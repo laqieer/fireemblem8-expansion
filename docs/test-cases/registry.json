@@ -539,7 +539,8 @@
         "TC-WORKFLOW-ASSET-DISCOVERY-001",
         "TC-PROBE-PRODUCER-CACHE-LIFETIME-001",
         "TC-PROBE-CONTENT-PUBLICATION-001",
-        "TC-PROBE-PENDING-ADMISSION-001"
+        "TC-PROBE-PENDING-ADMISSION-001",
+        "TC-PROBE-OBSERVATION-ALLOWANCE-001"
       ]
     },
     {
@@ -4056,6 +4057,46 @@
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_pending_request_bytes_accumulate_after_completed_commands scripts.validation_ownership.tests.test_foundation.FoundationTests.test_variant_limit_rejects_before_any_variant_launch scripts.validation_ownership.tests.test_foundation.FoundationTests.test_authority_composition_rejects_foreign_and_detached_budgets scripts.validation_ownership.tests.test_foundation.FoundationTests.test_report_budget_binds_one_terminal_session_lifetime -v",
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_check_docs.TesterCaseRegistryTests.test_late_shipped_contracts_are_complete_and_fail_closed scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_manual_handoff_json_contract_and_human_links -v",
+          "evidence": "scripts/docs_check_tests/test_check_docs.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-PROBE-OBSERVATION-ALLOWANCE-001",
+      "title": "Separate cumulative observations from capsule and inventory admission",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/262"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-probe-observation-allowance-001-separate-cumulative-observations-from-capsule-and-inventory-admission",
+      "profiles": [
+        "Linux x86-64 source checkout with existing native probe tools; entries=64 and observations=128 for bounded separation controls"
+      ],
+      "purpose": "Expose a separate cumulative observation allowance without changing ordinary defaults, entries-only tightening, per-capsule/inventory cardinality or any byte and native protocol limit.",
+      "prerequisites": "Clean owned temporary fixtures, Python 3, GNU Make 4.3, host compiler and existing namespace/ptrace/lifecycle prerequisites; no ROM, package, privilege change or calibration.",
+      "actions": "Run actual four-capsule 32/64/96/128 accounting, legacy/None and explicit lowering, exact/prelaunch and partial exhaustion, 99-record capsule and 65-entry inventory negatives, real metadata/cache/BASE/CURRENT/nested resumption, malformed closed/live counters, and isolated alias/clamp mutations. Exercise a genuine failed parent after its grant shrinks, transport-edit only its count/byte evidence to overclaim the old cap, and restore the failed-status bypass as a separate mutation.",
+      "expected_result": "Limits.observation_count resolves the optional appended observations alias. Every capsule remains bounded by min(entries, remaining effective total); checkpoints, resumption, returned counters and metadata retain that capped authority. Failed terminal observation counts also fit the prospective shared total before settlement. Valid failed work retains original count/byte deltas and native error; other failed-resource overshoot semantics remain. Every original byte debit and terminal cleanup remains; no completion, failure, cache or view refunds observations.",
+      "negative_control": "Delivered bf1e intentionally rejects at its shared 64-record lifetime. Omitted/None retains that result. Replacing the effective alias with entries breaks the actual multi-capsule positive; removing the initial capsule clamp admits the real 99-record stat/read operation and breaks its rejection control. The c8 failed-report bypass advances shared accounting from98 to160 after a64-to32 grant reduction; restoring that bypass must fail the new observable counter regression.",
+      "interactions": "Independent root on delivered shared budget, pending/publication, producer and immutable-view foundations. Direct dependent #180/#186, transitive #196, umbrella Discussion174; no other supported feature/profile conflict. Inventory, peer ancestry, regex and fixed metadata ABI guards are unchanged.",
+      "save_compatibility": "Host-only policy parameter; no gameplay/configure flag, modern/archival behavior, save/config migration, locale/generated-data format, ROM or GBA RAM change.",
+      "cleanup": "Original session/budget/watchdog cleanup leaves no child, waiter, parked capsule, active view, cache authority or scratch. Preserve preimage and isolated mutation logs; remove only owned fixtures after terminal cleanup.",
+      "limitations": "A small real resource-separation case, not full graph fit, sizing, performance, current H1, calibration, native AI review or production acceptance. Typed diagnostic subclasses retain class-field default validation but are not shipping profiles.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.ObservationAllowanceTests -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_total_exact_limit_cache_and_next_capsule scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_remaining_count_reaches_next_capsule_guard scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_totals_charge_failed_deferred_and_terminal_processes scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_totals_cover_compiler_native_static_make_and_cache scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_accounting_rejects_malformed_closed_reports scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_record_limit_is_aggregate_across_collections scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_bytes_remain_an_independent_aggregate_bound scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_observation_totals_follow_selection_without_reset -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_nested_generated_query_keeps_one_live_view_until_outer_completion scripts.validation_ownership.tests.test_producer.ProducerTests.test_live_include_preserves_actual_metadata_and_residual_resources scripts.validation_ownership.tests.test_foundation.PendingAdmissionTests.test_default_smaller_and_global_limits_remain_authoritative scripts.validation_ownership.tests.test_foundation.PendingAdmissionTests.test_small_actual_variants_keep_results_and_attempted_state_counts -v",
+          "evidence": "scripts/validation_ownership/tests/test_producer.py"
         },
         {
           "command": "python3 -m unittest scripts.docs_check_tests.test_check_docs.TesterCaseRegistryTests.test_late_shipped_contracts_are_complete_and_fail_closed scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_manual_handoff_json_contract_and_human_links -v",

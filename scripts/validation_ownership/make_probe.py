@@ -1018,7 +1018,10 @@ class ProbeSession:
             "syscall_limit": self.budget.limits.syscalls - self.syscalls_used,
             "write_limit": self.budget.limits.sandbox_bytes - self.budget.bytes.get("sandbox", 0),
             "creation_limit": self.budget.limits.created_files - self.files_created,
-            "observation_count": self.budget.limits.entries - self.observations_used,
+            "observation_count": min(
+                self.budget.limits.entries,
+                self.budget.limits.observation_count - self.observations_used,
+            ),
             "observation_limit": min(
                 self.budget.limits.file_bytes,
                 self.budget.limits.control_bytes - self.budget.bytes.get("control", 0),
@@ -1062,14 +1065,17 @@ class ProbeSession:
                 "observations": self.observations_used + values["observations"] - settled["observations"],
                 "created": self.files_created + values["created_files"] - settled["created_files"],
             }
-            if not failed and (
-                prospective["processes"] > self.budget.limits.descendants
-                or prospective["syscalls"] > self.budget.limits.syscalls
-                or prospective["observations"] > self.budget.limits.entries
-                or prospective["created"] > self.budget.limits.created_files
-                or values["live_process_peak"] > config["process_limit"]
-                or values["memory_peak"] > config["memory_limit"]
-                or values["observation_bytes"] < 128*values["observations"]
+            if (
+                prospective["observations"] > self.budget.limits.observation_count
+                or values["observations"] > config["observation_count"]
+                or not failed and (
+                    prospective["processes"] > self.budget.limits.descendants
+                    or prospective["syscalls"] > self.budget.limits.syscalls
+                    or prospective["created"] > self.budget.limits.created_files
+                    or values["live_process_peak"] > config["process_limit"]
+                    or values["memory_peak"] > config["memory_limit"]
+                    or values["observation_bytes"] < 128*values["observations"]
+                )
             ):
                 self.budget.reject("supervisor checkpoint exceeds aggregate resource authority")
             self.observations_used += values["observations"] - settled["observations"]
@@ -1092,7 +1098,9 @@ class ProbeSession:
                 "syscall_limit": (settled["syscalls"], self.budget.limits.syscalls - self.syscalls_used),
                 "write_limit": (settled["written_bytes"], self.budget.limits.sandbox_bytes - self.budget.bytes.get("sandbox", 0)),
                 "creation_limit": (settled["created_files"], self.budget.limits.created_files - self.files_created),
-                "observation_count": (settled["observations"], self.budget.limits.entries - self.observations_used),
+                "observation_count": (
+                    settled["observations"], self.budget.limits.observation_count - self.observations_used,
+                ),
                 "observation_limit": (
                     settled["observation_bytes"],
                     self.budget.limits.control_bytes - self.budget.bytes.get("control", 0) - extra_control,

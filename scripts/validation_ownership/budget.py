@@ -56,13 +56,25 @@ class Limits:
     process_output_bytes: int = 1024 * 1024
     address_space_bytes: int = 512 * 1024 * 1024
     syscalls: int = 2_000_000
+    observations: int | None = None
+
+    @property
+    def observation_count(self) -> int:
+        return self.entries if self.observations is None else self.observations
 
     def __post_init__(self):
-        for definition in fields(self):
+        definitions = fields(self)
+        for definition in definitions:
             name, value = definition.name, getattr(self, definition.name)
+            maximum = definition.default
+            if name == "observations":
+                if value is None:
+                    continue
+                if maximum is None:
+                    maximum = next(item.default for item in definitions if item.name == "entries")
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise MakeProbeError(f"invalid {name} budget")
-            if value <= 0 or value > definition.default or not math.isfinite(value):
+            if value <= 0 or value > maximum or not math.isfinite(value):
                 raise MakeProbeError(f"invalid {name} budget")
             if name != "seconds" and not isinstance(value, int):
                 raise MakeProbeError(f"nonintegral {name} budget")
