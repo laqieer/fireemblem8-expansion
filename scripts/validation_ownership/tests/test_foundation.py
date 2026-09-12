@@ -21,7 +21,7 @@ import time
 import unittest
 import venv
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, replace
+from dataclasses import FrozenInstanceError, asdict, dataclass, fields, replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -9437,6 +9437,476 @@ class PendingAdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
             budget.admit_planned_state(0)
         self.fixture.assert_clean(session)
+
+
+class ObservationAllowanceTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = FoundationTests()
+        self.fixture.setUp()
+        self.sessions = []
+
+    def tearDown(self):
+        try:
+            for session in self.sessions:
+                session.budget.close()
+                self.fixture.assert_clean(session)
+                self.assertFalse(session.budget.producer_waiters)
+        finally:
+            self.fixture.tearDown()
+
+    def session(self, *, budget=None, loader=None, **limits):
+        if budget is None:
+            budget = ProbeBudget(Limits(**{"seconds": 30, "runs": 64, **limits}))
+        if loader is None:
+            loader = AuthorityLoader(
+                self.fixture.root, GitTreeEntries(self.fixture.entries, budget=budget), budget=budget,
+            )
+        session = ProbeSession(loader, scratch_root=self.fixture.scratch, budget=budget)
+        self.sessions.append(session)
+        return session
+
+    def sources(self):
+        names = self.fixture.observation_reservoir()
+        self.fixture.add("anchor-a", "x")
+        self.fixture.add("anchor-b", "x")
+        return names
+
+    def read_sources(self, session, names, *, metadata=False):
+        command = Command((
+            "/usr/bin/python3", "-c",
+            "import os,sys\nfor name in sys.argv[1:-1]:\n"
+            + (" os.stat(name)\n" if metadata else "")
+            + " fd=os.open(name,os.O_RDONLY)\n"
+            " sys.stdout.buffer.write(os.read(fd,1))\n os.close(fd)\n",
+            *names, str(session.serial),
+        ), sources=tuple(names))
+        result = session.command(command)
+        self.assertEqual(result.stdout, b"x" * len(names))
+        self.assertEqual(result.consumed, tuple(sorted(names)))
+        if metadata:
+            self.assertEqual(len(result.metadata), len(names))
+        return result
+
+    @contextmanager
+    def capture(self, session, *, request_change=None, report_change=None):
+        records = {"launches": [], "reports": [], "grants": []}
+        run, read = session.budget.run, session.budget.read_bytes
+
+        def launch(argv, **kwargs):
+            if len(argv) >= 2 and argv[-2] == str(TRUSTED_ROOT / "sandbox_exec.py"):
+                config = json.loads(Path(argv[-1]).read_bytes())
+                initial = config["observation_count"]
+                records["launches"].append({
+                    "mode": config["mode"], "count": initial,
+                    "bytes": config["observation_limit"], "used": session.observations_used,
+                    "parked": len(session.parked_capsules),
+                })
+                handler = kwargs.get("producer_handler")
+                if handler is not None:
+                    def handle(packet):
+                        request = parse_json(packet, "actual producer request")
+                        if request_change is not None and request["kind"] == "request":
+                            request_change(request)
+                            packet = encoded(request)
+                        response = handler(packet)
+                        if response is not None:
+                            reply = parse_json(response, "actual producer reply")
+                            records["grants"].append({
+                                "initial": initial, "settled": request["counters"]["observations"],
+                                "settled_bytes": request["counters"]["observation_bytes"],
+                                "used": session.observations_used,
+                                "count": reply["limits"]["observation_count"],
+                            })
+                        return response
+                    kwargs["producer_handler"] = handle
+            return run(argv, **kwargs)
+
+        def reported(path, category):
+            data = read(path, category)
+            if path.name.startswith("report-"):
+                report = parse_json(data, "actual supervisor report")
+                records["reports"].append(report)
+                if report_change is not None:
+                    report_change(report)
+                    return encoded(report)
+            return data
+
+        with patch.object(session.budget, "run", launch), patch.object(
+            session.budget, "read_bytes", reported,
+        ), patch.object(session.budget, "charge", wraps=session.budget.charge) as charge:
+            records["charges"] = charge.call_args_list
+            yield records
+
+    def assert_accounting(self, session, records):
+        self.assertEqual(
+            session.observations_used, sum(report["observations"] for report in records["reports"]),
+        )
+        for launch in records["launches"]:
+            self.assertEqual(launch["count"], min(
+                session.budget.limits.entries,
+                session.budget.limits.observation_count - launch["used"],
+            ))
+        self.assertGreaterEqual(
+            session.budget.bytes["control"],
+            sum(report["observation_bytes"] for report in records["reports"]),
+        )
+
+    def test_optional_limit_preserves_positional_defaults_and_readonly_alias(self):
+        prefix = (
+            "seconds", "runs", "states", "processes", "descendants", "pending", "total_bytes",
+            "snapshot_bytes", "output_bytes", "event_bytes", "mapping_bytes", "cache_bytes",
+            "pending_bytes", "control_bytes", "sandbox_bytes", "created_files", "entries",
+            "file_bytes", "process_output_bytes", "address_space_bytes", "syscalls",
+        )
+        definitions = fields(Limits)
+        self.assertEqual(tuple(item.name for item in definitions), (*prefix, "observations"))
+        values = (
+            3600, 4096, 4096, 32, 16384, 32, 768*1024*1024, 384*1024*1024,
+            64*1024*1024, 16*1024*1024, 32*1024*1024, 32*1024*1024,
+            1024*1024, 32*1024*1024, 64*1024*1024, 4096, 32768,
+            16*1024*1024, 1024*1024, 512*1024*1024, 2_000_000,
+        )
+        self.assertEqual(Limits(*values), Limits())
+        self.assertEqual(Limits(*values, 128).observations, 128)
+        self.assertEqual(Limits().observation_count, 32768)
+        self.assertIsNone(Limits().observations)
+        for options, expected in (
+            ({"entries": 64}, 64), ({"entries": 64, "observations": None}, 64),
+            ({"entries": 64, "observations": 128}, 128),
+            ({"entries": 64, "observations": 32}, 32),
+        ):
+            with self.subTest(options=options):
+                limits = Limits(**options)
+                self.assertEqual(limits.observation_count, expected)
+                self.assertEqual(limits.entries, 64)
+                with self.assertRaises(FrozenInstanceError):
+                    limits.observation_count = 1
+        for value in (False, True, 0, -1, 1.0, 1.5, "128", float("inf"), float("-inf"), float("nan"), 32769):
+            with self.subTest(value=value), self.assertRaises(MakeProbeError):
+                Limits(observations=value)
+
+    def test_typed_diagnostic_defaults_retain_existing_field_ceiling_validation(self):
+        @dataclass(frozen=True)
+        class DiagnosticLimits(Limits):
+            observations: int | None = 65536
+
+        @dataclass(frozen=True, slots=True)
+        class DiagnosticEntries(Limits):
+            entries: int = 65536
+
+        for limits_type in (DiagnosticLimits, DiagnosticEntries):
+            limits = limits_type(entries=64, observations=65536)
+            self.assertEqual(limits.observation_count, 65536)
+            self.assertEqual(limits_type(entries=64, observations=None).observation_count, 64)
+            with self.assertRaises(MakeProbeError):
+                limits_type(observations=65537)
+            with self.assertRaises(MakeProbeError):
+                limits_type(file_bytes=16*1024*1024 + 1)
+        self.assertEqual(DiagnosticEntries().observation_count, 65536)
+        self.assertEqual(Limits(entries=64, observations=32768).observation_count, 32768)
+
+    def test_real_capsules_cross_entries_and_exhaust_independent_lifetime_exactly(self):
+        names = self.sources()
+        with self.session(entries=64, observations=128) as session, self.capture(session) as records:
+            self.assertEqual(len(session.snapshot.files), 64)
+            for expected in (32, 64, 96, 128):
+                self.read_sources(session, names[:32])
+                self.assertEqual(session.observations_used, expected)
+            self.assertEqual([item["count"] for item in records["launches"]], [64, 64, 64, 32])
+            self.assert_accounting(session, records)
+            for report in records["reports"]:
+                self.assertTrue(report["ok"])
+                self.assertIn(("control", report["observation_bytes"]), [
+                    call.args for call in records["charges"]
+                ])
+            before = session.budget.runs, session.processes_used, dict(session.budget.bytes)
+            with self.assertRaisesRegex(MakeProbeError, "filesystem-observation.*before launch"):
+                self.read_sources(session, names[:1])
+            self.assertEqual((session.budget.runs, session.processes_used), before[:2])
+            self.assertTrue(all(session.budget.bytes.get(key, 0) >= value for key, value in before[2].items()))
+            self.assertTrue(session.budget.failed)
+            self.assertTrue(session.budget.closed)
+        self.assertEqual(session.observations_used, 128)
+
+    def test_legacy_none_and_independent_lowering_keep_exact_prelaunch_rejection(self):
+        names = self.sources()
+        for options, total in (({}, 64), ({"observations": None}, 64), ({"observations": 32}, 32)):
+            with self.subTest(options=options):
+                with self.session(entries=64, **options) as session, self.capture(session) as records:
+                    for _ in range(total // 32):
+                        self.read_sources(session, names[:32])
+                    runs = session.budget.runs
+                    with self.assertRaisesRegex(MakeProbeError, "filesystem-observation.*before launch"):
+                        self.read_sources(session, names[:1])
+                    self.assertEqual(session.observations_used, total)
+                    self.assertEqual(session.budget.runs, runs)
+                    self.assert_accounting(session, records)
+                self.assertEqual(session.observations_used, total)
+
+    def test_partial_grant_charges_the_actual_failed_capsule_and_never_refunds(self):
+        names = self.sources()
+        with self.session(entries=64, observations=65) as session, self.capture(session) as records:
+            self.read_sources(session, names[:32])
+            self.read_sources(session, names[:32])
+            before = session.budget.runs, session.processes_used
+            with self.assertRaisesRegex(MakeProbeError, "confined command.*filesystem-observation"):
+                self.read_sources(session, names[:2])
+            self.assertEqual(records["launches"][-1]["count"], 1)
+            self.assertFalse(records["reports"][-1]["ok"])
+            self.assertEqual(records["reports"][-1]["observations"], 1)
+            self.assertEqual(session.observations_used, 65)
+            self.assertEqual((session.budget.runs, session.processes_used), (before[0] + 1, before[1] + 1))
+            self.assert_accounting(session, records)
+            with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
+                self.read_sources(session, names[:1])
+        self.assertEqual(session.observations_used, 65)
+
+    def test_surplus_lifetime_does_not_admit_an_oversized_real_capsule(self):
+        names = self.sources()
+        with self.session(entries=64, observations=128) as session, self.capture(session) as records:
+            with self.assertRaisesRegex(MakeProbeError, "confined command.*filesystem-observation"):
+                self.read_sources(session, names[:33], metadata=True)
+            self.assertEqual(records["launches"][0]["count"], 64)
+            self.assertEqual(records["reports"][0]["observations"], 64)
+            self.assertFalse(records["reports"][0]["ok"])
+            self.assertEqual(session.observations_used, 64)
+            self.assert_accounting(session, records)
+            self.assertTrue(session.budget.closed)
+
+    def test_surplus_lifetime_does_not_admit_oversized_source_inventory(self):
+        self.sources()
+        self.fixture.add("extra", "x")
+        session = self.session(entries=64, observations=128)
+        with patch.object(session, "_sandbox_run", wraps=session._sandbox_run) as launched:
+            with self.assertRaisesRegex(MakeProbeError, "snapshot entry count"):
+                with session:
+                    self.fail("65 source entries exceeded their unchanged inventory bound")
+        self.assertEqual(launched.call_count, 0)
+        self.assertEqual(session.observations_used, 0)
+        self.assertTrue(session.budget.closed)
+
+    def test_cache_and_selected_views_share_the_same_explicit_allowance(self):
+        command = self.fixture.observation_command_fixture()
+        names = self.fixture.observation_reservoir()
+        budget = ProbeBudget(Limits(entries=64, observations=128, seconds=30))
+        base = self.fixture.capture_view(budget)
+        self.fixture.add("data/a", "current\n")
+        current = self.fixture.capture_view(budget)
+        clock = budget.started, budget.deadline
+        with self.session(budget=budget, loader=current) as session, self.capture(session) as records:
+            first = session.command(command)
+            self.assertEqual(first.stdout, b"current\n")
+            before, runs = session.observations_used, budget.runs
+            self.assertIs(session.command(command), first)
+            self.assertGreater(session.observations_used, before)
+            self.assertGreater(budget.runs, runs)
+            with session.select_view(base):
+                before = session.observations_used
+                self.assertEqual(session.command(command).stdout, b"observed\n")
+                self.assertGreater(session.observations_used, before)
+                self.read_sources(session, names[:32])
+                self.read_sources(session, names[:32])
+                self.assertGreater(session.observations_used, 64)
+            self.assertIs(session.loader, current)
+            self.assertEqual(session.command(command).stdout, b"current\n")
+            left = budget.limits.observation_count - session.observations_used
+            self.assertGreater(left, 0)
+            self.assertLessEqual(left, len(names))
+            self.read_sources(session, names[:left])
+            self.assertEqual(session.observations_used, 128)
+            self.assert_accounting(session, records)
+            before = budget.runs
+            with self.assertRaisesRegex(MakeProbeError, "filesystem-observation.*before launch"):
+                session.command(command)
+            self.assertEqual(budget.runs, before)
+            self.assertEqual((budget.started, budget.deadline), clock)
+        self.assertEqual(session.observations_used, 128)
+
+    def test_nested_queries_resume_only_with_capped_shared_residual_grants(self):
+        names = self.fixture.observation_reservoir()
+        self.fixture.add("Makefile", "VALUE := $(shell printf inner)\nall: ;\n")
+        self.fixture.add("inner.mk", "VALUE := inner\ninner: ;\n")
+        nested = []
+        with self.session(entries=64, observations=128) as session, self.capture(session) as records:
+            class Commands:
+                def __contains__(self, command):
+                    return command == "printf inner"
+
+                def __getitem__(self, command):
+                    if command != "printf inner":
+                        raise KeyError(command)
+                    result = session.make("inner", makefile="inner.mk", variables=("VALUE",))
+                    nested.append(result)
+                    return Command(("/usr/bin/printf", "%s", result.semantics["domains"]["VALUE"]["value"]))
+
+            self.read_sources(session, names[:32])
+            self.read_sources(session, names[:32])
+            result = session.make("all", variables=("VALUE",), commands=Commands())
+            self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "inner")
+            self.assertEqual(len(nested), 1)
+            self.assertEqual(nested[0].semantics["domains"]["VALUE"]["value"], "inner")
+            self.assertGreater(session.observations_used, 64)
+            self.assertLessEqual(session.observations_used, 128)
+            self.assertTrue(any(item["parked"] for item in records["launches"]))
+            self.assertTrue(records["grants"])
+            for grant in records["grants"]:
+                self.assertEqual(grant["count"], min(
+                    grant["initial"], grant["settled"] + 128 - grant["used"],
+                ))
+                self.assertLessEqual(grant["count"], 64)
+            self.assert_accounting(session, records)
+            self.assertFalse(session.parked_capsules)
+            self.assertFalse(session.budget.producer_waiters)
+            total = session.observations_used
+        self.assertEqual(session.observations_used, total)
+
+    def failed_resumption(self, *, overclaim):
+        names = self.fixture.observation_reservoir()
+        self.fixture.add("protected.txt", "unchanged\n")
+        self.fixture.add("Makefile", (
+            "VALUE := $(shell printf nested)\n"
+            "$(file >protected.txt,forbidden)\nall: ;\n"
+        ))
+        evidence = {}
+        with self.session(entries=64, observations=128) as session:
+            owner = self
+
+            class Commands:
+                def __contains__(self, command):
+                    return command == "printf nested"
+
+                def __getitem__(self, command):
+                    if command != "printf nested":
+                        raise KeyError(command)
+                    owner.read_sources(session, names[:32])
+                    return Command(("/usr/bin/printf", "%s", "nested"))
+
+            def failed_report(report):
+                if "rendezvous" not in report:
+                    return
+                parent, = [item for item in records["launches"] if item["mode"] == "make"]
+                grant, = records["grants"]
+                self.assertIs(report["ok"], False)
+                self.assertIsInstance(report["error"], str)
+                self.assertTrue(report["error"])
+                self.assertEqual((parent["count"], grant["count"]), (64, 32))
+                self.assertLessEqual(grant["settled"], report["observations"])
+                self.assertLessEqual(report["observations"], grant["count"])
+                self.assertGreater(session.observations_used, 64)
+                evidence.update({
+                    "native_ok": report["ok"], "native_error": report["error"],
+                    "native_observations": report["observations"],
+                    "native_observation_bytes": report["observation_bytes"],
+                    "initial_count": parent["count"], "resumed_count": grant["count"],
+                    "settled_observations": grant["settled"],
+                    "settled_observation_bytes": grant["settled_bytes"],
+                    "before_observations": session.observations_used,
+                    "before_control": session.budget.bytes["control"],
+                    "decode_bytes": report["metadata"]["decoded_size"] + len(report["metadata"]["payload"]),
+                })
+                if overclaim:
+                    report["observations"] = parent["count"]
+                    report["observation_bytes"] = max(report["observation_bytes"], 128 * parent["count"])
+                evidence.update({
+                    "provided_observations": report["observations"],
+                    "provided_observation_bytes": report["observation_bytes"],
+                })
+
+            with self.capture(session, report_change=failed_report) as records:
+                self.read_sources(session, names[:32])
+                self.read_sources(session, names[:32])
+                with self.assertRaises(MakeProbeError) as rejected:
+                    session.make("all", commands=Commands())
+            self.assertIn("native_ok", evidence)
+            self.assertTrue(any(item["parked"] for item in records["launches"]))
+            self.assertTrue(session.budget.failed)
+            self.assertTrue(session.budget.closed)
+            evidence.update({
+                "after_observations": session.observations_used,
+                "control_delta": session.budget.bytes["control"] - evidence["before_control"],
+                "error": str(rejected.exception),
+            })
+        self.assertEqual((self.fixture.root / "protected.txt").read_bytes(), b"unchanged\n")
+        self.fixture.assert_clean(session)
+        return evidence
+
+    def test_failed_resumption_overclaim_rejects_before_observation_settlement(self):
+        evidence = self.failed_resumption(overclaim=True)
+        self.assertEqual(evidence["provided_observations"], evidence["initial_count"])
+        self.assertGreater(
+            evidence["before_observations"] + evidence["provided_observations"]
+            - evidence["settled_observations"], 128,
+        )
+        self.assertLessEqual(evidence["after_observations"], 128)
+        self.assertEqual(evidence["after_observations"], evidence["before_observations"])
+        self.assertEqual(evidence["control_delta"], evidence["decode_bytes"])
+        self.assertIn("checkpoint exceeds aggregate resource authority", evidence["error"])
+
+    def test_valid_failed_resumption_retains_native_count_bytes_and_error(self):
+        evidence = self.failed_resumption(overclaim=False)
+        self.assertEqual(evidence["provided_observations"], evidence["native_observations"])
+        self.assertEqual(evidence["provided_observation_bytes"], evidence["native_observation_bytes"])
+        self.assertEqual(
+            evidence["after_observations"], evidence["before_observations"]
+            + evidence["native_observations"] - evidence["settled_observations"],
+        )
+        self.assertLessEqual(evidence["after_observations"], 128)
+        self.assertEqual(
+            evidence["control_delta"], evidence["decode_bytes"]
+            + evidence["native_observation_bytes"] - evidence["settled_observation_bytes"],
+        )
+        self.assertIn(evidence["native_error"], evidence["error"])
+        self.assertIn("confined make probe rejected", evidence["error"])
+
+    def test_closed_report_remains_bound_to_capsule_not_surplus_lifetime(self):
+        names = self.sources()
+        for count in (False, -1, 0, 65):
+            with self.subTest(count=count):
+                def changed(report):
+                    report["observations"] = count
+                    report["observation_bytes"] = max(report["observation_bytes"], 128 * count)
+
+                with self.session(entries=64, observations=128) as session, self.capture(
+                    session, report_change=changed,
+                ):
+                    with self.assertRaisesRegex(MakeProbeError, "malformed supervisor"):
+                        self.read_sources(session, names[:2])
+                    self.assertEqual(session.observations_used, 0)
+                    self.assertTrue(session.budget.failed)
+                    self.assertTrue(session.budget.closed)
+
+    def test_live_checkpoints_reject_capsule_overflow_and_stale_counters(self):
+        self.fixture.add("Makefile", "ONE := $(shell printf one)\nTWO := $(shell printf two)\nall: ;\n")
+        for defect in ("above-capsule", "stale"):
+            with self.subTest(defect=defect):
+                resolved = []
+
+                class Commands:
+                    def __contains__(self, command):
+                        return command in {"printf one", "printf two"}
+
+                    def __getitem__(self, command):
+                        resolved.append(command)
+                        return Command(("/usr/bin/printf", "%s", command.split()[1]))
+
+                def changed(request):
+                    if defect == "above-capsule":
+                        request["counters"]["observations"] = 65
+                        request["counters"]["observation_bytes"] = max(
+                            request["counters"]["observation_bytes"], 65 * 128,
+                        )
+                    elif request["sequence"] == 2:
+                        request["counters"]["observations"] = 0
+
+                expected = "checkpoint exceeds aggregate" if defect == "above-capsule" else "nonmonotonic"
+                with self.session(entries=64, observations=128) as session, self.capture(
+                    session, request_change=changed,
+                ):
+                    with self.assertRaisesRegex(MakeProbeError, expected):
+                        session.make("all", commands=Commands())
+                    self.assertEqual(resolved, [] if defect == "above-capsule" else ["printf one"])
+                    self.assertTrue(session.budget.failed)
+                    self.assertTrue(session.budget.closed)
 
 
 if __name__ == "__main__":

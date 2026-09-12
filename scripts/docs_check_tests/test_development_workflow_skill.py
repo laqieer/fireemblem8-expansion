@@ -4599,6 +4599,7 @@ printf '%s\t%s\t%s\n' "$result" \
             "TC-PROBE-PRODUCER-CACHE-LIFETIME-001",
             "TC-PROBE-CONTENT-PUBLICATION-001",
             "TC-PROBE-PENDING-ADMISSION-001",
+            "TC-PROBE-OBSERVATION-ALLOWANCE-001",
         ]
         self.assertEqual(
             [],
