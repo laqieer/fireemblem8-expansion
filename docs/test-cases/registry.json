@@ -507,7 +507,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/243",
         "https://github.com/laqieer/fireemblem8-expansion/issues/246",
         "https://github.com/laqieer/fireemblem8-expansion/issues/252",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/256"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/256",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/258"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -535,7 +536,8 @@
         "TC-WORKFLOW-WORKTREE-CLEANUP-001",
         "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
         "TC-WORKFLOW-ASSET-DISCOVERY-001",
-        "TC-PROBE-PRODUCER-CACHE-LIFETIME-001"
+        "TC-PROBE-PRODUCER-CACHE-LIFETIME-001",
+        "TC-PROBE-CONTENT-PUBLICATION-001"
       ]
     },
     {
@@ -3988,6 +3990,38 @@
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_views_isolate_cache_native_files_and_static_make -v",
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-PROBE-CONTENT-PUBLICATION-001",
+      "title": "Preserve content-only publication and Make convergence",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/258"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-probe-content-publication-001-preserve-content-only-publication-and-make-convergence",
+      "profiles": [
+        "Linux x86-64 source checkout with the existing native ownership-probe tools"
+      ],
+      "purpose": "Preserve explicit content-only writer behavior through actual confined publication while keeping default same-byte replacement effects.",
+      "prerequisites": "Clean owned temporary fixture, original byte bounds and a finite unexpected-second-restart guard; no ROM or new dependency.",
+      "actions": "Compare ordinary and native forced-include convergence using a faithful writer and all three real dependency adapters. Change real bundle membership. Exercise mode-0600 equal content versus private mode 0644, missing/different content, default always-write behavior, strict policy/confirmation parsing, source/owner/nofollow and race failures, nested/view ownership and original-defect mutation.",
+      "expected_result": "Explicit content-only publication preserves the actual equal-content object and existing mode, confirms effective metadata truthfully and converges. Missing/different content is genuinely created/replaced; default unconditional effects remain. Every invocation, receipt, sequence, real comparison and existing accounting boundary is preserved.",
+      "negative_control": "The d091 real eventlists adapter rewrites identical included depfiles and hits restart 2 while ordinary Make converges at restart 1. Restoring unconditional adapter policy must fail the genuine native convergence control. Default always-writing same-byte producers intentionally still reach the finite guard.",
+      "interactions": "Uses existing Command, producer/publication and selected-view seams; preserves #256 cache-lifetime behavior. #180/#186 and #196 are dependents. No other feature/profile conflicts.",
+      "save_compatibility": "Host-only fidelity correction; no gameplay, save/config identity, localization, generated content format, ROM/GBA-RAM, modern or archival behavior change.",
+      "cleanup": "Existing watchdog/session cleanup verifies no owned children/waiters/stale views or scratch; retain failing evidence and remove only owned fixtures.",
+      "limitations": "Not blanket output deduplication, bytes-plus-mode comparison, resource-cap selection, aggregate host-RAM proof, full graph acceptance or native AI review. No manual-only criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_content_publication -v",
+          "evidence": "scripts/validation_ownership/tests/test_content_publication.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_declared_output_results_are_retained_only_by_actual_owners scripts.validation_ownership.tests.test_producer.ProducerTests.test_generated_publication_creation_mapping_cache_and_write_charges_are_cumulative scripts.validation_ownership.tests.test_producer.ProducerTests.test_nested_scope_inherits_ownership_and_preserves_all_file_stat_fields scripts.validation_ownership.tests.test_producer.ProducerTests.test_invalid_request_rejects_before_any_producer_execution scripts.validation_ownership.tests.test_producer.ProducerTests.test_invalid_reply_never_retries_an_effectful_producer -v",
+          "evidence": "scripts/validation_ownership/tests/test_producer.py"
         }
       ]
     },

@@ -166,7 +166,8 @@ def python_code_closure(session, body, code=()):
     return tuple(sorted(result))
 
 
-def python_command(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
+def python_command(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=(),
+                   publication_policy="replace"):
     modules = python_code_closure(session, body, code)
     prefix = "import sys;"
     if modules:
@@ -176,6 +177,7 @@ def python_command(session, body, arguments=(), *, sources=(), outputs=(), direc
          prefix + body, *arguments),
         code=modules, sources=tuple(sources), outputs=tuple(outputs),
         directories=tuple(sorted(set(directories) | set(python_import_directories(modules)))),
+        publication_policy=publication_policy,
     )
 
 
@@ -194,10 +196,12 @@ def _directory_closure(paths):
     return tuple(sorted(result))
 
 
-def directory_python_command(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
+def directory_python_command(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=(),
+                             publication_policy="replace"):
     return python_command(
         session, body, arguments, sources=sources, outputs=outputs,
         directories=_directory_closure(directories), code=code,
+        publication_policy=publication_policy,
     )
 
 
@@ -599,6 +603,7 @@ def generated_dependency_command(
         ),
         sources=files,
         outputs=(relative_path(depfile),),
+        publication_policy="if-content-changed",
         directories=tuple(sorted(declared_directories)),
         code=tuple(sorted(set(python_code))),
     )

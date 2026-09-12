@@ -8,10 +8,63 @@ import socket
 import stat
 import struct
 import time
+import re
 
 
 class ChannelError(RuntimeError):
     pass
+
+
+PUBLICATION_POLICIES = ("replace", "if-content-changed")
+PUBLICATION_MAGIC = b"VOGEN2\0\0"
+
+
+def publication_identity(info):
+    return (
+        info.st_dev, info.st_ino, info.st_mode, info.st_size,
+        info.st_mtime_ns, info.st_ctime_ns, info.st_nlink,
+    )
+
+
+def validate_publication_identity(value, mode, size):
+    if (
+        not isinstance(value, (list, tuple)) or len(value) != 7
+        or any(type(item) is not int for item in value)
+        or any(not 0 <= value[index] < 1 << 64 for index in (0, 1, 2, 3, 6))
+        or any(not -(1 << 63) <= value[index] < 1 << 63 for index in (4, 5))
+        or value[2] != stat.S_IFREG | mode or value[3] != size or value[6] < 1
+    ):
+        raise ChannelError("invalid effective publication object identity")
+    return tuple(value)
+
+
+def validate_publication_confirmation(value, *, count_limit, file_limit):
+    if (
+        not isinstance(value, dict) or set(value) != {"slot", "owner", "policy", "outputs"}
+        or type(value["slot"]) is not int or value["slot"] < 0
+        or not isinstance(value["owner"], str) or not re.fullmatch("[0-9a-f]{64}", value["owner"])
+        or type(value["policy"]) is not str or value["policy"] not in PUBLICATION_POLICIES
+        or not isinstance(value["outputs"], list) or len(value["outputs"]) > count_limit
+        or value["policy"] != "replace" and not value["outputs"]
+    ):
+        raise ChannelError("malformed effective publication confirmation")
+    names = set()
+    for output in value["outputs"]:
+        if (
+            not isinstance(output, dict)
+            or set(output) != {"path", "mode", "size", "sha256", "effect", "identity"}
+            or not isinstance(output["path"], str) or not 1 <= len(output["path"].encode("utf-8")) <= 4096
+            or output["path"] in names
+            or type(output["mode"]) is not int or not 0 <= output["mode"] <= 0o777
+            or type(output["size"]) is not int or not 0 <= output["size"] <= file_limit
+            or not isinstance(output["sha256"], str) or not re.fullmatch("[0-9a-f]{64}", output["sha256"])
+            or type(output["effect"]) is not str or output["effect"] not in {"created", "replaced", "retained"}
+            or value["policy"] == "replace" and output["effect"] == "retained"
+        ):
+            raise ChannelError("invalid effective publication result")
+        validate_publication_identity(output["identity"], output["mode"], output["size"])
+        names.add(output["path"])
+    return value
 
 
 class ProducerChannel:

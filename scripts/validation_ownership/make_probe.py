@@ -32,7 +32,10 @@ from .authority import (
 from .budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget, text
 from .lifecycle import cleanup_scope, finish_cleanup
 from . import metadata_transport
-from .producer_channel import ChannelError, ProducerChannel
+from .producer_channel import (
+    ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
+    publication_identity, validate_publication_confirmation,
+)
 
 
 TRUSTED_ROOT = Path(__file__).resolve().parent
@@ -80,6 +83,13 @@ class Command:
     native_tool: NativeTool | None = None
     outputs: tuple[str, ...] = ()
     dependency_only: bool = False
+    publication_policy: str = "replace"
+
+    def __post_init__(self):
+        if type(self.publication_policy) is not str or self.publication_policy not in PUBLICATION_POLICIES:
+            raise MakeProbeError("unsupported Command publication policy")
+        if self.publication_policy != "replace" and not self.outputs:
+            raise MakeProbeError("content-only publication requires declared outputs")
 
 
 @dataclass(frozen=True)
@@ -862,12 +872,49 @@ class ProbeSession:
 
     def _publication_records(self, since=0):
         result = []
-        for name, (owner, serial) in sorted(self.published_versions.items()):
+        for name, (owner, serial, identity) in sorted(self.published_versions.items()):
             self.budget.remaining()
             if serial > since:
                 item = self.published_sources[name]
-                result.append([name, owner, item.mode, len(item.data), hashlib.sha256(item.data).hexdigest()])
+                result.append([
+                    name, owner, item.mode, len(item.data), hashlib.sha256(item.data).hexdigest(),
+                    list(identity),
+                ])
         return result
+
+    def _verify_effective_output(self, item, outcome):
+        identity = tuple(outcome["identity"])
+        directory = os.open(self.tree, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            parts = relative_path(item.path).split("/")
+            for part in parts[:-1]:
+                following = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+                os.close(directory)
+                directory = following
+            descriptor = os.open(
+                parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOATIME,
+                dir_fd=directory,
+            )
+            with os.fdopen(descriptor, "rb") as stream:
+                if publication_identity(os.fstat(stream.fileno())) != identity:
+                    raise MakeProbeError("effective publication metadata differs from its actual object")
+                self.budget.charge("control", len(item.data))
+                offset = 0
+                while offset < len(item.data):
+                    self.budget.remaining()
+                    data = stream.read(min(65536, len(item.data) - offset))
+                    if not data or data != item.data[offset:offset + len(data)]:
+                        raise MakeProbeError("effective publication content differs from its produced output")
+                    offset += len(data)
+                if (
+                    publication_identity(os.fstat(stream.fileno())) != identity
+                    or publication_identity(os.stat(parts[-1], dir_fd=directory, follow_symlinks=False)) != identity
+                ):
+                    raise MakeProbeError("effective publication changed during confirmation")
+        except OSError as error:
+            raise MakeProbeError(f"effective publication could not be confirmed: {error}") from error
+        finally:
+            os.close(directory)
 
     def _new_root(self, name, *, make=False):
         root = self.base / name
@@ -1065,21 +1112,27 @@ class ProbeSession:
                 raise MakeProbeError("foreign producer request scope")
             if request.get("kind") == "finished":
                 if (
-                    set(request) != {"kind", "scope", "issued", "completed"}
+                    set(request) != {"kind", "scope", "issued", "completed", "publication"}
                     or type(request["issued"]) is not int or request["issued"] != sequence
                     or type(request["completed"]) is not int or not 0 <= request["completed"] <= sequence
                 ):
                     raise MakeProbeError("invalid producer completion notification")
-                completion = request["issued"], request["completed"]
+                validate_confirmation(request["completed"], request["publication"])
+                if publication_observer is not None:
+                    publication_observer(request["completed"], request["publication"])
+                completion = request["issued"], request["completed"], request["publication"]
                 return None
             if (
-                set(request) != {"kind", "scope", "sequence", "completed", "frame", "counters", "reserved"}
+                set(request) != {
+                    "kind", "scope", "sequence", "completed", "frame", "counters", "reserved", "publication",
+                }
                 or request["kind"] != "request" or type(request["sequence"]) is not int
                 or request["sequence"] != sequence + 1 or type(request["completed"]) is not int
                 or request["completed"] != sequence or not isinstance(request["frame"], str)
                 or len(request["frame"]) > 2*65536 or not re.fullmatch(r"(?:[0-9a-f]{2})+", request["frame"])
             ):
                 raise MakeProbeError("malformed, stale or out-of-order producer request")
+            validate_confirmation(request["completed"], request["publication"])
             events = _read_events(bytes.fromhex(request["frame"]), expected_mapping_count=0)
             if len(events) != 1 or events[0]["match"] != -1:
                 raise MakeProbeError("invalid producer request event")
@@ -1100,7 +1153,7 @@ class ProbeSession:
             ):
                 raise MakeProbeError("parked reservations contradict measured supervisor state")
             if publication_observer is not None:
-                publication_observer(sequence)
+                publication_observer(sequence, request["publication"])
             sequence += 1
             self.pending_commands_peak = max(
                 self.pending_commands_peak, reserved["pending"] + sum(item["pending"] for item in self.parked_capsules),
@@ -1120,6 +1173,21 @@ class ProbeSession:
             if len(data) + 4 > bound:
                 raise MakeProbeError("producer resumption grant encoding exceeded its reservation")
             return data
+
+        def validate_confirmation(completed, confirmation):
+            if completed == 0:
+                if confirmation is not None:
+                    raise MakeProbeError("publication confirmation precedes any producer")
+                return
+            try:
+                validate_publication_confirmation(
+                    confirmation, count_limit=self.budget.limits.created_files,
+                    file_limit=self.budget.limits.file_bytes,
+                )
+            except (ChannelError, UnicodeError) as error:
+                raise MakeProbeError(f"invalid effective publication confirmation: {error}") from error
+            if confirmation["slot"] != completed - 1:
+                raise MakeProbeError("publication confirmation has the wrong completed slot")
         if (
             config["process_limit"] < 1 or config["descendant_limit"] < 1
             or config["syscall_limit"] < 1 or config["write_limit"] < 1 or config["memory_limit"] < 1
@@ -1209,15 +1277,13 @@ class ProbeSession:
             if channel is not None:
                 final = observed["rendezvous"]
                 if (
-                    not isinstance(final, dict) or set(final) != {"issued", "completed", "pending_peak"}
-                    or any(type(value) is not int for value in final.values())
+                    not isinstance(final, dict) or set(final) != {"issued", "completed", "pending_peak", "publication"}
+                    or any(type(final[name]) is not int for name in ("issued", "completed", "pending_peak"))
                     or final["issued"] != sequence or final["completed"] != sequence
-                    or completion != (final["issued"], final["completed"])
+                    or completion != (final["issued"], final["completed"], final["publication"])
                     or not 0 <= final["pending_peak"] <= config["pending_limit"]
                 ):
                     raise MakeProbeError("partial or inconsistent live producer completion")
-                if publication_observer is not None:
-                    publication_observer(sequence)
             result.returncode = observed["returncode"]
             if metadata_validation and result.returncode not in {0, 1, 2}:
                 raise MakeProbeError("invalid trusted metadata comparison status")
@@ -1389,6 +1455,7 @@ class ProbeSession:
         self.budget.remaining()
         if not isinstance(command, Command):
             raise MakeProbeError("registered command requires a typed Command")
+        Command.__post_init__(command)
         if type(command.dependency_only) is not bool:
             raise MakeProbeError("dependency_only requires a boolean")
         if command.dependency_only and (
@@ -1445,7 +1512,9 @@ class ProbeSession:
             for cached in self.cache[key]:
                 if self._metadata_matches(cached.metadata):
                     return cached
-        self.budget.charge("pending", len(encoded([command.argv, code, sources, directories, outputs])))
+        self.budget.charge("pending", len(encoded([
+            command.argv, code, sources, directories, outputs, command.publication_policy,
+        ])))
         input_identities = tuple(self.source_owners(set(code) | set(sources)))
         work = self.base / f"command-{self.serial + 1}"
         root_name = f"command-root-{self.serial + 1}"
@@ -1518,7 +1587,10 @@ class ProbeSession:
             )
             self.budget.charge(
                 "cache", len(completed.stdout) + len(completed.stderr)
-                + len(encoded([self.snapshot.digest, command.argv, code, sources, directories, published_inputs]))
+                + len(encoded([
+                    self.snapshot.digest, command.argv, code, sources, directories,
+                    published_inputs, command.publication_policy,
+                ]))
                 + (0 if result.artifact is None else len(result.artifact))
                 + sum(len(item.data) + len(os.fsencode(item.path)) + 64 for item in result.generated),
             )
@@ -1743,6 +1815,7 @@ class ProbeSession:
         generated_paths = self.generated_paths
         generated_directories = self.generated_directories
         confirmed = 0
+        last_confirmation = None
         depth = self.make_depth
         # A query without registrations or inherited outputs has no publication
         # authority. Do not copy the complete tree's unused reservation list.
@@ -1760,18 +1833,58 @@ class ProbeSession:
                 self.published_sources.clear, self.published_versions.clear,
             ])
 
-        def acknowledge(completed):
-            nonlocal confirmed
+        def acknowledge(completed, confirmation):
+            nonlocal confirmed, last_confirmation
             if not confirmed <= completed <= len(receipts):
                 raise MakeProbeError("invalid producer publication acknowledgement")
-            for index in range(confirmed, completed):
-                for item in receipts[index][2].generated:
-                    self.publication_serial += 1
-                    version = receipts[index][3], self.publication_serial
-                    self.budget.charge("cache", len(encoded([item.path, version])))
-                    self.published_sources[item.path] = item
-                    self.published_versions[item.path] = version
+            if completed == confirmed:
+                if confirmation != last_confirmation:
+                    raise MakeProbeError("stale or inconsistent publication confirmation")
+                return
+            if completed != confirmed + 1:
+                raise MakeProbeError("publication confirmation skipped a producer")
+            try:
+                validate_publication_confirmation(
+                    confirmation, count_limit=self.budget.limits.created_files,
+                    file_limit=self.budget.limits.file_bytes,
+                )
+            except (ChannelError, UnicodeError) as error:
+                raise MakeProbeError(f"invalid publication confirmation: {error}") from error
+            _, record, produced, producer, policy, previous = receipts[confirmed]
+            if (
+                confirmation["slot"] != confirmed or confirmation["owner"] != producer
+                or confirmation["policy"] != policy
+                or [item["path"] for item in confirmation["outputs"]]
+                != [item.path for item in produced.generated]
+            ):
+                raise MakeProbeError("publication confirmation differs from its producer receipt")
+            effective = []
+            for item, outcome in zip(produced.generated, confirmation["outputs"]):
+                old = previous[item.path]
+                retained = policy == "if-content-changed" and old is not None and old[0].data == item.data
+                effect = "retained" if retained else "created" if old is None else "replaced"
+                mode = old[0].mode if retained else item.mode
+                if (
+                    outcome["effect"] != effect or outcome["mode"] != mode
+                    or outcome["size"] != len(item.data)
+                    or outcome["sha256"] != hashlib.sha256(item.data).hexdigest()
+                    or retained and tuple(outcome["identity"]) != old[1]
+                ):
+                    raise MakeProbeError("effective publication disagrees with its actual output contract")
+                self._verify_effective_output(item, outcome)
+                value = GeneratedFile(item.path, item.data, mode)
+                self.publication_serial += 1
+                version = producer, self.publication_serial, tuple(outcome["identity"])
+                self.budget.charge("cache", len(encoded([item.path, version])))
+                self.published_sources[item.path] = value
+                self.published_versions[item.path] = version
+                effective.append((item.path, f"{stat.S_IFREG | mode:06o}", outcome["sha256"]))
+            semantic_record = dict(record)
+            if effective:
+                semantic_record["generated_outputs"] = effective
+            command_results.setdefault(hashlib.sha256(encoded(semantic_record)).hexdigest(), semantic_record)
             confirmed = completed
+            last_confirmation = confirmation
 
         def produce(event, sequence):
             publication_start = self.publication_serial
@@ -1788,13 +1901,26 @@ class ProbeSession:
                 registration = commands[command]
                 if not isinstance(registration, Command):
                     raise MakeProbeError("producer registration requires a typed Command")
+                Command.__post_init__(registration)
                 outputs = self._output_paths(registration.outputs)
+                previous = {}
                 for name in outputs:
                     if any(name.startswith(other + "/") or other.startswith(name + "/") for other in generated_paths):
                         raise MakeProbeError("conflicting generated output namespaces")
                     path = self.tree / name
                     if (path.exists() or path.is_symlink()) and name not in generated_paths:
                         raise MakeProbeError("generated output would replace an unowned source object")
+                    try:
+                        before = path.lstat()
+                    except FileNotFoundError:
+                        previous[name] = None
+                    else:
+                        if (
+                            name not in self.published_versions
+                            or publication_identity(before) != self.published_versions[name][2]
+                        ):
+                            raise MakeProbeError("active publication identity changed before producer execution")
+                        previous[name] = self.published_sources[name], publication_identity(before)
                     generated_paths.add(name)
                     generated_directories.update(
                         parent.as_posix() for parent in PurePosixPath(name).parents
@@ -1805,6 +1931,7 @@ class ProbeSession:
                 identity = {
                     "argv": list(registration.argv), "directories": sorted(set(registration.directories)),
                     "inputs": list(result.input_identities),
+                    "publication_policy": registration.publication_policy,
                 }
                 if registration.dependency_only:
                     identity["dependency_only"] = True
@@ -1816,7 +1943,7 @@ class ProbeSession:
                     "command": identity, "output_sha256": hashlib.sha256(result.stdout).hexdigest(),
                 }
                 if result.generated:
-                    record["generated_outputs"] = [
+                    record["produced_outputs"] = [
                         (item.path, f"{stat.S_IFREG | item.mode:06o}", hashlib.sha256(item.data).hexdigest())
                         for item in result.generated
                     ]
@@ -1824,13 +1951,15 @@ class ProbeSession:
                     registration.argv, sorted(set(registration.code)), inputs,
                     sorted(set(registration.directories)), outputs,
                     None if registration.native_tool is None else registration.native_tool.digest,
+                    registration.publication_policy,
                 ])).hexdigest()
                 key = f"{sequence - 1:016x}"
                 self.budget.charge("mapping", len(command.encode("utf-8")) + len(result.stdout) + len(encoded(record)))
                 (mapping_path / (key + ".cmd")).write_bytes(command.encode("utf-8"))
                 (mapping_path / (key + ".out")).write_bytes(result.stdout)
                 if result.generated:
-                    frame = bytearray(b"VOGEN1\0\0" + bytes.fromhex(producer))
+                    frame = bytearray(PUBLICATION_MAGIC + bytes.fromhex(producer))
+                    frame.extend(struct.pack("<I", PUBLICATION_POLICIES.index(registration.publication_policy)))
                     frame.extend(struct.pack("<I", len(result.generated)))
                     for item in result.generated:
                         name = item.path.encode("utf-8")
@@ -1841,12 +1970,13 @@ class ProbeSession:
                         self.budget.reject("generated result mapping exceeds file byte bound")
                     self.budget.charge("mapping", len(frame))
                     (mapping_path / (key + ".files")).write_bytes(frame)
-                result_identity = hashlib.sha256(encoded(record)).hexdigest()
-                command_results.setdefault(result_identity, record)
-                receipts[sequence - 1] = (command, result_identity, result, producer)
+                receipts[sequence - 1] = (
+                    command, record, result, producer, registration.publication_policy, previous,
+                )
                 reply = {
                     "slot": sequence - 1, "owner": producer, "outputs": list(outputs),
                     "stdout_sha256": record["output_sha256"],
+                    "publication_policy": registration.publication_policy,
                 }
                 adopted = self._publication_records(publication_start)
                 if adopted:
@@ -1914,6 +2044,7 @@ class ProbeSession:
             recipe_sources = {record["source"] for record in semantics["files"] if record["source"]}
             semantics["owner_inputs"] = self.source_owners(set(owner_inputs) | recipe_sources)
             semantics["dynamic_commands"] = sorted(command_results.values(), key=encoded)
+            semantics["published_sources"] = [record[:5] for record in self._publication_records()]
             semantic_bytes = encoded(semantics)
             self.budget.charge("control", len(semantic_bytes))
             execution = self.snapshot.digest
