@@ -78,6 +78,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     mode = arguments.pop(0)
     try:
+        _clear_ambient_execution_environment()
         if mode in {"check", "resolve"}:
             reporter, parsed = _parse_reporter_arguments(arguments)
             parsed.repository_root = _controlled_root(parsed.repository_root)
@@ -87,7 +88,6 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("resolve mode requires at least one --changed")
         else:
             reporter = None
-        _clear_ambient_execution_environment()
         os.chdir(ROOT)
         sys.path.insert(0, str(ROOT))
         if mode == "tests":

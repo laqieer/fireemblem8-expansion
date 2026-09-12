@@ -3597,6 +3597,9 @@ game behavior needs a compensating change.
 6. Exercise the documented standalone-launcher and trusted-Make boundaries:
    controlled `MAKEFILES`, ambient/dry-run flags, and reporter `--eval` must
    prove that only the direct Python entry precedes Make startup evaluation.
+   Reporter top-level imports and their subprocesses must receive cleared
+   Git/Make/shell execution controls, while benign environment values and
+   caller-relative repository-root arguments keep their intended meaning.
    The convenience target must reject every execution-control override before
    configurable includes or dependency suppression.
    Invoke the actual launcher/reporter from the repository's parent using

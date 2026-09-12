@@ -100,6 +100,41 @@ class StandaloneLauncherTests(unittest.TestCase):
                 self.assertFalse((self.root / "preloaded.marker").exists())
                 (self.root / "payload.marker").unlink()
 
+    def test_reporter_import_and_its_subprocess_receive_scrubbed_controls(self):
+        names = (*CONTROLS, "GIT_DIR", "GIT_TEST_CONTROL", "BASH_ENV", "ENV")
+        reporter = self.launcher.with_name("reporter.py")
+        reporter.write_text(
+            "import json, os, subprocess\nfrom pathlib import Path\n"
+            "Path(__file__).with_name('import.json').write_text(json.dumps({"
+            "'controls': {key: os.environ[key] for key in " + repr(names)
+            + " if key in os.environ}, 'kept': os.environ.get('IMPORT_KEEP')}))\n"
+            "subprocess.run(['/bin/bash', '-c', 'printf import-ran > import-process.marker'], "
+            "check=True)\n" + reporter.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        hook = self.root / "import-env.sh"
+        hook.write_text("printf inherited > import-env.marker\n", encoding="ascii")
+        environment = {name: "inherited" for name in names}
+        environment.update({"MAKEFILES": str(self.poison), "BASH_ENV": str(hook),
+                            "ENV": str(hook), "IMPORT_KEEP": "kept"})
+        subprocess.run(
+            ["/bin/bash", "-c", "true"], cwd=self.root,
+            env={**self.environment, **environment}, check=True, timeout=10,
+        )
+        marker = self.root / "import-env.marker"
+        self.assertEqual(marker.read_text(), "inherited")
+        marker.unlink()
+        for mode, extra in (("check", ()), ("resolve", ("--changed", "src/data/file.json"))):
+            with self.subTest(mode=mode):
+                for name in ("import-env.marker", "import-process.marker", "payload.marker"):
+                    (self.root / name).unlink(missing_ok=True)
+                result = self.launch(environment, mode=mode, extra=extra)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse(marker.exists())
+                observed = json.loads(reporter.with_name("import.json").read_text())
+                self.assertEqual(observed, {"controls": {}, "kept": "kept"})
+                self.assertEqual((self.root / "import-process.marker").read_text(), "import-ran")
+                self.assertEqual((self.root / "payload.marker").read_text(), "payload-ran")
     def test_eval_is_not_a_standalone_argument_and_make_cannot_guard_it(self):
         expression = "--eval=$(file >evaluated.marker,evaluated)"
         control = subprocess.run(
