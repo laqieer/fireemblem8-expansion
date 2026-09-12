@@ -1351,10 +1351,12 @@ traffic accounting, establish full graph fit or add a manual-only criterion.
 5. Exercise nested publication and CURRENT/BASE/CURRENT fixtures. Preserve
    real effective modes/bytes and every invocation/receipt across view and
    outer cleanup. No view borrows another view's generated object.
-6. Restore the original adapter's unconditional policy in an owned mutation
-   source. The real eventlists convergence test must fail through native
-   behavior, not merely a policy-name assertion. Keep every required
-   creation/write/comparison/transport/cache charge and original bound.
+6. The runner repeats the real eventlists registration with the original
+   unconditional publication policy in its owned fixture. Require the actual
+   native restart-`2` failure, two real produced results with the expected
+   consumed inputs, and created/replaced publication effects, not merely a
+   policy-name assertion. Keep every required creation/write/comparison/
+   transport/cache charge and original bound.
 
 ### Expected result
 
@@ -1374,9 +1376,11 @@ bounds and fail-closed ownership/protocol checks remain intact.
 
 The preserved d091 ordinary/native preimage converges at restart `1` ordinarily
 but reaches the finite restart-`2` guard through the old real eventlists
-adapter. Stable-content mode 0600 is retained by the ordinary writer; comparing
-bytes plus requested mode would be incorrect. The mutation must restore that
-behavioral failure, not an unrelated setup error.
+adapter. The committed runner retains that real-adapter negative control;
+the separately preserved source-copy mutation also reached the same native
+failure. Stable-content mode 0600 is retained by the ordinary writer;
+comparing bytes plus requested mode would be incorrect. The negative control
+must restore the behavioral failure, not an unrelated setup error.
 
 ### Interactions and save compatibility
 

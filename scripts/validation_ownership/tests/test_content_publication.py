@@ -353,7 +353,7 @@ class ContentPublicationTests(unittest.TestCase):
                 self.assertTrue(changed)
             self.fixture.assert_clean(session)
 
-    def assert_real_adapter(self, name, *, membership=False):
+    def assert_real_adapter(self, name, *, membership=False, unconditional=False):
         cases = {item["name"]: item for item in self.support.add_generated_dependency_fixture()}
         case = cases[name]
         options = dict(case["options"])
@@ -392,20 +392,31 @@ class ContentPublicationTests(unittest.TestCase):
                 session, case["module"], option_values=options,
                 make_target="all", depfile="build/real.inputs.mk",
             )
+            if unconditional:
+                registration = replace(registration, publication_policy="replace")
             execute = session.command
             def capture(command):
                 result = execute(command)
                 produced.append(result)
                 return result
             with self.capture_effects(session, effects), patch.object(session, "command", capture):
-                observed = session.make(
-                    "all", variables=("MAKE_RESTARTS",), commands={command: registration},
-                )
-            self.assertEqual(observed.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
-            self.assertEqual(registration.publication_policy, "if-content-changed")
-            self.assertEqual(len(observed.events), 2)
-            self.assertEqual([item["effect"] for item in effects], ["created", "retained"])
-            self.assertEqual(effects[0]["identity"], effects[1]["identity"])
+                if unconditional:
+                    with self.assertRaisesRegex(MakeProbeError, "CONTENT_UNEXPECTED_RESTART_2"):
+                        session.make(
+                            "all", variables=("MAKE_RESTARTS",), commands={command: registration},
+                        )
+                else:
+                    observed = session.make(
+                        "all", variables=("MAKE_RESTARTS",), commands={command: registration},
+                    )
+            self.assertEqual([item["effect"] for item in effects], [
+                "created", "replaced" if unconditional else "retained",
+            ])
+            if not unconditional:
+                self.assertEqual(observed.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
+                self.assertEqual(registration.publication_policy, "if-content-changed")
+                self.assertEqual(len(observed.events), 2)
+                self.assertEqual(effects[0]["identity"], effects[1]["identity"])
             self.assertEqual(len(produced), 2)
             expected = [value.removeprefix(str(self.root) + "/") for value in ordinary.partition(": ")[2].split()]
             actual = [
@@ -419,14 +430,18 @@ class ContentPublicationTests(unittest.TestCase):
                 self.assertTrue(result.input_identities)
                 if membership:
                     self.assertIn("testdata/bundles/new_bundle.json", result.consumed)
-            self.assertEqual(
-                observed.semantics["published_sources"][0][2:5],
-                [effects[-1]["mode"], effects[-1]["size"], effects[-1]["sha256"]],
-            )
+            if not unconditional:
+                self.assertEqual(
+                    observed.semantics["published_sources"][0][2:5],
+                    [effects[-1]["mode"], effects[-1]["size"], effects[-1]["sha256"]],
+                )
         self.fixture.assert_clean(session)
 
     def test_real_eventlists_adapter_converges_like_ordinary_cli(self):
         self.assert_real_adapter("eventlists")
+
+    def test_real_eventlists_unconditional_control_reaches_native_restart_guard(self):
+        self.assert_real_adapter("eventlists", unconditional=True)
 
     def test_real_chapterobjectives_adapter_converges_like_ordinary_cli(self):
         self.assert_real_adapter("chapterobjectives")
