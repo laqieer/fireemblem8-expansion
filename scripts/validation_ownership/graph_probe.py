@@ -350,7 +350,7 @@ def run_probe(
                         if key not in visited and key not in planned:
                             if len(visited) + len(planned) >= min(512, session.budget.limits.states):
                                 raise MakeProbeError("graph domain fixed point exceeds its bounded context plan")
-                            session.budget.charge("pending", len(encoded(replacement)))
+                            session.budget.admit_planned_state(len(encoded(replacement)))
                             pending.append(replacement)
                             planned.add(key)
                         enumerated.add(name)

@@ -3,12 +3,14 @@ from pathlib import Path
 import secrets
 import shutil
 import unittest
+from unittest.mock import patch
 
-from scripts.validation_ownership.authority import AuthorityLoader, GitTreeEntries, GitTreeEntry
+from scripts.validation_ownership.authority import AuthorityLoader, GitTreeEntries, GitTreeEntry, encoded
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
-from scripts.validation_ownership.budget import Limits
+from scripts.validation_ownership.budget import Limits, MAX_PLANNED_STATE_BYTES
 from scripts.validation_ownership.graph_probe import run_probe, source_census
 from scripts.validation_ownership.make_probe import ProbeSession
+from scripts.validation_ownership.tests.test_foundation import _PendingTrafficLimits
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -31,8 +33,8 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         path.write_bytes(data)
         self.entries[name] = GitTreeEntry(name, "100644", "blob", hashlib.sha1(data).hexdigest())
 
-    def session(self):
-        budget = ProbeBudget()
+    def session(self, budget=None):
+        budget = ProbeBudget() if budget is None else budget
         loader = AuthorityLoader(self.root, GitTreeEntries(self.entries, budget=budget), budget=budget)
         return ProbeSession(loader, scratch_root=self.root / "build/probe", budget=budget)
 
@@ -62,6 +64,46 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.assertEqual({state["record"]["files"][0]["prerequisites"][0]["name"] for state in records},
                          {"one", "two"})
         self.assertEqual(result["all"]["prerequisite_domain_census"]["enumerated"], ["MODE"])
+
+    def test_graph_plan_admission_accumulates_before_queued_execution(self):
+        self.add("Makefile", "MODE ?= one\nall: $(MODE)\none two: ;\n")
+        budget = ProbeBudget(_PendingTrafficLimits(seconds=30, runs=64))
+        domains = {"MODE": {"kind": "explicit", "values": ["one", "two"]}}
+        with self.session(budget) as session:
+            original = budget.admit_planned_state
+            admitted = []
+
+            def admit(size):
+                before = budget.states, budget.bytes.get("pending", 0)
+                original(size)
+                self.assertEqual(budget.states, before[0])
+                self.assertEqual(budget.bytes["pending"] - before[1], size)
+                admitted.append(size)
+
+            expected = 0
+            with patch.object(budget, "admit_planned_state", side_effect=admit), \
+                 patch.object(session, "make", wraps=session.make) as made:
+                for _ in range(2):
+                    result = run_probe(session.loader, {"all"}, domains, {}, session=session)
+                    variants = result["all"]["record"]["variants"]
+                    self.assertEqual(
+                        {item["record"]["files"][0]["prerequisites"][0]["name"] for item in variants},
+                        {"one", "two"},
+                    )
+                    expected += sum(len(encoded(item["state"])) for item in variants if item["state"])
+                    self.assertEqual(budget.planned_state_bytes, expected)
+                    self.assertEqual(sum(admitted), expected)
+                    self.assertEqual(budget.states, made.call_count)
+                budget.admit_planned_state(MAX_PLANNED_STATE_BYTES - expected)
+                before = made.call_count
+                with self.assertRaisesRegex(MakeProbeError, "aggregate planned-state"):
+                    run_probe(session.loader, {"all"}, domains, {}, session=session)
+                self.assertEqual(made.call_count, before + 1)
+                self.assertEqual(budget.states, made.call_count)
+        self.assertEqual(budget.planned_state_bytes, MAX_PLANNED_STATE_BYTES)
+        self.assertTrue(budget.closed)
+        self.assertFalse(budget.children)
+        self.assertFalse(budget.producer_waiters)
 
     def test_all_targets_share_one_budget_and_keep_standalone_makecmdgoals(self):
         self.add("Makefile", "LOCAL = $(MAKECMDGOALS)\none two:\n\t@echo $(LOCAL)\n")

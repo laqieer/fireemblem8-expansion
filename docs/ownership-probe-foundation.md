@@ -775,6 +775,64 @@ performed by Make. Even cached results cannot be reused after that report's
 deadline or a terminal budget failure. The production consumer passes the one
 budget used for tree capture through its Make session and registry helper.
 
+### Independent pending-record and plan admission
+
+Issue [#260](https://github.com/laqieer/fireemblem8-expansion/issues/260) makes
+two original-size admission boundaries explicit without changing `Limits()`,
+adding a larger production profile, or changing any existing charge.
+
+| Boundary | Public contract |
+| --- | --- |
+| `MAX_PENDING_RECORD_BYTES` | 1,048,576 bytes for each complete `charge("pending", size)` record, independently of cumulative traffic allowance |
+| `MAX_PLANNED_STATE_BYTES` | 1,048,576 admitted planned-state bytes over one `ProbeBudget` lifetime |
+| `budget.planned_state_bytes` | Cumulative plan admission, separate from `budget.bytes` and attempted `budget.states` |
+| `budget.admit_planned_state(size)` | Admit one serialized state's nonnegative integer byte size, charge existing pending/global accounting once, then advance plan admission |
+
+The common record guard covers whole binary stdin, whole lifecycle/child
+launcher argv, normalized command authority and serialized planned states.
+It does not split records into chunks or omit declarations to fit. Individual
+argument, file, message and source-admission limits remain independent.
+Invalid sizes, including booleans, reject through `MakeProbeError`.
+
+A trusted finite planner uses the existing budget before adding a state to
+its own queue:
+
+```python
+from scripts.validation_ownership.authority import encoded
+
+budget.admit_planned_state(len(encoded(state)))
+planned.append(state)
+```
+
+`ProbeSession.variants()` already performs this admission while materializing
+its complete finite input, before any variant executes. Do **not** precharge
+its states or call `budget.plan()` for queued states. The new seam does not
+increment attempted states or launches; existing execution/view admission
+continues to own those counters. It neither creates a planner nor accepts a
+publication, source or execution authority.
+
+Plan bytes accumulate across separate `variants()` calls and selected
+CURRENT/BASE views. Executing a state, dropping a local list, or closing the
+session does not refund or reset them. They are not measured live storage,
+heap or RSS, and are not charged to the global sum a second time.
+If record, aggregate plan, smaller pending or global admission rejects, that
+state's plan counter is not advanced; earlier admissions remain charged.
+The specific new errors identify a `pending record` or `aggregate planned-state`
+admission limit. Budget failure remains terminal. `run()` may already count
+an attempted launch before a pre-`Popen` rejection, as before.
+
+Caller-side states, argv and serialized Python objects can already exist
+before admission; this is not a claim that their allocation was prevented.
+No coordinator AS/NNP policy or aggregate host-RAM guarantee is added.
+The graph planner uses the same seam for newly queued replacement states;
+repeated queries share admission without counting queued states as executions.
+Dependencies are the existing budget,
+producer and view APIs; other feature/profile conflicts are none. Save/config,
+generated content, locale, ROM/GBA RAM and modern/archival behavior are unchanged.
+
+See [TC-PROBE-PENDING-ADMISSION-001](test-cases/workflow-governance.md#tc-probe-pending-admission-001-preserve-whole-record-and-lifetime-plan-admission)
+for the bounded positive, original-source and independent-guard controls.
+
 ### Selecting immutable BASE/CURRENT views in one report
 
 Issue [#226](https://github.com/laqieer/fireemblem8-expansion/issues/226) is a
@@ -988,6 +1046,9 @@ binary stdin and subprocess launcher arguments spend it without refunds.
 Serial resolution does not reset that byte counter or reclassify completed
 traffic. A later pending-byte exhaustion is a distinct measured limit, not
 permission to increase it or silently turn it into a reusable credit pool.
+The independent whole-record and lifetime planned-state admission limits
+described above remain 1 MiB each even in a test-only larger-traffic profile;
+that profile is not a production option.
 
 Virtual memory uses one funded credit pool, not independent per-process
 512 MiB limits or a sampled/RSS threshold. The supervisor assigns kernel

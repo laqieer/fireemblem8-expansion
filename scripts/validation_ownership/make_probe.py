@@ -2296,7 +2296,7 @@ class ProbeSession:
         for state in states:
             if len(planned) >= self.budget.limits.states - self.budget.states:
                 self.budget.reject("variant states exceed aggregate bound before launch")
-            self.budget.charge("pending", len(encoded(state)))
+            self.budget.admit_planned_state(len(encoded(state)))
             planned.append(tuple(tuple(item) for item in state))
         if not planned:
             raise MakeProbeError("variant plan is empty")

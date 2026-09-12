@@ -461,6 +461,15 @@ reservations precede decoding; fixed streaming scratch is not counted as a
 saving. Raw metadata observation, cached legacy records and helper replay
 costs do not move or shrink.
 
+Whole stdin, launcher argv and normalized command declarations also retain
+the fixed 1 MiB pending-record admission boundary. Finite variant plans use
+the separate budget-owned 1 MiB cumulative planned-state admission envelope;
+that counter is not a producer-backlog count or a second global byte charge.
+No completion or selected view refunds either admission or traffic.
+See [the public pending admission API](ownership-probe-foundation.md#independent-pending-record-and-plan-admission)
+and [TC-PROBE-PENDING-ADMISSION-001](test-cases/workflow-governance.md#tc-probe-pending-admission-001-preserve-whole-record-and-lifetime-plan-admission).
+All production limits, live-request counts and publication policies stay unchanged.
+
 Malformed, foreign, duplicate, stale or out-of-order traffic, premature EOF,
 unknown slots, parked-process death, callback failure and interruption are terminal.
 A partially sent reply is never retried as another effectful request. Nested

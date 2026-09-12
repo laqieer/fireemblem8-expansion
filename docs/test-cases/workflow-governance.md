@@ -1405,6 +1405,101 @@ teardown; remove only owned fixtures after terminal cleanup. Source identities,
 native events and receipts remain actual. No full graph/prefix/matrix or sizing
 run belongs in this case.
 
+## TC-PROBE-PENDING-ADMISSION-001: Preserve whole-record and lifetime plan admission
+
+- **Feature / issue:** `workflow-governance` /
+  [#260](https://github.com/laqieer/fireemblem8-expansion/issues/260).
+- **Profile:** Linux x86-64 source checkout with the existing Python 3, GNU
+  Make, host compiler and qualified native probe tools. No ROM, new package
+  or privilege policy is required.
+- **Starting state:** run from the repository root with clean owned temporary
+  fixtures. Defaults remain unchanged. Only boundary-separation tests use
+  `_PendingTrafficLimits`, which changes cumulative pending to 4 MiB and
+  tightens time/runs to 30 seconds/64; every other maximum is unchanged.
+  This is not a production or full-graph profile.
+
+### Actions
+
+1. Run `PendingAdmissionTests` below. Require actual repeated 128 KiB stdin
+   and 16 KiB argv work, and nine real small commands, to cross 1 MiB of
+   cumulative pending traffic without refunds. Inspect consumed lengths/
+   digests, actual outputs, complete launch argv and monotonic byte counters.
+2. Submit a whole 1,048,576-byte stdin record and an exactly sized complete
+   launcher argv; both execute under the test profile. Add one byte to each
+   and require the independent pending-record error before another `Popen`.
+   Submit a normalized command whose argv alone fits but whose complete
+   code/source/directory/policy descriptor is 1,048,577 bytes; reject before
+   command launch. Keep all source/declaration checks.
+3. Execute two small real variants selecting `VALUE=one` and `VALUE=two`.
+   Require those actual observations, exactly two attempted Make states and
+   one pending/global charge per admitted serialized state. Then submit
+   eighteen states, each with a 60,000-character `VALUE`: every state fits
+   individually, but the aggregate plan rejects before the first variant.
+4. Use the same budget for two successive calls, each containing one
+   ten-assignment state (`V0` through `V9`, each 60,000 characters).
+   The first executes; the second exceeds aggregate plan admission before
+   executing. Also exercise small CURRENT/BASE/CURRENT variant calls and
+   verify that the same plan counter survives view restoration and cleanup.
+5. Retain default/smaller pending and global rejection, invalid-size and
+   terminal-budget controls. Run the existing variant-count, foreign/detached
+   budget and one-session lifetime controls. Queued bytes must not become
+   attempted states; failed traffic admission must not advance plan admission.
+6. In separate owned source copies, remove only the pending-record predicate
+   and run the exact/over stdin regression; it must fail because oversized
+   stdin is actually admitted. Independently remove only the aggregate-plan
+   predicate and run the pre-execution aggregate-plan regression. Its bounded
+   negative stops after one actual unexpected Make variant rather than
+   executing the rest of an oversized plan. Neither mutation changes limits,
+   original charges, source admission or cleanup.
+
+### Expected result
+
+Whole pending records and total planned-state admission stay independently
+bounded to 1 MiB, even with greater cumulative test traffic. Default and
+stricter production limits still reject as before. `planned_state_bytes`
+tracks cumulative admitted plan representation, not RSS/live storage, a
+refundable pool or a second global charge. Real results, attempted state/run
+semantics, source/view ownership and terminal cleanup remain truthful.
+
+### Negative control
+
+The preserved clean master473 preimage with the bounded test profile consumed
+1,048,577 bytes of actual stdin and admitted an aggregate 1,080,522-byte plan
+before one actual tiny Make variant. An explicit owned stop ended that
+preimage. This demonstrates why a profile-only pending change is insufficient,
+not a failing default-profile acceptance case or a full-workload result.
+Removing either independent guard must restore its relevant admission failure;
+comment, spelling or ordering changes are not mutation evidence.
+
+### Interactions and save compatibility
+
+Uses the existing `ProbeBudget`, `ProbeSession.variants`, producer and immutable
+view APIs; preserves #256 and #258. The graph planner also admits each newly
+queued replacement through the same budget without resetting admission across
+queries or incrementing attempted states at enqueue. #196 follows that graph
+contract. There are no
+other feature/profile conflicts, gameplay or modern/archival changes, save or
+configuration migration, locale/generated-content format change, or ROM/GBA
+RAM effect. No runtime feature flag or manual-only judgment is required.
+
+### Automation
+
+- `python3 -m unittest scripts.validation_ownership.tests.test_foundation.PendingAdmissionTests -v`
+  -- whole-record, plan, actual execution, counters and selected-view controls.
+- `python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_pending_request_bytes_accumulate_after_completed_commands scripts.validation_ownership.tests.test_foundation.FoundationTests.test_variant_limit_rejects_before_any_variant_launch scripts.validation_ownership.tests.test_foundation.FoundationTests.test_authority_composition_rejects_foreign_and_detached_budgets scripts.validation_ownership.tests.test_foundation.FoundationTests.test_report_budget_binds_one_terminal_session_lifetime -v`
+  -- existing cumulative, count and ownership/lifetime compatibility.
+- `python3 -m unittest scripts.docs_check_tests.test_check_docs.TesterCaseRegistryTests.test_late_shipped_contracts_are_complete_and_fail_closed scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_manual_handoff_json_contract_and_human_links -v`
+  -- both closed catalogs retain missing/extra/duplicate and order-insensitive controls.
+
+### Cleanup and limitations
+
+Keep all processes under the existing budget/watchdog lifetime. Require no
+owned children, waiters, source views or scratch after terminal cleanup;
+remove only owned fixtures and mutation copies, preserving logs/preimages.
+Caller-side Python objects may exist before admission. No coordinator AS
+policy, aggregate host-RAM claim, new shipping profile, graph/prefix/matrix/
+sizing run, native AI review or automatic retry is part of this case.
+
 ## TC-WORKFLOW-ASSET-DISCOVERY-001: Render captured-source asset discovery without FIFO races
 
 - **Feature / originating issue:** `workflow-governance` /

@@ -21,7 +21,7 @@ import time
 import unittest
 import venv
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -30,7 +30,10 @@ from scripts.validation_ownership.authority import (
     AuthorityLoader, ENVIRONMENT, GitlinkSource, GitTreeEntries, GitTreeEntry, Snapshot, encoded, git_tree_entries,
     parse_json,
 )
-from scripts.validation_ownership.budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget
+from scripts.validation_ownership.budget import (
+    Limits, MakeProbeError, MAX_PENDING_RECORD_BYTES, MAX_PLANNED_STATE_BYTES,
+    NAMESPACE_LAUNCHER, ProbeBudget,
+)
 from scripts.validation_ownership.make_probe import (
     Command, NativeTool, ProbeSession, TRUSTED_ROOT, _command_hash, _event_command, _make_interpreter, _make_runtime,
     _metadata_frame, _read_events, _read_observation, _trusted_runtime_bytes, probe_generated_registry,
@@ -9034,6 +9037,406 @@ int main(int argc, char **argv) {
             self.assertEqual(session.budget.runs, runs)
             self.assertTrue(session.budget.failed)
         self.assert_clean(session)
+
+
+@dataclass(frozen=True)
+class _PendingTrafficLimits(Limits):
+    pending_bytes: int = 4 * 1024 * 1024
+
+
+class PendingAdmissionTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = FoundationTests()
+        self.fixture.setUp()
+        self.budgets = []
+
+    def tearDown(self):
+        for budget in self.budgets:
+            budget.close()
+            self.assertFalse(budget.children)
+            self.assertFalse(budget.producer_waiters)
+        self.fixture.tearDown()
+
+    def budget(self, **limits):
+        budget = ProbeBudget(_PendingTrafficLimits(**{"seconds": 30, "runs": 64, **limits}))
+        self.budgets.append(budget)
+        return budget
+
+    def session(self, budget, loader=None):
+        if loader is None:
+            loader = AuthorityLoader(
+                self.fixture.root, GitTreeEntries(self.fixture.entries, budget=budget), budget=budget,
+            )
+        return ProbeSession(loader, scratch_root=self.fixture.scratch, budget=budget)
+
+    def test_record_admission_is_independent_of_traffic_and_other_categories(self):
+        budget = self.budget()
+        limit = 1024 * 1024
+        budget.charge("pending", limit)
+        budget.charge("control", limit + 1)
+        before = dict(budget.bytes)
+        with self.assertRaisesRegex(MakeProbeError, "pending record"):
+            budget.charge("pending", limit + 1)
+        self.assertEqual(budget.bytes, before)
+        self.assertTrue(budget.failed)
+        self.assertEqual((budget.planned_state_bytes, budget.states, budget.runs), (0, 0, 0))
+        with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
+            budget.charge("pending", 0)
+        self.assertEqual(budget.bytes, before)
+
+    def test_default_smaller_and_global_limits_remain_authoritative(self):
+        self.assertEqual(MAX_PENDING_RECORD_BYTES, 1024 * 1024)
+        self.assertEqual(MAX_PLANNED_STATE_BYTES, 1024 * 1024)
+        original = asdict(Limits())
+        widened = asdict(_PendingTrafficLimits())
+        self.assertEqual(
+            {key: (original[key], widened[key]) for key in original if original[key] != widened[key]},
+            {"pending_bytes": (1024 * 1024, 4 * 1024 * 1024)},
+        )
+        for name, value in (
+            ("pending_bytes", 1024 * 1024 + 1),
+            ("control_bytes", 32 * 1024 * 1024 + 1),
+            ("cache_bytes", 32 * 1024 * 1024 + 1),
+            ("total_bytes", 768 * 1024 * 1024 + 1),
+        ):
+            with self.subTest(limit=name), self.assertRaises(MakeProbeError):
+                Limits(**{name: value})
+        for limits, first in ((Limits(), 1024 * 1024), (Limits(pending_bytes=7), 7)):
+            with self.subTest(pending=first):
+                budget = ProbeBudget(limits)
+                self.budgets.append(budget)
+                budget.charge("pending", first)
+                with self.assertRaisesRegex(MakeProbeError, "aggregate pending byte"):
+                    budget.charge("pending", 1)
+                self.assertEqual(budget.bytes, {"pending": first})
+                self.assertTrue(budget.failed)
+        budget = self.budget(total_bytes=7)
+        budget.charge("control", 4)
+        with self.assertRaisesRegex(MakeProbeError, "aggregate pending byte"):
+            budget.admit_planned_state(4)
+        self.assertEqual(budget.bytes, {"control": 4})
+        self.assertEqual(budget.planned_state_bytes, 0)
+        self.assertTrue(budget.failed)
+
+    def test_invalid_sizes_cannot_admit_or_execute_work(self):
+        for size in (-1, True, False, 1.5, None, "1"):
+            for method in ("charge", "admit_planned_state"):
+                with self.subTest(size=size, method=method):
+                    budget = self.budget()
+                    with self.assertRaisesRegex(MakeProbeError, "invalid"):
+                        if method == "charge":
+                            budget.charge("pending", size)
+                        else:
+                            budget.admit_planned_state(size)
+                    self.assertEqual(budget.bytes, {})
+                    self.assertEqual((budget.planned_state_bytes, budget.states, budget.runs), (0, 0, 0))
+                    self.assertTrue(budget.failed)
+        budget = self.budget()
+        budget.admit_planned_state(0)
+        self.assertEqual(budget.bytes, {"pending": 0})
+        self.assertEqual((budget.planned_state_bytes, budget.states), (0, 0))
+        budget.close()
+        with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
+            budget.admit_planned_state(1)
+        self.assertEqual((budget.bytes, budget.planned_state_bytes), ({"pending": 0}, 0))
+
+    def test_stdin_exact_record_executes_and_one_byte_over_rejects_before_popen(self):
+        budget = self.budget()
+        payload = b"a" * (1024 * 1024)
+        argv = [
+            "/usr/bin/python3", "-I", "-S", "-B", "-c",
+            "import hashlib,sys; data=sys.stdin.buffer.read(); "
+            "print(len(data)); print(hashlib.sha256(data).hexdigest())",
+        ]
+        with patch.object(subprocess, "Popen", wraps=subprocess.Popen) as launched:
+            result = budget.run(argv, env=ENVIRONMENT, input_data=payload)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), [
+                str(len(payload)).encode(), hashlib.sha256(payload).hexdigest().encode(),
+            ])
+            self.assertEqual(launched.call_count, 1)
+            before = dict(budget.bytes)
+            with self.assertRaisesRegex(MakeProbeError, "pending record"):
+                rejected = budget.run(argv, env=ENVIRONMENT, input_data=payload + b"a")
+                self.assertEqual(rejected.returncode, 0, rejected.stderr)
+                self.assertEqual(rejected.stdout.splitlines(), [
+                    str(len(payload) + 1).encode(), hashlib.sha256(payload + b"a").hexdigest().encode(),
+                ])
+            self.assertEqual(launched.call_count, 1)
+        self.assertEqual(budget.bytes, before)
+        self.assertEqual(budget.runs, 2)
+        self.assertFalse(budget.children)
+        self.assertTrue(budget.failed)
+
+    def test_complete_launcher_argv_exact_and_over_record_admission(self):
+        budget = self.budget()
+        limit = 1024 * 1024
+        base = [
+            "/usr/bin/python3", "-I", "-S", "-B", "-c",
+            "import sys; print(sum(len(value.encode('utf-8')) for value in sys.argv[1:]))",
+        ]
+        with patch.object(subprocess, "Popen", wraps=subprocess.Popen) as launched:
+            initial = budget.run(base, env=ENVIRONMENT)
+            self.assertEqual(initial.returncode, 0, initial.stderr)
+            self.assertEqual(initial.stdout, b"0\n")
+            complete = launched.call_args.args[0]
+            remaining = limit - sum(len(os.fsencode(value)) + 1 for value in complete)
+            extra = []
+            while remaining:
+                length = min(60000, remaining - 1)
+                extra.append("x" * length)
+                remaining -= length + 1
+            result = budget.run([*base, *extra], env=ENVIRONMENT)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, str(sum(map(len, extra))).encode() + b"\n")
+            self.assertEqual(
+                sum(len(os.fsencode(value)) + 1 for value in launched.call_args.args[0]),
+                limit,
+            )
+            before = dict(budget.bytes)
+            extra[-1] += "x"
+            with self.assertRaisesRegex(MakeProbeError, "pending record"):
+                rejected = budget.run([*base, *extra], env=ENVIRONMENT)
+                self.assertEqual(rejected.returncode, 0, rejected.stderr)
+                self.assertEqual(rejected.stdout, str(sum(map(len, extra))).encode() + b"\n")
+            self.assertEqual(launched.call_count, 2)
+        self.assertEqual(budget.bytes, before)
+        self.assertEqual(budget.runs, 3)
+        self.assertFalse(budget.children)
+
+    def test_small_stdin_and_argv_keep_every_cumulative_debit(self):
+        budget = self.budget()
+        payload = b"s" * (128 * 1024)
+        argument = "a" * (16 * 1024)
+        argv = [
+            "/usr/bin/python3", "-I", "-S", "-B", "-c",
+            "import hashlib,json,sys; data=sys.stdin.buffer.read(); "
+            "print(json.dumps([len(data),hashlib.sha256(data).hexdigest(),len(sys.argv[1])]))",
+            argument,
+        ]
+        previous, output_bytes = 0, 0
+        with patch.object(subprocess, "Popen", wraps=subprocess.Popen) as launched:
+            for _ in range(8):
+                result = budget.run(argv, env=ENVIRONMENT, input_data=payload)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), [
+                    len(payload), hashlib.sha256(payload).hexdigest(), len(argument),
+                ])
+                output_bytes += len(result.stdout) + len(result.stderr)
+                self.assertGreater(budget.bytes["pending"], previous)
+                previous = budget.bytes["pending"]
+                self.assertFalse(budget.children)
+            launcher_bytes = sum(
+                sum(len(os.fsencode(value)) + 1 for value in call.args[0])
+                for call in launched.call_args_list
+            )
+        self.assertEqual(budget.bytes, {
+            "pending": 8 * len(payload) + launcher_bytes, "output": output_bytes,
+        })
+        self.assertGreater(budget.bytes["pending"], MAX_PENDING_RECORD_BYTES)
+        self.assertEqual((budget.runs, budget.states, budget.planned_state_bytes), (8, 0, 0))
+        before = dict(budget.bytes)
+        budget.close()
+        self.assertEqual(budget.bytes, before)
+
+    def test_small_real_commands_cross_traffic_bound_without_refunds(self):
+        budget = self.budget()
+        self.fixture.add("Makefile", "all: ;\n")
+        with self.session(budget) as session:
+            before = budget.bytes.get("pending", 0)
+            expected = 0
+            with patch.object(subprocess, "Popen", wraps=subprocess.Popen) as launched:
+                for index in range(9):
+                    command = Command((
+                        "/usr/bin/python3", "-c",
+                        "import sys; print(sum(len(value) for value in sys.argv[1:-1]),sys.argv[-1])",
+                        "a" * 60000, "b" * 60000, str(index),
+                    ))
+                    size = len(encoded([
+                        command.argv, (), (), (), (), command.publication_policy, None, None,
+                    ]))
+                    self.assertLess(size, MAX_PENDING_RECORD_BYTES)
+                    expected += size
+                    result = session.command(command)
+                    self.assertEqual(result.stdout, f"120000 {index}\n".encode())
+                    self.assertEqual(result.consumed, ())
+                expected += sum(
+                    sum(len(os.fsencode(value)) + 1 for value in call.args[0])
+                    for call in launched.call_args_list
+                )
+            self.assertEqual(budget.bytes["pending"] - before, expected)
+            self.assertGreater(expected, MAX_PENDING_RECORD_BYTES)
+            self.assertEqual(budget.planned_state_bytes, 0)
+            admitted = dict(budget.bytes)
+        self.assertEqual(budget.bytes, admitted)
+        self.fixture.assert_clean(session)
+
+    def test_combined_normalized_authority_rejects_before_command_launch(self):
+        budget = self.budget()
+        limit = 1024 * 1024
+        source = "data/" + "p" * 180 + ".txt"
+        self.fixture.add(source, "owned")
+        self.fixture.add("reader.py", (
+            "import os,sys\n"
+            f"print(open({source!r}).read(),len(sys.argv)-1)\n"
+            "os.listdir('.')\n"
+        ))
+        argv = ["/usr/bin/python3", "/repo/reader.py", *(["x" * 60000] * 17)]
+        command = Command(tuple(argv), code=("reader.py",), sources=(source,), directories=(".",))
+        fixed = len(encoded([
+            command.argv, command.code, command.sources, command.directories,
+            command.outputs, command.publication_policy, None, None,
+        ]))
+        argv.append("x" * (limit + 1 - fixed - 3))
+        command = replace(command, argv=tuple(argv))
+        self.assertLess(len(encoded(command.argv)), limit)
+        self.assertTrue(all(len(value.encode()) <= 65536 for value in command.argv))
+        self.assertEqual(len(encoded([
+            command.argv, command.code, command.sources, command.directories,
+            command.outputs, command.publication_policy, None, None,
+        ])), limit + 1)
+        with self.session(budget) as session:
+            before = budget.bytes.get("pending", 0)
+            runs = budget.runs
+            with patch.object(subprocess, "Popen", wraps=subprocess.Popen) as launched:
+                with self.assertRaisesRegex(MakeProbeError, "pending record"):
+                    session.command(command)
+                self.assertEqual(launched.call_count, 0)
+            self.assertEqual(budget.bytes.get("pending", 0), before)
+            self.assertEqual(budget.runs, runs)
+            self.assertTrue(budget.failed)
+        self.fixture.assert_clean(session)
+
+    def test_planned_state_admission_is_lifetime_aggregate_and_charged_once(self):
+        budget = self.budget()
+        limit = 1024 * 1024
+        first = limit // 2
+        budget.admit_planned_state(first)
+        self.assertEqual(budget.bytes, {"pending": first})
+        self.assertEqual((budget.planned_state_bytes, budget.states, budget.runs), (first, 0, 0))
+        budget.admit_planned_state(limit - first)
+        self.assertEqual(budget.bytes, {"pending": limit})
+        self.assertEqual(budget.planned_state_bytes, limit)
+        self.assertEqual(budget.states, 0)
+        before = dict(budget.bytes)
+        with self.assertRaisesRegex(MakeProbeError, "aggregate planned-state"):
+            budget.admit_planned_state(1)
+        self.assertEqual(budget.bytes, before)
+        self.assertEqual(budget.planned_state_bytes, limit)
+        budget.close()
+        self.assertEqual((budget.bytes, budget.planned_state_bytes), (before, limit))
+
+    def test_planned_state_rejection_does_not_spend_failed_traffic_admission(self):
+        for limits, initial in (({"pending_bytes": 7}, "pending"), ({"total_bytes": 7}, "control")):
+            with self.subTest(limits=limits):
+                budget = self.budget(**limits)
+                budget.charge(initial, 4)
+                before = dict(budget.bytes)
+                with self.assertRaisesRegex(MakeProbeError, "aggregate pending byte"):
+                    budget.admit_planned_state(4)
+                self.assertEqual(budget.bytes, before)
+                self.assertEqual(budget.planned_state_bytes, 0)
+                self.assertTrue(budget.failed)
+
+    def test_small_actual_variants_keep_results_and_attempted_state_counts(self):
+        budget = self.budget()
+        self.fixture.add("Makefile", "VALUE ?= default\nall: ;\n")
+        states = [(("command-line", "VALUE", value),) for value in ("one", "two")]
+        plan_bytes = sum(len(encoded(state)) for state in states)
+        with self.session(budget) as session:
+            before = budget.bytes.get("pending", 0)
+            with patch.object(subprocess, "Popen", wraps=subprocess.Popen) as launched:
+                results = session.variants("all", states, variables=("VALUE",))
+                launcher_bytes = sum(
+                    sum(len(os.fsencode(value)) + 1 for value in call.args[0])
+                    for call in launched.call_args_list
+                )
+            self.assertEqual(
+                [result.semantics["domains"]["VALUE"]["value"] for result in results], ["one", "two"],
+            )
+            self.assertEqual(budget.planned_state_bytes, plan_bytes)
+            self.assertEqual(budget.bytes["pending"] - before, plan_bytes + launcher_bytes)
+            self.assertEqual(budget.states, 2)
+            self.assertEqual(len(results), 2)
+        self.assertEqual(budget.planned_state_bytes, plan_bytes)
+        self.fixture.assert_clean(session)
+
+    def test_aggregate_plan_rejects_before_first_actual_variant(self):
+        budget = self.budget()
+        self.fixture.add("Makefile", "all: ;\n")
+        state = (("command-line", "VALUE", "x" * 60000),)
+        states = [state] * 18
+        size = len(encoded(state))
+        self.assertLess(size, MAX_PENDING_RECORD_BYTES)
+        self.assertGreater(len(states) * size, MAX_PLANNED_STATE_BYTES)
+        observed = []
+        with self.session(budget) as session:
+            before, runs = budget.bytes.get("pending", 0), budget.runs
+            original_make = session.make
+
+            def record_unexpected_execution(*args, **kwargs):
+                result = original_make(*args, **kwargs)
+                observed.append(result)
+                self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "x" * 60000)
+                self.fail("oversized aggregate plan reached an actual Make variant")
+
+            with patch.object(session, "make", side_effect=record_unexpected_execution):
+                with self.assertRaisesRegex(MakeProbeError, "aggregate planned-state"):
+                    session.variants("all", states, variables=("VALUE",))
+            self.assertEqual(observed, [])
+            self.assertEqual(budget.runs, runs)
+            self.assertEqual(budget.states, 0)
+            admitted = (MAX_PLANNED_STATE_BYTES // size) * size
+            self.assertEqual(budget.planned_state_bytes, admitted)
+            self.assertEqual(budget.bytes["pending"] - before, admitted)
+        self.fixture.assert_clean(session)
+
+    def test_plan_admission_accumulates_across_actual_variant_calls(self):
+        budget = self.budget()
+        self.fixture.add("Makefile", "all: ;\n")
+        state = tuple(("command-line", f"V{index}", "x" * 60000) for index in range(10))
+        size = len(encoded(state))
+        self.assertLess(size, MAX_PENDING_RECORD_BYTES)
+        self.assertGreater(2 * size, MAX_PLANNED_STATE_BYTES)
+        with self.session(budget) as session:
+            first, = session.variants("all", [state], variables=("V0",))
+            self.assertEqual(first.semantics["domains"]["V0"]["value"], "x" * 60000)
+            self.assertEqual(budget.planned_state_bytes, size)
+            before, runs = budget.bytes.get("pending", 0), budget.runs
+            with self.assertRaisesRegex(MakeProbeError, "aggregate planned-state"):
+                session.variants("all", [state], variables=("V0",))
+            self.assertEqual(budget.planned_state_bytes, size)
+            self.assertEqual(budget.bytes["pending"], before)
+            self.assertEqual(budget.runs, runs)
+            self.assertEqual(budget.states, 1)
+        self.fixture.assert_clean(session)
+
+    def test_plan_admission_survives_selected_views_and_terminal_cleanup(self):
+        budget = self.budget()
+        self.fixture.add("Makefile", "VALUE := base\nall: ;\n")
+        base = self.fixture.capture_view(budget)
+        self.fixture.add("Makefile", "VALUE := current\nall: ;\n")
+        current = self.fixture.capture_view(budget)
+        size = len(encoded(()))
+        with self.session(budget, current) as session:
+            first, = session.variants("all", [()], variables=("VALUE",))
+            self.assertEqual(first.semantics["domains"]["VALUE"]["value"], "current")
+            self.assertEqual(budget.planned_state_bytes, size)
+            with session.select_view(base):
+                second, = session.variants("all", [()], variables=("VALUE",))
+                self.assertEqual(second.semantics["domains"]["VALUE"]["value"], "base")
+                self.assertIs(session.budget, budget)
+                self.assertEqual(budget.planned_state_bytes, 2 * size)
+            self.assertIs(session.loader, current)
+            third, = session.variants("all", [()], variables=("VALUE",))
+            self.assertEqual(third.semantics["domains"]["VALUE"]["value"], "current")
+            self.assertEqual(budget.planned_state_bytes, 3 * size)
+            self.assertEqual(budget.states, 4)
+            pending = budget.bytes["pending"]
+        self.assertEqual((budget.planned_state_bytes, budget.bytes["pending"]), (3 * size, pending))
+        with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
+            budget.admit_planned_state(0)
+        self.fixture.assert_clean(session)
 
 
 if __name__ == "__main__":
