@@ -438,6 +438,9 @@ effective shared total. Resumption grants never exceed the original capped
 config or settled observations plus the remaining lifetime count. Nested
 queries, publications, cache revalidation and cleanup do not reset/refund it;
 decoded metadata and every original byte charge keep their existing bounds.
+Failed terminal reports must also fit the prospective shared observation
+total; the original capsule cap alone is insufficient after nested work.
+Valid failed work still settles its original count and byte deltas.
 
 A cold shell producer needs capacity for Make, its parked interceptor and the
 producer. A two-live-process report cannot launch that third process. It can

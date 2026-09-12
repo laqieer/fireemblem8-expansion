@@ -9476,6 +9476,7 @@ class ObservationAllowanceTests(unittest.TestCase):
                             reply = parse_json(response, "actual producer reply")
                             records["grants"].append({
                                 "initial": initial, "settled": request["counters"]["observations"],
+                                "settled_bytes": request["counters"]["observation_bytes"],
                                 "used": session.observations_used,
                                 "count": reply["limits"]["observation_count"],
                             })
@@ -9721,6 +9722,104 @@ class ObservationAllowanceTests(unittest.TestCase):
             self.assertFalse(session.budget.producer_waiters)
             total = session.observations_used
         self.assertEqual(session.observations_used, total)
+
+    def failed_resumption(self, *, overclaim):
+        names = self.fixture.observation_reservoir()
+        self.fixture.add("protected.txt", "unchanged\n")
+        self.fixture.add("Makefile", (
+            "VALUE := $(shell printf nested)\n"
+            "$(file >protected.txt,forbidden)\nall: ;\n"
+        ))
+        evidence = {}
+        with self.session(entries=64, observations=128) as session:
+            owner = self
+
+            class Commands:
+                def __contains__(self, command):
+                    return command == "printf nested"
+
+                def __getitem__(self, command):
+                    if command != "printf nested":
+                        raise KeyError(command)
+                    owner.read_sources(session, names[:32])
+                    return Command(("/usr/bin/printf", "%s", "nested"))
+
+            def failed_report(report):
+                if "rendezvous" not in report:
+                    return
+                parent, = [item for item in records["launches"] if item["mode"] == "make"]
+                grant, = records["grants"]
+                self.assertIs(report["ok"], False)
+                self.assertIsInstance(report["error"], str)
+                self.assertTrue(report["error"])
+                self.assertEqual((parent["count"], grant["count"]), (64, 32))
+                self.assertLessEqual(grant["settled"], report["observations"])
+                self.assertLessEqual(report["observations"], grant["count"])
+                self.assertGreater(session.observations_used, 64)
+                evidence.update({
+                    "native_ok": report["ok"], "native_error": report["error"],
+                    "native_observations": report["observations"],
+                    "native_observation_bytes": report["observation_bytes"],
+                    "initial_count": parent["count"], "resumed_count": grant["count"],
+                    "settled_observations": grant["settled"],
+                    "settled_observation_bytes": grant["settled_bytes"],
+                    "before_observations": session.observations_used,
+                    "before_control": session.budget.bytes["control"],
+                    "decode_bytes": report["metadata"]["decoded_size"] + len(report["metadata"]["payload"]),
+                })
+                if overclaim:
+                    report["observations"] = parent["count"]
+                    report["observation_bytes"] = max(report["observation_bytes"], 128 * parent["count"])
+                evidence.update({
+                    "provided_observations": report["observations"],
+                    "provided_observation_bytes": report["observation_bytes"],
+                })
+
+            with self.capture(session, report_change=failed_report) as records:
+                self.read_sources(session, names[:32])
+                self.read_sources(session, names[:32])
+                with self.assertRaises(MakeProbeError) as rejected:
+                    session.make("all", commands=Commands())
+            self.assertIn("native_ok", evidence)
+            self.assertTrue(any(item["parked"] for item in records["launches"]))
+            self.assertTrue(session.budget.failed)
+            self.assertTrue(session.budget.closed)
+            evidence.update({
+                "after_observations": session.observations_used,
+                "control_delta": session.budget.bytes["control"] - evidence["before_control"],
+                "error": str(rejected.exception),
+            })
+        self.assertEqual((self.fixture.root / "protected.txt").read_bytes(), b"unchanged\n")
+        self.fixture.assert_clean(session)
+        return evidence
+
+    def test_failed_resumption_overclaim_rejects_before_observation_settlement(self):
+        evidence = self.failed_resumption(overclaim=True)
+        self.assertEqual(evidence["provided_observations"], evidence["initial_count"])
+        self.assertGreater(
+            evidence["before_observations"] + evidence["provided_observations"]
+            - evidence["settled_observations"], 128,
+        )
+        self.assertLessEqual(evidence["after_observations"], 128)
+        self.assertEqual(evidence["after_observations"], evidence["before_observations"])
+        self.assertEqual(evidence["control_delta"], evidence["decode_bytes"])
+        self.assertIn("checkpoint exceeds aggregate resource authority", evidence["error"])
+
+    def test_valid_failed_resumption_retains_native_count_bytes_and_error(self):
+        evidence = self.failed_resumption(overclaim=False)
+        self.assertEqual(evidence["provided_observations"], evidence["native_observations"])
+        self.assertEqual(evidence["provided_observation_bytes"], evidence["native_observation_bytes"])
+        self.assertEqual(
+            evidence["after_observations"], evidence["before_observations"]
+            + evidence["native_observations"] - evidence["settled_observations"],
+        )
+        self.assertLessEqual(evidence["after_observations"], 128)
+        self.assertEqual(
+            evidence["control_delta"], evidence["decode_bytes"]
+            + evidence["native_observation_bytes"] - evidence["settled_observation_bytes"],
+        )
+        self.assertIn(evidence["native_error"], evidence["error"])
+        self.assertIn("confined make probe rejected", evidence["error"])
 
     def test_closed_report_remains_bound_to_capsule_not_surplus_lifetime(self):
         names = self.sources()

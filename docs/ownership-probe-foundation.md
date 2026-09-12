@@ -486,6 +486,12 @@ lifetime allowance. Closed reports and decoded metadata still use the actual
 capped config, not the larger lifetime allowance. Source/gitlink inventories,
 snapshot admission, producer-peer ancestry and regex batches keep `entries`.
 Independent metadata record, frame, path, syscall-buffer and VM limits remain.
+Observation authority is checked before settlement even when the terminal
+native report failed. Such a report cannot reclaim an initial grant that
+nested work has reduced: its prospective shared count must still fit.
+Valid failed counts retain their exact observation and byte deltas; other
+failed-resource overshoot/charging semantics are unchanged. Malformed counts
+reject before changing shared observation authority, not by clamping or refunding.
 
 The [indexed case](test-cases/workflow-governance.md#tc-probe-observation-allowance-001-separate-cumulative-observations-from-capsule-and-inventory-admission)
 uses real bounded capsules, metadata, caches, immutable views, nested requests

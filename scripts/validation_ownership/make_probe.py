@@ -1065,15 +1065,17 @@ class ProbeSession:
                 "observations": self.observations_used + values["observations"] - settled["observations"],
                 "created": self.files_created + values["created_files"] - settled["created_files"],
             }
-            if not failed and (
-                prospective["processes"] > self.budget.limits.descendants
-                or prospective["syscalls"] > self.budget.limits.syscalls
-                or prospective["observations"] > self.budget.limits.observation_count
+            if (
+                prospective["observations"] > self.budget.limits.observation_count
                 or values["observations"] > config["observation_count"]
-                or prospective["created"] > self.budget.limits.created_files
-                or values["live_process_peak"] > config["process_limit"]
-                or values["memory_peak"] > config["memory_limit"]
-                or values["observation_bytes"] < 128*values["observations"]
+                or not failed and (
+                    prospective["processes"] > self.budget.limits.descendants
+                    or prospective["syscalls"] > self.budget.limits.syscalls
+                    or prospective["created"] > self.budget.limits.created_files
+                    or values["live_process_peak"] > config["process_limit"]
+                    or values["memory_peak"] > config["memory_limit"]
+                    or values["observation_bytes"] < 128*values["observations"]
+                )
             ):
                 self.budget.reject("supervisor checkpoint exceeds aggregate resource authority")
             self.observations_used += values["observations"] - settled["observations"]

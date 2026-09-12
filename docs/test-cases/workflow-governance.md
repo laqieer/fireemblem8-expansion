@@ -1541,6 +1541,14 @@ sizing run, native AI review or automatic retry is part of this case.
    malformed/unaccounted counts, a 65-record checkpoint under a 64-record
    capsule but 128-record lifetime, and a stale second checkpoint must reject
    before unresolved producer execution. Original failure and cleanup remain.
+   Also park a real outer Make capsule after 64 prior observations, perform
+   32 nested source reads, and resume with a count grant reduced from 64 to 32.
+   A subsequent denied source write produces a genuine failed native report.
+   Leave its failure flag/error intact, but transport-edit its final count to
+   the old cap of 64 and supply sufficient bookkeeping-byte evidence. Reject
+   the resulting 160-record prospective total before changing the shared
+   counter. Without that transport edit, retain the actual failed count and
+   byte deltas, original native error and unchanged protected source.
 7. In isolated mutation controls, make the effective alias always return
    `entries`; the multi-capsule positive must fail at the old 64-record
    lifetime. Independently remove only the initial per-capsule `min(entries,
@@ -1550,6 +1558,9 @@ sizing run, native AI review or automatic retry is part of this case.
    just the 33 successful source consumptions or 33 returned metadata records.
    Restore the supported implementation after each mutation; do not change
    source admission, byte limits, report validation or lifecycle guards.
+   Separately restore the failed-status observation bypass and run the failed
+   post-resumption overclaim regression. It must fail because the shared
+   counter exceeds 128, not merely because an error message changes.
 
 ### Expected result
 
@@ -1569,6 +1580,12 @@ The lifetime-alias mutation must reject genuine work beyond 64; the clamp
 mutation must admit the actual 99-record capsule, not fail for an unrelated
 setup or source error. No historical diagnostic is rewritten as sizing or
 complete-report evidence.
+The c8 review preimage additionally accepted the malformed failed terminal
+count into shared accounting: 98 became 160 after the parent grant shrank to
+32. The corrected path retains 98 on that overclaim; the unedited genuine
+failure retains 99 and charges the original 201 remaining observation bytes
+plus 20 metadata-decode bytes in the measured fixture. The overclaim is a
+transport mutation of a real native failure, not a kernel-produced count.
 
 ### Interactions and save compatibility
 
