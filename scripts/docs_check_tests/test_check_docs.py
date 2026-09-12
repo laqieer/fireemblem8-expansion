@@ -1324,6 +1324,24 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "FoundationTests.test_immutable_views_isolate_cache_native_files_and_static_make -v",
                         },
                     },
+                    "TC-PROBE-CONTENT-PUBLICATION-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.validation_ownership.tests.test_content_publication -v",
+                            "python3 -m unittest "
+                            "scripts.validation_ownership.tests.test_producer.ProducerTests."
+                            "test_declared_output_results_are_retained_only_by_actual_owners "
+                            "scripts.validation_ownership.tests.test_producer.ProducerTests."
+                            "test_generated_publication_creation_mapping_cache_and_write_charges_are_cumulative "
+                            "scripts.validation_ownership.tests.test_producer.ProducerTests."
+                            "test_nested_scope_inherits_ownership_and_preserves_all_file_stat_fields "
+                            "scripts.validation_ownership.tests.test_producer.ProducerTests."
+                            "test_invalid_request_rejects_before_any_producer_execution "
+                            "scripts.validation_ownership.tests.test_producer.ProducerTests."
+                            "test_invalid_reply_never_retries_an_effectful_producer -v",
+                        },
+                    },
                     "TC-WORKFLOW-ASSET-DISCOVERY-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {

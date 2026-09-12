@@ -1356,6 +1356,13 @@ traffic accounting, establish full graph fit or add a manual-only criterion.
    behavior, not merely a policy-name assertion. Keep every required
    creation/write/comparison/transport/cache charge and original bound.
 
+### Expected result
+
+The ordinary and native content-only queries converge with the same selected
+dependencies. Effective metadata describes the actual retained or replaced
+object, and default unconditional effects, every invocation, original resource
+bounds and fail-closed ownership/protocol checks remain intact.
+
 ### Automation
 
 - `python3 -m unittest scripts.validation_ownership.tests.test_content_publication -v`
@@ -1363,7 +1370,7 @@ traffic accounting, establish full graph fit or add a manual-only criterion.
 - `python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_declared_output_results_are_retained_only_by_actual_owners scripts.validation_ownership.tests.test_producer.ProducerTests.test_generated_publication_creation_mapping_cache_and_write_charges_are_cumulative scripts.validation_ownership.tests.test_producer.ProducerTests.test_nested_scope_inherits_ownership_and_preserves_all_file_stat_fields scripts.validation_ownership.tests.test_producer.ProducerTests.test_invalid_request_rejects_before_any_producer_execution scripts.validation_ownership.tests.test_producer.ProducerTests.test_invalid_reply_never_retries_an_effectful_producer -v`
   -- existing producer/lifetime/protocol compatibility.
 
-### Negative control, cleanup and compatibility
+### Negative control
 
 The preserved d091 ordinary/native preimage converges at restart `1` ordinarily
 but reaches the finite restart-`2` guard through the old real eventlists
@@ -1371,10 +1378,7 @@ adapter. Stable-content mode 0600 is retained by the ordinary writer; comparing
 bytes plus requested mode would be incorrect. The mutation must restore that
 behavioral failure, not an unrelated setup error.
 
-The existing watchdog/session owns all child, waiter, source-view and scratch
-teardown; remove only owned fixtures after terminal cleanup. Source identities,
-native events and receipts remain actual. No full graph/prefix/matrix or sizing
-run belongs in this case.
+### Interactions and save compatibility
 
 Reuses the delivered producer/publication/view APIs and preserves #256's
 cache-lifetime fix. Dependents are #180/#186 and #196; their integration is
@@ -1382,6 +1386,13 @@ separate. There are no other feature/profile conflicts, save migrations,
 configuration/locale/generated-content format changes or ROM/GBA-RAM effects.
 Modern debug/release and archival target behavior is unchanged. No subjective
 manual-only criterion or full-workload resource claim is added.
+
+### Cleanup and limitations
+
+The existing watchdog/session owns all child, waiter, source-view and scratch
+teardown; remove only owned fixtures after terminal cleanup. Source identities,
+native events and receipts remain actual. No full graph/prefix/matrix or sizing
+run belongs in this case.
 
 ## TC-WORKFLOW-ASSET-DISCOVERY-001: Render captured-source asset discovery without FIFO races
 
