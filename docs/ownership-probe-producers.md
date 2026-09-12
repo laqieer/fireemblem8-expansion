@@ -284,8 +284,11 @@ and retains the runner-ownership rule for new objects on the sudo route.
 Only a normalized logical producer can replace its own generated output.
 
 Output-producing invocations execute genuinely for every actual dispatch.
-Identical storage/provenance can deduplicate, but that does not erase a call or
-publication effect. Pure reuse remains subject to complete current observations.
+The default `Command.publication_policy="replace"` recreates the output even
+when its bytes are unchanged. Explicit `"if-content-changed"` preserves an
+existing same-owner regular object when its content is equal. This is a
+publication decision, never cached producer execution or blanket deduplication.
+Pure reuse remains subject to complete current observations.
 Resolved source membership and declared published code/source bytes and modes
 also bind the cache key: a reader using only `open`/`read` must not reuse old
 output after its generated input or code is replaced, even when it made no
@@ -297,6 +300,74 @@ cache/control budgets. A cache hit retains its original execution receipt;
 current input hashes never relabel earlier stdout.
 The kernel's metadata on published objects is authoritative, not metadata
 copied from private output files.
+
+### Content-only publication
+
+Issue [#258](https://github.com/laqieer/fireemblem8-expansion/issues/258) restores
+the ordinary dependency writers' write-if-changed behavior. A forced included
+depfile otherwise gets recreated on every Make restart even when its contents
+are stable. The default replacement policy remains necessary for producers
+whose same-byte writes are intentional effects.
+
+```python
+command = Command(
+    ("/usr/bin/python3", "/repo/render.py"),
+    code=("render.py",), outputs=("build/generated.inputs.mk",),
+    publication_policy="if-content-changed",
+)
+```
+
+`python_command`, `directory_python_command` and `ProbeSession.native` forward
+the same optional policy. Invalid policies, and content-only policies without
+declared outputs, reject before command execution. The chapterobjectives,
+autoplaystrategies and eventlists dependency adapters explicitly opt in;
+ordinary CLI loaders, selectors, renderers and generated content stay unchanged.
+
+The comparison is **content-only**, not content-and-mode. Equal bytes retain
+the actual old mode, inode, mtime and ctime, without chmod or replacement.
+Thus a private mode-0644 result can leave a mode-0600 output unchanged.
+Missing outputs and different content are created/replaced with the produced
+mode. Reads may affect atime; it is not normalized or promised invariant.
+Comparison errors, nonregular paths, wrong owners and identity changes reject
+rather than becoming a successful no-op.
+
+The private `VOGEN2` mapping binds the normalized producer, a policy index
+(`0` replace, `1` content-only), output count, and existing path/mode/data
+records. The strict result reply also carries `publication_policy`; a mismatch
+with the protected mapping rejects. The supervisor decides from the real
+owned object and returns a closed publication confirmation containing the
+completed slot, owner, policy and effective outputs. Each output names its
+path, mode, size, SHA-256, `created`/`replaced`/`retained` effect and physical
+identity (device, inode, full mode, size, mtime_ns, ctime_ns, link count).
+
+Only the last completed slot is carried on the next request and terminal
+handshake, rather than replaying a growing history. The driver verifies it
+against that exact invocation, its previous owned state, the actual nofollow
+object and produced bytes. Terminal report/handshake disagreement rejects.
+Confirmed identity also travels with existing nested-publication adoption.
+
+`ProcessOutput.generated` remains the private producer result. The active
+`published_sources` map instead carries effective bytes/modes; in particular
+it must not copy private mode 0644 over a retained effective mode 0600.
+`MakeObservation.semantics["dynamic_commands"]` distinguishes
+`produced_outputs` from effective `generated_outputs`, and
+`semantics["published_sources"]` returns the final portable
+`[path, owner, mode, size, sha256]` bindings, including nested publications.
+Physical identities are confirmation/adoption authority, not semantic hashes.
+No generated-byte field or producer-object archive is added to MakeObservation.
+
+Every invocation, receipt and sequence remains. Private writes, comparison
+reads, mapping/confirmation traffic and retained identity data spend existing
+budgets. A retained object performs no public write/create, so those effects
+are not invented; earlier charges are never refunded. The separate #256
+non-reusable-result lifetime behavior and all original limits remain intact.
+This host-only correction changes no gameplay, ROM/RAM, save/config identity,
+locale, ordinary Make goal or generated content format. There are no new
+feature/profile conflicts; graph consumers adopt this shared contract through
+their normal integration. It is not full-graph or resource-fit evidence.
+
+See [TC-PROBE-CONTENT-PUBLICATION-001](test-cases/workflow-governance.md#tc-probe-content-publication-001-preserve-content-only-publication-and-make-convergence)
+for the ordinary/native, mode, protocol and mutation controls.
 
 ## Nested queries and publication lifetime
 

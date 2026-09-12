@@ -985,6 +985,26 @@ class TesterCaseRegistryTests(unittest.TestCase):
         ):
             self.assertTrue(markdown_section(section, heading), heading)
 
+    def test_content_publication_case_is_indexed_with_complete_contract(self):
+        registry, errors = check_docs.parse_test_case_registry(REAL_REPO_ROOT)
+        self.assertEqual(errors, [])
+        case_id = "TC-PROBE-CONTENT-PUBLICATION-001"
+        feature = next(item for item in registry["features"] if item["id"] == "workflow-governance")
+        case, = [item for item in registry["cases"] if item["id"] == case_id]
+        self.assertEqual(feature["required_cases"].count(case_id), 1)
+        self.assertEqual(case["issue_urls"], ["https://github.com/laqieer/fireemblem8-expansion/issues/258"])
+        selected = {
+            "schema_version": registry["schema_version"],
+            "coverage": {"mode": "complete", "expected_feature_ids": [feature["id"]], "deferred_issues": []},
+            "features": [{**feature, "required_cases": [case_id]}],
+            "cases": [case],
+        }
+        with mock.patch.object(check_docs, "parse_test_case_registry", return_value=(selected, [])):
+            self.assertEqual(check_docs.check_test_case_registry(REAL_REPO_ROOT), [])
+        self.assertEqual(case["automation"][0]["command"], (
+            "python3 -m unittest scripts.validation_ownership.tests.test_content_publication -v"
+        ))
+
     def test_review_path_coverage_case_is_indexed_with_focused_procedure(self):
         registry, errors = check_docs.parse_test_case_registry(REAL_REPO_ROOT)
         self.assertEqual(errors, [])

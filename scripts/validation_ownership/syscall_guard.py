@@ -28,12 +28,18 @@ if __package__:
     from .authority import _event_command, _read_events, encoded, parse_json
     from .lifecycle import finish_cleanup
     from .metadata_transport import encode_metadata_transport
-    from .producer_channel import ProducerChannel
+    from .producer_channel import (
+        ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
+        publication_identity, validate_publication_identity,
+    )
 else:
     from authority import _event_command, _read_events, encoded, parse_json
     from lifecycle import finish_cleanup
     from metadata_transport import encode_metadata_transport
-    from producer_channel import ProducerChannel
+    from producer_channel import (
+        ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
+        publication_identity, validate_publication_identity,
+    )
 
 
 LIBC = ctypes.CDLL(None, use_errno=True)
@@ -243,6 +249,7 @@ class Policy:
         self.producer_completed = 0
         self.producer_pending_peak = 0
         self.published = {}
+        self.publication_confirmation = None
         self.memory_peak = 0
         self.processes = {}
         self.newborn_stops = {}
@@ -498,9 +505,9 @@ class Policy:
             raise Violation("published context exceeds the existing creation bound")
         adopted = {}
         for record in records:
-            if not isinstance(record, list) or len(record) != 5:
+            if not isinstance(record, list) or len(record) != 6:
                 raise Violation("malformed completed publication")
-            name, owner, mode, size, digest = record
+            name, owner, mode, size, digest, identity = record
             self.publication_name(name)
             if (
                 name in adopted or type(mode) is not int or not 0 <= mode <= 0o777
@@ -509,8 +516,12 @@ class Policy:
                 or not isinstance(digest, str) or not re.fullmatch("[0-9a-f]{64}", digest)
             ):
                 raise Violation("invalid completed publication identity")
+            try:
+                identity = validate_publication_identity(identity, mode, size)
+            except ChannelError as error:
+                raise Violation(str(error)) from error
             producer = bytes.fromhex(owner)
-            if name in self.published and self.published[name] != producer:
+            if name in self.published and self.published[name][0] != producer:
                 raise Violation("conflicting generated output producers")
             self.reserve_observation("accessed", "published:" + hashlib.sha256(encoded(record)).hexdigest())
             self.charge_metadata(len(encoded(record)))
@@ -526,34 +537,66 @@ class Policy:
                     os.close(directory)
                     directory = following
                 descriptor = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+                with os.fdopen(descriptor, "rb") as source:
+                    before = os.fstat(source.fileno())
+                    if publication_identity(before) != identity:
+                        raise Violation("published source type, mode or size changed")
+                    self.charge_metadata(size)
+                    remaining, actual = size, hashlib.sha256()
+                    while remaining:
+                        if time.monotonic() >= self.config["deadline"]:
+                            raise Violation("aggregate deadline exhausted during readonly publication validation")
+                        data = source.read(min(remaining, SYSCALL_MEMORY_LIMIT))
+                        if not data:
+                            raise Violation("published source was truncated")
+                        actual.update(data)
+                        remaining -= len(data)
+                    after = os.fstat(source.fileno())
+                    if (
+                        actual.hexdigest() != digest or before != after
+                        or publication_identity(os.stat(
+                            parts[-1], dir_fd=directory, follow_symlinks=False,
+                        )) != identity
+                        or any(getattr(before, field) != getattr(after, field) for field in (
+                            "st_atime_ns", "st_mtime_ns", "st_ctime_ns", "st_blksize", "st_blocks", "st_rdev",
+                        ))
+                    ):
+                        raise Violation("published source changed during readonly validation")
             finally:
                 os.close(directory)
-            with os.fdopen(descriptor, "rb") as source:
-                before = os.fstat(source.fileno())
-                if before.st_mode != stat.S_IFREG | mode or before.st_size != size:
-                    raise Violation("published source type, mode or size changed")
-                self.charge_metadata(size)
-                remaining, actual = size, hashlib.sha256()
-                while remaining:
-                    if time.monotonic() >= self.config["deadline"]:
-                        raise Violation("aggregate deadline exhausted during readonly publication validation")
-                    data = source.read(min(remaining, SYSCALL_MEMORY_LIMIT))
-                    if not data:
-                        raise Violation("published source was truncated")
-                    actual.update(data)
-                    remaining -= len(data)
-                after = os.fstat(source.fileno())
-                if (
-                    actual.hexdigest() != digest or before != after
-                    or any(getattr(before, field) != getattr(after, field) for field in (
-                        "st_atime_ns", "st_mtime_ns", "st_ctime_ns", "st_blksize", "st_blocks", "st_rdev",
-                    ))
-                ):
-                    raise Violation("published source changed during readonly validation")
-            adopted[name] = producer
+            adopted[name] = producer, identity
         self.published.update(adopted)
 
-    def publish(self, key, *, owner, outputs):
+    def _content_matches(self, mapping, directory, name, size, identity):
+        descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        with os.fdopen(descriptor, "rb") as current:
+            if publication_identity(os.fstat(current.fileno())) != identity:
+                raise Violation("published output identity changed before comparison")
+            offset, equal = 0, True
+            position = mapping.tell()
+            while offset < size:
+                if time.monotonic() >= self.config["deadline"]:
+                    raise Violation("aggregate deadline exhausted during content comparison")
+                count = min(size - offset, SYSCALL_MEMORY_LIMIT)
+                self.charge_metadata(2 * count)
+                wanted = os.pread(mapping.fileno(), count, position + offset)
+                actual = current.read(count)
+                if len(wanted) != count or len(actual) != count:
+                    raise Violation("publication comparison input was truncated")
+                equal = equal and wanted == actual
+                offset += count
+            if (
+                publication_identity(os.fstat(current.fileno())) != identity
+                or publication_identity(os.stat(name, dir_fd=directory, follow_symlinks=False)) != identity
+            ):
+                raise Violation("published output changed during content comparison")
+        return equal
+
+    def publish(self, key, *, owner, outputs, policy="replace"):
+        if type(policy) is not str or policy not in PUBLICATION_POLICIES or (
+            policy != "replace" and not outputs
+        ):
+            raise Violation("invalid generated publication policy")
         mapping = Path(self.config["root"]) / "control/map"
         path = mapping / f"{key:016x}.files"
         try:
@@ -561,11 +604,11 @@ class Policy:
         except FileNotFoundError:
             if outputs:
                 raise Violation("declared generated result is missing")
-            return ()
-        names = []
+            return []
+        names, effective = [], []
         with os.fdopen(descriptor, "rb") as source:
             status = os.fstat(source.fileno())
-            if not stat.S_ISREG(status.st_mode) or not 44 <= status.st_size <= self.config["file_limit"]:
+            if not stat.S_ISREG(status.st_mode) or not 48 <= status.st_size <= self.config["file_limit"]:
                 raise Violation("invalid generated mapping file bound")
             self.observation_bytes += status.st_size
             if self.observation_bytes > self.config["observation_limit"]:
@@ -584,11 +627,13 @@ class Policy:
                 return data
             def integer():
                 return int.from_bytes(take(4), "little")
-            if take(8) != b"VOGEN1\0\0":
+            if take(8) != PUBLICATION_MAGIC:
                 raise Violation("invalid generated mapping protocol")
             producer = take(32)
             if producer.hex() != owner:
                 raise Violation("generated result has a foreign producer identity")
+            if integer() != PUBLICATION_POLICIES.index(policy):
+                raise Violation("generated mapping publication policy differs from its request")
             count = integer()
             if count != len(outputs) or not 1 <= count <= self.config["creation_limit"]:
                 raise Violation("generated output count exceeds creation bound")
@@ -604,9 +649,6 @@ class Policy:
                 self.publication_name(name)
                 if name not in outputs or name in names:
                     raise Violation("generated result differs from its exact declared outputs")
-                self.written += size
-                if self.written > self.config["write_limit"]:
-                    raise Violation("aggregate generated publication byte budget exhausted")
                 directory = os.open(view, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
                 try:
                     parts = name.split("/")
@@ -629,34 +671,96 @@ class Policy:
                             # Transfer before adding children, so even failed publication
                             # remains removable by the unprivileged report owner.
                             os.fchown(directory, self.config["runner_uid"], self.config["runner_gid"])
-                    if name in self.published:
-                        if self.published[name] != producer:
-                            raise Violation("conflicting generated output producers")
-                        os.unlink(parts[-1], dir_fd=directory)
-                    self.reserve_creation()
+                    if name in self.published and self.published[name][0] != producer:
+                        raise Violation("conflicting generated output producers")
                     try:
-                        output = os.open(
-                            parts[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-                            0o600, dir_fd=directory,
-                        )
-                    except FileExistsError as error:
-                        raise Violation("generated output conflicts with immutable source") from error
-                    with os.fdopen(output, "wb") as destination:
-                        if self.config["sudo_drop"]:
-                            os.fchown(destination.fileno(), self.config["runner_uid"], self.config["runner_gid"])
+                        current = os.stat(parts[-1], dir_fd=directory, follow_symlinks=False)
+                    except FileNotFoundError:
+                        current = None
+                    identity = None if current is None else publication_identity(current)
+                    if current is not None:
+                        if name not in self.published:
+                            raise Violation("generated output conflicts with immutable source")
+                        if (
+                            not stat.S_ISREG(current.st_mode) or current.st_mode & 0o7000
+                            or identity != self.published[name][1]
+                        ):
+                            raise Violation("published output identity or type changed")
+                    retain = (
+                        policy == "if-content-changed" and current is not None
+                        and current.st_size == size
+                        and self._content_matches(source, directory, parts[-1], size, identity)
+                    )
+                    digest = hashlib.sha256()
+                    if retain:
                         left = size
                         while left:
                             data = take(min(left, SYSCALL_MEMORY_LIMIT))
-                            destination.write(data)
+                            digest.update(data)
                             left -= len(data)
-                        os.fchmod(destination.fileno(), mode)
-                    self.published[name] = producer
+                        if publication_identity(os.stat(
+                            parts[-1], dir_fd=directory, follow_symlinks=False,
+                        )) != identity:
+                            raise Violation("retained output identity changed")
+                        mode = stat.S_IMODE(current.st_mode)
+                        effect = "retained"
+                    else:
+                        self.written += size
+                        if self.written > self.config["write_limit"]:
+                            raise Violation("aggregate generated publication byte budget exhausted")
+                        if current is not None:
+                            if publication_identity(os.stat(
+                                parts[-1], dir_fd=directory, follow_symlinks=False,
+                            )) != identity:
+                                raise Violation("published output changed before replacement")
+                            os.unlink(parts[-1], dir_fd=directory)
+                        self.reserve_creation()
+                        try:
+                            output = os.open(
+                                parts[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                0o600, dir_fd=directory,
+                            )
+                        except FileExistsError as error:
+                            raise Violation("generated output conflicts with immutable source") from error
+                        with os.fdopen(output, "wb", buffering=0) as destination:
+                            if self.config["sudo_drop"]:
+                                os.fchown(destination.fileno(), self.config["runner_uid"], self.config["runner_gid"])
+                            left = size
+                            while left:
+                                data = take(min(left, SYSCALL_MEMORY_LIMIT))
+                                digest.update(data)
+                                written = 0
+                                while written < len(data):
+                                    amount = destination.write(memoryview(data)[written:])
+                                    if not amount:
+                                        raise Violation("incomplete generated output write")
+                                    written += amount
+                                left -= len(data)
+                            os.fchmod(destination.fileno(), mode)
+                            identity = publication_identity(os.fstat(destination.fileno()))
+                        if (
+                            identity != publication_identity(os.stat(
+                                parts[-1], dir_fd=directory, follow_symlinks=False,
+                            ))
+                            or identity[2] != stat.S_IFREG | mode or identity[3] != size
+                        ):
+                            raise Violation("generated output changed during publication")
+                        effect = "created" if current is None else "replaced"
+                    self.published[name] = producer, identity
+                    result = {
+                        "path": name, "mode": mode, "size": size, "sha256": digest.hexdigest(),
+                        "effect": effect, "identity": list(identity),
+                    }
+                    self.charge_metadata(len(encoded(result)))
+                    effective.append(result)
                     names.append(name)
                 finally:
                     os.close(directory)
             if remaining:
                 raise Violation("trailing generated mapping bytes")
-        return tuple(names)
+            if publication_identity(os.fstat(source.fileno())) != publication_identity(status):
+                raise Violation("generated mapping changed during publication")
+        return effective
 
     def counters(self):
         return {
@@ -2025,13 +2129,17 @@ def supervise(config, drop_privileges):
             "kind": "request", "scope": config["producer_scope"], "sequence": sequence,
             "completed": policy.producer_completed, "frame": state.producer_frame.hex(),
             "counters": policy.counters(), "reserved": policy.reservations(),
+            "publication": policy.publication_confirmation,
         }
         raw = channel.exchange(
             encoded(request),
             watch=[record.pidfd for record in processes.values()] + list(newborn_stops.values()),
         )
         reply = parse_json(raw, "producer reply")
-        required = {"kind", "scope", "sequence", "slot", "owner", "outputs", "stdout_sha256", "limits"}
+        required = {
+            "kind", "scope", "sequence", "slot", "owner", "outputs", "stdout_sha256", "limits",
+            "publication_policy",
+        }
         if (
             not isinstance(reply, dict)
             or set(reply) not in (required, required | {"adopt_sha256"})
@@ -2044,6 +2152,9 @@ def supervise(config, drop_privileges):
             or len(reply["outputs"]) > config["creation_limit"]
             or any(not isinstance(name, str) for name in reply["outputs"])
             or len(set(reply["outputs"])) != len(reply["outputs"])
+            or type(reply["publication_policy"]) is not str
+            or reply["publication_policy"] not in PUBLICATION_POLICIES
+            or reply["publication_policy"] != "replace" and not reply["outputs"]
             or "adopt_sha256" in reply and (
                 not isinstance(reply["adopt_sha256"], str) or not re.fullmatch("[0-9a-f]{64}", reply["adopt_sha256"])
             )
@@ -2073,7 +2184,14 @@ def supervise(config, drop_privileges):
             policy.adopt_published(records)
         channel.require_live([record.pidfd for record in processes.values()] + list(newborn_stops.values()))
         channel.ensure_idle()
-        policy.publish(sequence - 1, owner=reply["owner"], outputs=reply["outputs"])
+        effective = policy.publish(
+            sequence - 1, owner=reply["owner"], outputs=reply["outputs"],
+            policy=reply["publication_policy"],
+        )
+        policy.publication_confirmation = {
+            "slot": sequence - 1, "owner": reply["owner"],
+            "policy": reply["publication_policy"], "outputs": effective,
+        }
         policy.producer_completed = sequence
         state.producer_slot = sequence - 1
         state.producer_ready = False
@@ -2164,6 +2282,7 @@ def supervise(config, drop_privileges):
                 result["rendezvous"] = {
                     "issued": policy.producer_issued, "completed": policy.producer_completed,
                     "pending_peak": policy.producer_pending_peak,
+                    "publication": policy.publication_confirmation,
                 }
             Path(config["report"]).write_text(
                 json.dumps(result, sort_keys=True, separators=(",", ":")), encoding="ascii",
@@ -2175,6 +2294,7 @@ def supervise(config, drop_privileges):
                     channel.finish(encoded({
                         "kind": "finished", "scope": config["producer_scope"],
                         "issued": policy.producer_issued, "completed": policy.producer_completed,
+                        "publication": policy.publication_confirmation,
                     }))
                 except BaseException as failure:
                     if error is None:

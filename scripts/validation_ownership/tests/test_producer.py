@@ -26,7 +26,9 @@ from scripts.validation_ownership.authority import (
     ENVIRONMENT, _command_hash, _event_command, _read_event_frames, parse_json,
     relative_path,
 )
-from scripts.validation_ownership.producer_channel import ChannelError, ProducerChannel
+from scripts.validation_ownership.producer_channel import (
+    ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
+)
 from scripts.validation_ownership.python_commands import (
     GENERATED_DEPENDENCY_MODULES,
     _chapterbundle_support,
@@ -1152,7 +1154,10 @@ class ProducerTests(unittest.TestCase):
             "generated/deeper/nested.mk": (b"SELECTED := observed\n", 0o644),
             "source/binary.bin": (b"\0\xffproof", 0o444),
         }
-        frame = bytearray(b"VOGEN1\0\0" + b"\x01"*32 + struct.pack("<I", len(outputs)))
+        frame = bytearray(
+            PUBLICATION_MAGIC + b"\x01"*32
+            + struct.pack("<II", PUBLICATION_POLICIES.index("replace"), len(outputs))
+        )
         for name, (data, mode) in outputs.items():
             name = name.encode()
             frame.extend(struct.pack("<III", len(name), mode, len(data)) + name + data)
@@ -1189,7 +1194,9 @@ class ProducerTests(unittest.TestCase):
                     transferred.append((info.st_dev, info.st_ino, uid, gid))
                     fchown(descriptor, uid, gid)
                 with patch.object(os, "fchown", transfer):
-                    self.assertEqual(policy.publish(1, owner="01"*32, outputs=list(outputs)), tuple(outputs))
+                    effective = policy.publish(1, owner="01"*32, outputs=list(outputs))
+                    self.assertEqual([item["path"] for item in effective], list(outputs))
+                    self.assertTrue(all(item["effect"] == "created" for item in effective))
                 created = [self.root / name for name in outputs]
                 created.extend((self.root / "generated", self.root / "generated/deeper"))
                 expected = []
@@ -2315,6 +2322,7 @@ class ProducerTests(unittest.TestCase):
                                     records[0][4] = "0"*64
                                 elif defect == "mode":
                                     records[0][2] = 0o444
+                                    records[0][5][2] = stat.S_IFREG | 0o444
                                 elif defect == "duplicate":
                                     records.append(records[0])
                                 elif defect == "immutable":
