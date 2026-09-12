@@ -430,6 +430,15 @@ global live-process/VM capacity. On completion, its actual work reduces the
 outer remaining authorization before resumption. Final settlement charges
 only the unsent delta, not counters already settled at earlier requests.
 
+The optional
+[`Limits.observations` lifetime allowance](ownership-probe-foundation.md#independent-cumulative-observation-allowance)
+defaults to `None`, preserving the original entries-only count. Each initial
+capsule is still capped at `entries`; checkpoints validate that cap and the
+effective shared total. Resumption grants never exceed the original capped
+config or settled observations plus the remaining lifetime count. Nested
+queries, publications, cache revalidation and cleanup do not reset/refund it;
+decoded metadata and every original byte charge keep their existing bounds.
+
 A cold shell producer needs capacity for Make, its parked interceptor and the
 producer. A two-live-process report cannot launch that third process. It can
 consume a compatible pure result that was genuinely executed before Make, with

@@ -434,9 +434,34 @@ remain observations. Failed calls add no evidence, and read/pread/readv/readlink
 need positive returned bytes. A later failed operation does not erase a prior
 valid observation. FD duplication/state changes are applied only on success.
 
-The configured observation-record count bounds the **entire report**. Each
-capsule limits the sum of attempted `consumed`, `code_consumed` and `accessed`
-records to the remaining allowance before insertion. Repeating a value in the
+### Independent cumulative observation allowance
+
+Issue [#262](https://github.com/laqieer/fireemblem8-expansion/issues/262) adds a
+**framework capability** for repeated target queries and cached-metadata or
+BASE/CURRENT revalidation over small inventories. It separates cumulative work
+from per-capsule/source cardinality, not an incorrect observation decision.
+
+| Public API | Contract |
+| --- | --- |
+| `Limits.observations: int \| None = None` | Appended after the existing positional fields; `None` retains entries-only lifetime tightening |
+| `Limits.observation_count` | Read-only numeric effective total: `entries` for `None`, otherwise `observations` |
+| `Limits(entries=64, observations=128)` | Up to 128 cumulative observations across capsules, but at most 64 per capsule and per captured inventory |
+| `Limits(entries=64, observations=32)` | Independently tighten cumulative work to 32; inventory admission still uses 64 |
+
+Ordinary explicit values must be positive integers at most 32,768. Booleans,
+floats, strings, zero, negatives, nonfinite and above-maximum values reject.
+Omitted and explicit `None` preserve every default and stricter entries-only
+caller. Typed diagnostic subclasses retain the existing dataclass-field
+default ceiling validation: an explicit observation field default supplies
+that field's ceiling; a `None` default uses the class's entries field default.
+This is not a new production profile or permission to raise ordinary caps.
+No configure/gameplay flag, source-inventory increase or byte-policy change
+is involved.
+
+The effective observation-record count bounds the **entire report**. Each
+capsule receives `min(entries, observation_count - observations_used)` and
+limits the sum of attempted `consumed`, `code_consumed` and `accessed`
+records to that actual capped grant before insertion. Repeating a value in the
 same collection and capsule spends no additional record or bookkeeping bytes;
 a failed attempt retains its charge, and later successful consumption does not
 charge it again. The independent observation-byte limit remains unchanged.
@@ -453,6 +478,23 @@ With no records remaining,
 another capsule rejects before launch. A terminal failure also forbids cached
 replay. The separate captured-source entry bound still uses `Limits.entries`;
 source capture is not a filesystem-observation charge.
+
+Producer checkpoints validate both their capped capsule count and prospective
+effective lifetime total. Parked/nested work spends that same total; resumption
+never exceeds the capsule's initial cap or its settled count plus the remaining
+lifetime allowance. Closed reports and decoded metadata still use the actual
+capped config, not the larger lifetime allowance. Source/gitlink inventories,
+snapshot admission, producer-peer ancestry and regex batches keep `entries`.
+Independent metadata record, frame, path, syscall-buffer and VM limits remain.
+
+The [indexed case](test-cases/workflow-governance.md#tc-probe-observation-allowance-001-separate-cumulative-observations-from-capsule-and-inventory-admission)
+uses real bounded capsules, metadata, caches, immutable views, nested requests
+and guard-removal mutations. No full graph or capacity/fit claim follows.
+Dependencies are the existing shared budget, producer and view lifetimes.
+#180/#186 may integrate this root later; #196 remains downstream under
+Discussion #174. No supported modern/archival, feature/locale, save/config,
+generated-content, ROM or GBA RAM behavior changes, and no profile conflicts
+or manual-only criteria apply. Rollback is an ordinary revert of this root.
 
 Raw metadata observation accounting is unchanged: requested before/after
 buffers, null/EFAULT failures and per-record legacy JSON dedupe all still spend
@@ -965,7 +1007,8 @@ snapshotting, compilation, all subprocesses and replay. Every subprocess gets
 the remaining lifetime. Defaults bound 4,096 states/launches, 32 simultaneously
 live traced guest processes, 16,384 total guest-process creations per report,
 32 pending command resolutions, two million
-syscalls and 32,768 snapshot entries. There are no futures or hidden worker
+syscalls, 32,768 snapshot entries and (by the default `None` alias) 32,768
+report-lifetime observations. There are no futures or hidden worker
 queues. Variant plans are checked before any variant launch.
 
 Make validates each authenticated live request before resolving it. The single

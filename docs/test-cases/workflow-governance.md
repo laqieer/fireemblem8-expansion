@@ -1496,6 +1496,111 @@ Caller-side Python objects may exist before admission. No coordinator AS
 policy, aggregate host-RAM claim, new shipping profile, graph/prefix/matrix/
 sizing run, native AI review or automatic retry is part of this case.
 
+## TC-PROBE-OBSERVATION-ALLOWANCE-001: Separate cumulative observations from capsule and inventory admission
+
+- **Feature / issue:** `workflow-governance` /
+  [#262](https://github.com/laqieer/fireemblem8-expansion/issues/262), an
+  independent framework-capability root. Existing entries-only behavior is
+  intentional, not a faulty kernel or permission decision.
+- **Profile:** Linux x86-64 source checkout with existing Python 3, GNU Make
+  4.3, host compiler, namespace/ptrace and lifecycle prerequisites. No ROM,
+  new dependency, privilege policy, feature flag or calibration is required.
+- **Starting state:** run from the source root with clean owned bounded
+  fixtures. Ordinary defaults are unchanged. The primary control uses
+  `entries=64, observations=128`; time/runs are tightened to 30 seconds/64.
+  API-only diagnostic-subclass tests do not launch a larger workload.
+
+### Actions
+
+1. Run `ObservationAllowanceTests` below. Confirm the existing positional
+   constructor prefix/defaults, omitted/explicit `None` alias and read-only
+   numeric `observation_count`. Reject malformed and above-maximum ordinary
+   values; retain typed diagnostic-subclass field-default validation.
+2. With a real 64-entry inventory and `observations=128`, read 32 real source
+   bytes in each of four separate capsules. Require correct returned bytes
+   and source consumption; cumulative records are 32, 64, 96 and 128, with
+   actual capsule grants 64, 64, 64 and 32. The next capsule must reject
+   before launch. Native observation bytes still spend original control.
+3. Repeat exact exhaustion with omitted/`None` observations and require the
+   original 64-record lifetime. Explicitly lower observations to 32 and
+   require that independent total. With total 65, spend 64 and attempt two
+   further reads: the actual one-record grant rejects, retains the failed
+   capsule's one observation, and leaves the session terminal at 65.
+4. With surplus lifetime 128, stat and read 33 admitted source files in one
+   capsule. Its 99 attempted records must reject at the actual 64-record cap.
+   Separately admit a 65-entry inventory with `entries=64`; source capture
+   must reject before any candidate capsule. Trusted runtime setup may
+   precede snapshot admission; it is not candidate execution.
+5. Revalidate a genuine cached result and select BASE then CURRENT over the
+   same report. Require actual view-specific contents, new charged metadata,
+   monotonic counts beyond 64 and exact total exhaustion without resetting
+   the original clock. Exercise a real parked outer Make request, nested
+   Make query and command; require actual returned values and resumption
+   bounded by the original capsule cap and shared residual allowance.
+6. Corrupt actual closed reports and live requests in the test transport:
+   malformed/unaccounted counts, a 65-record checkpoint under a 64-record
+   capsule but 128-record lifetime, and a stale second checkpoint must reject
+   before unresolved producer execution. Original failure and cleanup remain.
+7. In isolated mutation controls, make the effective alias always return
+   `entries`; the multi-capsule positive must fail at the old 64-record
+   lifetime. Independently remove only the initial per-capsule `min(entries,
+   ...)` clamp. The actual 33-file stat/read capsule must then succeed with
+   99 reported observations and correct output, causing its rejection test
+   to fail. The native report count includes all metadata bookkeeping, not
+   just the 33 successful source consumptions or 33 returned metadata records.
+   Restore the supported implementation after each mutation; do not change
+   source admission, byte limits, report validation or lifecycle guards.
+
+### Expected result
+
+An explicit cumulative allowance separates repeated work from capsule and
+inventory cardinality without changing ordinary maxima or legacy tightening.
+Failed/successful work, cache revalidation, selected views and nested queries
+remain one monotonic lifetime. Initial grants, checkpoints, resumption and
+closed metadata use the correct shared total and capped capsule authority.
+Every original byte charge and fixed file/frame/ABI/VM boundary remains.
+
+### Negative control
+
+The delivered bf1e preimage's real 64-record exact/remaining controls retain
+the original terminal and prelaunch rejection. Independent allowance is
+absent before this feature. Default/`None` retains that behavior after it.
+The lifetime-alias mutation must reject genuine work beyond 64; the clamp
+mutation must admit the actual 99-record capsule, not fail for an unrelated
+setup or source error. No historical diagnostic is rewritten as sizing or
+complete-report evidence.
+
+### Interactions and save compatibility
+
+Uses the delivered shared budget, producer, pending-admission, publication
+and immutable-view foundations. This root has no unmerged graph dependency.
+#180 / PR #186 is the direct dependent; #196 is transitive under Discussion
+#174. No other feature/profile conflict, modern/archival or gameplay change,
+save/config migration, locale/generated-data format change, ROM/GBA RAM
+effect or manual-only criterion applies. Peer ancestry, inventory and regex
+limits are independent and unchanged. Rollback is a normal root-PR revert.
+
+### Automation
+
+- `python3 -m unittest scripts.validation_ownership.tests.test_foundation.ObservationAllowanceTests -v`
+  -- real capsule, metadata, cache/view/nested, API and malformed-counter controls.
+- `python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_total_exact_limit_cache_and_next_capsule scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_remaining_count_reaches_next_capsule_guard scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_totals_charge_failed_deferred_and_terminal_processes scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_totals_cover_compiler_native_static_make_and_cache scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_accounting_rejects_malformed_closed_reports scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_record_limit_is_aggregate_across_collections scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_bytes_remain_an_independent_aggregate_bound scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_observation_totals_follow_selection_without_reset -v`
+  -- preserved default, byte, failed-work, compilation, cache and view contracts.
+- `python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_nested_generated_query_keeps_one_live_view_until_outer_completion scripts.validation_ownership.tests.test_producer.ProducerTests.test_live_include_preserves_actual_metadata_and_residual_resources scripts.validation_ownership.tests.test_foundation.PendingAdmissionTests.test_default_smaller_and_global_limits_remain_authoritative scripts.validation_ownership.tests.test_foundation.PendingAdmissionTests.test_small_actual_variants_keep_results_and_attempted_state_counts -v`
+  -- existing nested publication/reservation, typed limits and plan compatibility.
+- `python3 -m unittest scripts.docs_check_tests.test_check_docs.TesterCaseRegistryTests.test_late_shipped_contracts_are_complete_and_fail_closed scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_manual_handoff_json_contract_and_human_links -v`
+  -- both closed catalogs, without broad documentation/catalog discovery.
+
+### Cleanup and limitations
+
+Existing session/budget/watchdog teardown must leave no owned child, waiter,
+active view, cache authority, parked capsule or scratch tree. Preserve the
+preimage and mutation logs; remove only owned temporary fixtures after
+terminal cleanup. This case proves a host policy capability, not #180 full
+graph fit, a new resource value, performance, current H1, calibration or
+production acceptance. No full graph/native-suite run or native AI review
+belongs in these focused controls.
+
 ## TC-WORKFLOW-ASSET-DISCOVERY-001: Render captured-source asset discovery without FIFO races
 
 - **Feature / originating issue:** `workflow-governance` /
