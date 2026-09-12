@@ -1,4 +1,5 @@
 import hashlib
+import json
 from pathlib import Path
 import secrets
 import shutil
@@ -182,6 +183,35 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.add("Makefile", "FLAGS ?= selected\nALIAS = $(FLAGS)\nall: $(ALIAS)\nselected: ;\n")
         with self.assertRaisesRegex(MakeProbeError, "symbolic inputs influence"):
             self.observe(external={"FLAGS"}, symbolic_recipe_names={"FLAGS"})
+
+    def test_modern_size_recipe_default_uses_sealed_contract(self):
+        name = "MODERN_SIZE"
+        usage = source_census({"modern.mk": (ROOT / "modern.mk").read_bytes()})
+        self.assertIn(name, usage["defaults"])
+        self.assertIn(name, usage["recipe_only"])
+        contract = json.loads((ROOT / ".github/validation-ownership-make-dynamics.json").read_text())
+        options = {
+            "external": contract["ambient_inputs"]["allowed_names"],
+            "symbolic_recipe_names": contract["prerequisite_domains"]["symbolic_recipe_names"],
+        }
+        records = []
+        for value in ("arm-none-eabi-size", "/selected/bin/arm-none-eabi-size"):
+            self.add("Makefile", f"{name} ?= {value}\nall:\n\t@echo $({name})\n")
+            record = self.observe(**options)["all"]["record"]
+            self.assertEqual(record["symbolic_recipe_names"], [name])
+            self.assertEqual(record["variants"][0]["record"]["domains"][name]["value"], value)
+            records.append(record)
+        self.assertNotEqual(records[0], records[1])
+        with self.assertRaisesRegex(MakeProbeError, "unsealed external defaults"):
+            self.observe(**{**options, "external": set(options["external"]) - {name}})
+        for source, error in (
+            (f"{name} ?= selected\nall: $({name})\nselected: ;\n", "symbolic inputs influence"),
+            ("MODERN_SIZE_UNSEALED ?= x\nall: ;\n", "unsealed external defaults"),
+        ):
+            with self.subTest(source=source):
+                self.add("Makefile", source)
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    self.observe(**options)
 
     def test_branch_loaded_domains_reach_a_bounded_fixed_point(self):
         self.add("Makefile", "MODE ?= one\nifeq ($(MODE),two)\ninclude branch.mk\nendif\nall: ;\n")

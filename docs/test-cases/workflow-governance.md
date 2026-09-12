@@ -3991,6 +3991,11 @@ census without spawning closure-expansion variants. Reversed domain
 declaration order produces identical authority. State/source/domain/
 combination/depth/time cap fixtures reject rather than returning a partial
 census, with one deadline and aggregate budget shared by the entire report.
+For `MODERN_SIZE`, parse its real `modern.mk` default/recipe-only use and run
+`test_modern_size_recipe_default_uses_sealed_contract`. Different tool paths
+must change native recipe authority. Removing its exact ambient declaration,
+using it as a prerequisite, or adding an unsealed neighboring default must
+reject; no executable or source admission is widened.
 Environment-origin graph variants are spawned only for names observed as
 loaded-source defaults or actual undefined authority; explicit graph
 assignments collapse that unrelated environment dimension.

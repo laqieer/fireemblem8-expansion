@@ -566,7 +566,11 @@ assignment context, so nested `MODE` -> `DEP` -> include selectors cannot hide
 behind fallback-only parsing. Branch-only undeclared or graph-shaping symbolic
 selectors reject immediately; branch-only recipe symbolic inputs contribute
 authentic recipe-only census evidence, and recipe-only finite domains remain in
-the observed census without spawning closure-expansion variants. Definition-dependency expansion is
+the observed census without spawning closure-expansion variants.
+Tool defaults such as `MODERN_SIZE` are sealed as ambient recipe-only values:
+their actual values affect recipe authority, but neither graph selection nor
+new executable/source admission is granted by that classification.
+Definition-dependency expansion is
 scoped to the authoritative sources GNU Make actually loaded, so an alternate
 branch cannot backfill an unobserved selector into another branch's census.
 Process-environment variants are likewise driven by authentic observations:
