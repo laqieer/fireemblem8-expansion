@@ -1,0 +1,101 @@
+name: Issue 180 disposable diagnostic baseline 2
+
+on:
+  push:
+    branches: [calibration/issue-180-ci-baseline-2]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue180-disposable-diagnostic-baseline-2
+  cancel-in-progress: false
+
+jobs:
+  disposable-graph-calibration-2:
+    name: Disposable graph calibration only 2
+    if: >-
+      github.repository == 'laqieer/fireemblem8-expansion' &&
+      github.actor == 'laqieer' &&
+      github.event.created == true &&
+      github.event.deleted == false &&
+      github.run_number == 1 &&
+      github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      BASH_ENV: ''
+      ENV: ''
+      PYTHONDONTWRITEBYTECODE: '1'
+
+    steps:
+    - name: Checkout this exact diagnostic harness
+      timeout-minutes: 5
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ github.sha }}
+        path: harness
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Record the closed first-attempt scope
+      env:
+        EXPECTED_HARNESS_SHA: ${{ github.sha }}
+      run: |
+        /usr/bin/python3 -I -S -B harness/scripts/ci_calibration/supervisor.py plan \
+          --harness "$GITHUB_WORKSPACE/harness" \
+          --candidate "$GITHUB_WORKSPACE/candidate" \
+          --output "$RUNNER_TEMP/issue180-ci-baseline-2-$GITHUB_RUN_ID" \
+          --event "$GITHUB_EVENT_PATH" --sha "$EXPECTED_HARNESS_SHA" \
+          --event-name "$GITHUB_EVENT_NAME" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
+          --run-number "$GITHUB_RUN_NUMBER" \
+          --runner-environment "$RUNNER_ENVIRONMENT" --runner-os "$RUNNER_OS"
+
+    - name: Checkout the immutable graph workload separately
+      timeout-minutes: 10
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: 3d78dbc26f2df16cb50b0684042d84a98fbc2ea9
+        path: candidate
+        fetch-depth: 0
+        submodules: recursive
+        persist-credentials: false
+
+    - name: Install only the diagnostic host and modern-query prerequisites
+      timeout-minutes: 15
+      run: |
+        sudo -n apt-get update
+        sudo -n apt-get install -y --no-install-recommends \
+          build-essential binutils-arm-none-eabi gcc-arm-none-eabi \
+          libnewlib-arm-none-eabi libpng-dev pkg-config \
+          apparmor-utils e2fsprogs util-linux
+
+    - name: Qualify containment and invoke the graph at most once
+      timeout-minutes: 70
+      env:
+        EXPECTED_HARNESS_SHA: ${{ github.sha }}
+      run: |
+        sudo -n env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+          /usr/bin/python3 -I -S -B "$GITHUB_WORKSPACE/harness/scripts/ci_calibration/supervisor.py" run \
+          --harness "$GITHUB_WORKSPACE/harness" \
+          --candidate "$GITHUB_WORKSPACE/candidate" \
+          --output "$RUNNER_TEMP/issue180-ci-baseline-2-$GITHUB_RUN_ID" \
+          --event "$GITHUB_EVENT_PATH" --sha "$EXPECTED_HARNESS_SHA" \
+          --event-name "$GITHUB_EVENT_NAME" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
+          --run-number "$GITHUB_RUN_NUMBER" \
+          --runner-environment "$RUNNER_ENVIRONMENT" --runner-os "$RUNNER_OS"
+
+    - name: Upload bounded diagnostic records only
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+      with:
+        name: issue180-ci-baseline-2-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+        retention-days: 7
+        if-no-files-found: error
+        path: |
+          ${{ runner.temp }}/issue180-ci-baseline-2-${{ github.run_id }}/scope.json
+          ${{ runner.temp }}/issue180-ci-baseline-2-${{ github.run_id }}/preflight.json
+          ${{ runner.temp }}/issue180-ci-baseline-2-${{ github.run_id }}/metrics.jsonl
+          ${{ runner.temp }}/issue180-ci-baseline-2-${{ github.run_id }}/progress.jsonl
+          ${{ runner.temp }}/issue180-ci-baseline-2-${{ github.run_id }}/result.json
+          ${{ runner.temp }}/issue180-ci-baseline-2-${{ github.run_id }}/report.json
