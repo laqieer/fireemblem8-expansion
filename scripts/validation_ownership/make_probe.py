@@ -1724,7 +1724,8 @@ class ProbeSession:
                 self.budget.charge("cache", len(encoded(result.executed)))
             if result.runtime_receipt:
                 self.budget.charge("cache", len(encoded(result.runtime_receipt)))
-            self.cache.setdefault(key, []).append(result)
+            if not outputs:
+                self.cache.setdefault(key, []).append(result)
             return result
 
     def _compiler_runtime_profile(self, compiler, search_arguments=()):

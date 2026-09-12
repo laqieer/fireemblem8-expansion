@@ -16,6 +16,21 @@ path, actual bytes and ordinary file mode. Its `input_identities` binds the
 resolved code/source paths, modes and bytes at actual execution; native build
 inputs and Make provenance use that receipt, not a later view's hashes.
 
+Only commands with no declared `outputs` enter the reuse cache. Declared-output
+commands still execute on every dispatch and incur every original charge.
+Callers and active Make receipts retain complete `ProcessOutput` objects;
+live publication state owns the generated files it needs. Returned
+`MakeObservation` values retain semantic/provenance, stdout/stderr and event
+records. This graph extension also retains captured `GeneratedFile` bytes/modes
+in `MakeObservation.generated` for the view at each query's completion, not
+complete producer objects.
+After the last real owner releases a result, the reuse cache does not pin an
+object it can never reuse. Native compiler artifacts with `outputs=()` and
+pure-reader metadata revalidation retain their existing caching behavior.
+This is an ownership-lifetime correction, not output deduplication, a counter
+refund, a resource-limit change or a claim of complete graph fit. See
+[`TC-PROBE-PRODUCER-CACHE-LIFETIME-001`](test-cases/workflow-governance.md#tc-probe-producer-cache-lifetime-001-release-non-reusable-results-after-their-owners-finish).
+
 ```python
 producer = Command(
     ("/usr/bin/python3", "/repo/producer.py", "/work/generated.mk"),
