@@ -3553,10 +3553,14 @@ game behavior needs a compensating change.
    `.github/workflows/build.yml`, `.github/validation-ownership-graph.json`,
    `.github/CODEOWNERS`, `.github/ISSUE_TEMPLATE/bug_report.yml`,
    `scripts/modernize/package_ci_patch.sh`, and
-   `tests/workflows/test_patch_release_workflow.py`.
+   `tests/workflows/test_patch_release_workflow.py`, plus
+   `scripts/validation_ownership/tests/test_content_publication.py`.
 4. Confirm each result identifies one surface, every applicable typed edge,
    its existing authority, and a plain-language reason. Confirm the graph
    remains `report-only` with `narrowing_authorized` false.
+   The content-publication test module has the native producer module's exact
+   host ownership. Removing its exact admission or adding an unclassified
+   neighboring test must fail; a prefix does not grant admission.
 5. Inspect the suite's non-destructive fixtures against the complete canonical
    [typed contract](../validation-ownership.md#typed-contract),
    [path-coverage contract](../validation-ownership.md#maintainable-path-coverage),

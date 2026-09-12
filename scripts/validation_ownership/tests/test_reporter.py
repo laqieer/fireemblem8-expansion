@@ -110,6 +110,8 @@ class AssetOwnershipTests(unittest.TestCase):
              "scripts/modernize/tests/test_build_default_lane.py"),
             ("scripts/validation_ownership/tests/test_metadata_transport.py",
              "scripts/validation_ownership/tests/test_foundation.py"),
+            ("scripts/validation_ownership/tests/test_content_publication.py",
+             "scripts/validation_ownership/tests/test_producer.py"),
         ):
             with self.subTest(path=path):
                 actual = reporter._resolve_path(path, self.graph, model)
@@ -231,6 +233,7 @@ class AssetOwnershipTests(unittest.TestCase):
             "graphics/unclassified.png", "changelog_fragments/unclassified.json",
             "scripts/workflow_pilot/tests/unclassified_support.py",
             "scripts/modernize/tests/unclassified_dependencies.py",
+            "scripts/validation_ownership/tests/unclassified_publication.py",
         ):
             entries = {**self.entries, path: reporter.GitTreeEntry(path, "100644", "blob", "0" * 40)}
             with self.subTest(path=path), self.assertRaisesRegex(reporter.OwnershipError, "semantic admission"):

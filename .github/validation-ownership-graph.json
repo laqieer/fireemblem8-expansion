@@ -1973,6 +1973,10 @@
         },
         {
           "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_content_publication.py"
+        },
+        {
+          "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_producer.py"
         },
         {
