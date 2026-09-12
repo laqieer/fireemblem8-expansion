@@ -6,6 +6,7 @@ import shutil
 import unittest
 from unittest.mock import patch
 
+from scripts.validation_ownership import reporter
 from scripts.validation_ownership.authority import AuthorityLoader, GitTreeEntries, GitTreeEntry, encoded
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.budget import Limits, MAX_PLANNED_STATE_BYTES
@@ -190,6 +191,9 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.assertIn(name, usage["defaults"])
         self.assertIn(name, usage["recipe_only"])
         contract = json.loads((ROOT / ".github/validation-ownership-make-dynamics.json").read_text())
+        self.assertEqual(contract["seal"], reporter._sha256(
+            reporter.MAKE_DYNAMIC_SEAL_DOMAIN, reporter.canonical_make_dynamic_payload(contract),
+        ))
         options = {
             "external": contract["ambient_inputs"]["allowed_names"],
             "symbolic_recipe_names": contract["prerequisite_domains"]["symbolic_recipe_names"],

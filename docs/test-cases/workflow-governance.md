@@ -3744,6 +3744,8 @@ game behavior needs a compensating change.
   `/usr/bin/sudo`, a static-capable `/usr/bin/cc`, the host C++ compiler,
   libpng/zlib development headers and libraries plus `pkg-config`
   (`libpng-dev` and `pkg-config` on Ubuntu),
+  ARM compiler/binutils and newlib (`binutils-arm-none-eabi`,
+  `gcc-arm-none-eabi` and `libnewlib-arm-none-eabi`),
   the existing pinned host Python environment, and the manual-handoff
   contract unchanged. No token, ROM, emulator, or remote workflow is required.
 
