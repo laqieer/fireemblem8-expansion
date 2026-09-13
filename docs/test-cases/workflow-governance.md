@@ -4090,6 +4090,70 @@ explicitly. Restore the old physical census and incomplete-expression
 handling in an isolated process; all three rewritten-body controls must
 recover their actual false symbolic/finite acceptances.
 
+For emitted defaults, define RULE with `MODE ?= first` and
+`all: $$(MODE)`, close the define, invoke `$(eval $(RULE))`, and provide
+recipe-less first/second targets. Repeat through `$(eval $(call RULE))` and
+an argument-free forwarding macro. Compare real native prerequisites under
+MODE=first/second. With no external/domain declaration, the exactc6 preimage
+returned defaults/used/enumerated empty and only baseline; it must now reject
+the unsealed default, just like the top-level declaration. Calling MODE
+recipe-symbolic must also reject. With a finite first/second MODE domain,
+require both command-line and environment variants and their actual
+prerequisites, not only a nonempty domain list.
+
+Compare emitted `export`, `private`, `override` and combined modifier forms
+with equivalent ordinary declarations, retaining their actual native
+origin/flavor and scope. A private target default keeps its distinct file and
+global contexts: in GNU 4.3 the command-line value remains global/exported
+while this private target lookup is undefined and its echo prints a blank
+line. Do not replace that observation with an assumed inherited value.
+Conditional define headers must seal their own default variable. An unused
+default-producing body or deferred eval/shell body must not create its marker
+or define its emitted variables; `?=` in literal values and shell arguments
+must remain data. Remove only retained-assignment default sealing in an
+isolated mutation: the real unsealed baselines and missing environment
+dimension must reappear while native execution and ordinary-source sealing
+remain intact.
+
+For mode timing, put `.POSIX:` before FIRST and SECOND, each assigned
+`alpha` followed by two spaces, backslash-LF, two spaces, backslash-LF,
+one space and `beta`. Compare ordinary output, authenticated native raw
+definitions and the collected values. FIRST must be `alpha beta`; SECOND
+must have four spaces between the words. Moving activation before the first
+collapse is a refuted correction, not a fix. A define header activates before
+its body, so a continued FIRST define body and subsequent SECOND both have
+four spaces. Include literal multi-target `.POSIX` rules and distinguish a
+`.POSIX` variable assignment or target-specific assignment from a real rule.
+
+Repeat with `.POSIX` under literal false/true, nested, quoted and
+`else`/`else ifeq` conditions. The false branch must leave both values
+non-POSIX, including an ignored nested condition whose shell operand would
+otherwise create a marker. Put `.POSIX`, an intervening assignment, and
+`include values.mk` in the root: both included continued values must use
+POSIX folding. Repeat with a continued include directive, nested includes,
+inactive includes and a child that ends immediately after `.POSIX:`;
+its EOF records the rule before the parent resumes. Use only the actual
+native MAKEFILE_LIST sources for this comparison.
+
+Reject unproven activation in a variable-dependent condition, generated eval
+or fragmented dynamic target, and unknown include order when folding can
+differ. Bind a command-line macro capable of emitting `.POSIX` to its real
+invocation; unexport it in the fixture so it does not re-execute during recipe
+environment construction. An unused mode body stays unused, and late
+top-level activation may change actual shell `-ec` dispatch while earlier
+values remain non-POSIX. Rule-producing eval in recipes must retain GNU's
+actual error, not be treated as a positive late-mode fixture. Exercise a
+large unused dependency graph through lazy metadata/conditional operations;
+the native body must stay unexpanded and analysis must honor the existing
+deadline without recursion growth or extra observations.
+
+Restore only the old c6 conditional-blind/per-file collector and require
+the native conditional/include mismatches to return. Separately move pending
+activation before collapse in an isolated mutation: the real unconditional
+timing controls must fail. All source, native/frame/record/plan budgets,
+capture checks and cleanup remain unchanged. These source-only controls do
+not establish whole-repository resource, verifier, H1 or delivery acceptance.
+
 For selector history, use `FLAGS ?= first`, `NAME ?= FLAGS`, `OTHER = first`,
 `all: $($(NAME))` and an `echo $(FLAGS)` recipe, then assign `NAME = OTHER`
 after the rule. Also use secondary `$$($$(NAME))` followed by recipe-time

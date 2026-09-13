@@ -658,6 +658,39 @@ GNU and literal `.POSIX` continuation spacing. Make comments are not shell
 comments. Unproven dynamic definition names and recipe-prefix contexts reject
 instead of silently changing the source classification.
 
+Conditional defaults retain their declaration meaning when a supported
+`eval`/argument-free `call` emits them. The retained-assignment path uses the
+same parsed operator, modifier and target-scope sealing contract as ordinary
+source, including environment-sensitive default variants. A macro emitting
+`MODE ?= first` cannot obtain a baseline-only report without sealing MODE.
+Conditional `define` headers retain their own default contract, while an
+unused body or a literal `?=` in a value/recipe is not a declaration being
+executed. Retention follows consumed macro references without expanding
+unused bodies or discarding their original source histories.
+
+GNU Make 4.3 records a pending `.POSIX` rule only after collapsing the next
+active non-recipe statement. That first statement uses the prior mode; later
+statements use POSIX folding. A define header records the pending rule before
+its body is read. The collector preserves this timing, carries mode across
+proven literal includes and include EOF, and tracks literal `ifeq`/`ifneq`,
+quoted operands, nesting and `else` without evaluating arbitrary Make
+conditions in Python. Inactive branches cannot enable the mode. A variable
+named `.POSIX` or a target-specific variable assignment is not a `.POSIX`
+rule.
+
+Unproven conditional activation rejects explicitly. Generated rules,
+effectful/computed references and unresolved include order may leave the mode
+unknown; mode-sensitive continuation data then rejects instead of selecting a
+guessed fold. Identical results under both folds remain unambiguous, and
+already-established POSIX mode cannot be undone by later source. Actual
+invocation assignments participate in this analysis; final native values are
+not substituted for original context. Literal metadata lookups do not expand
+their operands. Analysis uses iterative dependency traversal and the existing
+shared deadline, not a new quota, process or native observation ABI. A late
+top-level `.POSIX` can change actual recipe shell flags without retroactively
+changing earlier source values; GNU rejects attempts to emit such rules from
+recipes.
+
 A later rewrite cannot erase an earlier opaque operation or selector value.
 Computed-name closure retains all proven source alternatives alongside native
 observations, including literal eval assignment history and target-specific

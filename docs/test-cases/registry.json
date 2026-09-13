@@ -2917,6 +2917,14 @@
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_eval_emitted_defaults_use_ordinary_external_sealing scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_emitted_default_modifiers_and_scope_match_source_declarations scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_unused_default_bodies_and_literal_default_text_do_not_execute scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_conditional_define_headers_retain_their_own_default_contract -v",
+          "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_posix_mode_keeps_gnu_delayed_statement_and_define_activation scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_posix_mode_uses_proven_literal_conditional_branches scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_posix_mode_carries_original_nested_include_and_eof_context scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_unproven_generated_conditional_and_include_modes_reject scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_unused_and_late_mode_bodies_do_not_rewrite_original_source scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_mode_analysis_keeps_metadata_lazy_and_the_existing_deadline -v",
+          "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_source_faithful_framework_templates_keep_native_graph_and_real_outputs scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_framework_template_selectors_keep_complete_native_dependencies scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_template_macro_names_and_real_wildcard_inputs_are_not_special_cased scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_rule_template_opaque_parameter_and_context_variants_reject scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_rule_templates_reject_late_context_and_reference_mismatch scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_template_wildcard_namespace_cannot_emit_make_syntax -v",
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },

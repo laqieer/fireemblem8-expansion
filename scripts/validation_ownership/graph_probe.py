@@ -9,12 +9,13 @@ from __future__ import annotations
 import re
 import copy
 from collections import Counter
+from dataclasses import dataclass, field
 from itertools import chain
 from typing import NamedTuple
 from pathlib import PurePosixPath
 
 from .authority import encoded, relative_path
-from .budget import MakeProbeError
+from .budget import MakeProbeError, ProbeBudget
 from .graph_commands import MakeCommands
 
 
@@ -41,6 +42,12 @@ TARGET_ASSIGNMENT = re.compile(
     rf"^(?P<target>.*?)\s*:\s*(?:(?:export|override|private)\s+)*"
     rf"(?P<name>{IDENTIFIER})\s*(?P<operator>\?=|::=|:=|\+=|!=|=)(?P<value>.*)$"
 )
+MODE_ASSIGNMENT, MODE_TARGET_ASSIGNMENT = (
+    re.compile(pattern.pattern.replace(
+        rf"(?P<name>{IDENTIFIER})", rf"(?P<name>(?:{IDENTIFIER}|\.[A-Za-z_][A-Za-z0-9_]*))",
+    ))
+    for pattern in (ASSIGNMENT, TARGET_ASSIGNMENT)
+)
 DEFINE = re.compile(rf"^\s*(?:(?:export|override|private)\s+)*define\s+({IDENTIFIER})")
 SECONDARY = re.compile(rf"\$\$(?:\(({IDENTIFIER})|\{{({IDENTIFIER})\}})")
 NAME_PART = re.compile(rf"\$\(({IDENTIFIER})\)|\$\{{({IDENTIFIER})\}}")
@@ -62,6 +69,128 @@ class MakeSourceUnit(NamedTuple):
     text: str
     body: str | None = None
     native_literal_header: bool = False
+
+
+@dataclass
+class _MakeSourceMode:
+    posix: bool | None = False
+    definitions: dict = field(default_factory=dict)
+    forced: frozenset = frozenset()
+    budget: ProbeBudget | None = None
+
+    def checkpoint(self):
+        if self.budget is not None:
+            self.budget.remaining()
+
+    def uncertain(self):
+        if self.posix is not True:
+            self.posix = None
+
+    def collapse(self, value):
+        self.checkpoint()
+        if self.posix is not None:
+            return _collapse_make_continuations(value, posix=self.posix)
+        ordinary = _collapse_make_continuations(value)
+        if ordinary != _collapse_make_continuations(value, posix=True):
+            raise MakeProbeError("unproven GNU Make parsing-mode context changes continuation data")
+        return ordinary
+
+    def effectful(self, expression):
+        if self.posix is True:
+            return False
+        pending, active, complete = [(None, expression)], set(), set()
+        while pending:
+            self.checkpoint()
+            name, value = pending.pop()
+            if value is None:
+                active.remove(name)
+                complete.add(name)
+                continue
+            if name is not None:
+                if name in complete:
+                    continue
+                if name in active:
+                    return True
+                active.add(name)
+                pending.append((name, None))
+            metadata = []
+            for start, stop, body in _make_expression_spans(value):
+                operation = re.match(r"([^ \t\r\n\v\f]+)[ \t\r\n\v\f]+", body)
+                if operation and operation[1] not in MAKE_FUNCTIONS - {"call", "eval", "guile"}:
+                    return True
+                if re.fullmatch(r"(?:origin|flavor|value)[ \t\r\n\v\f]+" + IDENTIFIER, body):
+                    metadata.append((start, stop))
+            for start, stop in sorted(metadata, reverse=True):
+                value = value[:start] + value[stop:]
+            if next(computed_selectors(value), None) is not None:
+                return True
+            for dependency in references(value):
+                if dependency not in self.definitions:
+                    return True
+                pending.append((dependency, self.definitions[dependency]))
+        return False
+
+    def assign(self, name, operator, value, *, override=False, active=True):
+        if active is False or name in self.forced and not override:
+            return
+        if operator == "?=" and name in self.definitions:
+            return
+        if active is None:
+            self.definitions.pop(name, None)
+            if operator in {":=", "::=", "!=", "+="} and self.effectful(value):
+                self.uncertain()
+            return
+        if operator in {":=", "::=", "!="}:
+            if self.effectful(value):
+                self.uncertain()
+            self.definitions[name] = ""
+        elif operator == "+=":
+            # The prior flavor is not reconstructed here. Either evaluation
+            # time must be safe before it can leave the mode proven.
+            if self.effectful(value):
+                self.uncertain()
+            self.definitions[name] = self.definitions.get(name, "") + " " + value
+        else:
+            self.definitions[name] = value
+
+
+def _literal_condition(keyword, arguments):
+    if keyword not in {"ifeq", "ifneq"} or "$" in arguments:
+        return None
+    if arguments.startswith("("):
+        match = re.fullmatch(r"\(([^(),]*),([^()]*)\)", arguments)
+        if not match:
+            return None
+        left, right = match[1].rstrip(" \t"), match[2].lstrip(MAKE_SPACE)
+    else:
+        words = []
+        while arguments and arguments[0] in "'\"" and len(words) < 2:
+            stop = arguments.find(arguments[0], 1)
+            if stop < 0:
+                return None
+            words.append(arguments[1:stop])
+            arguments = arguments[stop + 1:].lstrip(MAKE_SPACE)
+        if len(words) != 2 or arguments:
+            return None
+        left, right = words
+    return (left == right) == (keyword == "ifeq")
+
+
+def _mode_and(left, right):
+    return False if left is False or right is False else True if left is True and right is True else None
+
+
+def _mode_not(value):
+    return None if value is None else not value
+
+
+def _include_names(header):
+    include = re.fullmatch(r"(?:-?include|sinclude)[ \t\r\n\v\f]+(.*)", header)
+    if include is None:
+        return False
+    if any(character in include[1] for character in "$*?[]~\\"):
+        return None
+    return re.split(r"[ \t\r\n\v\f]+", include[1].strip(MAKE_SPACE)) if include[1].strip(MAKE_SPACE) else []
 
 
 def _make_logical_chunks(text):
@@ -105,34 +234,81 @@ def _collapse_make_continuations(text, *, posix=False):
             pieces.append("\n")
 
 
-def make_source_units(text):
+def make_source_units(text, *, mode=None, include=None, known_context=True):
     """GNU logical lines and whole define bodies; recipes keep their escapes."""
     if "\0" in text:
         raise MakeProbeError("Make source contains an unsupported NUL byte")
     text = text.removeprefix("\ufeff")
     chunks = iter(_make_logical_chunks(text))
-    posix = False
+    mode = _MakeSourceMode() if mode is None else mode
     pending_posix = False
+    conditions, active = [], True
+
+    def record_pending():
+        nonlocal pending_posix
+        if pending_posix is not False and active is not False:
+            if pending_posix is True and active is True:
+                mode.posix = True
+            else:
+                mode.uncertain()
+            if active is True:
+                pending_posix = False
+
     for raw in chunks:
-        line = raw if raw.startswith("\t") else _collapse_make_continuations(raw, posix=posix)
+        mode.checkpoint()
+        line = raw if raw.startswith("\t") else mode.collapse(raw)
         header = strip_comment(line).strip(MAKE_SPACE)
-        if not raw.startswith("\t") and re.match(r"^(?:(?:export|override|private)[ \t]+)*define(?:[ \t]|$)", header) and not re.fullmatch(
+        assignment = None if raw.startswith("\t") else MODE_ASSIGNMENT.fullmatch(header)
+        if not raw.startswith("\t") and not assignment and re.match(r"^(?:(?:export|override|private)[ \t]+)*define(?:[ \t]|$)", header) and not re.fullmatch(
             rf"(?:(?:export|override|private)[ \t]+)*define[ \t]+{IDENTIFIER}[ \t]*(?:(?:\?=|::=|:=|\+=|!=|=)[ \t]*)?",
             header,
         ):
             raise MakeProbeError("Make source has an unproven dynamic define name")
         if not raw.startswith("\t") and re.match(r"^(?:(?:export|override|private)[ \t]+)*\.RECIPEPREFIX\b", header):
             raise MakeProbeError("Make source requires an unproven non-default recipe-prefix context")
-        if pending_posix and header and not raw.startswith("\t") and not re.match(
-            r"^(?:ifeq|ifneq|ifdef|ifndef|else|endif)(?:[ \t]|$)", header,
-        ):
-            posix, pending_posix = True, False
-        if not raw.startswith("\t") and re.match(r"^\.POSIX[ \t]*:", header):
-            pending_posix = True
-        if not raw.startswith("\t") and DEFINE.match(header):
+        conditional = None if raw.startswith("\t") or assignment else re.fullmatch(
+            r"(ifeq|ifneq|ifdef|ifndef|else|endif)(?:[ \t\r\n\v\f]+(.*))?", header,
+        )
+        if conditional:
+            keyword, arguments = conditional[1], conditional[2] or ""
+            if keyword == "endif":
+                if not conditions or arguments:
+                    raise MakeProbeError("Make parsing-mode context has an unmatched conditional")
+                active = conditions.pop()[0]
+            else:
+                if keyword == "else":
+                    if not conditions or conditions[-1][2]:
+                        raise MakeProbeError("Make parsing-mode context has an unmatched else")
+                    parent, seen, _ = conditions[-1]
+                    eligible = _mode_and(parent, _mode_not(seen))
+                    nested = re.fullmatch(r"(ifeq|ifneq|ifdef|ifndef)[ \t\r\n\v\f]+(.*)", arguments)
+                    if arguments and nested is None:
+                        raise MakeProbeError("Make parsing-mode context has an unproven else")
+                    if nested:
+                        keyword, arguments = nested[1], nested[2]
+                        choice = _literal_condition(keyword, arguments)
+                    else:
+                        choice = True
+                        conditions[-1][2] = True
+                    conditions[-1][1] = _mode_not(_mode_and(_mode_not(seen), _mode_not(choice)))
+                    active = _mode_and(eligible, choice)
+                else:
+                    eligible = active
+                    choice = _literal_condition(keyword, arguments)
+                    conditions.append([active, choice, False])
+                    active = _mode_and(active, choice)
+                if eligible is not False and mode.effectful(arguments):
+                    mode.uncertain()
+            yield MakeSourceUnit(line)
+            continue
+        if header and not raw.startswith("\t"):
+            # GNU collapses this line before recording the preceding rule.
+            record_pending()
+        definition = DEFINE.match(header) if not raw.startswith("\t") and not assignment else None
+        if definition:
             body, depth = [], 1
             for raw_body in chunks:
-                part = _collapse_make_continuations(raw_body, posix=posix)
+                part = mode.collapse(raw_body)
                 directive = strip_comment(part).strip(MAKE_SPACE)
                 if not part.startswith("\t"):
                     if re.match(r"^define(?:[ \t]|$)", directive):
@@ -144,18 +320,95 @@ def make_source_units(text):
                 body.append(part)
             else:
                 raise MakeProbeError("Make source has an unterminated define body")
-            yield MakeSourceUnit(line, "\n".join(body))
+            body = "\n".join(body)
+            mode.assign(
+                definition[1], header[definition.end():].strip(MAKE_SPACE) or "=", body,
+                override="override" in header[:definition.start(1)].split(), active=active,
+            )
+            yield MakeSourceUnit(line, body)
         else:
+            if not raw.startswith("\t") and active is not False:
+                if assignment:
+                    mode.assign(
+                        assignment["name"], assignment["operator"], assignment["value"],
+                        override="override" in header[:assignment.start("name")].split(), active=active,
+                    )
+                elif MODE_TARGET_ASSIGNMENT.fullmatch(header):
+                    target_assignment = MODE_TARGET_ASSIGNMENT.fullmatch(header)
+                    if target_assignment["operator"] in {":=", "::=", "!=", "+="} and mode.effectful(target_assignment["value"]):
+                        mode.uncertain()
+                else:
+                    if mode.effectful(header):
+                        mode.uncertain()
+                    included = _include_names(header)
+                    if included is not False:
+                        if include is None:
+                            mode.uncertain()
+                        else:
+                            include(included, active, mode)
+                    else:
+                        separators = _rule_separators(header)
+                        left = header[:separators[0]] if separators else header
+                        if any(character in left for character in "$*?[%\\"):
+                            pending_posix = None
+                        elif separators and ".POSIX" in re.split(r"[ \t\r\n\v\f]+", left.strip(MAKE_SPACE)):
+                            if mode.posix is not True and (active is None or not known_context):
+                                raise MakeProbeError("unproven conditional/include .POSIX activation")
+                            pending_posix = True
             yield MakeSourceUnit(line)
+    if conditions:
+        raise MakeProbeError("Make parsing-mode context has an unterminated conditional")
+    record_pending()
 
 
-def _source_units(sources):
-    units = {}
+def _source_units(sources, *, assignments=(), budget=None):
+    decoded = {}
     for path, data in sources.items():
+        if budget is not None:
+            budget.remaining()
         try:
-            units[path] = list(make_source_units(data.decode("utf-8")))
+            decoded[path] = data.decode("utf-8")
         except UnicodeDecodeError as error:
             raise MakeProbeError(f"Make census source is not UTF-8: {path}") from error
+    mode = _MakeSourceMode(
+        definitions={name: value for _, name, value in assignments},
+        forced=frozenset(name for _, name, _ in assignments),
+        budget=budget,
+    )
+    units, entry_modes, reading, unresolved_modes = {}, {}, set(), []
+
+    def visit(path, *, known=True):
+        if path in reading:
+            raise MakeProbeError("Make include parsing-mode context is recursive")
+        if path in units:
+            if entry_modes[path] != mode.posix:
+                raise MakeProbeError("Make include parsing-mode context changed across repeated reads")
+            return
+        entry_modes[path] = mode.posix
+        units[path] = []
+        reading.add(path)
+
+        def included(names, active, current_mode):
+            if names is None:
+                unresolved_modes.append(current_mode.posix)
+                current_mode.uncertain()
+                return
+            if active is None:
+                current_mode.uncertain()
+            for name in names:
+                if name in decoded:
+                    visit(name, known=known and active is True)
+
+        for unit in make_source_units(decoded[path], mode=mode, include=included, known_context=known):
+            units[path].append(unit)
+        reading.remove(path)
+
+    if decoded:
+        visit(next(iter(decoded)))
+    for path in decoded:
+        if path not in units:
+            mode.posix = True if unresolved_modes and all(value is True for value in unresolved_modes) else None
+            visit(path, known=False)
     return units
 
 
@@ -336,7 +589,7 @@ def _unproven_assignment_destination(header):
 def _prepare_rule_templates(
     session, target, state, commands, observation, sources, *, observe_dispatch=False, external_names=(),
 ):
-    units = _source_units(sources)
+    units = _source_units(sources, assignments=state, budget=session.budget)
     ordered, known_positions = _ordered_source_units(units)
     positions = {(path, index): offset for offset, (path, index, _) in enumerate(ordered)}
     macros, assignments, initializers, callers = {}, {}, {}, []
@@ -765,11 +1018,14 @@ def closure(names, dependencies):
     return result
 
 
-def source_census(sources, *, observed_values=None, reference_units=None, template_graph_inputs=(), template_scoped=()):
+def source_census(
+    sources, *, observed_values=None, reference_units=None, template_graph_inputs=(), template_scoped=(),
+    source_assignments=(), budget=None,
+):
     all_names, graph, recipe, introspection, defaults = set(), set(), set(), set(), set()
     dependencies = {}
     definitions, expressions, graph_expressions = {}, {}, []
-    eval_history = []
+    eval_requests, deferred_evals, consumed_names = [], set(), set()
     ambiguous_assignment = False
     observed_values = {} if observed_values is None else observed_values
     stage_sinks, stage_roots = [], set()
@@ -777,16 +1033,39 @@ def source_census(sources, *, observed_values=None, reference_units=None, templa
     all_names.update(template_graph_inputs)
     all_names.update(template_scoped)
 
-    def retain_assignment(assignment):
+    def retain_defaults(statement):
+        assignment = ASSIGNMENT.fullmatch(statement) or TARGET_ASSIGNMENT.fullmatch(statement)
+        if assignment:
+            if assignment["operator"] == "?=":
+                found = DEFAULT.finditer(statement[:assignment.start("value")])
+                defaults.update(match["name"] for match in found
+                                if "override" not in match["modifiers"].split())
+            return
+        spans = [(start, stop) for start, stop, _ in _make_expression_spans(statement)]
+        if any(not any(start <= match.start() < stop for start, stop in spans)
+               for match in re.finditer(r"\?=", statement)):
+            raise MakeProbeError("Make external-default declaration has a dynamic name")
+
+    def retain_define_default(line, definition):
+        prefix = " ".join(word for word in line[:definition.start(1)].split() if word != "define")
+        retain_defaults(prefix + " " + line[definition.start(1):])
+
+    def retain_assignment(assignment, *, expanded_input=False):
         name, value = assignment["name"], assignment["value"]
-        dependencies.setdefault(name, set()).update(references(value))
+        retain_defaults(assignment[0])
+        dependencies.setdefault(name, set())
+        if not expanded_input or "$" not in value:
+            dependencies[name].update(references(value))
         definitions.setdefault(name, []).append(
-            value.lstrip(MAKE_SPACE) if assignment["operator"] in {"=", ":=", "::=", "?="} else None
+            value.lstrip(MAKE_SPACE)
+            if assignment["operator"] in {"=", ":=", "::=", "?="} and not (expanded_input and "$" in value)
+            else None
         )
-        expressions.setdefault(name, []).append(value)
+        if not expanded_input or "$" not in value:
+            expressions.setdefault(name, []).append(value)
 
     if reference_units is None:
-        reference_units = _source_units(sources)
+        reference_units = _source_units(sources, assignments=source_assignments, budget=budget)
     ordered, known_positions = _ordered_source_units(reference_units)
     secondary_directive = lambda unit: (
         unit.body is None and not unit.text.startswith("\t")
@@ -799,22 +1078,6 @@ def source_census(sources, *, observed_values=None, reference_units=None, templa
         raw = unit.text
         statement, inline_recipe = (raw, "") if raw.startswith("\t") else split_inline_recipe(raw)
         line = statement if raw.startswith("\t") else strip_comment(statement)
-        original = unit.body if unit.body is not None else line + "\n" + inline_recipe
-        for body in make_expressions(original.replace("$$", "$")):
-            if body.startswith(("eval ", "eval\t")):
-                assignment = ASSIGNMENT.fullmatch(body[5:].lstrip(MAKE_SPACE))
-                target_assignment = TARGET_ASSIGNMENT.fullmatch(body[5:].lstrip(MAKE_SPACE))
-                if assignment or target_assignment:
-                    assignment = assignment or target_assignment
-                    if "$" in assignment["value"]:
-                        # Eval expands this input before assigning it. Keep
-                        # ambiguity for name lookups, not a fabricated raw body.
-                        definitions.setdefault(assignment["name"], []).append(None)
-                        dependencies.setdefault(assignment["name"], set())
-                    else:
-                        retain_assignment(assignment)
-                else:
-                    eval_history.append(body[5:].lstrip(MAKE_SPACE))
         if not raw.startswith("\t"):
             ambiguous_assignment |= bool(_unproven_assignment_destination(line))
             undefined = re.fullmatch(r"[ \t]*(?:override[ \t]+)?undefine[ \t]+(" + IDENTIFIER + r")[ \t]*", line)
@@ -827,6 +1090,8 @@ def source_census(sources, *, observed_values=None, reference_units=None, templa
         if inline_recipe:
             inline_names = references(inline_recipe)
             all_names.update(inline_names)
+            consumed_names.update(inline_names)
+            eval_requests.append((None, inline_recipe))
             if "$(eval" in inline_recipe or "${eval" in inline_recipe:
                 graph.update(inline_names)
                 graph_expressions.append(inline_recipe)
@@ -836,6 +1101,7 @@ def source_census(sources, *, observed_values=None, reference_units=None, templa
         start = DEFINE.match(line)
         if start and unit.body is not None:
             defining = start.group(1)
+            retain_define_default(line, start)
             dependencies.setdefault(defining, set())
             expressions.setdefault(defining, [])
             operator = line[start.end():].strip(MAKE_SPACE)
@@ -848,8 +1114,8 @@ def source_census(sources, *, observed_values=None, reference_units=None, templa
             expressions[defining].append(unit.body)
             introspection.update(INTROSPECTION.findall(unit.body))
             if "$(eval" in unit.body or "${eval" in unit.body:
-                graph.add(defining)
-                stage_roots.add(defining)
+                deferred_evals.add(defining)
+                eval_requests.append((defining, unit.body))
             continue
         names = references(line)
         all_names.update(names)
@@ -858,26 +1124,46 @@ def source_census(sources, *, observed_values=None, reference_units=None, templa
         target_assignment = None if raw.startswith("\t") else TARGET_ASSIGNMENT.match(line)
         if assignment:
             retain_assignment(assignment)
+            immediate = assignment["operator"] in {":=", "::=", "!="}
+            eval_requests.append((None if immediate else assignment["name"], assignment["value"]))
+            if immediate:
+                consumed_names.update(names)
             if line.lstrip(MAKE_SPACE).startswith("export "):
                 recipe.update(names)
+                consumed_names.add(assignment["name"])
             if "$(eval" in assignment["value"] or "${eval" in assignment["value"]:
-                graph.update(names)
-                graph_expressions.append(assignment["value"])
-                stage_sinks.append(assignment["value"])
+                if immediate:
+                    graph.update(names)
+                    graph_expressions.append(assignment["value"])
+                    stage_sinks.append(assignment["value"])
+                else:
+                    deferred_evals.add(assignment["name"])
         elif target_assignment:
             retain_assignment(target_assignment)
+            immediate = target_assignment["operator"] in {":=", "::=", "!="}
+            eval_requests.append((None if immediate else target_assignment["name"], target_assignment["value"]))
+            if immediate:
+                consumed_names.update(names)
             graph.update(references(target_assignment["target"]))
             graph_expressions.append(target_assignment["target"])
+            consumed_names.update(references(target_assignment["target"]))
             if "$(eval" in target_assignment["value"] or "${eval" in target_assignment["value"]:
-                graph.update(names)
-                graph_expressions.append(target_assignment["value"])
-                stage_sinks.append(target_assignment["value"])
+                if immediate:
+                    graph.update(names)
+                    graph_expressions.append(target_assignment["value"])
+                    stage_sinks.append(target_assignment["value"])
+                else:
+                    deferred_evals.add(target_assignment["name"])
         elif raw.startswith("\t"):
+            consumed_names.update(names)
+            eval_requests.append((None, line))
             (graph if "$(eval" in line or "${eval" in line else recipe).update(names)
             if "$(eval" in line or "${eval" in line:
                 graph_expressions.append(line)
                 stage_sinks.append(line)
         else:
+            consumed_names.update(names)
+            eval_requests.append((None, line))
             graph.update(names)
             graph_expressions.append(line.replace("$$", "$"))
             if "$(eval" in line or "${eval" in line:
@@ -894,15 +1180,18 @@ def source_census(sources, *, observed_values=None, reference_units=None, templa
             secondary = {left or right for left, right in SECONDARY.findall(line)}
             graph.update(secondary)
             all_names.update(secondary)
-        found = list(DEFAULT.finditer(line))
-        if "?=" in line and not found:
-            raise MakeProbeError(f"Make external-default declaration has a dynamic name: {path}")
-        defaults.update(match["name"] for match in found
-                        if "override" not in match["modifiers"].split())
+        if not raw.startswith("\t"):
+            retain_defaults(line)
+
+    consumed = closure(consumed_names, dependencies)
+    graph.update(deferred_evals & consumed)
+    stage_roots.update(deferred_evals & consumed)
 
     def retain_eval_history(body, active=()):
         forwarded = NAME_PART.fullmatch(body.strip(MAKE_SPACE))
         function = _make_function(body)
+        if function and function[0] == "eval" and len(function[1]) == 1:
+            return retain_eval_history(function[1][0], active)
         if forwarded or function and function[0] == "call" and len(function[1]) == 1:
             name = (forwarded[1] or forwarded[2]) if forwarded else function[1][0].strip(MAKE_SPACE)
             if not re.fullmatch(IDENTIFIER, name):
@@ -919,29 +1208,33 @@ def source_census(sources, *, observed_values=None, reference_units=None, templa
                 if any(value is None or not retain_eval_history(value, (*active, name)) for value in values):
                     return False
             return True
-        for unit in make_source_units(body):
+        for unit in make_source_units(body, mode=_MakeSourceMode(budget=budget)):
             if unit.text.startswith("\t"):
                 continue
             line = strip_comment(unit.text).strip(MAKE_SPACE)
             assignment = ASSIGNMENT.fullmatch(line) or TARGET_ASSIGNMENT.fullmatch(line)
             definition = DEFINE.match(line) if unit.body is not None else None
             if assignment:
-                if "$" in assignment["value"]:
-                    definitions.setdefault(assignment["name"], []).append(None)
-                    dependencies.setdefault(assignment["name"], set())
-                else:
-                    retain_assignment(assignment)
+                retain_assignment(assignment, expanded_input=True)
             elif definition:
+                retain_define_default(line, definition)
                 definitions.setdefault(definition[1], []).append(unit.body if "$" not in unit.body else None)
                 dependencies.setdefault(definition[1], set()).update(references(unit.body))
+            elif NAME_PART.fullmatch(line) or _make_function(line):
+                nested = _make_function(line)
+                if (nested and (nested[0] not in {"call", "eval"} or len(nested[1]) != 1)) or not retain_eval_history(line, active):
+                    return False
             elif line and not _rule_separators(line):
                 return False
         return True
 
     ambiguous_history = False
-    for body in eval_history:
-        if not retain_eval_history(body):
-            ambiguous_history = True
+    for owner, expression in eval_requests:
+        if owner is not None and owner not in consumed:
+            continue
+        for body in make_expressions(expression.replace("$$", "$")):
+            if body.startswith(("eval ", "eval\t")) and not retain_eval_history(body[5:].lstrip(MAKE_SPACE)):
+                ambiguous_history = True
     unresolved = set()
     for name, values in expressions.items():
         try:
@@ -1238,6 +1531,8 @@ def run_probe(
             usage = source_census(
                 loaded, observed_values=observed_values, reference_units=reference_units,
                 template_graph_inputs=template_inputs, template_scoped=template_scoped,
+                source_assignments=state,
+                budget=session.budget,
             )
             usages.append(usage)
             _graph_definitions(
