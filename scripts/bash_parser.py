@@ -5,7 +5,7 @@ from __future__ import annotations
 import shlex
 
 
-def bash_line_state(line, state):
+def _scan_bash_line(line, state):
     index = 0
     word_start = state == "normal"
     while index < len(line):
@@ -14,7 +14,7 @@ def bash_line_state(line, state):
             if character in " \t":
                 word_start = True
             elif character == "#" and word_start:
-                break
+                return state, False, index
             elif character == "'":
                 state = "single"
                 word_start = False
@@ -23,7 +23,7 @@ def bash_line_state(line, state):
                 word_start = False
             elif character == "\\":
                 if index == len(line) - 1:
-                    return state, True
+                    return state, True, len(line)
                 index += 2
                 word_start = False
                 continue
@@ -41,12 +41,21 @@ def bash_line_state(line, state):
                 state = "normal"
             elif character == "\\":
                 if index == len(line) - 1:
-                    return state, True
+                    return state, True, len(line)
                 if line[index + 1] in '$`"\\':
                     index += 2
                     continue
         index += 1
-    return state, False
+    return state, False, len(line)
+
+
+def bash_line_state(line, state):
+    return _scan_bash_line(line, state)[:2]
+
+
+def strip_bash_command_comment(command):
+    """Remove a real shell comment after logical-line continuation folding."""
+    return command[:_scan_bash_line(command, "normal")[2]]
 
 
 def normalize_bash_script_commands(script, label):

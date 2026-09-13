@@ -449,7 +449,7 @@ inside the proof.
 
 The Make binding uses the captured native recipe and the actual scheduled
 executable/argv/cwd, not a textual mention or target fingerprint. Dispatch
-observation is opt-in for the declared consumer and retains ordinary Make
+projection is selected for the declared consumer and retains ordinary Make
 execution decisions: an up-to-date/skipped target supplies no dispatch.
 The supported consumer is a direct leaf with one mandatory checker command;
 compound/conditional recipes, failure-ignoring prefixes or `.IGNORE`, changed
@@ -458,6 +458,15 @@ roots, help-only modes and substituted programs reject. Only the native
 Equivalent quoting, Python isolation-flag ordering and alternative target
 names remain supported with complete evidence. Runtime aliases come from the
 actual captured view rather than guessed host paths.
+Shell comments begin only at actual word boundaries: `.#missing` is one
+literal path, not `.` followed by a comment. Operators hidden after such a
+path still make the route conditional and reject. Every original path
+component is checked against the selected immutable source namespace before
+canonicalization. Missing or non-directory intermediates, source symlinks and
+excursions outside that namespace cannot become valid through `..`.
+Existing internal directory traversals, quoted roots and native `CURDIR`
+remain supported. The ordinary launcher also asks the kernel to open the
+original root as a directory before resolving it.
 
 The consistency binding comes from actual captured testcase automation and
 requires a mandatory `check` dispatch. Supplemental tests do not substitute
@@ -520,7 +529,8 @@ stock runtime inputs, native tools, generated publication and cleanup use the
 [shared foundation](ownership-probe-foundation.md).
 
 The native observer records actual target/prerequisite order, recipe text,
-target-local variable values/origins/flavors, includes and successful dynamic
+target-local variable values/origins/flavors, effective scheduled export
+membership/values, includes and successful dynamic
 provenance. It does not scrape diagnostic output or synthesize a dry-run
 Makefile. Ordinary recipes are metadata only; genuine expansion and include
 remakes use the declared real command/output adapters. The graph planner
@@ -532,10 +542,40 @@ characters. Make comments are stripped only from non-recipe statements;
 inline recipes are separated without treating semicolons inside Make
 references as lexical separators. Native Make still determines the actual
 recipe and prerequisites after expansion.
+The authority retains native recipe bytes, including trailing whitespace,
+quoted physical comment/blank lines and here-document bodies. Non-recipe Make
+comments and equivalent declaration ordering remain stable when the actual
+observations are unchanged. Adding a recipe comment can itself schedule a
+shell and construct an environment; it is not silently erased as though no
+dispatch occurred.
+
+`native_dispatches` binds each scheduled command to its actual `envp`, argv,
+cwd and order. Global and target-specific exports and inherited unexport
+membership are observed without eagerly expanding unconsumed names. GNU Make
+4.3 has no target-specific `target: unexport NAME = value` directive; that
+spelling retains its real native interpretation/failure, not invented support.
+Malformed exports or values beyond the existing native frame/string bounds
+reject. Recipe dispatch/environment changes between variable observation pages
+also reject; additional value queries retain their ordinary command-provenance
+and value checks.
 Computed `value`, `origin` or `flavor` selectors in graph expressions or
 consumed recipes reject rather than silently omit a possible prerequisite
 domain. Literal selectors remain supported. An unconsumed debug recipe does
 not become a graph input or force its symbolic values to expand.
+Computed variable names are closed in targets, normal/order-only and secondary
+prerequisites, includes, conditional-name operands, definitions and `eval`/`call`
+positions. Literal name templates (including nested aliases, braces and
+prefix/suffix fragments) and actual sealed finite/fallback selector values
+provide the possible selected identifiers or existing typed automatic names.
+Their dependencies participate in
+graph classification and real native domain enumeration. Global and
+target-local native values both contribute; a global fallback cannot hide the
+different selector used by a target's secondary expansion. Cyclic, unsealed,
+unsupported or otherwise unresolved name construction rejects. A function
+used to construct an internal selector name is not reimplemented in Python:
+admit that selector through the existing finite/fallback domain seam so its
+actual GNU value is observed, or retain the rejection. Unconsumed unresolved
+definitions do not execute.
 
 New paths brought in by the delivered producer/dependency/adaptive/cleanup
 contracts have explicit selectors in the existing host and documentation

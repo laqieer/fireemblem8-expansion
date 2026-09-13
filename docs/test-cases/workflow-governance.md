@@ -4007,6 +4007,35 @@ observed through bounded native variable pages, and inconsistent graph or
 command provenance across pages rejects. A semantic recipe-variable change
 must change its authority while a comment-only refactor remains stable.
 Preserve references after a quoted recipe `#`, including inline recipes.
+For the exact478 regression, use `FLAGS ?= first`, `NAME = FLAGS` and
+`all: $($(NAME))`, with real `first`/`second` targets. Ordinary Make under
+`FLAGS=first` and `FLAGS=second` selects different prerequisites. Calling FLAGS
+symbolic/recipe-only must now reject; the finite two-value domain must actually
+enumerate both closures. Repeat in target names, secondary prerequisites,
+includes, conditional-name operands, definitions and `eval`/`call` forms.
+Braced and literal prefix/suffix name templates remain supported. An internal
+function-built name that the closed census cannot prove must reject unless
+the selector is itself admitted through the existing native finite/fallback
+domain contract.
+
+Set `export OPTION = first` and run a recipe
+`printf '%s\n' "$$OPTION"`, then change the value to `second`. Both ordinary
+outputs and native authority must differ. Repeat with target-specific exports,
+inherited global `unexport OPTION`, and swapped exports on two scheduled
+targets. Equivalent declaration ordering must stay stable. Inspect actual
+`native_dispatches` environments and their original observation/control-byte
+charges; a host-only variable and observer bootstrap variables must be absent.
+No unused variable is expanded to discover exports. GNU Make 4.3 does not
+support a target-specific `unexport` directive; preserve its actual failure.
+A single-quoted `'$$OPTION'` prints literal shell data, so it is not an
+output-changing variable-expansion control.
+
+For recipe literal preservation, use a single-quoted `printf` argument whose
+backslash-newline continuation has a physical `#first` line, then change it to
+`#second`. Repeat with quoted whitespace and a here-document. Native recipe
+bytes, scheduled argv and real ordinary output must retain each change.
+Non-recipe Make comments remain stable; an actual additional recipe dispatch
+is not erased as a purported comment-only equivalence.
 Use a computed `value`/`origin`/`flavor` selector whose native prerequisites
 change under a sealed domain: the graph must reject the unsupported selector
 instead of reporting an incomplete successful census. Unconsumed debug
@@ -4017,6 +4046,18 @@ session/deadline reset. Wildcard-visible paths, modes, source bytes and generate
 outputs retain their actual captured identity. BASE registry/models are measured
 in one grouped public view, and lifecycle removal/restoration reuses that
 already validated model without recursive report execution.
+For the lifecycle dispatch negatives, replace the consistency root with
+`.#missing || true`: the real shell exits zero after the launcher's missing-root
+failure, but no lifecycle proof may be issued. Replace the Make program with
+`scripts/absent/../validation_ownership/isolated_launcher.py`, or use root
+`missing/..` or `Makefile/..`. Actual execution fails and the original path
+components must reject before proof. A real existing traversal such as
+`scripts/generated_data/../validation_ownership/isolated_launcher.py` with
+quoted root `scripts/..` still passes. Preserve the original shell/native
+failures, restore fixture files and close every child/session. Removing only
+the comment-boundary or component-validation correction must restore the
+old false three-proof acceptance in the owned fixture, not merely change an
+error message.
 Count actual output-producing dispatches through the graph consumer: a single
 dependency-include remake must execute once, not once for registration and
 again for Make. The completed observation must retain the real final bytes

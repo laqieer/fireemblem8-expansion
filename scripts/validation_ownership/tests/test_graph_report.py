@@ -548,6 +548,84 @@ class LifecycleBindingTests(unittest.TestCase):
                 with self.assertRaises(MakeProbeError):
                     self.report()
 
+    def test_shell_comment_boundary_matches_real_launcher_and_cannot_hide_failure(self):
+        valid = report_fixture.CHECK_COMMAND
+        for suffix in (" # ordinary comment", ".#missing || true"):
+            with self.subTest(suffix=suffix):
+                command = valid + suffix if suffix.startswith(" ") else valid[:-1] + suffix
+                self.case_command(command)
+                self.fixture.commit("Real shell comment boundary")
+                budget = ProbeBudget(Limits(seconds=90))
+                try:
+                    actual = budget.run(["/bin/sh", "-c", command], cwd=self.fixture.root, env=ENVIRONMENT)
+                    self.assertEqual(actual.returncode, 0, actual.stderr)
+                    if suffix.startswith(" "):
+                        self.assertEqual(len(json.loads(actual.stdout)["artifact"]["executable_lifecycle"]), 3)
+                        self.assertEqual(len(self.report()["artifact"]["executable_lifecycle"]), 3)
+                    else:
+                        self.assertEqual(actual.stdout, b"")
+                        self.assertIn(b".#missing", actual.stderr)
+                        with mock.patch.object(graph_lifecycle, "prove", wraps=graph_lifecycle.prove) as proof:
+                            with self.assertRaises(MakeProbeError):
+                                self.report()
+                            proof.assert_not_called()
+                finally:
+                    budget.close()
+                    self.assertFalse(budget.children)
+
+    def test_original_missing_and_nondirectory_path_components_cannot_receive_proofs(self):
+        baseline = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        valid = report_fixture.CHECK_COMMAND
+        cases = (
+            ("make-missing", valid.replace("scripts/validation_ownership", "scripts/absent/../validation_ownership")),
+            ("make-nondirectory", valid.replace("isolated_launcher.py", "isolated_launcher.py/../isolated_launcher.py")),
+            ("case-missing", valid.replace("--repository-root .", "--repository-root missing/..")),
+            ("case-nondirectory", valid.replace("--repository-root .", "--repository-root Makefile/..")),
+        )
+        for label, command in cases:
+            with self.subTest(path=label):
+                self.fixture.git("switch", "--detach", baseline)
+                if label.startswith("make-"):
+                    self.fixture.add("Makefile", ".PHONY: validation-ownership-check\nvalidation-ownership-check:\n\t@"
+                                     + command + "\n")
+                    argv = ["/usr/bin/make", "--no-print-directory", "validation-ownership-check"]
+                else:
+                    self.case_command(command)
+                    argv = ["/bin/sh", "-c", command]
+                self.fixture.commit("Real invalid traversal " + label)
+                budget = ProbeBudget(Limits(seconds=90))
+                try:
+                    actual = budget.run(argv, cwd=self.fixture.root, env=ENVIRONMENT)
+                    self.assertNotEqual(actual.returncode, 0)
+                    self.assertEqual(actual.stdout, b"")
+                finally:
+                    budget.close()
+                    self.assertFalse(budget.children)
+                with mock.patch.object(graph_lifecycle, "prove", wraps=graph_lifecycle.prove) as proof:
+                    with self.assertRaises(MakeProbeError):
+                        self.report()
+                    proof.assert_not_called()
+
+    def test_existing_directory_traversals_and_quoted_roots_keep_real_dispatch(self):
+        valid = report_fixture.CHECK_COMMAND.replace(
+            "scripts/validation_ownership", "scripts/generated_data/../validation_ownership",
+        ).replace("--repository-root .", "--repository-root 'scripts/..'")
+        self.fixture.add("Makefile", ".PHONY: validation-ownership-check\nvalidation-ownership-check:\n\t@" + valid + "\n")
+        self.case_command(valid)
+        self.fixture.commit("Actual existing directory traversal")
+        budget = ProbeBudget(Limits(seconds=90))
+        try:
+            actual = budget.run(
+                ["/usr/bin/make", "--no-print-directory", "validation-ownership-check"],
+                cwd=self.fixture.root, env=ENVIRONMENT,
+            )
+            self.assertEqual(actual.returncode, 0, actual.stderr)
+            self.assertEqual(len(json.loads(actual.stdout)["artifact"]["executable_lifecycle"]), 3)
+            self.assertEqual(len(self.report()["artifact"]["executable_lifecycle"]), 3)
+        finally:
+            budget.close()
+            self.assertFalse(budget.children)
+
     def test_skipped_up_to_date_consumer_has_no_native_dispatch(self):
         path = self.fixture.root / reporter.GRAPH_PATH
         graph = json.loads(path.read_text())
@@ -607,7 +685,7 @@ class LifecycleBindingTests(unittest.TestCase):
                 self.assertEqual(record["files"][0]["variables"]["CURDIR"]["value"], "/repo")
                 self.assertEqual(len(record["recipe_dispatches"]), 1)
                 routes = graph_lifecycle._consumer_routes(
-                    graph, actual, cases, {}, self.fixture.root.as_posix(),
+                    graph, actual, cases, {}, self.fixture.root.as_posix(), session.snapshot,
                 )
                 self.assertEqual(routes[0][1][0][-2:], ("/repo", "HEAD"))
                 self.assertFalse(session.budget.children)

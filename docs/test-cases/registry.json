@@ -2885,6 +2885,18 @@
           "evidence": "scripts/validation_ownership/tests/test_coordinator_capture.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_computed_graph_positions_close_real_selected_domains scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_computed_include_and_unresolved_name_contracts_are_native scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_computed_conditional_names_cannot_be_symbolic_recipe_inputs scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_computed_selector_values_include_actual_target_local_context -v",
+          "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_actual_export_membership_values_and_target_context_are_authority scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_target_exports_keep_actual_scheduled_order_and_equivalent_declarations scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_export_observation_is_lazy_and_keeps_native_frame_admission scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_export_contexts_spend_actual_native_and_retained_accounting -v",
+          "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_multiline_recipe_literals_preserve_native_bytes_and_real_output scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_make_comments_stay_stable_and_heredoc_data_is_native -v",
+          "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_report_views.ReportViewTests.test_registry_count_support_ownership_follows_the_selected_view -v",
           "evidence": "scripts/validation_ownership/tests/test_report_views.py"
         },

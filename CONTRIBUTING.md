@@ -187,6 +187,12 @@ describe dispatch verification separately from consumer execution.
 Coordinator capture must bind BASE, owned worktree, candidate and required
 check inside the executor in every mode; wrapper-only identity checks are
 insufficient, and reviewed qualifications are additional.
+Make authority must retain native recipe data and actual scheduled export
+membership/values. Close computed names through literal/finite selector
+evidence or reject them; do not infer recipe-only use from the outer variable
+name. Lifecycle dispatch parsing must respect shell word-boundary comments and
+validate original path components in the selected source namespace before
+normalizing them.
 Complete tests and documentation remain in the issue's full review scope,
 including when a predeclared genuinely indivisible review exception applies.
 

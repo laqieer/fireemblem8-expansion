@@ -7037,6 +7037,11 @@ int main(int argc, char **argv) {
                         self.assertEqual(len(observed.events), 1)
                         self.assertEqual(observed.events[0]["match"], 0)
                         self.assertEqual(observed.stdout, b"")
+                        contexts = observed.semantics["native_dispatches"]
+                        self.assertEqual({item["kind"] for item in contexts}, {"value", "recipe"})
+                        self.assertTrue(all(item["environment"]["HOME"] == "/nonexistent" for item in contexts))
+                        self.assertTrue(all(not any(name.startswith("VO_") for name in item["environment"])
+                                            for item in contexts))
                     self.assert_clean(session)
 
     def test_recursive_and_makefile_remake_dispatch_still_requires_real_mappings(self):

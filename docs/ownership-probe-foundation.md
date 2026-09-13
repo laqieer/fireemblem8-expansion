@@ -222,15 +222,25 @@ GNU Make's native recursive-command flags conservatively require registered
 results for their dispatches, rather than silently suppressing recursion.
 The fixed process/resource bounds still include interceptor children.
 
-The graph's lifecycle consumer may opt into
-`ProbeSession.make(..., observe_recipe_dispatch=True)`. The trusted syscall
-observer then records the real scheduled recipe executable/argv/cwd and
-failure-ignore state before the existing metadata-only interceptor returns.
-This is dispatch evidence, not execution of candidate recipes. The same
-aggregate observation and byte guards bound it; vectors retain the existing
-1,024-argument/64 KiB frame and 4,096-byte string limits. Other queries keep
-their default behavior. GNU Make's actual ignore-errors state and captured
-`.IGNORE` declaration are observed, not inferred from source comments.
+Every Make observation includes `native_dispatches`: the actual scheduled
+executable/argv/cwd, ordered dispatch identity, recipe/value classification,
+failure-ignore state and complete effective environment at the authenticated
+interceptor exec boundary. Export membership and values come from GNU Make's
+actual `envp`, including target-specific export and inherited unexport behavior,
+not a source-name scan or another expansion of unused variables. No host
+environment or observer bootstrap variables are inherited. Values are not
+redacted or replaced with a claimed semantic equivalent. Duplicate/malformed
+environment names and excessive vectors reject. Both vectors share the
+existing 64 KiB frame bound, each retains the 1,024-entry bound, and strings
+retain the 4,096-byte bound. Native observations, JSON transport, retained
+semantics and graph caches spend their existing counters without refunds.
+
+The graph's lifecycle consumer may additionally select
+`ProbeSession.make(..., observe_recipe_dispatch=True)` for the validated
+`recipe_dispatches` projection. These are dispatch observations, not execution
+of candidate recipes; metadata-only suppression is unchanged. GNU Make's actual
+ignore-errors state and captured `.IGNORE` declaration are observed, not
+inferred from source comments.
 The graph uses these records only with its closed ordinary dispatcher,
 captured source identity and session/model binding. It does not acquire
 permission to execute arbitrary consumer code or reset its report budget.

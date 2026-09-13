@@ -36,6 +36,8 @@ def _controlled_root(argument: str) -> Path:
     candidate = Path(argument)
     if candidate.is_symlink():
         raise ValueError("repository root must be a non-symlink directory")
+    descriptor = os.open(argument, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    os.close(descriptor)
     root = candidate.resolve(strict=True)
     if root != ROOT:
         raise ValueError(

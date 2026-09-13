@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 from pathlib import Path
 import secrets
 import shutil
@@ -7,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts.validation_ownership import reporter
-from scripts.validation_ownership.authority import AuthorityLoader, GitTreeEntries, GitTreeEntry, encoded
+from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, GitTreeEntries, GitTreeEntry, encoded
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.budget import Limits, MAX_PLANNED_STATE_BYTES
 from scripts.validation_ownership.graph_probe import run_probe, source_census
@@ -51,7 +52,21 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             self.last_accounting = (session.budget.runs, session.budget.states)
         self.assertIsNone(session.base)
         self.assertFalse(session.budget.children)
+        self.assertFalse(session.budget.producer_waiters)
         return result
+
+    def ordinary(self, *assignments):
+        budget = ProbeBudget()
+        try:
+            actual = budget.run(
+                ["/usr/bin/make", "--no-print-directory", *assignments, "all"],
+                cwd=self.root, env=ENVIRONMENT,
+            )
+            self.assertEqual(actual.returncode, 0, actual.stderr)
+            return actual.stdout
+        finally:
+            budget.close()
+            self.assertFalse(budget.children)
 
     def test_conditionals_and_finite_origins_are_native_make_observations(self):
         self.add("Makefile", "MODE ?= one\nall: $(MODE)\none two: ;\n")
@@ -185,6 +200,111 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         with self.assertRaisesRegex(MakeProbeError, "symbolic inputs influence"):
             self.observe(external={"FLAGS"}, symbolic_recipe_names={"FLAGS"})
 
+    def test_computed_graph_positions_close_real_selected_domains(self):
+        expressions = (
+            ("prerequisite", "all: $($(NAME))\nfirst second: ;\n"),
+            ("order-only", "all: | $($(NAME))\nfirst second: ;\n"),
+            ("target", "$($(NAME)): ;\nall: $($(NAME))\n"),
+            ("secondary", ".SECONDEXPANSION:\nall: $$($$(NAME))\nfirst second: ;\n"),
+            ("definition", "ALIAS = $($(NAME))\nall: $(ALIAS)\nfirst second: ;\n"),
+            ("eval", "$(eval all: $($(NAME)))\nfirst second: ;\n"),
+            ("call", "define RULE\nall: $($(NAME))\nendef\n$(eval $(call RULE))\nfirst second: ;\n"),
+            ("computed-call", "SELECTOR = RULE\ndefine RULE\nall: $(FLAGS)\nendef\n"
+                             "$(eval $(call $(SELECTOR)))\nfirst second: ;\n"),
+            ("braced", "all: ${${NAME}}\nfirst second: ;\n"),
+            ("partial", "all: $(F$(NAME))\nfirst second: ;\n"),
+            ("target-local-secondary", ".SECONDEXPANSION:\nall: NAME = FLAGS\nall: $$($$(NAME))\nfirst second: ;\n"),
+        )
+        domain = {"FLAGS": {"kind": "explicit", "values": ["first", "second"]}}
+        for position, body in expressions:
+            with self.subTest(position=position):
+                name = "LAGS" if position == "partial" else "FLAGS"
+                self.add("Makefile", "FLAGS ?= first\nNAME = " + name + "\n" + body + "all:\n\t@echo $(FLAGS)\n")
+                with self.session() as session:
+                    actual = {
+                        session.make("all", assignments=(("command-line", "FLAGS", value),))
+                        .semantics["files"][0]["prerequisites"][0]["name"]
+                        for value in ("first", "second")
+                    }
+                self.assertEqual(actual, {"first", "second"})
+                with self.assertRaises(MakeProbeError):
+                    self.observe(external={"FLAGS"}, symbolic_recipe_names={"FLAGS"})
+                observed = self.observe(domain)["all"]
+                self.assertEqual(observed["prerequisite_domain_census"]["enumerated"], ["FLAGS"])
+                self.assertEqual({
+                    item["record"]["files"][0]["prerequisites"][0]["name"]
+                    for item in observed["record"]["variants"]
+                }, actual)
+
+    def test_computed_include_and_unresolved_name_contracts_are_native(self):
+        self.add("first.mk", "SELECTED = first\n")
+        self.add("second.mk", "SELECTED = second\n")
+        self.add("Makefile", (
+            "FLAGS ?= first\nNAME = FLAGS\ninclude $($(NAME)).mk\n"
+            "all: $(SELECTED)\n\t@echo $(FLAGS)\nfirst second: ;\n"
+        ))
+        self.assertEqual(self.ordinary("FLAGS=first"), b"first\n")
+        self.assertEqual(self.ordinary("FLAGS=second"), b"second\n")
+        with self.assertRaises(MakeProbeError):
+            self.observe(external={"FLAGS"}, symbolic_recipe_names={"FLAGS"})
+        records = self.observe({"FLAGS": {"kind": "explicit", "values": ["first", "second"]}})["all"]
+        self.assertEqual(records["record"]["includes"], ["Makefile", "first.mk", "second.mk"])
+        self.add("Makefile", (
+            "FLAGS ?= first\nNAME = $(subst X,FLAGS,X)\n"
+            "all: $($(NAME))\nfirst second: ;\n"
+        ))
+        self.assertEqual(self.ordinary("FLAGS=second"), b"make: Nothing to be done for 'all'.\n")
+        with self.assertRaisesRegex(MakeProbeError, "computed selector"):
+            self.observe({"FLAGS": {"kind": "explicit", "values": ["first", "second"]}})
+        observed = self.observe({
+            "FLAGS": {"kind": "explicit", "values": ["first", "second"]},
+            "NAME": {"kind": "tracked-fallback"},
+        })["all"]
+        self.assertEqual(observed["prerequisite_domain_census"]["enumerated"], ["FLAGS", "NAME"])
+
+    def test_computed_conditional_names_cannot_be_symbolic_recipe_inputs(self):
+        self.add("Makefile", (
+            "FLAGS ?=\nNAME = FLAGS\nifdef $(NAME)\nSELECTED = second\nelse\nSELECTED = first\nendif\n"
+            "all: $(SELECTED)\n\t@printf '%s\\n' '$(SELECTED)'\nfirst second: ;\n"
+        ))
+        self.assertEqual(self.ordinary("FLAGS="), b"first\n")
+        self.assertEqual(self.ordinary("FLAGS=yes"), b"second\n")
+        with self.assertRaises(MakeProbeError):
+            self.observe(external={"FLAGS"}, symbolic_recipe_names={"FLAGS"})
+        result = self.observe({"FLAGS": {"kind": "explicit", "values": ["", "yes"]}})["all"]
+        self.assertEqual({
+            item["record"]["files"][0]["prerequisites"][0]["name"] for item in result["record"]["variants"]
+        }, {"first", "second"})
+
+    def test_computed_selector_values_include_actual_target_local_context(self):
+        self.add("Makefile", (
+            "FLAGS ?= first\nNAME ?= OTHER\nOTHER = first\n.SECONDEXPANSION:\n"
+            "all: NAME = FLAGS\nall: $$($$(NAME))\n\t@echo $(FLAGS)\nfirst second: ;\n"
+        ))
+        with self.session() as session:
+            actual = session.make("all", variables=("NAME",))
+            self.assertEqual(actual.semantics["domains"]["NAME"]["value"], "OTHER")
+            self.assertEqual(actual.semantics["files"][0]["variables"]["NAME"]["value"], "FLAGS")
+        self.assertEqual(self.ordinary("FLAGS=first"), b"first\n")
+        self.assertEqual(self.ordinary("FLAGS=second"), b"second\n")
+        domain = {"NAME": {"kind": "tracked-fallback"}}
+        with self.assertRaises(MakeProbeError):
+            self.observe(domain, external={"FLAGS"}, symbolic_recipe_names={"FLAGS"})
+        result = self.observe({
+            **domain, "FLAGS": {"kind": "explicit", "values": ["first", "second"]},
+        })["all"]
+        self.assertEqual(result["prerequisite_domain_census"]["enumerated"], ["FLAGS", "NAME"])
+        self.assertEqual({
+            item["record"]["files"][0]["prerequisites"][0]["name"] for item in result["record"]["variants"]
+        }, {"first", "second"})
+        self.add("Makefile", "NAME = @\nall:\n\t@printf '%s\\n' '$($(NAME))'\n")
+        self.assertEqual(self.ordinary(), b"all\n")
+        record = self.observe(scoped_variable_names={"@"})["all"]
+        self.assertEqual(record["variable_census"]["scoped_variables"], ["@"])
+        self.assertEqual(record["record"]["variants"][0]["record"]["native_dispatches"][0]["arguments"][-1], "all")
+        with self.assertRaises(MakeProbeError):
+            self.observe()
+
     def test_modern_size_recipe_default_uses_sealed_contract(self):
         name = "MODERN_SIZE"
         usage = source_census({"modern.mk": (ROOT / "modern.mk").read_bytes()})
@@ -282,6 +402,131 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.add("Makefile", "GUARD ?= SECOND\nall:\n\t@printf '#define $(GUARD) 1\\n'\n")
         second = self.observe(external={"GUARD"}, symbolic_recipe_names={"GUARD"})["all"]["record"]
         self.assertNotEqual(first, second)
+
+    def test_actual_export_membership_values_and_target_context_are_authority(self):
+        for declaration in ("export OPTION = {value}", "all: export OPTION = {value}"):
+            records = []
+            for value in ("first", "second"):
+                self.add("Makefile", declaration.format(value=value) + "\nall:\n\t@printf '%s\\n' \"$$OPTION\"\n")
+                self.assertEqual(self.ordinary(), (value + "\n").encode())
+                with patch.dict(os.environ, {"ISSUE180_HOST_SECRET": "not-an-input"}):
+                    record = self.observe()["all"]["record"]
+                contexts = record["variants"][0]["record"]["native_dispatches"]
+                self.assertEqual(len(contexts), 1)
+                self.assertEqual(contexts[0]["environment"]["OPTION"], value)
+                self.assertNotIn("ISSUE180_HOST_SECRET", contexts[0]["environment"])
+                self.assertNotIn("LD_PRELOAD", contexts[0]["environment"])
+                self.assertFalse(any(name.startswith("VO_") for name in contexts[0]["environment"]))
+                records.append(record)
+            self.assertNotEqual(*records)
+        for assignment in ("", "all: OPTION = local\n"):
+            self.add("Makefile", "export OPTION = first\nunexport OPTION\n" + assignment
+                     + "all:\n\t@printf '%s\\n' \"$$OPTION\"\n")
+            self.assertEqual(self.ordinary(), b"\n")
+            context = self.observe()["all"]["record"]["variants"][0]["record"]["native_dispatches"][0]
+            self.assertNotIn("OPTION", context["environment"])
+        self.add("Makefile", "export OPTION = first\nall: unexport OPTION = local\nall:\n\t@true\n")
+        with self.assertRaises(MakeProbeError):
+            self.observe()
+
+    def test_target_exports_keep_actual_scheduled_order_and_equivalent_declarations(self):
+        records = []
+        for swapped in (False, True):
+            first, second = ("second", "first") if swapped else ("first", "second")
+            source = (
+                "all: one two\none: export OPTION = " + first + "\ntwo: export OPTION = " + second
+                + "\none two:\n\t@printf '%s\\n' \"$$OPTION\"\n"
+            )
+            self.add("Makefile", source)
+            self.assertEqual(self.ordinary(), (first + "\n" + second + "\n").encode())
+            record = self.observe()["all"]["record"]
+            contexts = record["variants"][0]["record"]["native_dispatches"]
+            self.assertEqual([item["sequence"] for item in contexts], [1, 2])
+            self.assertEqual([item["environment"]["OPTION"] for item in contexts], [first, second])
+            records.append(record)
+        self.assertNotEqual(*records)
+        self.add("Makefile", (
+            "two: export OPTION = first\none: export OPTION = second\nall: one two\n"
+            "one two:\n\t@printf '%s\\n' \"$$OPTION\"\n"
+        ))
+        self.assertEqual(self.observe()["all"]["record"], records[-1])
+
+    def test_export_observation_is_lazy_and_keeps_native_frame_admission(self):
+        self.add("Makefile", "UNUSED = $(shell touch marker)\nall:\n\t@true\n")
+        self.observe()
+        self.assertFalse((self.root / "marker").exists())
+        self.add("Makefile", "export OPTION = " + "x" * 4096 + "\nall:\n\t@true\n")
+        with self.assertRaisesRegex(MakeProbeError, "pathname exceeds bound"):
+            self.observe()
+        self.assertFalse((self.root / "marker").exists())
+
+    def test_export_contexts_spend_actual_native_and_retained_accounting(self):
+        self.add("Makefile", "export OPTION = first\nall:\n\t@printf '%s\\n' \"$$OPTION\"\n")
+        with self.session() as session:
+            original = session._sandbox_run
+            captured = []
+
+            def observe(*arguments, **keywords):
+                actual = original(*arguments, **keywords)
+                captured.append(actual[1])
+                return actual
+
+            before = session.observations_used, session.budget.bytes.get("control", 0)
+            with patch.object(session, "_sandbox_run", observe):
+                result = session.make("all")
+            native, = captured
+            frames = [value for value in native["accessed"] if value.startswith("make-dispatch:")]
+            self.assertEqual(len(frames), 1)
+            self.assertEqual(json.loads(frames[0].removeprefix("make-dispatch:")),
+                             result.semantics["native_dispatches"][0])
+            self.assertEqual(session.observations_used - before[0], native["observations"])
+            self.assertGreaterEqual(native["observation_bytes"], len(frames[0].encode()) + 128)
+            self.assertGreaterEqual(
+                session.budget.bytes["control"] - before[1],
+                native["observation_bytes"] + len(encoded(result.semantics)),
+            )
+            self.last_export_evidence = {
+                "runs": session.budget.runs, "states": session.budget.states,
+                "observations": native["observations"], "observation_bytes": native["observation_bytes"],
+                "control_delta": session.budget.bytes["control"] - before[1],
+                "native_dispatch_frame_bytes": len(frames[0].encode()),
+                "semantic_bytes": len(encoded(result.semantics)),
+            }
+        self.assertIsNone(session.base)
+        self.assertFalse(session.budget.children)
+        self.assertFalse(session.budget.producer_waiters)
+
+    def test_multiline_recipe_literals_preserve_native_bytes_and_real_output(self):
+        for literal in ("#", " ", ""):
+            with self.subTest(literal=literal):
+                records, outputs = [], []
+                for value in ("first", "second"):
+                    self.add("Makefile", "all:\n\t@printf '%s\\n' 'header\\\n\t" + literal + value + " '\n")
+                    outputs.append(self.ordinary())
+                    with self.session() as session:
+                        recipe = session.make("all").semantics["files"][0]["recipe"]
+                    record = self.observe()["all"]["record"]
+                    self.assertEqual(record["variants"][0]["record"]["files"][0]["recipe"], recipe)
+                    records.append(record)
+                self.assertNotEqual(*outputs)
+                self.assertNotEqual(*records)
+
+    def test_make_comments_stay_stable_and_heredoc_data_is_native(self):
+        self.add("Makefile", "all:\n\t@printf '%s\\n' hello\n")
+        first = self.observe()["all"]["record"]
+        self.add("Makefile", "# safe Make comment\nall:\n\t@printf '%s\\n' hello\n")
+        self.assertEqual(self.ordinary(), b"hello\n")
+        self.assertEqual(self.observe()["all"]["record"], first)
+        records = []
+        for value in ("first", "second"):
+            self.add("Makefile", ".ONESHELL:\nall:\n\t@cat <<'EOF'\n\t#" + value + "\n\tEOF\n")
+            self.assertEqual(self.ordinary(), ("#" + value + "\n").encode())
+            with self.session() as session:
+                recipe = session.make("all").semantics["files"][0]["recipe"]
+            record = self.observe()["all"]["record"]
+            self.assertEqual(record["variants"][0]["record"]["files"][0]["recipe"], recipe)
+            records.append(record)
+        self.assertNotEqual(*records)
 
     def test_inline_recipe_and_unused_debug_introspection_remain_recipe_context(self):
         self.add("Makefile", (

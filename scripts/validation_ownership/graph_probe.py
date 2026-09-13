@@ -27,16 +27,102 @@ SCOPED = re.compile(r"(?<!\$)\$(?:\(([@%*+<?^|](?:D|F)?|[0-9])\)|\{([@%*+<?^|](?
 INTROSPECTION = re.compile(rf"\$[({{](?:flavor|origin|value)\s+({IDENTIFIER})[)}}]")
 INTROSPECTION_CALL = re.compile(r"(?<!\$)\$[({](?:flavor|origin|value)[ \t]+([^)}]*)")
 CONDITIONAL = re.compile(rf"^\s*(?:ifdef|ifndef)\s+({IDENTIFIER})")
+CONDITIONAL_NAME = re.compile(r"^\s*(?:ifdef|ifndef)\s+(.+)$")
+CALL = re.compile(rf"(?<!\$)\$[({{]call\s+({IDENTIFIER})[ \t]*(?=[,)}}])")
 ASSIGNMENT = re.compile(
     rf"^\s*(?:(?:export|override|private)\s+)*(?P<name>{IDENTIFIER})\s*"
     r"(?P<operator>\?=|::=|:=|\+=|!=|=)(?P<value>.*)$"
 )
 TARGET_ASSIGNMENT = re.compile(
     rf"^(?P<target>.*?)\s*:\s*(?:(?:export|override|private)\s+)*"
-    rf"(?P<name>{IDENTIFIER})\s*(?:\?=|::=|:=|\+=|!=|=)(?P<value>.*)$"
+    rf"(?P<name>{IDENTIFIER})\s*(?P<operator>\?=|::=|:=|\+=|!=|=)(?P<value>.*)$"
 )
 DEFINE = re.compile(rf"^\s*(?:(?:export|override|private)\s+)*define\s+({IDENTIFIER})")
 SECONDARY = re.compile(rf"\$\$(?:\(({IDENTIFIER})|\{{({IDENTIFIER})\}})")
+NAME_PART = re.compile(rf"\$\(({IDENTIFIER})\)|\$\{{({IDENTIFIER})\}}")
+
+
+class _UnresolvedName(ValueError):
+    pass
+
+
+def computed_selectors(line):
+    stack = []
+    index = 0
+    while index < len(line):
+        if line[index:index + 2] == "$$":
+            index += 2
+            continue
+        if line[index:index + 2] in {"$(", "${"}:
+            stack.append((index + 2, ")" if line[index + 1] == "(" else "}"))
+            index += 2
+            continue
+        if stack and line[index] == stack[-1][1]:
+            start, _ = stack.pop()
+            if start is not None:
+                body = line[start:index]
+                call = re.match(r"call[ \t]+", body)
+                if call:
+                    body = body[call.end():]
+                depth, end = 0, len(body)
+                for position, character in enumerate(body):
+                    if character in "({":
+                        depth += 1
+                    elif character in ")}":
+                        depth -= 1
+                    elif not depth and (character == "," and call or character.isspace() or character == ":"):
+                        end = position if call or character == ":" else 0
+                        break
+                head = body[:end]
+                if "$" in head:
+                    yield head
+        elif stack and line[index] == ("(" if stack[-1][1] == ")" else "{"):
+            stack.append((None, stack[-1][1]))
+        index += 1
+
+
+def selected_names(expressions, definitions, observed_values):
+    def expand(template, active):
+        matches = list(NAME_PART.finditer(template))
+        values, offset = {""}, 0
+        for match in matches:
+            literal = template[offset:match.start()]
+            if "$" in literal:
+                raise _UnresolvedName("computed selector contains an unsupported name expression")
+            name = match[1] or match[2]
+            if name in active:
+                raise _UnresolvedName("computed selector has a cyclic name definition")
+            if name in observed_values:
+                choices = observed_values[name]
+            else:
+                declarations = definitions.get(name)
+                if not declarations or any(value is None for value in declarations):
+                    raise _UnresolvedName("computed selector lacks a closed literal or finite name definition")
+                choices = set()
+                for value in declarations:
+                    choices.update(expand(value, active | {name}))
+            combined = set()
+            for prefix in values:
+                for choice in choices:
+                    combined.add(prefix + literal + choice)
+                    if len(combined) > 512:
+                        raise _UnresolvedName("computed selector exceeds the existing bounded context plan")
+            values, offset = combined, match.end()
+        if "$" in template[offset:]:
+            raise _UnresolvedName("computed selector contains an unsupported name expression")
+        return {value + template[offset:] for value in values}
+
+    selected = set()
+    for expression in expressions:
+        for selector in computed_selectors(expression):
+            values = expand(selector, set())
+            if not values or any(
+                not re.fullmatch(IDENTIFIER, name) and not SCOPED.fullmatch("$(" + name + ")")
+                for name in values
+            ):
+                raise _UnresolvedName("computed selector is not a closed set of variable identifiers")
+            selected.update(values)
+    return selected
 
 
 def strip_comment(line):
@@ -93,6 +179,7 @@ def references(line):
     names = {next(value for value in match.groups() if value is not None)
              for pattern in (REFERENCE, SCOPED) for match in pattern.finditer(line)}
     names.update(INTROSPECTION.findall(line))
+    names.update(CALL.findall(line))
     conditional = CONDITIONAL.match(line)
     if conditional:
         names.add(conditional.group(1))
@@ -109,10 +196,11 @@ def closure(names, dependencies):
     return result
 
 
-def source_census(sources):
+def source_census(sources, *, observed_values=None):
     all_names, graph, recipe, introspection, defaults = set(), set(), set(), set(), set()
     dependencies = {}
-    computed = set()
+    definitions, expressions, graph_expressions = {}, {}, []
+    observed_values = {} if observed_values is None else observed_values
     for path, data in sources.items():
         try:
             lines = data.decode("utf-8").splitlines()
@@ -127,11 +215,17 @@ def source_census(sources):
             if inline_recipe:
                 inline_names = references(inline_recipe)
                 all_names.update(inline_names)
-                recipe.update(inline_names)
+                if "$(eval" in inline_recipe or "${eval" in inline_recipe:
+                    graph.update(inline_names)
+                    graph_expressions.append(inline_recipe)
+                else:
+                    recipe.update(inline_names)
             start = DEFINE.match(line)
             if start and defining is None:
                 defining = start.group(1)
                 dependencies.setdefault(defining, set())
+                expressions.setdefault(defining, [])
+                definitions.setdefault(defining, []).append(None)
                 continue
             names = references(line)
             all_names.update(names)
@@ -143,8 +237,7 @@ def source_census(sources):
                 names.update(references(line.replace("$$", "$")))
                 all_names.update(names)
                 dependencies[defining].update(names)
-                if "$($" in line or "${$" in line:
-                    computed.add(defining)
+                expressions[defining].append(line.replace("$$", "$"))
                 if "$(eval" in line or "${eval" in line:
                     graph.add(defining)
                 continue
@@ -152,23 +245,37 @@ def source_census(sources):
             target_assignment = None if raw.startswith("\t") else TARGET_ASSIGNMENT.match(line)
             if assignment:
                 dependencies.setdefault(assignment["name"], set()).update(references(assignment["value"]))
+                definitions.setdefault(assignment["name"], []).append(
+                    assignment["value"].lstrip() if assignment["operator"] in {"=", ":=", "::=", "?="} else None
+                )
+                expressions.setdefault(assignment["name"], []).append(assignment["value"])
                 if line.lstrip().startswith("export "):
                     recipe.update(names)
                 if "$(eval" in assignment["value"] or "${eval" in assignment["value"]:
                     graph.update(names)
-                if "$($" in assignment["value"] or "${$" in assignment["value"]:
-                    computed.add(assignment["name"])
+                    graph_expressions.append(assignment["value"])
             elif target_assignment:
                 dependencies.setdefault(target_assignment["name"], set()).update(references(target_assignment["value"]))
+                definitions.setdefault(target_assignment["name"], []).append(
+                    target_assignment["value"].lstrip()
+                    if target_assignment["operator"] in {"=", ":=", "::=", "?="} else None
+                )
+                expressions.setdefault(target_assignment["name"], []).append(target_assignment["value"])
                 graph.update(references(target_assignment["target"]))
+                graph_expressions.append(target_assignment["target"])
                 if "$(eval" in target_assignment["value"] or "${eval" in target_assignment["value"]:
                     graph.update(names)
-                if "$($" in target_assignment["value"] or "${$" in target_assignment["value"]:
-                    computed.add(target_assignment["name"])
+                    graph_expressions.append(target_assignment["value"])
             elif raw.startswith("\t"):
                 (graph if "$(eval" in line or "${eval" in line else recipe).update(names)
+                if "$(eval" in line or "${eval" in line:
+                    graph_expressions.append(line)
             else:
                 graph.update(names)
+                graph_expressions.append(line.replace("$$", "$"))
+                conditional = CONDITIONAL_NAME.match(line)
+                if conditional and "$" in conditional[1]:
+                    graph_expressions.append("$(" + conditional[1] + ")")
                 secondary = {left or right for left, right in SECONDARY.findall(line)}
                 graph.update(secondary)
                 all_names.update(secondary)
@@ -177,9 +284,19 @@ def source_census(sources):
                 raise MakeProbeError(f"Make external-default declaration has a dynamic name: {path}")
             defaults.update(match["name"] for match in found
                             if "override" not in match["modifiers"].split())
-    for name in computed:
-        dependencies[name].update(defaults)
+    unresolved = set()
+    for name, values in expressions.items():
+        try:
+            dependencies[name].update(selected_names(values, definitions, observed_values))
+        except _UnresolvedName:
+            unresolved.add(name)
+    try:
+        graph.update(selected_names(graph_expressions, definitions, observed_values))
+    except _UnresolvedName as error:
+        raise MakeProbeError(str(error)) from error
     expanded_graph = closure(graph, dependencies)
+    if expanded_graph & unresolved:
+        raise MakeProbeError("graph dependency has an unresolved computed selector")
     expanded_recipe = closure(recipe, dependencies)
     return {
         "all": closure(all_names | graph | recipe, dependencies),
@@ -190,6 +307,9 @@ def source_census(sources):
         "defaults": defaults,
         "defined": set(dependencies),
         "dependencies": dependencies,
+        "definitions": definitions,
+        "observed_values": observed_values,
+        "unresolved": unresolved,
     }
 
 
@@ -223,10 +343,7 @@ def _semantic(semantics):
     result["domains"] = {name: value for name, value in result["domains"].items()
                          if name not in {"MAKEFILE_LIST", "MAKE_RESTARTS"}}
     result["files"] = [
-        {**entry, "recipe": "\n".join(
-            line.rstrip() for line in entry["recipe"].splitlines()
-            if line.strip() and not line.lstrip().startswith("#")
-        ), "variables": {name: value for name, value in entry["variables"].items()
+        {**entry, "variables": {name: value for name, value in entry["variables"].items()
                         if name not in {"MAKEFILE_LIST", "MAKE_RESTARTS"}}}
         for entry in result["files"]
     ]
@@ -241,6 +358,22 @@ def _recipe_domains(session, target, state, commands, observation, usage, observ
         {name for entry in observation.semantics["files"] for name in references(entry["recipe"])},
         usage["dependencies"],
     )
+    try:
+        names.update(closure(selected_names(
+            (entry["recipe"] for entry in observation.semantics["files"]),
+            usage["definitions"], usage["observed_values"],
+        ), usage["dependencies"]))
+    except _UnresolvedName as error:
+        raise MakeProbeError(str(error)) from error
+    if names & usage["unresolved"]:
+        raise MakeProbeError("consumed recipe has an unresolved computed selector")
+    exports = {
+        name for context in observation.semantics["native_dispatches"]
+        for name in context["environment"] if name in usage["defined"]
+    }
+    usage["recipe"].update(closure(names | exports, usage["dependencies"]))
+    usage["all"].update(usage["recipe"])
+    usage["recipe_only"] = usage["recipe"] - usage["graph"]
     pending = sorted(name for name in names - set(observed_names) if re.fullmatch(IDENTIFIER, name))
     combined = copy.deepcopy(observation.semantics)
     for index in range(0, len(pending), 512):
@@ -259,6 +392,12 @@ def _recipe_domains(session, target, state, commands, observation, usage, observ
             raise MakeProbeError("Make command provenance changed across recipe observations")
         if measured.semantics.get("recipe_dispatches") != combined.get("recipe_dispatches"):
             raise MakeProbeError("native recipe dispatch changed across recipe observations")
+        recipe_contexts = lambda value: [
+            {key: field for key, field in item.items() if key != "sequence"}
+            for item in value["native_dispatches"] if item["kind"] == "recipe"
+        ]
+        if recipe_contexts(measured.semantics) != recipe_contexts(combined):
+            raise MakeProbeError("native recipe environment changed across recipe observations")
         combined["domains"].update(measured.semantics["domains"])
         for previous, actual in zip(combined["files"], measured.semantics["files"]):
             previous["variables"].update(actual["variables"])
@@ -310,7 +449,16 @@ def run_probe(
             )
             loaded = _loaded_sources(session, observation)
             source_union.update(loaded)
-            usage = source_census(loaded)
+            scopes = [observation.semantics["domains"], *(
+                entry["variables"] for entry in observation.semantics["files"]
+            )]
+            observed_values = {
+                name: set(domain.get("values", ())) | {
+                    scope[name]["value"] for scope in scopes if scope[name]["origin"] != "undefined"
+                }
+                for name, domain in domains.items()
+            }
+            usage = source_census(loaded, observed_values=observed_values)
             usages.append(usage)
             semantics = _recipe_domains(
                 session, target, state, commands, observation, usage, variables, observe_dispatch=observe_dispatch,
@@ -365,7 +513,10 @@ def run_probe(
                             pending.append(replacement)
                             planned.add(key)
                         enumerated.add(name)
-        aggregate = source_census(source_union)
+        aggregate = source_census(source_union, observed_values={
+            name: set().union(*(usage["observed_values"].get(name, set()) for usage in usages))
+            for name in domains
+        })
         actual_names = set().union(*(usage["all"] for usage in usages))
         used_domains = set(domains) & actual_names
         generated = set(generated_path_names) & {
@@ -376,7 +527,7 @@ def run_probe(
         record = {
             "variants": sorted(variants, key=encoded),
             "includes": sorted(source_union),
-            "symbolic_recipe_names": sorted(symbolic & aggregate["recipe_only"]),
+            "symbolic_recipe_names": sorted(symbolic & set().union(*(usage["recipe_only"] for usage in usages))),
         }
         session.budget.charge("cache", len(encoded(record)))
         results[target] = {

@@ -9,7 +9,7 @@ import shlex
 import tempfile
 import weakref
 
-from scripts.bash_parser import normalize_bash_script_commands
+from scripts.bash_parser import normalize_bash_script_commands, strip_bash_command_comment
 from .authority import encoded, parse_json
 from .budget import MakeProbeError
 
@@ -33,9 +33,9 @@ def _command_words(command):
         lines = normalize_bash_script_commands(command, "lifecycle dispatch")
         if len(lines) != 1:
             raise MakeProbeError("lifecycle dispatch must be one mandatory command")
-        lexer = shlex.shlex(lines[0], posix=True, punctuation_chars=";&|<>()")
+        lexer = shlex.shlex(strip_bash_command_comment(lines[0]), posix=True, punctuation_chars=";&|<>()")
         lexer.whitespace_split = True
-        lexer.commenters = "#"
+        lexer.commenters = ""
         words = list(lexer)
     except ValueError as error:
         raise MakeProbeError("lifecycle dispatch has invalid shell syntax") from error
@@ -49,7 +49,38 @@ def _command_words(command):
     return words
 
 
-def _checker_dispatch(arguments, *, cwd, source_root):
+def _source_path(spelling, *, source_root, snapshot, directory=False):
+    if spelling.startswith("/"):
+        if spelling == source_root:
+            spelling = ""
+        elif spelling.startswith(source_root + "/"):
+            spelling = spelling[len(source_root) + 1:]
+        else:
+            raise MakeProbeError("lifecycle path leaves its selected source namespace")
+    components = []
+    parts = spelling.split("/")
+    for index, part in enumerate(parts):
+        snapshot.budget.remaining()
+        if part == "..":
+            if not components:
+                raise MakeProbeError("lifecycle path leaves its selected source namespace")
+            components.pop()
+        elif part not in {"", "."}:
+            components.append(part)
+        name = "/".join(components)
+        is_directory = (
+            not name or name in snapshot.gitlink_roots
+            or any(path.startswith(name + "/") for path in snapshot.files)
+        )
+        if index < len(parts) - 1 or directory:
+            if not is_directory:
+                raise MakeProbeError("lifecycle path has a missing or non-directory component")
+        elif name not in snapshot.files:
+            raise MakeProbeError("lifecycle checker path is not a selected regular source")
+    return source_root + ("/" + "/".join(components) if components else "")
+
+
+def _checker_dispatch(arguments, *, cwd, source_root, snapshot):
     from . import isolated_launcher
 
     if not arguments or arguments[0] not in {"/usr/bin/python3", "python3"}:
@@ -63,7 +94,9 @@ def _checker_dispatch(arguments, *, cwd, source_root):
         index += 1
     if flags != {"I", "S", "B"} or len(arguments) <= index + 1:
         raise MakeProbeError("lifecycle Python invocation lacks its complete checker route")
-    program = posixpath.normpath(posixpath.join(cwd, arguments[index]))
+    if cwd != source_root:
+        raise MakeProbeError("lifecycle dispatch changed its selected source directory")
+    program = _source_path(arguments[index], source_root=source_root, snapshot=snapshot)
     if program != source_root + "/scripts/validation_ownership/isolated_launcher.py":
         raise MakeProbeError("lifecycle dispatch uses a substituted checker")
     mode = arguments[index + 1]
@@ -74,13 +107,15 @@ def _checker_dispatch(arguments, *, cwd, source_root):
             _, parsed = isolated_launcher.graph_dispatch(mode, arguments[index + 2:])
     except (ValueError, SystemExit) as error:
         raise MakeProbeError("lifecycle dispatch does not reach the graph checker") from error
-    actual_root = posixpath.normpath(posixpath.join(cwd, parsed.repository_root))
+    actual_root = _source_path(
+        parsed.repository_root, source_root=source_root, snapshot=snapshot, directory=True,
+    )
     if actual_root != source_root or parsed.revision != "HEAD" or parsed.base_revision is not None:
         raise MakeProbeError("lifecycle dispatch selects a different root or graph context")
     return ("/usr/bin/python3", program, mode, actual_root, parsed.revision)
 
 
-def _consumer_routes(graph, make_authorities, tester_cases, runtime_programs, source_root):
+def _consumer_routes(graph, make_authorities, tester_cases, runtime_programs, source_root, snapshot):
     definition = graph["artifact"]
     target, case_id = definition["executable_consumer"], definition["consistency_check"]
     if target not in make_authorities or case_id not in tester_cases:
@@ -103,7 +138,9 @@ def _consumer_routes(graph, make_authorities, tester_cases, runtime_programs, so
             recipe = recipe.replace("$(CURDIR)", "/repo").replace("${CURDIR}", "/repo")
         if "$" in recipe:
             raise MakeProbeError("lifecycle Make consumer has unproven conditional or variable dispatch")
-        declared = _checker_dispatch(_command_words(recipe), cwd="/repo", source_root="/repo")
+        declared = _checker_dispatch(
+            _command_words(recipe), cwd="/repo", source_root="/repo", snapshot=snapshot,
+        )
         dispatches = record.get("recipe_dispatches")
         if not isinstance(dispatches, list) or len(dispatches) != 1:
             raise MakeProbeError("lifecycle Make consumer did not actually dispatch its checker")
@@ -118,7 +155,7 @@ def _consumer_routes(graph, make_authorities, tester_cases, runtime_programs, so
             arguments = _command_words(arguments[2])
         elif executable != "/usr/bin/python3":
             raise MakeProbeError("lifecycle native dispatch is not the checker: " + dispatch["executable"])
-        actual = _checker_dispatch(arguments, cwd="/repo", source_root="/repo")
+        actual = _checker_dispatch(arguments, cwd="/repo", source_root="/repo", snapshot=snapshot)
         if actual != declared:
             raise MakeProbeError("lifecycle native dispatch differs from the captured recipe")
         make_routes.append(actual)
@@ -139,7 +176,9 @@ def _consumer_routes(graph, make_authorities, tester_cases, runtime_programs, so
         ]
         if not positions or words[positions[0] + 1:positions[0] + 2] != ["check"]:
             continue
-        case_routes.append(_checker_dispatch(words, cwd=source_root, source_root=source_root))
+        case_routes.append(_checker_dispatch(
+            words, cwd=source_root, source_root=source_root, snapshot=snapshot,
+        ))
     if not case_routes:
         raise MakeProbeError("lifecycle consistency case lacks a mandatory artifact-consuming check")
     return ((target, tuple(make_routes)), (case_id, tuple(case_routes)))
@@ -167,7 +206,7 @@ def bind(graph, *, session, model, make_authorities, tester_cases):
                     ))
                     runtime_programs[mapped] = program
     routes = _consumer_routes(
-        graph, make_authorities, tester_cases, runtime_programs, session.loader.root.as_posix(),
+        graph, make_authorities, tester_cases, runtime_programs, session.loader.root.as_posix(), session.snapshot,
     )
     # The parser/dispatch conclusion applies only to the implementation whose
     # actual loaded sources match this immutable selected source view.

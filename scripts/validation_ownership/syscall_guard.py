@@ -118,23 +118,23 @@ def cstring(pid, address):
     raise Violation("pathname exceeds bound")
 
 
-def recipe_arguments(pid, address):
+def recipe_arguments(pid, address, *, label="argument", byte_limit=SYSCALL_MEMORY_LIMIT, allow_empty=False):
     arguments = []
     size = 0
     for index in range(1025):
         pointer = int.from_bytes(memory(pid, address + 8 * index, 8), "little")
         if not pointer:
-            if not arguments:
-                raise Violation("empty native recipe argument vector")
+            if not arguments and not allow_empty:
+                raise Violation("empty native recipe " + label + " vector")
             return arguments
         if index == 1024:
             break
         value = cstring(pid, pointer)
         size += len(value.encode("utf-8")) + 1
-        if size > SYSCALL_MEMORY_LIMIT:
+        if size > byte_limit:
             break
         arguments.append(value)
-    raise Violation("native recipe argument vector exceeds its frame bound")
+    raise Violation("native recipe " + label + " vector exceeds its frame bound")
 
 
 def directory_entries(data, *, wide):
@@ -276,6 +276,7 @@ class Policy:
         self.live_process_peak = 0
         self.make_pid = 0
         self.make_restarts = 0
+        self.dispatch_sequence = 0
         self.executable = set(config["executables"])
         self.executable.update(self.resolve(path) for path in config["executables"])
         self.runtime_closure = set(config.get("runtime_closure", ()))
@@ -1697,11 +1698,23 @@ class Policy:
                     state.helper_kind = VO_VALUE if (
                         required & 1 or source == "/usr/bin/make" or self.fd(state, 1) == "<pipe>"
                     ) else VO_RECIPE
-                    if state.helper_kind == VO_RECIPE and self.config.get("observe_recipe_dispatch"):
-                        self.observe("accessed", "make-recipe:" + encoded({
-                            "executable": source, "arguments": recipe_arguments(pid, b),
-                            "cwd": state.cwd, "ignore_errors": bool(required & 2),
-                        }).decode("ascii"))
+                    arguments = recipe_arguments(pid, b)
+                    remaining = SYSCALL_MEMORY_LIMIT - sum(len(value.encode("utf-8")) + 1 for value in arguments)
+                    environment = {}
+                    for value in recipe_arguments(
+                        pid, c, label="environment", byte_limit=remaining, allow_empty=True,
+                    ):
+                        name, separator, content = value.partition("=")
+                        if not separator or not name or name in environment:
+                            raise Violation("malformed or duplicate native Make export")
+                        environment[name] = content
+                    self.dispatch_sequence += 1
+                    self.observe("accessed", "make-dispatch:" + encoded({
+                        "sequence": self.dispatch_sequence, "environment": environment,
+                        "kind": "recipe" if state.helper_kind == VO_RECIPE else "value",
+                        "executable": source, "arguments": arguments,
+                        "cwd": state.cwd, "ignore_errors": bool(required & 2),
+                    }).decode("ascii"))
                     if state.helper_kind == VO_VALUE and self.config.get("producer_endpoint"):
                         state.helper_kind = VO_LIVE
                     state.dispatch = None

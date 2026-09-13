@@ -2281,23 +2281,37 @@ class ProbeSession:
                     raise MakeProbeError("malformed Make file-open observation")
                 file_open_attempts.append(tuple(record))
             semantics = _read_observation(self.budget.read_bytes(result_path, "control"), target, variables)
+            contexts = []
+            for value in observed["accessed"]:
+                if not value.startswith("make-dispatch:"):
+                    continue
+                dispatch = parse_json(value[len("make-dispatch:"):].encode("ascii"), "native Make dispatch")
+                if (
+                    not isinstance(dispatch, dict)
+                    or set(dispatch) != {
+                        "sequence", "kind", "environment", "executable", "arguments", "cwd", "ignore_errors",
+                    }
+                    or type(dispatch["sequence"]) is not int or dispatch["sequence"] < 1
+                    or not isinstance(dispatch["kind"], str) or dispatch["kind"] not in {"recipe", "value"}
+                    or type(dispatch["ignore_errors"]) is not bool
+                    or not isinstance(dispatch["executable"], str) or not isinstance(dispatch["cwd"], str)
+                    or not isinstance(dispatch["arguments"], list) or not 1 <= len(dispatch["arguments"]) <= 1024
+                    or any(not isinstance(argument, str) for argument in dispatch["arguments"])
+                    or not isinstance(dispatch["environment"], dict) or len(dispatch["environment"]) > 1024
+                    or any(not name or "=" in name or not isinstance(content, str)
+                           for name, content in dispatch["environment"].items())
+                ):
+                    raise MakeProbeError("malformed native Make dispatch")
+                contexts.append(dispatch)
+            contexts.sort(key=lambda item: item["sequence"])
+            if [item["sequence"] for item in contexts] != list(range(1, len(contexts) + 1)):
+                raise MakeProbeError("native Make dispatch sequence is incomplete")
+            semantics["native_dispatches"] = contexts
             if observe_recipe_dispatch:
-                dispatches = []
-                for value in observed["accessed"]:
-                    if not value.startswith("make-recipe:"):
-                        continue
-                    dispatch = parse_json(value[len("make-recipe:"):].encode("ascii"), "native recipe dispatch")
-                    if (
-                        not isinstance(dispatch, dict)
-                        or set(dispatch) != {"executable", "arguments", "cwd", "ignore_errors"}
-                        or type(dispatch["ignore_errors"]) is not bool
-                        or not isinstance(dispatch["executable"], str) or not isinstance(dispatch["cwd"], str)
-                        or not isinstance(dispatch["arguments"], list) or not 1 <= len(dispatch["arguments"]) <= 1024
-                        or any(not isinstance(argument, str) for argument in dispatch["arguments"])
-                    ):
-                        raise MakeProbeError("malformed native recipe dispatch")
-                    dispatches.append(dispatch)
-                semantics["recipe_dispatches"] = dispatches
+                semantics["recipe_dispatches"] = [
+                    {key: value for key, value in item.items() if key not in {"sequence", "kind", "environment"}}
+                    for item in contexts if item["kind"] == "recipe"
+                ]
             semantics["assignments"] = sorted(assignments, key=lambda item: item[1])
             recipe_sources = {record["source"] for record in semantics["files"] if record["source"]}
             semantics["owner_inputs"] = self.source_owners(set(owner_inputs) | recipe_sources)
