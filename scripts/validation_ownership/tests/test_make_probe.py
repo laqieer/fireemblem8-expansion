@@ -371,6 +371,105 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.observe()
         self.assertFalse((self.root / "marker").exists())
 
+    def assert_staged_rejection_before_late_observation(self):
+        for symbolic in (True, False):
+            with self.subTest(symbolic=symbolic), self.session() as session:
+                domains = {} if symbolic else {"FLAGS": {"kind": "explicit", "values": ["first", "second"]}}
+                with patch.object(session, "make", wraps=session.make) as calls:
+                    with self.assertRaisesRegex(MakeProbeError, "unproven emitted-reference"):
+                        run_probe(
+                            session.loader, {"all"}, domains, {}, session=session,
+                            declared_external_names={"FLAGS"},
+                            symbolic_recipe_names={"FLAGS"} if symbolic else (),
+                        )
+                    self.assertEqual(calls.call_count, 1)
+                    self.assertEqual(calls.call_args.kwargs.get("definitions", ()), ())
+            self.assertIsNone(session.base)
+            self.assertFalse(session.budget.children)
+
+    def test_opaque_staged_transformations_do_not_invent_emitted_reference_authority(self):
+        transformations = (
+            ("subst", "", "$(subst OTHER,FLAGS,$(TEXT))"),
+            ("patsubst", "END := )\n", "$(patsubst %OTHER$(END),%FLAGS$(END),$(TEXT))"),
+            ("substitution-reference", "END := )\n", "$(TEXT:OTHER$(END)=FLAGS$(END))"),
+            ("call-builtin", "subst = ignored variable\n", "$(call subst,OTHER,FLAGS,$(TEXT))"),
+            ("call-macro", "CHANGE = $(subst OTHER,FLAGS,$(TEXT))\n", "$(call CHANGE)"),
+        )
+        for name, declarations, expression in transformations:
+            for stage in ("secondary", "immediate-eval", "rule-eval"):
+                with self.subTest(transformation=name, stage=stage):
+                    if stage == "secondary":
+                        body = ".SECONDEXPANSION:\nall: $(PAYLOAD)\n"
+                    elif stage == "immediate-eval":
+                        body = "DEP =\nall: $(eval DEP := $(PAYLOAD)) $(DEP)\n"
+                    else:
+                        body = "$(eval all: $(PAYLOAD))\nall:\n"
+                    self.add("Makefile", "FLAGS ?= first\nOTHER = first\nTEXT := $$(OTHER)\n"
+                             + declarations + "PAYLOAD = " + expression + "\n" + body
+                             + "\t@echo $(FLAGS)\nfirst second: ;\n")
+                    self.assertEqual(self.ordinary("FLAGS=first"), b"first\n")
+                    self.assertEqual(self.ordinary("FLAGS=second"), b"second\n")
+                    with self.session() as session:
+                        actual = [
+                            session.make("all", assignments=(("command-line", "FLAGS", value),))
+                            .semantics["files"][0]["prerequisites"][0]["name"]
+                            for value in ("first", "second")
+                        ]
+                    self.assertEqual(actual, ["first", "second"])
+                    self.assert_staged_rejection_before_late_observation()
+
+    def test_late_or_stateful_payload_values_cannot_supply_original_stage_evidence(self):
+        self.last_late_evidence = []
+        for mode in ("stateful", "rewritten"):
+            with self.subTest(mode=mode):
+                payload = "$(subst OTHER,FLAGS,$(TEXT))"
+                if mode == "stateful":
+                    payload = "$(eval SEEN += x)$(if $(word 2,$(SEEN)),first," + payload + ")"
+                source = (
+                    "FLAGS ?= first\nOTHER = first\nTEXT := $$(OTHER)\nSEEN =\nPAYLOAD = " + payload
+                    + "\n.SECONDEXPANSION:\nall: $(PAYLOAD)\n\t@echo $(FLAGS)\n"
+                    + ("\t$(eval PAYLOAD = first)\n" if mode == "rewritten" else "")
+                    + "first second: ;\n"
+                )
+                self.add("Makefile", source)
+                self.assertEqual(self.ordinary("FLAGS=second"), b"second\n")
+                with self.session() as session:
+                    later = session.make(
+                        "all", assignments=(("command-line", "FLAGS", "second"),),
+                        variables=("PAYLOAD",) if mode == "stateful" else (),
+                        definitions=("PAYLOAD",) if mode == "rewritten" else (),
+                    )
+                    self.assertEqual(later.semantics["files"][0]["prerequisites"][0]["name"], "second")
+                    observed = (
+                        later.semantics["domains"] if mode == "stateful"
+                        else later.semantics["definitions"]["global"]
+                    )
+                    self.assertEqual(observed["PAYLOAD"]["value"], "first")
+                    self.last_late_evidence.append({
+                        "mode": mode, "actual_prerequisite": "second", "later_payload": observed["PAYLOAD"]["value"],
+                    })
+                self.assert_staged_rejection_before_late_observation()
+
+    def test_transparent_staged_forwarding_and_unused_transformations_remain_supported(self):
+        self.add("Makefile", "FLAGS ?= first\nTEXT := $$(FLAGS)\nCOPY = $(TEXT)\n"
+                 "PAYLOAD = $(call COPY)\nUNUSED = $(subst X,Y,$(shell touch marker))\n"
+                 ".SECONDEXPANSION:\nall: $(PAYLOAD)\n\t@echo $(FLAGS)\nfirst second: ;\n")
+        self.assertEqual(self.ordinary("FLAGS=first"), b"first\n")
+        self.assertEqual(self.ordinary("FLAGS=second"), b"second\n")
+        result = self.observe({"FLAGS": {"kind": "explicit", "values": ["first", "second"]}})["all"]
+        self.assertEqual(result["prerequisite_domain_census"]["enumerated"], ["FLAGS"])
+        self.assertEqual({
+            item["record"]["files"][0]["prerequisites"][0]["name"] for item in result["record"]["variants"]
+        }, {"first", "second"})
+        self.assertFalse((self.root / "marker").exists())
+        self.add("Makefile", "FLAGS ?= first\nINPUT = OTHER\nPAYLOAD = $(subst OTHER,$(FLAGS),$(INPUT))\n"
+                 "all: $(PAYLOAD)\nfirst second: ;\n")
+        result = self.observe({"FLAGS": {"kind": "explicit", "values": ["first", "second"]}})["all"]
+        self.assertEqual(result["prerequisite_domain_census"]["enumerated"], ["FLAGS"])
+        self.assertEqual({
+            item["record"]["files"][0]["prerequisites"][0]["name"] for item in result["record"]["variants"]
+        }, {"first", "second"})
+
     def test_combined_raw_and_expanded_names_keep_exact_512_admission(self):
         self.add("Makefile", "".join("VALUE_" + str(index) + " := " + str(index) + "\n" for index in range(513))
                  + "all: ;\n")

@@ -636,6 +636,23 @@ secondary forms retain their native behavior. Complete production resource
 fit remains separately required; these extra real observations spend the
 unchanged report budget.
 
+Balanced staged text is not proof of the reference names it will emit.
+Staged inputs must satisfy the supported reference-preserving contract:
+literal text, ordinary/scoped or already-proven computed references, and
+argument-free literal/computed-name macro forwarding. Structural eval is
+checked at its graph sink; reachable macro/variable bodies remain subject to
+the same contract. General value-producing Make functions, substitution
+references, parameterized or otherwise unproven call forms, and stateful
+operations inside staged payload definitions reject explicitly. This is a
+positive supported grammar, not a blacklist for `subst`.
+
+Both source definitions and native raw forms are checked. A later rewrite
+cannot erase an earlier opaque operation, and the reporter does not obtain
+authority by expanding that operation again after consumption. Additional
+proof-input retention spends the existing cache allowance. Ordinary
+non-staged Make evaluation remains native, and complete supported deferred
+forms and native-proven recursive eval still resolve normally.
+
 New paths brought in by the delivered producer/dependency/adaptive/cleanup
 contracts have explicit selectors in the existing host and documentation
 rules. The original introduction cohort is unchanged; another new path under

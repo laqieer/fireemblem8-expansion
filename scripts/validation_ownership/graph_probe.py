@@ -103,6 +103,30 @@ def _outside_eval_references(expression):
     return references("".join(pieces))
 
 
+def _require_staged_reference_contract(expressions, *, allow_eval=False):
+    """Only transparent references have an emitted-name contract here."""
+    for expression in expressions:
+        for staged in (False, True):
+            try:
+                for _, _, body in _make_expression_spans(expression, staged=staged):
+                    operation = re.fullmatch(r"([^ \t\r\n\v\f]+)[ \t\r\n\v\f]+(.*)", body, re.S)
+                    if operation:
+                        name, argument = operation.groups()
+                        if allow_eval and name == "eval":
+                            continue
+                        if name == "call":
+                            argument = argument.strip(" \t\r\n\v\f")
+                            if re.fullmatch(IDENTIFIER, argument) or NAME_PART.fullmatch(argument):
+                                continue
+                        raise MakeProbeError("unproven emitted-reference transformation in staged Make input")
+                    if ":" in body or any(character.isspace() for character in body):
+                        raise MakeProbeError("unproven emitted-reference substitution in staged Make input")
+            except _UnresolvedName:
+                # Incomplete syntax still needs the separate native fragment/
+                # eval proof; it is not transparent output evidence.
+                continue
+
+
 def computed_selectors(line):
     for body in make_expressions(line):
         call = re.match(r"call[ \t]+", body)
@@ -354,6 +378,8 @@ def source_census(sources, *, observed_values=None):
         "definitions": definitions,
         "observed_values": observed_values,
         "unresolved": unresolved,
+        "source_expressions": expressions,
+        "graph_expressions": graph_expressions,
         "stage_expressions": graph_expressions + [
             value for name in expanded_graph for value in expressions.get(name, ())
         ],
@@ -422,11 +448,21 @@ def _graph_definitions(session, target, state, commands, observation, usage, *, 
     ]
     if not usage["secondary_expansion"] and not evals:
         return
+    session.budget.charge("cache", len(encoded([
+        usage["graph_expressions"], usage["source_expressions"],
+    ])))
+    _require_staged_reference_contract(
+        usage["graph_expressions"] if usage["secondary_expansion"] else evals,
+        allow_eval=usage["secondary_expansion"],
+    )
     if any("$" in dependency["name"] for item in observation.semantics["files"] for dependency in item["prerequisites"]):
         raise MakeProbeError("staged Make graph retains unresolved dollar-bearing prerequisites")
     required = set(usage["graph"])
     measured, records = set(), {}
     while True:
+        _require_staged_reference_contract(
+            expression for name in required for expression in usage["source_expressions"].get(name, ())
+        )
         pending = sorted(name for name in required - measured if re.fullmatch(IDENTIFIER, name))
         for offset in range(0, len(pending), 512):
             names = tuple(pending[offset:offset + 512])
@@ -458,6 +494,7 @@ def _graph_definitions(session, target, state, commands, observation, usage, *, 
                     forms.append(raw)
                 if flavor == "recursive" and "$$" in raw and (usage["secondary_expansion"] or evals):
                     forms.append(raw.replace("$$", "$"))
+        _require_staged_reference_contract(forms)
         found = closure(set().union(*(references(form) for form in forms)), usage["dependencies"])
         if found - required:
             required.update(found)

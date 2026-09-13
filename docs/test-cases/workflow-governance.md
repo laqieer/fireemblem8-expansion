@@ -4052,6 +4052,28 @@ An unused partial definition and unused shell body must stay unexpanded.
 Exercise exactly 512 combined raw/expanded names successfully and reject 513
 before another native launch.
 
+For transformed emitted references, use `FLAGS ?= first`, `OTHER = first`,
+`TEXT := $$(OTHER)` and `PAYLOAD = $(subst OTHER,FLAGS,$(TEXT))`.
+Consume PAYLOAD with `.SECONDEXPANSION:` and `all: $(PAYLOAD)`, with
+`all: $(eval DEP := $(PAYLOAD)) $(DEP)` after initially empty DEP, and with
+top-level `$(eval all: $(PAYLOAD))`. Ordinary and native prerequisites change
+first/second with FLAGS; balanced raw syntax must not authorize symbolic FLAGS
+or an empty finite census. Repeat with pattern replacement, substitution
+reference syntax, a builtin call even when a same-named variable exists, and
+a user macro wrapping the transformation. All unproven staged operations
+reject before additional observation queries.
+
+Keep transparent literal/reference forwarding and argument-free macros,
+complete deferred forms and native recursive-eval positives. An unused opaque
+body remains unused, and ordinary non-staged transformations still execute
+through GNU Make. Use a stateful payload whose later expansion returns
+`first` after the real prerequisite selected `second`, and a payload rewritten
+after consumption: those later values are not original output evidence.
+Check source expressions as well as native raw forms, never collect literal
+identifier-looking words as proof, and never re-evaluate the payload to make
+it appear safe. Removing only the emitted-reference contract must restore the
+actual false symbolic and finite acceptances.
+
 For native ignore policy, execute real `exit 7` recipes with no ignore rule,
 `.IGNORE: unrelated-target`, `.IGNORE: all`, empty `.IGNORE:`, `MAKEFLAGS += -i`
 and a command-local `-`, including an expanded `-` prefix. Ordinary Make exits

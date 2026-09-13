@@ -2905,6 +2905,10 @@
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_opaque_staged_transformations_do_not_invent_emitted_reference_authority scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_late_or_stateful_payload_values_cannot_supply_original_stage_evidence scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_transparent_staged_forwarding_and_unused_transformations_remain_supported -v",
+          "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_native_ignore_error_policy_matches_actual_gnu_jobs scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_native_job_policy_requires_complete_pid_bound_receipts -v",
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },
