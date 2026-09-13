@@ -4017,6 +4017,31 @@ Braced and literal prefix/suffix name templates remain supported. An internal
 function-built name that the closed census cannot prove must reject unless
 the selector is itself admitted through the existing native finite/fallback
 domain contract.
+For deferred stages, keep the same FLAGS/NAME/first/second fixture but store
+`DEPS := $$($(NAME))` or `DEPS = $$($$(NAME))`, enable `.SECONDEXPANSION`,
+and use `all: $(DEPS)`. Also use `DOLLAR := $$`, initially empty DEP and
+`all: $(eval DEP = $(DOLLAR)($(DOLLAR)(NAME))) $(DEP)`. Ordinary first/second
+must change prerequisites; symbolic FLAGS rejects and the finite domain
+actually enumerates both. Inspect native raw definitions and origin/flavor:
+the simple DEPS contains `$(FLAGS)`, recursively deferred DEPS retains its
+escapes, and eval leaves an actual recursive DEP definition. An unconsumed
+`UNUSED = $(shell touch marker)` body must remain literal and create no marker.
+Raw/expanded name requests share the original 512-name bound and cannot
+overlap. Opaque dollar-generated secondary expressions, generated immediate
+eval or overwritten eval definitions must reject instead of reporting zero
+enumerated domains. No Python implementation of arbitrary Make evaluation is
+permitted.
+
+For native ignore policy, execute real `exit 7` recipes with no ignore rule,
+`.IGNORE: unrelated-target`, `.IGNORE: all`, empty `.IGNORE:`, `MAKEFLAGS += -i`
+and a command-local `-`, including an expanded `-` prefix. Ordinary Make exits
+2 for the first two and 0 for the remaining forms. Captured native bits must
+agree. Mixed one/two targets and mixed commands retain `[true, false]`, not
+one bit inferred from `.IGNORE` existence. The real unrelated scoped rule
+must preserve a valid lifecycle checker. Join authenticated GNU wait-policy
+receipts to actual helper PIDs/dispatches; missing, malformed, mismatched or
+forged receipts reject without falling back to global flags. Keep actual Make
+restarts, parallel dispatch and metadata-only recipe behavior intact.
 
 Set `export OPTION = first` and run a recipe
 `printf '%s\n' "$$OPTION"`, then change the value to `second`. Both ordinary

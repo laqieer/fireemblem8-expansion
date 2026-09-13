@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import copy
+from collections import Counter
 
 from .authority import encoded, relative_path
 from .budget import MakeProbeError
@@ -46,7 +47,7 @@ class _UnresolvedName(ValueError):
     pass
 
 
-def computed_selectors(line):
+def make_expressions(line):
     stack = []
     index = 0
     while index < len(line):
@@ -60,25 +61,29 @@ def computed_selectors(line):
         if stack and line[index] == stack[-1][1]:
             start, _ = stack.pop()
             if start is not None:
-                body = line[start:index]
-                call = re.match(r"call[ \t]+", body)
-                if call:
-                    body = body[call.end():]
-                depth, end = 0, len(body)
-                for position, character in enumerate(body):
-                    if character in "({":
-                        depth += 1
-                    elif character in ")}":
-                        depth -= 1
-                    elif not depth and (character == "," and call or character.isspace() or character == ":"):
-                        end = position if call or character == ":" else 0
-                        break
-                head = body[:end]
-                if "$" in head:
-                    yield head
+                yield line[start:index]
         elif stack and line[index] == ("(" if stack[-1][1] == ")" else "{"):
             stack.append((None, stack[-1][1]))
         index += 1
+
+
+def computed_selectors(line):
+    for body in make_expressions(line):
+        call = re.match(r"call[ \t]+", body)
+        if call:
+            body = body[call.end():]
+        depth, end = 0, len(body)
+        for position, character in enumerate(body):
+            if character in "({":
+                depth += 1
+            elif character in ")}":
+                depth -= 1
+            elif not depth and (character == "," and call or character.isspace() or character == ":"):
+                end = position if call or character == ":" else 0
+                break
+        head = body[:end]
+        if "$" in head:
+            yield head
 
 
 def selected_names(expressions, definitions, observed_values):
@@ -201,6 +206,7 @@ def source_census(sources, *, observed_values=None):
     dependencies = {}
     definitions, expressions, graph_expressions = {}, {}, []
     observed_values = {} if observed_values is None else observed_values
+    secondary_expansion = False
     for path, data in sources.items():
         try:
             lines = data.decode("utf-8").splitlines()
@@ -210,6 +216,8 @@ def source_census(sources, *, observed_values=None):
         for raw in lines:
             statement, inline_recipe = (raw, "") if raw.startswith("\t") else split_inline_recipe(raw)
             line = statement if raw.startswith("\t") else strip_comment(statement)
+            if not raw.startswith("\t") and re.match(r"^\s*\.SECONDEXPANSION\s*:", line):
+                secondary_expansion = True
             if not raw.startswith("\t") and computed_introspection(line.replace("$$", "$")):
                 raise MakeProbeError(f"computed Make introspection lacks a sealed literal selector: {path}")
             if inline_recipe:
@@ -310,6 +318,10 @@ def source_census(sources, *, observed_values=None):
         "definitions": definitions,
         "observed_values": observed_values,
         "unresolved": unresolved,
+        "stage_expressions": graph_expressions + [
+            value for name in expanded_graph for value in expressions.get(name, ())
+        ],
+        "secondary_expansion": secondary_expansion,
     }
 
 
@@ -350,6 +362,104 @@ def _semantic(semantics):
     return result
 
 
+def _stable_native_context(expected, actual):
+    structure = lambda value: [
+        {key: item[key] for key in ("target", "source", "recipe", "prerequisites")}
+        for item in value["files"]
+    ]
+    if structure(expected) != structure(actual):
+        raise MakeProbeError("Make graph changed across variable observations")
+    if expected["dynamic_commands"] != actual["dynamic_commands"]:
+        raise MakeProbeError("Make command provenance changed across variable observations")
+    recipes = lambda value: [
+        {key: field for key, field in item.items() if key != "sequence"}
+        for item in value["native_dispatches"] if item["kind"] == "recipe"
+    ]
+    if recipes(expected) != recipes(actual):
+        raise MakeProbeError("native recipe context changed across variable observations")
+
+
+def _graph_definitions(session, target, state, commands, observation, usage, *, observe_dispatch=False):
+    evals = [
+        body[5:].lstrip() for expression in usage["stage_expressions"]
+        for body in make_expressions(expression) if body.startswith(("eval ", "eval\t"))
+    ]
+    if not usage["secondary_expansion"] and not evals:
+        return
+    if any("$" in dependency["name"] for item in observation.semantics["files"] for dependency in item["prerequisites"]):
+        raise MakeProbeError("staged Make graph retains unresolved dollar-bearing prerequisites")
+    required = set(usage["graph"])
+    measured, records = set(), {}
+    while True:
+        pending = sorted(name for name in required - measured if re.fullmatch(IDENTIFIER, name))
+        for offset in range(0, len(pending), 512):
+            names = tuple(pending[offset:offset + 512])
+            actual = session.make(
+                target, definitions=names, assignments=state, commands=commands,
+                observe_recipe_dispatch=observe_dispatch,
+            )
+            _stable_native_context(observation.semantics, actual.semantics)
+            metadata = actual.semantics["definitions"]
+            session.budget.charge("cache", len(encoded(metadata)))
+            scopes = [metadata["global"], *(item["variables"] for item in metadata["files"])]
+            for name in names:
+                records[name] = [scope[name] for scope in scopes if scope[name]["origin"] != "undefined"]
+                if any(value["origin"] in {"file", "override"} for value in records[name]):
+                    usage["defined"].add(name)
+            measured.update(names)
+        forms, literals = [], copy.deepcopy(usage["observed_values"])
+        definitions = copy.deepcopy(usage["definitions"])
+        fragments = set()
+        for name, values in records.items():
+            for value in values:
+                raw, flavor = value["value"], value["flavor"]
+                definitions.setdefault(name, []).append(raw)
+                if flavor == "simple" or "$" not in raw:
+                    literals.setdefault(name, set()).add(raw)
+                if raw in {"$", "$$", "$(", "${"}:
+                    fragments.add(name)
+                if flavor == "recursive" or usage["secondary_expansion"] or evals:
+                    forms.append(raw)
+                if flavor == "recursive" and "$$" in raw and (usage["secondary_expansion"] or evals):
+                    forms.append(raw.replace("$$", "$"))
+        found = closure(set().union(*(references(form) for form in forms)), usage["dependencies"])
+        if found - required:
+            required.update(found)
+            continue
+        try:
+            found.update(selected_names(forms, definitions, literals))
+        except _UnresolvedName as error:
+            raise MakeProbeError("unresolved staged Make selector: " + str(error)) from error
+        if found - required:
+            required.update(found)
+            continue
+        affected_assignments = []
+        for body in evals:
+            if closure(references(body), usage["dependencies"]) & fragments:
+                assignment = ASSIGNMENT.fullmatch(body)
+                if assignment is None or assignment["operator"] != "=" or "\n" in body:
+                    raise MakeProbeError("unresolved dollar-generated Make eval")
+                affected_assignments.append(assignment["name"])
+        if usage["secondary_expansion"] and not evals and fragments & required:
+            raise MakeProbeError("unresolved dollar-generated secondary expansion")
+        assignment_counts = Counter(
+            assignment["name"] for body in evals
+            if (assignment := ASSIGNMENT.fullmatch(body)) is not None
+        )
+        if any(assignment_counts[name] != 1 for name in affected_assignments):
+            raise MakeProbeError("staged Make eval overwrites its observed definition")
+        if set(affected_assignments) - required:
+            required.update(affected_assignments)
+            continue
+        if any(not records.get(name) or any(value["flavor"] != "recursive" for value in records[name])
+               for name in affected_assignments):
+            raise MakeProbeError("staged Make eval lacks its resulting recursive definition")
+        break
+    usage["graph"].update(required)
+    usage["all"].update(required)
+    usage["recipe_only"].difference_update(required)
+
+
 def _recipe_domains(session, target, state, commands, observation, usage, observed_names, *, observe_dispatch=False):
     """Measure referenced recipe values through bounded native variable pages."""
     if any(computed_introspection(entry["recipe"]) for entry in observation.semantics["files"]):
@@ -382,22 +492,9 @@ def _recipe_domains(session, target, state, commands, observation, usage, observ
             target, variables=chunk, assignments=state, commands=commands,
             observe_recipe_dispatch=observe_dispatch,
         )
-        structural = lambda value: [
-            {key: entry[key] for key in ("target", "source", "recipe", "prerequisites")}
-            for entry in value["files"]
-        ]
-        if structural(measured.semantics) != structural(combined):
-            raise MakeProbeError("Make graph changed while observing its recipe values")
-        if measured.semantics["dynamic_commands"] != combined["dynamic_commands"]:
-            raise MakeProbeError("Make command provenance changed across recipe observations")
+        _stable_native_context(combined, measured.semantics)
         if measured.semantics.get("recipe_dispatches") != combined.get("recipe_dispatches"):
             raise MakeProbeError("native recipe dispatch changed across recipe observations")
-        recipe_contexts = lambda value: [
-            {key: field for key, field in item.items() if key != "sequence"}
-            for item in value["native_dispatches"] if item["kind"] == "recipe"
-        ]
-        if recipe_contexts(measured.semantics) != recipe_contexts(combined):
-            raise MakeProbeError("native recipe environment changed across recipe observations")
         combined["domains"].update(measured.semantics["domains"])
         for previous, actual in zip(combined["files"], measured.semantics["files"]):
             previous["variables"].update(actual["variables"])
@@ -460,6 +557,9 @@ def run_probe(
             }
             usage = source_census(loaded, observed_values=observed_values)
             usages.append(usage)
+            _graph_definitions(
+                session, target, state, commands, observation, usage, observe_dispatch=observe_dispatch,
+            )
             semantics = _recipe_domains(
                 session, target, state, commands, observation, usage, variables, observe_dispatch=observe_dispatch,
             )

@@ -1986,7 +1986,7 @@ class ProbeSession:
     @terminal_failure
     def make(
         self, target: str, *, makefile="Makefile", variables=(), assignments=(),
-        owner_inputs=(), commands=None, observe_recipe_dispatch=False,
+        owner_inputs=(), commands=None, observe_recipe_dispatch=False, definitions=(),
     ) -> MakeObservation:
         self.budget.remaining()
         if type(observe_recipe_dispatch) is not bool:
@@ -1996,18 +1996,24 @@ class ProbeSession:
         relative_path(makefile)
         if makefile not in self.snapshot.files and makefile not in self.published_sources:
             raise MakeProbeError("Makefile is not an admitted snapshot input")
-        if len(variables) > 512 or len(assignments) > 512 or len(owner_inputs) > 4096:
+        if len(variables) + len(definitions) > 512 or len(assignments) > 512 or len(owner_inputs) > 4096:
             raise MakeProbeError("Make request count exceeds admission bound")
-        variables = tuple(sorted(set(variables)))
-        if any(not isinstance(name, str) or len(name) > 128 or not VARIABLE.fullmatch(name) for name in variables):
+        if any(not isinstance(name, str) or len(name) > 128 or not VARIABLE.fullmatch(name)
+               for name in (*variables, *definitions)):
             raise MakeProbeError("invalid/excessive Make observation variables")
+        variables = tuple(sorted(set(variables)))
+        definitions = tuple(sorted(set(definitions)))
+        if set(variables) & set(definitions):
+            raise MakeProbeError("Make variable cannot request two observation forms")
+        observed_names = tuple(sorted((*variables, *definitions)))
         self.budget.plan(1)
         cli = []
         environment = {
             **ENVIRONMENT,
             "LD_PRELOAD": "/lib/vo-observer.so",
             "VO_OBSERVE_TARGET": target,
-            "VO_OBSERVE_NAMES": " ".join(variables),
+            "VO_OBSERVE_NAMES": " ".join(observed_names),
+            "VO_OBSERVE_RAW_NAMES": " ".join(definitions),
             "VO_OBSERVE_BYTES": str(min(self.budget.limits.file_bytes, 16 * 1024 * 1024)),
         }
         names = set()
@@ -2280,20 +2286,47 @@ class ProbeSession:
                 ):
                     raise MakeProbeError("malformed Make file-open observation")
                 file_open_attempts.append(tuple(record))
-            semantics = _read_observation(self.budget.read_bytes(result_path, "control"), target, variables)
+            semantics = _read_observation(self.budget.read_bytes(result_path, "control"), target, observed_names)
+            if definitions:
+                semantics["definitions"] = {
+                    "global": {name: semantics["domains"].pop(name) for name in definitions},
+                    "files": [
+                        {"target": item["target"], "variables": {
+                            name: item["variables"].pop(name) for name in definitions
+                        }}
+                        for item in semantics["files"]
+                    ],
+                }
             contexts = []
+            helpers, policies = {}, {}
             for value in observed["accessed"]:
+                if value.startswith(("make-helper:", "make-job-policy:")):
+                    kind, payload = value.split(":", 1)
+                    record = parse_json(payload.encode("ascii"), "native Make job binding")
+                    if (
+                        not isinstance(record, list) or len(record) != 2
+                        or any(type(item) is not int for item in record)
+                        or not 0 < record[0] < 1 << 31
+                        or kind == "make-helper" and not 0 < record[1] < 1 << 31
+                        or kind == "make-job-policy" and record[1] not in {0, 1, 2, 3}
+                    ):
+                        raise MakeProbeError("malformed native Make job binding")
+                    destination = helpers if kind == "make-helper" else policies
+                    if record[0] in destination:
+                        raise MakeProbeError("duplicate native Make job binding")
+                    destination[record[0]] = record[1]
+                    continue
                 if not value.startswith("make-dispatch:"):
                     continue
                 dispatch = parse_json(value[len("make-dispatch:"):].encode("ascii"), "native Make dispatch")
                 if (
                     not isinstance(dispatch, dict)
                     or set(dispatch) != {
-                        "sequence", "kind", "environment", "executable", "arguments", "cwd", "ignore_errors",
+                        "sequence", "kind", "environment", "executable", "arguments", "cwd", "global_ignore_errors",
                     }
                     or type(dispatch["sequence"]) is not int or dispatch["sequence"] < 1
                     or not isinstance(dispatch["kind"], str) or dispatch["kind"] not in {"recipe", "value"}
-                    or type(dispatch["ignore_errors"]) is not bool
+                    or type(dispatch["global_ignore_errors"]) is not bool
                     or not isinstance(dispatch["executable"], str) or not isinstance(dispatch["cwd"], str)
                     or not isinstance(dispatch["arguments"], list) or not 1 <= len(dispatch["arguments"]) <= 1024
                     or any(not isinstance(argument, str) for argument in dispatch["arguments"])
@@ -2306,6 +2339,17 @@ class ProbeSession:
             contexts.sort(key=lambda item: item["sequence"])
             if [item["sequence"] for item in contexts] != list(range(1, len(contexts) + 1)):
                 raise MakeProbeError("native Make dispatch sequence is incomplete")
+            if (
+                set(helpers) != {item["sequence"] for item in contexts}
+                or len(set(helpers.values())) != len(helpers) or set(helpers.values()) != set(policies)
+            ):
+                raise MakeProbeError("native Make job policy evidence is incomplete")
+            for item in contexts:
+                policy = policies[helpers[item["sequence"]]]
+                if item["kind"] == "recipe" and not policy & 2:
+                    raise MakeProbeError("native recipe lacks its actual GNU Make job")
+                item.pop("global_ignore_errors")
+                item["ignore_errors"] = bool(policy & 1)
             semantics["native_dispatches"] = contexts
             if observe_recipe_dispatch:
                 semantics["recipe_dispatches"] = [

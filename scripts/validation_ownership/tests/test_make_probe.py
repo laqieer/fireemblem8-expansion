@@ -236,6 +236,74 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                     for item in observed["record"]["variants"]
                 }, actual)
 
+    def test_deferred_and_constructed_eval_selectors_keep_actual_graph_domains(self):
+        cases = (
+            ("simple", "DEPS := $$($(NAME))\n.SECONDEXPANSION:\nall: $(DEPS)\n"),
+            ("recursive", "DEPS = $$($$(NAME))\n.SECONDEXPANSION:\nall: $(DEPS)\n"),
+            ("eval", "DOLLAR := $$\nDEP =\nall: $(eval DEP = $(DOLLAR)($(DOLLAR)(NAME))) $(DEP)\n"),
+        )
+        self.last_staged_evidence = []
+        for name, body in cases:
+            with self.subTest(stage=name):
+                self.add("Makefile", "FLAGS ?= first\nNAME = FLAGS\n" + body
+                         + "\t@echo $(FLAGS)\nfirst second: ;\n")
+                self.assertEqual(self.ordinary("FLAGS=first"), b"first\n")
+                self.assertEqual(self.ordinary("FLAGS=second"), b"second\n")
+                with self.assertRaises(MakeProbeError):
+                    self.observe(external={"FLAGS"}, symbolic_recipe_names={"FLAGS"})
+                result = self.observe({"FLAGS": {"kind": "explicit", "values": ["first", "second"]}})["all"]
+                self.assertEqual(result["prerequisite_domain_census"]["enumerated"], ["FLAGS"])
+                observed = {
+                    item["record"]["files"][0]["prerequisites"][0]["name"]
+                    for item in result["record"]["variants"]
+                }
+                self.assertEqual(observed, {"first", "second"})
+                self.last_staged_evidence.append({
+                    "stage": name, "prerequisites": sorted(observed),
+                    "enumerated": result["prerequisite_domain_census"]["enumerated"],
+                    "runs_states": self.last_accounting,
+                })
+
+    def test_native_raw_definitions_do_not_expand_unused_variable_bodies(self):
+        self.add("Makefile", "ifneq ($(origin VO_OBSERVE_RAW_NAMES),undefined)\n$(error observer input leaked)\nendif\n"
+                 "UNUSED = $(shell touch marker)\nNAME = global\nall: NAME = local\nall: ;\n")
+        with self.session() as session:
+            result = session.make("all", definitions=("UNUSED", "NAME"))
+            definitions = result.semantics["definitions"]
+            self.assertEqual(definitions["global"]["UNUSED"], {
+                "value": "$(shell touch marker)", "origin": "file", "flavor": "recursive",
+            })
+            self.assertEqual(definitions["global"]["NAME"]["value"], "global")
+            self.assertEqual(definitions["files"][0]["variables"]["NAME"]["value"], "local")
+            self.assertEqual(result.semantics["domains"], {})
+            self.assertEqual(result.semantics["files"][0]["variables"], {})
+            self.assertEqual(result.semantics["native_dispatches"], [])
+            self.assertEqual(result.events, ())
+            self.assertFalse((session.tree / "marker").exists())
+        self.assertFalse((self.root / "marker").exists())
+        self.assertIsNone(session.base)
+        self.assertFalse(session.budget.children)
+        for variables, definitions in ((("NAME",), ("NAME",)), ((), tuple("VALUE_" + str(index) for index in range(513)))):
+            with self.subTest(names=len(definitions)), self.session() as session:
+                before = session.budget.runs
+                with self.assertRaises(MakeProbeError):
+                    session.make("all", variables=variables, definitions=definitions)
+                self.assertEqual(session.budget.runs, before)
+
+    def test_unresolved_generated_stages_reject_instead_of_omitting_domains(self):
+        cases = (
+            ".SECONDEXPANSION:\nall: $(DOLLAR)($(DOLLAR)(NAME))\n",
+            "DEP =\nall: $(eval DEP := $(DOLLAR)($(DOLLAR)(NAME))) $(DEP)\n",
+            "DEP =\nall: $(eval DEP = $(DOLLAR)($(DOLLAR)(NAME))) $(DEP) $(eval DEP =)\n",
+        )
+        for body in cases:
+            with self.subTest(body=body):
+                self.add("Makefile", "FLAGS ?= first\nNAME = FLAGS\nDOLLAR := $$\n" + body
+                         + "\t@echo $(FLAGS)\nfirst second: ;\n")
+                self.assertEqual(self.ordinary("FLAGS=first"), b"first\n")
+                self.assertEqual(self.ordinary("FLAGS=second"), b"second\n")
+                with self.assertRaises(MakeProbeError):
+                    self.observe({"FLAGS": {"kind": "explicit", "values": ["first", "second"]}})
     def test_computed_include_and_unresolved_name_contracts_are_native(self):
         self.add("first.mk", "SELECTED = first\n")
         self.add("second.mk", "SELECTED = second\n")
@@ -477,8 +545,9 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             native, = captured
             frames = [value for value in native["accessed"] if value.startswith("make-dispatch:")]
             self.assertEqual(len(frames), 1)
-            self.assertEqual(json.loads(frames[0].removeprefix("make-dispatch:")),
-                             result.semantics["native_dispatches"][0])
+            dispatch = json.loads(frames[0].removeprefix("make-dispatch:"))
+            dispatch["ignore_errors"] = dispatch.pop("global_ignore_errors")
+            self.assertEqual(dispatch, result.semantics["native_dispatches"][0])
             self.assertEqual(session.observations_used - before[0], native["observations"])
             self.assertGreaterEqual(native["observation_bytes"], len(frames[0].encode()) + 128)
             self.assertGreaterEqual(
@@ -495,6 +564,86 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.assertIsNone(session.base)
         self.assertFalse(session.budget.children)
         self.assertFalse(session.budget.producer_waiters)
+
+    def test_native_ignore_error_policy_matches_actual_gnu_jobs(self):
+        scenarios = (
+            ("none", "", "all:\n\t@exit 7\n", 2, [False]),
+            ("unrelated", ".IGNORE: unrelated-target\n", "all:\n\t@exit 7\n", 2, [False]),
+            ("selected", ".IGNORE: all\n", "all:\n\t@exit 7\n", 0, [True]),
+            ("global", ".IGNORE:\n", "all:\n\t@exit 7\n", 0, [True]),
+            ("flag", "MAKEFLAGS += -i\n", "all:\n\t@exit 7\n", 0, [True]),
+            ("local", "", "all:\n\t-@exit 7\n", 0, [True]),
+            ("expanded-local", "PREFIX = -\n", "all:\n\t@$(PREFIX)exit 7\n", 0, [True]),
+            ("mixed-targets", ".IGNORE: one\n", "all: one two\none two:\n\t@exit 7\n", 2, [True, False]),
+            ("mixed-commands", "", "all:\n\t-@exit 7\n\t@exit 7\n", 2, [True, False]),
+        )
+        self.last_ignore_evidence = []
+        for name, prelude, body, code, flags in scenarios:
+            with self.subTest(scenario=name):
+                self.add("Makefile", ".PHONY: all one two unrelated-target\n" + prelude + body)
+                budget = ProbeBudget()
+                try:
+                    actual = budget.run(
+                        ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root, env=ENVIRONMENT,
+                    )
+                    self.assertEqual(actual.returncode, code, actual.stderr)
+                    if name == "mixed-targets":
+                        for target, expected in (("one", 0), ("two", 2)):
+                            reference = budget.run(
+                                ["/usr/bin/make", "-f", "Makefile", target], cwd=self.root, env=ENVIRONMENT,
+                            )
+                            self.assertEqual(reference.returncode, expected, reference.stderr)
+                finally:
+                    budget.close()
+                    self.assertFalse(budget.children)
+                with self.session() as session:
+                    native = session.make("all", observe_recipe_dispatch=True)
+                    observed = [item["ignore_errors"] for item in native.semantics["recipe_dispatches"]]
+                    self.last_ignore_evidence.append({
+                        "scenario": name, "ordinary_exit": actual.returncode, "native_ignore": observed,
+                    })
+                    self.assertEqual(observed, flags)
+                self.assertIsNone(session.base)
+                self.assertFalse(session.budget.children)
+                self.assertFalse(session.budget.producer_waiters)
+
+    def test_native_job_policy_requires_complete_pid_bound_receipts(self):
+        self.add("Makefile", "all:\n\t@true\n")
+        for defect in ("missing-policy", "missing-helper", "wrong-pid", "invalid-flags"):
+            with self.subTest(defect=defect), self.session() as session:
+                original = session._sandbox_run
+
+                def mutate(*arguments, **options):
+                    completed, observed = original(*arguments, **options)
+                    observed = {**observed, "accessed": list(observed["accessed"])}
+                    prefix = "make-helper:" if defect == "missing-helper" else "make-job-policy:"
+                    row = next(value for value in observed["accessed"] if value.startswith(prefix))
+                    observed["accessed"].remove(row)
+                    if not defect.startswith("missing"):
+                        record = json.loads(row.removeprefix(prefix))
+                        record[0 if defect == "wrong-pid" else 1] = 999999 if defect == "wrong-pid" else 4
+                        observed["accessed"].append(prefix + json.dumps(record))
+                    return completed, observed
+
+                with patch.object(session, "_sandbox_run", mutate):
+                    with self.assertRaises(MakeProbeError):
+                        session.make("all")
+                self.assertTrue(session.budget.failed)
+            self.assertIsNone(session.base)
+            self.assertFalse(session.budget.children)
+
+    def test_parallel_jobs_keep_each_actual_command_policy(self):
+        self.add("Makefile", "MAKEFLAGS += -j2\n.IGNORE: one\n.PHONY: all one two\n"
+                 "all: one two\none:\n\t@printf one; exit 7\ntwo:\n\t@printf two; exit 7\n")
+        with self.session() as session:
+            result = session.make("all", observe_recipe_dispatch=True)
+            policies = {
+                item["arguments"][-1]: item["ignore_errors"]
+                for item in result.semantics["recipe_dispatches"]
+            }
+            self.assertEqual(policies, {"printf one; exit 7": True, "printf two; exit 7": False})
+        self.assertIsNone(session.base)
+        self.assertFalse(session.budget.children)
 
     def test_multiline_recipe_literals_preserve_native_bytes_and_real_output(self):
         for literal in ("#", " ", ""):

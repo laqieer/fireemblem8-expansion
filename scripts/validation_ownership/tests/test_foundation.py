@@ -6913,6 +6913,7 @@ int main(int argc, char **argv) {
             "ifneq ($(findstring --no-print-directory,$(MAKEFLAGS)),)",
             "ifneq ($(origin LD_PRELOAD),undefined)",
             "ifneq ($(origin VO_OBSERVE_TARGET),undefined)",
+            "ifneq ($(origin VO_OBSERVE_RAW_NAMES),undefined)",
             "ifneq ($(origin SOURCE_DATE_EPOCH),undefined)",
         )
         for condition in controls:
@@ -7101,8 +7102,8 @@ int main(int argc, char **argv) {
             self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "observed")
             self.assertTrue(all(event["match"] >= 0 for event in result.events))
         self.assert_clean(session)
-        from scripts.validation_ownership.syscall_guard import VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA
-        for marker in (VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA):
+        from scripts.validation_ownership.syscall_guard import VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_JOB_POLICY
+        for marker in (VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_JOB_POLICY):
             with self.subTest(marker=marker):
                 session = self.session()
                 with self.assertRaisesRegex(MakeProbeError, "unauthenticated"):

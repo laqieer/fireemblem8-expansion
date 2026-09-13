@@ -53,9 +53,9 @@ MAP_ANONYMOUS = 0x20
 # Fixed placement, loader hints and stacks do not alias pages or change their
 # size. Growing/huge-page and unknown flags cannot bypass 4 KiB reservations.
 MMAP_FLAGS = 3 | 0x10 | MAP_ANONYMOUS | 0x800 | 0x1000 | 0x20000 | 0x100000
-VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE = (
+VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY = (
     0x564F4D4B00000001, 0x564F4D4B00000002, 0x564F4D4B00000003, 0x564F4D4B00000004,
-    0x564F4D4B00000005,
+    0x564F4D4B00000005, 0x564F4D4B00000006,
 )
 VO_RECIPE, VO_VALUE, VO_VALIDATE = 0x564F4D4B00000011, 0x564F4D4B00000012, 0x564F4D4B00000013
 VO_LIVE = 0x564F4D4B00000014
@@ -202,6 +202,8 @@ class Process:
     break_end: int = 0
     dispatch: tuple | None = None
     helper_kind: int = 0
+    native_dispatch_sequence: int | None = None
+    namespace_pid: int | None = None
     observer_ready: bool = False
     memory_group: int = 0
     memory_limit: int = 0
@@ -1489,7 +1491,7 @@ class Policy:
         state.observations.clear()
         state.observation_needs_bytes = False
         trusted = self.observer(state, r)
-        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE}:
+        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY}:
             if a == VO_QUERY_KIND:
                 if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE, VO_LIVE}:
                     raise Violation("unauthenticated interceptor kind query")
@@ -1530,6 +1532,13 @@ class Policy:
                     if b or c or state.observer_ready:
                         raise Violation("invalid observer bootstrap notification")
                     state.observer_ready = True
+                elif a == VO_JOB_POLICY:
+                    if (
+                        state.role != "make" or pid != self.make_pid or not state.observer_ready
+                        or not 0 < b < 1 << 31 or c not in {0, 1, 2, 3}
+                    ):
+                        raise Violation("invalid native Make job policy")
+                    self.observe("accessed", "make-job-policy:" + encoded([b, c]).decode("ascii"))
                 elif b:
                     path = self.path(pid, state, b)
                     if path not in self.executable or path == "/control/interceptor" or c not in {0, 1, 2, 3}:
@@ -1709,11 +1718,12 @@ class Policy:
                             raise Violation("malformed or duplicate native Make export")
                         environment[name] = content
                     self.dispatch_sequence += 1
+                    state.native_dispatch_sequence = self.dispatch_sequence
                     self.observe("accessed", "make-dispatch:" + encoded({
                         "sequence": self.dispatch_sequence, "environment": environment,
                         "kind": "recipe" if state.helper_kind == VO_RECIPE else "value",
                         "executable": source, "arguments": arguments,
-                        "cwd": state.cwd, "ignore_errors": bool(required & 2),
+                        "cwd": state.cwd, "global_ignore_errors": bool(required & 2),
                     }).decode("ascii"))
                     if state.helper_kind == VO_VALUE and self.config.get("producer_endpoint"):
                         state.helper_kind = VO_LIVE
@@ -1891,6 +1901,13 @@ class Policy:
         elif operation == "cwd":
             state.cwd = value
         elif operation == "helper_kind":
+            if state.native_dispatch_sequence is not None and value == state.helper_kind:
+                if not 0 < result < 1 << 31 or state.namespace_pid not in {None, result}:
+                    raise Violation("invalid native helper PID identity")
+                state.namespace_pid = result
+                self.observe("accessed", "make-helper:" + encoded([
+                    state.native_dispatch_sequence, result,
+                ]).decode("ascii"))
             r.rax = value
             ptrace(SETREGS, pid, 0, ctypes.byref(r))
         elif operation == "directory":

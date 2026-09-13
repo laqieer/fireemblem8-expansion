@@ -2889,6 +2889,14 @@
           "evidence": "scripts/validation_ownership/tests/test_coordinator_capture.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_deferred_and_constructed_eval_selectors_keep_actual_graph_domains scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_native_raw_definitions_do_not_expand_unused_variable_bodies scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_unresolved_generated_stages_reject_instead_of_omitting_domains -v",
+          "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_native_ignore_error_policy_matches_actual_gnu_jobs scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_native_job_policy_requires_complete_pid_bound_receipts -v",
+          "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_computed_graph_positions_close_real_selected_domains scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_computed_include_and_unresolved_name_contracts_are_native scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_computed_conditional_names_cannot_be_symbolic_recipe_inputs scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_computed_selector_values_include_actual_target_local_context -v",
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },

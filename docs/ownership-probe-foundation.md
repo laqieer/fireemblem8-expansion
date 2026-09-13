@@ -240,12 +240,29 @@ The graph's lifecycle consumer may additionally select
 `recipe_dispatches` projection. It retains each complete recipe context,
 including sequence, kind and environment, rather than dropping startup
 authority. These are dispatch observations, not execution
-of candidate recipes; metadata-only suppression is unchanged. GNU Make's actual
-ignore-errors state and captured `.IGNORE` declaration are observed, not
-inferred from source comments.
+of candidate recipes; metadata-only suppression is unchanged. Effective error
+policy comes from GNU Make's active job `noerror` bit, which combines target
+`COMMANDS_NOERROR`, command flags and expanded leading `-`, plus the global
+ignore flag. The observer reads that job at the real `wait`/`waitpid` return,
+before GNU Make updates or frees it. Authenticated native receipts bind the
+waited namespace PID to the helper's actual kernel `getpid` result and dispatch
+sequence. Missing, duplicate, malformed or unmatched receipts reject; PIDs are
+not owner identity. All receipt traffic retains observation/byte accounting.
+An unrelated scoped `.IGNORE` is not global ignore authority.
 The graph uses these records only with its closed ordinary dispatcher,
 captured source identity and session/model binding. It does not acquire
 permission to execute arbitrary consumer code or reset its report budget.
+
+`ProbeSession.make(..., definitions=("NAME",))` observes literal GNU
+`$(value NAME)` together with origin/flavor in global and actual file scopes.
+Those records live under `semantics["definitions"]`, separate from expanded
+`domains`/file `variables`. Raw and expanded requests cannot overlap, and
+their combined count keeps the original 512-name admission. Identifier and
+128-character bounds are unchanged. Raw observation does not expand an unused
+body; normal Make parsing/recipe evaluation still occurs. The private selector
+is removed before Make imports its environment and survives genuine Make
+re-exec only through the existing trusted bootstrap. Raw result, decoded and
+retained/cached bytes keep their original counters and limits.
 
 Make's runtime is captured once per session from its actual ELF interpreter
 and that trusted interpreter's bounded `--list` dependency closure. Canonical

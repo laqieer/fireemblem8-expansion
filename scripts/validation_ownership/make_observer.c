@@ -4,6 +4,7 @@
  * https://git.savannah.gnu.org/cgit/make.git/tree/src/filedef.h?h=4.3
  * https://git.savannah.gnu.org/cgit/make.git/tree/src/dep.h?h=4.3
  * https://git.savannah.gnu.org/cgit/make.git/tree/src/commands.h?h=4.3
+ * https://git.savannah.gnu.org/cgit/make.git/tree/src/job.h?h=4.3
  * No candidate-loadable functions are registered with GNU Make.
  */
 #define _GNU_SOURCE
@@ -16,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "dispatch.h"
@@ -55,6 +57,26 @@ struct FileView
     struct FileView *previous;
 };
 
+struct ChildView
+{
+    char *command_name;
+    char **environment;
+    struct
+    {
+        int out;
+        int error;
+        unsigned int syncout;
+    } output;
+    struct ChildView *next;
+    struct FileView *file;
+    char *batch_file;
+    char **command_lines;
+    char *command_pointer;
+    unsigned int command_line;
+    pid_t pid;
+    unsigned int flags;
+};
+
 extern struct FileView *lookup_file(const char *);
 extern char *gmk_expand(const char *);
 extern char *allocated_variable_expand_for_file(const char *, struct FileView *);
@@ -63,6 +85,7 @@ extern void set_file_variables(struct FileView *);
 extern void chop_commands(struct CommandsView *);
 extern int rebuilding_makefiles;
 extern int ignore_errors_flag;
+extern struct ChildView *children;
 extern char **environ;
 
 #define MAX_NODES 4096
@@ -71,9 +94,13 @@ extern char **environ;
 
 static char *target;
 static char *names;
+static char *raw_names;
 static char *parsed_names;
+static char *parsed_raw_names;
 static char *name_list[MAX_NAMES];
+static char *raw_name_list[MAX_NAMES];
 static size_t name_count;
+static size_t raw_name_count;
 static unsigned char *result;
 static size_t used;
 static size_t capacity;
@@ -102,11 +129,12 @@ __attribute__((constructor)) static void setup(void)
 {
     const char *goal = getenv("VO_OBSERVE_TARGET");
     const char *variables = getenv("VO_OBSERVE_NAMES");
+    const char *definitions = getenv("VO_OBSERVE_RAW_NAMES");
     const char *limit = getenv("VO_OBSERVE_BYTES");
     char *end = NULL;
     unsigned long bound;
 
-    if (!goal || !variables || !limit)
+    if (!goal || !variables || !definitions || !limit)
         fail();
     bound = strtoul(limit, &end, 10);
     if (!end || *end || !bound || bound > MAX_RESULT)
@@ -114,9 +142,11 @@ __attribute__((constructor)) static void setup(void)
     capacity = bound;
     target = strdup(goal);
     names = strdup(variables);
+    raw_names = strdup(definitions);
     parsed_names = strdup(variables);
+    parsed_raw_names = strdup(definitions);
     result = malloc(capacity);
-    if (!target || !names || !parsed_names || !result)
+    if (!target || !names || !raw_names || !parsed_names || !parsed_raw_names || !result)
         fail();
     {
         char *state;
@@ -127,9 +157,16 @@ __attribute__((constructor)) static void setup(void)
                 fail();
             name_list[name_count++] = name;
         }
+        for (name = strtok_r(parsed_raw_names, " ", &state); name; name = strtok_r(NULL, " ", &state))
+        {
+            if (raw_name_count == MAX_NAMES || strlen(name) > 128)
+                fail();
+            raw_name_list[raw_name_count++] = name;
+        }
     }
     unsetenv("VO_OBSERVE_TARGET");
     unsetenv("VO_OBSERVE_NAMES");
+    unsetenv("VO_OBSERVE_RAW_NAMES");
     unsetenv("VO_OBSERVE_BYTES");
     unsetenv("LD_PRELOAD");
     make_pid = raw_call(SYS_getpid, VO_READY, 0, 0);
@@ -146,6 +183,7 @@ int execvp(const char *file, char *const argv[])
         fail();
     snprintf(limit, sizeof(limit), "%zu", capacity);
     if (setenv("VO_OBSERVE_TARGET", target, 1) || setenv("VO_OBSERVE_NAMES", names, 1)
+        || setenv("VO_OBSERVE_RAW_NAMES", raw_names, 1)
         || setenv("VO_OBSERVE_BYTES", limit, 1) || setenv("LD_PRELOAD", "/lib/vo-observer.so", 1))
         fail();
     status = raw_call(SYS_execve, (long)file, (long)argv, (long)environ);
@@ -203,6 +241,60 @@ static int recursive_graph(void)
     return 0;
 }
 
+static void observe_job_policy(pid_t pid, const int *status)
+{
+    struct ChildView *child;
+    size_t count = 0;
+    unsigned int flags = ignore_errors_flag ? 1 : 0;
+    if (pid <= 0 || !status || !(WIFEXITED(*status) || WIFSIGNALED(*status)))
+        return;
+    /* GNU Make has linked the running child before waiting, and has not yet
+     * changed its per-command noerror bit or freed it at this return boundary. */
+    for (child = children; child; child = child->next)
+    {
+        if (++count > MAX_NODES)
+            fail();
+        if (child->pid == pid)
+        {
+            flags |= 2 | ((child->flags & 2) ? 1 : 0);
+            break;
+        }
+    }
+    raw_call(SYS_getpid, VO_JOB_POLICY, pid, flags);
+}
+
+pid_t wait(int *status)
+{
+    static pid_t (*original)(int *);
+    pid_t pid;
+    int error;
+    if (!original)
+        original = dlsym(RTLD_NEXT, "wait");
+    if (!original)
+        fail();
+    pid = original(status);
+    error = errno;
+    observe_job_policy(pid, status);
+    errno = error;
+    return pid;
+}
+
+pid_t waitpid(pid_t selected, int *status, int options)
+{
+    static pid_t (*original)(pid_t, int *, int);
+    pid_t pid;
+    int error;
+    if (!original)
+        original = dlsym(RTLD_NEXT, "waitpid");
+    if (!original)
+        fail();
+    pid = original(selected, status, options);
+    error = errno;
+    observe_job_policy(pid, status);
+    errno = error;
+    return pid;
+}
+
 int posix_spawn(pid_t *pid, const char *path, const posix_spawn_file_actions_t *actions,
                 const posix_spawnattr_t *attributes, char *const argv[], char *const envp[])
 {
@@ -217,7 +309,7 @@ int posix_spawn(pid_t *pid, const char *path, const posix_spawn_file_actions_t *
      * The kernel supervisor authenticates this notification and the child's
      * stdout FD. Recursive/remake contexts conservatively require mappings. */
     raw_call(SYS_getpid, VO_DISPATCH, (long)path,
-             recursive_graph() | ((ignore_errors_flag || lookup_file(".IGNORE")) ? 2 : 0));
+             recursive_graph() | (ignore_errors_flag ? 2 : 0));
     status = spawn(pid, VO_INTERCEPTOR, actions, attributes, argv, envp);
     raw_call(SYS_getpid, VO_DISPATCH, 0, 0);
     return status;
@@ -270,6 +362,13 @@ static void variable(struct FileView *file, const char *name)
     char expression[512];
     const char *forms[] = {"", "origin ", "flavor "};
     size_t form;
+    size_t index;
+    for (index = 0; index < raw_name_count; ++index)
+        if (!strcmp(name, raw_name_list[index]))
+        {
+            forms[0] = "value ";
+            break;
+        }
     string(name);
     for (form = 0; form < 3; ++form)
     {

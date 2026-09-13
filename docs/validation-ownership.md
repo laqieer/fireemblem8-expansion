@@ -452,7 +452,8 @@ executable/argv/cwd, not a textual mention or target fingerprint. Dispatch
 projection is selected for the declared consumer and retains ordinary Make
 execution decisions: an up-to-date/skipped target supplies no dispatch.
 The supported consumer is a direct leaf with one mandatory checker command;
-compound/conditional recipes, failure-ignoring prefixes or `.IGNORE`, changed
+compound/conditional recipes, effective failure-ignoring command/target/global
+policy, changed
 roots, help-only modes and substituted programs reject. Only the native
 `CURDIR` observation is admitted as a Make substitution in that closed route.
 Equivalent quoting, Python isolation-flag ordering and alternative target
@@ -591,6 +592,23 @@ used to construct an internal selector name is not reimplemented in Python:
 admit that selector through the existing finite/fallback domain seam so its
 actual GNU value is observed, or retain the rejection. Unconsumed unresolved
 definitions do not execute.
+When secondary expansion or eval is involved, the existing native variable
+pages also capture literal post-parse definitions without expanding their
+bodies. The graph census retains immediate and deferred forms and closes their
+references to a fixed point in the same session. Thus
+`DEPS := $$($(NAME))` and `DEPS = $$($$(NAME))` cannot lose FLAGS when consumed
+by secondary expansion. A literal-name recursive eval assignment constructed
+with `DOLLAR := $$` is closed through the actual resulting GNU definition, not
+an emulated eval. Graph/recipe context or producer-provenance drift across
+pages rejects.
+
+This is not a general Make interpreter. Dollar-generated immediate eval
+assignments, overwritten observed eval definitions, opaque dollar-generated
+secondary expressions, or unresolved dollar-bearing prerequisites reject
+rather than inventing a finite census. Ordinary supported eval/call and
+secondary forms retain their native behavior. Complete production resource
+fit remains separately required; these extra real observations spend the
+unchanged report budget.
 
 New paths brought in by the delivered producer/dependency/adaptive/cleanup
 contracts have explicit selectors in the existing host and documentation

@@ -792,6 +792,22 @@ class LifecycleBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(MakeProbeError, "did not actually dispatch"):
             self.report()
 
+    def test_unrelated_scoped_ignore_preserves_the_real_checker_route(self):
+        self.fixture.add("Makefile", ".IGNORE: unrelated-target\n"
+                         + report_fixture.consuming_makefile("validation-ownership-check"))
+        self.fixture.commit("Unrelated scoped ignore rule")
+        self.assertEqual(len(self.report()["artifact"]["executable_lifecycle"]), 3)
+        budget = ProbeBudget(Limits(seconds=90))
+        try:
+            actual = budget.run(
+                ["/usr/bin/make", "-f", "Makefile", "validation-ownership-check"],
+                cwd=self.fixture.root, env=ENVIRONMENT,
+            )
+            self.assertEqual(actual.returncode, 0, actual.stderr)
+        finally:
+            budget.close()
+            self.assertFalse(budget.children)
+
     def test_checker_substitution_is_rejected_even_with_the_right_argv(self):
         self.fixture.add("scripts/validation_ownership/isolated_launcher.py", "raise SystemExit(0)\n")
         self.fixture.commit("Substitute the checker behind its valid pathname")
