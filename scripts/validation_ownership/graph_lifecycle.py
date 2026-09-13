@@ -1,10 +1,199 @@
-"""Artifact lifecycle checks using the already measured report model."""
+"""Verified consumer dispatch plus nonrecursive, already-measured checks."""
 
+from dataclasses import dataclass
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
+import posixpath
+import shlex
 import tempfile
+import weakref
 
+from scripts.bash_parser import normalize_bash_script_commands
 from .authority import encoded, parse_json
 from .budget import MakeProbeError
+
+
+@dataclass(frozen=True, eq=False)
+class _Bindings:
+    session: object
+    loader: object
+    snapshot: object
+    model: dict
+    graph_bytes: bytes
+    authority_bytes: bytes
+    routes: tuple
+
+
+_issued = weakref.WeakSet()
+
+
+def _command_words(command):
+    try:
+        lines = normalize_bash_script_commands(command, "lifecycle dispatch")
+        if len(lines) != 1:
+            raise MakeProbeError("lifecycle dispatch must be one mandatory command")
+        lexer = shlex.shlex(lines[0], posix=True, punctuation_chars=";&|<>()")
+        lexer.whitespace_split = True
+        lexer.commenters = "#"
+        words = list(lexer)
+    except ValueError as error:
+        raise MakeProbeError("lifecycle dispatch has invalid shell syntax") from error
+    if len(words) >= 2 and words[-2:] == [">", "/dev/null"]:
+        words = words[:-2]
+    if (
+        not words or any(word in {";", "&", "&&", "|", "||", "<", ">", ">>", "(", ")"} for word in words)
+        or any("$" in word or "`" in word for word in words)
+    ):
+        raise MakeProbeError("lifecycle dispatch is conditional, redirected or unproven")
+    return words
+
+
+def _checker_dispatch(arguments, *, cwd, source_root):
+    from . import isolated_launcher
+
+    if not arguments or arguments[0] not in {"/usr/bin/python3", "python3"}:
+        raise MakeProbeError("lifecycle dispatch does not invoke the trusted Python checker")
+    index, flags = 1, set()
+    while index < len(arguments) and arguments[index].startswith("-"):
+        option = arguments[index][1:]
+        if not option or set(option) - {"I", "S", "B"}:
+            raise MakeProbeError("lifecycle Python invocation is not isolated/no-site")
+        flags.update(option)
+        index += 1
+    if flags != {"I", "S", "B"} or len(arguments) <= index + 1:
+        raise MakeProbeError("lifecycle Python invocation lacks its complete checker route")
+    program = posixpath.normpath(posixpath.join(cwd, arguments[index]))
+    if program != source_root + "/scripts/validation_ownership/isolated_launcher.py":
+        raise MakeProbeError("lifecycle dispatch uses a substituted checker")
+    mode = arguments[index + 1]
+    if mode != "check":
+        raise MakeProbeError("lifecycle dispatch is not the artifact-consuming check")
+    try:
+        with redirect_stdout(StringIO()):
+            _, parsed = isolated_launcher.graph_dispatch(mode, arguments[index + 2:])
+    except (ValueError, SystemExit) as error:
+        raise MakeProbeError("lifecycle dispatch does not reach the graph checker") from error
+    actual_root = posixpath.normpath(posixpath.join(cwd, parsed.repository_root))
+    if actual_root != source_root or parsed.revision != "HEAD" or parsed.base_revision is not None:
+        raise MakeProbeError("lifecycle dispatch selects a different root or graph context")
+    return ("/usr/bin/python3", program, mode, actual_root, parsed.revision)
+
+
+def _consumer_routes(graph, make_authorities, tester_cases, runtime_programs, source_root):
+    definition = graph["artifact"]
+    target, case_id = definition["executable_consumer"], definition["consistency_check"]
+    if target not in make_authorities or case_id not in tester_cases:
+        raise MakeProbeError("lifecycle binding lacks its captured consumer authority")
+    make_routes = []
+    for variant in make_authorities[target]["record"]["variants"]:
+        record = variant["record"]
+        files = record["files"]
+        if len(files) != 1 or files[0]["target"] != target or files[0]["prerequisites"]:
+            raise MakeProbeError("lifecycle Make consumer requires a direct, mandatory checker recipe")
+        recipe = files[0]["recipe"].lstrip()
+        while recipe.startswith("@"):
+            recipe = recipe[1:].lstrip()
+        if not recipe or recipe.startswith(("-", "+")):
+            raise MakeProbeError("lifecycle Make consumer suppresses or changes failure propagation")
+        if "$(CURDIR)" in recipe or "${CURDIR}" in recipe:
+            directory = files[0]["variables"].get("CURDIR")
+            if not isinstance(directory, dict) or directory.get("value") != "/repo":
+                raise MakeProbeError("lifecycle Make root lacks its native variable observation")
+            recipe = recipe.replace("$(CURDIR)", "/repo").replace("${CURDIR}", "/repo")
+        if "$" in recipe:
+            raise MakeProbeError("lifecycle Make consumer has unproven conditional or variable dispatch")
+        declared = _checker_dispatch(_command_words(recipe), cwd="/repo", source_root="/repo")
+        dispatches = record.get("recipe_dispatches")
+        if not isinstance(dispatches, list) or len(dispatches) != 1:
+            raise MakeProbeError("lifecycle Make consumer did not actually dispatch its checker")
+        dispatch = dispatches[0]
+        if dispatch["ignore_errors"] or dispatch["cwd"] != "/repo":
+            raise MakeProbeError("lifecycle Make consumer ignores failure or changes its root")
+        arguments = dispatch["arguments"]
+        executable = runtime_programs.get(dispatch["executable"], dispatch["executable"])
+        if executable in {"/bin/sh", "/bin/bash"}:
+            if len(arguments) != 3 or arguments[1] not in {"-c", "-ec"}:
+                raise MakeProbeError("lifecycle shell dispatch is not a supported command")
+            arguments = _command_words(arguments[2])
+        elif executable != "/usr/bin/python3":
+            raise MakeProbeError("lifecycle native dispatch is not the checker: " + dispatch["executable"])
+        actual = _checker_dispatch(arguments, cwd="/repo", source_root="/repo")
+        if actual != declared:
+            raise MakeProbeError("lifecycle native dispatch differs from the captured recipe")
+        make_routes.append(actual)
+    if not make_routes:
+        raise MakeProbeError("lifecycle Make consumer has no measured dispatch")
+    automation = tester_cases[case_id].get("automation")
+    if not isinstance(automation, list) or not automation:
+        raise MakeProbeError("lifecycle consistency case has no executable automation")
+    case_routes = []
+    for entry in automation:
+        if not isinstance(entry, dict) or not isinstance(entry.get("command"), str):
+            raise MakeProbeError("lifecycle consistency automation is malformed")
+        words = _command_words(entry["command"])
+        checker = source_root + "/scripts/validation_ownership/isolated_launcher.py"
+        positions = [
+            index for index, word in enumerate(words)
+            if posixpath.normpath(posixpath.join(source_root, word)) == checker
+        ]
+        if not positions or words[positions[0] + 1:positions[0] + 2] != ["check"]:
+            continue
+        case_routes.append(_checker_dispatch(words, cwd=source_root, source_root=source_root))
+    if not case_routes:
+        raise MakeProbeError("lifecycle consistency case lacks a mandatory artifact-consuming check")
+    return ((target, tuple(make_routes)), (case_id, tuple(case_routes)))
+
+
+def bind(graph, *, session, model, make_authorities, tester_cases):
+    from . import ci_verifier, isolated_launcher, reporter
+
+    if (
+        session is None or session.base is None or model.get("graph") is not graph
+        or reporter._binding_models.get(id(model)) is not model
+        or model.get("lifecycle_authorities") != (make_authorities, tester_cases)
+    ):
+        raise MakeProbeError("lifecycle binding requires the active validated graph model")
+    runtime_programs = {
+        item.canonical: item.path for item in session.runtime_inputs
+        if item.data is not None and item.path in {"/bin/sh", "/bin/bash", "/usr/bin/python3"}
+    }
+    for item in session.runtime_inputs:
+        for alias, destination in item.aliases:
+            for program in ("/bin/sh", "/bin/bash", "/usr/bin/python3"):
+                if program.startswith(alias + "/"):
+                    mapped = posixpath.normpath(posixpath.join(
+                        posixpath.dirname(alias), destination, program[len(alias) + 1:],
+                    ))
+                    runtime_programs[mapped] = program
+    routes = _consumer_routes(
+        graph, make_authorities, tester_cases, runtime_programs, session.loader.root.as_posix(),
+    )
+    # The parser/dispatch conclusion applies only to the implementation whose
+    # actual loaded sources match this immutable selected source view.
+    ci_verifier._verify_loaded_modules(isolated_launcher.ROOT, session.loader)
+    graph_bytes, authority_bytes = encoded(graph), encoded(model["authorities"])
+    session.budget.charge("cache", len(graph_bytes) + len(authority_bytes) + len(encoded(routes)))
+    binding = _Bindings(
+        weakref.ref(session), weakref.ref(session.loader), weakref.ref(session.snapshot),
+        weakref.ref(model), graph_bytes, authority_bytes, routes,
+    )
+    _issued.add(binding)
+    model["lifecycle_bindings"] = binding
+
+
+def _require_bindings(graph, session, model):
+    binding = model.get("lifecycle_bindings")
+    if (
+        type(binding) is not _Bindings or binding not in _issued
+        or binding.session() is not session or binding.loader() is not session.loader
+        or binding.snapshot() is not session.snapshot or binding.model() is not model
+        or binding.graph_bytes != encoded(graph)
+        or binding.authority_bytes != encoded(model.get("authorities"))
+    ):
+        raise MakeProbeError("lifecycle requires verified source/session/graph dispatch bindings")
+    session.budget.remaining()
+    return binding
 
 
 def check(artifact_root, check_id, *, session, graph, schema, oracle, model):
@@ -12,6 +201,7 @@ def check(artifact_root, check_id, *, session, graph, schema, oracle, model):
 
     if session is None or session.base is None or model.get("graph") != graph:
         raise MakeProbeError("lifecycle requires the active validated report model")
+    _require_bindings(graph, session, model)
     definition = graph["artifact"]
     if check_id not in (definition["executable_consumer"], definition["consistency_check"]):
         raise MakeProbeError("lifecycle check is not allowlisted")
@@ -44,6 +234,7 @@ def prove(root, graph, *, session, schema, oracle, model):
 
     if session is None or session.base is None:
         raise MakeProbeError("lifecycle proof requires the report's active session")
+    _require_bindings(graph, session, model)
     triggers = {event["id"]: event for event in graph["lifecycle_events"]
                 if event["type"] in reporter.REQUIRED_PROOF_KINDS}
     proofs = [event for event in graph["lifecycle_events"] if event["type"] == "deletion_proof"]
@@ -82,5 +273,7 @@ def prove(root, graph, *, session, schema, oracle, model):
             "trigger_type": triggers[event["trigger_event_id"]]["type"],
             "proof_id": event["id"], "removal": "fail",
             "reason": reporter.LIFECYCLE_FAILURE_REASON, "restoration": "pass",
+            "semantics": "verified-dispatch-and-shared-checker",
+            "verified_routes": list(checks),
         })
     return results

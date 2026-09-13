@@ -222,6 +222,19 @@ GNU Make's native recursive-command flags conservatively require registered
 results for their dispatches, rather than silently suppressing recursion.
 The fixed process/resource bounds still include interceptor children.
 
+The graph's lifecycle consumer may opt into
+`ProbeSession.make(..., observe_recipe_dispatch=True)`. The trusted syscall
+observer then records the real scheduled recipe executable/argv/cwd and
+failure-ignore state before the existing metadata-only interceptor returns.
+This is dispatch evidence, not execution of candidate recipes. The same
+aggregate observation and byte guards bound it; vectors retain the existing
+1,024-argument/64 KiB frame and 4,096-byte string limits. Other queries keep
+their default behavior. GNU Make's actual ignore-errors state and captured
+`.IGNORE` declaration are observed, not inferred from source comments.
+The graph uses these records only with its closed ordinary dispatcher,
+captured source identity and session/model binding. It does not acquire
+permission to execute arbitrary consumer code or reset its report budget.
+
 Make's runtime is captured once per session from its actual ELF interpreter
 and that trusted interpreter's bounded `--list` dependency closure. Canonical
 system tool/library paths, resolved aliases and their ancestors must be

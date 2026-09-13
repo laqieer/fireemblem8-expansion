@@ -177,6 +177,16 @@ then each sub-issue receives its own branch, frozen contract, PR, validation,
 merge, post-merge Build verification, issue closure, and
 `make remote-completion-check`.
 
+For ownership-graph lifecycle changes, use
+[TC-WORKFLOW-GATE-OWNERSHIP-001](docs/test-cases/workflow-governance.md#tc-workflow-gate-ownership-001-resolve-every-admitted-path-to-complete-validation-ownership).
+Keep real consumer dispatch, trusted-source binding and the nonrecursive
+shared checker coherent. No-op positive fixtures, copied role labels or
+source fingerprints alone cannot prove artifact necessity. Preserve actual
+public-route references and independent no-op/redirect/substitution mutations;
+describe dispatch verification separately from consumer execution.
+Complete tests and documentation remain in the issue's full review scope,
+including when a predeclared genuinely indivisible review exception applies.
+
 ### Worked umbrella and stack example
 
 Suppose discussion `#100` tracks three accepted issues:

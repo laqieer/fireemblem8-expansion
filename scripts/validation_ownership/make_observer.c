@@ -62,6 +62,7 @@ extern void initialize_file_variables(struct FileView *, int);
 extern void set_file_variables(struct FileView *);
 extern void chop_commands(struct CommandsView *);
 extern int rebuilding_makefiles;
+extern int ignore_errors_flag;
 extern char **environ;
 
 #define MAX_NODES 4096
@@ -215,7 +216,8 @@ int posix_spawn(pid_t *pid, const char *path, const posix_spawn_file_actions_t *
     /* Redirect execution, never Make's visible variables, origins or flags.
      * The kernel supervisor authenticates this notification and the child's
      * stdout FD. Recursive/remake contexts conservatively require mappings. */
-    raw_call(SYS_getpid, VO_DISPATCH, (long)path, recursive_graph());
+    raw_call(SYS_getpid, VO_DISPATCH, (long)path,
+             recursive_graph() | ((ignore_errors_flag || lookup_file(".IGNORE")) ? 2 : 0));
     status = spawn(pid, VO_INTERCEPTOR, actions, attributes, argv, envp);
     raw_call(SYS_getpid, VO_DISPATCH, 0, 0);
     return status;

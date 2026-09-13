@@ -1096,7 +1096,7 @@ class ProbeSession:
         self, root, *, mode, argv, environment, mounts, code=(), sources=(),
         directories=(), executables=None, mapping_entries=(), metadata_validation=False,
         producer_handler=None, publication_observer=None, publication_allowed=True,
-        dependency=None,
+        dependency=None, observe_recipe_dispatch=False,
     ):
         self.budget.remaining()
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
@@ -1164,6 +1164,10 @@ class ProbeSession:
                 self.budget.limits.control_bytes - self.budget.bytes.get("control", 0),
             ),
         }
+        if observe_recipe_dispatch:
+            if mode != "make":
+                raise MakeProbeError("native recipe dispatch requires Make confinement")
+            config["observe_recipe_dispatch"] = True
         if dependency is not None:
             if mode != "compile":
                 raise MakeProbeError("dependency profile requires compiler confinement")
@@ -1982,9 +1986,11 @@ class ProbeSession:
     @terminal_failure
     def make(
         self, target: str, *, makefile="Makefile", variables=(), assignments=(),
-        owner_inputs=(), commands=None,
+        owner_inputs=(), commands=None, observe_recipe_dispatch=False,
     ) -> MakeObservation:
         self.budget.remaining()
+        if type(observe_recipe_dispatch) is not bool:
+            raise MakeProbeError("native recipe observation requires a boolean selection")
         if not TARGET.fullmatch(target) or target.startswith(("-", "/")) or ".." in target.split("/"):
             raise MakeProbeError("invalid requested Make target")
         relative_path(makefile)
@@ -2236,6 +2242,7 @@ class ProbeSession:
                 ],
                 producer_handler=produce, publication_observer=acknowledge,
                 publication_allowed=publication_allowed,
+                observe_recipe_dispatch=observe_recipe_dispatch,
             )
             raw_events = self.budget.read_bytes(events_path, "event")
             native_events = Counter(bytes.fromhex(item) for item in observed["events"])
@@ -2274,6 +2281,23 @@ class ProbeSession:
                     raise MakeProbeError("malformed Make file-open observation")
                 file_open_attempts.append(tuple(record))
             semantics = _read_observation(self.budget.read_bytes(result_path, "control"), target, variables)
+            if observe_recipe_dispatch:
+                dispatches = []
+                for value in observed["accessed"]:
+                    if not value.startswith("make-recipe:"):
+                        continue
+                    dispatch = parse_json(value[len("make-recipe:"):].encode("ascii"), "native recipe dispatch")
+                    if (
+                        not isinstance(dispatch, dict)
+                        or set(dispatch) != {"executable", "arguments", "cwd", "ignore_errors"}
+                        or type(dispatch["ignore_errors"]) is not bool
+                        or not isinstance(dispatch["executable"], str) or not isinstance(dispatch["cwd"], str)
+                        or not isinstance(dispatch["arguments"], list) or not 1 <= len(dispatch["arguments"]) <= 1024
+                        or any(not isinstance(argument, str) for argument in dispatch["arguments"])
+                    ):
+                        raise MakeProbeError("malformed native recipe dispatch")
+                    dispatches.append(dispatch)
+                semantics["recipe_dispatches"] = dispatches
             semantics["assignments"] = sorted(assignments, key=lambda item: item[1])
             recipe_sources = {record["source"] for record in semantics["files"] if record["source"]}
             semantics["owner_inputs"] = self.source_owners(set(owner_inputs) | recipe_sources)

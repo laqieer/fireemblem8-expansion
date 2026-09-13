@@ -233,7 +233,7 @@ def _semantic(semantics):
     return result
 
 
-def _recipe_domains(session, target, state, commands, observation, usage, observed_names):
+def _recipe_domains(session, target, state, commands, observation, usage, observed_names, *, observe_dispatch=False):
     """Measure referenced recipe values through bounded native variable pages."""
     if any(computed_introspection(entry["recipe"]) for entry in observation.semantics["files"]):
         raise MakeProbeError("computed Make introspection in a consumed recipe lacks a sealed literal selector")
@@ -245,7 +245,10 @@ def _recipe_domains(session, target, state, commands, observation, usage, observ
     combined = copy.deepcopy(observation.semantics)
     for index in range(0, len(pending), 512):
         chunk = tuple(pending[index:index + 512])
-        measured = session.make(target, variables=chunk, assignments=state, commands=commands)
+        measured = session.make(
+            target, variables=chunk, assignments=state, commands=commands,
+            observe_recipe_dispatch=observe_dispatch,
+        )
         structural = lambda value: [
             {key: entry[key] for key in ("target", "source", "recipe", "prerequisites")}
             for entry in value["files"]
@@ -254,6 +257,8 @@ def _recipe_domains(session, target, state, commands, observation, usage, observ
             raise MakeProbeError("Make graph changed while observing its recipe values")
         if measured.semantics["dynamic_commands"] != combined["dynamic_commands"]:
             raise MakeProbeError("Make command provenance changed across recipe observations")
+        if measured.semantics.get("recipe_dispatches") != combined.get("recipe_dispatches"):
+            raise MakeProbeError("native recipe dispatch changed across recipe observations")
         combined["domains"].update(measured.semantics["domains"])
         for previous, actual in zip(combined["files"], measured.semantics["files"]):
             previous["variables"].update(actual["variables"])
@@ -264,7 +269,7 @@ def run_probe(
     loader, requested_targets, domains, dynamic_contracts, *, session,
     declared_external_names=(), environment_names=(), generated_path_names=(),
     symbolic_recipe_names=(), ambient_undefined_names=(), trusted_builtin_names=(),
-    scoped_variable_names=(), escaped_literal_names=(), **unused,
+    scoped_variable_names=(), escaped_literal_names=(), dispatch_targets=(), **unused,
 ):
     if session is None or session.loader is not loader or session.snapshot is None:
         raise MakeProbeError("graph Make planning requires the selected shared report session")
@@ -285,6 +290,7 @@ def run_probe(
     commands = MakeCommands(session, dynamic_contracts)
     results = {}
     for target in sorted(requested_targets):
+        observe_dispatch = target in dispatch_targets
         pending = [()]
         visited, variants, source_union, usages = set(), [], {}, []
         planned = set()
@@ -298,12 +304,17 @@ def run_probe(
             if identity in visited:
                 continue
             visited.add(identity)
-            observation = session.make(target, variables=variables, assignments=state, commands=commands)
+            observation = session.make(
+                target, variables=variables, assignments=state, commands=commands,
+                observe_recipe_dispatch=observe_dispatch,
+            )
             loaded = _loaded_sources(session, observation)
             source_union.update(loaded)
             usage = source_census(loaded)
             usages.append(usage)
-            semantics = _recipe_domains(session, target, state, commands, observation, usage, variables)
+            semantics = _recipe_domains(
+                session, target, state, commands, observation, usage, variables, observe_dispatch=observe_dispatch,
+            )
             unclassified = usage["defaults"] - external - set(domains)
             if unclassified:
                 raise MakeProbeError(f"unsealed external defaults: {sorted(unclassified)}")

@@ -118,6 +118,25 @@ def cstring(pid, address):
     raise Violation("pathname exceeds bound")
 
 
+def recipe_arguments(pid, address):
+    arguments = []
+    size = 0
+    for index in range(1025):
+        pointer = int.from_bytes(memory(pid, address + 8 * index, 8), "little")
+        if not pointer:
+            if not arguments:
+                raise Violation("empty native recipe argument vector")
+            return arguments
+        if index == 1024:
+            break
+        value = cstring(pid, pointer)
+        size += len(value.encode("utf-8")) + 1
+        if size > SYSCALL_MEMORY_LIMIT:
+            break
+        arguments.append(value)
+    raise Violation("native recipe argument vector exceeds its frame bound")
+
+
 def directory_entries(data, *, wide):
     names = []
     offset = 0
@@ -1512,7 +1531,7 @@ class Policy:
                     state.observer_ready = True
                 elif b:
                     path = self.path(pid, state, b)
-                    if path not in self.executable or path == "/control/interceptor" or c not in {0, 1}:
+                    if path not in self.executable or path == "/control/interceptor" or c not in {0, 1, 2, 3}:
                         raise Violation(f"untrusted executable dispatch: {path}")
                     if self.runtime_metadata(path, parents=False):
                         self.check_optional_make_spelling(state, path, "execute")
@@ -1676,8 +1695,13 @@ class Policy:
                     role = "helper"
                     source, required = state.dispatch
                     state.helper_kind = VO_VALUE if (
-                        required or source == "/usr/bin/make" or self.fd(state, 1) == "<pipe>"
+                        required & 1 or source == "/usr/bin/make" or self.fd(state, 1) == "<pipe>"
                     ) else VO_RECIPE
+                    if state.helper_kind == VO_RECIPE and self.config.get("observe_recipe_dispatch"):
+                        self.observe("accessed", "make-recipe:" + encoded({
+                            "executable": source, "arguments": recipe_arguments(pid, b),
+                            "cwd": state.cwd, "ignore_errors": bool(required & 2),
+                        }).decode("ascii"))
                     if state.helper_kind == VO_VALUE and self.config.get("producer_endpoint"):
                         state.helper_kind = VO_LIVE
                     state.dispatch = None

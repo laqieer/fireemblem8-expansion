@@ -34,6 +34,10 @@ def inventory(loader: AuthorityLoader):
 def documents(loader):
     from . import reporter
 
+    if reporter.GRAPH_PATH.as_posix() not in loader.entries:
+        raise reporter.OwnershipError(
+            "validation ownership graph artifact is missing: " + reporter.LIFECYCLE_FAILURE_REASON
+        )
     return (
         loader.read_json(reporter.GRAPH_PATH, "ownership graph"),
         loader.read_json(reporter.SCHEMA_PATH, "ownership schema"),
@@ -65,6 +69,7 @@ def check(root, *, budget: ProbeBudget, revision="HEAD", base_revision=None, cha
                     base_schema = base_loader.read_json(reporter.SCHEMA_PATH, "BASE ownership schema")
                     base_model = reporter.validate_graph(
                         prior, base_schema, base_loader, base_entries, session=session,
+                        comparison_only=True,
                     )
                 elif any(path not in entries and path in base_entries for path in changed_paths):
                     base_model = reporter.introduction_base_model(

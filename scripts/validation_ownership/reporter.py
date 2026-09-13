@@ -1422,7 +1422,7 @@ def _parse_make_authorities(
     *,
     require_dynamic_contracts: bool = False,
     session=None,
-    _metadata=None,
+    _metadata=None, dispatch_targets=(),
 ) -> dict[str, dict[str, Any]]:
     if requested_targets is None:
         raise OwnershipError(
@@ -1476,6 +1476,7 @@ def _parse_make_authorities(
             "scoped_variable_names": scoped_variables,
             "trusted_builtin_names": trusted_builtins,
             "session": session,
+            "dispatch_targets": dispatch_targets,
         }
         result = graph_probe.run_probe(
             loader, requested_targets, prerequisite_domains, dynamic_contracts, **common_args,
@@ -1514,8 +1515,8 @@ def _validate_authorities(
     generated_records: list[dict[str, Any]],
     *,
     strict_workflow: bool,
-    session=None,
-) -> dict[str, dict[str, str]]:
+    session=None, lifecycle_target=None,
+):
     requested_make_targets = {
         node["authority"]["target"]
         for node in evidence_nodes.values()
@@ -1529,6 +1530,7 @@ def _validate_authorities(
             require_dynamic_contracts=True,
             session=session,
             _metadata=metadata,
+            dispatch_targets=() if lifecycle_target is None else (lifecycle_target,),
         )
         if requested_make_targets
         else {}
@@ -1728,7 +1730,7 @@ def _validate_authorities(
                 f"Make dynamic contract {contract['id']!r} owner mismatch "
                 f"(expected={sorted(expected)}, actual={sorted(actual)})"
             )
-    return result
+    return result, make_targets, tester_cases
 
 
 def _validate_lifecycle(
@@ -2209,12 +2211,13 @@ def _validate_semantics(
             "admission": _path_admission(path, matches[0], admission_sources),
         }
 
-    authorities = _validate_authorities(
+    authorities, make_authorities, tester_cases = _validate_authorities(
         loader,
         evidence_nodes,
         generated_records,
         strict_workflow=True,
         session=session,
+        lifecycle_target=graph["artifact"]["executable_consumer"],
     )
     return {
         "graph": graph,
@@ -2228,7 +2231,15 @@ def _validate_semantics(
         "coverage": coverage,
         "entries": entries,
         "admission_sources": admission_sources,
+        "lifecycle_authorities": (make_authorities, tester_cases),
     }
+
+
+class _ValidatedGraphModel(dict):
+    pass
+
+
+_binding_models = {}
 
 
 def validate_graph(
@@ -2237,14 +2248,28 @@ def validate_graph(
     loader: AuthorityLoader,
     entries: dict[str, GitTreeEntry],
     *,
-    session=None,
+    session=None, comparison_only=False,
 ) -> dict[str, Any]:
     if not isinstance(schema, dict):
         raise OwnershipError("graph schema must be an object")
     if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
         raise OwnershipError("graph schema must use JSON Schema draft 2020-12")
     validate_json_schema(graph, schema, schema, budget=loader.budget)
-    return _validate_semantics(graph, loader, entries, session=session)
+    if type(comparison_only) is not bool:
+        raise OwnershipError("historical comparison selection must be boolean")
+    model = _ValidatedGraphModel(_validate_semantics(graph, loader, entries, session=session))
+    if not comparison_only:
+        from . import graph_lifecycle
+        make_authorities, tester_cases = model["lifecycle_authorities"]
+        _binding_models[id(model)] = model
+        try:
+            graph_lifecycle.bind(
+                graph, session=session, model=model,
+                make_authorities=make_authorities, tester_cases=tester_cases,
+            )
+        finally:
+            del _binding_models[id(model)]
+    return model
 
 
 def _resolved_edges(
@@ -2508,7 +2533,7 @@ def introduction_base_model(graph, loader, entries, *, changed_paths, session):
             if _path_rule_matches(rule, path, generated_paths):
                 selected.update(edge["target"] for edge in outgoing[rule["surface"]]
                                 if edge["type"] != "depends-on")
-    authorities = _validate_authorities(
+    authorities, _, _ = _validate_authorities(
         loader, {key: evidence[key] for key in selected}, records,
         strict_workflow=False, session=session,
     )
@@ -2966,18 +2991,21 @@ def run_lifecycle_check(
     from .graph_commands import ROOT_RUNTIME_FILES
 
     budget = ProbeBudget()
-    authority_root = Path(authority_root).resolve(strict=True)
-    loader = graph_report.capture(authority_root, "HEAD", budget)
-    with ProbeSession(loader, scratch_root=authority_root / "build/test-artifacts/validation-ownership",
-                      budget=budget, runtime_files=ROOT_RUNTIME_FILES) as session:
-        graph, schema, oracle = graph_report.documents(loader)
-        model = validate_graph(
-            graph, schema, loader, graph_report.inventory(loader), session=session,
-        )
-        return graph_lifecycle.check(
-            artifact_root, check_id, session=session, graph=graph, schema=schema,
-            oracle=oracle, model=model,
-        )
+    try:
+        authority_root = Path(authority_root).resolve(strict=True)
+        loader = graph_report.capture(authority_root, "HEAD", budget)
+        with ProbeSession(loader, scratch_root=authority_root / "build/test-artifacts/validation-ownership",
+                          budget=budget, runtime_files=ROOT_RUNTIME_FILES) as session:
+            graph, schema, oracle = graph_report.documents(loader)
+            model = validate_graph(
+                graph, schema, loader, graph_report.inventory(loader), session=session,
+            )
+            return graph_lifecycle.check(
+                artifact_root, check_id, session=session, graph=graph, schema=schema,
+                oracle=oracle, model=model,
+            )
+    finally:
+        budget.close()
 
 
 def validate_executable_lifecycle(

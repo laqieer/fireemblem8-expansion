@@ -987,6 +987,7 @@ def _verify(trusted_root, repository_root, base_sha, candidate_sha, *,
                 reporter.validate_probe_oracle(base_oracle, base_graph, inventory(base_loader))
                 base_model = reporter.validate_graph(
                     base_graph, base_schema, base_loader, inventory(base_loader), session=session,
+                    comparison_only=True,
                 )
             if expected_mode == "reviewed-evolution":
                 pairs, authorities, invalidation = _reviewed_evolution_authority(

@@ -14,6 +14,16 @@ from scripts.validation_ownership.authority import ENVIRONMENT
 
 
 ROOT = Path(__file__).resolve().parents[3]
+CHECK_COMMAND = (
+    "/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py "
+    "check --repository-root ."
+)
+
+
+def consuming_makefile(*targets):
+    return ".PHONY: " + " ".join(targets) + "\n" + "".join(
+        target + ":\n\t@" + CHECK_COMMAND + " > /dev/null\n" for target in targets
+    )
 
 
 class ReportFixture:
@@ -32,7 +42,7 @@ class ReportFixture:
                      "asm_file.cpp", "asm_file.h", "c_file.cpp", "c_file.h", "Makefile"):
             self.add("tools/scaninc/" + name, (ROOT / "tools/scaninc" / name).read_text())
         self.add(".github/workflows/build.yml", (ROOT / ".github/workflows/build.yml").read_text())
-        self.add("Makefile", "validation-ownership-check:\n\t@true\n")
+        self.add("Makefile", consuming_makefile("validation-ownership-check"))
         self.add("src/data/table.json", '{"version":1}\n')
         self.add("scripts/generated_data/registry.py", (
             "import json\nfrom pathlib import Path\n"
@@ -54,10 +64,7 @@ class ReportFixture:
                 "id": "TC-WORKFLOW-GATE-OWNERSHIP-001",
                 "title": "Controlled ownership case",
                 "automation": [{
-                    "command": (
-                        "/usr/bin/python3 -I -S -B "
-                        "scripts/validation_ownership/isolated_launcher.py tests"
-                    ),
+                    "command": CHECK_COMMAND,
                     "evidence": "scripts/validation_ownership/tests/test_coordinator_capture.py",
                 }],
             }],
@@ -199,7 +206,7 @@ def reviewed_evolution_case(fixture: ReportFixture):
     fixture.add(path, "Reviewed evolution fixture path\n")
     fixture.add(
         "Makefile",
-        "validation-ownership-check:\n\t@true\nvalidation-ownership-reviewed:\n\t@true\n",
+        consuming_makefile("validation-ownership-check", "validation-ownership-reviewed"),
     )
     graph = reporter.load_json(fixture.root / reporter.GRAPH_PATH)
     for node in graph["nodes"]:

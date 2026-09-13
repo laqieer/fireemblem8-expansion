@@ -439,11 +439,46 @@ unique decision, consistency check, bounded maintenance estimate, deletion
 criterion, expiry, and disposition history. Checkpoint, dependency-change, and
 pre-graduation triggers each have one later proof bound to the artifact,
 dependency edge or decision authority. The public check uses its bounded
-session under the isolated launcher: for each trigger, both the declared
-executable consumer and consistency check run before removal, while the graph
-is absent, and after restoration. Each route must produce the fixed named
-semantic failure on removal and pass on restoration; those bounded behavioral
-results are attached to every trigger-specific proof record.
+session under the isolated launcher. Before any proof is credited, the
+validated CURRENT model must contain issued **verified dispatch bindings** for
+both declared roles. For each trigger, their shared artifact checker runs
+before removal, while the graph is absent, and after restoration. The result
+explicitly says `semantics: verified-dispatch-and-shared-checker` and names
+`verified_routes`; it does not claim the Make target or complete testcase ran
+inside the proof.
+
+The Make binding uses the captured native recipe and the actual scheduled
+executable/argv/cwd, not a textual mention or target fingerprint. Dispatch
+observation is opt-in for the declared consumer and retains ordinary Make
+execution decisions: an up-to-date/skipped target supplies no dispatch.
+The supported consumer is a direct leaf with one mandatory checker command;
+compound/conditional recipes, failure-ignoring prefixes or `.IGNORE`, changed
+roots, help-only modes and substituted programs reject. Only the native
+`CURDIR` observation is admitted as a Make substitution in that closed route.
+Equivalent quoting, Python isolation-flag ordering and alternative target
+names remain supported with complete evidence. Runtime aliases come from the
+actual captured view rather than guessed host paths.
+
+The consistency binding comes from actual captured testcase automation and
+requires a mandatory `check` dispatch. Supplemental tests do not substitute
+for that route. Both bindings use the same `graph_dispatch` argument contract
+as ordinary launcher execution, require isolated/no-site Python and the
+correct source root/default HEAD context, and verify actual loaded checker
+sources against the immutable selected source through the existing trusted
+module verification seam. A path, flags, check ID or source hash alone is not
+binding evidence.
+
+Bindings are issued objects scoped to the exact active model, graph,
+authorities, loader, snapshot and session. Missing, forged, copied, changed
+or closed-session bindings reject. Historical BASE comparison models are
+explicitly structural-only and cannot obtain lifecycle proof credit; CURRENT,
+public `lifecycle-check` and the standalone verifier require full bindings.
+This preserves source evolution without treating a historical checker as the
+current implementation.
+
+Each bound shared check must produce the fixed named semantic failure on
+removal and pass on restoration. These bounded results are attached to every
+trigger-specific proof record.
 Self-declared replacement reasons, fabricated authorities, stale timestamps,
 or non-restoring proofs reject.
 Each proof performs its own actual removal and restoration under the same
@@ -455,9 +490,13 @@ The consistency route also checks its actual captured tester-case registry.
 The allowed identities come only from that validated artifact's two declared
 roles. A valid reviewed Make-consumer change retains its consumer role rather
 than being mistaken for a tester-case ID; undeclared routes still reject.
-Neither route reruns Make or recursively invokes the lifecycle driver.
+The proof neither reruns Make nor recursively invokes the lifecycle driver.
 Allowing removal or rejecting restoration in either route must fail the proof;
 the other route's success cannot substitute for it.
+Actual public Make and consistency commands are separately exercised on small
+real Git fixtures, including removal/restoration of their authoritative
+artifact. Those execution references are not full repository resource or H1
+evidence.
 
 The independently sealed oracle pins exact `(edge_type, evidence_id)` owner
 pairs for runtime, host-only, generated,

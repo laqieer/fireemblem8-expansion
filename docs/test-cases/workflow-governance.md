@@ -3937,7 +3937,7 @@ criterion, and all broader checks remain mandatory.
 The canonical report and lifecycle results must satisfy the complete
 [artifact lifecycle, measurement, and seal contract](../validation-ownership.md#artifact-lifecycle-measurements-and-seals):
 zero oracle pair mismatches, semantic-only seal/invalidation changes, and one
-real removal/restoration cycle for both declared routes at every trigger.
+real removal/restoration cycle for both verified consumer bindings at every trigger.
 Either route failing independently, stale proof reuse, unrelated check
 substitution, or exact-base authority-fingerprint drift must reject. Equivalent
 parsed reordering remains stable, and tester-case authority changes remain
@@ -4170,10 +4170,36 @@ Lifecycle checks reuse the report's already validated complete model and
 recheck the copied artifact's schema, graph identity and exact oracle pairs;
 the consistency route also checks its captured tester-case registry. The
 driver never recursively repeats the whole report. Every trigger has its own
-real removal/restoration cycle, and both declared routes run before removal,
-while absent and after restoration. Missing graph must fail with the named
+real removal/restoration cycle. Native Make dispatch and captured case
+automation must first bind to the real isolated checker and its actual trusted
+sources, correct root/context and current session/model. The shared checker
+runs for those bindings before removal, while absent and after restoration.
+Results say `verified-dispatch-and-shared-checker`, not that the full consumer
+or testcase executed during proof. Missing graph must fail with the named
 reason and restoration must pass; no earlier trigger's successful cycle can
 stand in for a later checkpoint, dependency-change or pre-graduation proof.
+
+Run the focused `LifecycleBindingTests` command below with clean owned
+fixtures. Actual public Make and consistency commands must consume their
+authoritative graph and fail its removal, then pass restoration. Public
+`lifecycle-check` must honor both bound identities without recursive proof;
+the separately rooted standalone verifier must reject a no-op consumer.
+Keep the genuine baseline/alternate consuming fixtures and original authority
+invalidation controls. Equivalent quoting and isolation-flag order remain
+valid; changing either role to a no-op, conditional/redirected/help-only or
+wrong-root command must reject. A skipped existing target, ignored failure,
+substituted checker source, missing automation or copied/forged/stale binding
+cannot receive a proof.
+
+For isolated mutations, bypass only consumer-dispatch verification and run
+each no-op regression independently. Each must fail because the report again
+accepts three removal/restoration proofs for the no-op role. Independently
+bypass loaded-source verification and require the substituted-checker
+regression to expose the same wrong acceptance. Restore the supported
+implementation after each mutation; do not weaken admission or run the full
+repository graph. The preserved bc02 preimage really removed the artifact and
+made eighteen shared-checker calls, but neither consumer executed; its
+independent no-op roles still received three proofs.
 
 Exact current/base Git mode and provenance is mandatory. Symlinks, synthetic
 gitlinks under owned prefixes, untracked/ignored/nonexistent changed paths,
@@ -4194,8 +4220,9 @@ and its owner together.
 This capability depends on issue #176's artifact admission/deletion lifecycle,
 strict source boundaries, isolated startup, clean-Git checks, seals, and
 maintenance reporting. Each checkpoint, dependency-change, and pre-graduation
-event executes the declared consumer and consistency check against a bounded
-remove/restore sandbox with one fixed failure reason. It reuses existing Make targets, Build workflow
+event applies the verified-dispatch/shared-checker contract against a bounded
+remove/restore sandbox with one fixed failure reason. Actual route execution
+is separately identified in fixture evidence. It reuses existing Make targets, Build workflow
 structure, the generated-data registry, tester-case registry, and manual
 handoff contract. Issue #181 is parallel and not a dependency. There is no
 feature flag and no gameplay, runtime, save, localization payload, generated
@@ -4214,7 +4241,12 @@ executable lifecycle deletion/restoration, review invalidation, canonical
 reporting, mixed-goal rejection, bounded scratch symlink rejection, and
 unchanged source bytes/Git state across simulated fixture exceptions.
 `make validation-ownership-check` runs the same reporter through
-`/usr/bin/python3 -I`.
+`/usr/bin/python3 -I -S -B`.
+
+- `python3 -m unittest scripts.validation_ownership.tests.test_graph_report.LifecycleBindingTests -v`
+  -- real public route, public lifecycle and standalone verifier references,
+  native dispatch/skip/failure propagation, source substitution and model
+  binding negatives. This runs only owned small fixtures, not the full report.
 
 The focused A/V fixtures also execute the title fingerprint comparator with
 missing/changed framebuffer controls, the actual presentation runner's

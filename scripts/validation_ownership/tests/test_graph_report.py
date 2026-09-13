@@ -2,6 +2,7 @@ import copy
 from datetime import datetime, timedelta
 from io import BytesIO
 import json
+import shlex
 import unittest
 from pathlib import Path
 import tempfile
@@ -12,7 +13,7 @@ from unittest import mock
 
 from scripts.validation_ownership import graph_lifecycle, reporter
 from scripts.validation_ownership.authority import ENVIRONMENT
-from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
+from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
 from scripts.validation_ownership.graph_report import check
 from .report_fixture import ReportFixture
 from . import report_fixture
@@ -78,6 +79,11 @@ class GraphReportTests(unittest.TestCase):
                 )
         self.assertEqual(result["resolutions"][0]["path"], "Makefile")
         self.assertGreater(result["execution"]["runs"], 0)
+        for proof in result["artifact"]["executable_lifecycle"]:
+            self.assertEqual(proof["semantics"], "verified-dispatch-and-shared-checker")
+            self.assertEqual(proof["verified_routes"], [
+                artifact["executable_consumer"], artifact["consistency_check"],
+            ])
 
     def test_both_declared_lifecycle_routes_require_removal_failure_and_restoration(self):
         artifact = json.loads((self.fixture.root / reporter.GRAPH_PATH).read_text())["artifact"]
@@ -123,9 +129,9 @@ class GraphReportTests(unittest.TestCase):
 
     def test_current_and_base_models_share_report_and_invalidate_real_case_change(self):
         base = self.fixture.git("rev-parse", "HEAD").decode().strip()
-        self.fixture.add("docs/test-cases/registry.json", json.dumps({
-            "cases": [{"id": "TC-WORKFLOW-GATE-OWNERSHIP-001", "title": "Changed real case"}],
-        }))
+        registry = json.loads((self.fixture.root / reporter.TEST_CASE_REGISTRY_PATH).read_text())
+        registry["cases"][0]["title"] = "Changed real case"
+        self.fixture.add(reporter.TEST_CASE_REGISTRY_PATH, json.dumps(registry))
         self.fixture.commit("Change case semantics")
         result = self.run_report(base_revision=base)
         self.assertTrue(result["review_invalidation"]["invalidated"])
@@ -250,7 +256,7 @@ class GraphReportTests(unittest.TestCase):
         graph = json.loads(path.read_text())
         self.fixture.add(
             "Makefile",
-            "validation-ownership-check:\n\t@true\nalternate-ownership-check:\n\t@true\n",
+            report_fixture.consuming_makefile("validation-ownership-check", "alternate-ownership-check"),
         )
         graph["nodes"].extend((
             {"id": "owner.alternate-make", "kind": "evidence", "label": "Alternate existing consumer",
@@ -340,6 +346,9 @@ class GraphReportTests(unittest.TestCase):
                     self.assertIn("retargets exact-base oracle authority", result.stderr)
                 else:
                     self.assertEqual(result.returncode, 0, result.stderr)
+                    if argv[0] == "/usr/bin/python3":
+                        report = json.loads(result.stdout)
+                        self.assertEqual(len(report["artifact"]["executable_lifecycle"]), 3)
                     observed = json.loads(result.stdout)
                     self.assertEqual(observed["review_invalidation"]["changed_edge_ids"], edges)
 
@@ -451,6 +460,303 @@ class GraphReportTests(unittest.TestCase):
             self.run_report(
                 base_revision=base, changed_paths=("external-policy.txt",), lifecycle=False,
             )
+
+
+class LifecycleBindingTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = ReportFixture()
+        self.addCleanup(self.fixture.close)
+
+    def report(self, **arguments):
+        budget = ProbeBudget(Limits(seconds=90))
+        try:
+            return check(self.fixture.root, budget=budget, runtime_files=(), **arguments)
+        finally:
+            budget.close()
+            self.assertFalse(budget.children)
+            self.assertFalse(budget.producer_waiters)
+            scratch = self.fixture.root / "build/test-artifacts/validation-ownership"
+            self.assertFalse(scratch.exists())
+
+    def case_command(self, command):
+        registry = json.loads((self.fixture.root / reporter.TEST_CASE_REGISTRY_PATH).read_text())
+        registry["cases"][0]["automation"][0]["command"] = command
+        self.fixture.add(reporter.TEST_CASE_REGISTRY_PATH, json.dumps(registry))
+
+    def test_real_make_noop_cannot_receive_a_lifecycle_proof(self):
+        self.fixture.add("Makefile", "validation-ownership-check:\n\t@true\n")
+        self.fixture.commit("Make the actual consumer a no-op")
+        direct = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        with self.assertRaises(MakeProbeError):
+            result = self.report()
+            self.assertEqual(len(result["artifact"]["executable_lifecycle"]), 3)
+        self.assertEqual(self.fixture.git("rev-parse", "HEAD").decode().strip(), direct)
+
+    def test_real_consistency_noop_cannot_receive_a_lifecycle_proof(self):
+        self.case_command("/usr/bin/true")
+        self.fixture.commit("Make the actual consistency automation a no-op")
+        with self.assertRaises(MakeProbeError):
+            result = self.report()
+            self.assertEqual(len(result["artifact"]["executable_lifecycle"]), 3)
+
+    def test_conditional_help_wrong_root_and_ignored_make_routes_reject(self):
+        baseline = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        valid = report_fixture.CHECK_COMMAND
+        cases = (
+            ("conditional", "false && " + valid),
+            ("make-conditional", "$(if enabled," + valid + ",true)"),
+            ("help", valid + " --help"),
+            ("wrong-root", valid.replace("--repository-root .", "--repository-root /elsewhere")),
+            ("different-entry", valid.replace("isolated_launcher.py", "reporter.py")),
+            ("ignore-prefix", "-" + valid),
+            ("global-ignore", valid),
+        )
+        for label, command in cases:
+            with self.subTest(route=label):
+                self.fixture.git("switch", "--detach", baseline)
+                self.fixture.add("Makefile", (
+                    (".IGNORE:\n" if label == "global-ignore" else "")
+                    + ".PHONY: validation-ownership-check\nvalidation-ownership-check:\n\t@"
+                    + command + "\n"
+                ))
+                self.fixture.commit("Unproven " + label + " dispatch")
+                with self.assertRaises(MakeProbeError):
+                    self.report()
+
+    def test_conditional_help_redirected_and_missing_case_routes_reject(self):
+        baseline = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        valid = report_fixture.CHECK_COMMAND
+        for label, command in (
+            ("conditional", "false && " + valid),
+            ("help", valid + " --help"),
+            ("wrong-root", valid.replace("--repository-root .", "--repository-root /elsewhere")),
+            ("guest-root", valid.replace("--repository-root .", "--repository-root /repo")),
+            ("different-entry", valid.replace("isolated_launcher.py", "reporter.py")),
+            ("missing", None),
+        ):
+            with self.subTest(route=label):
+                self.fixture.git("switch", "--detach", baseline)
+                if command is None:
+                    registry = json.loads((self.fixture.root / reporter.TEST_CASE_REGISTRY_PATH).read_text())
+                    registry["cases"][0].pop("automation")
+                    self.fixture.add(reporter.TEST_CASE_REGISTRY_PATH, json.dumps(registry))
+                else:
+                    self.case_command(command)
+                self.fixture.commit("Unproven consistency " + label)
+                with self.assertRaises(MakeProbeError):
+                    self.report()
+
+    def test_skipped_up_to_date_consumer_has_no_native_dispatch(self):
+        path = self.fixture.root / reporter.GRAPH_PATH
+        graph = json.loads(path.read_text())
+        target = "src/data/table.json"
+        graph["artifact"]["executable_consumer"] = target
+        next(node for node in graph["nodes"] if node["id"] == "owner.make")["authority"]["target"] = target
+        self.fixture.add(reporter.GRAPH_PATH, json.dumps(graph))
+        self.fixture.add("Makefile", target + ":\n\t@" + report_fixture.CHECK_COMMAND + "\n")
+        self.fixture.commit("Existing target skips its apparent checker")
+        with self.assertRaisesRegex(MakeProbeError, "did not actually dispatch"):
+            self.report()
+
+    def test_checker_substitution_is_rejected_even_with_the_right_argv(self):
+        self.fixture.add("scripts/validation_ownership/isolated_launcher.py", "raise SystemExit(0)\n")
+        self.fixture.commit("Substitute the checker behind its valid pathname")
+        with self.assertRaises(MakeProbeError):
+            self.report()
+
+    def test_equivalent_quoted_and_alternate_consumers_retain_real_binding(self):
+        graph = json.loads((self.fixture.root / reporter.GRAPH_PATH).read_text())
+        graph["artifact"]["executable_consumer"] = "alternate-ownership-check"
+        next(node for node in graph["nodes"] if node["id"] == "owner.make")["authority"]["target"] = (
+            "alternate-ownership-check"
+        )
+        self.fixture.add(reporter.GRAPH_PATH, json.dumps(graph))
+        self.fixture.add("Makefile", report_fixture.consuming_makefile("alternate-ownership-check").replace(
+            "-I -S -B", "-BSI",
+        ).replace("isolated_launcher.py", "'isolated_launcher.py'"))
+        self.case_command(report_fixture.CHECK_COMMAND.replace("-I -S -B", "-B -S -I"))
+        self.fixture.commit("Equivalent bound alternate consumer")
+        result = self.report()
+        for proof in result["artifact"]["executable_lifecycle"]:
+            self.assertEqual(proof["verified_routes"][0], "alternate-ownership-check")
+
+    def test_native_curdir_recipe_uses_observed_value_and_actual_dispatch(self):
+        from scripts.validation_ownership import graph_probe, graph_report
+        from scripts.validation_ownership.make_probe import ProbeSession
+
+        target = "validation-ownership-check"
+        self.fixture.add("Makefile", report_fixture.consuming_makefile(target).replace(
+            "--repository-root .", '--repository-root "$(CURDIR)"',
+        ))
+        self.fixture.commit("Native CURDIR checker dispatch")
+        budget = ProbeBudget(Limits(seconds=60))
+        try:
+            loader = graph_report.capture(self.fixture.root, "HEAD", budget)
+            graph, _, _ = graph_report.documents(loader)
+            cases = reporter._load_test_case_registry(loader)
+            with ProbeSession(
+                loader, scratch_root=self.fixture.root / "build/probe", budget=budget,
+            ) as session:
+                actual = graph_probe.run_probe(
+                    loader, {target}, {}, {}, session=session,
+                    trusted_builtin_names={"CURDIR"}, dispatch_targets={target},
+                )
+                record = actual[target]["record"]["variants"][0]["record"]
+                self.assertEqual(record["files"][0]["variables"]["CURDIR"]["value"], "/repo")
+                self.assertEqual(len(record["recipe_dispatches"]), 1)
+                routes = graph_lifecycle._consumer_routes(
+                    graph, actual, cases, {}, self.fixture.root.as_posix(),
+                )
+                self.assertEqual(routes[0][1][0][-2:], ("/repo", "HEAD"))
+                self.assertFalse(session.budget.children)
+        finally:
+            budget.close()
+            self.assertFalse(budget.children)
+            self.assertFalse(budget.producer_waiters)
+
+    def test_missing_forged_copied_and_mutated_model_bindings_reject(self):
+        original = graph_lifecycle.prove
+        observed = []
+
+        def inspect(root, graph, **arguments):
+            model, session = arguments["model"], arguments["session"]
+            binding = model["lifecycle_bindings"]
+            for replacement in (None, True, {"verified": True}, copy.copy(binding)):
+                model["lifecycle_bindings"] = replacement
+                with self.assertRaisesRegex(MakeProbeError, "verified.*bindings"):
+                    original(root, graph, **arguments)
+            model["lifecycle_bindings"] = binding
+            with self.assertRaisesRegex(MakeProbeError, "active validated graph model"):
+                graph_lifecycle.bind(
+                    graph, session=session, model=dict(model),
+                    make_authorities=model["lifecycle_authorities"][0],
+                    tester_cases=model["lifecycle_authorities"][1],
+                )
+            with self.assertRaisesRegex(MakeProbeError, "verified.*bindings"):
+                original(root, graph, **{**arguments, "model": dict(model)})
+            changed = copy.deepcopy(graph)
+            changed["artifact"]["owner"] += "-unbound"
+            with self.assertRaisesRegex(MakeProbeError, "verified.*bindings"):
+                original(root, changed, **arguments)
+            with self.assertRaisesRegex(MakeProbeError, "verified.*bindings"):
+                original(root, graph, **{**arguments, "session": copy.copy(session)})
+            owner = model["authorities"]["owner.make"]
+            fingerprint = owner["fingerprint"]
+            owner["fingerprint"] = "changed"
+            with self.assertRaisesRegex(MakeProbeError, "verified.*bindings"):
+                original(root, graph, **arguments)
+            owner["fingerprint"] = fingerprint
+            observed.append((session, model, graph))
+            return original(root, graph, **arguments)
+
+        with mock.patch.object(graph_lifecycle, "prove", inspect):
+            self.report()
+        session, model, graph = observed[0]
+        self.assertEqual(reporter._binding_models, {})
+        with self.assertRaises(MakeProbeError):
+            graph_lifecycle.check(
+                self.fixture.root, graph["artifact"]["executable_consumer"],
+                session=session, graph=graph, schema={}, oracle={}, model=model,
+            )
+
+    def test_actual_declared_routes_consume_authoritative_artifact_before_and_after_removal(self):
+        baseline = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        graph_path = self.fixture.root / reporter.GRAPH_PATH
+        registry = json.loads((self.fixture.root / reporter.TEST_CASE_REGISTRY_PATH).read_text())
+        commands = (
+            ["/usr/bin/make", "--no-print-directory", "-f", "Makefile", "validation-ownership-check"],
+            shlex.split(registry["cases"][0]["automation"][0]["command"]),
+        )
+        outcomes = []
+        budget = ProbeBudget(Limits(seconds=180))
+        try:
+            for phase in ("present", "removed", "restored"):
+                if phase == "removed":
+                    graph_path.unlink()
+                    self.fixture.commit("Remove authoritative graph input")
+                elif phase == "restored":
+                    self.fixture.git("switch", "--detach", baseline)
+                for argv in commands:
+                    result = budget.run(argv, cwd=self.fixture.root, env=ENVIRONMENT)
+                    outcomes.append((phase, result.returncode))
+                    if phase == "removed":
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn(reporter.LIFECYCLE_FAILURE_REASON.encode(), result.stderr)
+                    else:
+                        self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual([code for phase, code in outcomes if phase != "removed"], [0, 0, 0, 0])
+        finally:
+            budget.close()
+            self.assertFalse(budget.children)
+            self.assertFalse(budget.producer_waiters)
+        self.assertTrue(graph_path.is_file())
+
+    def test_public_lifecycle_uses_bound_routes_without_recursive_proof(self):
+        graph = json.loads((self.fixture.root / reporter.GRAPH_PATH).read_text())
+        parent = self.fixture.root / "build/test-artifacts/validation-ownership"
+        parent.mkdir(parents=True)
+        budget = ProbeBudget(Limits(seconds=180))
+        try:
+            with tempfile.TemporaryDirectory(prefix="public-lifecycle-", dir=parent) as directory:
+                artifact_root = Path(directory)
+                artifact = artifact_root / reporter.GRAPH_PATH
+                artifact.parent.mkdir()
+                artifact.write_text(json.dumps(graph))
+                backup = artifact_root / "backup"
+                for phase in ("present", "removed", "restored"):
+                    if phase == "removed":
+                        artifact.replace(backup)
+                    elif phase == "restored":
+                        backup.replace(artifact)
+                    for route in (graph["artifact"]["executable_consumer"], graph["artifact"]["consistency_check"]):
+                        result = budget.run([
+                            "/usr/bin/python3", "-I", "-S", "-B",
+                            "scripts/validation_ownership/isolated_launcher.py", "lifecycle-check",
+                            "--artifact-root", str(artifact_root),
+                            "--authority-root", str(self.fixture.root), "--check", route,
+                        ], cwd=self.fixture.root, env=ENVIRONMENT)
+                        if phase == "removed":
+                            self.assertNotEqual(result.returncode, 0)
+                            self.assertIn(reporter.LIFECYCLE_FAILURE_REASON.encode(), result.stderr)
+                        else:
+                            self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse(backup.exists())
+        finally:
+            budget.close()
+            self.assertFalse(budget.children)
+            self.assertFalse(budget.producer_waiters)
+
+    def test_actual_trusted_verifier_rejects_a_noop_consumer(self):
+        baseline = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        trusted = self.fixture.extract_revision(baseline, "trusted-lifecycle")
+        budget = ProbeBudget(Limits(seconds=180))
+        try:
+            for noop in (False, True):
+                if noop:
+                    self.fixture.add("Makefile", "validation-ownership-check:\n\t@true\n")
+                    self.fixture.commit("No-op consumer with unchanged checker implementation")
+                head = self.fixture.git("rev-parse", "HEAD").decode().strip()
+                result = budget.run([
+                    "/usr/bin/python3", "-I", "-S", "-B",
+                    str(trusted / "scripts/validation_ownership/ci_verifier.py"),
+                    "--trusted-root", str(trusted), "--repository-root", str(self.fixture.root),
+                    "--base-sha", baseline, "--candidate-sha", head,
+                    "--trusted-sha", baseline, "--expected-mode", "exact-base-pinned",
+                ], cwd=trusted, env=ENVIRONMENT)
+                if noop:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertNotIn(b'"lifecycle":', result.stdout)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    report = json.loads(result.stdout)
+                    self.assertEqual(len(report["lifecycle"]), 3)
+                    self.assertTrue(all(row["semantics"] == "verified-dispatch-and-shared-checker"
+                                        for row in report["lifecycle"]))
+                self.assertFalse((trusted / ".validation-ownership-runtime").exists())
+        finally:
+            budget.close()
+            self.assertFalse(budget.children)
+            self.assertFalse(budget.producer_waiters)
 
 
 class GitFixtureTests(unittest.TestCase):

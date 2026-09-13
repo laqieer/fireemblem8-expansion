@@ -56,6 +56,17 @@ def _parse_reporter_arguments(arguments: list[str]):
         raise ValueError(str(error)) from error
 
 
+def graph_dispatch(mode: str, arguments: list[str]):
+    if mode not in {"check", "resolve"}:
+        raise ValueError("dispatch is not a graph-checking route")
+    reporter, parsed = _parse_reporter_arguments(arguments)
+    if mode == "check" and parsed.changed:
+        raise ValueError("check mode does not accept --changed")
+    if mode == "resolve" and not parsed.changed:
+        raise ValueError("resolve mode requires at least one --changed")
+    return reporter, parsed
+
+
 def main(argv: list[str] | None = None) -> int:
     if not sys.flags.isolated or not sys.flags.no_site:
         print(
@@ -80,12 +91,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         _clear_ambient_execution_environment()
         if mode in {"check", "resolve"}:
-            reporter, parsed = _parse_reporter_arguments(arguments)
+            reporter, parsed = graph_dispatch(mode, arguments)
             parsed.repository_root = _controlled_root(parsed.repository_root)
-            if mode == "check" and parsed.changed:
-                raise ValueError("check mode does not accept --changed")
-            if mode == "resolve" and not parsed.changed:
-                raise ValueError("resolve mode requires at least one --changed")
         else:
             reporter = None
         os.chdir(ROOT)
