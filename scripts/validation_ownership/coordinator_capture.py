@@ -296,6 +296,31 @@ class VerifierExpectation:
     def check_definition(self):
         return {"contract": "coordinator-check", "evidence_id": self.evidence_id(), "inputs": []}
 
+    def validate_assignment(self, assignment, result_sha):
+        self.validate()
+        if not isinstance(assignment, dict) or not isinstance(assignment.get("required_checks"), dict):
+            raise MakeProbeError("ownership capture lacks its registered check assignment")
+        if (
+            assignment.get("assigned_parent_sha") != self.base_sha
+            or result_sha != self.candidate_sha
+            or "head_sha" in assignment and assignment["head_sha"] != self.candidate_sha
+        ):
+            raise MakeProbeError("ownership capture differs from its assignment BASE/candidate")
+        allowed = assignment.get("allowed_worktree")
+        if not isinstance(allowed, (str, Path)) or not str(allowed):
+            raise MakeProbeError("ownership capture lacks its assigned worktree")
+        try:
+            root = Path(allowed).resolve(strict=True)
+            expected = self.repository_root.resolve(strict=True)
+        except (OSError, ValueError) as error:
+            raise MakeProbeError("ownership capture cannot resolve its assigned worktree") from error
+        if not root.is_dir() or root != expected:
+            raise MakeProbeError("ownership capture differs from its assigned worktree")
+        if assignment["required_checks"].get(CHECK_ID) != self.check_definition():
+            raise MakeProbeError("ownership capture differs from its registered check assignment")
+        if self.qualification is not None:
+            self.qualification.validate_assignment(assignment, result_sha)
+
     def validate(self):
         for value in (self.base_sha, self.candidate_sha, self.trusted_sha):
             if not re.fullmatch(r"[0-9a-f]{40}", value):
@@ -324,10 +349,7 @@ class VerifierExpectation:
 def trusted_executor(expectation: VerifierExpectation):
     expectation.validate()
     def execute(current_assignment, result_sha):
-        if current_assignment is not assignment or result_sha != expectation.candidate_sha:
-            raise MakeProbeError("ownership capture changed its head/assignment binding")
-        if expectation.qualification is not None:
-            expectation.qualification.validate_assignment(current_assignment, result_sha)
+        expectation.validate_assignment(current_assignment, result_sha)
         argv = [
             "/usr/bin/python3", "-I", "-S", "-B",
             str(expectation.trusted_root / "scripts/validation_ownership/ci_verifier.py"),
@@ -352,6 +374,7 @@ def trusted_executor(expectation: VerifierExpectation):
             timeout=min(3600, current_assignment.get("max_lifetime_seconds", 3600)),
             max_bytes=raw_diff_check.MAX_BYTES,
         )
+        expectation.validate_assignment(current_assignment, result_sha)
         if actual.returncode == 0:
             result = parse_json(actual.stdout, "captured ownership verifier result")
             expected = {
@@ -387,29 +410,14 @@ def trusted_executor(expectation: VerifierExpectation):
                 ):
                     raise MakeProbeError("captured reviewed evolution result differs from coordinator expectation")
         return actual, dict.fromkeys(agent_handoff.METRICS)
-    assignment = None
-
-    def executor(current_assignment, result_sha):
-        nonlocal assignment
-        assignment = current_assignment
-        return execute(current_assignment, result_sha)
-
-    return executor
+    return execute
 
 
 def capture(entry, expectation: VerifierExpectation):
     """Coordinator supplies the definition/source/BASE expectations, not candidate YAML."""
     expectation.validate()
     assignment = entry["assignment"]
-    if expectation.qualification is not None:
-        expectation.qualification.validate_assignment(assignment, expectation.candidate_sha)
-    definition = assignment["required_checks"].get(CHECK_ID)
-    if (
-        definition is None
-        or definition != expectation.check_definition()
-        or Path(assignment["allowed_worktree"]).resolve() != expectation.repository_root.resolve()
-    ):
-        raise MakeProbeError("managed ownership admission lacks its coordinator check assignment")
+    expectation.validate_assignment(assignment, expectation.candidate_sha)
 
     return agent_handoff.capture_check(
         entry, CHECK_ID, expectation.candidate_sha, trusted_executor=trusted_executor(expectation),

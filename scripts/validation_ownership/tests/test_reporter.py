@@ -56,7 +56,7 @@ class AssetOwnershipTests(unittest.TestCase):
             node["id"]: {"display": json.dumps(node["authority"], sort_keys=True)}
             for node in graph["nodes"] if node["kind"] == "evidence"
         }
-        with mock.patch.object(reporter, "_validate_authorities", return_value=authorities), \
+        with mock.patch.object(reporter, "_validate_authorities", return_value=(authorities, {}, {})), \
              mock.patch.object(reporter, "_generated_registry_records", return_value=([], self.generated_paths)), \
              mock.patch.object(reporter, "_path_admission_sources", return_value=self.admission_sources):
             schema_budget = ProbeBudget()

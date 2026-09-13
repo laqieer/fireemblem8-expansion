@@ -346,10 +346,12 @@ class GraphReportTests(unittest.TestCase):
                     self.assertIn("retargets exact-base oracle authority", result.stderr)
                 else:
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    if argv[0] == "/usr/bin/python3":
-                        report = json.loads(result.stdout)
-                        self.assertEqual(len(report["artifact"]["executable_lifecycle"]), 3)
                     observed = json.loads(result.stdout)
+                    self.assertEqual(len(observed["lifecycle"]), 3)
+                    self.assertTrue(all(
+                        proof["semantics"] == "verified-dispatch-and-shared-checker"
+                        for proof in observed["lifecycle"]
+                    ))
                     self.assertEqual(observed["review_invalidation"]["changed_edge_ids"], edges)
 
     def test_unknown_current_path_cannot_be_admitted_by_prefix(self):

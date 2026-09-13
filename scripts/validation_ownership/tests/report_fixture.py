@@ -27,7 +27,7 @@ def consuming_makefile(*targets):
 
 
 class ReportFixture:
-    def __init__(self, *, foundation_base=False):
+    def __init__(self, *, foundation_base=False, foundation_support=False):
         self.directory = ROOT / "build/test-artifacts/full-report" / secrets.token_hex(12)
         self.root = self.directory / "repo"
         self.root.mkdir(parents=True)
@@ -132,6 +132,12 @@ class ReportFixture:
         self.git("init", "--quiet")
         self.foundation_base = None
         if foundation_base:
+            if foundation_support:
+                self.git("add", "--", *[
+                    path.relative_to(self.root).as_posix()
+                    for path in (self.root / "scripts").rglob("*.py")
+                    if not path.relative_to(self.root).as_posix().startswith("scripts/validation_ownership/")
+                ], "tools/scaninc")
             self.git("add", "--", *[
                 "scripts/validation_ownership/" + name for name in (
                     "authority.py", "budget.py", "make_probe.py", "syscall_guard.py",

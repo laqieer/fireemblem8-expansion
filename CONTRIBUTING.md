@@ -184,6 +184,9 @@ shared checker coherent. No-op positive fixtures, copied role labels or
 source fingerprints alone cannot prove artifact necessity. Preserve actual
 public-route references and independent no-op/redirect/substitution mutations;
 describe dispatch verification separately from consumer execution.
+Coordinator capture must bind BASE, owned worktree, candidate and required
+check inside the executor in every mode; wrapper-only identity checks are
+insufficient, and reviewed qualifications are additional.
 Complete tests and documentation remain in the issue's full review scope,
 including when a predeclared genuinely indivisible review exception applies.
 

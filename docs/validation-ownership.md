@@ -761,7 +761,16 @@ whether verification ran. `coordinator_capture.validate_handoff` requires the
 existing #178 `coordinator-check` assignment and always calls the real
 standalone verifier through `capture_check`/`trusted_executor` before managed
 admission. The coordinator owns the trusted source/root, actual PR BASE,
-candidate/worktree and expected mode outside candidate control. For a reviewed
+candidate/worktree and expected mode outside candidate control. Every
+`trusted_executor` invocation, including coordinator-local capture that bypasses
+the outer handoff wrapper, binds the registered assignment's BASE, resolved
+owned worktree, exact candidate/result SHA and required-check definition before
+execution and again before crediting its result. These checks apply equally
+to exact-BASE and foundation-introduction modes. A verifier cannot use HEAD as
+its own BASE while the captured record labels another parent. Missing or changed
+bindings produce no successful capture or managed readiness.
+
+For a reviewed
 graph evolution, `qualify_reviewed_evolution` first consumes the coordinator's
 actual `ReviewSession` task result and immutable `ReviewTools` tester-case
 binding. The completed read-only reviewer must be independent of the

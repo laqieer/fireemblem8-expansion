@@ -4147,6 +4147,16 @@ fails before exact-base authority can succeed.
 For this introducing PR, the complete merged foundation-only BASE selects
 `foundation-introduction`; its independently selected verifier source and
 actual exact-head capture must report that mode, not authority-none bootstrap.
+Run `NonReviewedCaptureBindingTests` below to verify real valid exact-BASE and
+foundation captures, then substitute HEAD as BASE, another worktree, a different
+check definition or another candidate. Every mismatch must be rejected inside
+the trusted executor before a verifier can supply successful local readiness.
+Reviewed qualifications remain additional authority, never a substitute for
+these universal bindings. The exact478 preimage produced a real successful H/H
+verifier result while capture recorded B and managed readiness was true;
+removing the universal assignment check must expose that same wrong acceptance.
+A bounded foundation fixture retains already-existing support code in BASE
+rather than increasing the raw-diff size or hiding its source checks.
 A genuine earlier base lacking every package/graph/oracle marker instead emits
 `bootstrap-not-authoritative` with no claimed graph authority. Preserve that
 separate historical/negative case rather than treating it as this PR's current
@@ -4247,6 +4257,9 @@ unchanged source bytes/Git state across simulated fixture exceptions.
   -- real public route, public lifecycle and standalone verifier references,
   native dispatch/skip/failure propagation, source substitution and model
   binding negatives. This runs only owned small fixtures, not the full report.
+- `python3 -m unittest scripts.validation_ownership.tests.test_coordinator_capture.NonReviewedCaptureBindingTests -v`
+  -- universal assignment/expectation binding and real non-reviewed managed
+  capture/readiness; no native review qualification or current H1 is created.
 
 The focused A/V fixtures also execute the title fingerprint comparator with
 missing/changed framebuffer controls, the actual presentation runner's

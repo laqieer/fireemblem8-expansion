@@ -3,6 +3,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -87,8 +88,8 @@ class CoordinatorCaptureTests(unittest.TestCase):
     def test_wrong_base_and_head_cannot_supply_a_successful_capture(self):
         self.fixture.add("unrelated.txt", "later head\n")
         head = self.fixture.commit("Advance candidate")
-        result = capture(self.entry, self.expectation(head, base_sha=head, trusted_sha=head))
-        self.assertNotEqual(result["exit_code"], 0)
+        with self.assertRaisesRegex(MakeProbeError, "assignment BASE/candidate"):
+            capture(self.entry, self.expectation(head, base_sha=head, trusted_sha=head))
         with self.assertRaises(ValueError):
             capture(self.entry, self.expectation(self.base))
 
@@ -123,6 +124,118 @@ class IntroductionCaptureTests(unittest.TestCase):
         actual = capture(entry, expected)
         self.assertEqual(actual["exit_code"], 0, actual)
         self.assertEqual(actual["parent_sha"], fixture.foundation_base)
+
+
+class NonReviewedCaptureBindingTests(unittest.TestCase):
+    def coordinator(self, *, foundation=False, evolved=False):
+        fixture = ReportFixture(foundation_base=foundation, foundation_support=foundation)
+        self.addCleanup(fixture.close)
+        if evolved:
+            case = reviewed_code_evolution_case(fixture)
+            base, head = case["base"], case["head"]
+        else:
+            base = fixture.foundation_base if foundation else fixture.git("rev-parse", "HEAD").decode().strip()
+            if not foundation:
+                fixture.add("src/data/table.json", '{"version":2}\n')
+                fixture.commit("Actual data-only candidate")
+            head = fixture.git("rev-parse", "HEAD").decode().strip()
+        fixture.git("switch", "-c", "candidate")
+        source = head if foundation or evolved else base
+        trusted = fixture.extract_revision(source, "trusted-nonreviewed")
+        expected = VerifierExpectation(
+            fixture.root, trusted, base, head, source,
+            "foundation-introduction" if foundation else "exact-base-pinned",
+        )
+        state = handoff.new_state("owner/repository", "coordinator-one", {
+            "mode": "plan", "observed_at": at_offset(-10), "valid_until": at_offset(600),
+            "autostop_enabled": None, "stop_on_disconnect": None,
+            "plan": "Bounded non-reviewed capture binding fixture",
+        })
+        pr = SimpleNamespace(
+            repository="owner/repository", repository_id=1, number=186,
+            head_sha=head, head_ref="candidate", base_sha=base, base_ref="master",
+        )
+        decision = model_control(gate.select_mode(
+            decisions(number=186), number=186, head_sha=head,
+            decision_oid="a" * 40, changed_lines=10,
+        ), pr)
+        record = gate.begin_candidate(state, pr, base, decision, runs=())
+        gate.register_local_validation(state, record, pr, fixture.root, {
+            "raw": {"contract": "git-diff-check", "evidence_id": "raw", "inputs": []},
+            CHECK_ID: expected.check_definition(),
+        })
+        raw_result = gate.capture_local_check(state, record, pr, "raw")
+        self.assertEqual(raw_result["exit_code"], 0, raw_result)
+        self.assertFalse(gate.coordinator_local_ready(state, record, pr))
+        return fixture, state, record, pr, expected
+
+    def observed_capture(self, state, record, pr, expected):
+        executed = []
+        original = raw.run_process
+
+        def observe(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if result.returncode == 0 and len(args[0]) > 4 and str(args[0][4]).endswith("/ci_verifier.py"):
+                executed.append(json.loads(result.stdout))
+            return result
+
+        with patch.object(raw, "run_process", observe):
+            captured = gate.capture_local_check(state, record, pr, CHECK_ID, trusted_executor(expected))
+        self.last_binding_evidence = {
+            "assignment_base": record["local_validation"]["base_sha"],
+            "expected_base": expected.base_sha,
+            "captured_parent": captured["parent_sha"],
+            "exit_code": captured["exit_code"],
+            "pid": captured["pid"],
+            "verifier_bases": [result["base_sha"] for result in executed],
+            "ready": gate.coordinator_local_ready(state, record, pr),
+        }
+        return captured, executed
+
+    def test_nonreviewed_exact_base_and_foundation_captures_bind_the_assignment(self):
+        for foundation in (False, True):
+            with self.subTest(foundation=foundation):
+                _, state, record, pr, expected = self.coordinator(foundation=foundation)
+                captured, executed = self.observed_capture(state, record, pr, expected)
+                self.assertEqual(captured["exit_code"], 0, captured)
+                self.assertEqual([result["base_sha"] for result in executed], [pr.base_sha])
+                self.assertEqual(captured["parent_sha"], pr.base_sha)
+                self.assertGreater(captured["pid"], 0)
+                self.assertTrue(gate.coordinator_local_ready(state, record, pr))
+                self.assertNotIn("review_qualification", record["local_validation"])
+
+    def test_head_as_own_base_cannot_gain_nonreviewed_managed_readiness(self):
+        for foundation in (False, True):
+            with self.subTest(foundation=foundation):
+                _, state, record, pr, expected = self.coordinator(foundation=foundation, evolved=not foundation)
+                wrong = replace(expected, base_sha=pr.head_sha, trusted_sha=pr.head_sha, mode="exact-base-pinned")
+                captured, executed = self.observed_capture(state, record, pr, wrong)
+                self.assertIsNone(captured["exit_code"], self.last_binding_evidence)
+                self.assertIsNone(captured["pid"])
+                self.assertEqual(executed, [])
+                self.assertFalse(gate.coordinator_local_ready(state, record, pr))
+
+    def test_wrong_root_definition_and_candidate_cannot_gain_readiness(self):
+        fixture, state, record, pr, expected = self.coordinator()
+        other = fixture.directory / "other-root"
+        fixture.git("clone", "--quiet", "--no-local", str(fixture.root), str(other))
+        for defect in ("root", "definition", "candidate"):
+            with self.subTest(defect=defect):
+                selected = expected
+                definition = expected.check_definition()
+                if defect == "root":
+                    selected = replace(expected, repository_root=other)
+                elif defect == "definition":
+                    definition = {**definition, "evidence_id": "another-ownership-check"}
+                else:
+                    selected = replace(expected, candidate_sha=pr.base_sha)
+                record["local_validation"]["required_checks"][CHECK_ID] = definition
+                captured, executed = self.observed_capture(state, record, pr, selected)
+                self.assertIsNone(captured["exit_code"], self.last_binding_evidence)
+                self.assertIsNone(captured["pid"])
+                self.assertEqual(executed, [])
+                self.assertFalse(gate.coordinator_local_ready(state, record, pr))
+        record["local_validation"]["required_checks"][CHECK_ID] = expected.check_definition()
 
 
 class ReviewedEvolutionCaptureTests(unittest.TestCase):
