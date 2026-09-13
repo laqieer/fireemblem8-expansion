@@ -645,16 +645,64 @@ literal text, ordinary/scoped or already-proven computed references, and
 argument-free literal/computed-name macro forwarding. Structural eval is
 checked at its graph sink; reachable macro/variable bodies remain subject to
 the same contract. General value-producing Make functions, substitution
-references, parameterized or otherwise unproven call forms, and stateful
-operations inside staged payload definitions reject explicitly. This is a
-positive supported grammar, not a blacklist for `subst`.
+references, unproven call forms, and stateful operations inside staged payload
+definitions reject explicitly. Parameterized rule templates require the
+separate original-context proof below. This is a positive supported grammar,
+not a blacklist for `subst`.
 
-Both source definitions and native raw forms are checked. A later rewrite
-cannot erase an earlier opaque operation, and the reporter does not obtain
-authority by expanding that operation again after consumption. Additional
-proof-input retention spends the existing cache allowance. Ordinary
-non-staged Make evaluation remains native, and complete supported deferred
-forms and native-proven recursive eval still resolve normally.
+Both complete source definitions and native raw forms are checked. The source
+collector retains GNU logical lines, continuation/comment semantics and whole
+multiline/nested `define` bodies, rather than physical fragments. It preserves
+recipe escapes, recognizes LF/CRLF and an initial UTF-8 BOM, and distinguishes
+GNU and literal `.POSIX` continuation spacing. Make comments are not shell
+comments. Unproven dynamic definition names and recipe-prefix contexts reject
+instead of silently changing the source classification.
+
+A later rewrite cannot erase an earlier opaque operation or selector value.
+Computed-name closure retains all proven source alternatives alongside native
+observations, including literal eval assignment history and target-specific
+definitions. An unresolved earlier alternative or ambiguous generated
+assignment history cannot be repaired by a well-formed final value. Eval's
+pre-expansion input is not fabricated into its resulting raw definition.
+Only a single unchanged, context-free literal-function initializer can use
+its native finite-name observation in place of unsupported Python evaluation.
+Secondary-expansion sinks follow the original rule/include order; enabling
+the feature later does not retroactively make earlier rules secondary.
+Unknown include order is conservative, not original-context evidence.
+The reporter never obtains authority by expanding a stateful body again after
+consumption. Ordinary non-staged Make evaluation remains native, and complete
+supported deferred forms and native-proven recursive eval still resolve.
+
+The real generation and modern-object templates in `generated_data.mk` and
+`modern.mk` use a bounded reference-preserving contract, without recognizing
+their symbol spellings. A top-level `foreach` passes one literal identifier
+word as one positional argument through `eval`/`call` to one prior recursive
+source macro. Its native raw body/origin/flavor must agree with that original
+definition; external macro overrides, extra parameters, redefinitions,
+uncertain/repeated include order and unsupported generated writes reject.
+The emitted rule has one literal separator and a parameter-bound confined
+target. Immediate inputs must have proven preceding global assignment
+histories, pure initializers and literal native values that cannot inject
+another reference, line, rule or assignment. Deferred recipe references and
+automatic-variable substitutions remain recipe context; deferred operations
+or additional unbound scope references do not acquire template authority.
+
+The supported header wildcard has one confined literal directory and a single
+ordinary pattern. GNU Make supplies its actual result; the proof conservatively
+checks that the directory's admitted source/generated names cannot introduce
+Make syntax. It does not implement glob expansion in Python. Only the proved
+reference-analysis representation separates header inputs from recipe-only
+compiler flags: the original macro, call and all source bytes still execute
+through the real native Make observation. Literal definition pages and the
+incrementally admitted template representation spend the existing observation,
+run, cache and aggregate allowances, including the unchanged combined
+512-name request bound. No synthetic Makefile supplies graph evidence.
+
+Source-faithful template slices exercise generated paths, table selection,
+shared/table-specific Python and config prerequisites, real fixture C
+generation and ARM object compilation. These prove those template contracts,
+not the production generator implementation or full-repository graph/resource
+fit; the complete production, verifier and H1 gates remain separate.
 
 New paths brought in by the delivered producer/dependency/adaptive/cleanup
 contracts have explicit selectors in the existing host and documentation

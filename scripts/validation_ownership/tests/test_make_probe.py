@@ -11,7 +11,7 @@ from scripts.validation_ownership import reporter
 from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, GitTreeEntries, GitTreeEntry, encoded
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.budget import Limits, MAX_PLANNED_STATE_BYTES
-from scripts.validation_ownership.graph_probe import run_probe, source_census
+from scripts.validation_ownership.graph_probe import make_source_units, run_probe, source_census
 from scripts.validation_ownership.make_probe import ProbeSession
 from scripts.validation_ownership.tests.test_foundation import _PendingTrafficLimits
 
@@ -36,10 +36,63 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         path.write_bytes(data)
         self.entries[name] = GitTreeEntry(name, "100644", "blob", hashlib.sha1(data).hexdigest())
 
-    def session(self, budget=None):
+    def session(self, budget=None, *, runtime_files=()):
         budget = ProbeBudget() if budget is None else budget
         loader = AuthorityLoader(self.root, GitTreeEntries(self.entries, budget=budget), budget=budget)
-        return ProbeSession(loader, scratch_root=self.root / "build/probe", budget=budget)
+        return ProbeSession(loader, scratch_root=self.root / "build/probe", budget=budget, runtime_files=runtime_files)
+
+    def framework_templates(self, *, renamed=False):
+        for path, name in (
+            ("generated_data.mk", "GENERATED_DATA_LINK_TABLE_RULES"),
+            ("modern.mk", "GENERATED_DATA_MODERN_OVERRIDE_RULES"),
+        ):
+            source = (ROOT / path).read_text()
+            start = source.index("define " + name + "\n")
+            stop = source.index("\nendef", start) + len("\nendef")
+            caller = next(line for line in source.split("\n") if line.startswith("$(foreach ") and name in line)
+            selected = source[start:stop] + "\n\n" + caller + "\n"
+            self.add(path, selected.replace(name, "PROJECT_" + name) if renamed else selected)
+        self.add("Makefile", (
+            ".DEFAULT_GOAL := all\n"
+            "GENERATED_DATA_OUT_DIR := build/generated/data\n"
+            "GENERATED_DATA_LINKED_HAND_SOURCES := src/data_alpha.c src/data_beta.c\n"
+            "GENERATED_DATA_LINKED_TABLES := $(patsubst src/data_%.c,%,$(GENERATED_DATA_LINKED_HAND_SOURCES))\n"
+            "GENERATED_DATA_SHARED_PY_SOURCES := $(wildcard scripts/generated_data/*.py)\n"
+            "GENERATED_DATA_CONFIG_INPUTS_alpha := include/alpha.h\n"
+            "GENERATED_DATA_CONFIG_INPUTS_beta := include/beta.h\n"
+            "GENERATED_DATA_PY := /usr/bin/python3 -m scripts.generated_data\n"
+            "MODERN_OUTPUT_DIR := build/modern\n"
+            "MODERN_CC := /usr/bin/arm-none-eabi-gcc\n"
+            "MODERN_CFLAGS := -mthumb -mcpu=arm7tdmi -O2\n"
+            "SELECTED_TABLE := alpha\n"
+            "include generated_data.mk\ninclude modern.mk\n"
+            "all: $(MODERN_OUTPUT_DIR)/src/data_$(SELECTED_TABLE).o\n"
+            ".SECONDEXPANSION:\n"
+        ))
+        for name in ("alpha", "beta"):
+            self.add("src/data/" + name + ".json", '{"value":1}\n')
+            self.add("include/" + name + ".h", "/* fixture config */\n")
+            self.add("scripts/generated_data/" + name + "/schema.py", "# fixture module input\n")
+        self.add("scripts/generated_data/__init__.py", "")
+        self.add("scripts/generated_data/__main__.py", (
+            "import argparse,json\nfrom pathlib import Path\n"
+            "p=argparse.ArgumentParser();p.add_argument('mode');p.add_argument('--table');p.add_argument('--out-dir')\n"
+            "a=p.parse_args();data=json.loads(Path('src/data/'+a.table+'.json').read_text())\n"
+            "out=Path(a.out_dir);out.mkdir(parents=True,exist_ok=True)\n"
+            "(out/('data_'+a.table+'.c')).write_text('const int data_'+a.table+'='+str(data['value'])+';\\n')\n"
+        ))
+
+    def observe_framework(self, domains=None, *, symbolic=()):
+        with self.session() as session:
+            result = run_probe(
+                session.loader, {"all"}, domains or {}, {}, session=session,
+                scoped_variable_names={"1", "t", "@", "@D", "<"},
+                symbolic_recipe_names={"MODERN_CC", "MODERN_CFLAGS", "GENERATED_DATA_PY", *symbolic},
+                declared_external_names=set(symbolic),
+            )
+        self.assertIsNone(session.base)
+        self.assertFalse(session.budget.children)
+        return result["all"]
 
     def observe(self, domains=None, *, targets=("all",), **options):
         domains = domains or {}
@@ -449,6 +502,285 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                         "mode": mode, "actual_prerequisite": "second", "later_payload": observed["PAYLOAD"]["value"],
                     })
                 self.assert_staged_rejection_before_late_observation()
+
+    def test_complete_logical_and_define_bodies_reject_original_rewritten_transformations(self):
+        declarations = (
+            "PAYLOAD = $(subst OTHER,FLAGS,\\\n  $(TEXT))\n",
+            "define PAYLOAD\n$(subst OTHER,FLAGS,\n$(TEXT))\nendef\n",
+            "define PAYLOAD\n$(subst OTHER,FLAGS,\\\n  $(TEXT))\nendef\n",
+        )
+        for declaration in declarations:
+            with self.subTest(declaration=declaration):
+                self.add("Makefile", "FLAGS ?= first\nOTHER = first\nTEXT := $$(OTHER)\n"
+                         + declaration + ".SECONDEXPANSION:\nall: $(PAYLOAD)\n"
+                         "\t@echo $(FLAGS)\n\t$(eval PAYLOAD = first)\nfirst second: ;\n")
+                self.assertEqual(self.ordinary("FLAGS=second"), b"second\n")
+                with self.session() as session:
+                    actual = session.make(
+                        "all", assignments=(("command-line", "FLAGS", "second"),), definitions=("PAYLOAD",),
+                    )
+                    self.assertEqual(actual.semantics["files"][0]["prerequisites"][0]["name"], "second")
+                    self.assertEqual(actual.semantics["definitions"]["global"]["PAYLOAD"]["value"], "first")
+                self.assert_staged_rejection_before_late_observation()
+
+    def test_selector_history_cannot_be_replaced_by_a_later_native_value(self):
+        bodies = (
+            "NAME ?= FLAGS\nall: $($(NAME))\n\t@echo $(FLAGS)\nNAME = OTHER\n",
+            "NAME ?= FLAGS\n.SECONDEXPANSION:\nall: $$($$(NAME))\n\t@echo $(FLAGS)\n\t$(eval NAME = OTHER)\n",
+            "$(eval NAME = FLAGS)\nall: $($(NAME))\n\t@echo $(FLAGS)\nNAME = OTHER\n",
+            "define SET_NAME\nNAME = FLAGS\nendef\n$(eval $(SET_NAME))\n"
+            "all: $($(NAME))\n\t@echo $(FLAGS)\nNAME = OTHER\n",
+        )
+        for body in bodies:
+            with self.subTest(body=body):
+                self.add("Makefile", "FLAGS ?= first\nOTHER = first\n" + body + "first second: ;\n")
+                with self.session() as session:
+                    actual = session.make(
+                        "all", assignments=(("command-line", "FLAGS", "second"),), variables=("NAME",),
+                    )
+                    self.assertEqual(actual.semantics["files"][0]["prerequisites"][0]["name"], "second")
+                    self.assertEqual(actual.semantics["domains"]["NAME"]["value"], "OTHER")
+                domains = {"NAME": {"kind": "tracked-fallback"}}
+                with self.assertRaises(MakeProbeError):
+                    self.observe(domains, external={"FLAGS"}, symbolic_recipe_names={"FLAGS"})
+                result = self.observe({
+                    **domains, "FLAGS": {"kind": "explicit", "values": ["first", "second"]},
+                })["all"]
+                self.assertEqual(result["prerequisite_domain_census"]["enumerated"], ["FLAGS", "NAME"])
+                self.assertEqual({
+                    variant["record"]["files"][0]["prerequisites"][0]["name"]
+                    for variant in result["record"]["variants"]
+                }, {"first", "second"})
+        self.add("Makefile", "FLAGS ?= first\nNAME ?= $(subst X,FLAGS,X)\nOTHER = first\n"
+                 "all: $($(NAME))\n\t@echo $(FLAGS)\nNAME = OTHER\nfirst second: ;\n")
+        with self.assertRaises(MakeProbeError):
+            self.observe({"NAME": {"kind": "tracked-fallback"}, "FLAGS": {"kind": "explicit", "values": ["first", "second"]}})
+        for assignment in ("$(eval $(DEST) = FLAGS)", "$(DEST) = FLAGS"):
+            self.add("Makefile", "FLAGS ?= first\nDEST = NAME\nOTHER = first\n" + assignment
+                     + "\nall: $($(NAME))\n\t@echo $(FLAGS)\nNAME = OTHER\nfirst second: ;\n")
+            with self.session() as session:
+                native = session.make("all", assignments=(("command-line", "FLAGS", "second"),), variables=("NAME",))
+                self.assertEqual(native.semantics["files"][0]["prerequisites"][0]["name"], "second")
+                self.assertEqual(native.semantics["domains"]["NAME"]["value"], "OTHER")
+            with self.assertRaisesRegex(MakeProbeError, "original assignment history"):
+                self.observe({"NAME": {"kind": "tracked-fallback"}, "FLAGS": {"kind": "explicit", "values": ["first", "second"]}})
+
+    def test_make_logical_source_matches_native_definitions_without_shell_folding(self):
+        for posix in (False, True):
+            with self.subTest(posix=posix):
+                source = (".POSIX:\n" if posix else "") + (
+                    "# ignored continuation \\\nHIDDEN = $(shell touch marker)\n"
+                    "VALUE = alpha  \\\n \t\\\n beta\n"
+                    "HASH = a\\#b\nHASH_EXPR = $(subst x,#,x)\n"
+                    "define BLOCK\none\\\n two\n\tendef # retained body data\nthree\nendef\n"
+                    "all: ;\n"
+                )
+                self.add("Makefile", source)
+                census = source_census({"Makefile": source.encode()})
+                self.assertNotIn("HIDDEN", census["defined"])
+                with self.session() as session:
+                    native = session.make("all", definitions=("VALUE", "HASH", "HASH_EXPR", "BLOCK"))
+                    for name, value in native.semantics["definitions"]["global"].items():
+                        self.assertEqual(census["definitions"][name], [value["value"]])
+                    self.assertFalse((session.tree / "marker").exists())
+                self.assertFalse((self.root / "marker").exists())
+        source = "all:\n\t@printf '%s\\n' 'one\\\n\t#two'\n"
+        self.add("Makefile", source)
+        recipe = next(unit.text for unit in make_source_units(source) if unit.text.startswith("\t"))
+        with self.session() as session:
+            native = session.make("all")
+            self.assertEqual(recipe[1:] + "\n", native.semantics["files"][0]["recipe"])
+
+    def test_source_faithful_framework_templates_keep_native_graph_and_real_outputs(self):
+        self.framework_templates()
+        actual = self.observe_framework()
+        record = actual["record"]["variants"][0]["record"]
+        files = {item["target"]: item for item in record["files"]}
+        generated = "build/generated/data/data_alpha.c"
+        object_file = "build/modern/src/data_alpha.o"
+        self.assertEqual(files[object_file]["prerequisites"], [{"name": generated, "order_only": False}])
+        self.assertEqual({item["name"] for item in files[generated]["prerequisites"]}, {
+            "src/data/alpha.json", "scripts/generated_data/__init__.py", "scripts/generated_data/__main__.py",
+            "scripts/generated_data/alpha/schema.py", "include/alpha.h",
+        })
+        self.assertIn("MODERN_CFLAGS", actual["record"]["symbolic_recipe_names"])
+        self.assertEqual(self.ordinary().count(b"error:"), 0)
+        self.assertEqual((self.root / generated).read_text(), "const int data_alpha=1;\n")
+        self.assertEqual((self.root / object_file).read_bytes()[:4], b"\x7fELF")
+
+    def test_make_bom_crlf_backslashes_and_nested_defines_keep_native_values(self):
+        for separator, count in (("\n", 1), ("\r\n", 2), ("\r\n", 3)):
+            with self.subTest(separator=separator, backslashes=count):
+                source = "\ufeff" + (
+                    "VALUE = before" + "\\" * count + "\n  AFTER = tail\n"
+                    "define BLOCK\ndefine INNER\nliteral\nendef\nendef\nall: ;\n"
+                ).replace("\n", separator)
+                self.add("Makefile", source)
+                census = source_census({"Makefile": source.encode()})
+                with self.session() as session:
+                    native = session.make("all", definitions=("VALUE", "BLOCK", "AFTER"))
+                for name in ("VALUE", "BLOCK"):
+                    self.assertEqual(census["definitions"][name], [native.semantics["definitions"]["global"][name]["value"]])
+                self.assertEqual("AFTER" in census["defined"], count == 2)
+        for source in (
+            "PART = LOAD\ndefine PAY$(PART)\nfirst\nendef\nall: ;\n",
+            ".RECIPEPREFIX := >\nall:\n>@echo real\n",
+        ):
+            self.add("Makefile", source)
+            with self.session() as session:
+                session.make("all")
+            with self.assertRaises(MakeProbeError):
+                source_census({"Makefile": source.encode()})
+
+    def test_secondary_stages_follow_original_rule_and_include_order(self):
+        self.add("rules.mk", "all: $(PAYLOAD)\n\t@echo $(FLAGS)\nfirst second: ;\n")
+        declarations = "FLAGS ?= first\nPAYLOAD = $(subst OTHER,$(FLAGS),OTHER)\n"
+        self.add("Makefile", declarations + "include rules.mk\n.SECONDEXPANSION:\n")
+        domain = {"FLAGS": {"kind": "explicit", "values": ["first", "second"]}}
+        before = self.observe(domain)["all"]
+        self.assertEqual(before["prerequisite_domain_census"]["enumerated"], ["FLAGS"])
+        self.assertEqual({
+            variant["record"]["files"][0]["prerequisites"][0]["name"] for variant in before["record"]["variants"]
+        }, {"first", "second"})
+        self.add("Makefile", declarations + ".SECONDEXPANSION:\ninclude rules.mk\n")
+        with self.assertRaisesRegex(MakeProbeError, "unproven emitted-reference"):
+            self.observe(domain)
+
+    def test_framework_template_selectors_keep_complete_native_dependencies(self):
+        cases = (
+            ("GENERATED_DATA_OUT_DIR", ["build/generated/data", "build/alternate/data"]),
+            ("MODERN_OUTPUT_DIR", ["build/modern", "build/alternate/modern"]),
+            ("GENERATED_DATA_CONFIG_INPUTS_alpha", ["include/alpha.h", "include/alternate.h"]),
+            ("GENERATED_DATA_SHARED_PY_SOURCES", [
+                "scripts/generated_data/__init__.py scripts/generated_data/__main__.py",
+                "scripts/generated_data/__init__.py scripts/generated_data/__main__.py scripts/shared.py",
+            ]),
+            ("GENERATED_DATA_LINKED_HAND_SOURCES", [
+                "src/data_alpha.c", "src/data_alpha.c src/data_beta.c",
+            ]),
+            ("SELECTED_TABLE", ["alpha", "beta"]),
+        )
+        for name, values in cases:
+            with self.subTest(selector=name):
+                self.framework_templates()
+                self.add("include/alternate.h", "/* alternate config */\n")
+                self.add("scripts/shared.py", "# additional shared dependency\n")
+                observed = self.observe_framework({name: {"kind": "explicit", "values": values}})
+                self.assertEqual(observed["prerequisite_domain_census"]["enumerated"], [name])
+                variants = observed["record"]["variants"]
+                for value in values:
+                    state = [("command-line", name, value)]
+                    record = next(variant["record"] for variant in variants if variant["state"] == state)
+                    with self.session() as session:
+                        native = session.make("all", assignments=(("command-line", name, value),))
+                    projection = lambda files: [
+                        {key: item[key] for key in ("target", "recipe", "prerequisites")} for item in files
+                    ]
+                    self.assertEqual(projection(record["files"]), projection(native.semantics["files"]))
+                    files = {item["target"]: item for item in record["files"]}
+                    selected = value if name == "SELECTED_TABLE" else "alpha"
+                    generated_dir = value if name == "GENERATED_DATA_OUT_DIR" else "build/generated/data"
+                    modern_dir = value if name == "MODERN_OUTPUT_DIR" else "build/modern"
+                    generated = generated_dir + "/data_" + selected + ".c"
+                    self.assertEqual(files[modern_dir + "/src/data_" + selected + ".o"]["prerequisites"], [
+                        {"name": generated, "order_only": False},
+                    ])
+                    prerequisites = {item["name"] for item in files[generated]["prerequisites"]}
+                    self.assertIn("src/data/" + selected + ".json", prerequisites)
+                    self.assertIn("scripts/generated_data/" + selected + "/schema.py", prerequisites)
+                    if name == "GENERATED_DATA_CONFIG_INPUTS_alpha":
+                        self.assertIn(value, prerequisites)
+                    if name == "GENERATED_DATA_SHARED_PY_SOURCES":
+                        self.assertTrue(set(value.split()) <= prerequisites)
+
+    def test_template_macro_names_and_real_wildcard_inputs_are_not_special_cased(self):
+        self.framework_templates()
+        before = self.observe_framework()["record"]["variants"][0]["record"]["files"]
+        self.framework_templates(renamed=True)
+        renamed = self.observe_framework()["record"]["variants"][0]["record"]["files"]
+        self.assertEqual(before, renamed)
+        self.add("scripts/generated_data/alpha/extra.py", "# new table-specific source\n")
+        after = self.observe_framework()["record"]["variants"][0]["record"]["files"]
+        generated = next(item for item in after if item["target"] == "build/generated/data/data_alpha.c")
+        self.assertIn({"name": "scripts/generated_data/alpha/extra.py", "order_only": False}, generated["prerequisites"])
+        self.assertNotEqual(before, after)
+
+    def test_rule_template_opaque_parameter_and_context_variants_reject(self):
+        cases = (
+            ("header-function", "generated_data.mk", "$(wildcard scripts/generated_data/$(1)/*.py)",
+             "$(subst Q,Q,$(wildcard scripts/generated_data/$(1)/*.py))"),
+            ("immediate-effect", "generated_data.mk", "\t$(GENERATED_DATA_PY)",
+             "\t$(eval SEEN = one)$(GENERATED_DATA_PY)"),
+            ("deferred-effect", "generated_data.mk", "\t$(GENERATED_DATA_PY)",
+             "\t$$(eval SEEN = one)$(GENERATED_DATA_PY)"),
+            ("extra-dollar-stage", "generated_data.mk", "$$(@D)", "$$$(@D)"),
+            ("extra-parameter", "generated_data.mk",
+             "$(call GENERATED_DATA_LINK_TABLE_RULES,$(t))", "$(call GENERATED_DATA_LINK_TABLE_RULES,$(t),ignored)"),
+            ("parameter-data", "Makefile", "src/data_beta.c", "src/data_bad.name.c"),
+            ("initializer-effect", "Makefile", "GENERATED_DATA_OUT_DIR := build/generated/data",
+             "GENERATED_DATA_OUT_DIR := $(eval SEEN = one)build/generated/data"),
+            ("initializer-unproven", "Makefile", "GENERATED_DATA_OUT_DIR := build/generated/data",
+             "GENERATED_DATA_OUT_DIR := $(UNKNOWN)build/generated/data"),
+            ("late-output", "Makefile", ".SECONDEXPANSION:\n",
+             ".SECONDEXPANSION:\nGENERATED_DATA_OUT_DIR := build/later\n"),
+            ("late-macro", "Makefile", ".SECONDEXPANSION:\n",
+             ".SECONDEXPANSION:\nGENERATED_DATA_LINK_TABLE_RULES = ignored\n"),
+            ("late-undefine", "Makefile", ".SECONDEXPANSION:\n",
+             ".SECONDEXPANSION:\nundefine GENERATED_DATA_LINKED_TABLES\n"),
+            ("dynamic-write", "Makefile", ".SECONDEXPANSION:\n",
+             ".SECONDEXPANSION:\nNAME = GENERATED_DATA_OUT_DIR\n$(NAME) := build/later\n"),
+            ("dynamic-undefine", "Makefile", ".SECONDEXPANSION:\n",
+             ".SECONDEXPANSION:\nNAME = GENERATED_DATA_LINKED_TABLES\nundefine $(NAME)\n"),
+            ("wildcard-patterns", "generated_data.mk", "$(wildcard scripts/generated_data/$(1)/*.py)",
+             "$(wildcard scripts/generated_data/$(1)/*.py scripts/shared/*.py)"),
+            ("uncertain-include", "Makefile", "include generated_data.mk",
+             "ifeq (yes,yes)\ninclude generated_data.mk\nendif"),
+        )
+        for case, path, old, new in cases:
+            with self.subTest(case=case):
+                self.framework_templates()
+                self.add(path, (self.root / path).read_text().replace(old, new))
+                with self.assertRaises(MakeProbeError):
+                    self.observe_framework()
+        self.framework_templates()
+        with self.assertRaisesRegex(MakeProbeError, "macro identity"):
+            self.observe_framework({"GENERATED_DATA_LINK_TABLE_RULES": {"kind": "tracked-fallback"}})
+        with self.assertRaisesRegex(MakeProbeError, "macro identity"):
+            self.observe_framework(symbolic={"GENERATED_DATA_LINK_TABLE_RULES"})
+        self.add("Makefile", "define wildcard\nall: input\nendef\n"
+                 "$(foreach t,absent,$(eval $(call wildcard,$(t))))\nall: ;\n")
+        self.ordinary()
+        with self.assertRaisesRegex(MakeProbeError, "parameterized rule-template invocation"):
+            self.observe()
+
+    def test_rule_templates_reject_late_context_and_reference_mismatch(self):
+        self.framework_templates()
+        source = (self.root / "Makefile").read_text()
+        source = "FLAGS ?= include/first.h\n" + source.replace(
+            "GENERATED_DATA_CONFIG_INPUTS_alpha := include/alpha.h",
+            "GENERATED_DATA_CONFIG_INPUTS_alpha := $(FLAGS)",
+        )
+        self.add("Makefile", source + "GENERATED_DATA_LINKED_TABLES := beta\nall:\n\t@echo $(FLAGS)\n")
+        for name in ("first", "second"):
+            self.add("include/" + name + ".h", "/* selected original input */\n")
+        with self.session() as session:
+            for value in ("include/first.h", "include/second.h"):
+                actual = session.make(
+                    "all", assignments=(("command-line", "FLAGS", value),), definitions=("GENERATED_DATA_LINKED_TABLES",),
+                )
+                generated = next(item for item in actual.semantics["files"] if item["target"] == "build/generated/data/data_alpha.c")
+                self.assertIn({"name": value, "order_only": False}, generated["prerequisites"])
+                self.assertEqual(actual.semantics["definitions"]["global"]["GENERATED_DATA_LINKED_TABLES"]["value"], "beta")
+        with self.assertRaisesRegex(MakeProbeError, "original global assignment context"):
+            self.observe_framework(symbolic={"FLAGS"})
+        with self.assertRaisesRegex(MakeProbeError, "original global assignment context"):
+            self.observe_framework({"FLAGS": {"kind": "explicit", "values": ["include/first.h", "include/second.h"]}})
+
+    def test_template_wildcard_namespace_cannot_emit_make_syntax(self):
+        self.framework_templates()
+        self.add("scripts/generated_data/alpha/unrelated;rule.txt", "# unproven wildcard namespace\n")
+        with self.assertRaisesRegex(MakeProbeError, "reference-preserving namespace"):
+            self.observe_framework()
 
     def test_transparent_staged_forwarding_and_unused_transformations_remain_supported(self):
         self.add("Makefile", "FLAGS ?= first\nTEXT := $$(FLAGS)\nCOPY = $(TEXT)\n"

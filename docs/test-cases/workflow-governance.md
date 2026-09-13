@@ -4074,6 +4074,67 @@ identifier-looking words as proof, and never re-evaluate the payload to make
 it appear safe. Removing only the emitted-reference contract must restore the
 actual false symbolic and finite acceptances.
 
+For complete original source, continue the `subst` call after a backslash-LF
+and separately put it in a multiline `define PAYLOAD` body. After the
+secondary prerequisite consumes PAYLOAD, add recipe-time
+`$(eval PAYLOAD = first)`. Under `FLAGS=second`, inspect the actual native
+prerequisite `second` and the later raw PAYLOAD `first`. The exact841 preimage
+accepted symbolic FLAGS and omitted its finite domain; both routes now reject
+the original opaque operation before further observation pages. Repeat with a
+continued define body. Compare native raw values against complete collected
+GNU/POSIX continuations, Make comment escaping, nested defines, tab-prefixed
+body data, initial BOM, CRLF and odd/even backslashes. Recipe backslash-LF
+bytes must remain identical to native Make, not shell-normalized. Unproven
+dynamic define names or non-default recipe-prefix contexts must fail
+explicitly. Restore the old physical census and incomplete-expression
+handling in an isolated process; all three rewritten-body controls must
+recover their actual false symbolic/finite acceptances.
+
+For selector history, use `FLAGS ?= first`, `NAME ?= FLAGS`, `OTHER = first`,
+`all: $($(NAME))` and an `echo $(FLAGS)` recipe, then assign `NAME = OTHER`
+after the rule. Also use secondary `$$($$(NAME))` followed by recipe-time
+`$(eval NAME = OTHER)`. The native prerequisite for FLAGS=second remains
+`second` while the later NAME is `OTHER`. Declare NAME tracked-fallback:
+symbolic FLAGS must reject and finite FLAGS must enumerate first/second
+alongside NAME. Repeat with a literal eval assignment and a source macro
+forwarding that assignment. An unresolved earlier expression or unproven
+generated assignment destination must reject, even if the final NAME is a
+valid identifier. Restore only the old preference for final observed values
+and require these controls to detect omitted FLAGS. Preserve direct,
+target-local and unchanged native finite-name positives.
+
+For the real framework template contract, copy the complete current
+`GENERATED_DATA_LINK_TABLE_RULES` and
+`GENERATED_DATA_MODERN_OVERRIDE_RULES` definitions and their actual
+`foreach`/`eval`/`call` invocations into isolated same-named Makefile fragments.
+Supply alpha/beta JSON, shared and table-specific Python files, config
+headers, a small fixture generator and the installed ARM compiler. Keep the
+same native observer and ordinary Make routes. Inspect the full generated-C
+prerequisite set, generated-C-to-modern-object edge, recipes and real C/ELF
+outputs. Change generated and modern output directories, table selection,
+linked-table list, config and shared Python selectors through finite domains;
+every recorded closure must equal a separate actual native observation.
+Adding a table-specific module must change its real wildcard prerequisites.
+Rename both macros without changing their bodies or callers' semantics:
+the native graph must remain equal, proving there is no symbol-name allowlist.
+Keep a later `.SECONDEXPANSION` directive, as in the real source ordering;
+also exercise secondary activation before/after an included ordinary rule.
+
+Reject transformed headers, immediate/deferred stateful recipe operations,
+extra dollar stages or parameters, non-identifier parameter data, unproven
+initializers, external macro overrides, late input/macro rewrites, undefine,
+dynamic write destinations, uncertain include context and unsupported
+wildcard patterns/names. Specifically make alpha's config depend on FLAGS,
+then rewrite the linked-table list to beta only after both real callers.
+The original alpha rule must still contain the first/second config selected
+by FLAGS while the later list reads beta; that later list is not permission
+to analyze only beta. Removing only the original-assignment-order guard in an
+isolated mutation must restore the false symbolic acceptance and omitted
+finite FLAGS domain. Every source byte, native receipt and existing budget
+remains in force. The source-faithful slices use a fixture generator, not the
+real production generator, and do not establish whole-repository resource,
+verifier, H1 or delivery acceptance.
+
 For native ignore policy, execute real `exit 7` recipes with no ignore rule,
 `.IGNORE: unrelated-target`, `.IGNORE: all`, empty `.IGNORE:`, `MAKEFLAGS += -i`
 and a command-local `-`, including an expanded `-` prefix. Ordinary Make exits
