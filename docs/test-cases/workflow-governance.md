@@ -4172,6 +4172,14 @@ old normalizer and old word decoder independently: each must reproduce the
 actual CR false proof. A bare backslash at EOF without LF remains a named
 unsupported grammar form, not a justification for banning control/Unicode data.
 
+For trailing comments, compare both public parser consumers with actual shell
+argv for `ok # note`, `a#b`, quoted `'#'` and escaped `\#`. Only the real
+word-boundary comment disappears. Repeat with a continued word followed by a
+comment, a hash joined to that word across backslash-LF, and ignored unmatched
+quotes/backslashes inside the comment. Registration and upstream workflow
+matching must see the same argv as the typed consumer. Restore loss of the
+detected comment endpoint and require the real-shell differential to fail.
+
 For startup authority, set `export LD_DEBUG = help` on the genuine Make
 checker. Ordinary Make exits zero with loader help whether the authoritative
 graph is present, committed as removed, or restored; the report must reject

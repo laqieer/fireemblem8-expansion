@@ -102,8 +102,8 @@ def normalize_bash_script_commands(script, label):
     lines = script.split("\n")
     for index, line in enumerate(lines):
         has_lf = index < len(lines) - 1
-        current += line
-        state, continued, _, word_start = _scan_bash_line(line, state, word_start=word_start)
+        state, continued, end, word_start = _scan_bash_line(line, state, word_start=word_start)
+        current += line[:end]
         if continued:
             if not has_lf:
                 raise ValueError(f"{label} has an unsupported bare backslash at EOF")

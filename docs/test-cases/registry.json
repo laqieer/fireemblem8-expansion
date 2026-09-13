@@ -2889,6 +2889,10 @@
           "evidence": "scripts/validation_ownership/tests/test_graph_report.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_graph_commands.GraphCommandTests.test_shell_comment_boundaries_match_both_consumers_and_actual_argv -v",
+          "evidence": "scripts/validation_ownership/tests/test_graph_commands.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_coordinator_capture.NonReviewedCaptureBindingTests -v",
           "evidence": "scripts/validation_ownership/tests/test_coordinator_capture.py"
         },

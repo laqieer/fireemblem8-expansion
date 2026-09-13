@@ -290,6 +290,31 @@ class GraphCommandTests(unittest.TestCase):
         self.assertEqual(words, typed)
         return words
 
+    def test_shell_comment_boundaries_match_both_consumers_and_actual_argv(self):
+        prefix = ("/usr/bin/python3", "-I", "-S", "-B", "-c",
+                  "import json,sys;print(json.dumps(sys.argv[1:]))")
+        program = shlex.join(prefix)
+        cases = (
+            ("ok # note", ["ok"]),
+            ("a#b", ["a#b"]),
+            ("'#' note", ["#", "note"]),
+            (r"\# note", ["#", "note"]),
+            ("'ok'#tail # note", ["ok#tail"]),
+            ("lo\\\nng # note", ["long"]),
+            ("lo\\\n#ng # note", ["lo#ng"]),
+            ("ok \\\n # note", ["ok"]),
+            ("ok # ignored ' \" && trailing \\", ["ok"]),
+        )
+        for suffix, expected in cases:
+            with self.subTest(suffix=suffix):
+                command = program + " " + suffix
+                actual = self.shell_argv(command)
+                self.assertEqual(actual.returncode, 0, actual.stderr)
+                self.assertEqual(json.loads(actual.stdout), expected)
+                words, = self.shell_decodings(command)
+                self.assertEqual(words[:len(prefix)], prefix)
+                self.assertEqual(list(words[len(prefix):]), expected)
+
     def test_shell_non_lf_separators_remain_literal_argument_data(self):
         prefix = ("/usr/bin/python3", "-I", "-S", "-B", "-c",
                   "import json,sys;print(json.dumps(sys.argv[1:]))")

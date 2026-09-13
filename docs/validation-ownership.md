@@ -477,9 +477,12 @@ state preserved across the join. Unclosed quotes and a bare backslash at EOF
 without LF remain explicitly unsupported rather than being silently repaired.
 
 Shell comments begin only at actual word boundaries: `.#missing` is one
-literal path, not `.` followed by a comment. Operators hidden after such a
-path still make the route conditional and reject. Every original path
-component is checked against the selected immutable source namespace before
+literal path, not `.` followed by a comment. Logical-line normalization retains
+that boundary for both plain argv and typed-token consumers, including after
+continuations; trailing comments do not become registration or workflow
+arguments. Quoted, escaped and mid-word hashes remain literal data.
+Operators hidden after such a path still make the route conditional and reject.
+Every original path component is checked against the selected immutable source namespace before
 canonicalization. Missing or non-directory intermediates, source symlinks and
 excursions outside that namespace cannot become valid through `..`.
 Existing internal directory traversals, quoted roots and native `CURDIR`
