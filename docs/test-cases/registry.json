@@ -2921,6 +2921,14 @@
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_computed_consumption_seals_reached_eval_defaults scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_consumption_fixed_point_retains_new_selector_histories scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_fixed_point_keeps_unused_metadata_bodies_lazy_and_rejects_ambiguity -v",
+          "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_mode_assignment_origins_keep_gnu_file_and_default_precedence scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_repeated_include_replays_changed_expression_inputs scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_completed_include_revisits_preserve_order_and_reject_changed_source_or_cycles -v",
+          "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_posix_mode_keeps_gnu_delayed_statement_and_define_activation scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_posix_mode_uses_proven_literal_conditional_branches scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_posix_mode_carries_original_nested_include_and_eof_context scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_unproven_generated_conditional_and_include_modes_reject scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_unused_and_late_mode_bodies_do_not_rewrite_original_source scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_mode_analysis_keeps_metadata_lazy_and_the_existing_deadline -v",
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },

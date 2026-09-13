@@ -668,6 +668,18 @@ unused body or a literal `?=` in a value/recipe is not a declaration being
 executed. Retention follows consumed macro references without expanding
 unused bodies or discarding their original source histories.
 
+Consumption is not frozen before computed references are resolved. Computed
+dependencies, executing references, retained assignments/defaults and newly
+available selector histories reach one monotonic fixed point. Resolved
+selectors are retained even if another selector on the same line still needs
+a later pass. Only after that closure may a body be treated as unused.
+Unresolved/cyclic invocations reject; literal metadata lookups retain their
+domain meaning without executing the referenced body. Proven literal eval
+declarations may be forwarded through computed macros, but opaque generated
+programs do not acquire authority. Distinct retained facts spend the existing
+cache allowance, and every pass uses the same deadline; no native body is
+re-evaluated to manufacture this proof.
+
 GNU Make 4.3 records a pending `.POSIX` rule only after collapsing the next
 active non-recipe statement. That first statement uses the prior mode; later
 statements use POSIX folding. A define header records the pending rule before
@@ -690,6 +702,17 @@ shared deadline, not a new quota, process or native observation ABI. A late
 top-level `.POSIX` can change actual recipe shell flags without retroactively
 changing earlier source values; GNU rejects attempts to emit such rules from
 recipes.
+
+Assignment origin remains part of that context. Command-line assignments
+retain their admitted precedence; ordinary file assignments can replace
+environment values, and a defined empty environment value still prevents
+`?=` from assigning. Input order and native environment evidence are not
+rewritten. A completed include is analyzed again with its current definitions,
+not skipped because its entry POSIX bit matches an earlier visit. Nested
+visits preserve their original order and share the same deadline. Identical
+source units need only one retained representation, but changed parsing across
+visits rejects rather than replacing an earlier history. Active include cycles
+remain distinct from legitimate completed revisits.
 
 A later rewrite cannot erase an earlier opaque operation or selector value.
 Computed-name closure retains all proven source alternatives alongside native

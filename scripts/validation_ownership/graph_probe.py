@@ -113,15 +113,11 @@ class _MakeSourceMode:
                     return True
                 active.add(name)
                 pending.append((name, None))
-            metadata = []
-            for start, stop, body in _make_expression_spans(value):
+            for body in make_expressions(value):
                 operation = re.match(r"([^ \t\r\n\v\f]+)[ \t\r\n\v\f]+", body)
                 if operation and operation[1] not in MAKE_FUNCTIONS - {"call", "eval", "guile"}:
                     return True
-                if re.fullmatch(r"(?:origin|flavor|value)[ \t\r\n\v\f]+" + IDENTIFIER, body):
-                    metadata.append((start, stop))
-            for start, stop in sorted(metadata, reverse=True):
-                value = value[:start] + value[stop:]
+            value = _without_literal_metadata(value)
             if next(computed_selectors(value), None) is not None:
                 return True
             for dependency in references(value):
@@ -372,20 +368,18 @@ def _source_units(sources, *, assignments=(), budget=None):
             raise MakeProbeError(f"Make census source is not UTF-8: {path}") from error
     mode = _MakeSourceMode(
         definitions={name: value for _, name, value in assignments},
-        forced=frozenset(name for _, name, _ in assignments),
+        forced=frozenset(name for origin, name, _ in assignments if origin == "command-line"),
         budget=budget,
     )
-    units, entry_modes, reading, unresolved_modes = {}, {}, set(), []
+    units, reading, unresolved_modes = {}, set(), []
 
     def visit(path, *, known=True):
+        mode.checkpoint()
         if path in reading:
             raise MakeProbeError("Make include parsing-mode context is recursive")
-        if path in units:
-            if entry_modes[path] != mode.posix:
-                raise MakeProbeError("Make include parsing-mode context changed across repeated reads")
-            return
-        entry_modes[path] = mode.posix
-        units[path] = []
+        previous = units.get(path)
+        if previous is None:
+            units[path] = []
         reading.add(path)
 
         def included(names, active, current_mode):
@@ -399,8 +393,17 @@ def _source_units(sources, *, assignments=(), budget=None):
                 if name in decoded:
                     visit(name, known=known and active is True)
 
+        count = 0
+        # Revisit the original inputs; reuse only the identical source units,
+        # never the effects of a previous include invocation.
         for unit in make_source_units(decoded[path], mode=mode, include=included, known_context=known):
-            units[path].append(unit)
+            if previous is None:
+                units[path].append(unit)
+            elif count >= len(previous) or unit != previous[count]:
+                raise MakeProbeError("Make include source changed across original read contexts")
+            count += 1
+        if previous is not None and count != len(previous):
+            raise MakeProbeError("Make include source changed across original read contexts")
         reading.remove(path)
 
     if decoded:
@@ -478,6 +481,16 @@ def _make_expression_spans(line, *, staged=False, require_complete=False):
 def make_expressions(line):
     for _, _, body in _make_expression_spans(line):
         yield body
+
+
+def _without_literal_metadata(expression):
+    spans = [
+        (start, stop) for start, stop, body in _make_expression_spans(expression)
+        if re.fullmatch(r"(?:origin|flavor|value)[ \t\r\n\v\f]+" + IDENTIFIER, body)
+    ]
+    for start, stop in sorted(spans, reverse=True):
+        expression = expression[:start] + expression[stop:]
+    return expression
 
 
 def _make_function(expression):
@@ -871,7 +884,7 @@ def computed_selectors(line):
             yield head
 
 
-def selected_names(expressions, definitions, observed_values):
+def selected_names(expressions, definitions, observed_values, *, unresolved=None):
     def native_constant(declarations):
         if len(set(declarations)) != 1:
             return False
@@ -919,12 +932,18 @@ def selected_names(expressions, definitions, observed_values):
     selected = set()
     for expression in expressions:
         for selector in computed_selectors(expression):
-            values = expand(selector, set())
-            if not values or any(
-                not re.fullmatch(IDENTIFIER, name) and not SCOPED.fullmatch("$(" + name + ")")
-                for name in values
-            ):
-                raise _UnresolvedName("computed selector is not a closed set of variable identifiers")
+            try:
+                values = expand(selector, set())
+                if not values or any(
+                    not re.fullmatch(IDENTIFIER, name) and not SCOPED.fullmatch("$(" + name + ")")
+                    for name in values
+                ):
+                    raise _UnresolvedName("computed selector is not a closed set of variable identifiers")
+            except _UnresolvedName as error:
+                if unresolved is None:
+                    raise
+                unresolved.append(error)
+                continue
             selected.update(values)
     return selected
 
@@ -1025,13 +1044,30 @@ def source_census(
     all_names, graph, recipe, introspection, defaults = set(), set(), set(), set(), set()
     dependencies = {}
     definitions, expressions, graph_expressions = {}, {}, []
-    eval_requests, deferred_evals, consumed_names = [], set(), set()
+    eval_requests, deferred_evals, consumed_expressions = [], set(), []
+    eval_raw_expressions = {}
+    retained_declarations = set()
     ambiguous_assignment = False
     observed_values = {} if observed_values is None else observed_values
     stage_sinks, stage_roots = [], set()
     graph.update(template_graph_inputs)
     all_names.update(template_graph_inputs)
     all_names.update(template_scoped)
+
+    def extend_known(destination, values):
+        added = set(values) - destination
+        if added and budget is not None:
+            budget.charge("cache", len(encoded(sorted(added))))
+        destination.update(added)
+
+    def retain_once(kind, value):
+        key = (kind, value)
+        if key in retained_declarations:
+            return False
+        if budget is not None:
+            budget.charge("cache", len(encoded(key)))
+        retained_declarations.add(key)
+        return True
 
     def retain_defaults(statement):
         assignment = ASSIGNMENT.fullmatch(statement) or TARGET_ASSIGNMENT.fullmatch(statement)
@@ -1051,6 +1087,8 @@ def source_census(
         retain_defaults(prefix + " " + line[definition.start(1):])
 
     def retain_assignment(assignment, *, expanded_input=False):
+        if expanded_input and not retain_once("assignment", assignment[0]):
+            return
         name, value = assignment["name"], assignment["value"]
         retain_defaults(assignment[0])
         dependencies.setdefault(name, set())
@@ -1090,7 +1128,7 @@ def source_census(
         if inline_recipe:
             inline_names = references(inline_recipe)
             all_names.update(inline_names)
-            consumed_names.update(inline_names)
+            consumed_expressions.append(inline_recipe)
             eval_requests.append((None, inline_recipe))
             if "$(eval" in inline_recipe or "${eval" in inline_recipe:
                 graph.update(inline_names)
@@ -1126,11 +1164,12 @@ def source_census(
             retain_assignment(assignment)
             immediate = assignment["operator"] in {":=", "::=", "!="}
             eval_requests.append((None if immediate else assignment["name"], assignment["value"]))
+            eval_raw_expressions.setdefault(assignment["value"], set()).add(assignment["value"].lstrip(MAKE_SPACE))
             if immediate:
-                consumed_names.update(names)
+                consumed_expressions.append(assignment["value"])
             if line.lstrip(MAKE_SPACE).startswith("export "):
                 recipe.update(names)
-                consumed_names.add(assignment["name"])
+                consumed_expressions.append("$(" + assignment["name"] + ")")
             if "$(eval" in assignment["value"] or "${eval" in assignment["value"]:
                 if immediate:
                     graph.update(names)
@@ -1142,11 +1181,12 @@ def source_census(
             retain_assignment(target_assignment)
             immediate = target_assignment["operator"] in {":=", "::=", "!="}
             eval_requests.append((None if immediate else target_assignment["name"], target_assignment["value"]))
+            eval_raw_expressions.setdefault(target_assignment["value"], set()).add(target_assignment["value"].lstrip(MAKE_SPACE))
             if immediate:
-                consumed_names.update(names)
+                consumed_expressions.append(target_assignment["value"])
             graph.update(references(target_assignment["target"]))
             graph_expressions.append(target_assignment["target"])
-            consumed_names.update(references(target_assignment["target"]))
+            consumed_expressions.append(target_assignment["target"])
             if "$(eval" in target_assignment["value"] or "${eval" in target_assignment["value"]:
                 if immediate:
                     graph.update(names)
@@ -1155,14 +1195,14 @@ def source_census(
                 else:
                     deferred_evals.add(target_assignment["name"])
         elif raw.startswith("\t"):
-            consumed_names.update(names)
+            consumed_expressions.append(line)
             eval_requests.append((None, line))
             (graph if "$(eval" in line or "${eval" in line else recipe).update(names)
             if "$(eval" in line or "${eval" in line:
                 graph_expressions.append(line)
                 stage_sinks.append(line)
         else:
-            consumed_names.update(names)
+            consumed_expressions.append(line)
             eval_requests.append((None, line))
             graph.update(names)
             graph_expressions.append(line.replace("$$", "$"))
@@ -1183,11 +1223,9 @@ def source_census(
         if not raw.startswith("\t"):
             retain_defaults(line)
 
-    consumed = closure(consumed_names, dependencies)
-    graph.update(deferred_evals & consumed)
-    stage_roots.update(deferred_evals & consumed)
-
     def retain_eval_history(body, active=()):
+        if budget is not None:
+            budget.remaining()
         forwarded = NAME_PART.fullmatch(body.strip(MAKE_SPACE))
         function = _make_function(body)
         if function and function[0] == "eval" and len(function[1]) == 1:
@@ -1217,9 +1255,10 @@ def source_census(
             if assignment:
                 retain_assignment(assignment, expanded_input=True)
             elif definition:
-                retain_define_default(line, definition)
-                definitions.setdefault(definition[1], []).append(unit.body if "$" not in unit.body else None)
-                dependencies.setdefault(definition[1], set()).update(references(unit.body))
+                if retain_once("define", (line, unit.body)):
+                    retain_define_default(line, definition)
+                    definitions.setdefault(definition[1], []).append(unit.body if "$" not in unit.body else None)
+                    dependencies.setdefault(definition[1], set()).update(references(unit.body))
             elif NAME_PART.fullmatch(line) or _make_function(line):
                 nested = _make_function(line)
                 if (nested and (nested[0] not in {"call", "eval"} or len(nested[1]) != 1)) or not retain_eval_history(line, active):
@@ -1228,26 +1267,70 @@ def source_census(
                 return False
         return True
 
-    ambiguous_history = False
-    for owner, expression in eval_requests:
-        if owner is not None and owner not in consumed:
-            continue
-        for body in make_expressions(expression.replace("$$", "$")):
-            if body.startswith(("eval ", "eval\t")) and not retain_eval_history(body[5:].lstrip(MAKE_SPACE)):
-                ambiguous_history = True
-    unresolved = set()
-    for name, values in expressions.items():
-        try:
-            dependencies[name].update(selected_names(values, definitions, observed_values))
-        except _UnresolvedName:
-            unresolved.add(name)
-    try:
-        graph.update(selected_names(graph_expressions, definitions, observed_values))
-        stage_roots.update(selected_names(stage_sinks, definitions, observed_values))
-    except _UnresolvedName as error:
-        raise MakeProbeError(str(error)) from error
+    consumed, execution_roots, execution_dependencies = set(), set(), {}
+
+    def fact_count():
+        maps = (definitions, expressions, dependencies, execution_dependencies)
+        return (
+            sum(len(values) + sum(len(items) for items in values.values()) for values in maps)
+            + len(consumed) + len(execution_roots) + len(graph) + len(stage_roots)
+            + len(defaults) + len(retained_declarations)
+        )
+
+    # New selector edges can consume an eval whose assignments resolve another
+    # selector. Only append-only facts determine completion.
+    while True:
+        if budget is not None:
+            budget.remaining()
+        before = fact_count()
+        unresolved, unresolved_execution = set(), set()
+        for name, values in list(expressions.items()):
+            executing = [_without_literal_metadata(value) for value in values]
+            actual_dependencies = execution_dependencies.setdefault(name, set())
+            extend_known(actual_dependencies, set().union(*(references(value) for value in executing)))
+            errors = []
+            extend_known(dependencies[name], selected_names(values, definitions, observed_values, unresolved=errors))
+            if errors:
+                unresolved.add(name)
+            errors = []
+            extend_known(actual_dependencies, selected_names(executing, definitions, observed_values, unresolved=errors))
+            if errors:
+                unresolved_execution.add(name)
+        executing = [_without_literal_metadata(value) for value in consumed_expressions]
+        extend_known(execution_roots, set().union(*(references(value) for value in executing)))
+        root_errors = []
+        for destination, values in ((graph, graph_expressions), (stage_roots, stage_sinks), (execution_roots, executing)):
+            extend_known(destination, selected_names(values, definitions, observed_values, unresolved=root_errors))
+        extend_known(consumed, closure(execution_roots, execution_dependencies))
+        extend_known(graph, deferred_evals & consumed)
+        extend_known(stage_roots, deferred_evals & consumed)
+
+        ambiguous_history, proven_eval_expressions = False, set()
+        for owner, expression in eval_requests:
+            if owner is not None and owner not in consumed:
+                continue
+            bodies = [body[5:].lstrip(MAKE_SPACE) for body in make_expressions(expression.replace("$$", "$"))
+                      if body.startswith(("eval ", "eval\t"))]
+            proven = True
+            for body in bodies:
+                if not retain_eval_history(body):
+                    ambiguous_history, proven = True, False
+            if bodies and proven:
+                proven_eval_expressions.add(expression)
+                proven_eval_expressions.update(eval_raw_expressions.get(expression, ()))
+        if fact_count() == before:
+            break
+
+    if root_errors:
+        raise MakeProbeError(str(root_errors[0])) from root_errors[0]
+    if consumed & unresolved_execution:
+        raise MakeProbeError("consumed Make body has an unresolved computed invocation")
+    if ambiguous_history:
+        raise MakeProbeError("unproven emitted-reference invocation in original assignment history")
+    if budget is not None and proven_eval_expressions:
+        budget.charge("cache", len(encoded(sorted(proven_eval_expressions))))
     expanded_graph = closure(graph, dependencies)
-    if (ambiguous_history or ambiguous_assignment) and any(
+    if ambiguous_assignment and any(
         next(computed_selectors(value), None) is not None
         for value in chain(graph_expressions, (
             expression for name in expanded_graph for expression in expressions.get(name, ())
@@ -1278,6 +1361,7 @@ def source_census(
             value for name in stage_graph for value in expressions.get(name, ())
         ],
         "secondary_expansion": secondary_expansion,
+        "proven_eval_expressions": proven_eval_expressions,
     }
 
 
@@ -1353,9 +1437,11 @@ def _graph_definitions(session, target, state, commands, observation, usage, *, 
     required = set(usage["stage_graph"])
     measured, records = set(), {}
     while True:
-        _require_staged_reference_contract(
-            expression for name in required for expression in usage["source_expressions"].get(name, ())
-        )
+        for name in required:
+            for expression in usage["source_expressions"].get(name, ()):
+                _require_staged_reference_contract(
+                    (expression,), allow_eval=expression in usage["proven_eval_expressions"],
+                )
         pending = sorted(name for name in required - measured if re.fullmatch(IDENTIFIER, name))
         for offset in range(0, len(pending), 512):
             names = tuple(pending[offset:offset + 512])
@@ -1387,7 +1473,10 @@ def _graph_definitions(session, target, state, commands, observation, usage, *, 
                     forms.append(raw)
                 if flavor == "recursive" and "$$" in raw and (usage["secondary_expansion"] or evals):
                     forms.append(raw.replace("$$", "$"))
-        _require_staged_reference_contract(forms, original=False)
+        for form in forms:
+            _require_staged_reference_contract(
+                (form,), original=False, allow_eval=form in usage["proven_eval_expressions"],
+            )
         found = closure(set().union(*(references(form) for form in forms)), usage["dependencies"])
         if found - required:
             required.update(found)

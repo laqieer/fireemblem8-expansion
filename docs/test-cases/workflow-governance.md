@@ -4115,6 +4115,26 @@ isolated mutation: the real unsealed baselines and missing environment
 dimension must reappear while native execution and ordinary-source sealing
 remain intact.
 
+For computed consumption, define RULE with `$(eval MODE ?= first)`, set
+`NAME = RULE`, then use `all: $($(NAME)) $(MODE)` and an `echo $(MODE)`
+recipe with real first/second targets. Native prerequisites vary with MODE,
+but exactcac0 incorrectly accepted an empty default/domain baseline.
+The unsealed request must now reject; a finite first/second domain must seal
+MODE and include both command-line and environment variants. Repeat direct,
+braced, computed-call, alias and immediately consumed assignment forms.
+Chain one reached eval assigning NEXT, a NEXT-selected macro assigning LAST,
+and a LAST-selected macro declaring MODE: all must participate before the
+unused decision. A known selector on a line must not disappear just because
+another selector on that line is not resolved yet.
+
+An unreferenced computed macro and an `origin` lookup of its body must not
+execute its eval/shell contents or create its marker. Combining a metadata
+lookup with a real invocation must still seal the reached default. Cyclic or
+genuinely unsupported computed selectors must reject, not become unused
+bodies. Restore the old single-pass consumption decision in an isolated
+mutation and require the original false baseline and missing environment
+dimension to reappear with actual first/second native prerequisites.
+
 For mode timing, put `.POSIX:` before FIRST and SECOND, each assigned
 `alpha` followed by two spaces, backslash-LF, two spaces, backslash-LF,
 one space and `beta`. Compare ordinary output, authenticated native raw
@@ -4146,6 +4166,33 @@ actual error, not be treated as a positive late-mode fixture. Exercise a
 large unused dependency graph through lazy metadata/conditional operations;
 the native body must stay unexpanded and analysis must honor the existing
 deadline without recursion growth or extra observations.
+
+For assignment origin, provide environment MAYBE=literal while the source
+assigns `MAYBE = $(eval .POSIX:)`, then evaluates `RESULT := $(MAYBE)` before
+the continued FIRST. Ordinary/native FIRST has four spaces between words;
+the census must reject that unproven generated mode instead of forcing the
+environment value and reporting one space. The command-line MAYBE=literal
+control remains non-POSIX and supported. Repeat defined empty values and
+`?=`: a defined empty environment value still prevents the conditional
+assignment. Ordinary file replacement of an effectful environment value
+must not execute the replaced body; explicit override retains its real
+precedence. Preserve original argv order and complete environment evidence.
+Use a top-level `info` and recipe-less target for the exact origin fixture,
+so an exported recursive macro is not accidentally executed again as a recipe
+environment side effect. Restoring environment-as-forced behavior must recover
+the native-versus-census mismatch while leaving the CLI control intact.
+
+For completed includes, use `SWITCH =`, include mode.mk, assign
+`SWITCH = $(eval .POSIX:)`, include mode.mk again, then define continued FIRST.
+mode.mk contains `RESULT := $(SWITCH)`. Require the native MAKEFILE_LIST to
+contain both visits and FIRST to be POSIX; the unchanged entry mode bit is
+not permission to skip the second, changed input. Repeat through an outer
+include. Literal replacement inputs remain supported, as do completed visits
+with different mode bits but identical source units. If parsing the same
+source differs between visits, reject rather than overwrite earlier history.
+Active recursive include cycles reject without being confused with completed
+revisits. Restore the old mode-bit-only memo in isolation and require the
+original repeated-visit mismatch to return.
 
 Restore only the old c6 conditional-blind/per-file collector and require
 the native conditional/include mismatches to return. Separately move pending

@@ -108,12 +108,12 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.assertFalse(session.budget.producer_waiters)
         return result
 
-    def ordinary(self, *assignments):
+    def ordinary(self, *assignments, environment=None):
         budget = ProbeBudget()
         try:
             actual = budget.run(
                 ["/usr/bin/make", "--no-print-directory", *assignments, "all"],
-                cwd=self.root, env=ENVIRONMENT,
+                cwd=self.root, env={**ENVIRONMENT, **(environment or {})},
             )
             self.assertEqual(actual.returncode, 0, actual.stderr)
             return actual.stdout
@@ -126,7 +126,10 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.add("Makefile", source)
         for name, body in (includes or {}).items():
             self.add(name, body)
-        ordinary = self.ordinary(*(name + "=" + value for _, name, value in assignments)).decode().splitlines()
+        ordinary = self.ordinary(
+            *(name + "=" + value for origin, name, value in assignments if origin == "command-line"),
+            environment={name: value for origin, name, value in assignments if origin == "environment"},
+        ).decode().splitlines()
         with self.session() as session:
             native = session.make(
                 "all", variables=("MAKEFILE_LIST",), definitions=("FIRST", "SECOND"), assignments=assignments,
@@ -141,6 +144,22 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         if expected is not None:
             self.assertEqual(values, expected)
         return sources, values
+
+    def mode_first(self, source, *, includes=None, assignments=()):
+        source += "$(info $(value FIRST))\nall: ;\n"
+        self.add("Makefile", source)
+        for name, value in (includes or {}).items():
+            self.add(name, value)
+        ordinary = self.ordinary(
+            *(name + "=" + value for origin, name, value in assignments if origin == "command-line"),
+            environment={name: value for origin, name, value in assignments if origin == "environment"},
+        ).decode().splitlines()[0]
+        with self.session() as session:
+            native = session.make("all", variables=("MAKEFILE_LIST",), definitions=("FIRST",), assignments=assignments)
+        value = native.semantics["definitions"]["global"]["FIRST"]["value"]
+        self.assertEqual(ordinary, value)
+        visits = native.semantics["domains"]["MAKEFILE_LIST"]["value"].split()
+        return {name: (self.root / name).read_bytes() for name in visits}, value, visits
 
     def test_conditionals_and_finite_origins_are_native_make_observations(self):
         self.add("Makefile", "MODE ?= one\nall: $(MODE)\none two: ;\n")
@@ -280,6 +299,8 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 self.assertEqual(actual, ["first", "second"])
                 with self.assertRaisesRegex(MakeProbeError, "unsealed external defaults"):
                     self.observe()
+                with self.assertRaisesRegex(MakeProbeError, "cyclic"):
+                    source_census({"Makefile": b"NAME = $(NAME)\nall: $($(NAME))\n"})
                 with self.assertRaisesRegex(MakeProbeError, "symbolic inputs influence"):
                     self.observe(external={"MODE"}, symbolic_recipe_names={"MODE"})
                 result = self.observe({
@@ -296,6 +317,72 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 self.assertEqual({
                     variant["record"]["files"][0]["prerequisites"][0]["name"] for variant in variants
                 }, {"first", "second"})
+
+    def test_computed_consumption_seals_reached_eval_defaults(self):
+        for declarations, expression in (
+            ("NAME = RULE\n", "$(RULE)"),
+            ("NAME = RULE\n", "$($(NAME))"),
+            ("NAME = RULE\n", "${${NAME}}"),
+            ("NAME = RULE\n", "$(call $(NAME))"),
+            ("NAME = RULE\nALIAS = $($(NAME))\n", "$(ALIAS)"),
+            ("NAME = RULE\nRESULT := $($(NAME))\n", ""),
+        ):
+            with self.subTest(expression=expression, declarations=declarations):
+                self.add("Makefile", "define RULE\n$(eval MODE ?= first)\nendef\n" + declarations
+                         + "all: " + expression + " $(MODE)\n\t@echo $(MODE)\nfirst second: ;\n")
+                with self.session() as session:
+                    actual = [
+                        session.make("all", assignments=(("command-line", "MODE", value),))
+                        .semantics["files"][0]["prerequisites"][0]["name"] for value in ("first", "second")
+                    ]
+                self.assertEqual(actual, ["first", "second"])
+                with self.assertRaisesRegex(MakeProbeError, "unsealed external defaults"):
+                    self.observe()
+                result = self.observe({"MODE": {"kind": "explicit", "values": ["first", "second"]}},
+                                      environment_names={"MODE"})["all"]
+                self.assertEqual(result["variable_census"]["defaults"], ["MODE"])
+                self.assertEqual(result["prerequisite_domain_census"]["enumerated"], ["MODE"])
+                self.assertEqual({
+                    variant["record"]["files"][0]["prerequisites"][0]["name"]
+                    for variant in result["record"]["variants"]
+                }, {"first", "second"})
+                self.assertEqual({
+                    variant["state"][0][0] for variant in result["record"]["variants"] if variant["state"]
+                }, {"command-line", "environment"})
+
+    def test_consumption_fixed_point_retains_new_selector_histories(self):
+        self.add("Makefile", "SEED = $(eval NEXT = MIDDLE)\nMIDDLE = $(eval LAST = RULE)\n"
+                 "RULE = $(eval MODE ?= first)\nENTRY = SEED\n"
+                 "all: $($(ENTRY)) $($(NEXT)) $($(LAST)) $(MODE)\n\t@echo $(MODE)\nfirst second: ;\n")
+        self.assertEqual(self.ordinary("MODE=second"), b"second\n")
+        with self.assertRaisesRegex(MakeProbeError, "unsealed external defaults"):
+            self.observe()
+        result = self.observe({"MODE": {"kind": "explicit", "values": ["first", "second"]}})["all"]
+        self.assertEqual(result["variable_census"]["defaults"], ["MODE"])
+        self.assertEqual(result["prerequisite_domain_census"]["enumerated"], ["MODE"])
+        self.assertEqual({
+            variant["record"]["files"][0]["prerequisites"][0]["name"]
+            for variant in result["record"]["variants"]
+        }, {"first", "second"})
+
+    def test_fixed_point_keeps_unused_metadata_bodies_lazy_and_rejects_ambiguity(self):
+        for sink in ("all: ;\n", "all: $(origin RULE)\nfile: ;\n"):
+            self.add("Makefile", "RULE = $(eval MODE ?= first)$(shell touch marker)\n"
+                     "NAME = RULE\nUNUSED = $($(NAME))\n" + sink)
+            result = self.observe()["all"]
+            self.assertEqual(result["variable_census"]["defaults"], [])
+            self.assertFalse((self.root / "marker").exists())
+        self.add("Makefile", "RULE = $(eval MODE ?= first)\nNAME = $(subst X,RULE,X)\n"
+                 "all: $($(NAME)) $(MODE)\nfirst second: ;\n")
+        with self.session() as session:
+            actual = session.make("all", assignments=(("command-line", "MODE", "second"),))
+        self.assertEqual(actual.semantics["files"][0]["prerequisites"][0]["name"], "second")
+        with self.assertRaisesRegex(MakeProbeError, "computed selector"):
+            self.observe()
+        self.add("Makefile", "RULE = $(eval MODE ?= first)\n"
+                 "all: $(origin RULE) $(RULE) $(MODE)\nfile first second: ;\n")
+        with self.assertRaisesRegex(MakeProbeError, "unsealed external defaults"):
+            self.observe()
 
     def test_emitted_default_modifiers_and_scope_match_source_declarations(self):
         for modifiers in ("", "export ", "private ", "override ", "export override private "):
@@ -788,6 +875,72 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         sources, _ = self.mode_values(source, assignments=assignments, expected=["alpha    beta"] * 2)
         with self.assertRaisesRegex(MakeProbeError, "unproven.*mode"):
             source_census(sources, source_assignments=assignments)
+
+    def test_mode_assignment_origins_keep_gnu_file_and_default_precedence(self):
+        continued = "FIRST = alpha  \\\n  \\\n beta\n"
+        for origin, value, operator, prefix, expected, rejected in (
+            ("environment", "literal", "=", "", "alpha    beta", True),
+            ("command-line", "literal", "=", "", "alpha beta", False),
+            ("environment", "", "=", "", "alpha    beta", True),
+            ("environment", "literal", "?=", "", "alpha beta", False),
+            ("environment", "", "?=", "", "alpha beta", False),
+            ("command-line", "", "?=", "", "alpha beta", False),
+            ("command-line", "literal", "=", "override ", "alpha    beta", True),
+        ):
+            with self.subTest(origin=origin, value=value, operator=operator, prefix=prefix):
+                source = prefix + "MAYBE " + operator + " $(eval .POSIX:)\nRESULT := $(MAYBE)\n" + continued
+                assignments = ((origin, "MAYBE", value),)
+                sources, native, _ = self.mode_first(source, assignments=assignments)
+                self.assertEqual(native, expected)
+                if rejected:
+                    with self.assertRaisesRegex(MakeProbeError, "unproven.*mode"):
+                        source_census(sources, source_assignments=assignments)
+                else:
+                    self.assertEqual(source_census(sources, source_assignments=assignments)["definitions"]["FIRST"], [native])
+        source = "MAYBE = literal\nRESULT := $(MAYBE)\n" + continued
+        assignments = (("environment", "MAYBE", "$(eval .POSIX:)"),)
+        sources, native, _ = self.mode_first(source, assignments=assignments)
+        self.assertEqual(native, "alpha beta")
+        self.assertEqual(source_census(sources, source_assignments=assignments)["definitions"]["FIRST"], [native])
+
+    def test_repeated_include_replays_changed_expression_inputs(self):
+        continued = "FIRST = alpha  \\\n  \\\n beta\n"
+        for nested in (False, True):
+            for replacement, expected in (("literal", "alpha beta"), ("$(eval .POSIX:)", "alpha    beta")):
+                with self.subTest(nested=nested, replacement=replacement):
+                    name = "outer.mk" if nested else "mode.mk"
+                    includes = {"mode.mk": "RESULT := $(SWITCH)\n"}
+                    if nested:
+                        includes["outer.mk"] = "include mode.mk\n"
+                    source = "SWITCH =\ninclude " + name + "\nSWITCH = " + replacement + "\ninclude " + name + "\n"
+                    sources, native, visits = self.mode_first(source + continued, includes=includes)
+                    self.assertEqual(native, expected)
+                    self.assertEqual(visits, ["Makefile", *([name, "mode.mk"] if nested else [name]) * 2])
+                    if replacement == "literal":
+                        self.assertEqual(source_census(sources)["definitions"]["FIRST"], [native])
+                    else:
+                        with self.assertRaisesRegex(MakeProbeError, "unproven.*mode"):
+                            source_census(sources)
+
+    def test_completed_include_revisits_preserve_order_and_reject_changed_source_or_cycles(self):
+        continued = "FIRST = alpha  \\\n  \\\n beta\n"
+        source = "include repeated.mk\n.POSIX:\nACTIVATE = yes\ninclude repeated.mk\n"
+        sources, native, visits = self.mode_first(source + continued, includes={"repeated.mk": "VALUE = literal\n"})
+        self.assertEqual(native, "alpha    beta")
+        self.assertEqual(visits, ["Makefile", "repeated.mk", "repeated.mk"])
+        self.assertEqual(source_census(sources)["definitions"]["FIRST"], [native])
+        sources, native, _ = self.mode_first(source, includes={"repeated.mk": continued})
+        self.assertEqual(native, "alpha    beta")
+        with self.assertRaisesRegex(MakeProbeError, "include source changed"):
+            source_census(sources)
+        budget = ProbeBudget()
+        try:
+            with self.assertRaisesRegex(MakeProbeError, "context is recursive"):
+                source_census({"Makefile": b"include child.mk\n", "child.mk": b"include Makefile\n"}, budget=budget)
+            self.assertEqual(budget.runs, 0)
+            self.assertFalse(budget.children)
+        finally:
+            budget.close()
 
     def test_unused_and_late_mode_bodies_do_not_rewrite_original_source(self):
         values = "FIRST = alpha  \\\n  \\\n beta\nSECOND = alpha  \\\n  \\\n beta\n"
