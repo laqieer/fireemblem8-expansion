@@ -4130,6 +4130,25 @@ Keep quoted roots, adjacent quote parts, comments and the existing
 conditional/startup/path/source/model controls. Compare generic literal
 punctuation tokens with actual shell argv; do not blacklist only one spelling
 or infer operators from decoded word values.
+For whitespace, append an actual CR to the consistency command's dot root.
+The real shell passes `.\r`, and the launcher fails before artifact checking;
+the report must not normalize it to dot and issue proofs. With a Bash Make
+recipe, also place CR after `@` before the executable or after the root before
+a real comment. These literal bytes must survive prefix trimming and decoding
+and preserve the ordinary failure. The complete f33 preimages show false
+proofs for the case trailing CR and Make leading CR; the separate 29-case
+shell/parser matrix is not 29 graph runs.
+
+Compare both public parser consumers with actual shell argv for trailing and
+quoted CR, VT, FF, FS, GS, RS, NEL, line separator and paragraph separator.
+Extra lines beginning with CR, NBSP, EM SPACE or IDEOGRAPHIC SPACE plus `#`
+remain commands, not comments. The three non-CR leading Unicode executable
+names were already preserved in the preimage and are not additional bypasses.
+Keep ASCII tab/blank/comment behavior, quoted literal backslash-LF, LF
+continuation at EOF and continued-word quote/comment boundaries. Restore the
+old normalizer and old word decoder independently: each must reproduce the
+actual CR false proof. A bare backslash at EOF without LF remains a named
+unsupported grammar form, not a justification for banning control/Unicode data.
 
 For startup authority, set `export LD_DEBUG = help` on the genuine Make
 checker. Ordinary Make exits zero with loader help whether the authoritative

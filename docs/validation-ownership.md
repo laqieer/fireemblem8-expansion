@@ -467,6 +467,14 @@ escaped or quote-concatenated literal `>` stays an argument and is rejected by
 the same checker argument contract as ordinary execution. The shared shell
 scanner marks unquoted operator spans, and `shlex` decodes words between those
 spans; decoded punctuation alone never supplies operator authority.
+Physical shell lines are separated only by LF. Blank/comment-prefix decisions
+use ASCII space and tab, and word decoding does not treat CR as whitespace.
+CR, other control separators and Unicode separators remain literal argument
+or command-name data, including inside quotes; they are not banned or rewritten
+to LF. Make-prefix trimming likewise removes only ASCII layout, never those
+characters. LF continuations remain valid at EOF, with quote and word-boundary
+state preserved across the join. Unclosed quotes and a bare backslash at EOF
+without LF remain explicitly unsupported rather than being silently repaired.
 
 Shell comments begin only at actual word boundaries: `.#missing` is one
 literal path, not `.` followed by a comment. Operators hidden after such a

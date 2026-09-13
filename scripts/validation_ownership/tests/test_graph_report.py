@@ -631,6 +631,61 @@ class LifecycleBindingTests(unittest.TestCase):
                     budget.close()
                     self.assertFalse(budget.children)
 
+    def test_carriage_returns_do_not_become_valid_lifecycle_routes(self):
+        baseline = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        for role in ("case-trailing", "make-leading", "make-argument"):
+            with self.subTest(role=role):
+                self.fixture.git("switch", "--detach", baseline)
+                if role == "case-trailing":
+                    command = report_fixture.CHECK_COMMAND + "\r"
+                    self.case_command(command)
+                    argv = ["/bin/sh", "-c", command]
+                else:
+                    command = (
+                        "\r" + report_fixture.CHECK_COMMAND if role == "make-leading"
+                        else report_fixture.CHECK_COMMAND + "\r # CR is argument data"
+                    )
+                    self.fixture.add("Makefile", "SHELL := /bin/bash\n.PHONY: validation-ownership-check\n"
+                                     "validation-ownership-check:\n\t@" + command + "\n")
+                    argv = ["/usr/bin/make", "-f", "Makefile", "validation-ownership-check"]
+                self.fixture.commit("Actual CR command data")
+                budget = ProbeBudget(Limits(seconds=90))
+                try:
+                    actual = budget.run(argv, cwd=self.fixture.root, env=ENVIRONMENT)
+                    self.assertEqual(actual.returncode, 2)
+                    self.assertIn(b"No such file or directory", actual.stderr)
+                finally:
+                    budget.close()
+                    self.assertFalse(budget.children)
+                seen = []
+                decode = graph_lifecycle._command_words
+
+                def observe(command):
+                    seen.append(command)
+                    return decode(command)
+
+                with mock.patch.object(graph_lifecycle, "_command_words", observe), \
+                     mock.patch.object(graph_lifecycle, "prove", wraps=graph_lifecycle.prove) as proof:
+                    with self.assertRaises(MakeProbeError):
+                        self.report()
+                    proof.assert_not_called()
+                if role == "make-leading":
+                    self.assertTrue(seen[0].startswith("\r"))
+
+    def test_case_lf_continuation_at_eof_keeps_real_checker_execution(self):
+        command = report_fixture.CHECK_COMMAND + "\\\n"
+        self.case_command(command)
+        self.fixture.commit("Real LF continuation at EOF")
+        self.assertEqual(len(self.report()["artifact"]["executable_lifecycle"]), 3)
+        budget = ProbeBudget(Limits(seconds=90))
+        try:
+            actual = budget.run(["/bin/sh", "-c", command], cwd=self.fixture.root, env=ENVIRONMENT)
+            self.assertEqual(actual.returncode, 0, actual.stderr)
+            self.assertEqual(len(json.loads(actual.stdout)["artifact"]["executable_lifecycle"]), 3)
+        finally:
+            budget.close()
+            self.assertFalse(budget.children)
+
     def test_original_missing_and_nondirectory_path_components_cannot_receive_proofs(self):
         baseline = self.fixture.git("rev-parse", "HEAD").decode().strip()
         valid = report_fixture.CHECK_COMMAND

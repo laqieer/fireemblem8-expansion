@@ -2885,6 +2885,10 @@
           "evidence": "scripts/validation_ownership/tests/test_graph_report.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_graph_commands.GraphCommandTests.test_shell_non_lf_separators_remain_literal_argument_data scripts.validation_ownership.tests.test_graph_commands.GraphCommandTests.test_non_ascii_comment_prefixes_and_exec_names_are_not_discarded scripts.validation_ownership.tests.test_graph_commands.GraphCommandTests.test_lf_continuation_eof_and_quoted_newlines_match_actual_shell scripts.validation_ownership.tests.test_graph_report.LifecycleBindingTests.test_carriage_returns_do_not_become_valid_lifecycle_routes scripts.validation_ownership.tests.test_graph_report.LifecycleBindingTests.test_case_lf_continuation_at_eof_keeps_real_checker_execution -v",
+          "evidence": "scripts/validation_ownership/tests/test_graph_report.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_coordinator_capture.NonReviewedCaptureBindingTests -v",
           "evidence": "scripts/validation_ownership/tests/test_coordinator_capture.py"
         },

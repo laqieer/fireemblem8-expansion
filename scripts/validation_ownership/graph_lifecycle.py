@@ -146,9 +146,9 @@ def _consumer_routes(graph, make_authorities, tester_cases, runtime_programs, so
         files = record["files"]
         if len(files) != 1 or files[0]["target"] != target or files[0]["prerequisites"]:
             raise MakeProbeError("lifecycle Make consumer requires a direct, mandatory checker recipe")
-        recipe = files[0]["recipe"].lstrip()
+        recipe = files[0]["recipe"].lstrip(" \t\n")
         while recipe.startswith("@"):
-            recipe = recipe[1:].lstrip()
+            recipe = recipe[1:].lstrip(" \t\n")
         if not recipe or recipe.startswith(("-", "+")):
             raise MakeProbeError("lifecycle Make consumer suppresses or changes failure propagation")
         if "$(CURDIR)" in recipe or "${CURDIR}" in recipe:

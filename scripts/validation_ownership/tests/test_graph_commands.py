@@ -12,7 +12,9 @@ import subprocess
 import unittest
 from unittest import mock
 
-from scripts.bash_parser import BashToken, parse_bash_script_commands, tokenize_bash_command
+from scripts.bash_parser import (
+    BashToken, normalize_bash_script_commands, parse_bash_script_commands, tokenize_bash_command,
+)
 from scripts.validation_ownership.authority import (
     AuthorityLoader, ENVIRONMENT, GitTreeEntries, GitTreeEntry, encoded, git_tree_entries,
 )
@@ -274,6 +276,73 @@ class GraphCommandTests(unittest.TestCase):
             tokens = tokenize_bash_command(command)
             self.assertEqual([tokens[-1].value], json.loads(actual.stdout))
             self.assertFalse(tokens[-1].operator)
+
+    def shell_argv(self, command):
+        return subprocess.run(
+            ["/bin/sh", "-c", command], cwd=self.root, env=ENVIRONMENT,
+            capture_output=True, timeout=15,
+        )
+
+    def shell_decodings(self, command):
+        normalized = normalize_bash_script_commands(command, "fixture")
+        words = parse_bash_script_commands(command, "fixture")
+        typed = tuple(tuple(token.value for token in tokenize_bash_command(line)) for line in normalized)
+        self.assertEqual(words, typed)
+        return words
+
+    def test_shell_non_lf_separators_remain_literal_argument_data(self):
+        prefix = ("/usr/bin/python3", "-I", "-S", "-B", "-c",
+                  "import json,sys;print(json.dumps(sys.argv[1:]))")
+        program = shlex.join(prefix)
+        for separator in ("\r", "\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"):
+            for quoted in (False, True):
+                with self.subTest(separator=ord(separator), quoted=quoted):
+                    argument = "." + separator + ("tail" if quoted else "")
+                    command = program + " " + (shlex.quote(argument) if quoted else argument)
+                    actual = self.shell_argv(command)
+                    self.assertEqual(actual.returncode, 0, actual.stderr)
+                    words, = self.shell_decodings(command)
+                    self.assertEqual(words[:len(prefix)], prefix)
+                    self.assertEqual(list(words[len(prefix):]), json.loads(actual.stdout))
+                    self.assertEqual(list(words[len(prefix):]), [argument])
+
+    def test_non_ascii_comment_prefixes_and_exec_names_are_not_discarded(self):
+        program = "/usr/bin/python3 -I -S -B -c 'print(1)'"
+        for prefix in ("\r", "\u00a0", "\u2003", "\u3000"):
+            with self.subTest(prefix=ord(prefix)):
+                leading = prefix + program
+                actual = self.shell_argv(leading)
+                self.assertEqual(actual.returncode, 127)
+                words, = self.shell_decodings(leading)
+                self.assertEqual(words[0], prefix + "/usr/bin/python3")
+                extra = program + "\n" + prefix + "# not a comment"
+                actual = self.shell_argv(extra)
+                self.assertEqual(actual.returncode, 127)
+                words = self.shell_decodings(extra)
+                self.assertEqual(len(words), 2)
+                self.assertEqual(words[1][0], prefix + "#")
+
+    def test_lf_continuation_eof_and_quoted_newlines_match_actual_shell(self):
+        prefix = ("/usr/bin/python3", "-I", "-S", "-B", "-c",
+                  "import json,sys;print(json.dumps(sys.argv[1:]))")
+        program = shlex.join(prefix)
+        for command in (
+            program + " .\\\n",
+            program + " '.\\\ntail'",
+            program + "\t.",
+            " \t# ordinary comment\n" + program + " .\n",
+            program + " a\\\n#'b\nc'",
+            program + ' "a\\\nb"',
+            program + " .\\\n\t",
+        ):
+            with self.subTest(command=command):
+                actual = self.shell_argv(command)
+                self.assertEqual(actual.returncode, 0, actual.stderr)
+                words, = self.shell_decodings(command)
+                self.assertEqual(words[:len(prefix)], prefix)
+                self.assertEqual(list(words[len(prefix):]), json.loads(actual.stdout))
+        with self.assertRaisesRegex(ValueError, "bare backslash at EOF"):
+            normalize_bash_script_commands(program + " .\\", "fixture")
 
     def test_bash_parser_matches_shell_continuations_and_rejects_multi_command_registration(self):
         script = (
