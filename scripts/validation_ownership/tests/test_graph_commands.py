@@ -548,22 +548,31 @@ class GraphCommandTests(unittest.TestCase):
                         if item["id"] == "banim-compressing-linker-inputs")
         expression = contract["expression"]
         self.add("Makefile", "PYTHON := python3\nINPUTS := " + expression
-                 + "\nall:\n\t@printf '%s\\n' '$(INPUTS)'\n")
+                 + "\nall:\n\t@printf '%s\\n' '$(INPUTS)'\nmeasure-inputs:\n")
         ordinary = subprocess.run(
             ["/usr/bin/make", "--no-print-directory", "-f", "Makefile", "all"],
             cwd=self.root, env={**ENVIRONMENT, "TMPDIR": str(self.directory)},
             capture_output=True, check=True, timeout=15,
         ).stdout
-        self.assertGreater(len(ordinary), 0)
+        self.assertGreater(len(ordinary), 4096)
         with self.session() as probe:
             commands = MakeCommands(probe, self.contracts)
-            actual = probe.make("all", variables=("INPUTS",), commands=commands)
+            actual = probe.make("measure-inputs", variables=("INPUTS",), commands=commands)
             self.assertEqual(actual.semantics["domains"]["INPUTS"]["value"],
-                             ordinary.decode().strip())
+                             ordinary.decode().removesuffix("\n"))
+            self.assertTrue(all(item["kind"] == "value" for item in actual.semantics["native_dispatches"]))
             self.assertEqual(actual.stderr, b"")
             self.assertEqual(len(actual.semantics["dynamic_commands"]), 1)
             self.assertTrue(actual.events)
             self.assertTrue(all(event["match"] == 0 for event in actual.events))
+        self.assertIsNone(probe.base)
+        self.assertFalse(probe.budget.children)
+        with self.session() as probe:
+            commands = MakeCommands(probe, self.contracts)
+            with self.assertRaisesRegex(MakeProbeError, "pathname exceeds bound"):
+                probe.make("all", variables=("INPUTS",), commands=commands)
+        self.assertIsNone(probe.base)
+        self.assertFalse(probe.budget.children)
 
     def test_registered_find_matches_real_find_with_nested_unicode_and_multiple_batches(self):
         descriptors = set(os.listdir("/proc/self/fd"))

@@ -691,7 +691,8 @@ class ProducerTests(unittest.TestCase):
         current = (foundation.ROOT / "Makefile").read_text()
         line = next(line for line in current.splitlines() if line.startswith("$(BANIM_OBJECT):"))
         expression = line.split(":", 1)[1].strip().removesuffix(" $(ASSET_BANIM_COMBINED_LINKER_SCRIPT)")
-        self.fixture.add("adapted.mk", "PYTHON := python3\nINPUTS := " + expression + "\nall:\n\t@printf '%s\\n' '$(INPUTS)'\n")
+        self.fixture.add("adapted.mk", "PYTHON := python3\nINPUTS := " + expression
+                         + "\nall:\n\t@printf '%s\\n' '$(INPUTS)'\nmeasure-inputs:\n")
         outputs = []
         for makefile in ("original.mk", "adapted.mk"):
             result = subprocess.run(
@@ -702,6 +703,7 @@ class ProducerTests(unittest.TestCase):
             outputs.append(result.stdout)
         self.assertTrue(outputs[0])
         self.assertEqual(outputs[0], outputs[1])
+        self.assertGreater(len(outputs[0]), 4096)
         registration = Command(
             ("/usr/bin/python3", "/repo/" + path, "-t", "linker_script_banim.txt", "-m"),
             code=(path,), sources=("linker_script_banim.txt",),
@@ -721,16 +723,24 @@ class ProducerTests(unittest.TestCase):
         self.fixture.assert_clean(session)
         with self.fixture.session(seconds=30) as session:
             observed = session.make(
-                "all", makefile="adapted.mk", variables=("INPUTS",),
+                "measure-inputs", makefile="adapted.mk", variables=("INPUTS",),
                 commands={"python3 scripts/arm_compressing_linker.py -t linker_script_banim.txt -m": registration},
             )
-            self.assertEqual(observed.semantics["domains"]["INPUTS"]["value"], outputs[0].decode().strip())
+            self.assertEqual(observed.semantics["domains"]["INPUTS"]["value"], outputs[0].decode().removesuffix("\n"))
+            self.assertTrue(all(item["kind"] == "value" for item in observed.semantics["native_dispatches"]))
             self.assertEqual(observed.stderr, b"")
             self.assertEqual(len(observed.events), 1)
             dynamic, = observed.semantics["dynamic_commands"]
             self.assertEqual(dynamic["command"]["argv"], list(registration.argv))
             self.assertEqual(dynamic["command"]["inputs"], session.snapshot.owners((path, "linker_script_banim.txt")))
             self.assertEqual(dynamic["output_sha256"], hashlib.sha256(outputs[0]).hexdigest())
+        self.fixture.assert_clean(session)
+        with self.fixture.session(seconds=30) as session:
+            with self.assertRaisesRegex(MakeProbeError, "pathname exceeds bound"):
+                session.make(
+                    "all", makefile="adapted.mk", variables=("INPUTS",),
+                    commands={"python3 scripts/arm_compressing_linker.py -t linker_script_banim.txt -m": registration},
+                )
         self.fixture.assert_clean(session)
 
     def test_make_lookup_guard_preserves_ordinary_absence_nonexecutables_and_metadata(self):

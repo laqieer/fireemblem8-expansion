@@ -70,6 +70,13 @@ output bytes, error status and cleanup behavior remain covered by real
 controls. The probe never appends syntax, synthesizes executable metadata or
 installs a native image into Make. Graphics recipes remain metadata-only in
 the report; their ordinary build outputs are not claimed as probe-produced.
+The real linker-discovery fixtures measure complete `INPUTS` on a recipe-less
+`measure-inputs` target. Their ordinary print target is a value oracle, not a
+safe confined recipe: its single 56,560-byte argument exceeds the existing
+4,096-byte native string bound. Keep the entire 56,561-byte producer result
+(1,475 paths in the exact-d9 fixture), the real adapter and original noexec
+negative. The oversized print target remains an explicit rejection control;
+neither truncating discovery nor increasing the bound is a correction.
 
 The original direct Python entry demonstrated a different failure from a
 missing program: Make successfully statted an executable source, received

@@ -762,13 +762,16 @@ Two identities deliberately serve different purposes:
   repeated events use them. Every speculative command still requires complete
   authority, successful source accounting and the same aggregate charges/cache.
 
-Unique-name assignment metadata is canonicalized by name, retaining each
-origin and value. Environment and command-line assignments, including mixed
-origins and recursive references, therefore have the same semantic identity
-when reordering them leaves the native target/domain observations equivalent.
-The executed argv and environment application order are **not** reordered.
-Order-sensitive Make observations, such as a `MAKEOVERRIDES` value or a
-prerequisite selected from it, remain intact and continue to change the digest.
+Unique-name request metadata is canonicalized by name, retaining each origin
+and value. Equal variable values/origins/flavors and prerequisites do not imply
+equal complete native identity: reordering CLI assignments changes exported
+`MAKEFLAGS`, which an ordinary recipe can observe. Actual executable/argv,
+environment bytes and application order are **not** sorted or masked.
+Only genuinely equal complete native contexts retain equal semantic digests.
+Likewise, quoting forms with identical direct `printf` argv remain equivalent,
+while a form that makes GNU Make select `/bin/sh -c` retains a different native
+context despite equal registered-command output and variable semantics.
+Order-sensitive `MAKEOVERRIDES` or prerequisite observations also remain intact.
 This does not expand the metadata-only recipe contract into production recipe
 execution or artifact validation.
 

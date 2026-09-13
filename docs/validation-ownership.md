@@ -110,7 +110,7 @@ Both generated includes reach actual GNU Make and each restarts once. A single
 public `select_view` block restores BASE's real deleted source and battle
 consumer ID, without resetting the report budget or changing source paths.
 That source/output test is not a substitute for the reporter's BASE ownership
-model, full112 domains, oracle, lifecycle or independently captured public gate.
+model, full 112 domains, oracle, lifecycle or independently captured public gate.
 
 The scanner adapter similarly reuses `SourceFile::GetIncludes` and
 `ScanIncDependencies` from `tools/scaninc`. The ordinary CLI still uses real
@@ -823,8 +823,8 @@ complete path, edge-ID, and affected-consumer sets. The full sorted arrays
 remain explicit in the qualification and verifier selection; the digests only
 give the bounded review scope an identity, not source-content ledgers,
 truncation, sampling, or independent authority. Paths are capped at the single
-review's200-file capacity before launch; edge/consumer arrays remain256 and
-the subject cap remains40. Every path needs actual read coverage from the
+review's 200-file capacity before launch; edge/consumer arrays remain 256 and
+the subject cap remains 40. Every path needs actual read coverage from the
 same immutable root/BASE/head pair through the same `ReviewTools.model`
 that created the session. Qualification invokes the shared
 `require_candidate_path_coverage` over `candidate_changes`: added/modified

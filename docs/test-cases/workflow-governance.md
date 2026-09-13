@@ -3862,7 +3862,7 @@ game behavior needs a compensating change.
    packaging, authenticated master-only publication, correct source/profile,
    real BPS round trip, patch-only outputs, private cleanup and visible
    failures. This does not prove actual private-base publication or the still
-   blocked full112-domain ownership acceptance.
+   blocked full 112-domain ownership acceptance.
 9. Exercise the canonical path-admission fixtures: broad prefixes must reject
    immutable new source/script/documentation/graphics members until an exact
    selector supplies complete ownership. Generated-source and verifier-runtime
@@ -4029,6 +4029,15 @@ No unused variable is expanded to discover exports. GNU Make 4.3 does not
 support a target-specific `unexport` directive; preserve its actual failure.
 A single-quoted `'$$OPTION'` prints literal shell data, so it is not an
 output-changing variable-expansion control.
+For assignment-order controls, compare ordinary Make's variable
+values/origins/flavors and prerequisites separately from its recipe's actual
+exported `MAKEFLAGS` bytes. Reversing CLI `A=one` and `B=$(A)-two` leaves the
+first projection equal but changes the environment and complete native
+identity. Do not sort or mask those bytes. For quote controls,
+`printf %s 'a b'`, `printf '%s' 'a b'` and `printf %s a\ b` have identical
+direct native argv. GNU Make instead selects `/bin/sh -c` for
+`printf "%s" "a b"`: registered output and VALUE still agree, but complete
+native identity must differ.
 
 For recipe literal preservation, use a single-quoted `printf` argument whose
 backslash-newline continuation has a physical `#first` line, then change it to
@@ -4324,7 +4333,7 @@ missing/changed framebuffer controls, the actual presentation runner's
 scenario construction, and the package checker's successful/resource-failure
 inputs. The live parsed model, not the older 80-variable synthetic Make fixture,
 owns the tester procedure's 112-domain scope. Parsing that count is not
-complete domain execution: full112-domain graph/oracle/lifecycle/public-gate
+complete domain execution: full 112-domain graph/oracle/lifecycle/public-gate
 adoption of the independent
 [issue #206 foundation](https://github.com/laqieer/fireemblem8-expansion/issues/206)
 remains a separate acceptance requirement.
@@ -5128,6 +5137,15 @@ without recreating a source context. The real original gbagfx recipe failed
 before dispatch; the direct linker lookup was worse, returning a successful
 empty value. The required source-authored adaptations and narrow denial guard
 replace those failures without weakening source noexec or runtime closure.
+Run the real linker lookup and MakeCommands linker-adapter controls with their
+unchanged script, expression and linker inputs. Read full `INPUTS` from the
+recipe-less `measure-inputs` target and compare every byte with ordinary Make's
+print result, removing only its one terminating newline. The exact-d9 result
+contains 1,475 paths and 56,561 producer bytes; its flattened value is 56,560
+bytes. The original direct noexec lookup must still reject before registration.
+Separately select the print target in the confined session: its oversized
+argument must reject at the unchanged native string bound. Preserve cleanup
+and original rejection instead of truncating output or enlarging a cap.
 
 The first integrated CI also exposed a stale two-slot cold-producer fixture,
 unused full-tree publication inventory exhausting the complete pair's control
