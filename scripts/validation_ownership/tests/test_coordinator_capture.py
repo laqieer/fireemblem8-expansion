@@ -1,12 +1,15 @@
 import copy
+from contextlib import ExitStack
 from dataclasses import replace
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+from scripts import workflow_pilot
 from scripts.validation_ownership import ci_verifier, reporter
 from scripts.validation_ownership.coordinator_capture import (
     CHECK_ID,
@@ -17,7 +20,7 @@ from scripts.validation_ownership.coordinator_capture import (
     reviewed_evolution_scope,
     trusted_executor,
 )
-from scripts.validation_ownership.budget import MakeProbeError
+from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.workflow_pilot import adaptive_gate as gate, agent_handoff as handoff
 from scripts.workflow_pilot import candidate_evidence, coordinator_observations as observations
 from scripts.workflow_pilot import pr_metadata as github, raw_diff_check as raw, review_family as review
@@ -242,6 +245,8 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
     def setUp(self):
         self.fixture = ReportFixture()
         self.addCleanup(self.fixture.close)
+        self.enterContext(patch.dict(sys.modules))
+        self.enterContext(patch.dict(vars(workflow_pilot)))
         self.select_case(reviewed_evolution_case(self.fixture))
 
     def select_case(self, case):
@@ -758,6 +763,108 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         self.assertTrue(admitted["merge_eligible"], admitted)
         unqualified, _ = observed(saved, (preflight, full), None)
         self.assertFalse(unqualified["merge_eligible"])
+
+
+class CaptureModuleLifetimeTests(unittest.TestCase):
+    def run_loading_fixture(self, *, fail=False):
+        before = dict(sys.modules)
+        attributes = dict(vars(workflow_pilot))
+        changed = {}
+        owner = self
+
+        class LoadingFixture(ReviewedEvolutionCaptureTests):
+            def runTest(self):
+                owner.directory = self.fixture.directory
+                tree = GitTree(self.fixture.root, self.case["head"])
+                read = tree.read
+
+                def selected_read(path):
+                    if fail and path == "scripts/workflow_pilot/review_family.py":
+                        raise RuntimeError("controlled tool-source failure")
+                    return read(path)
+
+                try:
+                    with patch.object(tree, "read", selected_read):
+                        ReviewTools(tree, self.fixture.root)
+                finally:
+                    changed.update({
+                        name: module for name, module in sys.modules.items()
+                        if name.startswith("scripts.workflow_pilot.") and before.get(name) is not module
+                    })
+
+        close = ReportFixture.close
+
+        def checked_close(fixture):
+            try:
+                self.assertTrue(changed)
+                for name in changed:
+                    self.assertIs(sys.modules.get(name), before.get(name))
+                    attribute = name.rsplit(".", 1)[1]
+                    self.assertIs(vars(workflow_pilot).get(attribute), attributes.get(attribute))
+            finally:
+                close(fixture)
+
+        # Recovery also contains the deliberate isolation-removal mutation;
+        # checked_close asserts the inner cleanup before this outer scope exits.
+        with ExitStack() as recovery:
+            recovery.enter_context(patch.dict(sys.modules))
+            recovery.enter_context(patch.dict(vars(workflow_pilot)))
+            with patch.object(ReportFixture, "close", checked_close):
+                result = unittest.TestResult()
+                LoadingFixture("runTest").run(result)
+            self.assertFalse(result.failures, result.failures)
+            if fail:
+                self.assertEqual(len(result.errors), 1, result.errors)
+                self.assertIn("RuntimeError: controlled tool-source failure", result.errors[0][1])
+            else:
+                self.assertFalse(result.errors, result.errors)
+            self.assertFalse(self.directory.exists())
+            self.assertEqual(len(changed), 2 if fail else 3)
+            for name in changed:
+                self.assertIs(sys.modules.get(name), before.get(name))
+                attribute = name.rsplit(".", 1)[1]
+                self.assertIs(vars(workflow_pilot).get(attribute), attributes.get(attribute))
+        return changed
+
+    def test_completed_tool_fixture_restores_modules_before_following_graph(self):
+        from .test_graph_report import GraphReportTests
+
+        self.run_loading_fixture()
+        result = unittest.TestResult()
+        GraphReportTests("test_added_removed_and_changed_exclusions_invalidate_all_edges").run(result)
+        self.assertEqual(result.testsRun, 1)
+        self.assertFalse(result.errors, result.errors)
+        self.assertFalse(result.failures, result.failures)
+
+    def test_partial_tool_load_preserves_failure_and_restores_import_state(self):
+        self.run_loading_fixture(fail=True)
+
+    def test_live_wrong_root_and_stale_owned_modules_still_reject(self):
+        from scripts.validation_ownership.graph_report import capture as capture_source
+
+        fixture = ReportFixture()
+        self.addCleanup(fixture.close)
+        budget = ProbeBudget()
+        self.addCleanup(budget.close)
+        loader = capture_source(fixture.root, "HEAD", budget)
+        original = ci_verifier._verify_loaded_modules(ci_verifier.TRUSTED_ROOT, loader)
+        with ExitStack() as recovery:
+            recovery.enter_context(patch.dict(sys.modules))
+            recovery.enter_context(patch.dict(vars(workflow_pilot)))
+            owned = ReportFixture()
+            try:
+                revision = owned.git("rev-parse", "HEAD").decode().strip()
+                ReviewTools(GitTree(owned.root, revision), owned.root)
+                with self.assertRaises(MakeProbeError):
+                    ci_verifier._verify_loaded_modules(ci_verifier.TRUSTED_ROOT, loader)
+            finally:
+                owned.close()
+            with self.assertRaises(FileNotFoundError) as failure:
+                ci_verifier._verify_loaded_modules(ci_verifier.TRUSTED_ROOT, loader)
+            self.assertEqual(failure.exception.filename, str(owned.directory))
+        self.assertEqual(ci_verifier._verify_loaded_modules(ci_verifier.TRUSTED_ROOT, loader), original)
+        self.assertFalse(budget.children)
+        self.assertFalse(budget.producer_waiters)
 
 
 if __name__ == "__main__":

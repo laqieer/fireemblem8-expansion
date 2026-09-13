@@ -2885,6 +2885,10 @@
           "evidence": "scripts/validation_ownership/tests/test_coordinator_capture.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_coordinator_capture.CaptureModuleLifetimeTests -v",
+          "evidence": "scripts/validation_ownership/tests/test_coordinator_capture.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_computed_graph_positions_close_real_selected_domains scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_computed_include_and_unresolved_name_contracts_are_native scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_computed_conditional_names_cannot_be_symbolic_recipe_inputs scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_computed_selector_values_include_actual_target_local_context -v",
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },

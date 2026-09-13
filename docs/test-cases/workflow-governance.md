@@ -4198,6 +4198,20 @@ verifier result while capture recorded B and managed readiness was true;
 removing the universal assignment check must expose that same wrong acceptance.
 A bounded foundation fixture retains already-existing support code in BASE
 rather than increasing the raw-diff size or hiding its source checks.
+The reviewed-capture fixture must restore both `sys.modules` and the
+`scripts.workflow_pilot` package attributes before deleting its source tree.
+The real immutable tool loader installs `raw_diff_check`, `review_family` and
+`review_subjects` under their canonical owned names; leaving those entries
+behind caused the exact478 suite's later graph checks to resolve one already
+removed fixture directory. Run `CaptureModuleLifetimeTests`: load the real
+tools, close the fixture, then run the CURRENT/BASE exclusion case in the same
+process. Repeat with partial tool-source loading failure. Original module
+objects must be restored before directory deletion, and the original failure
+must remain visible. An intentionally unscoped live wrong-root or deleted
+owned module must still fail the unchanged trusted-source verifier; this is
+fixture lifetime cleanup, not permission to ignore unrelated-looking imports
+or swallow `FileNotFoundError`. These controls create no review session or
+current H1 authority.
 A genuine earlier base lacking every package/graph/oracle marker instead emits
 `bootstrap-not-authoritative` with no claimed graph authority. Preserve that
 separate historical/negative case rather than treating it as this PR's current
@@ -4301,6 +4315,9 @@ unchanged source bytes/Git state across simulated fixture exceptions.
 - `python3 -m unittest scripts.validation_ownership.tests.test_coordinator_capture.NonReviewedCaptureBindingTests -v`
   -- universal assignment/expectation binding and real non-reviewed managed
   capture/readiness; no native review qualification or current H1 is created.
+- `python3 -m unittest scripts.validation_ownership.tests.test_coordinator_capture.CaptureModuleLifetimeTests -v`
+  -- real immutable tool-loading cleanup followed by the CURRENT/BASE graph
+  case, partial-load failure, and strict stale-owned-module negatives.
 
 The focused A/V fixtures also execute the title fingerprint comparator with
 missing/changed framebuffer controls, the actual presentation runner's
