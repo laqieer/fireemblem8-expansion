@@ -237,7 +237,9 @@ semantics and graph caches spend their existing counters without refunds.
 
 The graph's lifecycle consumer may additionally select
 `ProbeSession.make(..., observe_recipe_dispatch=True)` for the validated
-`recipe_dispatches` projection. These are dispatch observations, not execution
+`recipe_dispatches` projection. It retains each complete recipe context,
+including sequence, kind and environment, rather than dropping startup
+authority. These are dispatch observations, not execution
 of candidate recipes; metadata-only suppression is unchanged. GNU Make's actual
 ignore-errors state and captured `.IGNORE` declaration are observed, not
 inferred from source comments.

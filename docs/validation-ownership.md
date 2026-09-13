@@ -467,6 +467,21 @@ excursions outside that namespace cannot become valid through `..`.
 Existing internal directory traversals, quoted roots and native `CURDIR`
 remain supported. The ordinary launcher also asks the kernel to open the
 original root as a directory before resolving it.
+An originally empty root is invalid, even though normalizing an empty relative
+path could otherwise produce the selected directory.
+
+The binding consumes the complete captured recipe context, including its
+environment. The supported Linux loader profile rejects `LD_*`, `MALLOC_*`,
+`GLIBC_TUNABLES`, `GCONV_PATH`, `LOCPATH` and `NLSPATH` controls. A shell route
+also rejects `BASH_ENV`, `ENV`, `SHELLOPTS`, `BASHOPTS` and exported
+`BASH_FUNC_*` functions. These can change startup or prevent the checker from
+starting; clearing them inside Python would be too late and would describe a
+different invocation. An unqualified `python3` requires the captured
+controlled PATH. Other benign exports remain in authority, including
+`PYTHONPATH`, which the mandatory `-I -S -B` invocation does not use for
+startup imports. Testcase automation remains one literal mandatory invocation
+under the documented controlled process environment, not a claim about an
+arbitrary user's ambient shell.
 
 The consistency binding comes from actual captured testcase automation and
 requires a mandatory `check` dispatch. Supplemental tests do not substitute

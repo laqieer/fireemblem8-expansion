@@ -4067,6 +4067,26 @@ failures, restore fixture files and close every child/session. Removing only
 the comment-boundary or component-validation correction must restore the
 old false three-proof acceptance in the owned fixture, not merely change an
 error message.
+
+For startup authority, set `export LD_DEBUG = help` on the genuine Make
+checker. Ordinary Make exits zero with loader help whether the authoritative
+graph is present, committed as removed, or restored; the report must reject
+that captured context before issuing any lifecycle proof. Repeat with
+`LD_TRACE_LOADED_OBJECTS=1`. With `/bin/bash`, repeat using `SHELLOPTS=noexec`,
+a fixture-owned `BASH_ENV` script that exits zero, and an exported `python3`
+function that returns zero. These are actual startup skips, not successful
+checker execution. Keep other loader/shell startup controls fail-closed under
+the documented supported profile and reject a missing environment projection
+or unqualified checker with an uncontrolled PATH.
+
+As the positive counterpart, retain a benign `PROJECT_LABEL` export and an
+ignored `PYTHONPATH`: real present/removed/restored executions must return
+success/failure/success, and the complete environment remains captured.
+For empty-root handling, use `--repository-root ''` independently in Make and
+case automation. Ordinary opening fails with ENOENT, so neither route receives
+proof. Dot, an actual absolute case root, quoting and native CURDIR remain
+positive controls. Do not sanitize an unsupported environment and claim it
+was the captured invocation.
 Count actual output-producing dispatches through the graph consumer: a single
 dependency-include remake must execute once, not once for registration and
 again for Make. The completed observation must retain the real final bytes

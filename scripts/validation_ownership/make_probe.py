@@ -2309,8 +2309,7 @@ class ProbeSession:
             semantics["native_dispatches"] = contexts
             if observe_recipe_dispatch:
                 semantics["recipe_dispatches"] = [
-                    {key: value for key, value in item.items() if key not in {"sequence", "kind", "environment"}}
-                    for item in contexts if item["kind"] == "recipe"
+                    item for item in contexts if item["kind"] == "recipe"
                 ]
             semantics["assignments"] = sorted(assignments, key=lambda item: item[1])
             recipe_sources = {record["source"] for record in semantics["files"] if record["source"]}

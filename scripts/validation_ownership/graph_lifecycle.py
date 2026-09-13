@@ -10,7 +10,7 @@ import tempfile
 import weakref
 
 from scripts.bash_parser import normalize_bash_script_commands, strip_bash_command_comment
-from .authority import encoded, parse_json
+from .authority import ENVIRONMENT, encoded, parse_json
 from .budget import MakeProbeError
 
 
@@ -50,6 +50,8 @@ def _command_words(command):
 
 
 def _source_path(spelling, *, source_root, snapshot, directory=False):
+    if not spelling:
+        raise MakeProbeError("lifecycle path has an empty original spelling")
     if spelling.startswith("/"):
         if spelling == source_root:
             spelling = ""
@@ -115,6 +117,27 @@ def _checker_dispatch(arguments, *, cwd, source_root, snapshot):
     return ("/usr/bin/python3", program, mode, actual_root, parsed.revision)
 
 
+def _startup_environment(dispatch, arguments, *, shell):
+    environment = dispatch.get("environment")
+    if not isinstance(environment, dict):
+        raise MakeProbeError("lifecycle dispatch lacks its captured startup environment")
+    loader_controls = {
+        name for name in environment
+        if name.startswith(("LD_", "MALLOC_"))
+        or name in {"GLIBC_TUNABLES", "GCONV_PATH", "LOCPATH", "NLSPATH"}
+    }
+    if loader_controls:
+        raise MakeProbeError("lifecycle dispatch has unsupported loader controls: " + ", ".join(sorted(loader_controls)))
+    shell_controls = {
+        name for name in environment
+        if name in {"BASH_ENV", "ENV", "SHELLOPTS", "BASHOPTS"} or name.startswith("BASH_FUNC_")
+    }
+    if shell and shell_controls:
+        raise MakeProbeError("lifecycle dispatch has unsupported shell startup controls: " + ", ".join(sorted(shell_controls)))
+    if arguments[0] == "python3" and environment.get("PATH") != ENVIRONMENT["PATH"]:
+        raise MakeProbeError("lifecycle unqualified checker lacks its captured controlled PATH")
+
+
 def _consumer_routes(graph, make_authorities, tester_cases, runtime_programs, source_root, snapshot):
     definition = graph["artifact"]
     target, case_id = definition["executable_consumer"], definition["consistency_check"]
@@ -149,12 +172,14 @@ def _consumer_routes(graph, make_authorities, tester_cases, runtime_programs, so
             raise MakeProbeError("lifecycle Make consumer ignores failure or changes its root")
         arguments = dispatch["arguments"]
         executable = runtime_programs.get(dispatch["executable"], dispatch["executable"])
-        if executable in {"/bin/sh", "/bin/bash"}:
+        shell = executable in {"/bin/sh", "/bin/bash"}
+        if shell:
             if len(arguments) != 3 or arguments[1] not in {"-c", "-ec"}:
                 raise MakeProbeError("lifecycle shell dispatch is not a supported command")
             arguments = _command_words(arguments[2])
         elif executable != "/usr/bin/python3":
             raise MakeProbeError("lifecycle native dispatch is not the checker: " + dispatch["executable"])
+        _startup_environment(dispatch, arguments, shell=shell)
         actual = _checker_dispatch(arguments, cwd="/repo", source_root="/repo", snapshot=snapshot)
         if actual != declared:
             raise MakeProbeError("lifecycle native dispatch differs from the captured recipe")

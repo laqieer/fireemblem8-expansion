@@ -626,6 +626,160 @@ class LifecycleBindingTests(unittest.TestCase):
             budget.close()
             self.assertFalse(budget.children)
 
+    def test_loader_help_and_trace_do_not_prove_artifact_consumption(self):
+        baseline = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        for name, value in (("LD_DEBUG", "help"), ("LD_TRACE_LOADED_OBJECTS", "1")):
+            with self.subTest(control=name):
+                self.fixture.git("switch", "--detach", baseline)
+                self.fixture.add("Makefile", "export " + name + " = " + value
+                                 + "\n.PHONY: validation-ownership-check\nvalidation-ownership-check:\n\t@"
+                                 + report_fixture.CHECK_COMMAND + "\n")
+                selected = self.fixture.commit("Real loader-only startup")
+                contexts = []
+                startup = graph_lifecycle._startup_environment
+
+                def observe(dispatch, *arguments, **options):
+                    contexts.append(dispatch)
+                    return startup(dispatch, *arguments, **options)
+
+                with mock.patch.object(graph_lifecycle, "_startup_environment", observe), \
+                     mock.patch.object(graph_lifecycle, "prove", wraps=graph_lifecycle.prove) as proof:
+                    with self.assertRaisesRegex(MakeProbeError, "unsupported loader"):
+                        self.report()
+                    proof.assert_not_called()
+                self.assertEqual(contexts[0]["environment"][name], value)
+                graph = self.fixture.root / reporter.GRAPH_PATH
+                budget = ProbeBudget(Limits(seconds=90))
+                try:
+                    for phase in ("present", "removed", "restored"):
+                        if phase == "removed":
+                            graph.unlink()
+                            self.fixture.commit("Remove the real authoritative graph")
+                        elif phase == "restored":
+                            self.fixture.git("switch", "--detach", selected)
+                        actual = budget.run(
+                            ["/usr/bin/make", "-f", "Makefile", "validation-ownership-check"],
+                            cwd=self.fixture.root, env=ENVIRONMENT,
+                        )
+                        self.assertEqual(actual.returncode, 0, actual.stderr)
+                        self.assertTrue(actual.stdout)
+                finally:
+                    budget.close()
+                    self.assertFalse(budget.children)
+
+    def test_shell_startup_cannot_skip_the_bound_checker(self):
+        baseline = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        startup_file = self.fixture.directory / "startup.sh"
+        startup_file.write_text("exit 0\n")
+        for name, value, spelling in (
+            ("SHELLOPTS", "noexec", "/usr/bin/python3"),
+            ("BASH_ENV", str(startup_file), "/usr/bin/python3"),
+            ("BASH_FUNC_python3%%", "() { return 0; }", "python3"),
+        ):
+            with self.subTest(control=name):
+                self.fixture.git("switch", "--detach", baseline)
+                command = report_fixture.CHECK_COMMAND.replace("/usr/bin/python3", spelling)
+                self.fixture.add("Makefile", "SHELL := /bin/bash\nexport " + name + " = " + value
+                                 + "\n.PHONY: validation-ownership-check\nvalidation-ownership-check:\n\t@"
+                                 + command + " > /dev/null\n")
+                self.fixture.commit("Real shell startup bypass")
+                with mock.patch.object(graph_lifecycle, "prove", wraps=graph_lifecycle.prove) as proof:
+                    with self.assertRaisesRegex(MakeProbeError, "unsupported shell startup"):
+                        self.report()
+                    proof.assert_not_called()
+                graph = self.fixture.root / reporter.GRAPH_PATH
+                graph.unlink()
+                self.fixture.commit("Remove the real graph behind the skipped checker")
+                budget = ProbeBudget(Limits(seconds=90))
+                try:
+                    actual = budget.run(
+                        ["/usr/bin/make", "-f", "Makefile", "validation-ownership-check"],
+                        cwd=self.fixture.root, env=ENVIRONMENT,
+                    )
+                    self.assertEqual(actual.returncode, 0, actual.stderr)
+                    self.assertEqual(actual.stdout, b"")
+                finally:
+                    budget.close()
+                    self.assertFalse(budget.children)
+
+    def test_benign_exports_keep_complete_dispatch_and_real_checker_behavior(self):
+        command = report_fixture.CHECK_COMMAND
+        self.fixture.add("Makefile", "export PROJECT_LABEL = retained\nexport PYTHONPATH = /not-imported\n"
+                         ".PHONY: validation-ownership-check\nvalidation-ownership-check:\n\t@" + command + "\n")
+        selected = self.fixture.commit("Benign exact checker exports")
+        startup = graph_lifecycle._startup_environment
+        observed = []
+
+        def inspect(dispatch, arguments, *, shell):
+            self.assertEqual(dispatch["environment"]["PROJECT_LABEL"], "retained")
+            self.assertEqual(dispatch["environment"]["PYTHONPATH"], "/not-imported")
+            with self.assertRaisesRegex(MakeProbeError, "captured startup environment"):
+                startup({key: value for key, value in dispatch.items() if key != "environment"}, arguments, shell=shell)
+            if arguments[0] == "/usr/bin/python3":
+                with self.assertRaisesRegex(MakeProbeError, "controlled PATH"):
+                    startup(
+                        {**dispatch, "environment": {**dispatch["environment"], "PATH": "/not-the-runtime"}},
+                        ["python3", *arguments[1:]], shell=shell,
+                    )
+            observed.append(dispatch)
+            return startup(dispatch, arguments, shell=shell)
+
+        with mock.patch.object(graph_lifecycle, "_startup_environment", inspect):
+            self.assertEqual(len(self.report()["artifact"]["executable_lifecycle"]), 3)
+        self.assertEqual(len(observed), 1)
+        graph = self.fixture.root / reporter.GRAPH_PATH
+        budget = ProbeBudget(Limits(seconds=120))
+        try:
+            for phase in ("present", "removed", "restored"):
+                if phase == "removed":
+                    graph.unlink()
+                    self.fixture.commit("Remove the actually consumed graph")
+                elif phase == "restored":
+                    self.fixture.git("switch", "--detach", selected)
+                result = budget.run(
+                    ["/usr/bin/make", "-f", "Makefile", "validation-ownership-check"],
+                    cwd=self.fixture.root, env=ENVIRONMENT,
+                )
+                if phase == "removed":
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(reporter.LIFECYCLE_FAILURE_REASON.encode(), result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(len(json.loads(result.stdout)["artifact"]["executable_lifecycle"]), 3)
+        finally:
+            budget.close()
+            self.assertFalse(budget.children)
+
+    def test_empty_original_root_rejects_but_actual_absolute_case_root_remains_valid(self):
+        baseline = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        command = report_fixture.CHECK_COMMAND.replace("--repository-root .", "--repository-root ''")
+        for route in ("make", "case"):
+            with self.subTest(route=route):
+                self.fixture.git("switch", "--detach", baseline)
+                if route == "make":
+                    self.fixture.add("Makefile", "validation-ownership-check:\n\t@" + command + "\n")
+                    argv = ["/usr/bin/make", "-f", "Makefile", "validation-ownership-check"]
+                else:
+                    self.case_command(command)
+                    argv = ["/bin/sh", "-c", command]
+                self.fixture.commit("Empty original root")
+                with self.assertRaisesRegex(MakeProbeError, "empty original spelling"):
+                    self.report()
+                budget = ProbeBudget(Limits(seconds=90))
+                try:
+                    actual = budget.run(argv, cwd=self.fixture.root, env=ENVIRONMENT)
+                    self.assertNotEqual(actual.returncode, 0)
+                    self.assertEqual(actual.stdout, b"")
+                finally:
+                    budget.close()
+                    self.assertFalse(budget.children)
+        self.fixture.git("switch", "--detach", baseline)
+        self.case_command(report_fixture.CHECK_COMMAND.replace(
+            "--repository-root .", "--repository-root " + shlex.quote(str(self.fixture.root)),
+        ))
+        self.fixture.commit("Actual absolute case root")
+        self.assertEqual(len(self.report()["artifact"]["executable_lifecycle"]), 3)
+
     def test_skipped_up_to_date_consumer_has_no_native_dispatch(self):
         path = self.fixture.root / reporter.GRAPH_PATH
         graph = json.loads(path.read_text())
