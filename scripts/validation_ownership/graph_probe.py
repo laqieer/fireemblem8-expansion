@@ -69,6 +69,13 @@ class MakeSourceUnit(NamedTuple):
     text: str
     body: str | None = None
     native_literal_header: bool = False
+    conditional_depth: int = 0
+    active: bool | None = True
+
+
+class _SourceUnitStream(NamedTuple):
+    ordered: tuple
+    known_positions: frozenset
 
 
 @dataclass
@@ -250,8 +257,12 @@ def make_source_units(text, *, mode=None, include=None, known_context=True):
             if active is True:
                 pending_posix = False
 
+    def contextual_unit(line, body=None):
+        return MakeSourceUnit(line, body, conditional_depth=len(conditions), active=active)
+
     for raw in chunks:
         mode.checkpoint()
+        include_request = None
         line = raw if raw.startswith("\t") else mode.collapse(raw)
         header = strip_comment(line).strip(MAKE_SPACE)
         assignment = None if raw.startswith("\t") else MODE_ASSIGNMENT.fullmatch(header)
@@ -295,7 +306,7 @@ def make_source_units(text, *, mode=None, include=None, known_context=True):
                     active = _mode_and(active, choice)
                 if eligible is not False and mode.effectful(arguments):
                     mode.uncertain()
-            yield MakeSourceUnit(line)
+            yield contextual_unit(line)
             continue
         if header and not raw.startswith("\t"):
             # GNU collapses this line before recording the preceding rule.
@@ -321,7 +332,7 @@ def make_source_units(text, *, mode=None, include=None, known_context=True):
                 definition[1], header[definition.end():].strip(MAKE_SPACE) or "=", body,
                 override="override" in header[:definition.start(1)].split(), active=active,
             )
-            yield MakeSourceUnit(line, body)
+            yield contextual_unit(line, body)
         else:
             if not raw.startswith("\t") and active is not False:
                 if assignment:
@@ -341,7 +352,7 @@ def make_source_units(text, *, mode=None, include=None, known_context=True):
                         if include is None:
                             mode.uncertain()
                         else:
-                            include(included, active, mode)
+                            include_request = (included, active, mode)
                     else:
                         separators = _rule_separators(header)
                         left = header[:separators[0]] if separators else header
@@ -351,7 +362,9 @@ def make_source_units(text, *, mode=None, include=None, known_context=True):
                             if mode.posix is not True and (active is None or not known_context):
                                 raise MakeProbeError("unproven conditional/include .POSIX activation")
                             pending_posix = True
-            yield MakeSourceUnit(line)
+            yield contextual_unit(line)
+            if include_request is not None:
+                include(*include_request)
     if conditions:
         raise MakeProbeError("Make parsing-mode context has an unterminated conditional")
     record_pending()
@@ -372,6 +385,7 @@ def _source_units(sources, *, assignments=(), budget=None):
         budget=budget,
     )
     units, reading, unresolved_modes = {}, set(), []
+    ordered, known_positions = [], set()
 
     def visit(path, *, known=True):
         mode.checkpoint()
@@ -391,7 +405,7 @@ def _source_units(sources, *, assignments=(), budget=None):
                 current_mode.uncertain()
             for name in names:
                 if name in decoded:
-                    visit(name, known=known and active is True)
+                    visit(name, known=known and active is True and unit.conditional_depth == 0)
 
         count = 0
         # Revisit the original inputs; reuse only the identical source units,
@@ -399,8 +413,14 @@ def _source_units(sources, *, assignments=(), budget=None):
         for unit in make_source_units(decoded[path], mode=mode, include=included, known_context=known):
             if previous is None:
                 units[path].append(unit)
-            elif count >= len(previous) or unit != previous[count]:
+            elif count >= len(previous) or unit[:3] != previous[count][:3]:
                 raise MakeProbeError("Make include source changed across original read contexts")
+            position = len(ordered)
+            if budget is not None:
+                budget.charge("cache", len(encoded((path, position, unit))))
+            if known:
+                known_positions.add(position)
+            ordered.append((path, position, unit))
             count += 1
         if previous is not None and count != len(previous):
             raise MakeProbeError("Make include source changed across original read contexts")
@@ -412,39 +432,20 @@ def _source_units(sources, *, assignments=(), budget=None):
         if path not in units:
             mode.posix = True if unresolved_modes and all(value is True for value in unresolved_modes) else None
             visit(path, known=False)
-    return units
+    return _SourceUnitStream(tuple(ordered), frozenset(known_positions))
 
 
 def _ordered_source_units(units):
-    ordered, visited, known_positions = [], set(), set()
-
-    def visit(path, *, known=False):
-        if path in visited:
-            return
-        visited.add(path)
-        conditional_depth = 0
-        for index, unit in enumerate(units[path]):
-            if known:
-                known_positions.add(len(ordered))
-            ordered.append((path, index, unit))
-            header = strip_comment(unit.text)
-            if unit.body is not None or unit.text.startswith("\t"):
-                continue
-            if re.match(r"^[ \t]*(?:ifeq|ifneq|ifdef|ifndef)(?:[ \t]|$)", header):
-                conditional_depth += 1
-            elif re.match(r"^[ \t]*endif(?:[ \t]|$)", header):
-                conditional_depth -= 1
-            include = re.fullmatch(r"[ \t]*-?include[ \t]+([^$#]+)", header)
-            if include:
-                for name in re.split(r"[ \t]+", include[1].strip(" \t")):
-                    if name in units:
-                        visit(name, known=known and conditional_depth == 0)
-
-    if units:
-        visit(next(iter(units)), known=True)
-    for path in units:
-        visit(path)
-    return ordered, known_positions
+    if not isinstance(units, _SourceUnitStream):
+        raise MakeProbeError("semantic traversal requires the original source occurrence stream")
+    ordered, known_positions = [], set()
+    for position, occurrence in enumerate(units.ordered):
+        if occurrence[2].active is False:
+            continue
+        if position in units.known_positions:
+            known_positions.add(len(ordered))
+        ordered.append(occurrence)
+    return tuple(ordered), frozenset(known_positions)
 
 
 class _UnresolvedName(ValueError):
@@ -484,13 +485,17 @@ def make_expressions(line):
 
 
 def _without_literal_metadata(expression):
-    spans = [
-        (start, stop) for start, stop, body in _make_expression_spans(expression)
-        if re.fullmatch(r"(?:origin|flavor|value)[ \t\r\n\v\f]+" + IDENTIFIER, body)
-    ]
+    spans = [(start, stop) for start, stop, _ in _literal_metadata(expression)]
     for start, stop in sorted(spans, reverse=True):
         expression = expression[:start] + expression[stop:]
     return expression
+
+
+def _literal_metadata(expression):
+    for start, stop, body in _make_expression_spans(expression):
+        match = re.fullmatch(r"(?:origin|flavor|value)[ \t\r\n\v\f]+(" + IDENTIFIER + ")", body)
+        if match:
+            yield start, stop, match[1]
 
 
 def _make_function(expression):
@@ -642,13 +647,10 @@ def _prepare_rule_templates(
             raise MakeProbeError("rule template lacks one original prior definition")
         callers.append((path, index, variable, values.strip(MAKE_SPACE), candidates[0]))
     if not callers:
-        return None, set(), set()
-    loaded_names = observation.semantics["domains"]["MAKEFILE_LIST"]["value"].split()
-    if len(loaded_names) != len(set(loaded_names)):
-        raise MakeProbeError("rule-template source order contains repeated includes")
-    session.budget.charge("cache", len(encoded({
-        path: [(unit.text, unit.body) for unit in items] for path, items in units.items()
-    })))
+        return units, set(), set()
+    session.budget.charge("cache", len(encoded([
+        (path, index, unit.text, unit.body) for path, index, unit in ordered
+    ])))
     for _, _, unit in ordered:
         if unit.body is not None or unit.text.startswith("\t"):
             continue
@@ -805,12 +807,16 @@ def _prepare_rule_templates(
         replacements[path, index] = instantiated
         omitted.add((macro_path, macro_index))
         scoped.add(variable)
-    prepared = {
-        path: [replacement for index, unit in enumerate(items)
-               for replacement in ([] if (path, index) in omitted else replacements.get((path, index), [unit]))]
-        for path, items in units.items()
-    }
-    return prepared, graph_inputs, scoped
+    prepared, prepared_known = [], set()
+    for position, (path, index, unit) in enumerate(ordered):
+        replacement_units = [] if (path, index) in omitted else replacements.get((path, index), (unit,))
+        for replacement in replacement_units:
+            replacement = replacement._replace(conditional_depth=unit.conditional_depth, active=unit.active)
+            session.budget.charge("cache", len(encoded((path, len(prepared), replacement))))
+            if position in known_positions:
+                prepared_known.add(len(prepared))
+            prepared.append((path, len(prepared), replacement))
+    return _SourceUnitStream(tuple(prepared), frozenset(prepared_known)), graph_inputs, scoped
 
 
 def dollar_fragment(value):
@@ -978,10 +984,11 @@ def strip_comment(line):
 
 
 def computed_introspection(line):
-    return any(
-        not re.fullmatch(IDENTIFIER, match[1].strip())
-        for match in INTROSPECTION_CALL.finditer(line)
-    )
+    for body in make_expressions(line):
+        match = re.fullmatch(r"(?:flavor|origin|value)[ \t\r\n\v\f]+(.*)", body, re.S)
+        if match and not re.fullmatch(IDENTIFIER, match[1]):
+            return True
+    return False
 
 
 def split_inline_recipe(line):
@@ -1019,7 +1026,7 @@ def split_inline_recipe(line):
 def references(line):
     names = {next(value for value in match.groups() if value is not None)
              for pattern in (REFERENCE, SCOPED) for match in pattern.finditer(line)}
-    names.update(INTROSPECTION.findall(line))
+    names.update(name for _, _, name in _literal_metadata(line))
     names.update(CALL.findall(line))
     conditional = CONDITIONAL.match(line)
     if conditional:
@@ -1150,14 +1157,14 @@ def source_census(
             all_names.update(names)
             dependencies[defining].update(names)
             expressions[defining].append(unit.body)
-            introspection.update(INTROSPECTION.findall(unit.body))
+            introspection.update(name for _, _, name in _literal_metadata(unit.body))
             if "$(eval" in unit.body or "${eval" in unit.body:
                 deferred_evals.add(defining)
                 eval_requests.append((defining, unit.body))
             continue
         names = references(line)
         all_names.update(names)
-        introspection.update(INTROSPECTION.findall(line))
+        introspection.update(name for _, _, name in _literal_metadata(line))
         assignment = None if raw.startswith("\t") else ASSIGNMENT.match(line)
         target_assignment = None if raw.startswith("\t") else TARGET_ASSIGNMENT.match(line)
         if assignment:
@@ -1350,6 +1357,7 @@ def source_census(
         "defaults": defaults,
         "defined": set(dependencies),
         "dependencies": dependencies,
+        "execution_dependencies": execution_dependencies,
         "definitions": definitions,
         "observed_values": observed_values,
         "unresolved": unresolved,
@@ -1519,18 +1527,20 @@ def _graph_definitions(session, target, state, commands, observation, usage, *, 
 
 
 def _recipe_domains(session, target, state, commands, observation, usage, observed_names, *, observe_dispatch=False):
-    """Measure referenced recipe values through bounded native variable pages."""
-    if any(computed_introspection(entry["recipe"]) for entry in observation.semantics["files"]):
+    """Keep execution and literal metadata reads distinct in native pages."""
+    recipes = [entry["recipe"] for entry in observation.semantics["files"]]
+    if any(computed_introspection(recipe) for recipe in recipes):
         raise MakeProbeError("computed Make introspection in a consumed recipe lacks a sealed literal selector")
+    executing = [_without_literal_metadata(recipe) for recipe in recipes]
     names = closure(
-        {name for entry in observation.semantics["files"] for name in references(entry["recipe"])},
-        usage["dependencies"],
+        set().union(*(references(recipe) for recipe in executing)),
+        usage["execution_dependencies"],
     )
     try:
         names.update(closure(selected_names(
-            (entry["recipe"] for entry in observation.semantics["files"]),
+            executing,
             usage["definitions"], usage["observed_values"],
-        ), usage["dependencies"]))
+        ), usage["execution_dependencies"]))
     except _UnresolvedName as error:
         raise MakeProbeError(str(error)) from error
     if names & usage["unresolved"]:
@@ -1539,15 +1549,27 @@ def _recipe_domains(session, target, state, commands, observation, usage, observ
         name for context in observation.semantics["native_dispatches"]
         for name in context["environment"] if name in usage["defined"]
     }
-    usage["recipe"].update(closure(names | exports, usage["dependencies"]))
+    metadata_sources = recipes + [
+        expression for name in names | exports for expression in usage["source_expressions"].get(name, ())
+    ]
+    if any(computed_introspection(expression) for expression in metadata_sources):
+        raise MakeProbeError("computed Make introspection in a consumed recipe lacks a sealed literal selector")
+    metadata_names = {
+        name for expression in metadata_sources for _, _, name in _literal_metadata(expression)
+    }
+    usage["recipe"].update(names | metadata_names | closure(exports, usage["dependencies"]))
     usage["all"].update(usage["recipe"])
     usage["recipe_only"] = usage["recipe"] - usage["graph"]
     pending = sorted(name for name in names - set(observed_names) if re.fullmatch(IDENTIFIER, name))
     combined = copy.deepcopy(observation.semantics)
-    for index in range(0, len(pending), 512):
-        chunk = tuple(pending[index:index + 512])
+    raw_pending = sorted(metadata_names - set(combined.get("definitions", {}).get("global", ())))
+    while pending or raw_pending:
+        chunk = tuple(pending[:512])
+        del pending[:len(chunk)]
+        raw_chunk = tuple(name for name in raw_pending if name not in chunk)[:512 - len(chunk)]
+        raw_pending = [name for name in raw_pending if name not in raw_chunk]
         measured = session.make(
-            target, variables=chunk, assignments=state, commands=commands,
+            target, variables=chunk, definitions=raw_chunk, assignments=state, commands=commands,
             observe_recipe_dispatch=observe_dispatch,
         )
         _stable_native_context(combined, measured.semantics)
@@ -1556,6 +1578,17 @@ def _recipe_domains(session, target, state, commands, observation, usage, observ
         combined["domains"].update(measured.semantics["domains"])
         for previous, actual in zip(combined["files"], measured.semantics["files"]):
             previous["variables"].update(actual["variables"])
+        if raw_chunk:
+            metadata = measured.semantics["definitions"]
+            session.budget.charge("cache", len(encoded(metadata)))
+            if "definitions" not in combined:
+                combined["definitions"] = copy.deepcopy(metadata)
+            else:
+                combined["definitions"]["global"].update(metadata["global"])
+                for previous, actual in zip(combined["definitions"]["files"], metadata["files"]):
+                    if previous["target"] != actual["target"]:
+                        raise MakeProbeError("native metadata context changed across recipe observations")
+                    previous["variables"].update(actual["variables"])
     return combined
 
 
@@ -1637,10 +1670,11 @@ def run_probe(
             if wrong_symbolic:
                 raise MakeProbeError(f"symbolic inputs influence the Make graph: {sorted(wrong_symbolic)}")
             values = semantics["domains"]
-            actual_undefined = {name for name in usage["all"] if name in values
-                                and values[name]["origin"] == "undefined"}
+            observed_values_and_metadata = {**semantics.get("definitions", {}).get("global", {}), **values}
+            actual_undefined = {name for name in usage["all"] if name in observed_values_and_metadata
+                                and observed_values_and_metadata[name]["origin"] == "undefined"}
             unknown_undefined = actual_undefined - undefined - set(domains) - trusted - scoped - escaped
-            unknown_undefined.update(usage["all"] - usage["defined"] - set(values)
+            unknown_undefined.update(usage["all"] - usage["defined"] - set(observed_values_and_metadata)
                                      - trusted - scoped - escaped - undefined)
             if unknown_undefined:
                 raise MakeProbeError(f"unsealed undefined Make inputs: {sorted(unknown_undefined)}")

@@ -714,6 +714,15 @@ source units need only one retained representation, but changed parsing across
 visits rejects rather than replacing an earlier history. Active include cycles
 remain distinct from legitimate completed revisits.
 
+Mode analysis and semantic consumers share one ordered occurrence stream.
+Each include evaluation retains its place, conditional context and unique
+occurrence identity; only immutable source text is reused. The stage census,
+assignment history and template-input proof consume that same stream rather
+than rebuilding a first-visit-only path walk. Proven inactive occurrences are
+not executed; unknown branches remain conservative. Thus an include first read
+before secondary expansion cannot hide a later active read after it. Stream
+and template representations remain charged to the existing cache budget.
+
 A later rewrite cannot erase an earlier opaque operation or selector value.
 Computed-name closure retains all proven source alternatives alongside native
 observations, including literal eval assignment history and target-specific
@@ -759,6 +768,18 @@ shared/table-specific Python and config prerequisites, real fixture C
 generation and ARM object compilation. These prove those template contracts,
 not the production generator implementation or full-repository graph/resource
 fit; the complete production, verifier and H1 gates remain separate.
+
+Recipe observation preserves read kind through ordinary references, aliases
+and captured exports. Literal `origin`, `flavor` and `value` operands use
+native `definitions=` records, including raw value, origin/flavor and ordered
+per-file contexts, without expanding an otherwise unused error or shell body.
+Genuinely executed references still receive expanded observations. Mixed uses
+retain both forms in separate disjoint requests when necessary; pages share
+the original combined 512-name bound and all native byte/frame admissions.
+Undefined-input sealing recognizes raw observations without granting new
+computed-introspection authority. Original argv, environment, error policy and
+recipe dispatch must remain equal across pages. This is not permission to
+discard required body evidence or to sanitize a different invocation.
 
 New paths brought in by the delivered producer/dependency/adaptive/cleanup
 contracts have explicit selectors in the existing host and documentation

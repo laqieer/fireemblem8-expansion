@@ -4194,6 +4194,48 @@ Active recursive include cycles reject without being confused with completed
 revisits. Restore the old mode-bit-only memo in isolation and require the
 original repeated-visit mismatch to return.
 
+For semantic include visits, set FLAGS to first, OTHER to first,
+`TEXT := $$(OTHER)` and `PAYLOAD = $(subst OTHER,FLAGS,$(TEXT))`.
+Set MODE to no and include rules.mk, enable `.SECONDEXPANSION`, set MODE
+to yes and include rules.mk again. Inside rules.mk put `all: $(PAYLOAD)` and
+an `echo $(FLAGS)` recipe under `ifeq ($(MODE),yes)`; provide first/second
+targets in the root. Ordinary/native prerequisites change with FLAGS and
+MAKEFILE_LIST must record both visits. Exactc442 nevertheless accepted
+recipe-only symbolic FLAGS or an empty finite enumeration. Both unproven
+requests must now reject at the later staged occurrence. Repeat through an
+outer include, and keep the original mode walker, semantic ordering, histories
+and template consumers on the same occurrence stream.
+
+Replace the opaque payload with the supported `PAYLOAD := $$(FLAGS)` form.
+Repeated and nested visits must then retain actual first/second finite domains
+while symbolic FLAGS rejects. Add repeated unrelated includes beside the
+source-faithful real framework templates: valid inputs remain supported.
+Make a repeated include instead rewrite a template's table-list input after
+its callers; that changed original history must reject. Restore the old
+first-visit semantic projection in isolation and require the false symbolic
+and finite admissions to return while the mode walker still revisits correctly.
+
+For recipe metadata, define `RULE = $(error unused body expanded)` and print
+`$(origin RULE)` through a real printf recipe. Ordinary output is file/newline;
+flavor prints recursive/newline and value prints the literal unexpanded body.
+Repeat with an unused shell body and require no marker. The initial native
+argv/environment must match the final record, and later pages must request raw
+RULE definitions, never expanded RULE. Preserve full raw/origin/flavor evidence.
+Repeat through aliases, a computed ordinary alias invocation and captured
+exports; metadata remains metadata through those dependencies.
+
+Mix `$(RULE)` with origin/flavor/value on a safe literal RULE. Retain both
+expanded and raw records, never request the same name in both forms in one
+native call, and preserve genuine execution errors when RULE is actually
+expanded. Double-colon targets retain ordered duplicate per-file metadata
+contexts. A 513-name metadata fixture must use bounded 512/1 pages rather than
+enlarging the per-request cap. Keep the direct 513-name prelaunch rejection,
+all native frame/string byte bounds, and existing control/cache accounting.
+Computed introspection still rejects; escaped shell-literal introspection is
+not a Make read, and admitted undefined metadata retains its actual origin.
+Restore the old expanded-only recipe pager and require all three ordinary
+metadata positives to recover their original unused-body error.
+
 Restore only the old c6 conditional-blind/per-file collector and require
 the native conditional/include mismatches to return. Separately move pending
 activation before collapse in an isolated mutation: the real unconditional

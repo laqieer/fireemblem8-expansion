@@ -108,6 +108,18 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.assertFalse(session.budget.producer_waiters)
         return result
 
+    def recipe_pages(self, **options):
+        with self.session() as session:
+            with patch.object(session, "make", wraps=session.make) as made:
+                result = run_probe(session.loader, {"all"}, {}, {}, session=session, **options)
+            pages = [
+                (tuple(call.kwargs.get("variables", ())), tuple(call.kwargs.get("definitions", ())))
+                for call in made.call_args_list
+            ]
+        self.assertIsNone(session.base)
+        self.assertFalse(session.budget.children)
+        return result["all"]["record"]["variants"][0]["record"], pages
+
     def ordinary(self, *assignments, environment=None):
         budget = ProbeBudget()
         try:
@@ -941,6 +953,144 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             self.assertFalse(budget.children)
         finally:
             budget.close()
+
+    def test_semantic_include_occurrences_preserve_later_secondary_expansion(self):
+        for nested in (False, True):
+            with self.subTest(nested=nested):
+                name = "outer.mk" if nested else "rules.mk"
+                source = "FLAGS ?= first\nOTHER = first\nTEXT := $$(OTHER)\nPAYLOAD = $(subst OTHER,FLAGS,$(TEXT))\n"
+                source += "MODE = no\ninclude " + name + "\n.SECONDEXPANSION:\nMODE = yes\ninclude " + name + "\nfirst second: ;\n"
+                self.add("Makefile", source)
+                self.add("rules.mk", "ifeq ($(MODE),yes)\nall: $(PAYLOAD)\n\t@echo $(FLAGS)\nendif\n")
+                if nested:
+                    self.add("outer.mk", "include rules.mk\n")
+                with self.session() as session:
+                    observed = [
+                        session.make("all", variables=("MAKEFILE_LIST",), assignments=(("command-line", "FLAGS", value),))
+                        for value in ("first", "second")
+                    ]
+                self.assertEqual([item.semantics["files"][0]["prerequisites"][0]["name"] for item in observed],
+                                 ["first", "second"])
+                visits = ["Makefile", *(([name, "rules.mk"] if nested else [name]) * 2)]
+                self.assertTrue(all(item.semantics["domains"]["MAKEFILE_LIST"]["value"].split() == visits for item in observed))
+                self.assert_staged_rejection_before_late_observation()
+
+    def test_repeated_semantic_visits_keep_supported_native_domains(self):
+        for nested in (False, True):
+            with self.subTest(nested=nested):
+                name = "outer.mk" if nested else "rules.mk"
+                self.add("Makefile", "FLAGS ?= first\nPAYLOAD := $$(FLAGS)\nMODE = no\ninclude " + name
+                         + "\n.SECONDEXPANSION:\nMODE = yes\ninclude " + name + "\nfirst second: ;\n")
+                self.add("rules.mk", "ifeq ($(MODE),yes)\nall: $(PAYLOAD)\n\t@echo $(FLAGS)\nendif\n")
+                if nested:
+                    self.add("outer.mk", "include rules.mk\n")
+                self.assertEqual(self.ordinary("FLAGS=first"), b"first\n")
+                self.assertEqual(self.ordinary("FLAGS=second"), b"second\n")
+                with self.assertRaisesRegex(MakeProbeError, "symbolic inputs influence"):
+                    self.observe(external={"FLAGS"}, symbolic_recipe_names={"FLAGS"})
+                result = self.observe({"FLAGS": {"kind": "explicit", "values": ["first", "second"]}})["all"]
+                self.assertEqual(result["prerequisite_domain_census"]["enumerated"], ["FLAGS"])
+                self.assertEqual({
+                    item["record"]["files"][0]["prerequisites"][0]["name"] for item in result["record"]["variants"]
+                }, {"first", "second"})
+
+    def test_template_inputs_share_the_same_repeated_visit_history(self):
+        self.framework_templates()
+        original = (self.root / "Makefile").read_text()
+        self.add("shared.mk", "UNRELATED = literal\n")
+        self.add("Makefile", original.replace("include generated_data.mk",
+                 "include shared.mk\ninclude shared.mk\ninclude generated_data.mk"))
+        result = self.observe_framework()
+        files = {item["target"]: item for item in result["record"]["variants"][0]["record"]["files"]}
+        self.assertEqual(files["build/modern/src/data_alpha.o"]["prerequisites"], [
+            {"name": "build/generated/data/data_alpha.c", "order_only": False},
+        ])
+        self.add("shared.mk", "GENERATED_DATA_LINKED_TABLES := $(TABLES)\n")
+        self.add("Makefile", original.replace("include generated_data.mk",
+                 "TABLES = alpha beta\ninclude shared.mk\ninclude generated_data.mk")
+                 + "TABLES = beta\ninclude shared.mk\n")
+        with self.session() as session:
+            native = session.make("all", variables=("MAKEFILE_LIST",))
+        self.assertEqual(native.semantics["domains"]["MAKEFILE_LIST"]["value"].split().count("shared.mk"), 2)
+        self.assertIn("build/generated/data/data_alpha.c", {item["target"] for item in native.semantics["files"]})
+        with self.assertRaisesRegex(MakeProbeError, "original global assignment context"):
+            self.observe_framework()
+
+    def test_recipe_literal_metadata_keeps_unused_error_and_shell_bodies_raw(self):
+        for body in ("$(error unused body expanded)", "$(shell touch marker)"):
+            for operation, expected in (("origin", "file"), ("flavor", "recursive"), ("value", body)):
+                with self.subTest(body=body, operation=operation):
+                    self.add("Makefile", "RULE = " + body + "\nall:\n\t@printf '%s\\n' '$(" + operation + " RULE)'\n")
+                    self.assertEqual(self.ordinary(), (expected + "\n").encode())
+                    with self.session() as session:
+                        native = session.make("all", definitions=("RULE",))
+                    record, pages = self.recipe_pages()
+                    self.assertEqual(record["definitions"]["global"]["RULE"],
+                                     native.semantics["definitions"]["global"]["RULE"])
+                    self.assertEqual(record["native_dispatches"], native.semantics["native_dispatches"])
+                    self.assertTrue(any("RULE" in raw for _, raw in pages))
+                    self.assertFalse(any("RULE" in expanded for expanded, _ in pages))
+                    self.assertFalse((self.root / "marker").exists())
+
+    def test_recipe_metadata_kinds_follow_aliases_and_preserve_mixed_execution(self):
+        for operation, expected in (("origin", "file"), ("flavor", "recursive"),
+                                    ("value", "$(error unused body expanded)")):
+            with self.subTest(operation=operation):
+                self.add("Makefile", "RULE = $(error unused body expanded)\nALIAS = $(" + operation
+                         + " RULE)\nNEXT = $(ALIAS)\nNAME = NEXT\nall:\n\t@printf '%s\\n' '$($(NAME))'\n")
+                self.assertEqual(self.ordinary(), (expected + "\n").encode())
+                record, pages = self.recipe_pages()
+                self.assertEqual(record["definitions"]["global"]["RULE"]["value"], "$(error unused body expanded)")
+                self.assertTrue(any("NEXT" in expanded and "RULE" in raw for expanded, raw in pages))
+                self.assertFalse(any("RULE" in expanded for expanded, _ in pages))
+        self.add("Makefile", "RULE = literal\nALIAS = $(origin RULE)\nall:\n"
+                 "\t@printf '%s|%s|%s|%s\\n' '$(RULE)' '$(ALIAS)' '$(flavor RULE)' '$(value RULE)'\n")
+        self.assertEqual(self.ordinary(), b"literal|file|recursive|literal\n")
+        record, pages = self.recipe_pages()
+        self.assertEqual(record["domains"]["RULE"]["value"], "literal")
+        self.assertEqual(record["definitions"]["global"]["RULE"]["value"], "literal")
+        self.assertTrue(any("RULE" in expanded for expanded, _ in pages))
+        self.assertTrue(any("RULE" in raw for _, raw in pages))
+        self.assertTrue(all(not set(expanded) & set(raw) and len(expanded) + len(raw) <= 512 for expanded, raw in pages))
+        self.add("Makefile", "RULE = $(error genuinely executed)\nall:\n\t@echo $(RULE) $(origin RULE)\n")
+        with self.assertRaisesRegex(MakeProbeError, "genuinely executed"):
+            self.observe()
+
+    def test_recipe_metadata_retains_export_and_duplicate_file_contexts(self):
+        self.add("Makefile", "RULE = $(error unused body expanded)\nexport VISIBLE = $(origin RULE)\n"
+                 "all:\n\t@printf '%s\\n' \"$$VISIBLE\"\n")
+        self.assertEqual(self.ordinary(), b"file\n")
+        record, pages = self.recipe_pages()
+        self.assertEqual(record["native_dispatches"][0]["environment"]["VISIBLE"], "file")
+        self.assertIn("RULE", record["definitions"]["global"])
+        self.assertFalse(any("RULE" in expanded for expanded, _ in pages))
+        self.add("Makefile", "RULE = $(error unused body expanded)\n"
+                 "all::\n\t@printf '%s\\n' '$(origin RULE)'\nall::\n\t@printf '%s\\n' '$(flavor RULE)'\n")
+        self.assertEqual(self.ordinary(), b"file\nrecursive\n")
+        record, _ = self.recipe_pages()
+        self.assertEqual([item["target"] for item in record["definitions"]["files"]], ["all", "all"])
+        self.assertTrue(all(item["variables"]["RULE"]["value"] == "$(error unused body expanded)"
+                            for item in record["definitions"]["files"]))
+
+    def test_recipe_metadata_pages_keep_combined_bounds_and_literal_selectors(self):
+        names = ["VALUE_" + str(index) for index in range(513)]
+        self.add("Makefile", "".join(name + " = $(error unused body expanded)\n" for name in names)
+                 + "all:\n\t@printf '%s\\n' '" + " ".join("$(origin " + name + ")" for name in names) + "'\n")
+        self.assertEqual(self.ordinary(), (" ".join(["file"] * 513) + "\n").encode())
+        record, pages = self.recipe_pages()
+        self.assertEqual(set(record["definitions"]["global"]), set(names))
+        self.assertEqual([len(raw) for _, raw in pages if raw], [512, 1])
+        self.assertTrue(all(len(expanded) + len(raw) <= 512 and not set(expanded) & set(raw) for expanded, raw in pages))
+        self.add("Makefile", "RULE = $(error unused body expanded)\nNAME = RULE\nall:\n\t@echo $(origin $(NAME))\n")
+        with self.assertRaisesRegex(MakeProbeError, "computed Make introspection"):
+            self.observe()
+        self.add("Makefile", "all:\n\t@printf '%s\\n' '$$(origin UNREAD)'\n")
+        self.assertEqual(self.ordinary(), b"$(origin UNREAD)\n")
+        record, pages = self.recipe_pages()
+        self.assertFalse(any("UNREAD" in (*expanded, *raw) for expanded, raw in pages))
+        self.add("Makefile", "all:\n\t@printf '%s\\n' '$(origin UNDEFINED)'\n")
+        record, _ = self.recipe_pages(ambient_undefined_names={"UNDEFINED"})
+        self.assertEqual(record["definitions"]["global"]["UNDEFINED"]["origin"], "undefined")
 
     def test_unused_and_late_mode_bodies_do_not_rewrite_original_source(self):
         values = "FIRST = alpha  \\\n  \\\n beta\nSECOND = alpha  \\\n  \\\n beta\n"
