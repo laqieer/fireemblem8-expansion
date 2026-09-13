@@ -459,6 +459,15 @@ roots, help-only modes and substituted programs reject. Only the native
 Equivalent quoting, Python isolation-flag ordering and alternative target
 names remain supported with complete evidence. Runtime aliases come from the
 actual captured view rather than guessed host paths.
+
+Lexical operator identity survives word decoding. Only an actual unquoted
+`>` redirecting stdout to `/dev/null` may be elided; the destination may be
+quoted or assembled from adjacent quoted/unquoted word parts. A quoted,
+escaped or quote-concatenated literal `>` stays an argument and is rejected by
+the same checker argument contract as ordinary execution. The shared shell
+scanner marks unquoted operator spans, and `shlex` decodes words between those
+spans; decoded punctuation alone never supplies operator authority.
+
 Shell comments begin only at actual word boundaries: `.#missing` is one
 literal path, not `.` followed by a comment. Operators hidden after such a
 path still make the route conditional and reject. Every original path

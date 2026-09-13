@@ -12,7 +12,7 @@ import subprocess
 import unittest
 from unittest import mock
 
-from scripts.bash_parser import parse_bash_script_commands
+from scripts.bash_parser import BashToken, parse_bash_script_commands, tokenize_bash_command
 from scripts.validation_ownership.authority import (
     AuthorityLoader, ENVIRONMENT, GitTreeEntries, GitTreeEntry, encoded, git_tree_entries,
 )
@@ -242,6 +242,38 @@ class GraphCommandTests(unittest.TestCase):
         self.assertFalse(probe.runtime_tools)
         self.assertFalse(probe.runtime_query_profiles)
         self.assertFalse(probe.budget.children)
+
+    def test_shell_tokens_keep_real_operators_separate_from_literal_arguments(self):
+        program = '/usr/bin/python3 -I -S -B -c "import json,sys;print(json.dumps(sys.argv[1:]))"'
+        for literal in ("'>'", '">"', r"\>", "'>'\"\"", r"''\>"):
+            command = program + " " + literal + " /dev/null"
+            actual = subprocess.run(
+                ["/bin/sh", "-c", command], cwd=self.root, env=ENVIRONMENT,
+                capture_output=True, check=True, timeout=15,
+            )
+            tokens = tokenize_bash_command(command)
+            self.assertEqual(json.loads(actual.stdout), [">", "/dev/null"])
+            self.assertEqual(tokens[-2:], (BashToken(">", False), BashToken("/dev/null", False)))
+            self.assertFalse(any(token.operator for token in tokens))
+        for suffix in ("> /dev/null", "> '/dev/null'", '>"/dev/null"', ">''/dev/null"):
+            command = program + " " + suffix + " # real comment"
+            actual = subprocess.run(
+                ["/bin/sh", "-c", command], cwd=self.root, env=ENVIRONMENT,
+                capture_output=True, check=True, timeout=15,
+            )
+            self.assertEqual(actual.stdout, b"")
+            self.assertEqual(tokenize_bash_command(command)[-2:], (
+                BashToken(">", True), BashToken("/dev/null", False),
+            ))
+        for literal in ("'||'", "'&&'", "';'", "'('", "')'", "'<'", "'>>'"):
+            command = program + " " + literal
+            actual = subprocess.run(
+                ["/bin/sh", "-c", command], cwd=self.root, env=ENVIRONMENT,
+                capture_output=True, check=True, timeout=15,
+            )
+            tokens = tokenize_bash_command(command)
+            self.assertEqual([tokens[-1].value], json.loads(actual.stdout))
+            self.assertFalse(tokens[-1].operator)
 
     def test_bash_parser_matches_shell_continuations_and_rejects_multi_command_registration(self):
         script = (

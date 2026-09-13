@@ -5,11 +5,10 @@ from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 import posixpath
-import shlex
 import tempfile
 import weakref
 
-from scripts.bash_parser import normalize_bash_script_commands, strip_bash_command_comment
+from scripts.bash_parser import BashToken, normalize_bash_script_commands, tokenize_bash_command
 from .authority import ENVIRONMENT, encoded, parse_json
 from .budget import MakeProbeError
 
@@ -33,16 +32,14 @@ def _command_words(command):
         lines = normalize_bash_script_commands(command, "lifecycle dispatch")
         if len(lines) != 1:
             raise MakeProbeError("lifecycle dispatch must be one mandatory command")
-        lexer = shlex.shlex(strip_bash_command_comment(lines[0]), posix=True, punctuation_chars=";&|<>()")
-        lexer.whitespace_split = True
-        lexer.commenters = ""
-        words = list(lexer)
+        tokens = tokenize_bash_command(lines[0])
     except ValueError as error:
         raise MakeProbeError("lifecycle dispatch has invalid shell syntax") from error
-    if len(words) >= 2 and words[-2:] == [">", "/dev/null"]:
-        words = words[:-2]
+    if tokens[-2:] == (BashToken(">", True), BashToken("/dev/null", False)):
+        tokens = tokens[:-2]
+    words = [token.value for token in tokens]
     if (
-        not words or any(word in {";", "&", "&&", "|", "||", "<", ">", ">>", "(", ")"} for word in words)
+        not words or any(token.operator for token in tokens)
         or any("$" in word or "`" in word for word in words)
     ):
         raise MakeProbeError("lifecycle dispatch is conditional, redirected or unproven")

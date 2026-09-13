@@ -4093,6 +4093,24 @@ the comment-boundary or component-validation correction must restore the
 old false three-proof acceptance in the owned fixture, not merely change an
 error message.
 
+For operator identity, independently append `'>' /dev/null`, `">" /dev/null`,
+`\> /dev/null` and quote-concatenated equivalents to both declared routes.
+Ordinary execution rejects those extra arguments before checking the artifact;
+the report must retain them as arguments and issue no proof. Exercise both
+native direct argv and shell-dispatched Make forms: GNU Make may choose direct
+argv for single quotes/escaping but a shell for double quotes; explicit
+`SHELL := /bin/bash` also exercises the shell path. The exact95 defect issued
+three proofs for the real shell-dispatched forms despite ordinary exit 2.
+Restore the old quote-losing decoder as an isolated mutation and require that
+same false proof acceptance to reappear.
+
+Real unquoted `> /dev/null`, `> '/dev/null'`, `>"/dev/null"` and
+`>''/dev/null` must still bind and execute successfully through both roles.
+Keep quoted roots, adjacent quote parts, comments and the existing
+conditional/startup/path/source/model controls. Compare generic literal
+punctuation tokens with actual shell argv; do not blacklist only one spelling
+or infer operators from decoded word values.
+
 For startup authority, set `export LD_DEBUG = help` on the genuine Make
 checker. Ordinary Make exits zero with loader help whether the authoritative
 graph is present, committed as removed, or restored; the report must reject

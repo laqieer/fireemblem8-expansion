@@ -548,6 +548,64 @@ class LifecycleBindingTests(unittest.TestCase):
                 with self.assertRaises(MakeProbeError):
                     self.report()
 
+    def test_literal_redirection_arguments_reject_through_both_real_routes(self):
+        baseline = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        literals = ("'>'", '">"', r"\>", "'>'\"\"", r"''\>")
+        for role in ("make", "make-direct", "case"):
+            for literal in (("'>'", r"\>") if role == "make-direct" else literals):
+                with self.subTest(role=role, literal=literal):
+                    self.fixture.git("switch", "--detach", baseline)
+                    command = report_fixture.CHECK_COMMAND + " " + literal + " /dev/null"
+                    if role.startswith("make"):
+                        prefix = "SHELL := /bin/bash\n" if role == "make" else ""
+                        self.fixture.add("Makefile", prefix
+                                         + ".PHONY: validation-ownership-check\nvalidation-ownership-check:\n\t@"
+                                         + command + "\n")
+                        argv = ["/usr/bin/make", "-f", "Makefile", "validation-ownership-check"]
+                    else:
+                        self.case_command(command)
+                        argv = ["/bin/sh", "-c", command]
+                    self.fixture.commit("Literal redirection argument")
+                    budget = ProbeBudget(Limits(seconds=90))
+                    try:
+                        actual = budget.run(argv, cwd=self.fixture.root, env=ENVIRONMENT)
+                        self.assertEqual(actual.returncode, 2)
+                        self.assertIn(b"unrecognized arguments: > /dev/null", actual.stderr)
+                    finally:
+                        budget.close()
+                        self.assertFalse(budget.children)
+                    with mock.patch.object(graph_lifecycle, "prove", wraps=graph_lifecycle.prove) as proof:
+                        with self.assertRaises(MakeProbeError) as failure:
+                            self.report()
+                        self.assertIn("unrecognized arguments: > /dev/null", str(failure.exception.__cause__))
+                        proof.assert_not_called()
+
+    def test_real_stdout_redirection_preserves_quoted_destinations_and_roots(self):
+        baseline = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        for suffix in ("> /dev/null", "> '/dev/null'", '>"/dev/null"', ">''/dev/null"):
+            with self.subTest(redirection=suffix):
+                self.fixture.git("switch", "--detach", baseline)
+                command = report_fixture.CHECK_COMMAND.replace(
+                    "--repository-root .", "--repository-root '.'",
+                ) + " " + suffix + " # ordinary comment"
+                self.fixture.add("Makefile", ".PHONY: validation-ownership-check\nvalidation-ownership-check:\n\t@"
+                                 + command + "\n")
+                self.case_command(command)
+                self.fixture.commit("Real stdout redirection with equivalent quoting")
+                self.assertEqual(len(self.report()["artifact"]["executable_lifecycle"]), 3)
+                budget = ProbeBudget(Limits(seconds=120))
+                try:
+                    for argv in (
+                        ["/usr/bin/make", "-f", "Makefile", "validation-ownership-check"],
+                        ["/bin/sh", "-c", command],
+                    ):
+                        actual = budget.run(argv, cwd=self.fixture.root, env=ENVIRONMENT)
+                        self.assertEqual(actual.returncode, 0, actual.stderr)
+                        self.assertEqual(actual.stdout, b"")
+                finally:
+                    budget.close()
+                    self.assertFalse(budget.children)
+
     def test_shell_comment_boundary_matches_real_launcher_and_cannot_hide_failure(self):
         valid = report_fixture.CHECK_COMMAND
         for suffix in (" # ordinary comment", ".#missing || true"):

@@ -2881,6 +2881,10 @@
           "evidence": "scripts/validation_ownership/tests/test_graph_report.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_graph_commands.GraphCommandTests.test_shell_tokens_keep_real_operators_separate_from_literal_arguments scripts.validation_ownership.tests.test_graph_report.LifecycleBindingTests.test_literal_redirection_arguments_reject_through_both_real_routes scripts.validation_ownership.tests.test_graph_report.LifecycleBindingTests.test_real_stdout_redirection_preserves_quoted_destinations_and_roots -v",
+          "evidence": "scripts/validation_ownership/tests/test_graph_report.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_coordinator_capture.NonReviewedCaptureBindingTests -v",
           "evidence": "scripts/validation_ownership/tests/test_coordinator_capture.py"
         },
