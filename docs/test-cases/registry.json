@@ -2885,6 +2885,10 @@
           "evidence": "scripts/validation_ownership/tests/test_graph_report.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_graph_commands.GraphCommandTests.test_shared_tokens_preserve_assignment_and_io_number_roles scripts.validation_ownership.tests.test_graph_commands.GraphCommandTests.test_live_dependency_contract_rejects_embedded_operators_and_keeps_literals scripts.validation_ownership.tests.test_graph_commands.GraphCommandTests.test_generic_pipeline_and_assignment_grammar_keeps_original_roles scripts.validation_ownership.tests.test_graph_commands.GraphCommandTests.test_generic_fd_literals_and_real_redirections_remain_distinct scripts.validation_ownership.tests.test_graph_commands.GraphCommandTests.test_simple_adapter_branches_reject_unconsumed_active_operators -v",
+          "evidence": "scripts/validation_ownership/tests/test_graph_commands.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_graph_commands.GraphCommandTests.test_shell_non_lf_separators_remain_literal_argument_data scripts.validation_ownership.tests.test_graph_commands.GraphCommandTests.test_non_ascii_comment_prefixes_and_exec_names_are_not_discarded scripts.validation_ownership.tests.test_graph_commands.GraphCommandTests.test_lf_continuation_eof_and_quoted_newlines_match_actual_shell scripts.validation_ownership.tests.test_graph_report.LifecycleBindingTests.test_carriage_returns_do_not_become_valid_lifecycle_routes scripts.validation_ownership.tests.test_graph_report.LifecycleBindingTests.test_case_lf_continuation_at_eof_keeps_real_checker_execution -v",
           "evidence": "scripts/validation_ownership/tests/test_graph_report.py"
         },

@@ -467,6 +467,18 @@ escaped or quote-concatenated literal `>` stays an argument and is rejected by
 the same checker argument contract as ordinary execution. The shared shell
 scanner marks unquoted operator spans, and `shlex` decodes words between those
 spans; decoded punctuation alone never supplies operator authority.
+Registered producer adapters consume the complete supported token grammar,
+including adjacent operators such as the `||` in `-DUNUSED=1||true`.
+The quoted `-DUNUSED='1||true'` is instead one literal compiler argument.
+Dependency `&&`/`>` slots and printf/Python pipe slots require actual operators;
+any remaining active operator rejects before producer execution. Raw word
+spans retain assignment-prefix quoting and descriptor adjacency: a quoted or
+escaped whole `NAME=value` is not an environment assignment, and quoted `2`
+or `2` separated from `>` is not an IO number. Literal `2>&1` remains argv
+data, even before a genuine trailing stderr redirection. Existing raw registry
+envelopes and native stderr execution policy are not widened by this lexical
+contract. The legacy plain-word parser remains a compatibility projection,
+not an authority parser for these supported grammars.
 Physical shell lines are separated only by LF. Blank/comment-prefix decisions
 use ASCII space and tab, and word decoding does not treat CR as whitespace.
 CR, other control separators and Unicode separators remain literal argument

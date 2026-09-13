@@ -3,46 +3,70 @@
 from __future__ import annotations
 
 import shlex
+import re
 from typing import NamedTuple
 
 
 class BashToken(NamedTuple):
     value: str
     operator: bool
+    raw: str = ""
+    start: int = -1
+    end: int = -1
+    assignment: bool = False
+    io_number: bool = False
 
 
-def _scan_bash_line(line, state, *, operators=None, word_start=None):
+_OPERATORS = (
+    ";;&", "<<-", "<<<", "&>>", "&&", "||", ";;", ";&", "<<", ">>",
+    "<&", ">&", "<>", ">|", "&>", "|&", ";", "&", "|", "<", ">", "(", ")", "\n",
+)
+_REDIRECTIONS = frozenset(("<", ">", "<<", "<<-", "<<<", ">>", "<&", ">&", "<>", ">|"))
+
+
+def _scan_bash_line(line, state, *, operators=None, words=None, word_start=None):
     index = 0
+    word_begin = None
+
+    def finish_word(end):
+        nonlocal word_begin
+        if words is not None and word_begin is not None:
+            words.append((word_begin, end))
+        word_begin = None
+
     if word_start is None:
         word_start = state == "normal"
     while index < len(line):
         character = line[index]
         if state == "normal":
             if character in " \t":
+                finish_word(index)
                 word_start = True
             elif character == "#" and word_start:
+                finish_word(index)
                 return state, False, index, word_start
-            elif character == "'":
-                state = "single"
-                word_start = False
-            elif character == '"':
-                state = "double"
-                word_start = False
-            elif character == "\\":
-                if index == len(line) - 1:
-                    return state, True, len(line), word_start
-                index += 2
-                word_start = False
-                continue
-            elif character in ";&|<>()":
+            elif character in ";&|<>()\n":
+                finish_word(index)
                 start = index
-                while index + 1 < len(line) and line[index + 1] in ";&|<>()":
-                    index += 1
+                operator = next(value for value in _OPERATORS if line.startswith(value, index))
+                index += len(operator)
                 if operators is not None:
-                    operators.append((start, index + 1))
+                    operators.append((start, index))
                 word_start = True
+                continue
             else:
+                if word_begin is None:
+                    word_begin = index
+                if character == "\\" and index == len(line) - 1:
+                    return state, True, len(line), word_start
                 word_start = False
+                if character == "'":
+                    state = "single"
+                elif character == '"':
+                    state = "double"
+                elif character == "\\":
+                    index += 2
+                    continue
         elif state == "single":
             if character == "'":
                 state = "normal"
@@ -56,6 +80,7 @@ def _scan_bash_line(line, state, *, operators=None, word_start=None):
                     index += 2
                     continue
         index += 1
+    finish_word(len(line))
     return state, False, len(line), word_start
 
 
@@ -77,20 +102,34 @@ def _split_bash_words(command):
 
 
 def tokenize_bash_command(command):
-    """Keep operators distinct while shlex decodes the intervening words."""
+    """Retain lexical roles and adjacency while shlex only decodes words."""
     if "\0" in command:
         raise ValueError("shell command contains an invalid NUL byte")
-    operators = []
-    state, continued, end, _ = _scan_bash_line(command, "normal", operators=operators)
+    operators, words = [], []
+    state, continued, end, _ = _scan_bash_line(command, "normal", operators=operators, words=words)
     if state != "normal" or continued:
         raise ValueError("shell command is not a complete logical line")
     tokens = []
-    previous = 0
-    for start, stop in operators:
-        tokens.extend(BashToken(word, False) for word in _split_bash_words(command[previous:start]))
-        tokens.append(BashToken(command[start:stop], True))
-        previous = stop
-    tokens.extend(BashToken(word, False) for word in _split_bash_words(command[previous:end]))
+    for start, stop, operator in sorted(
+        [(start, stop, True) for start, stop in operators]
+        + [(start, stop, False) for start, stop in words]
+    ):
+        raw = command[start:stop]
+        if operator:
+            tokens.append(BashToken(raw, True, raw, start, stop))
+        else:
+            decoded = _split_bash_words(raw)
+            if len(decoded) != 1:
+                raise ValueError("shell word has an unsupported lexical shape")
+            assignment = re.match(r"[A-Za-z_][A-Za-z0-9_]*=", raw) is not None
+            tokens.append(BashToken(decoded[0], False, raw, start, stop, assignment))
+    for index, token in enumerate(tokens[:-1]):
+        following = tokens[index + 1]
+        if (
+            not token.operator and token.raw.isascii() and token.raw.isdigit()
+            and token.end == following.start and following.operator and following.value in _REDIRECTIONS
+        ):
+            tokens[index] = token._replace(io_number=True)
     return tuple(tokens)
 
 
@@ -126,6 +165,7 @@ def normalize_bash_script_commands(script, label):
 
 
 def parse_bash_script_commands(script, label):
+    """Legacy word projection; syntax consumers must use typed tokens."""
     parsed = []
     for command in normalize_bash_script_commands(script, label):
         words = _split_bash_words(command)

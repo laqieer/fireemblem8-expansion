@@ -4366,6 +4366,39 @@ Keep quoted roots, adjacent quote parts, comments and the existing
 conditional/startup/path/source/model controls. Compare generic literal
 punctuation tokens with actual shell argv; do not blacklist only one spelling
 or infer operators from decoded word values.
+
+For the live producer grammar regression, use the unchanged
+legacy-dependency-dry-run-recipes registration with:
+`mkdir -p .dep/src/ && cc -E -Iinclude -nostdinc -undef -DUNUSED=1||true src/input.c -MM -MG -MT src/input.o > .dep/src/input.d`.
+Make input.c include header.h. Ordinary shell execution exits zero after cc
+reports no input files and true creates an empty redirected depfile. Exact4d7
+instead passed `-DUNUSED=1||true` as one compiler argument and genuinely
+published the complete input/header dependency rule. The corrected adapter
+must reject the unconsumed operator before compiler execution. Quoting or
+escaping the operator bytes inside that argument must preserve the complete
+ordinary/native dependency output, actual GCC/cc1 execution and source/output
+receipts. Existing outer regexes already reject the quoted fixed &&/> slots;
+do not report those as additional live-registry bypasses.
+
+Use separately labelled in-memory contracts for generic syntax controls.
+A quoted/escaped pipe must remain a printf argument, not launch the Python
+pipeline. Quoted/escaped whole FE8_ITEM_ID_CAP=value words cause ordinary shell
+command lookup failure and must not become adapter environment assignments.
+Genuine unquoted assignment prefixes with quoted values remain supported,
+including on the Python side of a real pipe; an assignment scoped only to the
+printf side cannot be transferred to Python. Preserve literal fd-looking
+arguments before genuine trailing stderr syntax. Distinguish adjacent
+unquoted IO numbers from quoted, escaped or separated digits.
+
+Exercise all simple adapter branches with adjacent active `||`, `&&`, `;`,
+pipe and output-redirection tails; no unused syntax may disappear. Keep the
+existing modern wrapper envelopes and exact compiler argv controls. Compare
+quiet-program argv/output for real stderr suffixes without claiming a new
+general stderr/descriptor interpreter; the native process policy is unchanged.
+Restore only the old word-based dependency/registration consumers in isolation:
+the live dependency discrepancy and the separately labelled generic pipe,
+assignment and fd-literal discrepancies must reappear with real execution.
+
 For whitespace, append an actual CR to the consistency command's dot root.
 The real shell passes `.\r`, and the launcher fails before artifact checking;
 the report must not normalize it to dot and issue proofs. With a Bash Make

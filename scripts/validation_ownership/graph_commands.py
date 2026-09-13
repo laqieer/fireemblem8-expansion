@@ -8,7 +8,7 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 
-from scripts.bash_parser import normalize_bash_script_commands, parse_bash_script_commands
+from scripts.bash_parser import normalize_bash_script_commands, tokenize_bash_command
 
 from . import python_commands as shared_python_commands
 from .authority import ENVIRONMENT, encoded, parse_json, relative_path
@@ -157,13 +157,6 @@ def asset_discovery_command(session: ProbeSession, source: str, logical_output: 
     )
 
 
-def _shell_commands(command, label):
-    try:
-        return parse_bash_script_commands(command, label)
-    except ValueError as error:
-        raise MakeProbeError(str(error)) from error
-
-
 def _normalized_shell_commands(command, label):
     try:
         return normalize_bash_script_commands(command, label)
@@ -172,10 +165,49 @@ def _normalized_shell_commands(command, label):
 
 
 def _shell_tokens(command, label):
-    commands = _shell_commands(command, label)
-    if len(commands) != 1:
-        raise MakeProbeError(f"{label} uses an unsupported multi-command shell shape")
-    return list(commands[0])
+    try:
+        commands = normalize_bash_script_commands(command, label)
+        if len(commands) != 1:
+            raise MakeProbeError(f"{label} uses an unsupported multi-command shell shape")
+        return list(tokenize_bash_command(commands[0]))
+    except ValueError as error:
+        raise MakeProbeError(str(error)) from error
+
+
+def _operator(token, value):
+    return token.operator and token.value == value
+
+
+def _simple_words(tokens, label):
+    if any(token.operator or token.io_number for token in tokens):
+        raise MakeProbeError(f"{label} has unconsumed active shell syntax")
+    return [token.value for token in tokens]
+
+
+def _stderr_redirections(tokens):
+    consumed = []
+    while len(tokens) >= 3:
+        descriptor, operator, destination = tokens[-3:]
+        if not descriptor.io_number or descriptor.value != "2" or destination.operator:
+            break
+        if _operator(operator, ">&") and destination.value == "1":
+            consumed.append("stdout")
+        elif _operator(operator, ">") and destination.value == "/dev/null":
+            consumed.append("null")
+        else:
+            break
+        tokens = tokens[:-3]
+    return tokens, tuple(reversed(consumed))
+
+
+def _environment_assignments(tokens):
+    environment = {}
+    while tokens and tokens[0].assignment:
+        name, value = tokens.pop(0).value.split("=", 1)
+        if name != "FE8_ITEM_ID_CAP":
+            raise MakeProbeError(f"unsupported domain environment input: {name}")
+        environment[name] = value
+    return environment
 
 
 def _long_option_values(arguments, label):
@@ -259,7 +291,10 @@ def modern_toolchain_directory_command(session, command, contract):
     inner = command[len(prefix):-len(suffix)]
     if not inner.endswith(" 2>/dev/null"):
         raise MakeProbeError("modern toolchain directory query must suppress stderr explicitly")
-    tokens = _shell_tokens(inner[:-len(" 2>/dev/null")], "modern toolchain directory query")
+    tokens, redirections = _stderr_redirections(_shell_tokens(inner, "modern toolchain directory query"))
+    if redirections != ("null",):
+        raise MakeProbeError("modern toolchain directory query must suppress stderr explicitly")
+    tokens = _simple_words(tokens, "modern toolchain directory query")
     expected = MODERN_DIRECTORY_CONTRACTS[contract["id"]]
     if len(tokens) not in {len(MODERN_ARCH_QUERY_FLAGS) + 2, len(MODERN_ARCH_QUERY_FLAGS) + 3}:
         raise MakeProbeError("modern toolchain directory query differs from its declared flags")
@@ -414,16 +449,16 @@ class MakeCommands:
     def dependency(self, command):
         tokens = _shell_tokens(command, "dependency producer")
         if (
-            tokens[:2] != ["mkdir", "-p"] or len(tokens) < 8
-            or tokens[3] != "&&" or tokens[-2] != ">"
-            or tokens.count("&&") != 1 or tokens.count(">") != 1
+            len(tokens) < 8 or [token.value for token in tokens[:2]] != ["mkdir", "-p"]
+            or not _operator(tokens[3], "&&") or not _operator(tokens[-2], ">")
         ):
             raise MakeProbeError("dependency producer differs from its declared command")
-        output = relative_path(tokens[-1])
-        directory = relative_path(tokens[2].rstrip("/"))
+        prefix = _simple_words(tokens[:3], "dependency producer")
+        output = relative_path(_simple_words(tokens[-1:], "dependency producer")[0])
+        directory = relative_path(prefix[2].rstrip("/"))
         if directory != str(PurePosixPath(output).parent):
             raise MakeProbeError("dependency producer directory differs from its output")
-        arguments = tokens[4:-2]
+        arguments = _simple_words(tokens[4:-2], "dependency producer")
         if arguments[0] != "cc":
             raise MakeProbeError("dependency producer requires the supported host C driver")
         arguments[0] = "/usr/bin/cc"
@@ -442,32 +477,45 @@ class MakeCommands:
 
     def _register(self, command, contract):
         if contract["id"] == "host-uname":
+            if _simple_words(_shell_tokens(command, "uname producer"), "uname producer") != ["uname"]:
+                raise MakeProbeError("uname producer differs from its declared command")
             return Command(("/usr/bin/uname",))
         if contract["id"] == "legacy-dependency-dry-run-recipes":
             return self.dependency(command)
         if contract["id"] in MODERN_DIRECTORY_CONTRACTS:
             return modern_toolchain_directory_command(self.session, command, contract)
         tokens = _shell_tokens(command, "registered command")
-        while tokens and tokens[-1] in {"2>&1", "2>/dev/null"}:
-            tokens.pop()
-        environment = {}
-        while tokens and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tokens[0], re.DOTALL):
-            name, value = tokens.pop(0).split("=", 1)
-            if name != "FE8_ITEM_ID_CAP":
-                raise MakeProbeError(f"unsupported domain environment input: {name}")
-            environment[name] = value
+        tokens, redirections = _stderr_redirections(tokens)
+        environment = _environment_assignments(tokens)
         if not tokens:
             raise MakeProbeError("empty registered command")
+        stdin = None
+        if len(tokens) > 4 and [token.value for token in tokens[:2]] == ["printf", "%s\\n"] and _operator(tokens[3], "|"):
+            if environment:
+                raise MakeProbeError("printf pipeline has an unsupported producer environment")
+            left = _simple_words(tokens[:3], "printf pipeline")
+            stdin = left[2] + "\n"
+            tokens = tokens[4:]
+            environment = _environment_assignments(tokens)
+        tokens = _simple_words(tokens, "registered command")
+        if not tokens:
+            raise MakeProbeError("empty registered command")
+        if tokens[0] not in {"python3", PYTHON} and (environment or stdin is not None or redirections):
+            raise MakeProbeError("registered native command has an unsupported shell wrapper")
         if contract["id"] == "banim-scaninc-inputs":
             if tokens[:5] != ["tools/scaninc/scaninc", "-I", "include", "-I", ""] or len(tokens) != 6:
                 raise MakeProbeError("scaninc command differs from its declared include search")
             return self.scaninc(tokens[5])
         if contract["id"] == "asset-discovery-include-remake":
+            if environment or stdin is not None or redirections:
+                raise MakeProbeError("asset discovery has an unsupported shell wrapper")
             source = tokens[tokens.index("--manifest") + 1]
             destination = tokens[tokens.index("--discovery-makefile") + 1]
             return asset_discovery_command(self.session, source, destination)
         if contract["id"] == "banim-compressing-linker-inputs":
             path = "scripts/arm_compressing_linker.py"
+            if tokens[:2] not in (["python3", path], [PYTHON, path]) or environment or stdin is not None or redirections:
+                raise MakeProbeError("compressing linker has an unsupported shell wrapper")
             return python_command(
                 self.session,
                 "import runpy;sys.argv=" + repr([path, *tokens[2:]]) + ";"
@@ -477,6 +525,8 @@ class MakeCommands:
         if tokens[0] == "find" and contract["id"] in {
             "legacy-text-source-discovery", "asset-tool-source-discovery",
         }:
+            if len(tokens) != 6 or tokens[2:5] != ["-type", "f", "-name"]:
+                raise MakeProbeError("find producer differs from its declared grammar")
             root = relative_path(tokens[1])
             pattern = tokens[tokens.index("-name") + 1]
             sources = tuple(sorted(
@@ -493,6 +543,8 @@ class MakeCommands:
         if tokens[:2] == ["mkdir", "-p"] and contract["id"] in {
             "asset-include-remake-directory", "generated-include-remake-directory",
         }:
+            if len(tokens) != 3:
+                raise MakeProbeError("directory producer differs from its declared grammar")
             path = relative_path(tokens[2].rstrip("/"))
             if not path.startswith("build/"):
                 raise MakeProbeError("producer directory escapes the logical build root")
@@ -502,10 +554,6 @@ class MakeCommands:
                 "(Path('/work')/sys.argv[1]).mkdir(parents=True,exist_ok=True)",
                 path,
             ))
-        stdin = None
-        if tokens[:2] == ["printf", "%s\\n"] and len(tokens) > 4 and tokens[3] == "|":
-            stdin = tokens[2] + "\n"
-            tokens = tokens[4:]
         if tokens[0] not in {"python3", PYTHON}:
             raise MakeProbeError(
                 f"graph domain needs a typed command adapter: {contract['id']}: {command!r}"
@@ -519,11 +567,15 @@ class MakeCommands:
             if path.endswith(".py")
         )
         if arguments[:1] == ["-c"]:
+            if len(arguments) < 2:
+                raise MakeProbeError("registered Python -c requires its program")
             python_code = (*python_code, *_python_source_paths(self.session, arguments[1]))
             body = prefix + "sys.argv=['-c']+" + repr(arguments[2:]) + ";exec(" + repr(arguments[1]) + ")"
         elif arguments[:1] == ["-m"]:
+            if len(arguments) < 2:
+                raise MakeProbeError("registered Python -m requires its module")
             if arguments[1] in GENERATED_DEPENDENCY_MODULES:
-                if environment or stdin is not None:
+                if environment or stdin is not None or redirections:
                     raise MakeProbeError("generated dependency producer uses an unsupported shell wrapper")
                 values = _long_option_values(arguments[2:], arguments[1])
                 if not {"--make-target", "--depfile"} <= values.keys():

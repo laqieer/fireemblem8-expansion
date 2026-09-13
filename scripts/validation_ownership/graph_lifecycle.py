@@ -8,7 +8,7 @@ import posixpath
 import tempfile
 import weakref
 
-from scripts.bash_parser import BashToken, normalize_bash_script_commands, tokenize_bash_command
+from scripts.bash_parser import normalize_bash_script_commands, tokenize_bash_command
 from .authority import ENVIRONMENT, encoded, parse_json
 from .budget import MakeProbeError
 
@@ -35,7 +35,11 @@ def _command_words(command):
         tokens = tokenize_bash_command(lines[0])
     except ValueError as error:
         raise MakeProbeError("lifecycle dispatch has invalid shell syntax") from error
-    if tokens[-2:] == (BashToken(">", True), BashToken("/dev/null", False)):
+    if (
+        len(tokens) >= 2 and tokens[-2].operator and tokens[-2].value == ">"
+        and not tokens[-1].operator and tokens[-1].value == "/dev/null"
+        and not (len(tokens) >= 3 and tokens[-3].io_number)
+    ):
         tokens = tokens[:-2]
     words = [token.value for token in tokens]
     if (

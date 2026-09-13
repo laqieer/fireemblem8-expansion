@@ -255,7 +255,8 @@ class GraphCommandTests(unittest.TestCase):
             )
             tokens = tokenize_bash_command(command)
             self.assertEqual(json.loads(actual.stdout), [">", "/dev/null"])
-            self.assertEqual(tokens[-2:], (BashToken(">", False), BashToken("/dev/null", False)))
+            self.assertEqual(tuple((token.value, token.operator) for token in tokens[-2:]),
+                             ((">", False), ("/dev/null", False)))
             self.assertFalse(any(token.operator for token in tokens))
         for suffix in ("> /dev/null", "> '/dev/null'", '>"/dev/null"', ">''/dev/null"):
             command = program + " " + suffix + " # real comment"
@@ -264,9 +265,8 @@ class GraphCommandTests(unittest.TestCase):
                 capture_output=True, check=True, timeout=15,
             )
             self.assertEqual(actual.stdout, b"")
-            self.assertEqual(tokenize_bash_command(command)[-2:], (
-                BashToken(">", True), BashToken("/dev/null", False),
-            ))
+            self.assertEqual(tuple((token.value, token.operator) for token in tokenize_bash_command(command)[-2:]),
+                             ((">", True), ("/dev/null", False)))
         for literal in ("'||'", "'&&'", "';'", "'('", "')'", "'<'", "'>>'"):
             command = program + " " + literal
             actual = subprocess.run(
@@ -282,6 +282,157 @@ class GraphCommandTests(unittest.TestCase):
             ["/bin/sh", "-c", command], cwd=self.root, env=ENVIRONMENT,
             capture_output=True, timeout=15,
         )
+
+    def generic_registration(self, probe, command, *, identity="generic-lexical-fixture", inputs=()):
+        import re
+        contract = {"id": identity, "command_regex": re.escape(command), "input_files": list(inputs)}
+        return MakeCommands(probe, {"fixture": contract})[command]
+
+    def test_shared_tokens_preserve_assignment_and_io_number_roles(self):
+        for source, assigned in (
+            ("FE8_ITEM_ID_CAP=271", True), ("FE8_ITEM_ID_CAP='1||true'", True),
+            ("'FE8_ITEM_ID_CAP=271'", False), ('"FE8_ITEM_ID_CAP"=271', False),
+            (r"FE8_ITEM_ID_CAP\=271", False), ("''FE8_ITEM_ID_CAP=271", False),
+        ):
+            with self.subTest(source=source):
+                token, = tokenize_bash_command(source)
+                self.assertIsInstance(token, BashToken)
+                self.assertEqual(token.assignment, assigned)
+                self.assertEqual(token.raw, source[token.start:token.end])
+                self.assertFalse(token.operator)
+        for source, is_descriptor in (("2>&1", True), ("2 > /dev/null", False),
+                                      ("'2'>/dev/null", False), (r"\2>/dev/null", False)):
+            with self.subTest(source=source):
+                tokens = tokenize_bash_command(source)
+                self.assertEqual(tokens[0].io_number, is_descriptor)
+                self.assertTrue(tokens[1].operator)
+                self.assertEqual(tokens[0].end == tokens[1].start, source != "2 > /dev/null")
+        tokens = tokenize_bash_command("cc -DUNUSED=1||true input.c")
+        self.assertEqual([(token.value, token.operator) for token in tokens], [
+            ("cc", False), ("-DUNUSED=1", False), ("||", True), ("true", False), ("input.c", False),
+        ])
+        quoted = tokenize_bash_command("cc -DUNUSED='1||true' input.c")
+        self.assertEqual([token.value for token in quoted], ["cc", "-DUNUSED=1||true", "input.c"])
+        self.assertFalse(any(token.operator for token in quoted))
+
+    def test_live_dependency_contract_rejects_embedded_operators_and_keeps_literals(self):
+        self.add("src/input.c", '#include "header.h"\n')
+        self.add("include/header.h", "#define INPUT 1\n")
+        prefix = "mkdir -p .dep/src/ && cc -E -Iinclude -nostdinc -undef "
+        suffix = " src/input.c -MM -MG -MT src/input.o > .dep/src/input.d"
+        bad = prefix + "-DUNUSED=1||true" + suffix
+        ordinary = self.shell_argv(bad)
+        self.assertEqual(ordinary.returncode, 0)
+        self.assertIn(b"no input files", ordinary.stderr)
+        self.assertEqual((self.root / ".dep/src/input.d").read_bytes(), b"")
+        self.add("Makefile", "include .dep/src/input.d\n.dep/src/input.d: src/input.c\n\t" + bad + "\nsrc/input.o: ;\n")
+        with self.session() as probe:
+            commands = MakeCommands(probe, self.contracts)
+            self.assertIn(bad, commands)
+            with self.assertRaisesRegex(MakeProbeError, "unconsumed active shell syntax"):
+                commands[bad]
+        with self.session() as probe:
+            with self.assertRaisesRegex(MakeProbeError, "unconsumed active shell syntax"):
+                probe.make("src/input.o", commands=MakeCommands(probe, self.contracts))
+        for argument in ("-DUNUSED='1||true'", r"-DUNUSED=1\|\|true", '-DUNUSED="1&&true"'):
+            with self.subTest(argument=argument):
+                command = prefix + argument + suffix
+                ordinary = self.shell_argv(command)
+                self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+                expected = (self.root / ".dep/src/input.d").read_bytes()
+                self.add("Makefile", "include .dep/src/input.d\n.dep/src/input.d: src/input.c\n\t" + command + "\nsrc/input.o: ;\n")
+                with self.session() as probe:
+                    commands = MakeCommands(probe, self.contracts)
+                    registration = commands[command]
+                    produced = probe.command(registration)
+                    self.assertEqual(produced.generated[0].data, expected)
+                    self.assertEqual(produced.consumed, ("src/input.c",))
+                    self.assertEqual(produced.code_consumed, ("include/header.h",))
+                    native = probe.make("src/input.o", commands=commands)
+                    self.assertEqual(native.semantics["files"][0]["prerequisites"], [
+                        {"name": "src/input.c", "order_only": False},
+                        {"name": "include/header.h", "order_only": False},
+                    ])
+                    dynamic, = native.semantics["dynamic_commands"]
+                    self.assertEqual(dynamic["command"]["argv"], list(registration.argv))
+                    self.assertTrue(any(path.endswith("/cc1") for path in dynamic["command"]["executed"]))
+        for spelling in ("'&&'", '"&&"', r"\&\&"):
+            command = (prefix + "-DUNUSED=1" + suffix).replace("&&", spelling, 1)
+            with self.session() as probe:
+                self.assertNotIn(command, MakeCommands(probe, self.contracts))
+                with self.assertRaisesRegex(MakeProbeError, "declared command"):
+                    MakeCommands(probe, self.contracts).dependency(command)
+
+    def test_generic_pipeline_and_assignment_grammar_keeps_original_roles(self):
+        for literal in ("'|'", '"|"', r"\|"):
+            command = "printf '%s\\n' payload " + literal + " python3 -c 'print(\"unexpected\")'"
+            ordinary = self.shell_argv(command)
+            self.assertEqual(ordinary.returncode, 0)
+            self.assertIn(b"|\npython3\n", ordinary.stdout)
+            with self.session() as probe:
+                with self.assertRaises(MakeProbeError):
+                    self.generic_registration(probe, command)
+        for assignment in ("'FE8_ITEM_ID_CAP=271'", '"FE8_ITEM_ID_CAP=271"', r"FE8_ITEM_ID_CAP\=271"):
+            command = assignment + " python3 -c 'import os;print(os.environ[\"FE8_ITEM_ID_CAP\"])'"
+            self.assertEqual(self.shell_argv(command).returncode, 127)
+            with self.session() as probe:
+                with self.assertRaises(MakeProbeError):
+                    self.generic_registration(probe, command)
+        for command in (
+            "FE8_ITEM_ID_CAP='1||true' python3 -c 'import os;print(os.environ[\"FE8_ITEM_ID_CAP\"])'",
+            "printf '%s\\n' 'a|b'|FE8_ITEM_ID_CAP=271 python3 -c 'import os,sys;print(os.environ[\"FE8_ITEM_ID_CAP\"]+\":\"+sys.stdin.read().strip())'",
+        ):
+            ordinary = self.shell_argv(command)
+            self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+            with self.session() as probe:
+                actual = probe.command(self.generic_registration(probe, command))
+            self.assertEqual(actual.stdout, ordinary.stdout)
+        command = "FE8_ITEM_ID_CAP=271 printf '%s\\n' value|python3 -c 'print(\"unexpected\")'"
+        with self.session() as probe:
+            with self.assertRaisesRegex(MakeProbeError, "producer environment"):
+                self.generic_registration(probe, command)
+
+    def test_generic_fd_literals_and_real_redirections_remain_distinct(self):
+        program = "python3 -c 'import json,sys;print(json.dumps(sys.argv[1:]))'"
+        for suffix in ("'2>&1'", r"2\>\&1", "'2>&1' 2>/dev/null", "'2>/dev/null' 2>&1"):
+            with self.subTest(suffix=suffix):
+                command = program + " " + suffix
+                ordinary = self.shell_argv(command)
+                self.assertEqual(ordinary.returncode, 0)
+                with self.session() as probe:
+                    actual = probe.command(self.generic_registration(probe, command))
+                self.assertEqual(actual.stdout, ordinary.stdout)
+        program = "python3 -c 'import json,sys;print(json.dumps(sys.argv[1:]))'"
+        for suffix in ("2>&1", "2>/dev/null", "2> '/dev/null'", "2>&1 2>/dev/null", "2>/dev/null 2>&1"):
+            with self.subTest(suffix=suffix):
+                command = program + " " + suffix
+                ordinary = self.shell_argv(command)
+                self.assertEqual(ordinary.returncode, 0)
+                with self.session() as probe:
+                    actual = probe.command(self.generic_registration(probe, command))
+                self.assertEqual((actual.stdout, actual.stderr), (ordinary.stdout, ordinary.stderr))
+        for suffix in ("'2'>/dev/null", r"\2>/dev/null", "2 >/dev/null", "2>&1>elsewhere", "2>>/dev/null"):
+            with self.session() as probe:
+                with self.assertRaisesRegex(MakeProbeError, "unconsumed active shell syntax"):
+                    self.generic_registration(probe, program + " " + suffix)
+
+    def test_simple_adapter_branches_reject_unconsumed_active_operators(self):
+        self.add("scripts/fixture.py", "print('fixture')\n")
+        self.add("linker_script_banim.txt", "")
+        cases = (
+            ("generic-lexical-fixture", "python3 -c 'print(\"ok\")'", ()),
+            ("generic-lexical-fixture", "python3 scripts/fixture.py", ("scripts/fixture.py",)),
+            ("asset-discovery-include-remake", "python3 -m scripts.assets.manifest --manifest assets/manifest.json --discovery-makefile build/assets.mk", ()),
+            ("banim-compressing-linker-inputs", "python3 scripts/arm_compressing_linker.py --inputs linker_script_banim.txt", ()),
+            ("legacy-text-source-discovery", "find texts -type f -name '*.txt'", ()),
+            ("generated-include-remake-directory", "mkdir -p build/generated", ()),
+            ("banim-scaninc-inputs", 'tools/scaninc/scaninc -I include -I "" src/input.s', ()),
+        )
+        for identity, command, inputs in cases:
+            for tail in ("||true", "&&true", ";true", "|cat", ">elsewhere"):
+                with self.subTest(identity=identity, tail=tail), self.session() as probe:
+                    with self.assertRaisesRegex(MakeProbeError, "unconsumed active shell syntax"):
+                        self.generic_registration(probe, command + tail, identity=identity, inputs=inputs)
 
     def shell_decodings(self, command):
         normalized = normalize_bash_script_commands(command, "fixture")
