@@ -47,12 +47,12 @@ class _UnresolvedName(ValueError):
     pass
 
 
-def make_expressions(line):
+def _make_expression_spans(line, *, staged=False):
     stack = []
     index = 0
     while index < len(line):
         if line[index:index + 2] == "$$":
-            index += 2
+            index += 1 if staged else 2
             continue
         if line[index:index + 2] in {"$(", "${"}:
             stack.append((index + 2, ")" if line[index + 1] == "(" else "}"))
@@ -61,10 +61,46 @@ def make_expressions(line):
         if stack and line[index] == stack[-1][1]:
             start, _ = stack.pop()
             if start is not None:
-                yield line[start:index]
+                yield start - 2, index + 1, line[start:index]
         elif stack and line[index] == ("(" if stack[-1][1] == ")" else "{"):
             stack.append((None, stack[-1][1]))
+        elif staged and line[index] == "$":
+            token = line[index:index + 2]
+            if not REFERENCE.fullmatch(token) and not SCOPED.fullmatch(token):
+                raise _UnresolvedName("incomplete or unsupported dollar token")
+            index += 1
         index += 1
+    if staged and stack:
+        raise _UnresolvedName("incomplete dollar-bearing Make expression")
+
+
+def make_expressions(line):
+    for _, _, body in _make_expression_spans(line):
+        yield body
+
+
+def dollar_fragment(value):
+    """Classify incomplete staged syntax, not a list of known fragment values."""
+    try:
+        for _ in _make_expression_spans(value, staged=True):
+            pass
+    except _UnresolvedName:
+        return True
+    return False
+
+
+def _outside_eval_references(expression):
+    spans = sorted(
+        (start, stop) for start, stop, body in _make_expression_spans(expression)
+        if body.startswith(("eval ", "eval\t"))
+    )
+    pieces, previous = [], 0
+    for start, stop in spans:
+        if start >= previous:
+            pieces.append(expression[previous:start])
+        previous = max(previous, stop)
+    pieces.append(expression[previous:])
+    return references("".join(pieces))
 
 
 def computed_selectors(line):
@@ -416,7 +452,7 @@ def _graph_definitions(session, target, state, commands, observation, usage, *, 
                 definitions.setdefault(name, []).append(raw)
                 if flavor == "simple" or "$" not in raw:
                     literals.setdefault(name, set()).add(raw)
-                if raw in {"$", "$$", "$(", "${"}:
+                if dollar_fragment(raw):
                     fragments.add(name)
                 if flavor == "recursive" or usage["secondary_expansion"] or evals:
                     forms.append(raw)
@@ -440,7 +476,10 @@ def _graph_definitions(session, target, state, commands, observation, usage, *, 
                 if assignment is None or assignment["operator"] != "=" or "\n" in body:
                     raise MakeProbeError("unresolved dollar-generated Make eval")
                 affected_assignments.append(assignment["name"])
-        if usage["secondary_expansion"] and not evals and fragments & required:
+        outside_eval = set().union(*(
+            _outside_eval_references(expression) for expression in usage["stage_expressions"]
+        ))
+        if usage["secondary_expansion"] and fragments & closure(outside_eval, usage["dependencies"]):
             raise MakeProbeError("unresolved dollar-generated secondary expansion")
         assignment_counts = Counter(
             assignment["name"] for body in evals

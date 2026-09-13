@@ -4031,6 +4031,26 @@ overlap. Opaque dollar-generated secondary expressions, generated immediate
 eval or overwritten eval definitions must reject instead of reporting zero
 enumerated domains. No Python implementation of arbitrary Make evaluation is
 permitted.
+For partial fragments, use `FLAGS ?= first`, `PREFIX := $$(F`, `END := )`,
+`.SECONDEXPANSION:` and `all: $(PREFIX)LAGS$(END)`, with real first/second
+targets and an `echo $(FLAGS)` recipe. Compare native prerequisites under
+FLAGS=first/second, not only that recipe's output. Repeat through
+`all: $(eval DEP := $(PREFIX)LAGS$(END)) $(DEP)` with initially empty DEP,
+and through top-level `$(eval all: $(PREFIX)LAGS$(END))`.
+The exact95/bd62 preimage accepted symbolic FLAGS and omitted its finite
+domain despite different real prerequisites. These unresolved stages must
+now reject explicitly.
+
+Repeat with brace delimiters, multiple name fragments, nested incomplete
+references and a literal prefix before the dollar-bearing fragment. Add an
+unrelated eval alongside secondary expansion; it must not make the fragment
+safe. Restore only the old four-string classifier and require the original
+false acceptance to reappear. As positives, preserve both partial templates
+resolved by a recursive `DEP =` eval assignment through their actual complete
+native definitions and all three established complete deferred forms.
+An unused partial definition and unused shell body must stay unexpanded.
+Exercise exactly 512 combined raw/expanded names successfully and reject 513
+before another native launch.
 
 For native ignore policy, execute real `exit 7` recipes with no ignore rule,
 `.IGNORE: unrelated-target`, `.IGNORE: all`, empty `.IGNORE:`, `MAKEFLAGS += -i`

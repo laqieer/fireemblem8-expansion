@@ -304,6 +304,91 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 self.assertEqual(self.ordinary("FLAGS=second"), b"second\n")
                 with self.assertRaises(MakeProbeError):
                     self.observe({"FLAGS": {"kind": "explicit", "values": ["first", "second"]}})
+
+    def test_partial_dollar_templates_reject_in_all_graph_stages(self):
+        templates = (
+            ("paren", "PREFIX := $$(F\nEND := )\n", "$(PREFIX)LAGS$(END)", ""),
+            ("brace", "PREFIX := $${F\nEND := }\n", "$(PREFIX)LAGS$(END)", ""),
+            ("multiple", "PREFIX := $$(F\nMIDDLE := LA\nEND := GS)\n", "$(PREFIX)$(MIDDLE)$(END)", ""),
+            ("nested", "NAME = FLAGS\nPREFIX := $$($$(N\nMIDDLE := A\nEND := ME))\n",
+             "$(PREFIX)$(MIDDLE)$(END)", ""),
+            ("nested-brace", "NAME = FLAGS\nPREFIX := $${$${N\nMIDDLE := A\nEND := ME}}\n",
+             "$(PREFIX)$(MIDDLE)$(END)", ""),
+            ("embedded", "PREFIX := prefix$$(F\nEND := )\n", "$(PREFIX)LAGS$(END)", "prefix"),
+        )
+        self.last_fragment_evidence = []
+        for template, declarations, expression, prefix in templates:
+            for stage in ("secondary", "immediate-eval", "rule-eval", "secondary-with-unrelated-eval"):
+                with self.subTest(template=template, stage=stage):
+                    if stage.startswith("secondary"):
+                        body = ".SECONDEXPANSION:\nall: " + expression + "\n"
+                        if stage == "secondary-with-unrelated-eval":
+                            body = "$(eval UNUSED = harmless)\n" + body
+                    elif stage == "immediate-eval":
+                        body = "DEP =\nall: $(eval DEP := " + expression + ") $(DEP)\n"
+                    else:
+                        body = "$(eval all: " + expression + ")\nall:\n"
+                    self.add("Makefile", "FLAGS ?= first\n" + declarations + body
+                             + "\t@echo $(FLAGS)\nfirst second prefixfirst prefixsecond: ;\n")
+                    actual = []
+                    with self.session() as session:
+                        for value in ("first", "second"):
+                            native = session.make("all", assignments=(("command-line", "FLAGS", value),))
+                            actual.append(native.semantics["files"][0]["prerequisites"][0]["name"])
+                    self.assertEqual(actual, [prefix + "first", prefix + "second"])
+                    for symbolic in (True, False):
+                        with self.assertRaises(MakeProbeError):
+                            if symbolic:
+                                self.observe(external={"FLAGS"}, symbolic_recipe_names={"FLAGS"})
+                            else:
+                                self.observe({"FLAGS": {"kind": "explicit", "values": ["first", "second"]}})
+                    self.last_fragment_evidence.append({
+                        "template": template, "stage": stage, "native_prerequisites": actual,
+                        "symbolic_rejected": True, "finite_rejected": True,
+                    })
+
+    def test_recursive_eval_resolves_partial_templates_and_unused_fragments_stay_unused(self):
+        for opening, closing, stage in (
+            ("$$(F", ")", ""), ("$${F", "}", ""),
+            ("$$(F", ")", ".SECONDEXPANSION:\n"), ("$${F", "}", ".SECONDEXPANSION:\n"),
+        ):
+            with self.subTest(opening=opening, stage=stage):
+                self.add("Makefile", "FLAGS ?= first\nPREFIX := " + opening + "\nEND := " + closing
+                         + "\nDEP =\n" + stage + "all: $(eval DEP = $(PREFIX)LAGS$(END)) $(DEP)\n"
+                         "\t@echo $(FLAGS)\nfirst second: ;\n")
+                self.assertEqual(self.ordinary("FLAGS=first"), b"first\n")
+                self.assertEqual(self.ordinary("FLAGS=second"), b"second\n")
+                with self.assertRaises(MakeProbeError):
+                    self.observe(external={"FLAGS"}, symbolic_recipe_names={"FLAGS"})
+                result = self.observe({"FLAGS": {"kind": "explicit", "values": ["first", "second"]}})["all"]
+                self.assertEqual(result["prerequisite_domain_census"]["enumerated"], ["FLAGS"])
+                self.assertEqual({
+                    item["record"]["files"][0]["prerequisites"][0]["name"]
+                    for item in result["record"]["variants"]
+                }, {"first", "second"})
+        self.add("Makefile", "UNUSED_PREFIX := $$(F\nUNUSED_BODY = $(shell touch marker)\n"
+                 ".SECONDEXPANSION:\nall: ;\n")
+        self.observe()
+        self.assertFalse((self.root / "marker").exists())
+
+    def test_combined_raw_and_expanded_names_keep_exact_512_admission(self):
+        self.add("Makefile", "".join("VALUE_" + str(index) + " := " + str(index) + "\n" for index in range(513))
+                 + "all: ;\n")
+        variables = tuple("VALUE_" + str(index) for index in range(256))
+        definitions = tuple("VALUE_" + str(index) for index in range(256, 512))
+        with self.session() as session:
+            actual = session.make("all", variables=variables, definitions=definitions)
+            self.assertEqual(set(actual.semantics["domains"]), set(variables))
+            self.assertEqual(set(actual.semantics["definitions"]["global"]), set(definitions))
+            for index in range(256, 512):
+                self.assertEqual(actual.semantics["definitions"]["global"]["VALUE_" + str(index)]["value"], str(index))
+            before = session.budget.runs, session.budget.states
+            with self.assertRaises(MakeProbeError):
+                session.make("all", variables=variables, definitions=(*definitions, "VALUE_512"))
+            self.assertEqual((session.budget.runs, session.budget.states), before)
+        self.assertIsNone(session.base)
+        self.assertFalse(session.budget.children)
+
     def test_computed_include_and_unresolved_name_contracts_are_native(self):
         self.add("first.mk", "SELECTED = first\n")
         self.add("second.mk", "SELECTED = second\n")

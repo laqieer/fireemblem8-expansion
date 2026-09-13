@@ -614,7 +614,16 @@ pages rejects.
 This is not a general Make interpreter. Dollar-generated immediate eval
 assignments, overwritten observed eval definitions, opaque dollar-generated
 secondary expressions, or unresolved dollar-bearing prerequisites reject
-rather than inventing a finite census. Ordinary supported eval/call and
+rather than inventing a finite census. Fragment classification uses the shared
+Make-expression scanner to recognize incomplete or unsupported dollar tokens
+and unmatched parenthesis/brace references at any position and nesting depth,
+including deferred escapes. It is not an allowlist of four fragment strings:
+`$(F`, `${F`, nested fragments and fragments following ordinary text remain
+unresolved until their real context proves a complete reference.
+Secondary uses are tracked outside eval spans, so an unrelated eval cannot
+disable their rejection. A recursive literal-name eval assignment whose
+resulting native definition is complete still closes normally; unused fragment
+definitions remain unused. Ordinary supported eval/call and
 secondary forms retain their native behavior. Complete production resource
 fit remains separately required; these extra real observations spend the
 unchanged report budget.

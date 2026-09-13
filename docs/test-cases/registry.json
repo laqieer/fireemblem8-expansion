@@ -2897,6 +2897,10 @@
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_partial_dollar_templates_reject_in_all_graph_stages scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_recursive_eval_resolves_partial_templates_and_unused_fragments_stay_unused scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_combined_raw_and_expanded_names_keep_exact_512_admission -v",
+          "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_native_ignore_error_policy_matches_actual_gnu_jobs scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_native_job_policy_requires_complete_pid_bound_receipts -v",
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },
