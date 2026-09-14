@@ -705,8 +705,12 @@ rule.
 Unproven conditional activation rejects explicitly. Generated rules,
 effectful/computed references and unresolved include order may leave the mode
 unknown; mode-sensitive continuation data then rejects instead of selecting a
-guessed fold. Identical results under both folds remain unambiguous, and
-already-established POSIX mode cannot be undone by later source. Actual
+guessed fold. Identical results under both folds remain unambiguous. At a
+parsed assignment boundary, both folds may also prove identical scope/prefix,
+name, operator and RHS after GNU's leading-value whitespace handling; this
+does not normalize meaningful internal/trailing value whitespace or raw define
+bodies, and the mode remains unknown afterward. Already-established POSIX mode
+cannot be undone by later source. Actual
 invocation assignments participate in this analysis; final native values are
 not substituted for original context. Literal metadata lookups do not expand
 their operands. Analysis uses iterative dependency traversal and the existing
@@ -714,6 +718,23 @@ shared deadline, not a new quota, process or native observation ABI. A late
 top-level `.POSIX` can change actual recipe shell flags without retroactively
 changing earlier source values; GNU rejects attempts to emit such rules from
 recipes.
+
+The mode walker receives the original single-goal invocation, not an arbitrary
+post-parse MAKECMDGOALS value. The GNU-owned goal's original value/origin/flavor
+and mode-safe initial control reads support a narrow proof for literal control
+references, metadata, strip and literal-word filter/filter-out guards. It does
+not implement general Make evaluation or wildcard filter semantics. Source
+control writes/undefines, supplied control overrides and unproven effects
+invalidate those original facts. Error/warning/info/eval calls are not mistaken
+for generated target text merely because their syntax contains a dollar;
+their argument/effect checks still apply.
+
+This supports the real Makefile guard prefix that rejected the sole baseline9
+run before its first include: Makefile12-13's override assignment has identical
+parsed meaning under both folds despite one extra leading RHS space. The
+source-faithful guard fixture uses benign measurement recipes, not a complete
+report/check invocation. The closed baseline9 semantic failure remains
+preserved evidence, not a quota finding or permission for another graph run.
 
 Assignment origin remains part of that context. Command-line assignments
 retain their admitted precedence; ordinary file assignments can replace

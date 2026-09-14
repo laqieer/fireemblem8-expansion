@@ -63,6 +63,8 @@ MAKE_FUNCTIONS = frozenset((
 PURE_VALUE_FUNCTIONS = MAKE_FUNCTIONS - {
     "call", "eval", "file", "shell", "guile", "info", "error", "warning",
 }
+INVOCATION_CONTROL_READS = frozenset(("MAKECMDGOALS", "MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKEOVERRIDES"))
+EMPTY_RESULT_FUNCTIONS = frozenset(("error", "warning", "info", "eval"))
 
 
 class MakeSourceUnit(NamedTuple):
@@ -84,27 +86,111 @@ class _MakeSourceMode:
     definitions: dict = field(default_factory=dict)
     forced: frozenset = frozenset()
     budget: ProbeBudget | None = None
+    control_values: dict = field(default_factory=dict)
+    control_metadata: dict = field(default_factory=dict)
+    control_reads: set = field(default_factory=set)
 
     def checkpoint(self):
         if self.budget is not None:
             self.budget.remaining()
 
     def uncertain(self):
+        self.control_values.clear()
+        self.control_metadata.clear()
+        self.control_reads.clear()
         if self.posix is not True:
             self.posix = None
 
-    def collapse(self, value):
+    def bind_invocation(self, target):
+        relative_path(target)
+        if any(character in target for character in MAKE_SPACE + "$"):
+            raise MakeProbeError("Make mode context requires one literal invocation goal")
+        supplied = set(self.definitions)
+        if supplied & INVOCATION_CONTROL_READS:
+            self.uncertain()
+            return
+        # These are original GNU invocation data, not post-parse variable
+        # values. Source writes or unproven effects invalidate the facts.
+        self.control_reads.update(INVOCATION_CONTROL_READS - supplied)
+        if "MAKECMDGOALS" not in supplied:
+            self.control_values["MAKECMDGOALS"] = target
+            self.control_metadata["MAKECMDGOALS"] = ("default", "simple")
+            self.definitions["MAKECMDGOALS"] = target
+        if self.budget is not None:
+            self.budget.charge("cache", len(encoded((
+                sorted(self.control_reads), self.control_values, self.control_metadata,
+            ))))
+
+    def collapse(self, value, *, construct=False):
         self.checkpoint()
         if self.posix is not None:
             return _collapse_make_continuations(value, posix=self.posix)
         ordinary = _collapse_make_continuations(value)
-        if ordinary != _collapse_make_continuations(value, posix=True):
+        posix = _collapse_make_continuations(value, posix=True)
+        if ordinary != posix and not (construct and _same_make_assignment(ordinary, posix)):
             raise MakeProbeError("unproven GNU Make parsing-mode context changes continuation data")
         return ordinary
 
+    def control_text(self, expression):
+        self.checkpoint()
+        spans = sorted(_make_expression_spans(expression), key=lambda item: (item[0], -item[1]))
+        pieces, previous = [], 0
+        for start, stop, body in spans:
+            if start < previous:
+                continue
+            literal = expression[previous:start]
+            if "$" in literal:
+                return None
+            if re.fullmatch(IDENTIFIER, body):
+                value = self.control_values.get(body)
+            else:
+                function = _make_function(expression[start:stop])
+                if function is None:
+                    return None
+                name, arguments = function
+                if name in {"origin", "flavor"} and len(arguments) == 1:
+                    metadata = self.control_metadata.get(arguments[0])
+                    value = None if metadata is None else metadata[0 if name == "origin" else 1]
+                elif name == "strip" and len(arguments) == 1:
+                    value = self.control_text(arguments[0])
+                    if value is not None:
+                        value = " ".join(re.findall(r"[^ \t\r\n\v\f]+", value))
+                elif name in {"filter", "filter-out"} and len(arguments) == 2:
+                    patterns, words = (self.control_text(argument) for argument in arguments)
+                    if patterns is None or words is None or any(character in patterns for character in "%\\"):
+                        return None
+                    patterns = set(re.findall(r"[^ \t\r\n\v\f]+", patterns))
+                    value = " ".join(word for word in re.findall(r"[^ \t\r\n\v\f]+", words)
+                                     if (word in patterns) == (name == "filter"))
+                else:
+                    return None
+            if value is None:
+                return None
+            pieces.extend((literal, value))
+            previous = stop
+        if "$" in expression[previous:]:
+            return None
+        return "".join((*pieces, expression[previous:]))
+
+    def condition(self, keyword, arguments):
+        if "$" not in arguments:
+            if keyword in {"ifdef", "ifndef"} and arguments in self.control_values:
+                return bool(self.control_values[arguments]) == (keyword == "ifdef")
+            return _literal_condition(keyword, arguments)
+        if keyword not in {"ifeq", "ifneq"}:
+            return None
+        operands = _condition_operands(arguments)
+        if operands is None:
+            return None
+        try:
+            left, right = (self.control_text(value) for value in operands)
+        except RecursionError:
+            return None
+        if left is None or right is None:
+            return None
+        return (left == right) == (keyword == "ifeq")
+
     def effectful(self, expression):
-        if self.posix is True:
-            return False
         pending, active, complete = [(None, expression)], set(), set()
         while pending:
             self.checkpoint()
@@ -128,6 +214,8 @@ class _MakeSourceMode:
             if next(computed_selectors(value), None) is not None:
                 return True
             for dependency in references(value):
+                if dependency in self.control_reads:
+                    continue
                 if dependency not in self.definitions:
                     return True
                 pending.append((dependency, self.definitions[dependency]))
@@ -137,6 +225,13 @@ class _MakeSourceMode:
         if active is False or name in self.forced and not override:
             return
         if operator == "?=" and name in self.definitions:
+            return
+        if name in INVOCATION_CONTROL_READS:
+            self.control_reads.clear()
+            self.control_values.clear()
+            self.control_metadata.clear()
+        if operator == "undefine":
+            self.definitions.pop(name, None)
             return
         if active is None:
             self.definitions.pop(name, None)
@@ -157,14 +252,23 @@ class _MakeSourceMode:
             self.definitions[name] = value
 
 
-def _literal_condition(keyword, arguments):
-    if keyword not in {"ifeq", "ifneq"} or "$" in arguments:
-        return None
+def _condition_operands(arguments):
     if arguments.startswith("("):
-        match = re.fullmatch(r"\(([^(),]*),([^()]*)\)", arguments)
-        if not match:
+        depth, separator, closing = 0, None, None
+        for index, character in enumerate(arguments[1:], 1):
+            if character == "(":
+                depth += 1
+            elif character == ")":
+                if depth == 0:
+                    closing = index
+                    break
+                depth -= 1
+            elif character == "," and depth == 0 and separator is None:
+                separator = index
+        if separator is None or closing is None or arguments[closing + 1:].strip(MAKE_SPACE):
             return None
-        left, right = match[1].rstrip(" \t"), match[2].lstrip(MAKE_SPACE)
+        left = arguments[1:separator].rstrip(" \t")
+        right = arguments[separator + 1:closing].lstrip(MAKE_SPACE)
     else:
         words = []
         while arguments and arguments[0] in "'\"" and len(words) < 2:
@@ -176,7 +280,32 @@ def _literal_condition(keyword, arguments):
         if len(words) != 2 or arguments:
             return None
         left, right = words
+    return left, right
+
+
+def _literal_condition(keyword, arguments):
+    if keyword not in {"ifeq", "ifneq"} or "$" in arguments:
+        return None
+    operands = _condition_operands(arguments)
+    if operands is None:
+        return None
+    left, right = operands
     return (left == right) == (keyword == "ifeq")
+
+
+def _same_make_assignment(left, right):
+    def parsed(value):
+        value = strip_comment(value)
+        for kind, pattern in (("global", MODE_ASSIGNMENT), ("target", MODE_TARGET_ASSIGNMENT)):
+            assignment = pattern.fullmatch(value)
+            if assignment:
+                return (
+                    kind, value[:assignment.start("name")],
+                    assignment["name"], assignment["operator"], assignment["value"].lstrip(MAKE_SPACE),
+                )
+        return None
+    first, second = parsed(left), parsed(right)
+    return first is not None and first == second
 
 
 def _mode_and(left, right):
@@ -263,7 +392,7 @@ def make_source_units(text, *, mode=None, include=None, known_context=True):
     for raw in chunks:
         mode.checkpoint()
         include_request = None
-        line = raw if raw.startswith("\t") else mode.collapse(raw)
+        line = raw if raw.startswith("\t") else mode.collapse(raw, construct=True)
         header = strip_comment(line).strip(MAKE_SPACE)
         assignment = None if raw.startswith("\t") else MODE_ASSIGNMENT.fullmatch(header)
         if not raw.startswith("\t") and not assignment and re.match(r"^(?:(?:export|override|private)[ \t]+)*define(?:[ \t]|$)", header) and not re.fullmatch(
@@ -293,7 +422,7 @@ def make_source_units(text, *, mode=None, include=None, known_context=True):
                         raise MakeProbeError("Make parsing-mode context has an unproven else")
                     if nested:
                         keyword, arguments = nested[1], nested[2]
-                        choice = _literal_condition(keyword, arguments)
+                        choice = mode.condition(keyword, arguments)
                     else:
                         choice = True
                         conditions[-1][2] = True
@@ -301,7 +430,7 @@ def make_source_units(text, *, mode=None, include=None, known_context=True):
                     active = _mode_and(eligible, choice)
                 else:
                     eligible = active
-                    choice = _literal_condition(keyword, arguments)
+                    choice = mode.condition(keyword, arguments)
                     conditions.append([active, choice, False])
                     active = _mode_and(active, choice)
                 if eligible is not False and mode.effectful(arguments):
@@ -345,6 +474,11 @@ def make_source_units(text, *, mode=None, include=None, known_context=True):
                     if target_assignment["operator"] in {":=", "::=", "!=", "+="} and mode.effectful(target_assignment["value"]):
                         mode.uncertain()
                 else:
+                    undefined = re.fullmatch(r"(override[ \t]+)?undefine[ \t]+(" + IDENTIFIER + ")", header)
+                    if undefined:
+                        mode.assign(undefined[2], "undefine", "", override=bool(undefined[1]), active=active)
+                    if _unproven_assignment_destination(header):
+                        mode.uncertain()
                     if mode.effectful(header):
                         mode.uncertain()
                     included = _include_names(header)
@@ -356,7 +490,9 @@ def make_source_units(text, *, mode=None, include=None, known_context=True):
                     else:
                         separators = _rule_separators(header)
                         left = header[:separators[0]] if separators else header
-                        if any(character in left for character in "$*?[%\\"):
+                        function = _make_function(header)
+                        empty_result = function is not None and function[0] in EMPTY_RESULT_FUNCTIONS
+                        if not empty_result and any(character in left for character in "$*?[%\\"):
                             pending_posix = None
                         elif separators and ".POSIX" in re.split(r"[ \t\r\n\v\f]+", left.strip(MAKE_SPACE)):
                             if mode.posix is not True and (active is None or not known_context):
@@ -370,7 +506,7 @@ def make_source_units(text, *, mode=None, include=None, known_context=True):
     record_pending()
 
 
-def _source_units(sources, *, assignments=(), budget=None):
+def _source_units(sources, *, assignments=(), budget=None, target=None):
     decoded = {}
     for path, data in sources.items():
         if budget is not None:
@@ -384,6 +520,8 @@ def _source_units(sources, *, assignments=(), budget=None):
         forced=frozenset(name for origin, name, _ in assignments if origin == "command-line"),
         budget=budget,
     )
+    if target is not None:
+        mode.bind_invocation(target)
     units, reading, unresolved_modes = {}, set(), []
     ordered, known_positions = [], set()
 
@@ -607,7 +745,7 @@ def _unproven_assignment_destination(header):
 def _prepare_rule_templates(
     session, target, state, commands, observation, sources, *, observe_dispatch=False, external_names=(),
 ):
-    units = _source_units(sources, assignments=state, budget=session.budget)
+    units = _source_units(sources, assignments=state, budget=session.budget, target=target)
     ordered, known_positions = _ordered_source_units(units)
     positions = {(path, index): offset for offset, (path, index, _) in enumerate(ordered)}
     macros, assignments, initializers, callers = {}, {}, {}, []
@@ -1046,7 +1184,7 @@ def closure(names, dependencies):
 
 def source_census(
     sources, *, observed_values=None, reference_units=None, template_graph_inputs=(), template_scoped=(),
-    source_assignments=(), budget=None,
+    source_assignments=(), budget=None, source_target=None,
 ):
     all_names, graph, recipe, introspection, defaults = set(), set(), set(), set(), set()
     dependencies = {}
@@ -1110,7 +1248,7 @@ def source_census(
             expressions.setdefault(name, []).append(value)
 
     if reference_units is None:
-        reference_units = _source_units(sources, assignments=source_assignments, budget=budget)
+        reference_units = _source_units(sources, assignments=source_assignments, budget=budget, target=source_target)
     ordered, known_positions = _ordered_source_units(reference_units)
     secondary_directive = lambda unit: (
         unit.body is None and not unit.text.startswith("\t")
@@ -1655,6 +1793,7 @@ def run_probe(
                 template_graph_inputs=template_inputs, template_scoped=template_scoped,
                 source_assignments=state,
                 budget=session.budget,
+                source_target=target,
             )
             usages.append(usage)
             _graph_definitions(

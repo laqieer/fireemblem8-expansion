@@ -11,7 +11,7 @@ from scripts.validation_ownership import reporter
 from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, GitTreeEntries, GitTreeEntry, encoded
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.budget import Limits, MAX_PLANNED_STATE_BYTES
-from scripts.validation_ownership.graph_probe import make_source_units, run_probe, source_census
+from scripts.validation_ownership.graph_probe import _MakeSourceMode, make_source_units, run_probe, source_census
 from scripts.validation_ownership.make_probe import ProbeSession
 from scripts.validation_ownership.tests.test_foundation import _PendingTrafficLimits
 
@@ -825,6 +825,119 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 sources, native = self.mode_values(source, expected=expected)
                 actual = source_census(sources)
                 self.assertEqual([actual["definitions"][name][0] for name in ("FIRST", "SECOND")], native)
+
+    def test_original_invocation_supports_the_actual_make_guard_prefix(self):
+        prefix = (ROOT / "Makefile").read_text().split("\nvalidation-ownership-check:\n", 1)[0]
+        source = prefix + (
+            "\nvalidation-ownership-check: measurement\nelse\nall other: measurement\nendif\n"
+            "PROBE = alpha  \\\n  \\\n beta\nmeasurement:\n\t@printf '%s\\n' '$(value PROBE)'\n"
+        )
+        self.add("Makefile", source)
+        controls = {"MAKECMDGOALS", "MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKEOVERRIDES"}
+        for target in ("all", "other", "validation-ownership-check"):
+            with self.subTest(target=target):
+                budget = ProbeBudget()
+                try:
+                    ordinary = budget.run(["/usr/bin/make", "-f", "Makefile", target], cwd=self.root, env=ENVIRONMENT)
+                    self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+                    self.assertEqual(ordinary.stdout, b"alpha beta\n")
+                finally:
+                    budget.close()
+                    self.assertFalse(budget.children)
+                with self.session() as session:
+                    native = session.make(target, variables=("MAKECMDGOALS",),
+                                          definitions=("PROBE", "_VALIDATION_OWNERSHIP_FLAGS"))
+                self.assertEqual(native.semantics["domains"]["MAKECMDGOALS"], {
+                    "value": target, "origin": "default", "flavor": "simple",
+                })
+                self.assertEqual(native.semantics["definitions"]["global"]["PROBE"]["value"], "alpha beta")
+                guard = native.semantics["definitions"]["global"]["_VALIDATION_OWNERSHIP_FLAGS"]
+                self.assertEqual(guard["origin"], "override" if target == "validation-ownership-check" else "undefined")
+                observed = self.observe(targets=(target,), trusted_builtin_names=controls)[target]
+                self.assertEqual(observed["record"]["variants"][0]["record"]["files"][0]["target"], target)
+                self.assertEqual(source_census({"Makefile": source.encode()}, source_target=target)["definitions"]["PROBE"],
+                                 ["alpha beta"])
+
+    def test_unknown_mode_accepts_only_equivalent_assignment_constructs(self):
+        assignment = "  override _VALIDATION_OWNERSHIP_FLAGS := \\\n\t$(strip $(MAKEFLAGS) $(MFLAGS) $(GNUMAKEFLAGS))"
+        self.assertIn(assignment, (ROOT / "Makefile").read_text())
+        for activation in ("$(eval UNUSED = literal)\n", "$(eval .POSIX:)\n"):
+            with self.subTest(activation=activation):
+                self.add("Makefile", activation + assignment + "\nall: ;\n")
+                with self.session() as session:
+                    native = session.make("all", definitions=("_VALIDATION_OWNERSHIP_FLAGS",))
+                self.assertEqual(native.semantics["definitions"]["global"]["_VALIDATION_OWNERSHIP_FLAGS"], {
+                    "value": "", "origin": "override", "flavor": "simple",
+                })
+                actual = source_census({"Makefile": (activation + assignment + "\nall: ;\n").encode()}, source_target="all")
+                self.assertEqual(actual["definitions"]["_VALIDATION_OWNERSHIP_FLAGS"], [
+                    "$(strip $(MAKEFLAGS) $(MFLAGS) $(GNUMAKEFLAGS))",
+                ])
+        for statement in (
+            "override VALUE := \\\n literal",
+            "export VALUE = \\\n literal",
+            "all: private VALUE := \\\n literal",
+        ):
+            with self.subTest(statement=statement):
+                mode = _MakeSourceMode(posix=None)
+                folded = mode.collapse(statement, construct=True)
+                self.assertIsNone(mode.posix)
+                self.assertIn("literal", folded)
+                with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation"):
+                    mode.collapse("NEXT = alpha  \\\n beta", construct=True)
+
+    def test_unknown_mode_does_not_normalize_meaningful_values_or_define_data(self):
+        for statement in (
+            "VALUE = alpha  \\\n beta",
+            "VALUE := $(subst x,alpha  \\\n beta,x)",
+            "all: VALUE = alpha  \\\n beta",
+        ):
+            with self.subTest(statement=statement):
+                with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation"):
+                    _MakeSourceMode(posix=None).collapse(statement, construct=True)
+        body = "define BODY\nVALUE := \\\n literal\nendef\n"
+        with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation"):
+            list(make_source_units(body, mode=_MakeSourceMode(posix=None)))
+        for activation, expected in (("$(eval UNUSED = literal)\n", "alpha beta"),
+                                     ("$(eval .POSIX:)\n", "alpha    beta")):
+            source = activation + "VALUE := \\\n literal\nFIRST = alpha  \\\n  \\\n beta\n"
+            sources, actual, _ = self.mode_first(source)
+            self.assertEqual(actual, expected)
+            with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation"):
+                source_census(sources, source_target="all")
+
+    def test_original_control_facts_do_not_survive_source_changes_or_unknown_eval(self):
+        continued = "FIRST = alpha  \\\n  \\\n beta\n"
+        source = "MAKECMDGOALS = $(eval .POSIX:)\nRESULT := $(MAKECMDGOALS)\n" + continued
+        sources, native, _ = self.mode_first(source)
+        self.assertEqual(native, "alpha    beta")
+        with self.assertRaisesRegex(MakeProbeError, "unproven.*mode"):
+            source_census(sources, source_target="all")
+        source = "$(eval MAKECMDGOALS = other)\nifeq ($(MAKECMDGOALS),all)\nIGNORED = yes\nelse\n.POSIX:\nendif\n" + continued
+        sources, native, _ = self.mode_first(source)
+        self.assertEqual(native, "alpha beta")
+        with self.assertRaisesRegex(MakeProbeError, "unproven.*POSIX"):
+            source_census(sources, source_target="all")
+        source = "DEST = MAKECMDGOALS\n$(DEST) = other\nifeq ($(MAKECMDGOALS),all)\nIGNORED = yes\nelse\n.POSIX:\nendif\n" + continued
+        sources, native, _ = self.mode_first(source)
+        self.assertEqual(native, "alpha beta")
+        with self.assertRaisesRegex(MakeProbeError, "unproven.*POSIX"):
+            source_census(sources, source_target="all")
+        source = "undefine MAKECMDGOALS\nifeq ($(origin MAKECMDGOALS),undefined)\n.POSIX:\nendif\n" + continued
+        sources, native, _ = self.mode_first(source)
+        self.assertEqual(native, "alpha beta")
+        with self.assertRaisesRegex(MakeProbeError, "unproven.*POSIX"):
+            source_census(sources, source_target="all")
+        source = "ifeq ($(filter %, $(MAKECMDGOALS)),all)\n.POSIX:\nendif\n" + continued
+        sources, native, _ = self.mode_first(source)
+        self.assertEqual(native, "alpha beta")
+        with self.assertRaisesRegex(MakeProbeError, "unproven.*POSIX"):
+            source_census(sources, source_target="all")
+        mode = _MakeSourceMode(definitions={"MAKEOVERRIDES": "$(eval .POSIX:)"})
+        mode.bind_invocation("all")
+        self.assertIsNone(mode.posix)
+        self.assertEqual(mode.control_values, {})
+        self.assertEqual(mode.control_reads, set())
 
     def test_posix_mode_uses_proven_literal_conditional_branches(self):
         values = "FIRST = alpha  \\\n  \\\n beta\nSECOND = alpha  \\\n  \\\n beta\n"

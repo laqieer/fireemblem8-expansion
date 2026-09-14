@@ -4145,6 +4145,37 @@ its body, so a continued FIRST define body and subsequent SECOND both have
 four spaces. Include literal multi-target `.POSIX` rules and distinguish a
 `.POSIX` variable assignment or target-specific assignment from a real rule.
 
+For original invocation compatibility, copy the actual Makefile guard prefix
+through its declarations before the checker target into an isolated fixture,
+then supply benign measurement recipes for all, other and the checker-named
+goal. Do not invoke the complete reporter. Compare ordinary GNU and native
+MAKECMDGOALS value/origin/flavor and raw guard variables for each goal; the
+all/other branches leave those guarded variables undefined. Their continuation
+probe remains non-POSIX. The source/target census must consume the original
+single-goal context and accept the source-faithful guard prefix, without
+special-casing its private variable names.
+
+The immutable baseline9 run34783136813/attempt1 failed at Makefile12-13 before
+the first include: the missing original MAKECMDGOALS context made mode unknown
+at the ownership-error branch, then raw comparison rejected one versus two
+spaces after `:=`. Preserve the bounded result/scope/progress evidence and its
+call chain; that allocation is closed. Compare the exact override assignment
+under normal and established POSIX mode: its actual raw value is identically
+empty, override/simple. Under an unknown mode, global/export/target assignments
+with equal parsed scope, name, operator and RHS may pass, but mode must remain
+unknown. A following alpha-beta continuation with genuinely different values,
+an internal function argument difference, or a raw define body must still
+reject. Do not globally trim whitespace or set unknown mode to false.
+
+Overwrite or undefine the GNU goal, change it through an unproven eval or
+generated assignment destination, and require the original control facts to
+be invalidated. Unproven wildcard filter guards remain unproven. Preserve the
+actual source/invocation origins, include/eval ambiguity, delayed activation
+and original shared deadline. Restore missing invocation binding and the old
+raw-fold-only comparison independently: the source-faithful goal controls and
+equivalent-assignment controls must fail again while ordinary/native results
+remain valid.
+
 Repeat with `.POSIX` under literal false/true, nested, quoted and
 `else`/`else ifeq` conditions. The false branch must leave both values
 non-POSIX, including an ignored nested condition whose shell operand would
