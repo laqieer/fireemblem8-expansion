@@ -80,6 +80,35 @@ class _SourceUnitStream(NamedTuple):
     known_positions: frozenset
 
 
+class _SourceSite(NamedTuple):
+    path: str
+    logical: int
+    start: int
+    end: int
+
+    def label(self):
+        lines = str(self.start) if self.start == self.end else f"{self.start}-{self.end}"
+        return f"{self.path}:{lines} (logical {self.logical})"
+
+
+class _LogicalChunk(NamedTuple):
+    text: str
+    logical: int
+    start: int
+    end: int
+
+
+@dataclass(frozen=True)
+class _ModeBinding:
+    origin: str
+    flavor: str
+    value: str | None
+
+
+UNPROVEN_BINDING = _ModeBinding("unknown", "unknown", None)
+UNDEFINED_BINDING = _ModeBinding("undefined", "undefined", "")
+
+
 @dataclass
 class _MakeSourceMode:
     posix: bool | None = False
@@ -89,12 +118,80 @@ class _MakeSourceMode:
     control_values: dict = field(default_factory=dict)
     control_metadata: dict = field(default_factory=dict)
     control_reads: set = field(default_factory=set)
+    original_input: object = None
+    original_namespace_valid: bool = True
+    namespace: frozenset | None = None
+    site: _SourceSite | None = None
+    first_uncertainty: tuple | None = None
+    last_effect_input: str | None = None
+
+    def __post_init__(self):
+        self.definitions = {
+            name: frozenset((_ModeBinding("command line" if name in self.forced else "environment", "recursive", value),))
+            for name, value in self.definitions.items()
+        }
+
+    def binding(self, name):
+        if name not in self.definitions:
+            record = (
+                self.original_input(name)
+                if self.original_namespace_valid and self.original_input is not None else None
+            )
+            if record is None:
+                values = frozenset((UNPROVEN_BINDING,))
+            else:
+                values = frozenset((_ModeBinding(record["origin"], record["flavor"], record["value"]),))
+            self.definitions[name] = values
+        return self.definitions[name]
+
+    def retain_binding(self, name, values):
+        values = frozenset(values)
+        if self.budget is not None and values != self.definitions.get(name):
+            self.budget.charge("cache", len(encoded((
+                name, sorted(((value.origin, value.flavor, value.value) for value in values), key=encoded),
+            ))))
+        self.definitions[name] = values
+
+    def literal_text(self, expression, active=()):
+        self.checkpoint()
+        if not self.original_namespace_valid:
+            return None
+        pieces, previous = [], 0
+        for start, stop, body in sorted(_make_expression_spans(expression), key=lambda item: (item[0], -item[1])):
+            if start < previous:
+                continue
+            if "$" in expression[previous:start] or not re.fullmatch(IDENTIFIER, body) or body in active:
+                return None
+            values = set()
+            for binding in self.binding(body):
+                if binding.flavor == "undefined":
+                    values.add("")
+                elif binding.value is None or binding.flavor == "unknown":
+                    return None
+                elif binding.flavor == "recursive":
+                    value = self.literal_text(binding.value, (*active, body))
+                    if value is None:
+                        return None
+                    values.add(value)
+                else:
+                    values.add(binding.value)
+            if len(values) != 1:
+                return None
+            pieces.extend((expression[previous:start], values.pop()))
+            previous = stop
+        if "$" in expression[previous:]:
+            return None
+        return "".join((*pieces, expression[previous:]))
 
     def checkpoint(self):
         if self.budget is not None:
             self.budget.remaining()
 
-    def uncertain(self):
+    def uncertain(self, reason="unproven effect"):
+        if self.posix is not True and self.first_uncertainty is None:
+            self.first_uncertainty = (self.site, reason, self.last_effect_input)
+        self.last_effect_input = None
+        self.original_namespace_valid = False
         self.control_values.clear()
         self.control_metadata.clear()
         self.control_reads.clear()
@@ -115,7 +212,7 @@ class _MakeSourceMode:
         if "MAKECMDGOALS" not in supplied:
             self.control_values["MAKECMDGOALS"] = target
             self.control_metadata["MAKECMDGOALS"] = ("default", "simple")
-            self.definitions["MAKECMDGOALS"] = target
+            self.definitions["MAKECMDGOALS"] = frozenset((_ModeBinding("default", "simple", target),))
         if self.budget is not None:
             self.budget.charge("cache", len(encoded((
                 sorted(self.control_reads), self.control_values, self.control_metadata,
@@ -128,7 +225,13 @@ class _MakeSourceMode:
         ordinary = _collapse_make_continuations(value)
         posix = _collapse_make_continuations(value, posix=True)
         if ordinary != posix and not (construct and _same_make_assignment(ordinary, posix)):
-            raise MakeProbeError("unproven GNU Make parsing-mode context changes continuation data")
+            message = "unproven GNU Make parsing-mode context changes continuation data"
+            detail = "" if self.site is None else "; source " + self.site.label()
+            if self.first_uncertainty is not None:
+                site, reason, name = self.first_uncertainty
+                detail += "; first uncertainty " + (site.label() if site is not None else "<unknown source>")
+                detail += ": " + reason + (f" [{name}]" if name else "")
+            raise MakeProbeError(message + detail) from MakeProbeError(message)
         return ordinary
 
     def control_text(self, expression):
@@ -191,65 +294,86 @@ class _MakeSourceMode:
         return (left == right) == (keyword == "ifeq")
 
     def effectful(self, expression):
-        pending, active, complete = [(None, expression)], set(), set()
+        self.last_effect_input = None
+        pending, active, complete = [(None, expression, False)], set(), set()
         while pending:
             self.checkpoint()
-            name, value = pending.pop()
-            if value is None:
+            name, value, finished = pending.pop()
+            if finished:
                 active.remove(name)
-                complete.add(name)
+                complete.add((name, value))
                 continue
             if name is not None:
-                if name in complete:
+                if (name, value) in complete:
                     continue
                 if name in active:
+                    self.last_effect_input = name
                     return True
                 active.add(name)
-                pending.append((name, None))
+                pending.append((name, value, True))
             for body in make_expressions(value):
                 operation = re.match(r"([^ \t\r\n\v\f]+)[ \t\r\n\v\f]+", body)
                 if operation and operation[1] not in MAKE_FUNCTIONS - {"call", "eval", "guile"}:
+                    self.last_effect_input = name or operation[1]
                     return True
             value = _without_literal_metadata(value)
             if next(computed_selectors(value), None) is not None:
+                self.last_effect_input = "computed-selector"
                 return True
             for dependency in references(value):
                 if dependency in self.control_reads:
                     continue
-                if dependency not in self.definitions:
-                    return True
-                pending.append((dependency, self.definitions[dependency]))
+                for binding in self.binding(dependency):
+                    if binding.flavor == "unknown" or binding.flavor == "recursive" and binding.value is None:
+                        self.last_effect_input = dependency
+                        return True
+                    if binding.flavor == "recursive":
+                        pending.append((dependency, binding.value, False))
         return False
 
     def assign(self, name, operator, value, *, override=False, active=True):
         if active is False or name in self.forced and not override:
             return
-        if operator == "?=" and name in self.definitions:
+        previous = (
+            self.binding(name) if operator in {"?=", "+=", "undefine"} or active is None
+            else self.definitions.get(name, ())
+        )
+        if operator == "?=" and previous and all(item.flavor not in {"undefined", "unknown"} for item in previous):
             return
         if name in INVOCATION_CONTROL_READS:
             self.control_reads.clear()
             self.control_values.clear()
             self.control_metadata.clear()
-        if operator == "undefine":
-            self.definitions.pop(name, None)
-            return
-        if active is None:
-            self.definitions.pop(name, None)
-            if operator in {":=", "::=", "!=", "+="} and self.effectful(value):
-                self.uncertain()
-            return
-        if operator in {":=", "::=", "!="}:
-            if self.effectful(value):
-                self.uncertain()
-            self.definitions[name] = ""
-        elif operator == "+=":
-            # The prior flavor is not reconstructed here. Either evaluation
-            # time must be safe before it can leave the mode proven.
-            if self.effectful(value):
-                self.uncertain()
-            self.definitions[name] = self.definitions.get(name, "") + " " + value
-        else:
-            self.definitions[name] = value
+        origin = "override" if override else "file"
+        value = value.lstrip(MAKE_SPACE)
+        result = set(previous) if active is None else set()
+        choices = previous or (UNDEFINED_BINDING,)
+        for before in choices:
+            if before.origin == "override" and not override:
+                result.add(before)
+            elif operator == "undefine":
+                result.add(UNDEFINED_BINDING)
+            elif operator == "?=" and before.flavor not in {"undefined", "unknown"}:
+                result.add(before)
+            elif operator in {":=", "::=", "!="} or operator == "+=" and before.flavor == "simple":
+                if self.effectful(value):
+                    self.uncertain()
+                literal = value if "$" not in value and operator != "!=" else None
+                if operator == "+=":
+                    literal = before.value + " " + literal if before.value is not None and literal is not None else None
+                result.add(_ModeBinding(origin, "simple", literal))
+            elif operator == "+=":
+                if before.flavor == "unknown":
+                    if self.effectful(value):
+                        self.uncertain()
+                    result.add(UNPROVEN_BINDING)
+                else:
+                    result.add(_ModeBinding(origin, "recursive", (before.value + " " if before.flavor != "undefined" else "") + value))
+            else:
+                if operator == "?=" and before.flavor == "unknown":
+                    result.add(before)
+                result.add(_ModeBinding(origin, "recursive", value))
+        self.retain_binding(name, result)
 
 
 def _condition_operands(arguments):
@@ -316,17 +440,33 @@ def _mode_not(value):
     return None if value is None else not value
 
 
-def _include_names(header):
+def _include_names(header, mode=None):
     include = re.fullmatch(r"(?:-?include|sinclude)[ \t\r\n\v\f]+(.*)", header)
     if include is None:
         return False
     if any(character in include[1] for character in "$*?[]~\\"):
+        function = _make_function(include[1])
+        if (
+            mode is not None and mode.namespace is not None and mode.original_namespace_valid
+            and function is not None and function[0] == "wildcard" and len(function[1]) == 1
+        ):
+            try:
+                literal = mode.literal_text(function[1][0])
+            except RecursionError:
+                return None
+            if literal is not None and not any(character in literal for character in "$*?[]~\\#;:|"):
+                paths = re.findall(r"[^ \t\r\n\v\f]+", literal)
+                for path in paths:
+                    mode.checkpoint()
+                    relative_path(path)
+                return [path for path in paths if path in mode.namespace]
         return None
     return re.split(r"[ \t\r\n\v\f]+", include[1].strip(MAKE_SPACE)) if include[1].strip(MAKE_SPACE) else []
 
 
 def _make_logical_chunks(text):
     pending = []
+    start, logical = 1, 0
     lines = text.split("\n")
     for index, line in enumerate(lines):
         has_lf = index < len(lines) - 1
@@ -336,10 +476,12 @@ def _make_logical_chunks(text):
         slashes = len(line) - len(line.rstrip("\\"))
         if has_lf and slashes % 2:
             continue
-        yield "\n".join(pending)
+        logical += 1
+        yield _LogicalChunk("\n".join(pending), logical, start, index + 1)
         pending = []
+        start = index + 2
     if pending:
-        yield "\n".join(pending)
+        yield _LogicalChunk("\n".join(pending), logical + 1, start, len(lines))
 
 
 def _collapse_make_continuations(text, *, posix=False):
@@ -366,7 +508,7 @@ def _collapse_make_continuations(text, *, posix=False):
             pieces.append("\n")
 
 
-def make_source_units(text, *, mode=None, include=None, known_context=True):
+def make_source_units(text, *, mode=None, include=None, known_context=True, source_path="<Make source>"):
     """GNU logical lines and whole define bodies; recipes keep their escapes."""
     if "\0" in text:
         raise MakeProbeError("Make source contains an unsupported NUL byte")
@@ -382,14 +524,16 @@ def make_source_units(text, *, mode=None, include=None, known_context=True):
             if pending_posix is True and active is True:
                 mode.posix = True
             else:
-                mode.uncertain()
+                mode.uncertain("unproven generated target")
             if active is True:
                 pending_posix = False
 
     def contextual_unit(line, body=None):
         return MakeSourceUnit(line, body, conditional_depth=len(conditions), active=active)
 
-    for raw in chunks:
+    for chunk in chunks:
+        raw = chunk.text
+        mode.site = _SourceSite(source_path, chunk.logical, chunk.start, chunk.end)
         mode.checkpoint()
         include_request = None
         line = raw if raw.startswith("\t") else mode.collapse(raw, construct=True)
@@ -442,9 +586,11 @@ def make_source_units(text, *, mode=None, include=None, known_context=True):
             record_pending()
         definition = DEFINE.match(header) if not raw.startswith("\t") and not assignment else None
         if definition:
+            header_site = mode.site
             body, depth = [], 1
-            for raw_body in chunks:
-                part = mode.collapse(raw_body)
+            for body_chunk in chunks:
+                mode.site = _SourceSite(source_path, body_chunk.logical, body_chunk.start, body_chunk.end)
+                part = mode.collapse(body_chunk.text)
                 directive = strip_comment(part).strip(MAKE_SPACE)
                 if not part.startswith("\t"):
                     if re.match(r"^define(?:[ \t]|$)", directive):
@@ -456,6 +602,7 @@ def make_source_units(text, *, mode=None, include=None, known_context=True):
                 body.append(part)
             else:
                 raise MakeProbeError("Make source has an unterminated define body")
+            mode.site = header_site._replace(end=body_chunk.end)
             body = "\n".join(body)
             mode.assign(
                 definition[1], header[definition.end():].strip(MAKE_SPACE) or "=", body,
@@ -481,7 +628,7 @@ def make_source_units(text, *, mode=None, include=None, known_context=True):
                         mode.uncertain()
                     if mode.effectful(header):
                         mode.uncertain()
-                    included = _include_names(header)
+                    included = _include_names(header, mode)
                     if included is not False:
                         if include is None:
                             mode.uncertain()
@@ -506,7 +653,7 @@ def make_source_units(text, *, mode=None, include=None, known_context=True):
     record_pending()
 
 
-def _source_units(sources, *, assignments=(), budget=None, target=None):
+def _source_units(sources, *, assignments=(), budget=None, target=None, original_input=None, namespace=None):
     decoded = {}
     for path, data in sources.items():
         if budget is not None:
@@ -519,6 +666,8 @@ def _source_units(sources, *, assignments=(), budget=None, target=None):
         definitions={name: value for _, name, value in assignments},
         forced=frozenset(name for origin, name, _ in assignments if origin == "command-line"),
         budget=budget,
+        original_input=original_input,
+        namespace=namespace,
     )
     if target is not None:
         mode.bind_invocation(target)
@@ -537,10 +686,10 @@ def _source_units(sources, *, assignments=(), budget=None, target=None):
         def included(names, active, current_mode):
             if names is None:
                 unresolved_modes.append(current_mode.posix)
-                current_mode.uncertain()
+                current_mode.uncertain("unproven include outcome")
                 return
             if active is None:
-                current_mode.uncertain()
+                current_mode.uncertain("unproven include condition")
             for name in names:
                 if name in decoded:
                     visit(name, known=known and active is True and unit.conditional_depth == 0)
@@ -548,7 +697,7 @@ def _source_units(sources, *, assignments=(), budget=None, target=None):
         count = 0
         # Revisit the original inputs; reuse only the identical source units,
         # never the effects of a previous include invocation.
-        for unit in make_source_units(decoded[path], mode=mode, include=included, known_context=known):
+        for unit in make_source_units(decoded[path], mode=mode, include=included, known_context=known, source_path=path):
             if previous is None:
                 units[path].append(unit)
             elif count >= len(previous) or unit[:3] != previous[count][:3]:
@@ -745,7 +894,24 @@ def _unproven_assignment_destination(header):
 def _prepare_rule_templates(
     session, target, state, commands, observation, sources, *, observe_dispatch=False, external_names=(),
 ):
-    units = _source_units(sources, assignments=state, budget=session.budget, target=target)
+    original_inputs = {}
+    has_empty_witness = any(not value for value in session.snapshot.files.values())
+
+    def original_input(name):
+        if name in INVOCATION_CONTROL_READS | {"MAKEFILE_LIST", "MAKE_RESTARTS", "MAKELEVEL"} or not has_empty_witness:
+            return None
+        if name not in original_inputs:
+            original_inputs.update(session.original_make_inputs(target, (name,), assignments=state))
+        return original_inputs[name]
+
+    namespace = set(session.snapshot.files) | {item.path for item in observation.generated}
+    namespace.update(parent.as_posix() for name in tuple(namespace) for parent in PurePosixPath(name).parents if parent.as_posix() != ".")
+    namespace.update(session.snapshot.gitlink_roots)
+    session.budget.charge("cache", len(encoded(sorted(namespace))))
+    units = _source_units(
+        sources, assignments=state, budget=session.budget, target=target,
+        original_input=original_input, namespace=frozenset(namespace),
+    )
     ordered, known_positions = _ordered_source_units(units)
     positions = {(path, index): offset for offset, (path, index, _) in enumerate(ordered)}
     macros, assignments, initializers, callers = {}, {}, {}, []

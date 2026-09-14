@@ -739,6 +739,37 @@ source-faithful guard fixture uses benign measurement recipes, not a complete
 report/check invocation. The closed baseline9 semantic failure remains
 preserved evidence, not a quota finding or permission for another graph run.
 
+The following Tools prefix also needs original input/effect evidence.
+Missing model entries are not assumed undefined or safe. When the selected
+snapshot has an eligible zero-byte regular source, the shared session can use
+that immutable empty witness with a fixed, recipe-less GNU goal to query raw
+startup inputs before any candidate Make program is interpreted. The existing
+`definitions=` protocol, same ordered invocation assignments and original
+resource admissions apply. The query returns only input metadata, never graph
+authority; nonempty/published witnesses, extra source reads, commands, recipes,
+outputs and invocation-control substitutions reject. Without an eligible
+witness the input remains unproven, not a success-shaped fallback. No committed
+source/name/hash snapshot or new runtime permission is introduced.
+
+Native undefined inputs and original environment/builtin records retain their
+definedness, origin and flavor. Conditional source writes join abstract binding
+alternatives: undefined and simple bindings are mode-inert, while recursive
+alternatives keep their original expressions and are checked through current
+dependencies. Unknown or effectful alternatives are not discarded. This
+preserves the OS/EXE/PATH chain without selecting a guessed conditional value.
+Original input lookup is invalidated by unproven namespace effects. Exact,
+literal-path `wildcard` includes may use the captured source/generated namespace
+to prove an empty or present outcome; unresolved patterns/context still reject.
+This is not Python evaluation of general Make functions or arbitrary globbing.
+
+Mode failures report their actual visitor path, logical statement and physical
+line span, plus the first unproven source site/input name. The error chain and
+failure classification remain, without dumping variable or environment values.
+The baseline10 CPPFLAGS failure is intentionally not fixed by normalizing its
+internal whitespace: one versus two internal spaces are different raw values.
+The original data/effect and include proofs instead keep the real normal mode
+established through that full source-faithful prefix.
+
 Assignment origin remains part of that context. Command-line assignments
 retain their admitted precedence; ordinary file assignments can replace
 environment values, and a defined empty environment value still prevents

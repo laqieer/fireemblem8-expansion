@@ -1988,14 +1988,72 @@ class ProbeSession:
         self, target: str, *, makefile="Makefile", variables=(), assignments=(),
         owner_inputs=(), commands=None, observe_recipe_dispatch=False, definitions=(),
     ) -> MakeObservation:
+        return self._make(
+            target, makefile=makefile, variables=variables, assignments=assignments,
+            owner_inputs=owner_inputs, commands=commands,
+            observe_recipe_dispatch=observe_recipe_dispatch, definitions=definitions,
+        )
+
+    @terminal_failure
+    def original_make_inputs(self, target: str, names, *, assignments=()):
+        """Native raw inputs before candidate source; never a graph authority."""
+        if not isinstance(names, (tuple, list)) or not names or len(names) > 512:
+            raise MakeProbeError("original input query exceeds its bounded name contract")
+        if any(not isinstance(name, str) or len(name) > 128 or not VARIABLE.fullmatch(name) for name in names):
+            raise MakeProbeError("invalid original Make input name")
+        if set(names) & {
+            "MAKECMDGOALS", "MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKEOVERRIDES",
+            "MAKEFILE_LIST", "MAKE_RESTARTS", "MAKELEVEL",
+        }:
+            raise MakeProbeError("original input query cannot substitute invocation controls")
+        empty_sources = sorted(
+            path for path, data in self.snapshot.files.items()
+            if not data and TARGET.fullmatch(path) and "%" not in path and path != target
+            and path not in self.published_sources and path not in self.generated_paths
+        )
+        if not empty_sources:
+            raise MakeProbeError("original input query lacks an admitted empty source witness")
+        observed = self._make(
+            target, makefile=empty_sources[0], definitions=tuple(names), assignments=assignments,
+            _original_inputs=True,
+        )
+        if (
+            observed.generated or observed.events or observed.semantics["dynamic_commands"]
+            or observed.semantics["native_dispatches"]
+            or not observed.file_open_attempts
+            or len(observed.semantics["files"]) != 1
+            or observed.semantics["files"][0]["target"] != target
+            or observed.semantics["files"][0]["prerequisites"]
+            or any(item["recipe"] not in {"", "\n"} for item in observed.semantics["files"])
+            or any(resolved != "/repo/" + empty_sources[0] for resolved, _ in observed.file_open_attempts)
+        ):
+            raise MakeProbeError("original input query executed outside its empty source witness")
+        result = observed.semantics["definitions"]["global"]
+        self.budget.charge("cache", len(encoded(result)))
+        return result
+
+    def _make(
+        self, target: str, *, makefile="Makefile", variables=(), assignments=(),
+        owner_inputs=(), commands=None, observe_recipe_dispatch=False, definitions=(),
+        _original_inputs=False,
+    ) -> MakeObservation:
         self.budget.remaining()
+        if type(_original_inputs) is not bool:
+            raise MakeProbeError("invalid original input observation selection")
         if type(observe_recipe_dispatch) is not bool:
             raise MakeProbeError("native recipe observation requires a boolean selection")
         if not TARGET.fullmatch(target) or target.startswith(("-", "/")) or ".." in target.split("/"):
             raise MakeProbeError("invalid requested Make target")
-        relative_path(makefile)
-        if makefile not in self.snapshot.files and makefile not in self.published_sources:
-            raise MakeProbeError("Makefile is not an admitted snapshot input")
+        if _original_inputs:
+            if (
+                self.snapshot.files.get(makefile) != b"" or variables or owner_inputs
+                or commands is not None or observe_recipe_dispatch
+            ):
+                raise MakeProbeError("original input query escaped its fixed metadata-only program")
+        else:
+            relative_path(makefile)
+            if makefile not in self.snapshot.files and makefile not in self.published_sources:
+                raise MakeProbeError("Makefile is not an admitted snapshot input")
         if len(variables) + len(definitions) > 512 or len(assignments) > 512 or len(owner_inputs) > 4096:
             raise MakeProbeError("Make request count exceeds admission bound")
         if any(not isinstance(name, str) or len(name) > 128 or not VARIABLE.fullmatch(name)
@@ -2237,8 +2295,12 @@ class ProbeSession:
             result_path.touch()
             (control / "interceptor").touch()
             (mapping_path / "count").write_bytes((0).to_bytes(4, "little"))
+            original_program = (
+                ["--eval=.PHONY: " + target + "\n" + makefile + ":;\n" + target + ":;"]
+                if _original_inputs else []
+            )
             completed, observed = self._sandbox_run(
-                root, mode="make", argv=["/usr/bin/make", "-f", makefile, *cli, target],
+                root, mode="make", argv=["/usr/bin/make", "-f", makefile, *original_program, *cli, target],
                 environment=environment,
                 mounts=[
                     self._mount(self.tree, "/repo"),

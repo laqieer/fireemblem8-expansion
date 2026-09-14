@@ -173,6 +173,30 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         visits = native.semantics["domains"]["MAKEFILE_LIST"]["value"].split()
         return {name: (self.root / name).read_bytes() for name in visits}, value, visits
 
+    def original_input_witness(self):
+        path = "scripts/generated_data/chapterbundle/__init__.py"
+        value = (ROOT / path).read_text()
+        self.assertEqual(value, "")
+        self.add(path, value)
+
+    def original_effects_probe(self, source, *, includes=None, external=()):
+        self.original_input_witness()
+        self.add("Makefile", source)
+        for name, value in (includes or {}).items():
+            self.add(name, value)
+        with self.session() as session:
+            with patch.object(session, "original_make_inputs", wraps=session.original_make_inputs) as original:
+                result = run_probe(
+                    session.loader, {"all"}, {}, {}, session=session,
+                    declared_external_names=set(external),
+                    ambient_undefined_names={"OS", "DEVKITARM", "UNDEFINED", "MISSING"},
+                    trusted_builtin_names={"PATH", "MAKECMDGOALS", "MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS"},
+                )
+            queried = {name for call in original.call_args_list for name in call.args[1]}
+        self.assertFalse(session.budget.children)
+        self.assertIsNone(session.base)
+        return result["all"], queried
+
     def test_conditionals_and_finite_origins_are_native_make_observations(self):
         self.add("Makefile", "MODE ?= one\nall: $(MODE)\none two: ;\n")
         result = self.observe({
@@ -857,6 +881,121 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 self.assertEqual(observed["record"]["variants"][0]["record"]["files"][0]["target"], target)
                 self.assertEqual(source_census({"Makefile": source.encode()}, source_target=target)["definitions"]["PROBE"],
                                  ["alpha beta"])
+
+    def test_original_native_inputs_precede_candidate_source_and_keep_raw_origins(self):
+        self.original_input_witness()
+        self.add("Makefile", "$(error candidate source must not run)\nall: ;\n")
+        with self.session() as session:
+            result = session.original_make_inputs(
+                "all", ("OS", "PATH", "CC", "MAYBE"),
+                assignments=(("environment", "MAYBE", "$(error unused body)"),),
+            )
+            self.assertEqual(result["OS"], {"origin": "undefined", "flavor": "undefined", "value": ""})
+            self.assertEqual(result["PATH"], {"origin": "environment", "flavor": "recursive", "value": ENVIRONMENT["PATH"]})
+            self.assertEqual(result["CC"]["origin"], "default")
+            self.assertEqual(result["MAYBE"]["value"], "$(error unused body)")
+            self.assertEqual(session.budget.states, 1)
+        with self.session() as session:
+            before = session.budget.runs
+            with self.assertRaisesRegex(MakeProbeError, "invocation controls"):
+                session.original_make_inputs("all", ("MAKEFLAGS",))
+            self.assertEqual(session.budget.runs, before)
+        with self.session() as session:
+            before = session.budget.runs
+            with self.assertRaisesRegex(MakeProbeError, "bounded name contract"):
+                session.original_make_inputs("all", tuple("INPUT_" + str(index) for index in range(513)))
+            self.assertEqual(session.budget.runs, before)
+
+    def test_complete_actual_tools_prefix_has_original_input_effect_evidence(self):
+        original = (ROOT / "Makefile").read_text()
+        source = original[:original.index("\nASFLAGS  :=")] + (
+            "\nendif\nassets-check:\n\t@/usr/bin/printf '%s\\n' '$(value CPPFLAGS)'\n"
+        )
+        self.original_input_witness()
+        self.add("Makefile", source)
+        registry = json.loads((ROOT / ".github/validation-ownership-make-dynamics.json").read_text())
+        uname = next(row for row in registry["contracts"] if row["id"] == "host-uname")
+        from scripts.validation_ownership.graph_commands import MakeCommands
+        budget = ProbeBudget()
+        try:
+            ordinary = budget.run(["/usr/bin/make", "-f", "Makefile", "assets-check"], cwd=self.root, env=ENVIRONMENT)
+            self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+        finally:
+            budget.close()
+        contracts = {uname["expression"]: uname}
+        with self.session() as session:
+            native = session.make("assets-check", definitions=("CPPFLAGS",), commands=MakeCommands(session, contracts))
+            expected = native.semantics["definitions"]["global"]["CPPFLAGS"]["value"]
+            self.assertEqual(ordinary.stdout, (expected + "\n").encode())
+            with patch.object(session, "original_make_inputs", wraps=session.original_make_inputs) as original_inputs:
+                result = run_probe(
+                    session.loader, {"assets-check"}, {}, contracts, session=session,
+                    declared_external_names={
+                        "TOOLCHAIN", "PREFIX", "CPP", "PYTHON", "HOST_CC",
+                        "AUTOTOOLS_CONFIG_MK", "AUTOTOOLS_BUILD_DIR", "EXPANSION_HQ_MIXER",
+                    },
+                    ambient_undefined_names={"OS", "DEVKITARM", "MAKEOVERRIDES", "FE8_ITEM_ID_CAP"},
+                    trusted_builtin_names={"PATH", "MAKECMDGOALS", "MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS"},
+                )["assets-check"]
+            queried = {name for call in original_inputs.call_args_list for name in call.args[1]}
+            self.assertTrue({"OS", "PATH", "EXE"} <= queried)
+        record = result["record"]["variants"][0]["record"]
+        self.assertEqual(record["definitions"]["global"]["CPPFLAGS"]["value"], expected)
+        self.assertIn("-undef -DFE8_ARCHIVAL_BUILD=1", expected)
+        self.assertNotIn("-undef  -DFE8_ARCHIVAL_BUILD=1", expected)
+        self.assertEqual(len(result["record"]["variants"]), 1)
+        self.assertFalse(session.budget.children)
+
+    def test_original_effect_free_inputs_and_branch_alternatives_do_not_invent_modes(self):
+        continuation = "CPPFLAGS := -DFIRST=1 \\\n -DSECOND=2\nall:\n\t@/usr/bin/printf '%s\\n' '$(value CPPFLAGS)'\n"
+        for prefix, expected_input in (
+            ("ifeq ($(OS),Windows_NT)\nEXE := .exe\nelse\nEXE :=\nendif\nAS := as$(EXE)\n", "OS"),
+            ("CHOICE = yes\nifeq ($(CHOICE),yes)\nVALUE := one\nelse\nVALUE := two\nendif\nCOPY := $(VALUE)\n", "VALUE"),
+            ("export PATH := /usr/bin:$(PATH)\n", "PATH"),
+            ("CONFIG = absent.mk\n-include $(wildcard $(CONFIG))\n", None),
+        ):
+            with self.subTest(prefix=prefix):
+                result, queried = self.original_effects_probe(prefix + continuation)
+                self.assertEqual(self.ordinary(), b"-DFIRST=1 -DSECOND=2\n")
+                if expected_input is not None:
+                    self.assertIn(expected_input, queried)
+                value = result["record"]["variants"][0]["record"]["definitions"]["global"]["CPPFLAGS"]["value"]
+                self.assertEqual(value, "-DFIRST=1 -DSECOND=2")
+
+    def test_original_input_effect_evidence_does_not_hide_effectful_alternatives(self):
+        continuation = "CPPFLAGS := -DFIRST=1 \\\n -DSECOND=2\nall: ;\n"
+        cases = (
+            "OS = $(eval .POSIX:)Linux\nifeq ($(OS),Windows_NT)\nVALUE = one\nelse\nVALUE = two\nendif\n",
+            "CHOICE = yes\nVALUE = $(eval .POSIX:)\nifeq ($(CHOICE),yes)\nVALUE = literal\nendif\nCOPY := $(VALUE)\n",
+            "$(eval OS = $(eval .POSIX:)Linux)\nCOPY := $(OS)\n",
+        )
+        for prefix in cases:
+            with self.subTest(prefix=prefix):
+                self.original_input_witness()
+                self.add("Makefile", prefix + continuation)
+                with self.assertRaisesRegex(MakeProbeError, "unproven.*mode"):
+                    self.original_effects_probe(prefix + continuation)
+        with self.assertRaisesRegex(MakeProbeError, "unproven.*mode"):
+            self.original_effects_probe(
+                "SELECT = mode.mk\ninclude $(SELECT)\n" + continuation,
+                includes={"mode.mk": "$(eval .POSIX:)\n"},
+            )
+
+    def test_mode_failure_reports_real_source_span_and_first_input_without_values(self):
+        source = "# diagnostic prefix\nifeq ($(UNDEFINED),yes)\nVALUE = one\nendif\nCPPFLAGS := first \\\n second\nall: ;\n"
+        budget = ProbeBudget()
+        try:
+            with self.assertRaises(MakeProbeError) as rejected:
+                source_census({"diagnostic.mk": source.encode()}, budget=budget)
+        finally:
+            budget.close()
+        message = str(rejected.exception)
+        self.assertIn("diagnostic.mk:5-6", message)
+        self.assertIn("logical 5", message)
+        self.assertIn("first uncertainty diagnostic.mk:2", message)
+        self.assertIn("[UNDEFINED]", message)
+        self.assertNotIn("CPPFLAGS :=", message)
+        self.assertIsInstance(rejected.exception.__cause__, MakeProbeError)
 
     def test_unknown_mode_accepts_only_equivalent_assignment_constructs(self):
         assignment = "  override _VALIDATION_OWNERSHIP_FLAGS := \\\n\t$(strip $(MAKEFLAGS) $(MFLAGS) $(GNUMAKEFLAGS))"

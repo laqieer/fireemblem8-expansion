@@ -2953,6 +2953,10 @@
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_native_inputs_precede_candidate_source_and_keep_raw_origins scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_complete_actual_tools_prefix_has_original_input_effect_evidence scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_effect_free_inputs_and_branch_alternatives_do_not_invent_modes scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_input_effect_evidence_does_not_hide_effectful_alternatives scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_mode_failure_reports_real_source_span_and_first_input_without_values -v",
+          "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_source_faithful_framework_templates_keep_native_graph_and_real_outputs scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_framework_template_selectors_keep_complete_native_dependencies scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_template_macro_names_and_real_wildcard_inputs_are_not_special_cased scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_rule_template_opaque_parameter_and_context_variants_reject scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_rule_templates_reject_late_context_and_reference_mismatch scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_template_wildcard_namespace_cannot_emit_make_syntax -v",
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },

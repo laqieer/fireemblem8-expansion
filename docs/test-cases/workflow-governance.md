@@ -4176,6 +4176,43 @@ raw-fold-only comparison independently: the source-faithful goal controls and
 equivalent-assignment controls must fail again while ordinary/native results
 remain valid.
 
+For the closed baseline10 regression, extend the source-faithful fixture
+through the actual Tools/OS/EXE/PATH/optional-config/CPPFLAGS prefix, not only
+the initial guard declarations. Use its original `assets-check` target,
+unchanged registered uname producer and a benign absolute printf measurement.
+Copy an actually tracked empty source witness into the isolated fixture.
+Require both the native setup observation and `run_probe` through template/source
+analysis to succeed under original limits. Native OS is undefined, PATH comes
+from the original controlled environment, and CPPFLAGS retains one internal
+space before `-DFE8_ARCHIVAL_BUILD=1`. Do not trim that value to obtain equality.
+Baseline10 scope5657444621/run34793282205/result5657482497 remains consumed and
+closed; these small fixtures are not a new complete graph allocation.
+
+Make the candidate Makefile itself raise an error, then query original inputs
+through the native empty-witness route: no candidate program or recipe may run.
+Retain raw environment values containing an unused error body, native undefined
+records, builtin origin/flavor and exact PATH. Reject invocation-control queries
+and oversized name requests before launch. Witness selection must use actual
+captured zero-byte content, not a trusted filename spelling or a source ledger.
+
+Exercise an undefined OS condition, original PATH reference, two mode-inert
+simple branch alternatives and a provably empty exact-path wildcard include.
+All must preserve normal continuation behavior. Recursive OS eval, unknown or
+effectful branch alternatives and unresolved/generated include context still
+reject. Source changes cannot be repaired by arbitrary end-of-run values or
+fresh original inputs after an unproven namespace mutation. Independently remove
+native original-input proof, branch-alternative retention and original include
+outcome proof: each must restore the full Tools-prefix compatibility rejection
+while ordinary/native CPPFLAGS remains valid.
+
+For diagnostics, introduce an unproven input before a mode-sensitive
+continuation in a small named Makefile. Check the actual path, logical ordinal,
+physical span and first uncertainty input/site, with the original MakeProbeError
+preserved in the exception chain. Source values and full statements must not
+appear in the message. Continue to require the genuine normal/POSIX
+alpha-beta difference and all prior unknown-mode, history, lazy-read, origin,
+visit, native-frame and shared-deadline controls.
+
 Repeat with `.POSIX` under literal false/true, nested, quoted and
 `else`/`else ifeq` conditions. The false branch must leave both values
 non-POSIX, including an ignored nested condition whose shell operand would
