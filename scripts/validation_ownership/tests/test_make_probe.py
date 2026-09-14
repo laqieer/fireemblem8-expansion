@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import re
+from dataclasses import replace
 from pathlib import Path
 import secrets
 import shutil
@@ -13,7 +14,7 @@ from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT,
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.budget import Limits, MAX_PLANNED_STATE_BYTES
 from scripts.validation_ownership.graph_probe import _MakeSourceMode, make_source_units, run_probe, source_census
-from scripts.validation_ownership.make_probe import ProbeSession
+from scripts.validation_ownership.make_probe import Command, ProbeSession
 from scripts.validation_ownership.tests.test_foundation import _PendingTrafficLimits
 
 
@@ -121,11 +122,11 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.assertFalse(session.budget.children)
         return result["all"]["record"]["variants"][0]["record"], pages
 
-    def ordinary(self, *assignments, environment=None):
+    def ordinary(self, *assignments, environment=None, target="all"):
         budget = ProbeBudget()
         try:
             actual = budget.run(
-                ["/usr/bin/make", "--no-print-directory", *assignments, "all"],
+                ["/usr/bin/make", "--no-print-directory", *assignments, target],
                 cwd=self.root, env={**ENVIRONMENT, **(environment or {})},
             )
             self.assertEqual(actual.returncode, 0, actual.stderr)
@@ -194,13 +195,17 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 result.append("# nondependent fixture source omitted" + " \\\n#" * (chunk.end - chunk.start) + "\n")
         return "".join(result)
 
-    def observed_source_census(self, names=("FIRST", "SECOND"), *, assignments=(), witness=True):
+    def observed_source_census(
+        self, names=("FIRST", "SECOND"), *, assignments=(), witness=True,
+        target="all", commands_factory=None,
+    ):
         from scripts.validation_ownership.graph_commands import MakeCommands
         if witness:
             self.original_input_witness()
         ordinary = self.ordinary(
             *(name + "=" + value for origin, name, value in assignments if origin == "command-line"),
             environment={name: value for origin, name, value in assignments if origin == "environment"},
+            target=target,
         )
         modes = []
         bind = _MakeSourceMode.bind_invocation
@@ -210,19 +215,24 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             return bind(mode, target)
 
         with self.session() as session:
-            native = session.make("all", variables=("MAKEFILE_LIST",), definitions=names, assignments=assignments)
+            commands = MakeCommands(session, {}) if commands_factory is None else commands_factory(session)
+            native = session.make(
+                target, variables=("MAKEFILE_LIST", "MAKE_RESTARTS"), definitions=names,
+                assignments=assignments, commands=commands,
+            )
+            self.last_include_observation = native
             records = native.semantics["definitions"]["global"]
             self.last_target_values = [records[name]["value"] for name in names]
             self.assertEqual(ordinary, ("\n".join(self.last_target_values) + "\n").encode())
             sources = graph_probe._loaded_sources(session, native)
             with patch.object(_MakeSourceMode, "bind_invocation", bind_original):
                 units, inputs, scoped = graph_probe._prepare_rule_templates(
-                    session, "all", assignments, MakeCommands(session, {}), native, sources,
+                    session, target, assignments, commands, native, sources,
                 )
             self.assertEqual(len(modes), 1)
             self.assertIs(modes[0].budget, session.budget)
             usage = source_census(
-                sources, reference_units=units, source_assignments=assignments, source_target="all",
+                sources, reference_units=units, source_assignments=assignments, source_target=target,
                 template_graph_inputs=inputs, template_scoped=scoped, budget=session.budget,
             )
             original_values = {
@@ -231,6 +241,90 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.assertFalse(session.budget.children)
         self.assertIsNone(session.base)
         return usage, original_values, records
+
+    def include_writer(self, data, *, changing=False):
+        (self.root / "build/include.mk").unlink(missing_ok=True)
+        self.add("writer.py", (
+            "from pathlib import Path\nroot=Path(__file__).resolve().parent\n"
+            "out=(Path('/work') if root==Path('/repo') else root)/'build/include.mk'\n"
+            "out.parent.mkdir(parents=True,exist_ok=True)\n"
+            + f"data={data!r}\n"
+            + "if not out.exists() or out.read_text()!=data:out.write_text(data)\n"
+        ))
+        seed = ""
+        if changing:
+            self.add("first.py", (
+                "from pathlib import Path\nroot=Path(__file__).resolve().parent\n"
+                "out=(Path('/work') if root==Path('/repo') else root)/'build/include.mk'\n"
+                "out.parent.mkdir(parents=True,exist_ok=True)\nout.write_text('first: input\\n')\n"
+            ))
+            seed = "ifeq ($(MAKE_RESTARTS),)\nSEED := $(shell python3 first.py)\nendif\n"
+        self.add("Makefile", seed + ".PHONY: FORCE\nFORCE:\nINC := build/include.mk\n$(INC): FORCE\n"
+                 "\t@python3 writer.py\n-include $(INC)\n"
+                 "FIRST = alpha  \\\n beta\nSECOND = alpha  \\\n beta\n"
+                 "all:\n\t@printf '%s\\n' '$(value FIRST)' '$(value SECOND)'\n")
+        programs = ("writer.py", "first.py") if changing else ("writer.py",)
+        return lambda session: {"python3 " + program: Command(
+            ("/usr/bin/python3", "/repo/" + program), code=(program,),
+            outputs=("build/include.mk",), publication_policy="if-content-changed",
+        ) for program in programs}
+
+    def original_forced_include_fixture(self, *, renamed=False, target="assets-check"):
+        from scripts.validation_ownership.graph_commands import MakeCommands
+        self.add("fixture/source.json", '["fixture/input.h"]\n')
+        self.add("fixture/bundle.json", '["fixture/bundle.h"]\n')
+        self.add("fixture/input.h", "fixture input\n")
+        self.add("fixture/bundle.h", "fixture bundle\n")
+        self.add("scripts/generated_data/chapterbundle/schema.py", "# fixture prerequisite\n")
+        self.add("writer.py", (
+            "import argparse,json\nfrom pathlib import Path\n"
+            "p=argparse.ArgumentParser()\n"
+            "for name in ('source','bundle-source','make-target','depfile'):p.add_argument('--'+name,required=True)\n"
+            "a=p.parse_args();root=Path(__file__).resolve().parent\n"
+            "names=[a.source,a.bundle_source]+json.loads((root/a.source).read_text())+json.loads((root/a.bundle_source).read_text())\n"
+            "data=a.make_target+': '+' '.join(str(root/name) for name in names)+'\\n'\n"
+            "out=(Path('/work') if root==Path('/repo') else root)/a.depfile\n"
+            "out.parent.mkdir(parents=True,exist_ok=True)\n"
+            "if not out.exists() or out.read_text()!=data:out.write_text(data)\n"
+        ))
+        source = self.original_target_slices(
+            "generated_data.mk",
+            ("GENERATED_DATA_OUT_DIR ", "GENERATED_DATA_SHARED_PY_SOURCES :=",
+             "GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE ?=", "GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE ?="),
+            "GENERATED_DATA_CHAPTEROBJECTIVES_C :=", "$(GENERATED_DATA_CHAPTEROBJECTIVES_C):",
+        )
+        prefix = "PROJECT_" if renamed else "GENERATED_DATA_"
+        if renamed:
+            source = source.replace("GENERATED_DATA_", prefix)
+        path = "project-rules.mk" if renamed else "generated_data.mk"
+        names = (prefix + "CHAPTEROBJECTIVES_DEPFILE", prefix + "CONFIG_INPUTS_chapterobjectives")
+        self.add(path, source)
+        self.add("Makefile", "PYTHON := python3\ninclude " + path + "\n" + target + ":\n\t@printf '%s\\n' "
+                 + " ".join("'$(value " + name + ")'" for name in names) + "\n")
+        assignments = (
+            ("command-line", prefix + "CHAPTEROBJECTIVES_SOURCE", "fixture/source.json"),
+            ("command-line", prefix + "CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE", "fixture/bundle.json"),
+            ("command-line", prefix + "CHAPTEROBJECTIVES_DEP_DISCOVERY", "python3 writer.py"),
+        )
+        output = "build/generated/data/chapterobjectives.inputs.mk"
+        generated_target = "build/generated/data/data_chapter_objectives.c"
+        args = ("--source", "fixture/source.json", "--bundle-source", "fixture/bundle.json",
+                "--make-target", generated_target, "--depfile", output)
+        flat = 'python3 writer.py --source "fixture/source.json" --bundle-source "fixture/bundle.json" --make-target "' + generated_target + '" --depfile "' + output + '"'
+        registry = json.loads((ROOT / ".github/validation-ownership-make-dynamics.json").read_text())
+
+        def commands(session):
+            adapters = MakeCommands(session, {item["expression"]: item for item in registry["contracts"]})
+            writer = Command(
+                ("/usr/bin/python3", "/repo/writer.py", *args), code=("writer.py",),
+                sources=("fixture/source.json", "fixture/bundle.json"),
+                outputs=(output,), publication_policy="if-content-changed",
+            )
+            return {
+                flat: writer, flat.replace(" --", " \\\n\t--"): writer,
+                "mkdir -p build/generated/data": adapters["mkdir -p build/generated/data"],
+            }
+        return names, assignments, commands
 
     def target_mode_fixture(self, source, *, assignments=(), witness=True):
         source += "FIRST = alpha  \\\n beta\nSECOND = alpha  \\\n beta\n"
@@ -1521,6 +1615,181 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                         self.target_mode_fixture(source)
                     self.assertEqual(self.last_target_values, ["alpha beta", "alpha beta"])
 
+    def test_variable_include_names_join_actual_sources_and_empty_lists(self):
+        self.add("child.mk", "CHILD = ordinary\n")
+        self.add("other.mk", "OTHER = ordinary\n")
+        self.add("sub/child.mk", "CHILD = ordinary\n")
+        self.add("odd:equal=semi;.mk", "ODD = ordinary\n")
+        self.add("$literal.mk", "LITERAL = ordinary\n")
+        for directive in ("include", "-include", "sinclude"):
+            for prefix, expression, expected in (
+                ("INC := child.mk\n", "$(INC)", ["Makefile", "child.mk"]),
+                ("DIR = sub\nINC = $(DIR)/child.mk\n", "${INC}", ["Makefile", "sub/child.mk"]),
+                ("INC = child.mk other.mk\n", "$(INC)", ["Makefile", "child.mk", "other.mk"]),
+                ("INC =\n", "$(INC)", ["Makefile"]),
+                ("", "", ["Makefile"]),
+                ("INC = odd:equal=semi;.mk\n", "$(INC)", ["Makefile", "odd:equal=semi;.mk"]),
+                ("", "$$literal.mk", ["Makefile", "$literal.mk"]),
+            ):
+                with self.subTest(directive=directive, expression=expression):
+                    self.assertEqual(self.target_mode_fixture(prefix + directive + " " + expression + "\n"),
+                                     ["alpha beta", "alpha beta"])
+                    self.assertEqual(
+                        self.last_include_observation.semantics["domains"]["MAKEFILE_LIST"]["value"].split(), expected,
+                    )
+
+    def test_original_include_context_preserves_history_origins_and_proven_conditions(self):
+        self.add("ordinary.mk", "VALUE = ordinary\n")
+        self.add("posix.mk", ".POSIX:\n")
+        normal, posix = ["alpha beta"] * 2, ["alpha   beta"] * 2
+        for source, assignments, expected in (
+            ("NAME = ordinary.mk\nINC := $(NAME)\nNAME = posix.mk\ninclude $(INC)\n", (), normal),
+            ("NAME = ordinary.mk\nINC = $(NAME)\nNAME = posix.mk\ninclude $(INC)\n", (), posix),
+            ("INC = ordinary.mk\ninclude $(INC)\nINC = posix.mk\n", (), normal),
+            ("INC = posix.mk\ninclude $(INC)\nINC = ordinary.mk\n", (), posix),
+            ("INC = ordinary.mk\ninclude $(INC)\n", (("command-line", "INC", "posix.mk"),), posix),
+            ("INC = ordinary.mk\ninclude $(INC)\n", (("environment", "INC", "posix.mk"),), normal),
+            ("INC ?= ordinary.mk\ninclude $(INC)\n", (("environment", "INC", "posix.mk"),), posix),
+            ("INC = posix.mk\nifeq ($(MAKECMDGOALS),all)\ninclude $(INC)\nendif\n", (), posix),
+            ("INC = missing.mk\nifeq ($(MAKECMDGOALS),other)\n-include $(INC)\nendif\n", (), normal),
+        ):
+            with self.subTest(source=source, assignments=assignments):
+                self.assertEqual(self.target_mode_fixture(source, assignments=assignments), expected)
+
+    def test_variable_include_occurrences_keep_order_and_reject_changed_source_or_cycles(self):
+        self.add("one.mk", "VALUE = one\n")
+        self.add("two.mk", "VALUE = two\n")
+        self.assertEqual(
+            self.target_mode_fixture("INC = one.mk\ninclude $(INC)\nINC = two.mk\ninclude $(INC)\nINC = one.mk\ninclude $(INC)\n"),
+            ["alpha beta"] * 2,
+        )
+        self.assertEqual(self.last_include_observation.semantics["domains"]["MAKEFILE_LIST"]["value"].split(),
+                         ["Makefile", "one.mk", "two.mk", "one.mk"])
+        self.add("changed.mk", "VALUE = alpha  \\\n beta\n")
+        with self.assertRaisesRegex(MakeProbeError, "source changed"):
+            self.target_mode_fixture("INC = changed.mk\ninclude $(INC)\n.POSIX:\nRECORDED = yes\ninclude $(INC)\n")
+        with self.assertRaisesRegex(MakeProbeError, "recursive"):
+            source_census({
+                "Makefile": b"INC = child.mk\ninclude $(INC)\n",
+                "child.mk": b"include Makefile\n",
+            })
+
+    def test_unproven_and_missing_include_outcomes_do_not_become_empty_success(self):
+        self.add("ordinary.mk", "VALUE = ordinary\n")
+        self.add("posix.mk", ".POSIX:\n")
+        for source in (
+            "INC := $(subst X,ordinary.mk,X)\ninclude $(INC)\n",
+            "CHOICE = yes\nINC = ordinary.mk\nifeq ($(CHOICE),yes)\nINC = posix.mk\nendif\ninclude $(INC)\n",
+            "INC = $(eval .POSIX:)ordinary.mk\ninclude $(INC)\n",
+            "CHOICE = yes\nINC = ordinary.mk\nifeq ($(CHOICE),yes)\ninclude $(INC)\nendif\n",
+            "INC = ./*.mk\n-include $(INC)\n",
+        ):
+            with self.subTest(source=source):
+                with self.assertRaises(MakeProbeError):
+                    self.target_mode_fixture(source)
+        self.add("Makefile", "INC = missing.mk\n-include $(INC)\nall: ;\n")
+        with self.session() as session:
+            native = session.make("all", variables=("MAKEFILE_LIST", "MAKE_RESTARTS"))
+            self.assertEqual(native.semantics["domains"]["MAKEFILE_LIST"]["value"], "Makefile")
+            with self.assertRaisesRegex(MakeProbeError, "unadmitted Make file-open"):
+                graph_probe._loaded_sources(session, native)
+        with self.assertRaisesRegex(MakeProbeError, "include outcome"):
+            source_census({"Makefile": b"INC = missing.mk\n-include $(INC)\nall: ;\n"})
+        self.add("Makefile", "INC = missing.mk\ninclude $(INC)\nall: ;\n")
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "GNU Make failed"):
+                session.make("all", variables=("MAKEFILE_LIST",))
+        with self.assertRaisesRegex(MakeProbeError, "include outcome"):
+            source_census({"Makefile": b"include missing.mk\nall: ;\n"})
+        self.assertEqual(self.target_mode_fixture("INC = absent.mk\n-include $(wildcard $(INC))\n"),
+                         ["alpha beta"] * 2)
+
+    def test_original_force_backed_include_uses_real_stable_remake_evidence(self):
+        for renamed, target in ((False, "assets-check"), (True, "assets-check"),
+                                (False, "validation-ownership-check")):
+            with self.subTest(renamed=renamed, target=target):
+                names, assignments, commands = self.original_forced_include_fixture(renamed=renamed, target=target)
+                _, values, records = self.observed_source_census(
+                    names, assignments=assignments, target=target, commands_factory=commands,
+                )
+                for name in names:
+                    self.assertEqual(values[name], {records[name]["value"]})
+                native = self.last_include_observation
+                if target == "validation-ownership-check":
+                    self.assertEqual(native.generated, ())
+                    self.assertEqual(native.semantics["domains"]["MAKE_RESTARTS"]["origin"], "undefined")
+                else:
+                    self.assertEqual(native.semantics["domains"]["MAKE_RESTARTS"],
+                                     {"value": "1", "origin": "environment", "flavor": "recursive"})
+                    self.assertEqual(len(native.generated), 1)
+                    self.assertEqual(native.generated[0].path, "build/generated/data/chapterobjectives.inputs.mk")
+                    self.assertEqual(native.generated[0].data,
+                                     b"build/generated/data/data_chapter_objectives.c: /repo/fixture/source.json /repo/fixture/bundle.json /repo/fixture/input.h /repo/fixture/bundle.h\n")
+                    self.assertEqual(len(native.events), 4)
+                    self.assertEqual(len(native.semantics["dynamic_commands"]), 2)
+
+    def test_remade_include_requires_stable_literal_dependency_history(self):
+        commands = self.include_writer("plain: input\n")
+        _, values, _ = self.observed_source_census(commands_factory=commands)
+        self.assertEqual(values["FIRST"], {"alpha beta"})
+        self.assertEqual(self.last_include_observation.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
+        for data in (".POSIX:\n", "VARIABLE = changed\n", "plain: $(eval MODE ?= changed)\n",
+                     ".SECONDEXPANSION:\n", "include other.mk\n"):
+            with self.subTest(data=data):
+                commands = self.include_writer(data)
+                if data == "include other.mk\n":
+                    self.add("other.mk", "OTHER = ordinary\n")
+                with self.assertRaisesRegex(MakeProbeError, "generated include source history"):
+                    self.observed_source_census(commands_factory=commands)
+                self.assertEqual(self.last_include_observation.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
+        commands = self.include_writer("second: input\n", changing=True)
+        with self.assertRaisesRegex(MakeProbeError, "conflicting generated output producers"):
+            self.observed_source_census(commands_factory=commands)
+
+    def test_native_include_sequence_and_restart_controls_remain_authoritative(self):
+        commands = self.include_writer("plain: input\n")
+        makefile = (self.root / "Makefile").read_text()
+        self.add("Makefile", makefile.replace(
+            "FIRST = alpha", "READ := $(origin MAKE_RESTARTS)\nFIRST = alpha",
+        ))
+        with self.assertRaisesRegex(MakeProbeError, "restart-sensitive"):
+            self.observed_source_census(commands_factory=commands)
+        self.add("Makefile", "NAME = MAKE_RESTARTS\n" + makefile.replace(
+            "FIRST = alpha", "READ := $($(NAME))\nFIRST = alpha",
+        ))
+        with self.assertRaisesRegex(MakeProbeError, "unproven.*mode"):
+            self.observed_source_census(commands_factory=commands)
+        self.add("Makefile", makefile)
+        with self.session() as session:
+            native = session.make("all", variables=("MAKEFILE_LIST", "MAKE_RESTARTS"), commands=commands(session))
+            sources = graph_probe._loaded_sources(session, native)
+            with self.assertRaisesRegex(MakeProbeError, "source-read evidence"):
+                graph_probe._native_include_context(
+                    session, native, {"Makefile": sources["Makefile"]}, (),
+                )
+            with self.assertRaisesRegex(MakeProbeError, "restart history"):
+                graph_probe._native_include_context(
+                    session, native, sources, (("command-line", "MAKE_RESTARTS", "1"),),
+                )
+            conflicting = replace(native, semantics={
+                **native.semantics,
+                "dynamic_commands": [
+                    *native.semantics["dynamic_commands"],
+                    {"generated_outputs": [["build/include.mk", "100644", "0" * 64]]},
+                ],
+            })
+            with self.assertRaisesRegex(MakeProbeError, "changed or unreceipted"):
+                graph_probe._native_include_context(session, conflicting, sources, ())
+            with self.assertRaisesRegex(MakeProbeError, "changed from its original capture"):
+                graph_probe._native_include_context(
+                    session, native, {**sources, "build/include.mk": b".POSIX:\n"}, (),
+                )
+        with self.assertRaisesRegex(MakeProbeError, "traversal differs"):
+            graph_probe._source_units(
+                {"Makefile": b"INC = child.mk\ninclude $(INC)\n", "child.mk": b"VALUE = literal\n"},
+                read_order=("Makefile", "child.mk", "child.mk"),
+            )
+
     def test_unknown_mode_accepts_only_equivalent_assignment_constructs(self):
         assignment = "  override _VALIDATION_OWNERSHIP_FLAGS := \\\n\t$(strip $(MAKEFLAGS) $(MFLAGS) $(GNUMAKEFLAGS))"
         self.assertIn(assignment, (ROOT / "Makefile").read_text())
@@ -1643,18 +1912,22 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
 
     def test_unproven_generated_conditional_and_include_modes_reject(self):
         values = "FIRST = alpha  \\\n  \\\n beta\nSECOND = alpha  \\\n  \\\n beta\n"
-        for source, includes, expected in (
-            ("SWITCH = yes\nifeq ($(SWITCH),yes)\n.POSIX:\nendif\n" + values, {}, ["alpha beta", "alpha    beta"]),
-            ("$(eval .POSIX:)\n" + values, {}, ["alpha    beta"] * 2),
+        for source, includes, expected, proven in (
+            ("SWITCH = yes\nifeq ($(SWITCH),yes)\n.POSIX:\nendif\n" + values, {}, ["alpha beta", "alpha    beta"], False),
+            ("$(eval .POSIX:)\n" + values, {}, ["alpha    beta"] * 2, False),
             ("MODE_PREFIX = .PO\nMODE_SUFFIX = SIX\n$(MODE_PREFIX)$(MODE_SUFFIX):\n" + values,
-             {}, ["alpha beta", "alpha    beta"]),
+             {}, ["alpha beta", "alpha    beta"], True),
             ("SELECTED = mode.mk\ninclude $(SELECTED)\n" + values,
-             {"mode.mk": ".POSIX:\n"}, ["alpha    beta"] * 2),
+             {"mode.mk": ".POSIX:\n"}, ["alpha    beta"] * 2, True),
         ):
             with self.subTest(source=source):
-                sources, _ = self.mode_values(source, includes=includes, expected=expected)
-                with self.assertRaisesRegex(MakeProbeError, "unproven.*(mode|POSIX)"):
-                    source_census(sources)
+                sources, native = self.mode_values(source, includes=includes, expected=expected)
+                if proven:
+                    actual = source_census(sources)
+                    self.assertEqual([actual["definitions"][name][0] for name in ("FIRST", "SECOND")], native)
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "unproven.*(mode|POSIX)"):
+                        source_census(sources)
         source = "MAYBE =\nunexport MAYBE\nRESULT := $(MAYBE)\n" + values
         sources, native = self.mode_values(source, expected=["alpha beta"] * 2)
         actual = source_census(sources)

@@ -4248,6 +4248,63 @@ ARM objects; the source-prefix tests run no generator or ARM recipe.
 Baseline11 scope5659259166/run34808192321/result5659303197 remains consumed and
 closed, not a sizing point or permission for a retry.
 
+For the closed baseline12 include regression, retain the original output/
+depfile declarations, FORCE prerequisite and rule, the
+`ifneq ($(MAKECMDGOALS),validation-ownership-check)` condition, the variable-
+named optional include at476 and continued consumer at482-486. Comment-pad
+nondependent chunks as above. Select a small fixture dependency writer through
+the existing discovery Make variable; keep the real rule/include spelling.
+Use `assets-check` as the native/source fixture goal, and repeat with renamed
+variables/file spelling and the checker goal that skips this include.
+
+Begin with no owned depfile. The ordinary and native writer must actually
+produce a literal dependency file under the declared output root; the first
+publication creates it, the second retains the same content/file identity,
+and GNU reports one restart. Native MAKEFILE_LIST and file-open observations
+must contain the produced file. Compare the raw depfile/config values through
+the existing setup, template/source and census route. Exact73e rejects the
+consumer after treating the original filename as unresolved; the correction
+must visit the correctly captured source in its proven active context, not
+credit an assumed empty file or replace the include with wildcard syntax.
+
+Exercise include/-include/sinclude with original simple snapshots, recursive
+references, earlier/later rewrites, CLI/environment/override precedence,
+multiple/empty lists, canonical relative paths and literal filename punctuation.
+Repeat ordered includes with changing names, and reject active cycles or a
+file whose original continued source parses differently on a later read.
+An included `.POSIX` under a proven active condition retains GNU's delayed and
+include-EOF timing. Unknown conditions, differing filename alternatives and
+effectful/unproven transformations remain unproven. Required missing includes
+retain GNU's error; an unobserved optional filename also cannot become success.
+The earlier empty exact-path wildcard fixture must remain a separate positive.
+
+For generated history, accept only actual stable literal dependency sources.
+Generate `.POSIX`, an assignment, another include, an emitted expression or
+other special target and require rejection rather than using only the final
+source as original authority. Preserve actual publication/source conflicts:
+two writers attempting the same output are rejected by the existing ownership
+boundary before source analysis. Against an actual successful native
+observation, corrupt the joined source bytes, add a conflicting output
+identity, supply a restart override or alter the claimed visit sequence; none
+may receive source authority. Literal metadata and computed reads of restart
+state retain their respective original rejection boundaries.
+
+Restore only the old include-name proof in an isolated mutation. Original and
+renamed non-checker fixtures must recover the exact consumer-mode rejection
+while native included files, restart and dependency data remain real; the
+checker goal still skips the include. Restore the correction and remove each
+owned depfile/fixture/process afterward. Keep target/Tools/branch/wildcard,
+source/default fixed-point, metadata-only, `!=`/`+=`, context/name/admission,
+deadline and capture/import controls.
+
+The fixture writer is not the full dependency collector. The initial
+production-collector fixture exceeded the unchanged local control allowance
+and supplies no prefix acceptance. Its log remains separate from the bounded
+writer's native/source evidence. No package, registry, native permission/ABI,
+budget, host-timeout, production Make/generated output or workflow change is
+part of this correction. Baseline12 scope5660060610/run34814515499/
+result5660116650 remains consumed and closed; these fixtures do not reopen it.
+
 Make the candidate Makefile itself raise an error, then query original inputs
 through the native empty-witness route: no candidate program or recipe may run.
 Retain raw environment values containing an unused error body, native undefined

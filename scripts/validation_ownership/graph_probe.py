@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import copy
+import hashlib
 from collections import Counter
 from dataclasses import dataclass, field
 from itertools import chain
@@ -87,6 +88,7 @@ class MakeSourceUnit(NamedTuple):
 class _SourceUnitStream(NamedTuple):
     ordered: tuple
     known_positions: frozenset
+    remade: bool = False
 
 
 class _SourceSite(NamedTuple):
@@ -658,11 +660,12 @@ def _mode_not(value):
 
 
 def _include_names(header, mode=None):
-    include = re.fullmatch(r"(?:-?include|sinclude)[ \t\r\n\v\f]+(.*)", header)
+    include = re.fullmatch(r"(?:-?include|sinclude)(?:[ \t\r\n\v\f]+(.*))?", header)
     if include is None:
         return False
-    if any(character in include[1] for character in "$*?[]~\\"):
-        function = _make_function(include[1])
+    expression = include[1] or ""
+    if "$" in expression:
+        function = _make_function(expression)
         if (
             mode is not None and mode.namespace is not None and mode.original_namespace_valid
             and function is not None and function[0] == "wildcard" and len(function[1]) == 1
@@ -677,8 +680,22 @@ def _include_names(header, mode=None):
                     mode.checkpoint()
                     relative_path(path)
                 return [path for path in paths if path in mode.namespace]
+        if mode is None:
+            return None
+        try:
+            expression = mode.literal_text(expression)
+        except RecursionError:
+            return None
+        if expression is None:
+            return None
+    if any(character in expression for character in "*?[]~\\\r\n\v\f"):
         return None
-    return re.split(r"[ \t\r\n\v\f]+", include[1].strip(MAKE_SPACE)) if include[1].strip(MAKE_SPACE) else []
+    paths = re.findall(r"[^ \t]+", expression)
+    for path in paths:
+        if mode is not None:
+            mode.checkpoint()
+        relative_path(path)
+    return paths
 
 
 def _make_logical_chunks(text):
@@ -878,7 +895,10 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
     record_pending()
 
 
-def _source_units(sources, *, assignments=(), budget=None, target=None, original_input=None, namespace=None):
+def _source_units(
+    sources, *, assignments=(), budget=None, target=None, original_input=None, namespace=None,
+    read_order=None, remade=False,
+):
     decoded = {}
     for path, data in sources.items():
         if budget is not None:
@@ -898,6 +918,7 @@ def _source_units(sources, *, assignments=(), budget=None, target=None, original
         mode.bind_invocation(target)
     units, reading, unresolved_modes = {}, set(), []
     ordered, known_positions = [], set()
+    visits, unproven_include = [], False
 
     def visit(path, *, known=True):
         mode.checkpoint()
@@ -907,17 +928,26 @@ def _source_units(sources, *, assignments=(), budget=None, target=None, original
         if previous is None:
             units[path] = []
         reading.add(path)
+        if budget is not None:
+            budget.charge("cache", len(encoded(path)))
+        visits.append(path)
 
         def included(names, active, current_mode):
+            nonlocal unproven_include
             if names is None:
                 unresolved_modes.append(current_mode.posix)
                 current_mode.uncertain("unproven include outcome")
+                unproven_include = True
                 return
-            if active is None:
+            if active is None and names:
                 current_mode.uncertain("unproven include condition")
+                unproven_include = True
             for name in names:
                 if name in decoded:
-                    visit(name, known=known and active is True and unit.conditional_depth == 0)
+                    visit(name, known=known and active is True)
+                else:
+                    current_mode.uncertain("unobserved included source")
+                    unproven_include = True
 
         count = 0
         # Revisit the original inputs; reuse only the identical source units,
@@ -940,11 +970,15 @@ def _source_units(sources, *, assignments=(), budget=None, target=None, original
 
     if decoded:
         visit(next(iter(decoded)))
+    if unproven_include:
+        raise MakeProbeError("unproven original include outcome or source history")
+    if read_order is not None and tuple(visits) != tuple(read_order):
+        raise MakeProbeError("original include traversal differs from native MAKEFILE_LIST")
     for path in decoded:
         if path not in units:
             mode.posix = True if unresolved_modes and all(value is True for value in unresolved_modes) else None
             visit(path, known=False)
-    return _SourceUnitStream(tuple(ordered), frozenset(known_positions))
+    return _SourceUnitStream(tuple(ordered), frozenset(known_positions), remade)
 
 
 def _ordered_source_units(units):
@@ -1157,6 +1191,7 @@ def _unproven_assignment_destination(header):
 def _prepare_rule_templates(
     session, target, state, commands, observation, sources, *, observe_dispatch=False, external_names=(),
 ):
+    read_order, remade = _native_include_context(session, observation, sources, state)
     original_inputs = {}
     has_empty_witness = any(not value for value in session.snapshot.files.values())
 
@@ -1174,6 +1209,7 @@ def _prepare_rule_templates(
     units = _source_units(
         sources, assignments=state, budget=session.budget, target=target,
         original_input=original_input, namespace=frozenset(namespace),
+        read_order=read_order, remade=remade,
     )
     ordered, known_positions = _ordered_source_units(units)
     positions = {(path, index): offset for offset, (path, index, _) in enumerate(ordered)}
@@ -1383,7 +1419,7 @@ def _prepare_rule_templates(
             if position in known_positions:
                 prepared_known.add(len(prepared))
             prepared.append((path, len(prepared), replacement))
-    return _SourceUnitStream(tuple(prepared), frozenset(prepared_known)), graph_inputs, scoped
+    return _SourceUnitStream(tuple(prepared), frozenset(prepared_known), units.remade), graph_inputs, scoped
 
 
 def dollar_fragment(value):
@@ -1954,6 +1990,10 @@ def source_census(
         raise MakeProbeError("graph dependency has an unresolved computed selector")
     expanded_recipe = closure(recipe, dependencies)
     stage_graph = closure(stage_roots | set().union(*(references(value) for value in stage_sinks)), dependencies)
+    if reference_units.remade and {"MAKE_RESTARTS", "MAKEFILE_LIST"} & (
+        closure(all_names | graph | recipe, dependencies) | definitions.keys()
+    ):
+        raise MakeProbeError("unproven restart-sensitive Make source history")
     return {
         "all": closure(all_names | graph | recipe, dependencies),
         "graph": expanded_graph,
@@ -1977,6 +2017,74 @@ def source_census(
         "secondary_expansion": secondary_expansion,
         "proven_eval_expressions": proven_eval_expressions,
     }
+
+
+def _literal_dependency_include(path, data, budget):
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise MakeProbeError(f"generated Make include is not UTF-8: {path}") from error
+    for unit in make_source_units(text, mode=_MakeSourceMode(budget=budget), source_path=path):
+        budget.remaining()
+        line = strip_comment(unit.text).strip(MAKE_SPACE)
+        if not line:
+            continue
+        separators = _rule_separators(line)
+        if (
+            unit.body is not None or unit.text.startswith("\t") or len(separators) != 1
+            or any(character in line for character in "$%*?[]\\;|&=()")
+        ):
+            raise MakeProbeError(f"unproven generated include source history: {path}")
+        targets, prerequisites = line[:separators[0]].split(), line[separators[0] + 1:].split()
+        if not targets or any(target.startswith(".") for target in targets):
+            raise MakeProbeError(f"unproven generated include source history: {path}")
+        for name in targets:
+            relative_path(name)
+        for name in prerequisites:
+            relative_path(name.removeprefix("/repo/"))
+
+
+def _native_include_context(session, observation, sources, state):
+    listing = observation.semantics["domains"]["MAKEFILE_LIST"]
+    if listing["origin"] != "file" or listing["flavor"] != "simple":
+        raise MakeProbeError("unproven native Make include listing")
+    order = tuple(name.removeprefix("/repo/") for name in listing["value"].split())
+    opened = {resolved.removeprefix("/repo/") for resolved, _ in observation.file_open_attempts}
+    session.budget.charge("cache", len(encoded((order, sorted(opened)))))
+    if set(order) != set(sources) or not set(order) <= opened:
+        raise MakeProbeError("native Make include names lack actual source-read evidence")
+    generated = {item.path: item for item in observation.generated if item.path in sources}
+    if not generated:
+        return order, False
+    restart = observation.semantics["domains"].get("MAKE_RESTARTS")
+    if (
+        restart != {"origin": "environment", "flavor": "recursive", "value": "1"}
+        or any(name in {"MAKE_RESTARTS", "MAKEFILE_LIST"} for _, name, _ in state)
+    ):
+        raise MakeProbeError("unproven native Make include restart history")
+    published = {record[0]: record for record in observation.semantics["published_sources"]}
+    for path, item in generated.items():
+        session.budget.remaining()
+        if path in session.snapshot.files or sources[path] != item.data:
+            raise MakeProbeError(f"Make include source changed from its original capture: {path}")
+        digest = hashlib.sha256(item.data).hexdigest()
+        expected = (f"{0o100000 | item.mode:06o}", digest)
+        versions = {
+            (output[1], output[2])
+            for record in observation.semantics["dynamic_commands"]
+            for output in record.get("generated_outputs", ())
+            if output[0] == path
+        }
+        session.budget.charge("cache", len(encoded(sorted(versions))))
+        if (
+            versions != {expected} or path not in published
+            or published[path][2:5] != [item.mode, len(item.data), digest]
+        ):
+            raise MakeProbeError(f"unproven changed or unreceipted Make include: {path}")
+        # A stable literal dependency file cannot change the original parsing
+        # mode or variable namespace between its absent and remade passes.
+        _literal_dependency_include(path, item.data, session.budget)
+    return order, True
 
 
 def _loaded_sources(session, observation):

@@ -795,6 +795,37 @@ literal-path `wildcard` includes may use the captured source/generated namespace
 to prove an empty or present outcome; unresolved patterns/context still reject.
 This is not Python evaluation of general Make functions or arbitrary globbing.
 
+Variable-derived include names use that same original literal/reference model.
+Only one proven filename sequence is credited; different alternatives,
+effectful/computed transformations and unsupported wildcard/escape/path forms
+remain unproven. `include`, `-include` and `sinclude` retain their filename
+roles, including empty or multiple names. Proven active conditions propagate
+their context into the existing ordered source walker. Its complete visit
+sequence must match native MAKEFILE_LIST and actual file-open evidence;
+missing sources, extra/misordered occurrences, active cycles and changed
+original parsing cannot become absent-file success. The existing empty
+exact-path wildcard proof is distinct from naming an absent optional file.
+
+An initially absent optional file may be remade. The supported generated-include
+boundary requires a native one-restart observation, no supplied restart/list
+override, the actual generated source and publication record, and agreement of
+every recorded generated-output content identity. Only stable literal
+dependency facts are credited across the absent/remade passes: no assignments,
+special targets, recipes, includes or emitted expressions. Canonical `/repo/`
+prerequisites from the existing dependency renderer remain source-path data.
+Restart-sensitive source reads/writes and other generated-source histories
+reject; this is not replay of arbitrary Make programs or substitution of final
+variable values for original inputs. Existing source/publication ownership,
+native protocol and all budgets remain unchanged.
+
+The baseline12 source failure at generated_data.mk482-486 followed the real
+variable-named optional include at476, under the original non-checker goal
+condition. Its FORCE-backed dependency writer is not an empty-wildcard case.
+The regression retains that declaration/rule/condition/consumer slice and uses
+an explicitly selected small fixture writer with actual create/retain/remake
+receipts. It does not claim complete production-collector or repository-report
+acceptance; the consumed baseline12 allocation remains closed.
+
 Assignment timing and resulting flavor are distinct contracts. GNU Make `!=`
 executes its RHS immediately but creates a recursive variable, unlike
 `:=`/`::=`. If the original shell output cannot be bound safely, mode analysis
