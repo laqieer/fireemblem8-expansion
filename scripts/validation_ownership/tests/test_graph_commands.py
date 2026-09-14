@@ -315,6 +315,52 @@ class GraphCommandTests(unittest.TestCase):
         self.assertEqual([token.value for token in quoted], ["cc", "-DUNUSED=1||true", "input.c"])
         self.assertFalse(any(token.operator for token in quoted))
 
+    def test_live_compiler_depfile_cannot_replace_the_invocation_primary_source(self):
+        self.add("src/input.c", '#include "header.h"\nint fixture;\n')
+        self.add("src/header.h", "#define FIXTURE 1\n")
+        prefix = (
+            "MODE ?= first\ninclude .dep/src/input.d\n.dep/src/input.d: src/input.c\n"
+            "\tmkdir -p .dep/src/ && cc -E -nostdinc -undef src/input.c -MM -MG -MT src/input.o > .dep/src/input.d\n"
+        )
+        suffix = "all: $(MODE)\n\t@echo $(MODE)\nfirst second: ;\nsrc/input.o: ;\n"
+        for mutation in (
+            "MAKEFILE_LIST := .dep/src/input.d\n",
+            "$(eval MAKEFILE_LIST := .dep/src/input.d)\n",
+            "define HIDE\nMAKEFILE_LIST := .dep/src/input.d\nendef\n$(eval $(HIDE))\n",
+        ):
+            with self.subTest(mutation=mutation):
+                self.add("Makefile", prefix + mutation + suffix)
+                with self.session() as probe:
+                    native = probe.make("all", makefile="Makefile", variables=("MAKEFILE_LIST", "MAKE_RESTARTS"),
+                                        definitions=("MODE",), commands=MakeCommands(probe, self.contracts))
+                    self.assertEqual(native.semantics["domains"]["MAKEFILE_LIST"]["value"], ".dep/src/input.d")
+                    self.assertEqual(native.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
+                    self.assertEqual(native.semantics["definitions"]["global"]["MODE"]["value"], "first")
+                    self.assertEqual({resolved for resolved, _ in native.file_open_attempts},
+                                     {"/repo/Makefile", "/repo/.dep/src/input.d"})
+                    self.assertEqual(native.generated[0].data, b"src/input.o: src/input.c src/header.h\n")
+                    self.assertTrue(any(
+                        path.endswith("/cc1") for record in native.semantics["dynamic_commands"]
+                        for path in record["command"].get("executed", ())
+                    ))
+                    with self.assertRaisesRegex(MakeProbeError, "source-read evidence"):
+                        run_probe(probe.loader, {"all"}, {}, self.contracts, session=probe)
+        self.add("Makefile", prefix + suffix)
+        with self.session() as probe:
+            with self.assertRaisesRegex(MakeProbeError, "unsealed external defaults"):
+                run_probe(probe.loader, {"all"}, {}, self.contracts, session=probe)
+        with self.session() as probe:
+            result = run_probe(
+                probe.loader, {"all"}, {"MODE": {"kind": "explicit", "values": ["first", "second"]}},
+                self.contracts, session=probe, declared_external_names={"MODE"},
+            )["all"]
+        self.assertEqual(result["record"]["includes"], [".dep/src/input.d", "Makefile"])
+        self.assertEqual(result["variable_census"]["defaults"], ["MODE"])
+        self.assertEqual(result["prerequisite_domain_census"]["enumerated"], ["MODE"])
+        self.assertEqual({
+            variant["record"]["files"][0]["prerequisites"][0]["name"] for variant in result["record"]["variants"]
+        }, {"first", "second"})
+
     def test_live_dependency_contract_rejects_embedded_operators_and_keeps_literals(self):
         self.add("src/input.c", '#include "header.h"\n')
         self.add("include/header.h", "#define INPUT 1\n")

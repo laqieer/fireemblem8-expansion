@@ -122,11 +122,12 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.assertFalse(session.budget.children)
         return result["all"]["record"]["variants"][0]["record"], pages
 
-    def ordinary(self, *assignments, environment=None, target="all"):
+    def ordinary(self, *assignments, environment=None, target="all", makefile=None):
         budget = ProbeBudget()
         try:
             actual = budget.run(
-                ["/usr/bin/make", "--no-print-directory", *assignments, target],
+                ["/usr/bin/make", "--no-print-directory", *(("-f", makefile) if makefile is not None else ()),
+                 *assignments, target],
                 cwd=self.root, env={**ENVIRONMENT, **(environment or {})},
             )
             self.assertEqual(actual.returncode, 0, actual.stderr)
@@ -197,7 +198,7 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
 
     def observed_source_census(
         self, names=("FIRST", "SECOND"), *, assignments=(), witness=True,
-        target="all", commands_factory=None,
+        target="all", commands_factory=None, makefile="Makefile",
     ):
         from scripts.validation_ownership.graph_commands import MakeCommands
         if witness:
@@ -206,6 +207,7 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             *(name + "=" + value for origin, name, value in assignments if origin == "command-line"),
             environment={name: value for origin, name, value in assignments if origin == "environment"},
             target=target,
+            makefile=makefile,
         )
         modes = []
         bind = _MakeSourceMode.bind_invocation
@@ -217,17 +219,17 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         with self.session() as session:
             commands = MakeCommands(session, {}) if commands_factory is None else commands_factory(session)
             native = session.make(
-                target, variables=("MAKEFILE_LIST", "MAKE_RESTARTS"), definitions=names,
+                target, makefile=makefile, variables=("MAKEFILE_LIST", "MAKE_RESTARTS"), definitions=names,
                 assignments=assignments, commands=commands,
             )
             self.last_include_observation = native
             records = native.semantics["definitions"]["global"]
             self.last_target_values = [records[name]["value"] for name in names]
             self.assertEqual(ordinary, ("\n".join(self.last_target_values) + "\n").encode())
-            sources = graph_probe._loaded_sources(session, native)
+            sources = graph_probe._loaded_sources(session, native, primary_source=makefile)
             with patch.object(_MakeSourceMode, "bind_invocation", bind_original):
                 units, inputs, scoped = graph_probe._prepare_rule_templates(
-                    session, target, assignments, commands, native, sources,
+                    session, target, assignments, commands, native, sources, primary_source=makefile,
                 )
             self.assertEqual(len(modes), 1)
             self.assertIs(modes[0].budget, session.budget)
@@ -1692,7 +1694,7 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             native = session.make("all", variables=("MAKEFILE_LIST", "MAKE_RESTARTS"))
             self.assertEqual(native.semantics["domains"]["MAKEFILE_LIST"]["value"], "Makefile")
             with self.assertRaisesRegex(MakeProbeError, "unadmitted Make file-open"):
-                graph_probe._loaded_sources(session, native)
+                graph_probe._loaded_sources(session, native, primary_source="Makefile")
         with self.assertRaisesRegex(MakeProbeError, "include outcome"):
             source_census({"Makefile": b"INC = missing.mk\n-include $(INC)\nall: ;\n"})
         self.add("Makefile", "INC = missing.mk\ninclude $(INC)\nall: ;\n")
@@ -1762,14 +1764,14 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.add("Makefile", makefile)
         with self.session() as session:
             native = session.make("all", variables=("MAKEFILE_LIST", "MAKE_RESTARTS"), commands=commands(session))
-            sources = graph_probe._loaded_sources(session, native)
+            sources = graph_probe._loaded_sources(session, native, primary_source="Makefile")
             with self.assertRaisesRegex(MakeProbeError, "source-read evidence"):
                 graph_probe._native_include_context(
-                    session, native, {"Makefile": sources["Makefile"]}, (),
+                    session, native, {"Makefile": sources["Makefile"]}, (), primary_source="Makefile",
                 )
             with self.assertRaisesRegex(MakeProbeError, "restart history"):
                 graph_probe._native_include_context(
-                    session, native, sources, (("command-line", "MAKE_RESTARTS", "1"),),
+                    session, native, sources, (("command-line", "MAKE_RESTARTS", "1"),), primary_source="Makefile",
                 )
             conflicting = replace(native, semantics={
                 **native.semantics,
@@ -1779,16 +1781,121 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 ],
             })
             with self.assertRaisesRegex(MakeProbeError, "changed or unreceipted"):
-                graph_probe._native_include_context(session, conflicting, sources, ())
+                graph_probe._native_include_context(session, conflicting, sources, (), primary_source="Makefile")
             with self.assertRaisesRegex(MakeProbeError, "changed from its original capture"):
                 graph_probe._native_include_context(
-                    session, native, {**sources, "build/include.mk": b".POSIX:\n"}, (),
+                    session, native, {**sources, "build/include.mk": b".POSIX:\n"}, (), primary_source="Makefile",
                 )
         with self.assertRaisesRegex(MakeProbeError, "traversal differs"):
             graph_probe._source_units(
                 {"Makefile": b"INC = child.mk\ninclude $(INC)\n", "child.mk": b"VALUE = literal\n"},
                 read_order=("Makefile", "child.mk", "child.mk"),
             )
+
+    def test_selected_primary_and_included_sources_cannot_be_omitted_or_reordered(self):
+        self.add("child.mk", "CHILD = ordinary\n")
+        self.add("Makefile", "$(error wrong primary selected)\n")
+        body = "include child.mk\nFIRST = alpha  \\\n beta\nSECOND = alpha  \\\n beta\n"
+        body += "all:\n\t@printf '%s\\n' '$(value FIRST)' '$(value SECOND)'\n"
+        self.add("project.mk", body)
+        usage, values, _ = self.observed_source_census(makefile="project.mk")
+        self.assertEqual(values["FIRST"], {"alpha beta"})
+        self.assertNotIn("MAKEFILE_LIST", usage["defined"])
+        for line in (
+            "MAKEFILE_LIST := child.mk\n",
+            "MAKEFILE_LIST := project.mk\n",
+            "MAKEFILE_LIST := child.mk project.mk\n",
+            "define REWRITE\nMAKEFILE_LIST := project.mk\nendef\n$(eval $(REWRITE))\n",
+        ):
+            with self.subTest(line=line):
+                direct = body.replace("alpha  \\\n beta", "alpha beta")
+                self.add("project.mk", direct.replace("FIRST =", line + "FIRST =", 1))
+                with self.assertRaisesRegex(MakeProbeError, "source-read evidence|traversal differs"):
+                    self.observed_source_census(makefile="project.mk")
+        self.add("project.mk", "define UNUSED\nMAKEFILE_LIST := erased\nendef\n" + body)
+        self.observed_source_census(makefile="project.mk")
+        self.add("data.txt", "ordinary data, not a Make program\n")
+        self.add("project.mk", "DATA := $(file <data.txt)\n" + body)
+        self.observed_source_census(makefile="project.mk")
+        self.assertEqual(self.last_include_observation.semantics["domains"]["MAKEFILE_LIST"]["value"],
+                         "project.mk child.mk")
+        binary = b"\xff\xfe\n"
+        (self.root / "data.bin").write_bytes(binary)
+        self.entries["data.bin"] = GitTreeEntry("data.bin", "100644", "blob", hashlib.sha1(binary).hexdigest())
+        self.add("project.mk", "DATA := $(file <data.bin)\n" + body)
+        self.observed_source_census(makefile="project.mk")
+        self.assertIn(("/repo/data.bin", "data.bin"), self.last_include_observation.file_open_attempts)
+
+    def test_generated_colon_directives_are_not_literal_dependency_rules(self):
+        for directive in ("include", "-include", "sinclude"):
+            with self.subTest(directive=directive):
+                commands = self.include_writer(directive + " mode:\n")
+                self.add("mode:", ".POSIX:\n")
+                with self.assertRaisesRegex(MakeProbeError, "generated include source history"):
+                    self.observed_source_census(commands_factory=commands)
+                native = self.last_include_observation
+                self.assertEqual(native.semantics["domains"]["MAKEFILE_LIST"]["value"],
+                                 "Makefile build/include.mk mode:")
+                self.assertEqual(self.last_target_values, ["alpha   beta", "alpha   beta"])
+        for data in ("include: input\n", "export: input\n", "ordinary: /repo/input\n", "ordinary: input\n"):
+            with self.subTest(data=data):
+                commands = self.include_writer(data)
+                _, values, _ = self.observed_source_census(commands_factory=commands)
+                self.assertEqual(values["FIRST"], {"alpha beta"})
+
+    def test_actual_export_forms_cannot_hide_restart_sensitive_process_inputs(self):
+        for declaration in (
+            "export MAKE_RESTARTS\n",
+            "export MAKEFILE_LIST\n",
+            "NAMES = MAKE_RESTARTS\nexport $(NAMES)\n",
+            "NAMES = MAKEFILE_LIST\nexport ${NAMES}\n",
+            "export\n",
+            ".EXPORT_ALL_VARIABLES:\n",
+            "$(eval export MAKE_RESTARTS)\n",
+        ):
+            with self.subTest(declaration=declaration):
+                commands = self.include_writer("ordinary: input\n")
+                self.add("Makefile", declaration + (self.root / "Makefile").read_text())
+                with self.assertRaisesRegex(MakeProbeError, "restart-sensitive|unproven"):
+                    self.observed_source_census(commands_factory=commands)
+                contexts = [context for context in self.last_include_observation.semantics["native_dispatches"]
+                            if any("writer.py" in argument for argument in context["arguments"])]
+                self.assertEqual(len(contexts), 2)
+                self.assertTrue(any(
+                    name in context["environment"] for context in contexts for name in ("MAKE_RESTARTS", "MAKEFILE_LIST")
+                ))
+                self.assertTrue(any(
+                    contexts[0]["environment"].get(name) != contexts[1]["environment"].get(name)
+                    for name in ("MAKE_RESTARTS", "MAKEFILE_LIST")
+                ))
+        for declaration in (
+            "SAFE = literal\nexport SAFE\n",
+            "SAFE = literal\nNAMES = SAFE\nexport $(NAMES)\n",
+            "export SAFE := literal\n",
+            "ifeq (yes,no)\nexport MAKE_RESTARTS\nendif\n",
+        ):
+            with self.subTest(declaration=declaration):
+                commands = self.include_writer("ordinary: input\n")
+                self.add("Makefile", declaration + (self.root / "Makefile").read_text())
+                self.observed_source_census(commands_factory=commands)
+                self.assertTrue(all(
+                    "MAKEFILE_LIST" not in context["environment"] and "MAKE_RESTARTS" not in context["environment"]
+                    for context in self.last_include_observation.semantics["native_dispatches"]
+                ))
+
+    def test_native_exports_join_consumption_without_expanding_unexported_bodies(self):
+        for prefix, defaults in (
+            ("BODY = $(eval MODE ?= first)\nexport BODY\n", {"MODE"}),
+            ("$(eval BODY = $$(eval MODE ?= first))\nexport BODY\n", {"MODE"}),
+            ("BODY = $(eval MODE ?= first)\n", set()),
+        ):
+            with self.subTest(prefix=prefix):
+                self.add("Makefile", prefix + "FIRST = first\nSECOND = second\n"
+                         "all:\n\t@printf '%s\\n' '$(value FIRST)' '$(value SECOND)'\n")
+                usage, _, _ = self.observed_source_census()
+                self.assertEqual(usage["defaults"], defaults)
+                contexts = self.last_include_observation.semantics["native_dispatches"]
+                self.assertEqual(any("BODY" in context["environment"] for context in contexts), bool(defaults))
 
     def test_unknown_mode_accepts_only_equivalent_assignment_constructs(self):
         assignment = "  override _VALIDATION_OWNERSHIP_FLAGS := \\\n\t$(strip $(MAKEFLAGS) $(MFLAGS) $(GNUMAKEFLAGS))"

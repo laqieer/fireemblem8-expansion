@@ -4305,6 +4305,56 @@ budget, host-timeout, production Make/generated output or workflow change is
 part of this correction. Baseline12 scope5660060610/run34814515499/
 result5660116650 remains consumed and closed; these fixtures do not reopen it.
 
+For independent source authority, create the exact0c8 regression with
+`MODE ?= first`, `include .dep/src/input.d`, and the unchanged registered
+`mkdir -p .dep/src/ && cc -E -nostdinc -undef src/input.c -MM -MG -MT src/input.o > .dep/src/input.d`
+recipe. Provide real input/header sources, first/second targets and an all
+target depending on MODE. After the include, assign
+`MAKEFILE_LIST := .dep/src/input.d`. Native Make must open both the actual
+primary and depfile, restart once and retain the real compiler/cc1 output.
+Exact0c8 accepted only the depfile, empty default/domain sets and one empty
+state. The correction must reject that omission; removing only the rewrite
+must restore unsealed MODE rejection and then real first/second variants when
+MODE is declared finite. This is an unchanged live registered producer case,
+not an in-memory registry bypass claim.
+
+Repeat source-list omission/reordering through assignment and define/eval
+contexts. Select a differently named primary via the actual native `makefile`
+argument and place an error in an unselected Makefile: never guess the primary
+basename from source/list contents. Omission of another included file rejects
+as well. An unused define containing a list rewrite stays unused. Ordinary
+text/binary data opened by Make is retained as read evidence, not parsed as a
+Makefile or fabricated into the include list.
+
+For neutral generated syntax, use the bounded stable writer to emit each of
+`include mode:`, `-include mode:` and `sinclude mode:`. The actually captured
+file named `mode:` contains `.POSIX:`. Require ordinary/native Make to load it
+and produce the corresponding POSIX continuation values, then reject neutral
+history credit for the directive. The colon in its operand does not make it
+a dependency rule. Keep ordinary rules named `include:` and `export:`, plus
+the real renderer's canonical dependency path forms, as positives.
+
+For export history, begin with a neutral stable-remake fixture exporting
+neither control. Add `export MAKE_RESTARTS` and then `export MAKEFILE_LIST`.
+Record both actual writer dispatch environments: the exported values change
+from empty to1 and from the primary name to primary-plus-include respectively.
+Neither run may receive insensitive history credit. Repeat supported computed
+name lists, bare export-all and `.EXPORT_ALL_VARIABLES`; unsupported eval/name
+effects retain their explicit rejection. Unrelated literal/computed benign
+exports, inactive export branches and CLI/environment precedence stay valid.
+An exported body that emits a default participates in consumption even when
+its definition is retained by eval; the unexported body remains unused.
+
+Restore each old root independently in an isolated mutation: list-derived
+primary/source recovery, first-colon neutrality, and omitted native export
+consumption must recover their corresponding false admissions with real
+native observations intact. Restore the correction and clean all owned
+sources/depfiles/processes. Keep actual registered-C evidence distinct from
+the in-memory stable-writer controls. The existing targeted automation below
+retains current FORCE/include, target/POSIX/input/metadata/shell/append,
+name/admission/deadline and import behavior; it is not full graph/verifier/H1
+acceptance or a new diagnostic allocation.
+
 Make the candidate Makefile itself raise an error, then query original inputs
 through the native empty-witness route: no candidate program or recipe may run.
 Retain raw environment values containing an unused error body, native undefined

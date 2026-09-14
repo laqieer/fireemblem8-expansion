@@ -65,8 +65,13 @@ PURE_VALUE_FUNCTIONS = MAKE_FUNCTIONS - {
     "call", "eval", "file", "shell", "guile", "info", "error", "warning",
 }
 INVOCATION_CONTROL_READS = frozenset(("MAKECMDGOALS", "MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKEOVERRIDES"))
+SOURCE_HISTORY_CONTROLS = frozenset(("MAKEFILE_LIST", "MAKE_RESTARTS"))
 EMPTY_RESULT_FUNCTIONS = frozenset(("error", "warning", "info", "eval"))
 SIMPLE_ASSIGNMENT_OPERATORS = frozenset((":=", "::="))
+MAKE_DIRECTIVE = re.compile(
+    r"^(define|endef|undefine|ifdef|ifndef|ifeq|ifneq|else|endif|include|-include|sinclude|"
+    r"override|export|unexport|private|vpath|load|-load)(?:[ \t\r\n\v\f]+|$)"
+)
 
 
 class _AssignmentEffect(NamedTuple):
@@ -83,12 +88,15 @@ class MakeSourceUnit(NamedTuple):
     active: bool | None = True
     assignment: _AssignmentEffect | None = None
     emitted: tuple = ()
+    kind: str | None = None
 
 
 class _SourceUnitStream(NamedTuple):
     ordered: tuple
     known_positions: frozenset
     remade: bool = False
+    read_sources: tuple = ()
+    native_exports: tuple = ()
 
 
 class _SourceSite(NamedTuple):
@@ -763,8 +771,15 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
                 pending_posix = False
 
     def contextual_unit(line, body=None, assignment=None, emitted=()):
+        statement = strip_comment(line).strip(MAKE_SPACE)
+        kind = (
+            "recipe" if line.startswith("\t") else "define" if body is not None
+            else "assignment" if assignment is not None
+            else "directive" if MAKE_DIRECTIVE.match(statement)
+            else "rule" if _rule_separators(statement) else "expression"
+        )
         return MakeSourceUnit(
-            line, body, conditional_depth=len(conditions), active=active, assignment=assignment, emitted=emitted,
+            line, body, conditional_depth=len(conditions), active=active, assignment=assignment, emitted=emitted, kind=kind,
         )
 
     for chunk in chunks:
@@ -871,7 +886,7 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
                     function = _make_function(header)
                     empty_result = function is not None and function[0] in EMPTY_RESULT_FUNCTIONS
                     target_posix = (
-                        mode.target_posix(header) if not empty_result and _include_names(header) is False else False
+                        mode.target_posix(header) if not empty_result and not MAKE_DIRECTIVE.match(header) else False
                     )
                     emitted = mode.evaluate(header, active=active)
                     included = _include_names(header, mode)
@@ -897,16 +912,9 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
 
 def _source_units(
     sources, *, assignments=(), budget=None, target=None, original_input=None, namespace=None,
-    read_order=None, remade=False,
+    read_order=None, remade=False, native_exports=(),
 ):
     decoded = {}
-    for path, data in sources.items():
-        if budget is not None:
-            budget.remaining()
-        try:
-            decoded[path] = data.decode("utf-8")
-        except UnicodeDecodeError as error:
-            raise MakeProbeError(f"Make census source is not UTF-8: {path}") from error
     mode = _MakeSourceMode(
         definitions={name: value for _, name, value in assignments},
         forced=frozenset(name for origin, name, _ in assignments if origin == "command-line"),
@@ -924,6 +932,11 @@ def _source_units(
         mode.checkpoint()
         if path in reading:
             raise MakeProbeError("Make include parsing-mode context is recursive")
+        if path not in decoded:
+            try:
+                decoded[path] = sources[path].decode("utf-8")
+            except UnicodeDecodeError as error:
+                raise MakeProbeError(f"Make census source is not UTF-8: {path}") from error
         previous = units.get(path)
         if previous is None:
             units[path] = []
@@ -943,7 +956,7 @@ def _source_units(
                 current_mode.uncertain("unproven include condition")
                 unproven_include = True
             for name in names:
-                if name in decoded:
+                if name in sources:
                     visit(name, known=known and active is True)
                 else:
                     current_mode.uncertain("unobserved included source")
@@ -968,17 +981,18 @@ def _source_units(
             raise MakeProbeError("Make include source changed across original read contexts")
         reading.remove(path)
 
-    if decoded:
-        visit(next(iter(decoded)))
+    if sources:
+        visit(next(iter(sources)))
     if unproven_include:
         raise MakeProbeError("unproven original include outcome or source history")
     if read_order is not None and tuple(visits) != tuple(read_order):
         raise MakeProbeError("original include traversal differs from native MAKEFILE_LIST")
-    for path in decoded:
-        if path not in units:
-            mode.posix = True if unresolved_modes and all(value is True for value in unresolved_modes) else None
-            visit(path, known=False)
-    return _SourceUnitStream(tuple(ordered), frozenset(known_positions), remade)
+    if read_order is None:
+        for path in sources:
+            if path not in units:
+                mode.posix = True if unresolved_modes and all(value is True for value in unresolved_modes) else None
+                visit(path, known=False)
+    return _SourceUnitStream(tuple(ordered), frozenset(known_positions), remade, tuple(visits), native_exports)
 
 
 def _ordered_source_units(units):
@@ -1189,9 +1203,12 @@ def _unproven_assignment_destination(header):
 
 
 def _prepare_rule_templates(
-    session, target, state, commands, observation, sources, *, observe_dispatch=False, external_names=(),
+    session, target, state, commands, observation, sources, *, primary_source,
+    observe_dispatch=False, external_names=(),
 ):
-    read_order, remade = _native_include_context(session, observation, sources, state)
+    read_order, remade, native_exports = _native_include_context(
+        session, observation, sources, state, primary_source=primary_source,
+    )
     original_inputs = {}
     has_empty_witness = any(not value for value in session.snapshot.files.values())
 
@@ -1209,7 +1226,7 @@ def _prepare_rule_templates(
     units = _source_units(
         sources, assignments=state, budget=session.budget, target=target,
         original_input=original_input, namespace=frozenset(namespace),
-        read_order=read_order, remade=remade,
+        read_order=read_order, remade=remade, native_exports=native_exports,
     )
     ordered, known_positions = _ordered_source_units(units)
     positions = {(path, index): offset for offset, (path, index, _) in enumerate(ordered)}
@@ -1419,7 +1436,9 @@ def _prepare_rule_templates(
             if position in known_positions:
                 prepared_known.add(len(prepared))
             prepared.append((path, len(prepared), replacement))
-    return _SourceUnitStream(tuple(prepared), frozenset(prepared_known), units.remade), graph_inputs, scoped
+    return _SourceUnitStream(
+        tuple(prepared), frozenset(prepared_known), units.remade, units.read_sources, units.native_exports,
+    ), graph_inputs, scoped
 
 
 def dollar_fragment(value):
@@ -1912,6 +1931,10 @@ def source_census(
                 graph_expressions.append(assignment["target"])
                 consumed_expressions.append(assignment["target"])
 
+    # Native environment membership is actual consumption, including bare,
+    # computed and implicit exports; it does not expand unexported bodies.
+    exports = set(reference_units.native_exports)
+    extend_known(all_names, exports & SOURCE_HISTORY_CONTROLS)
     consumed, execution_roots, execution_dependencies = set(), set(), {}
 
     def fact_count():
@@ -1928,6 +1951,9 @@ def source_census(
         if budget is not None:
             budget.remaining()
         before = fact_count()
+        for name in sorted(exports & definitions.keys()):
+            if retain_once("native-export-consumption", name):
+                consumed_expressions.append("$(" + name + ")")
         unresolved, unresolved_execution = set(), set()
         for name, values in list(expressions.items()):
             executing = [_without_literal_metadata(value) for value in values]
@@ -1990,7 +2016,7 @@ def source_census(
         raise MakeProbeError("graph dependency has an unresolved computed selector")
     expanded_recipe = closure(recipe, dependencies)
     stage_graph = closure(stage_roots | set().union(*(references(value) for value in stage_sinks)), dependencies)
-    if reference_units.remade and {"MAKE_RESTARTS", "MAKEFILE_LIST"} & (
+    if reference_units.remade and SOURCE_HISTORY_CONTROLS & (
         closure(all_names | graph | recipe, dependencies) | definitions.keys()
     ):
         raise MakeProbeError("unproven restart-sensitive Make source history")
@@ -2031,7 +2057,7 @@ def _literal_dependency_include(path, data, budget):
             continue
         separators = _rule_separators(line)
         if (
-            unit.body is not None or unit.text.startswith("\t") or len(separators) != 1
+            unit.kind != "rule" or len(separators) != 1
             or any(character in line for character in "$%*?[]\\;|&=()")
         ):
             raise MakeProbeError(f"unproven generated include source history: {path}")
@@ -2044,22 +2070,30 @@ def _literal_dependency_include(path, data, budget):
             relative_path(name.removeprefix("/repo/"))
 
 
-def _native_include_context(session, observation, sources, state):
+def _native_include_context(session, observation, sources, state, *, primary_source):
     listing = observation.semantics["domains"]["MAKEFILE_LIST"]
     if listing["origin"] != "file" or listing["flavor"] != "simple":
         raise MakeProbeError("unproven native Make include listing")
     order = tuple(name.removeprefix("/repo/") for name in listing["value"].split())
     opened = {resolved.removeprefix("/repo/") for resolved, _ in observation.file_open_attempts}
     session.budget.charge("cache", len(encoded((order, sorted(opened)))))
-    if set(order) != set(sources) or not set(order) <= opened:
+    if (
+        not order or order[0] != primary_source or next(iter(sources), None) != primary_source
+        or primary_source not in opened or not set(order) <= set(sources)
+        or not set(sources) <= opened
+    ):
         raise MakeProbeError("native Make include names lack actual source-read evidence")
-    generated = {item.path: item for item in observation.generated if item.path in sources}
+    exports = tuple(sorted({
+        name for context in observation.semantics["native_dispatches"] for name in context["environment"]
+    }))
+    session.budget.charge("cache", len(encoded(exports)))
+    generated = {item.path: item for item in observation.generated if item.path in order}
     if not generated:
-        return order, False
+        return order, False, exports
     restart = observation.semantics["domains"].get("MAKE_RESTARTS")
     if (
         restart != {"origin": "environment", "flavor": "recursive", "value": "1"}
-        or any(name in {"MAKE_RESTARTS", "MAKEFILE_LIST"} for _, name, _ in state)
+        or any(name in SOURCE_HISTORY_CONTROLS for _, name, _ in state)
     ):
         raise MakeProbeError("unproven native Make include restart history")
     published = {record[0]: record for record in observation.semantics["published_sources"]}
@@ -2084,12 +2118,13 @@ def _native_include_context(session, observation, sources, state):
         # A stable literal dependency file cannot change the original parsing
         # mode or variable namespace between its absent and remade passes.
         _literal_dependency_include(path, item.data, session.budget)
-    return order, True
+    return order, True, exports
 
 
-def _loaded_sources(session, observation):
-    values = observation.semantics["domains"]["MAKEFILE_LIST"]["value"].split()
+def _loaded_sources(session, observation, *, primary_source):
+    relative_path(primary_source)
     generated = {item.path: item.data for item in observation.generated}
+    opened = set()
     for resolved, spelling in observation.file_open_attempts:
         try:
             name = relative_path(resolved.removeprefix("/repo/"))
@@ -2098,10 +2133,13 @@ def _loaded_sources(session, observation):
             raise MakeProbeError(f"unadmitted Make file-open spelling: {spelling!r}") from error
         if name not in session.snapshot.files and name not in generated:
             raise MakeProbeError(f"unadmitted Make file-open: {spelling!r}")
+        opened.add(name)
+    if primary_source not in opened:
+        raise MakeProbeError("invocation-selected Make source lacks actual open evidence")
     result = {}
-    for name in values:
-        name = name.removeprefix("/repo/")
-        relative_path(name)
+    # The trusted -f selection and actual opens establish the available source
+    # pool. MAKEFILE_LIST may describe visits, but cannot erase their bytes.
+    for name in (primary_source, *sorted(opened - {primary_source})):
         if name in session.snapshot.files:
             result[name] = session.snapshot.files[name]
         elif name in generated:
@@ -2329,6 +2367,8 @@ def run_probe(
     if len(variables) > 512:
         raise MakeProbeError("graph domain observation exceeds the public variable bound")
     commands = MakeCommands(session, dynamic_contracts)
+    # Bind source recovery to the same explicit -f selection, not a list entry.
+    primary_source = "Makefile"
     results = {}
     for target in sorted(requested_targets):
         observe_dispatch = target in dispatch_targets
@@ -2346,15 +2386,16 @@ def run_probe(
                 continue
             visited.add(identity)
             observation = session.make(
-                target, variables=variables, assignments=state, commands=commands,
+                target, makefile=primary_source, variables=variables, assignments=state, commands=commands,
                 observe_recipe_dispatch=observe_dispatch,
             )
-            loaded = _loaded_sources(session, observation)
-            source_union.update(loaded)
+            loaded = _loaded_sources(session, observation, primary_source=primary_source)
             reference_units, template_inputs, template_scoped = _prepare_rule_templates(
                 session, target, state, commands, observation, loaded, observe_dispatch=observe_dispatch,
+                primary_source=primary_source,
                 external_names=external | symbolic | environment,
             )
+            source_union.update((path, loaded[path]) for path in reference_units.read_sources)
             scopes = [observation.semantics["domains"], *(
                 entry["variables"] for entry in observation.semantics["files"]
             )]

@@ -806,6 +806,16 @@ missing sources, extra/misordered occurrences, active cycles and changed
 original parsing cannot become absent-file success. The existing empty
 exact-path wildcard proof is distinct from naming an absent optional file.
 
+Source recovery is independently bound to the trusted invocation's explicit
+`makefile` (`-f`) selection, not the first entry of mutable MAKEFILE_LIST.
+The actual open evidence supplies the available source pool, with that selected
+primary first. Only proven original Make visits are decoded and included in
+the semantic stream; ordinary data reads retain their evidence without being
+parsed as Make programs. The candidate's list must then match those visits.
+Omitting/reordering the primary or another read Makefile cannot hide the
+declaration that performs the mutation, an external default, or its history.
+Non-default primary filenames use the same existing invocation interface.
+
 An initially absent optional file may be remade. The supported generated-include
 boundary requires a native one-restart observation, no supplied restart/list
 override, the actual generated source and publication record, and agreement of
@@ -817,6 +827,21 @@ Restart-sensitive source reads/writes and other generated-source histories
 reject; this is not replay of arbitrary Make programs or substitution of final
 variable values for original inputs. Existing source/publication ownership,
 native protocol and all budgets remain unchanged.
+
+Neutrality is a parsed statement property, before filename validation. The
+shared source collector distinguishes directives from ordinary rules, so
+`include mode:`, `-include mode:` and `sinclude mode:` remain includes even
+though an operand contains a colon. A rule named `include:` remains an ordinary
+rule. A first-colon heuristic cannot grant neutral restart-history authority.
+
+Actual native dispatch environment membership also enters the same consumption
+fixed point. Bare, computed and implicit/export-all declarations therefore
+cannot hide exported MAKE_RESTARTS or MAKEFILE_LIST. These changing process
+inputs reject insensitive remake-history credit; unrelated benign exports
+retain native behavior. Exported definition bodies are consumed when their
+definitions become reachable, including retained eval declarations, while
+unexported unused bodies stay lazy. Unsupported export-name effects remain
+subject to the original source/effect guards, not an inert default.
 
 The baseline12 source failure at generated_data.mk482-486 followed the real
 variable-named optional include at476, under the original non-checker goal
