@@ -1326,8 +1326,10 @@ def _prepare_rule_templates(
     def read_globals(names):
         pending = sorted(set(names) - set(globals_seen))
         for offset in range(0, len(pending), 512):
-            actual = session.make(target, definitions=tuple(pending[offset:offset + 512]), assignments=state,
-                                  commands=commands, observe_recipe_dispatch=observe_dispatch)
+            actual = session.make(
+                target, makefile=primary_source, definitions=tuple(pending[offset:offset + 512]),
+                assignments=state, commands=commands, observe_recipe_dispatch=observe_dispatch,
+            )
             _stable_native_context(observation.semantics, actual.semantics)
             records = actual.semantics["definitions"]["global"]
             session.budget.charge("cache", len(encoded(records)))

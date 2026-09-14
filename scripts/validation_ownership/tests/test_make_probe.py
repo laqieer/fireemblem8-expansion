@@ -1826,6 +1826,32 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.observed_source_census(makefile="project.mk")
         self.assertIn(("/repo/data.bin", "data.bin"), self.last_include_observation.file_open_attempts)
 
+    def test_template_metadata_queries_keep_the_selected_primary(self):
+        self.add("input", "ordinary dependency data\n")
+        source = (
+            "ITEMS := first second\nINPUT := input\nFIRST := alpha\nSECOND := beta\n"
+            "define RULE\n$(1): $(INPUT)\nendef\n"
+            "$(foreach item,$(ITEMS),$(eval $(call RULE,$(item))))\n"
+            "all: first second\n\t@printf '%s\\n' '$(value FIRST)' '$(value SECOND)'\n"
+        )
+        for makefile in ("Makefile", "project.mk"):
+            with self.subTest(makefile=makefile):
+                self.add("Makefile", source if makefile == "Makefile"
+                         else "$(error unselected Makefile executed)\n")
+                self.add(makefile, source)
+                with patch.object(ProbeSession, "make", autospec=True, side_effect=ProbeSession.make) as calls:
+                    _, values, _ = self.observed_source_census(makefile=makefile)
+                self.assertEqual(values, {"FIRST": {"alpha"}, "SECOND": {"beta"}})
+                metadata = [
+                    call.kwargs for call in calls.call_args_list
+                    if "RULE" in call.kwargs.get("definitions", ())
+                ]
+                self.assertTrue(metadata)
+                self.assertEqual({call.get("makefile", "Makefile") for call in metadata}, {makefile})
+                files = {item["target"]: item for item in self.last_include_observation.semantics["files"]}
+                for target in ("first", "second"):
+                    self.assertEqual(files[target]["prerequisites"], [{"name": "input", "order_only": False}])
+
     def test_generated_colon_directives_are_not_literal_dependency_rules(self):
         for directive in ("include", "-include", "sinclude"):
             with self.subTest(directive=directive):

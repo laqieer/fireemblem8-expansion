@@ -815,6 +815,10 @@ parsed as Make programs. The candidate's list must then match those visits.
 Omitting/reordering the primary or another read Makefile cannot hide the
 declaration that performs the mutation, an external default, or its history.
 Non-default primary filenames use the same existing invocation interface.
+Template-definition and dependent-global metadata queries retain that same
+selected primary, rather than falling back to an unrelated default Makefile.
+The intentionally empty-source original-input witness remains a separate
+query; retaining template selection does not execute the candidate for it.
 
 An initially absent optional file may be remade. The supported generated-include
 boundary requires a native one-restart observation, no supplied restart/list

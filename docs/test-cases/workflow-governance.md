@@ -4326,6 +4326,29 @@ as well. An unused define containing a list rewrite stays unused. Ordinary
 text/binary data opened by Make is retained as read evidence, not parsed as a
 Makefile or fabricated into the include list.
 
+For template metadata selection, use a literal `ITEMS := first second`, an
+`INPUT := input` dependency, and this supported template:
+
+```make
+define RULE
+$(1): $(INPUT)
+endef
+$(foreach item,$(ITEMS),$(eval $(call RULE,$(item))))
+```
+
+Provide the input file and an all target depending on first/second that prints
+literal FIRST/SECOND probe values. First select the program as Makefile, then
+as project.mk while the unselected Makefile contains
+`$(error unselected Makefile executed)`. Run the mapped
+`test_template_metadata_queries_keep_the_selected_primary` control to reach
+the actual native RULE definition query, not only the first observation.
+Both selected programs must retain the same dependency edges and probe values;
+the metadata query must use the selected file. Exact cbfc, or an isolated
+restoration that omits the selected-file argument, fails only the project.mk
+route with the unselected-file error. Restore the correction and clean the
+owned fixture/process state. The default reporter route and the intentionally
+empty original-input witness remain unchanged; this is not full graph evidence.
+
 For neutral generated syntax, use the bounded stable writer to emit each of
 `include mode:`, `-include mode:` and `sinclude mode:`. The actually captured
 file named `mode:` contains `.POSIX:`. Require ordinary/native Make to load it
