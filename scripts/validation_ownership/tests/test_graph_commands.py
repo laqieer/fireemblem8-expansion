@@ -851,6 +851,45 @@ class GraphCommandTests(unittest.TestCase):
         self.assertIsNone(probe.base)
         self.assertFalse(probe.budget.children)
 
+    def test_registered_find_preserves_implicit_and_explicit_print_grammars(self):
+        cases = (
+            ("legacy-text-source-discovery", "texts", "txt",
+             'find texts -type f -name "*.txt"'),
+            ("asset-tool-source-discovery", "scripts/assets", "py",
+             "find scripts/assets -type f -name '*.py' -print"),
+        )
+        for identity, root, extension, command in cases:
+            with self.subTest(identity=identity):
+                expected = (f"{root}/a.{extension}\n{root}/nested/b.{extension}\n").encode()
+                self.add(f"{root}/a.{extension}", "first\n")
+                self.add(f"{root}/nested/b.{extension}", "second\n")
+                self.add(f"{root}/ignored.bin", "not matched\n")
+                contract = next(item for item in self.contracts.values() if item["id"] == identity)
+                self.add("Makefile", (
+                    "TEXT_DIR := texts\n"
+                    f"FOUND := {contract['expression']}\n"
+                    "all: ;\n"
+                ))
+                ordinary = self.shell_argv(command)
+                self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+                self.assertEqual(ordinary.stdout, expected)
+                with self.session() as probe:
+                    commands = MakeCommands(probe, {contract["expression"]: contract})
+                    registration = commands[command]
+                    actual = probe.command(registration)
+                    self.assertEqual(actual.stdout, ordinary.stdout)
+                    self.assertEqual(actual.consumed, registration.sources)
+                    observed = probe.make("all", variables=("FOUND",), commands=commands)
+                    self.assertEqual(
+                        observed.semantics["domains"]["FOUND"]["value"],
+                        " ".join(expected.decode().splitlines()),
+                    )
+                    for tail in (" -print", " -delete", " extra", "||true", "&&true", "|cat"):
+                        with self.subTest(tail=tail), self.assertRaises(MakeProbeError):
+                            commands[command + tail]
+                self.assertIsNone(probe.base)
+                self.assertFalse(probe.budget.children)
+
     def test_registered_find_matches_real_find_with_nested_unicode_and_multiple_batches(self):
         descriptors = set(os.listdir("/proc/self/fd"))
         paths = [

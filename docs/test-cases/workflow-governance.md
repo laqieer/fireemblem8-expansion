@@ -4430,6 +4430,14 @@ Restore only the old word-based dependency/registration consumers in isolation:
 the live dependency discrepancy and the separately labelled generic pipe,
 assignment and fd-literal discrepancies must reappear with real execution.
 
+For registered file discovery, create two matching files and one nonmatching
+file below both `texts` and `scripts/assets`. Compare the complete ordinary,
+registered and native Make results for `find texts -type f -name '*.txt'`
+and `find scripts/assets -type f -name '*.py' -print`. Both current sealed
+contracts must work; extra arguments/actions or active operators reject.
+Restore the six-token-only arity guard and require the asset command to fail
+while the implicit-print text control still succeeds.
+
 For whitespace, append an actual CR to the consistency command's dot root.
 The real shell passes `.\r`, and the launcher fails before artifact checking;
 the report must not normalize it to dot and issue proofs. With a Bash Make

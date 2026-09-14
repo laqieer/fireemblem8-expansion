@@ -525,7 +525,9 @@ class MakeCommands:
         if tokens[0] == "find" and contract["id"] in {
             "legacy-text-source-discovery", "asset-tool-source-discovery",
         }:
-            if len(tokens) != 6 or tokens[2:5] != ["-type", "f", "-name"]:
+            tail = ["-print"] if contract["id"] == "asset-tool-source-discovery" else []
+            if (len(tokens) != 6 + len(tail) or tokens[2:5] != ["-type", "f", "-name"]
+                    or tokens[6:] != tail):
                 raise MakeProbeError("find producer differs from its declared grammar")
             root = relative_path(tokens[1])
             pattern = tokens[tokens.index("-name") + 1]

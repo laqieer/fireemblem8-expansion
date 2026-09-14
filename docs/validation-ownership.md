@@ -152,7 +152,10 @@ Ordinary-versus-adapted comparisons use equivalent captured input metadata, not
 an ambient worktree containing untracked files. Native adapter unit tests and
 standalone producer successes are not whole-root Make acceptance.
 Registered `find ... -type f -name ...` discovery keeps the real depth-first
-directory traversal and captured source equality, but issues bounded Linux
+directory traversal and captured source equality. The sealed text command
+uses implicit print, while the asset-source command has an explicit final
+`-print`; both complete grammars remain supported without extra arguments or
+active operators. Discovery issues bounded Linux
 `getdents64` requests directly instead of inheriting Python `scandir`'s 32 KiB
 readdir buffer. Each request is 4096 bytes; the supervisor still records and
 accounts for the complete requested before/after buffers, offsets, results and
