@@ -8,7 +8,7 @@ import shutil
 import unittest
 from unittest.mock import patch
 
-from scripts.validation_ownership import reporter
+from scripts.validation_ownership import graph_probe, reporter
 from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, GitTreeEntries, GitTreeEntry, encoded
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.budget import Limits, MAX_PLANNED_STATE_BYTES
@@ -179,6 +179,68 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         value = (ROOT / path).read_text()
         self.assertEqual(value, "")
         self.add(path, value)
+
+    def original_target_slices(self, path, declarations, first, last):
+        chunks = list(graph_probe._make_logical_chunks((ROOT / path).read_text()))
+        start = next(chunk.start for chunk in chunks if chunk.text.startswith(first))
+        end = next(chunk.end for chunk in chunks if chunk.start >= start and chunk.text.startswith(last))
+        result = []
+        for chunk in chunks:
+            if chunk.start > end:
+                break
+            if chunk.start >= start or chunk.text.startswith(tuple(declarations)):
+                result.append(chunk.text + "\n")
+            else:
+                result.append("# nondependent fixture source omitted" + " \\\n#" * (chunk.end - chunk.start) + "\n")
+        return "".join(result)
+
+    def observed_source_census(self, names=("FIRST", "SECOND"), *, assignments=(), witness=True):
+        from scripts.validation_ownership.graph_commands import MakeCommands
+        if witness:
+            self.original_input_witness()
+        ordinary = self.ordinary(
+            *(name + "=" + value for origin, name, value in assignments if origin == "command-line"),
+            environment={name: value for origin, name, value in assignments if origin == "environment"},
+        )
+        modes = []
+        bind = _MakeSourceMode.bind_invocation
+
+        def bind_original(mode, target):
+            modes.append(mode)
+            return bind(mode, target)
+
+        with self.session() as session:
+            native = session.make("all", variables=("MAKEFILE_LIST",), definitions=names, assignments=assignments)
+            records = native.semantics["definitions"]["global"]
+            self.last_target_values = [records[name]["value"] for name in names]
+            self.assertEqual(ordinary, ("\n".join(self.last_target_values) + "\n").encode())
+            sources = graph_probe._loaded_sources(session, native)
+            with patch.object(_MakeSourceMode, "bind_invocation", bind_original):
+                units, inputs, scoped = graph_probe._prepare_rule_templates(
+                    session, "all", assignments, MakeCommands(session, {}), native, sources,
+                )
+            self.assertEqual(len(modes), 1)
+            self.assertIs(modes[0].budget, session.budget)
+            usage = source_census(
+                sources, reference_units=units, source_assignments=assignments, source_target="all",
+                template_graph_inputs=inputs, template_scoped=scoped, budget=session.budget,
+            )
+            original_values = {
+                name: {binding.value for binding in modes[0].definitions[name]} for name in names
+            }
+        self.assertFalse(session.budget.children)
+        self.assertIsNone(session.base)
+        return usage, original_values, records
+
+    def target_mode_fixture(self, source, *, assignments=(), witness=True):
+        source += "FIRST = alpha  \\\n beta\nSECOND = alpha  \\\n beta\n"
+        source += "all:\n\t@printf '%s\\n' '$(value FIRST)' '$(value SECOND)'\n"
+        self.add("Makefile", source)
+        usage, values, _ = self.observed_source_census(assignments=assignments, witness=witness)
+        for name, native in zip(("FIRST", "SECOND"), self.last_target_values):
+            self.assertEqual(values[name], {native})
+            self.assertEqual(usage["definitions"][name], [native])
+        return self.last_target_values
 
     def original_effects_probe(self, source, *, includes=None, external=()):
         self.original_input_witness()
@@ -1308,6 +1370,156 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.assertEqual(native.semantics["definitions"]["global"]["MODE"]["value"], "first")
         with self.assertRaisesRegex(MakeProbeError, "external-default declaration has a dynamic name"):
             self.observe()
+
+    def test_actual_generated_data_target_prefix_has_original_parse_stage_proof(self):
+        for grouped, renamed in ((False, False), (True, False), (True, True)):
+            with self.subTest(grouped=grouped, renamed=renamed):
+                source = self.original_target_slices(
+                    "generated_data.mk", ("GENERATED_DATA_OUT_DIR ", "GENERATED_DATA_CONFIG_INPUTS_items :="),
+                    "GENERATED_DATA_ITEM_CAP_STAMP :=",
+                    "GENERATED_DATA_CONFIG_INPUTS_items += $(GENERATED_DATA_ACTIVE_HEADER)" if grouped
+                    else "GENERATED_DATA_CONFIG_INPUTS_items +=",
+                )
+                names = ("GENERATED_DATA_ITEM_CAP_STAMP", "GENERATED_DATA_CONFIG_INPUTS_items")
+                path = "generated_data.mk"
+                if renamed:
+                    source = source.replace("GENERATED_DATA_", "PROJECT_DATA_")
+                    names = tuple(name.replace("GENERATED_DATA_", "PROJECT_DATA_") for name in names)
+                    path = "project-rules.mk"
+                self.add(path, source)
+                self.add("Makefile", "include " + path + "\nall:\n\t@printf '%s\\n' "
+                         + " ".join("'$(value " + name + ")'" for name in names) + "\n")
+                _, values, native = self.observed_source_census(names)
+                self.assertEqual(native[names[0]]["value"], "build/generated/data/.item_id_cap.stamp")
+                for name in names:
+                    self.assertEqual(values[name], {native[name]["value"]})
+                expected = "include/constants/items.h include/bmitem.h include/variables.h include/constants/msg.h "
+                expected += "src/data/data_item_icon.c include/constants/items_expansion.h src/data/items_expansion.json "
+                expected += "build/generated/data/.item_id_cap.stamp"
+                if grouped:
+                    expected += " build/generated/data/id_space_active.h"
+                self.assertEqual(native[names[1]]["value"], expected)
+
+    def test_actual_modern_pattern_target_slice_keeps_parent_continuations(self):
+        source = self.original_target_slices(
+            "modern.mk", ("MODERN_CONFIG ?=", "MODERN_ABI ?=", "MODERN_BUILD_ROOT :=", "MODERN_OUTPUT_DIR :="),
+            "$(MODERN_OUTPUT_DIR)/%.o: %.c", '\t"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD',
+        )
+        self.add("modern.mk", source)
+        self.assertEqual(self.target_mode_fixture("include modern.mk\n"), ["alpha beta", "alpha beta"])
+        renamed = source.replace("MODERN_", "PROJECT_")
+        self.add("other-rules.mk", renamed)
+        self.assertEqual(self.target_mode_fixture("include other-rules.mk\n"), ["alpha beta", "alpha beta"])
+
+    def test_generated_targets_keep_delayed_posix_and_original_lexical_roles(self):
+        ordinary = ["alpha beta", "alpha beta"]
+        delayed = ["alpha beta", "alpha   beta"]
+        for source, expected in (
+            ("TARGET = ordinary\n$(TARGET):\n", ordinary),
+            ("T = ordinary\n${T}:\n", ordinary),
+            ("T = ordinary\n$T:\n", ordinary),
+            ("TARGET = .POSIX\n$(TARGET):\n", delayed),
+            ("TARGET = one .POSIX two\n$(TARGET):\n", delayed),
+            ("EMPTY =\n$(EMPTY):\n", ordinary),
+            ("EMPTY =\n.POSIX:\n$(EMPTY)\n", ["alpha   beta", "alpha   beta"]),
+            ("obj/%.o:\n", ordinary),
+            (".POSIX%:\n", ordinary),
+            ("./.POSIX:\n", delayed),
+            ("././.POSIX:\n", delayed),
+            (".//.POSIX:\n", delayed),
+            (".POSIX/:\n", ordinary),
+            ("directory/.POSIX:\n", ordinary),
+            (".POSIX other%:\n", delayed),
+            ("\\.POSIX:\n", ordinary),
+            (".POSIX\\ :\n", ordinary),
+            ("\\ .POSIX:\n", ordinary),
+            ("one\\ two:\n", ordinary),
+            ("one\\:two:\n", ordinary),
+            (".POSIX\\::\n", ordinary),
+            (".POSIX &: ;\n", delayed),
+            (".POSIX&: ;\n", delayed),
+            (".POSIX& : ;\n", ordinary),
+            ("TARGET = .POSIX&\n$(TARGET): ;\n", ordinary),
+            (".POSIX::\n", delayed),
+            ("ordinary: .POSIX\n", ordinary),
+            ("$$literal:\n", ordinary),
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(self.target_mode_fixture(source), expected)
+
+    def test_target_proof_keeps_original_flavor_origin_and_history(self):
+        ordinary = ["alpha beta", "alpha beta"]
+        delayed = ["alpha beta", "alpha   beta"]
+        for source, assignments, expected in (
+            ("INPUT = ordinary\nTARGET := $(INPUT)\nINPUT = .POSIX\n$(TARGET):\n", (), ordinary),
+            ("INPUT = ordinary\nTARGET = $(INPUT)\nINPUT = .POSIX\n$(TARGET):\n", (), delayed),
+            ("TARGET = ordinary\n$(TARGET):\nTARGET = .POSIX\n", (), ordinary),
+            ("TARGET = .POSIX\n$(TARGET):\nTARGET = ordinary\n", (), ["alpha   beta", "alpha   beta"]),
+            ("TARGET = ordinary\n$(TARGET):\n", (("command-line", "TARGET", ".POSIX"),), delayed),
+            ("TARGET = ordinary\n$(TARGET):\n", (("environment", "TARGET", ".POSIX"),), ordinary),
+            ("TARGET ?= ordinary\n$(TARGET):\n", (("environment", "TARGET", ".POSIX"),), delayed),
+            ("TARGET ?= ordinary\n$(TARGET):\n", (("environment", "TARGET", ""),), ordinary),
+            ("override TARGET = .POSIX\n$(TARGET):\n", (("command-line", "TARGET", "ordinary"),), delayed),
+            ("CHOICE = yes\nTARGET = first\nifeq ($(CHOICE),yes)\nTARGET = second\nendif\n$(TARGET):\n", (), ordinary),
+            ("CHOICE = yes\nPART = first\nifeq ($(CHOICE),yes)\nPART = second\nendif\nTARGET := out/$(PART)\n$(TARGET):\n",
+             (), ordinary),
+        ):
+            with self.subTest(source=source, assignments=assignments):
+                self.assertEqual(self.target_mode_fixture(source, assignments=assignments), expected)
+        self.add("mode.mk", "TARGET = .POSIX\n$(TARGET):\n")
+        self.assertEqual(self.target_mode_fixture("include mode.mk\n"), ["alpha   beta", "alpha   beta"])
+
+    def test_unproven_target_results_do_not_gain_final_value_or_normal_mode_authority(self):
+        for source, witness in (
+            ("$(UNPROVEN):\n", False),
+            ("TARGET := $(subst MARK,.POSIX,MARK)\n$(TARGET):\nTARGET = ordinary\n", True),
+            ("TARGET := $(if yes,ordinary)\n$(TARGET):\n", True),
+            ("TARGET = $(eval .POSIX:)ordinary\n$(TARGET):\n", True),
+            ("CHOICE = yes\nTARGET = ordinary\nifeq ($(CHOICE),yes)\nTARGET = .POSIX\nendif\n$(TARGET):\n", True),
+            ("wild*:\n", True),
+            ("TARGET = .POSIX:\n$(TARGET) ;\n", True),
+            ("TARGET = ordinary: .POSIX\n$(TARGET)\n", True),
+            ("TARGET = ordinary\n$(eval TARGET = .POSIX)\n$(TARGET):\n", True),
+            ("$$(.POSIX):\n", True),
+            (".POSIX\\&: ;\n", True),
+        ):
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(MakeProbeError, "unproven.*mode"):
+                    self.target_mode_fixture(source, witness=witness)
+                self.assertEqual(len(self.last_target_values), 2)
+        self.add(".POSIX", "fixture filename for a real wildcard match\n")
+        with self.assertRaisesRegex(MakeProbeError, "unproven.*mode"):
+            self.target_mode_fixture(".POSI*:\n")
+        self.assertEqual(self.last_target_values, ["alpha beta", "alpha   beta"])
+
+    def test_target_proof_keeps_literal_metadata_bodies_unexpanded(self):
+        for lookup in ("$(origin RULE)", "$(flavor RULE)"):
+            with self.subTest(lookup=lookup):
+                source = "RULE = $(error unused body)$(shell touch marker)\n" + lookup + ":\n"
+                self.assertEqual(self.target_mode_fixture(source), ["alpha beta", "alpha beta"])
+                self.assertFalse((self.root / "marker").exists())
+        self.assertEqual(self.target_mode_fixture("RULE = ordinary\n$(value RULE):\n"), ["alpha beta", "alpha beta"])
+        self.assertEqual(
+            self.target_mode_fixture("RULE = $(error unused body)\nTARGET := $(origin RULE)\n$(TARGET):\n"),
+            ["alpha beta", "alpha beta"],
+        )
+        with self.assertRaises(MakeProbeError):
+            self.target_mode_fixture("RULE = ordinary\nNAME = RULE\n$(origin $(NAME)):\n")
+
+    def test_original_target_value_alternatives_keep_the_existing_context_bound(self):
+        for width in (9, 10):
+            with self.subTest(width=width):
+                source = "CHOICE = yes\n"
+                for index in range(width):
+                    name = "PART_" + str(index)
+                    source += name + " = a\nifeq ($(CHOICE),yes)\n" + name + " = b\nendif\n"
+                source += "TARGET := out/" + "".join("$(PART_" + str(index) + ")" for index in range(width)) + "\n$(TARGET):\n"
+                if width == 9:
+                    self.assertEqual(self.target_mode_fixture(source), ["alpha beta", "alpha beta"])
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "existing bounded context plan"):
+                        self.target_mode_fixture(source)
+                    self.assertEqual(self.last_target_values, ["alpha beta", "alpha beta"])
 
     def test_unknown_mode_accepts_only_equivalent_assignment_constructs(self):
         assignment = "  override _VALIDATION_OWNERSHIP_FLAGS := \\\n\t$(strip $(MAKEFLAGS) $(MFLAGS) $(GNUMAKEFLAGS))"

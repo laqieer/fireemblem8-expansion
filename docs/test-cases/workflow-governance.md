@@ -4188,6 +4188,66 @@ space before `-DFE8_ARCHIVAL_BUILD=1`. Do not trim that value to obtain equality
 Baseline10 scope5657444621/run34793282205/result5657482497 remains consumed and
 closed; these small fixtures are not a new complete graph allocation.
 
+For the closed baseline11 regression, retain the original
+`GENERATED_DATA_OUT_DIR` and initial items-config declarations plus the
+contiguous item-cap stamp/rule/continued-config slice of generated_data.mk.
+Comment-pad omitted nondependent logical chunks to keep original physical and
+logical positions. Include it from a small Makefile whose only selected recipe
+prints raw stamp/config values; do not execute the retained generator recipes.
+Use the existing native setup, original-input witness, template/source walker
+and census route, not final native values injected into the source model.
+
+Before the correction, observe the pending marker become unknown at the actual
+`$(GENERATED_DATA_ITEM_CAP_STAMP): FORCE_GENERATED_DATA_ITEM_CAP` rule at277.
+The next non-recipe statement at341 merely records it. The continuation at
+343-346 then rejects, matching the immutable baseline11 error chain, although
+ordinary/native Make resolves the stamp to
+`build/generated/data/.item_id_cap.stamp` and joins the config paths with single
+spaces. With the correction, the original model and native raw values must
+agree without trimming meaningful internal data. Extend through the real
+grouped active-output target and repeat with renamed variables/file spelling.
+Use the actual modern output-directory declarations and pattern-rule slice
+before parent continuation probes. These are source-faithful slices, not a
+claim that the whole generated-data module or repository report ran.
+
+Compare ordinary GNU and native FIRST/SECOND values for a generated ordinary
+target, `.POSIX`, multiple targets containing `.POSIX`, empty targets, `%`
+patterns, short/braced references, escaped spaces/colons, leading `./` forms,
+grouped and double-colon rules. A `.POSIX` prerequisite is not a target; a
+variable returning `.POSIX&` does not create the lexical grouped-rule marker.
+The first continued statement after a `.POSIX` rule uses the old mode and the
+next uses POSIX mode. An intervening empty expansion or include EOF records the
+pending rule before later continuations, exactly as GNU does.
+
+Snapshot a simple target variable from an input and then change that input;
+contrast a recursive target variable, and rewrite the target variable after
+its rule. Compare original CLI/environment/override/default precedence and
+mode-inert branch alternatives. A later native value must not retroactively
+rename an earlier target or select normal mode. A branch that may introduce
+`.POSIX`, missing original input proof, an effectful target or an unproven
+transformation must reject. Exercise a real wildcard match of a fixture
+`.POSIX` filename as an unsupported proof, not a wildcard waiver. Introduced
+separators, escaped group markers and archive-like dollar data remain explicit
+unsupported contexts.
+
+Use literal origin/flavor lookups on unused error/shell bodies as target names:
+the bodies stay unread and no marker is created. Literal value lookup may
+prove raw literal target data, not arbitrary computed introspection. Exercise
+512 retained original value alternatives and reject the next larger product
+through the existing context bound; keep the original deadline and native
+combined-name/frame controls.
+
+Restore only the old punctuation-based target classifier in an isolated
+mutation. The same original and renamed slices must recover the continuation
+rejection while ordinary/native values remain unchanged. Independently remove
+the original simple-value snapshot proof and require the same failure. Restore
+the correction and clean each owned fixture/process afterward. Keep the prior
+Tools/POSIX/default/history/template/introspection/shell/append and capture
+controls. The existing ARM template fixture uses a fixture generator and real
+ARM objects; the source-prefix tests run no generator or ARM recipe.
+Baseline11 scope5659259166/run34808192321/result5659303197 remains consumed and
+closed, not a sizing point or permission for a retry.
+
 Make the candidate Makefile itself raise an error, then query original inputs
 through the native empty-witness route: no candidate program or recipe may run.
 Retain raw environment values containing an unused error body, native undefined

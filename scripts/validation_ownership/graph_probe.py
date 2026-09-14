@@ -188,35 +188,104 @@ class _MakeSourceMode:
         self.binding_versions[scope, name] = self.version
 
     def literal_text(self, expression, active=()):
+        values = self.literal_values(expression, active)
+        return next(iter(values)) if values is not None and len(values) == 1 else None
+
+    def literal_values(self, expression, active=()):
         self.checkpoint()
         if not self.original_namespace_valid:
             return None
-        pieces, previous = [], 0
-        for start, stop, body in sorted(_make_expression_spans(expression), key=lambda item: (item[0], -item[1])):
+
+        def literal(text):
+            return None if "$" in text.replace("$$", "") else text.replace("$$", "$")
+
+        spans = list(_make_expression_spans(expression))
+        spans.extend((match.start(), match.end(), match["short"])
+                     for match in REFERENCE.finditer(expression) if match["short"] is not None)
+        values, previous = {""}, 0
+        for start, stop, body in sorted(spans, key=lambda item: (item[0], -item[1])):
             if start < previous:
                 continue
-            if "$" in expression[previous:start] or not re.fullmatch(IDENTIFIER, body) or body in active:
+            prefix = literal(expression[previous:start])
+            if prefix is None:
                 return None
-            values = set()
+            metadata = None
+            if not re.fullmatch(IDENTIFIER, body):
+                function = _make_function(expression[start:stop])
+                if (
+                    function is None or function[0] not in {"origin", "flavor", "value"}
+                    or len(function[1]) != 1 or not re.fullmatch(IDENTIFIER, function[1][0])
+                ):
+                    return None
+                metadata, body = function[0], function[1][0]
+            if body in active and metadata is None:
+                return None
+            choices = set()
             for binding in self.binding(body):
-                if binding.flavor == "undefined":
-                    values.add("")
+                self.checkpoint()
+                if metadata is not None:
+                    value = getattr(binding, metadata)
+                    if value is None or metadata != "value" and value == "unknown":
+                        return None
+                    choices.add(value)
+                elif binding.flavor == "undefined":
+                    choices.add("")
                 elif binding.value is None or binding.flavor == "unknown":
                     return None
                 elif binding.flavor == "recursive":
-                    value = self.literal_text(binding.value, (*active, body))
-                    if value is None:
+                    expanded = self.literal_values(binding.value, (*active, body))
+                    if expanded is None:
                         return None
-                    values.add(value)
+                    choices.update(expanded)
                 else:
-                    values.add(binding.value)
-            if len(values) != 1:
+                    choices.add(binding.value)
+            if not choices:
                 return None
-            pieces.extend((expression[previous:start], values.pop()))
+            combined = set()
+            for value in values:
+                for choice in choices:
+                    self.checkpoint()
+                    combined.add(value + prefix + choice)
+                    if len(combined) > 512:
+                        raise MakeProbeError("literal Make context exceeds the existing bounded context plan")
+            if self.budget is not None:
+                self.budget.charge("cache", len(encoded(sorted(combined))))
+            values = combined
             previous = stop
-        if "$" in expression[previous:]:
+        suffix = literal(expression[previous:])
+        if suffix is None:
             return None
-        return "".join((*pieces, expression[previous:]))
+        return frozenset(value + suffix for value in values)
+
+    def target_posix(self, header):
+        statement, _ = split_inline_recipe(header)
+        separators = _rule_separators(statement)
+        left = statement[:separators[0]] if separators else statement
+        if separators and left.endswith("&"):
+            if left.endswith("\\&"):
+                return None
+            left = left[:-1]
+        if "$" not in left:
+            values = (left,)
+        else:
+            try:
+                values = self.literal_values(left)
+            except RecursionError:
+                return None
+            if values is None:
+                return None
+        if not separators:
+            if "$" not in header and not any(character in header for character in "*?[%\\"):
+                return False
+            return False if all(not value.strip(" \t") for value in values) else None
+        outcomes = set()
+        for value in values:
+            self.checkpoint()
+            names = _make_target_words(value)
+            if names is None:
+                return None
+            outcomes.add(".POSIX" in names)
+        return next(iter(outcomes)) if len(outcomes) == 1 else None
 
     def checkpoint(self):
         if self.budget is not None:
@@ -440,6 +509,14 @@ class _MakeSourceMode:
         if not literal_body:
             value = value.lstrip(MAKE_SPACE)
         version = self.version
+        literal_choices = None
+        if scope is None and (
+            operator in SIMPLE_ASSIGNMENT_OPERATORS or operator == "+=" and effect.immediate is True
+        ):
+            try:
+                literal_choices = self.literal_values(value)
+            except RecursionError:
+                literal_choices = None
         # GNU expands simple/shell RHSs before write-precedence rejection.
         # Append expansion instead depends on the original binding's flavor.
         emitted = ()
@@ -462,20 +539,23 @@ class _MakeSourceMode:
                 # body. Neither the command text nor a later value proves it.
                 result.add(_ModeBinding(origin, "recursive", None))
             elif operator in SIMPLE_ASSIGNMENT_OPERATORS or operator == "+=" and immediate is True:
-                literal = (
-                    value[:len(value) - len(value.lstrip(MAKE_SPACE))] + value[len(value.rstrip(MAKE_SPACE)):]
-                    if emitted else value if "$" not in value else None
-                )
-                if operator == "+=":
-                    if literal in {"", None}:
-                        result.add(before)
-                    if literal == "":
-                        continue
-                    literal = (
-                        (before.value + " " if before.value else "") + literal
-                        if before.value is not None and literal is not None else None
-                    )
-                result.add(_ModeBinding(origin, "simple", literal))
+                if emitted:
+                    literals = (value[:len(value) - len(value.lstrip(MAKE_SPACE))] + value[len(value.rstrip(MAKE_SPACE)):],)
+                elif literal_choices is not None:
+                    literals = literal_choices
+                else:
+                    literals = (value if "$" not in value else None,)
+                for literal in literals:
+                    if operator == "+=":
+                        if literal in {"", None}:
+                            result.add(before)
+                        if literal == "":
+                            continue
+                        literal = (
+                            (before.value + " " if before.value else "") + literal
+                            if before.value is not None and literal is not None else None
+                        )
+                    result.add(_ModeBinding(origin, "simple", literal))
             elif operator == "+=":
                 if before.flavor == "unknown":
                     result.add(UNPROVEN_BINDING)
@@ -771,6 +851,11 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
                         mode.assign(undefined[2], "undefine", "", override=bool(undefined[1]), active=active)
                     if _unproven_assignment_destination(header):
                         mode.uncertain()
+                    function = _make_function(header)
+                    empty_result = function is not None and function[0] in EMPTY_RESULT_FUNCTIONS
+                    target_posix = (
+                        mode.target_posix(header) if not empty_result and _include_names(header) is False else False
+                    )
                     emitted = mode.evaluate(header, active=active)
                     included = _include_names(header, mode)
                     if included is not False:
@@ -779,13 +864,9 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
                         else:
                             include_request = (included, active, mode)
                     else:
-                        separators = _rule_separators(header)
-                        left = header[:separators[0]] if separators else header
-                        function = _make_function(header)
-                        empty_result = function is not None and function[0] in EMPTY_RESULT_FUNCTIONS
-                        if not empty_result and any(character in left for character in "$*?[%\\"):
+                        if target_posix is None:
                             pending_posix = None
-                        elif separators and ".POSIX" in re.split(r"[ \t\r\n\v\f]+", left.strip(MAKE_SPACE)):
+                        elif target_posix:
                             if mode.posix is not True and (active is None or not known_context):
                                 raise MakeProbeError("unproven conditional/include .POSIX activation")
                             pending_posix = True
@@ -1016,8 +1097,46 @@ def _rule_template_parts(body):
 
 def _rule_separators(header):
     spans = [(start, stop) for start, stop, _ in _make_expression_spans(header)]
-    return [index for index, char in enumerate(header)
-            if char == ":" and not any(start <= index < stop for start, stop in spans)]
+    separators, slashes = [], 0
+    for index, char in enumerate(header):
+        if char == ":" and not slashes % 2 and not any(start <= index < stop for start, stop in spans):
+            separators.append(index)
+        slashes = slashes + 1 if char == "\\" else 0
+    return separators
+
+
+def _make_target_words(value):
+    """The proven filename subset after target expansion, not a shell lexer."""
+    if any(character in value for character in "\r\n\v\f"):
+        return None
+    words, word, index = [], [], 0
+    while index < len(value):
+        character = value[index]
+        if character == "\\" and index + 1 < len(value):
+            following = value[index + 1]
+            if following in " \t:\\*?[%":
+                word.append(following)
+                index += 2
+                continue
+        if character in " \t":
+            if word:
+                words.append("".join(word))
+                word = []
+        elif character in ":;=*?[~#()":
+            return None
+        else:
+            word.append(character)
+        index += 1
+    if word:
+        words.append("".join(word))
+    result = []
+    for word in words:
+        while word.startswith("./"):
+            word = word[2:].lstrip("/")
+        if word.startswith("/") or ".." in word.split("/"):
+            return None
+        result.append(word)
+    return result
 
 
 def _unproven_assignment_destination(header):

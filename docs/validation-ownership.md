@@ -705,6 +705,39 @@ conditions in Python. Inactive branches cannot enable the mode. A variable
 named `.POSIX` or a target-specific variable assignment is not a `.POSIX`
 rule.
 
+Generated target spelling is not itself mode uncertainty. The collector proves
+the original parse-stage target result through literal concatenation, named
+references (including short/braced spellings), paired dollars and literal
+origin/flavor/value reads. Simple assignments snapshot proven values at their
+original assignment point; recursive reads use the current original binding
+history. Finite branch alternatives are retained and every alternative must
+agree about `.POSIX`. This uses the existing 512-context bound, cache accounting
+and shared deadline. Missing original input evidence remains unknown; final
+native values never fill the gap.
+
+The filename proof distinguishes the target side from prerequisites, consumes
+a literal grouped-rule `&:` marker before expansion, and keeps an ampersand
+introduced by a variable as filename data. It handles ordinary/pattern names,
+empty or multiple targets, quoted filename spaces/colons and GNU's leading
+`./` normalization. Thus an actual generated `.POSIX` retains the same delayed
+activation as a literal rule. An ordinary proven target leaves the current
+mode alone; it never resets an already unknown mode to normal. Unresolved
+wildcards, tilde/archive syntax, introduced rule separators, absolute/parent
+paths, escaped group markers and opaque/computed expansion operations remain
+outside this narrow proof rather than being blanket-approved.
+
+The closed baseline11 failure illustrates the distinction: the unknown marker
+originated at generated_data.mk's item-cap stamp rule at277, whose original
+target is `build/generated/data/.item_id_cap.stamp`. It was recorded at341,
+not introduced by that literal `generated-data-check` rule, and then rejected
+the meaningful continued config append at343-346. The source-faithful fixture
+keeps the relevant original declarations and contiguous rule/continuation
+slice, with nondependent chunks comment-padded to preserve source positions.
+It uses real native/source observations without running the stamp/generator
+recipes or a complete repository report. Companion modern pattern/grouped
+target slices and renamed forms use the same proof; no Make/build source was
+rewritten to accommodate the analyzer.
+
 Unproven conditional activation rejects explicitly. Generated rules,
 effectful/computed references and unresolved include order may leave the mode
 unknown; mode-sensitive continuation data then rejects instead of selecting a
