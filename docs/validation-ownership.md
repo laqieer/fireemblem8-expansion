@@ -855,6 +855,45 @@ an explicitly selected small fixture writer with actual create/retain/remake
 receipts. It does not claim complete production-collector or repository-report
 acceptance; the consumed baseline12 allocation remains closed.
 
+A separate generated literal-binding-module certificate covers a restricted
+metadata format; assignments are not reclassified as neutral dependency rules.
+The shared parser derives unique, unconditional global `:=` writes with exact
+literal values. Engine/history and GNU4.3 implicit-rule inputs are protected,
+including originally undefined inputs such as CFLAGS and TARGET_ARCH. Original
+native empty-source queries must prove every write name undefined; input
+overrides, exports, missing witnesses and conflicting publication identities
+reject. No asset prefix, producer ID or output filename grants eligibility.
+
+The initial certificate supports one newly created binding module and one
+actual producer dispatch under a parsed empty-MAKE_RESTARTS guard. Its first
+branch has only the selected output rule and proven literal recipe commands;
+the other branch has the same recipe-less target. Original rule ownership,
+command expansion and actual event order must agree. Other possible owners,
+unresolved targets, nested/altered phase control and other counter uses reject.
+The phase test is exempted from ordinary sensitivity only after this proof.
+
+Generated writes remain provisional in the original mode model, preserving
+undefined and assigned alternatives. The complete consumption fixed point then
+checks executing roots and reached bodies, including computed references and
+metadata reads, against the write set. An unrelated unexported deferred body
+stays unused; origin/flavor/value observations remain non-executing body reads
+but still count as consumers. Actual native export membership and producer input
+identities corroborate the exclusions. Variable-universe access and active
+unproved file/wildcard/realpath or emitted-program operations reject rather than
+receiving a normal-mode or final-value default. These restrictions are explicit
+eligibility boundaries, not an implementation of arbitrary Make replay.
+
+This admits the actual asset-discovery emitter's five literal metadata
+assignments in an uninstrumented, non-interfering candidate. Its captured-source
+renderer and native publication agree byte-for-byte; ordinary CLI discovery
+intentionally uses a different mtime-based digest while preserving the same
+consumer lists. Stable final bytes alone remain insufficient: a real-emitter
+control creates/exports a first-pass-only default that vanishes after restart.
+Consumer and phase obligations must close before graph authority is granted.
+The same context/name bounds, source/cache/control charges and shared deadline
+apply. Baseline13 remains closed; this certificate does not claim full repository
+eligibility or resource fit.
+
 Assignment timing and resulting flavor are distinct contracts. GNU Make `!=`
 executes its RHS immediately but creates a recursive variable, unlike
 `:=`/`::=`. If the original shell output cannot be bound safely, mode analysis

@@ -1741,7 +1741,7 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 commands = self.include_writer(data)
                 if data == "include other.mk\n":
                     self.add("other.mk", "OTHER = ordinary\n")
-                with self.assertRaisesRegex(MakeProbeError, "generated include source history"):
+                with self.assertRaisesRegex(MakeProbeError, "generated include source history|literal binding statement"):
                     self.observed_source_census(commands_factory=commands)
                 self.assertEqual(self.last_include_observation.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
         commands = self.include_writer("second: input\n", changing=True)

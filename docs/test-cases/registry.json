@@ -2977,6 +2977,10 @@
           "evidence": "scripts/validation_ownership/tests/test_graph_commands.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_literal_bindings.LiteralBindingModuleTests.test_generic_unconsumed_literal_module_closes_all_obligations scripts.validation_ownership.tests.test_literal_bindings.LiteralBindingModuleTests.test_actual_production_emitter_qualifies_without_candidate_observers scripts.validation_ownership.tests.test_literal_bindings.LiteralBindingModuleTests.test_first_pass_default_and_export_remain_visible_obligations scripts.validation_ownership.tests.test_literal_bindings.LiteralBindingModuleTests.test_consumers_aliases_metadata_exports_and_universe_cannot_be_pruned scripts.validation_ownership.tests.test_literal_bindings.LiteralBindingModuleTests.test_binding_syntax_original_inputs_and_phase_shape_fail_closed scripts.validation_ownership.tests.test_literal_bindings.LiteralBindingModuleTests.test_certificate_and_phase_obligations_have_independent_removal_controls scripts.validation_ownership.tests.test_literal_bindings.LiteralBindingModuleTests.test_literal_module_name_and_deadline_admissions_are_unchanged -v",
+          "evidence": "scripts/validation_ownership/tests/test_literal_bindings.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_selected_primary_and_included_sources_cannot_be_omitted_or_reordered scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_generated_colon_directives_are_not_literal_dependency_rules scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_actual_export_forms_cannot_hide_restart_sensitive_process_inputs scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_native_exports_join_consumption_without_expanding_unexported_bodies -v",
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },

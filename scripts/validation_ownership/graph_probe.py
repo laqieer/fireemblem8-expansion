@@ -15,9 +15,10 @@ from itertools import chain
 from typing import NamedTuple
 from pathlib import PurePosixPath
 
-from .authority import encoded, relative_path
+from .authority import ENVIRONMENT, _event_command, encoded, relative_path
 from .budget import MakeProbeError, ProbeBudget
 from .graph_commands import MakeCommands
+from .graph_commands import _normalized_shell_commands
 
 
 IDENTIFIER = r"[A-Za-z_][A-Za-z0-9_]*"
@@ -68,6 +69,19 @@ INVOCATION_CONTROL_READS = frozenset(("MAKECMDGOALS", "MAKEFLAGS", "MFLAGS", "GN
 SOURCE_HISTORY_CONTROLS = frozenset(("MAKEFILE_LIST", "MAKE_RESTARTS"))
 EMPTY_RESULT_FUNCTIONS = frozenset(("error", "warning", "info", "eval"))
 SIMPLE_ASSIGNMENT_OPERATORS = frozenset((":=", "::="))
+# GNU Make 4.3 default.c identifier-shaped implicit-rule inputs, plus engine
+# controls. Dotted/automatic names are outside the literal binding grammar.
+IMPLICIT_MAKE_INPUTS = frozenset((
+    "AR", "ARFLAGS", "AS", "ASFLAGS", "CC", "CFLAGS", "CPP", "CPPFLAGS", "CXX", "CXXFLAGS",
+    "OBJC", "OBJCFLAGS", "CO", "COFLAGS", "FC", "FFLAGS", "F77", "F77FLAGS", "GET", "GFLAGS",
+    "LD", "LDFLAGS", "LDLIBS", "LOADLIBES", "LEX", "LFLAGS", "LINT", "LINTFLAGS", "M2C",
+    "M2FLAGS", "DEFFLAGS", "MODFLAGS", "PC", "PFLAGS", "RFLAGS", "YACC", "YFLAGS",
+    "MAKEINFO", "MAKEINFO_FLAGS", "TEX", "TEXI2DVI", "TEXI2DVI_FLAGS", "WEAVE", "CWEAVE",
+    "TANGLE", "CTANGLE", "RM", "TARGET_ARCH", "TARGET_MACH", "OUTPUT_OPTION",
+    "SCCS_OUTPUT_OPTION", "VPATH", "GPATH", "SHELL", "MAKE", "MAKEFILES", "MAKELEVEL",
+    "MAKE_VERSION", "MAKE_HOST", "MAKE_TERMOUT", "MAKE_TERMERR", "SUFFIXES",
+))
+PROTECTED_BINDINGS = IMPLICIT_MAKE_INPUTS | INVOCATION_CONTROL_READS | SOURCE_HISTORY_CONTROLS | set(ENVIRONMENT)
 MAKE_DIRECTIVE = re.compile(
     r"^(define|endef|undefine|ifdef|ifndef|ifeq|ifneq|else|endif|include|-include|sinclude|"
     r"override|export|unexport|private|vpath|load|-load)(?:[ \t\r\n\v\f]+|$)"
@@ -89,6 +103,9 @@ class MakeSourceUnit(NamedTuple):
     assignment: _AssignmentEffect | None = None
     emitted: tuple = ()
     kind: str | None = None
+    phase: tuple | None = None
+    phase_target: str | None = None
+    phase_command: str | None = None
 
 
 class _SourceUnitStream(NamedTuple):
@@ -97,6 +114,14 @@ class _SourceUnitStream(NamedTuple):
     remade: bool = False
     read_sources: tuple = ()
     native_exports: tuple = ()
+    literal_modules: tuple = ()
+    phase_tests: frozenset = frozenset()
+
+
+class _LiteralBindingModule(NamedTuple):
+    path: str
+    bindings: tuple
+    commands: tuple
 
 
 class _SourceSite(NamedTuple):
@@ -750,7 +775,39 @@ def _collapse_make_continuations(text, *, posix=False):
             pieces.append("\n")
 
 
-def make_source_units(text, *, mode=None, include=None, known_context=True, source_path="<Make source>"):
+def _empty_restart_test(keyword, arguments):
+    operands = _condition_operands(arguments)
+    return (
+        keyword == "ifeq" and operands is not None and operands[1] == ""
+        and operands[0].strip(MAKE_SPACE) in {"$(MAKE_RESTARTS)", "${MAKE_RESTARTS}"}
+    )
+
+
+def _phase_recipe_text(mode, line, target):
+    if target is None:
+        return None
+    command = line[1:].lstrip(" \t")
+    if command.startswith("@"):
+        command = command[1:]
+    if command.startswith(("-", "+")):
+        return None
+    directory = str(PurePosixPath(target).parent)
+    for spelling in ("$(dir $@)", "${dir $@}"):
+        command = command.replace(spelling, directory + "/")
+    command = command.replace("$(@D)", directory).replace("${@D}", directory)
+    command = command.replace("$(@)", target).replace("${@}", target).replace("$@", target)
+    if SCOPED.search(command):
+        return None
+    try:
+        return mode.literal_text(command)
+    except RecursionError:
+        return None
+
+
+def make_source_units(
+    text, *, mode=None, include=None, known_context=True, source_path="<Make source>",
+    binding_modules=(), provisional=False,
+):
     """GNU logical lines and whole define bodies; recipes keep their escapes."""
     if "\0" in text:
         raise MakeProbeError("Make source contains an unsupported NUL byte")
@@ -759,6 +816,7 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
     mode = _MakeSourceMode() if mode is None else mode
     pending_posix = False
     conditions, active = [], True
+    phase, phase_target = None, None
 
     def record_pending():
         nonlocal pending_posix
@@ -771,6 +829,7 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
                 pending_posix = False
 
     def contextual_unit(line, body=None, assignment=None, emitted=()):
+        nonlocal phase_target
         statement = strip_comment(line).strip(MAKE_SPACE)
         kind = (
             "recipe" if line.startswith("\t") else "define" if body is not None
@@ -778,8 +837,22 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
             else "directive" if MAKE_DIRECTIVE.match(statement)
             else "rule" if _rule_separators(statement) else "expression"
         )
+        target, command = None, None
+        if binding_modules and kind == "rule":
+            header, _ = split_inline_recipe(statement)
+            separators = _rule_separators(header)
+            try:
+                left = header[:separators[0]].strip(MAKE_SPACE) if len(separators) == 1 else None
+                target = left if left is not None and "$" not in left else mode.literal_text(left) if left is not None else None
+            except RecursionError:
+                target = None
+            if phase is not None:
+                phase_target = target
+        elif phase is not None and kind == "recipe":
+            command = _phase_recipe_text(mode, line, phase_target)
         return MakeSourceUnit(
             line, body, conditional_depth=len(conditions), active=active, assignment=assignment, emitted=emitted, kind=kind,
+            phase=phase, phase_target=target, phase_command=command,
         )
 
     for chunk in chunks:
@@ -803,6 +876,14 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
         )
         if conditional:
             keyword, arguments = conditional[1], conditional[2] or ""
+            phase_test = bool(
+                binding_modules and not conditions and active is True and known_context
+                and _empty_restart_test(keyword, arguments)
+            )
+            if phase_test:
+                phase = tuple(mode.site)
+            if keyword == "else":
+                phase_target = None
             if keyword == "endif":
                 if not conditions or arguments:
                     raise MakeProbeError("Make parsing-mode context has an unmatched conditional")
@@ -829,9 +910,11 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
                     choice = mode.condition(keyword, arguments)
                     conditions.append([active, choice, False])
                     active = _mode_and(active, choice)
-                if eligible is not False and mode.effectful(arguments):
+                if eligible is not False and not phase_test and mode.effectful(arguments):
                     mode.uncertain()
             yield contextual_unit(line)
+            if keyword == "endif" and not conditions:
+                phase, phase_target = None, None
             continue
         if header and not raw.startswith("\t"):
             # GNU collapses this line before recording the preceding rule.
@@ -868,7 +951,8 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
                 if assignment:
                     effect = mode.assign(
                         assignment["name"], assignment["operator"], assignment["value"],
-                        override="override" in declaration[:assignment.start("name")].split(), active=active,
+                        override="override" in declaration[:assignment.start("name")].split(),
+                        active=_mode_and(active, None) if provisional else active,
                     )
                 elif MODE_TARGET_ASSIGNMENT.fullmatch(declaration):
                     target_assignment = MODE_TARGET_ASSIGNMENT.fullmatch(declaration)
@@ -912,7 +996,7 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
 
 def _source_units(
     sources, *, assignments=(), budget=None, target=None, original_input=None, namespace=None,
-    read_order=None, remade=False, native_exports=(),
+    read_order=None, remade=False, native_exports=(), literal_modules=(),
 ):
     decoded = {}
     mode = _MakeSourceMode(
@@ -965,7 +1049,10 @@ def _source_units(
         count = 0
         # Revisit the original inputs; reuse only the identical source units,
         # never the effects of a previous include invocation.
-        for unit in make_source_units(decoded[path], mode=mode, include=included, known_context=known, source_path=path):
+        for unit in make_source_units(
+            decoded[path], mode=mode, include=included, known_context=known, source_path=path,
+            binding_modules=literal_modules, provisional=any(module.path == path for module in literal_modules),
+        ):
             if previous is None:
                 units[path].append(unit)
             elif count >= len(previous) or unit[:3] != previous[count][:3]:
@@ -992,7 +1079,9 @@ def _source_units(
             if path not in units:
                 mode.posix = True if unresolved_modes and all(value is True for value in unresolved_modes) else None
                 visit(path, known=False)
-    return _SourceUnitStream(tuple(ordered), frozenset(known_positions), remade, tuple(visits), native_exports)
+    return _SourceUnitStream(
+        tuple(ordered), frozenset(known_positions), remade, tuple(visits), native_exports, literal_modules,
+    )
 
 
 def _ordered_source_units(units):
@@ -1202,14 +1291,90 @@ def _unproven_assignment_destination(header):
     )
 
 
+def _literal_binding_phases(units, observation, budget):
+    ordered, known = _ordered_source_units(units)
+    groups = {}
+    for position, (path, _, unit) in enumerate(ordered):
+        budget.remaining()
+        if unit.phase is not None and strip_comment(unit.text).strip(MAKE_SPACE):
+            groups.setdefault(unit.phase, []).append((position, unit))
+    events = tuple(_event_command(event) for event in observation.events)
+    matched, tests = set(), set()
+    for phase, group in groups.items():
+        rows = [unit for _, unit in group]
+        headers = [strip_comment(unit.text).strip(MAKE_SPACE) for unit in rows]
+        if (
+            group[0][0] not in known or rows[0].conditional_depth != 1
+            or headers[-1] != "endif" or headers.count("else") != 1
+        ):
+            raise MakeProbeError("unproven literal binding restart guard")
+        middle = headers.index("else")
+        first, later = rows[1:middle], rows[middle + 1:-1]
+        if (
+            len(first) < 2 or first[0].kind != "rule"
+            or any(unit.kind != "recipe" or unit.phase_command is None for unit in first[1:])
+            or len(later) != 1 or later[0].kind != "rule"
+        ):
+            raise MakeProbeError("literal binding phase must contain one producer rule and empty alternative")
+        target = first[0].phase_target
+        candidates = [module for module in units.literal_modules if module.path == target]
+        if len(candidates) != 1 or later[0].phase_target != target:
+            raise MakeProbeError("literal binding phase does not own the selected generated target")
+        module = candidates[0]
+        first_header, first_inline = split_inline_recipe(first[0].text)
+        later_header, later_inline = split_inline_recipe(later[0].text)
+        later_separators = _rule_separators(later_header)
+        if (
+            first_inline or later_inline or len(later_separators) != 1
+            or later_header[later_separators[0] + 1:].strip(MAKE_SPACE)
+        ):
+            raise MakeProbeError("literal binding later phase is not recipe-less")
+        commands = []
+        for unit in first[1:]:
+            normalized = _normalized_shell_commands(unit.phase_command, "literal binding phase")
+            if len(normalized) != 1:
+                raise MakeProbeError("literal binding phase command is not a proven single command")
+            commands.append(normalized[0])
+        native = []
+        for command in events:
+            normalized = _normalized_shell_commands(command, "native literal binding phase")
+            native.append(normalized[0] if len(normalized) == 1 else None)
+        publisher = _normalized_shell_commands(module.commands[0], "literal binding publisher")
+        if len(publisher) != 1 or publisher[0] not in commands:
+            raise MakeProbeError("literal binding phase omits its actual publication")
+        starts = [offset for offset in range(len(native) - len(commands) + 1)
+                  if native[offset:offset + len(commands)] == commands]
+        if len(starts) != 1 or any(native.count(command) != 1 for command in commands):
+            raise MakeProbeError("literal binding phase differs from actual producer dispatch")
+        if target in matched:
+            raise MakeProbeError("literal binding target has multiple phase guards")
+        matched.add(target)
+        tests.add(phase)
+        for _, _, unit in ordered:
+            if unit.kind != "rule" or unit.phase == phase:
+                continue
+            if unit.phase_target is None:
+                raise MakeProbeError("literal binding output has unresolved original rule ownership")
+            targets = _make_target_words(unit.phase_target)
+            if targets is None or any("%" in name for name in targets) or target in targets:
+                raise MakeProbeError("literal binding output has another possible rule owner")
+    if matched != {module.path for module in units.literal_modules}:
+        raise MakeProbeError("literal binding module lacks a proven first-pass-only guard")
+    budget.charge("cache", len(encoded((sorted(matched), sorted(tests)))))
+    return frozenset(tests)
+
+
 def _prepare_rule_templates(
     session, target, state, commands, observation, sources, *, primary_source,
     observe_dispatch=False, external_names=(),
 ):
-    read_order, remade, native_exports = _native_include_context(
-        session, observation, sources, state, primary_source=primary_source,
+    read_order, remade, native_exports, literal_modules = _native_include_context(
+        session, observation, sources, state, primary_source=primary_source, commands=commands,
     )
-    original_inputs = {}
+    original_inputs = {
+        name: {"origin": "undefined", "flavor": "undefined", "value": ""}
+        for module in literal_modules for name, _ in module.bindings
+    }
     has_empty_witness = any(not value for value in session.snapshot.files.values())
 
     def original_input(name):
@@ -1226,8 +1391,10 @@ def _prepare_rule_templates(
     units = _source_units(
         sources, assignments=state, budget=session.budget, target=target,
         original_input=original_input, namespace=frozenset(namespace),
-        read_order=read_order, remade=remade, native_exports=native_exports,
+        read_order=read_order, remade=remade, native_exports=native_exports, literal_modules=literal_modules,
     )
+    if literal_modules:
+        units = units._replace(phase_tests=_literal_binding_phases(units, observation, session.budget))
     ordered, known_positions = _ordered_source_units(units)
     positions = {(path, index): offset for offset, (path, index, _) in enumerate(ordered)}
     macros, assignments, initializers, callers = {}, {}, {}, []
@@ -1440,6 +1607,7 @@ def _prepare_rule_templates(
             prepared.append((path, len(prepared), replacement))
     return _SourceUnitStream(
         tuple(prepared), frozenset(prepared_known), units.remade, units.read_sources, units.native_exports,
+        units.literal_modules, units.phase_tests,
     ), graph_inputs, scoped
 
 
@@ -1766,6 +1934,12 @@ def source_census(
     )
     for path, _, unit in ordered:
         raw = unit.text
+        phase_condition = re.fullmatch(r"[ \t]*(ifeq)[ \t]+(.*)", strip_comment(raw))
+        if (
+            unit.phase in reference_units.phase_tests and phase_condition
+            and _empty_restart_test(phase_condition[1], phase_condition[2])
+        ):
+            continue
         statement, inline_recipe = (raw, "") if raw.startswith("\t") else split_inline_recipe(raw)
         line = statement if raw.startswith("\t") else strip_comment(statement)
         if not raw.startswith("\t"):
@@ -2022,6 +2196,11 @@ def source_census(
         closure(all_names | graph | recipe, dependencies) | definitions.keys()
     ):
         raise MakeProbeError("unproven restart-sensitive Make source history")
+    if reference_units.literal_modules:
+        _certify_literal_bindings(
+            reference_units.literal_modules, consumed_expressions, consumed, expressions,
+            definitions, observed_values, defaults, exports, ambiguous_assignment, budget,
+        )
     return {
         "all": closure(all_names | graph | recipe, dependencies),
         "graph": expanded_graph,
@@ -2044,7 +2223,40 @@ def source_census(
         ],
         "secondary_expansion": secondary_expansion,
         "proven_eval_expressions": proven_eval_expressions,
+        "literal_binding_modules": tuple(module.path for module in reference_units.literal_modules),
     }
+
+
+def _certify_literal_bindings(
+    modules, roots, consumed, expressions, definitions, observed_values, defaults, exports,
+    ambiguous_assignment, budget,
+):
+    writes = {name: value for module in modules for name, value in module.bindings}
+    if ambiguous_assignment:
+        raise MakeProbeError("literal binding module has an unproven assignment destination")
+    if set(writes) & (defaults | exports):
+        raise MakeProbeError("literal binding module has an external or exported consumer")
+    for name, value in writes.items():
+        if definitions.get(name) != [value]:
+            raise MakeProbeError("literal binding module has another original definition")
+    readers = [*roots, *(value for name in consumed for value in expressions.get(name, ()))]
+    names = set()
+    for expression in readers:
+        if budget is not None:
+            budget.remaining()
+        names.update(references(expression))
+        for body in make_expressions(expression):
+            function = re.match(r"([^ \t\r\n\v\f]+)[ \t\r\n\v\f]+", body)
+            if body == ".VARIABLES" or function and function[1] in {"file", "wildcard", "realpath", "eval", "guile"}:
+                raise MakeProbeError("literal binding module has an opaque program/data/universe consumer")
+        try:
+            names.update(selected_names((expression,), definitions, observed_values))
+        except _UnresolvedName as error:
+            raise MakeProbeError("literal binding module has an unresolved possible consumer") from error
+    if set(writes) & names:
+        raise MakeProbeError("literal binding module has an original candidate consumer")
+    if budget is not None:
+        budget.charge("cache", len(encoded((sorted(writes), sorted(names)))))
 
 
 def _literal_dependency_include(path, data, budget):
@@ -2072,7 +2284,40 @@ def _literal_dependency_include(path, data, budget):
             relative_path(name.removeprefix("/repo/"))
 
 
-def _native_include_context(session, observation, sources, state, *, primary_source):
+def _literal_binding_include(path, data, budget):
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise MakeProbeError(f"generated Make include is not UTF-8: {path}") from error
+    units = [unit for unit in make_source_units(text, mode=_MakeSourceMode(budget=budget), source_path=path)
+             if strip_comment(unit.text).strip(MAKE_SPACE)]
+    if not any(unit.kind == "assignment" for unit in units):
+        return None
+    bindings = {}
+    for unit in units:
+        budget.remaining()
+        line = strip_comment(unit.text)
+        assignment = ASSIGNMENT.fullmatch(line)
+        if (
+            unit.kind != "assignment" or unit.body is not None or assignment is None
+            or assignment["operator"] != ":=" or line[:assignment.start("name")].strip(MAKE_SPACE)
+            or unit.conditional_depth or unit.active is not True
+        ):
+            raise MakeProbeError(f"unproven literal binding statement: {path}")
+        name, value = assignment["name"], assignment["value"].lstrip(MAKE_SPACE)
+        if name in PROTECTED_BINDINGS or name in bindings:
+            raise MakeProbeError(f"protected or repeated generated binding: {name}")
+        if not re.fullmatch(r"[A-Za-z0-9_./+ \t-]*", value):
+            raise MakeProbeError(f"nonliteral generated binding value: {name}")
+        bindings[name] = value
+        if len(bindings) > 512:
+            raise MakeProbeError("literal binding module exceeds the existing name bound")
+    result = tuple(sorted(bindings.items()))
+    budget.charge("cache", len(encoded((path, result))))
+    return result
+
+
+def _native_include_context(session, observation, sources, state, *, primary_source, commands=None):
     listing = observation.semantics["domains"]["MAKEFILE_LIST"]
     if listing["origin"] != "file" or listing["flavor"] != "simple":
         raise MakeProbeError("unproven native Make include listing")
@@ -2091,7 +2336,7 @@ def _native_include_context(session, observation, sources, state, *, primary_sou
     session.budget.charge("cache", len(encoded(exports)))
     generated = {item.path: item for item in observation.generated if item.path in order}
     if not generated:
-        return order, False, exports
+        return order, False, exports, ()
     restart = observation.semantics["domains"].get("MAKE_RESTARTS")
     if (
         restart != {"origin": "environment", "flavor": "recursive", "value": "1"}
@@ -2099,6 +2344,7 @@ def _native_include_context(session, observation, sources, state, *, primary_sou
     ):
         raise MakeProbeError("unproven native Make include restart history")
     published = {record[0]: record for record in observation.semantics["published_sources"]}
+    modules = []
     for path, item in generated.items():
         session.budget.remaining()
         if path in session.snapshot.files or sources[path] != item.data:
@@ -2117,10 +2363,38 @@ def _native_include_context(session, observation, sources, state, *, primary_sou
             or published[path][2:5] != [item.mode, len(item.data), digest]
         ):
             raise MakeProbeError(f"unproven changed or unreceipted Make include: {path}")
-        # A stable literal dependency file cannot change the original parsing
-        # mode or variable namespace between its absent and remade passes.
-        _literal_dependency_include(path, item.data, session.budget)
-    return order, True, exports
+        bindings = _literal_binding_include(path, item.data, session.budget)
+        if bindings is None:
+            # Keep the separate neutral dependency contract unchanged.
+            _literal_dependency_include(path, item.data, session.budget)
+            continue
+        if commands is None or "MAKE_RESTARTS" in ENVIRONMENT:
+            raise MakeProbeError("literal binding module lacks original invocation evidence")
+        names = {name for name, _ in bindings}
+        if names & {name for _, name, _ in state} or names & set(exports):
+            raise MakeProbeError("literal binding module has an overridden or exported write")
+        initial = session.original_make_inputs(observation.target, tuple(sorted(names)), assignments=state)
+        if any(value != {"origin": "undefined", "flavor": "undefined", "value": ""} for value in initial.values()):
+            raise MakeProbeError("literal binding module lacks original undefined inputs")
+        writers = []
+        for event in observation.events:
+            session.budget.remaining()
+            command = _event_command(event)
+            registration = commands[command]
+            if path in registration.outputs:
+                if tuple(registration.outputs) != (path,):
+                    raise MakeProbeError("literal binding writer has multiple output authority")
+                writers.append(command)
+        if len(writers) != 1:
+            raise MakeProbeError("literal binding module requires one actual creation producer")
+        for record in observation.semantics["dynamic_commands"]:
+            if any(entry[0] == path for entry in record["command"]["inputs"]):
+                raise MakeProbeError("literal binding module has an opaque producer data reader")
+        modules.append(_LiteralBindingModule(path, bindings, tuple(writers)))
+    if len(modules) > 1:
+        raise MakeProbeError("multiple literal binding module histories are not proven")
+    session.budget.charge("cache", len(encoded(modules)))
+    return order, True, exports, tuple(modules)
 
 
 def _loaded_sources(session, observation, *, primary_source):
