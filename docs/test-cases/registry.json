@@ -2981,6 +2981,10 @@
           "evidence": "scripts/validation_ownership/tests/test_literal_bindings.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_literal_bindings.LiteralBindingModuleTests.test_module_discovery_collects_only_owned_cases -v",
+          "evidence": "scripts/validation_ownership/tests/test_literal_bindings.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_selected_primary_and_included_sources_cannot_be_omitted_or_reordered scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_generated_colon_directives_are_not_literal_dependency_rules scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_actual_export_forms_cannot_hide_restart_sensitive_process_inputs scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_native_exports_join_consumption_without_expanding_unexported_bodies -v",
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },

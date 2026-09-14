@@ -1,6 +1,7 @@
 import hashlib
 import json
 from pathlib import Path
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -11,7 +12,7 @@ from scripts.validation_ownership import graph_probe
 from scripts.validation_ownership.authority import GitTreeEntry
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.graph_commands import CODE_PREFIXES, MakeCommands
-from scripts.validation_ownership.tests.test_make_probe import AuthoritativeMakeProbeTests
+from scripts.validation_ownership.tests import test_make_probe
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -19,11 +20,24 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class LiteralBindingModuleTests(unittest.TestCase):
     def setUp(self):
-        self.fixture = AuthoritativeMakeProbeTests()
+        self.fixture = test_make_probe.AuthoritativeMakeProbeTests()
         self.fixture.setUp()
 
     def tearDown(self):
         self.fixture.tearDown()
+
+    def test_module_discovery_collects_only_owned_cases(self):
+        pending = [unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__])]
+        modules, identifiers = set(), []
+        while pending:
+            case = pending.pop()
+            if isinstance(case, unittest.TestSuite):
+                pending.extend(case)
+            else:
+                modules.add(type(case).__module__)
+                identifiers.append(case.id())
+        self.assertEqual(modules, {__name__})
+        self.assertEqual(len(identifiers), len(set(identifiers)))
 
     def generic(self, content="INVENTORY_ITEMS := alpha beta\nENTRY_TOTAL := 2\n", *, prefix="", suffix=""):
         case = self.fixture

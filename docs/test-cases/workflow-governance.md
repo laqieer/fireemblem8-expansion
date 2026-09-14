@@ -4425,6 +4425,14 @@ owned file/process. Record all fixture corrections and actual results. These
 host-only controls are not a new full graph/verifier/H1 measurement; baselines
 1-13 remain consumed/closed.
 
+Load the literal-binding module through ordinary unittest module discovery.
+Its collected cases must belong to that module and have unique IDs; reused
+Make-probe fixture cases remain in their original module, not a second copy
+here. Run `test_module_discovery_collects_only_owned_cases`, then exercise the
+real production-emitter fixture. Restoring a globally imported fixture
+TestCase must make the collection guard fail without dropping any original
+Make-probe test or changing a CI budget.
+
 Make the candidate Makefile itself raise an error, then query original inputs
 through the native empty-witness route: no candidate program or recipe may run.
 Retain raw environment values containing an unused error body, native undefined
