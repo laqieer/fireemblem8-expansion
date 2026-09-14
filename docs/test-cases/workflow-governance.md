@@ -4267,6 +4267,61 @@ registry or claims of a current live-registry occurrence. All original
 observations, native receipts, source/capture protections, counters and
 deadlines remain; no baseline9/10 or complete-report allocation is reopened.
 
+For original append timing, start a separate small fixture with `UNUSED :=`,
+then `UNUSED += $(eval MODE ?= first)`, `all: $(MODE)`, an echo of MODE, and
+real first/second targets. Run ordinary GNU Make with `MODE=first` and
+`MODE=second`; observe both native prerequisite identities and the raw
+simple UNUSED/file-recursive MODE metadata. Repeat with `override UNUSED +=`
+and a `define UNUSED +=` body. Exact64b incorrectly accepted an empty
+default/domain baseline even though all three RHSs executed. The corrected
+probe must reject undeclared MODE and retain MODE's default plus actual
+first/second command-line/environment variants when that finite input is
+declared. Use only the documented small fixture command, not a full report.
+
+Change the initial definition to recursive `UNUSED =` and leave its appended
+eval/shell body unread. MODE must remain undefined, raw origin/flavor/value
+observations must not run the body, and no shell marker may exist. Repeat the
+recursive define append. Conversely, appending `$$(eval MODE ?= first)` to a
+simple variable stores the literal returned spelling; one expansion must not
+execute it again. These remain supported without inventing an external default.
+
+Supply original command-line and environment UNUSED values and repeat ordinary,
+override, private, export and override-define forms. Distinguish applying a
+write from expanding its RHS: an ordinary append to a recursive CLI value stays
+unused, but a simple `:=` RHS still executes even when CLI precedence rejects
+the resulting write. An append to an override-origin simple binding also
+expands before its ordinary write is rejected. An empty override append can
+retain file origin, allowing a later ordinary recursive definition. Compare
+actual native origins/flavors, not a presumed precedence shortcut.
+
+Rewrite UNUSED after the append to the opposite flavor: the later metadata
+must not replace the original timing. A prior target-local simple definition
+makes that target's append immediate; a global simple definition alone does
+not, nor does another target's local definition. Check the global and target
+native records separately. An originally undefined append uses the existing
+empty-source native input witness and remains recursive. A branch that leaves
+the original flavor unproven must reject a possibly immediate effect.
+
+Use a literal `$(eval UNUSED :=)` before the append and direct literal eval
+append arguments with paired-dollar inner evals. The original statement's
+binding must still determine the execution stage: simple executes the inner
+default; recursive leaves it unused. The existing source/effect seam may prove
+these literal emitted assignments, but forwarded or computed generated
+contexts without equivalent original evidence must reject rather than borrow
+the final native flavor. Keep the actual ordinary/native metadata and
+prerequisites for both forms. Genuine conditional/include/eval mode ambiguity
+and the full Tools-prefix protections remain required.
+
+In an isolated restoration, restore only the old operator-only append
+consumption. All three permanent preimage subtests must fail by recovering the
+empty default/domain baseline while native MODE and first/second prerequisites
+remain real. Separately restore stale bindings after an unproven forwarded
+flavor-changing eval; that control must recover the same false baseline.
+Restore the correction afterward and remove each owned fixture/process.
+The automation below covers these host-only contracts under unchanged limits;
+there are no new packages, native ABI/registry permissions, profile flags or
+ROM/RAM/save/generated-data/localization interactions.
+
 For assignment origin, provide environment MAYBE=literal while the source
 assigns `MAYBE = $(eval .POSIX:)`, then evaluates `RESULT := $(MAYBE)` before
 the continued FIRST. Ordinary/native FIRST has four spaces between words;

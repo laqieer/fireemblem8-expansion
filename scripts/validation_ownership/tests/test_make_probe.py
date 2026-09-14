@@ -1113,6 +1113,202 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             self.assertEqual(native.semantics["definitions"]["global"]["PAYLOAD"]["origin"], "undefined")
             self.assertEqual(native.semantics["definitions"]["files"][0]["variables"]["PAYLOAD"]["flavor"], "recursive")
 
+    def test_simple_append_rhs_effects_seal_defaults_in_all_declaration_forms(self):
+        for append in (
+            "UNUSED += $(eval MODE ?= first)\n",
+            "override UNUSED += $(eval MODE ?= first)\n",
+            "define UNUSED +=\n$(eval MODE ?= first)\nendef\n",
+        ):
+            with self.subTest(append=append):
+                self.add("Makefile", "UNUSED :=\n" + append
+                         + "all: $(MODE)\n\t@echo $(MODE)\nfirst second: ;\n")
+                self.assertEqual(self.ordinary("MODE=first"), b"first\n")
+                self.assertEqual(self.ordinary("MODE=second"), b"second\n")
+                with self.session() as session:
+                    baseline = session.make("all", definitions=("UNUSED", "MODE"))
+                    actual = [
+                        session.make("all", assignments=(("command-line", "MODE", value),))
+                        .semantics["files"][0]["prerequisites"][0]["name"]
+                        for value in ("first", "second")
+                    ]
+                self.assertEqual(actual, ["first", "second"])
+                self.assertEqual(baseline.semantics["definitions"]["global"]["UNUSED"]["flavor"], "simple")
+                self.assertEqual(baseline.semantics["definitions"]["global"]["MODE"], {
+                    "origin": "file", "flavor": "recursive", "value": "first",
+                })
+                with self.assertRaisesRegex(MakeProbeError, "unsealed external defaults"):
+                    self.observe()
+                result = self.observe(
+                    {"MODE": {"kind": "explicit", "values": ["first", "second"]}},
+                    environment_names={"MODE"},
+                )["all"]
+                self.assertEqual(result["variable_census"]["defaults"], ["MODE"])
+                self.assertEqual(result["prerequisite_domain_census"]["enumerated"], ["MODE"])
+                self.assertEqual({
+                    variant["record"]["files"][0]["prerequisites"][0]["name"]
+                    for variant in result["record"]["variants"]
+                }, {"first", "second"})
+                self.assertEqual({
+                    tuple(variant["state"][0]) for variant in result["record"]["variants"] if variant["state"]
+                }, {(origin, "MODE", value) for origin in ("command-line", "environment") for value in ("first", "second")})
+
+    def test_append_rhs_keeps_unused_recursive_and_escaped_bodies_lazy(self):
+        for initial, append, flavor, raw in (
+            ("UNUSED =\n", "UNUSED += $(eval MODE ?= first)$(shell touch marker)\n",
+             "recursive", "$(eval MODE ?= first)$(shell touch marker)"),
+            ("UNUSED =\n", "define UNUSED +=\n$(eval MODE ?= first)$(shell touch marker)\nendef\n",
+             "recursive", "$(eval MODE ?= first)$(shell touch marker)"),
+            ("UNUSED :=\n", "UNUSED += $$(eval MODE ?= first)\n", "simple", "$(eval MODE ?= first)"),
+        ):
+            with self.subTest(initial=initial, append=append):
+                self.add("Makefile", initial + append + "all:\n\t@printf '%s\\n' '$(flavor UNUSED)' '$(value UNUSED)'\n")
+                self.assertEqual(self.ordinary(), (flavor + "\n" + raw + "\n").encode())
+                with self.session() as session:
+                    native = session.make("all", definitions=("UNUSED", "MODE"))
+                    self.assertEqual(native.semantics["definitions"]["global"]["UNUSED"]["flavor"], flavor)
+                    self.assertEqual(native.semantics["definitions"]["global"]["UNUSED"]["value"], raw)
+                    self.assertEqual(native.semantics["definitions"]["global"]["MODE"]["origin"], "undefined")
+                    self.assertFalse((session.tree / "marker").exists())
+                result = self.observe()["all"]
+                self.assertEqual(result["variable_census"]["defaults"], [])
+                self.assertEqual(result["prerequisite_domain_census"]["enumerated"], [])
+                self.assertFalse((self.root / "marker").exists())
+
+    def test_append_timing_separates_precedence_from_rhs_execution(self):
+        cli = (("command-line", "UNUSED", "cli"),)
+        environment = (("environment", "UNUSED", "environment"),)
+        for source, assignments, expected, flavor, origin in (
+            ("UNUSED :=\nUNUSED += $(eval MODE ?= first)\n", cli, False, "recursive", "command line"),
+            ("UNUSED :=\noverride UNUSED += $(eval MODE ?= first)\n", cli, False, "recursive", "override"),
+            ("UNUSED := $(eval MODE ?= first)\n", cli, True, "recursive", "command line"),
+            ("override UNUSED := old\nUNUSED += $(eval MODE ?= first)\n", (), True, "simple", "override"),
+            ("UNUSED :=\nUNUSED += $(eval MODE ?= first)\n", environment, True, "simple", "file"),
+            ("UNUSED += $(eval MODE ?= first)\n", environment, False, "recursive", "file"),
+            ("UNUSED :=\noverride UNUSED +=\nUNUSED =\nUNUSED += $(eval MODE ?= first)\n",
+             (), False, "recursive", "file"),
+            ("UNUSED :=\nprivate UNUSED += $(eval MODE ?= first)\n", (), True, "simple", "file"),
+            ("UNUSED :=\nexport UNUSED += $(eval MODE ?= first)\n", (), True, "simple", "file"),
+            ("UNUSED :=\noverride define UNUSED +=\n$(eval MODE ?= first)\nendef\n", cli, False, "recursive", "override"),
+            ("override UNUSED :=\nall: UNUSED += $(eval MODE ?= first)\n", cli, False, "simple", "override"),
+            ("UNUSED :=\noverride UNUSED += $(eval IGNORED =) \nUNUSED =\nUNUSED += $(eval MODE ?= first)\n",
+             (), True, "simple", "override"),
+            ("UNUSED :=\noverride define UNUSED +=\n $(eval IGNORED =)\nendef\nUNUSED =\n"
+             "UNUSED += $(eval MODE ?= first)\n", (), True, "simple", "override"),
+        ):
+            with self.subTest(source=source, assignments=assignments):
+                source += "$(info $(origin MODE))\nall: ;\n"
+                self.add("Makefile", source)
+                ordinary = self.ordinary(
+                    *(name + "=" + value for kind, name, value in assignments if kind == "command-line"),
+                    environment={name: value for kind, name, value in assignments if kind == "environment"},
+                )
+                self.assertEqual(ordinary.splitlines()[0], b"file" if expected else b"undefined")
+                with self.session() as session:
+                    native = session.make("all", definitions=("MODE", "UNUSED"), assignments=assignments)
+                values = native.semantics["definitions"]["global"]
+                self.assertEqual(values["MODE"]["origin"] == "file", expected)
+                self.assertEqual((values["UNUSED"]["flavor"], values["UNUSED"]["origin"]), (flavor, origin))
+                census = source_census({"Makefile": source.encode()}, source_assignments=assignments, source_target="all")
+                self.assertEqual(census["defaults"], {"MODE"} if expected else set())
+
+    def test_append_timing_uses_original_scope_and_flavor_history(self):
+        for source, expected, global_flavor, local_flavor in (
+            ("UNUSED :=\nUNUSED += $(eval MODE ?= first)\nUNUSED = literal\n", True, "recursive", "recursive"),
+            ("UNUSED =\nUNUSED += $(eval MODE ?= first)\nUNUSED := literal\n", False, "simple", "simple"),
+            ("all: UNUSED :=\nall: UNUSED += $(eval MODE ?= first)\n", True, "undefined", "simple"),
+            ("UNUSED :=\nall: UNUSED += $(eval MODE ?= first)\n", False, "simple", "recursive"),
+            ("all: UNUSED =\nall: UNUSED += $(eval MODE ?= first)\n", False, "undefined", "recursive"),
+            ("other: UNUSED :=\nall: UNUSED += $(eval MODE ?= first)\n", False, "undefined", "recursive"),
+        ):
+            with self.subTest(source=source):
+                source += "$(info $(origin MODE))\nall: ;\n"
+                self.add("Makefile", source)
+                self.assertEqual(self.ordinary().splitlines()[0], b"file" if expected else b"undefined")
+                with self.session() as session:
+                    native = session.make("all", definitions=("MODE", "UNUSED"))
+                metadata = native.semantics["definitions"]
+                self.assertEqual(metadata["global"]["MODE"]["origin"] == "file", expected)
+                self.assertEqual(metadata["global"]["UNUSED"]["flavor"], global_flavor)
+                self.assertEqual(metadata["files"][0]["variables"]["UNUSED"]["flavor"], local_flavor)
+                census = source_census({"Makefile": source.encode()}, source_target="all")
+                self.assertEqual(census["defaults"], {"MODE"} if expected else set())
+        self.add("Makefile", "UNUSED =\n$(eval UNUSED :=)\nUNUSED += $(eval MODE ?= first)\nall: $(MODE)\nfirst second: ;\n")
+        with self.session() as session:
+            native = session.make("all", definitions=("MODE", "UNUSED"))
+        self.assertEqual(native.semantics["definitions"]["global"]["UNUSED"]["flavor"], "simple")
+        self.assertEqual(native.semantics["definitions"]["global"]["MODE"]["value"], "first")
+        with self.assertRaisesRegex(MakeProbeError, "unsealed external defaults"):
+            self.observe()
+        result = self.observe({"MODE": {"kind": "explicit", "values": ["first", "second"]}})["all"]
+        self.assertEqual(result["variable_census"]["defaults"], ["MODE"])
+        self.add("Makefile", "UNUSED =\nCHANGE = UNUSED :=\n$(eval $(CHANGE))\n"
+                 "UNUSED += $(eval MODE ?= first)\nall: $(MODE)\nfirst: ;\n")
+        with self.session() as session:
+            native = session.make("all", definitions=("MODE", "UNUSED"))
+        self.assertEqual(native.semantics["definitions"]["global"]["UNUSED"]["flavor"], "simple")
+        self.assertEqual(native.semantics["definitions"]["global"]["MODE"]["value"], "first")
+        with self.assertRaisesRegex(MakeProbeError, "unproven original Make append RHS timing"):
+            self.observe()
+
+    def test_append_uses_original_inputs_and_retains_unknown_branch_timing(self):
+        self.original_input_witness()
+        self.add("Makefile", "UNUSED += $(eval MODE ?= first)$(shell touch marker)\nall:\n\t@echo '$(flavor UNUSED)'\n")
+        self.assertEqual(self.ordinary(), b"recursive\n")
+        with self.session() as session:
+            with patch.object(session, "original_make_inputs", wraps=session.original_make_inputs) as original:
+                result = run_probe(session.loader, {"all"}, {}, {}, session=session)["all"]
+            self.assertIn("UNUSED", {name for call in original.call_args_list for name in call.args[1]})
+            native = session.make("all", definitions=("MODE", "UNUSED"))
+            self.assertEqual(native.semantics["definitions"]["global"]["MODE"]["origin"], "undefined")
+            self.assertEqual(native.semantics["definitions"]["global"]["UNUSED"]["flavor"], "recursive")
+        self.assertEqual(result["variable_census"]["defaults"], [])
+        self.assertFalse((self.root / "marker").exists())
+        source = ("UNUSED =\nCHOICE = yes\nifeq ($(CHOICE),yes)\nUNUSED :=\nendif\n"
+                  "UNUSED += $(eval MODE ?= first)\nall: $(MODE)\nfirst: ;\n")
+        self.add("Makefile", source)
+        with self.session() as session:
+            native = session.make("all", definitions=("MODE", "UNUSED"))
+        self.assertEqual(native.semantics["definitions"]["global"]["MODE"]["value"], "first")
+        self.assertEqual(native.semantics["definitions"]["global"]["UNUSED"]["flavor"], "simple")
+        with self.assertRaisesRegex(MakeProbeError, "unproven original Make append RHS timing"):
+            self.observe()
+
+    def test_emitted_append_requires_original_timing_and_preserves_expansion_stages(self):
+        for operator in ("=", ":="):
+            with self.subTest(operator=operator):
+                source = "UNUSED " + operator + "\n$(eval UNUSED += $$(eval MODE ?= first))\nall: ;\n"
+                self.add("Makefile", source)
+                with self.session() as session:
+                    native = session.make("all", definitions=("MODE", "UNUSED"))
+                self.assertEqual(native.semantics["definitions"]["global"]["MODE"]["origin"],
+                                 "file" if operator == ":=" else "undefined")
+                if operator == ":=":
+                    with self.assertRaisesRegex(MakeProbeError, "unsealed external defaults"):
+                        self.observe()
+                    result = self.observe({"MODE": {"kind": "explicit", "values": ["first", "second"]}})["all"]
+                    self.assertEqual(result["variable_census"]["defaults"], ["MODE"])
+                else:
+                    self.assertEqual(self.observe()["all"]["variable_census"]["defaults"], [])
+        self.add("Makefile", "UNUSED :=\ndefine RULE\nUNUSED += $$(eval MODE ?= first)\nendef\n"
+                 "$(eval $(RULE))\nall: ;\n")
+        with self.session() as session:
+            native = session.make("all", definitions=("MODE",))
+        self.assertEqual(native.semantics["definitions"]["global"]["MODE"]["value"], "first")
+        with self.assertRaisesRegex(MakeProbeError, "unproven emitted Make append RHS timing"):
+            self.observe()
+        self.add("Makefile", "UNUSED =\n$(eval UNUSED += $(eval MODE ?= first))\nall: $(MODE)\nfirst second: ;\n")
+        with self.assertRaisesRegex(MakeProbeError, "unsealed external defaults"):
+            self.observe()
+        result = self.observe({"MODE": {"kind": "explicit", "values": ["first", "second"]}})["all"]
+        self.assertEqual(result["variable_census"]["defaults"], ["MODE"])
+        self.assertEqual(result["prerequisite_domain_census"]["enumerated"], ["MODE"])
+        self.add("Makefile", ".SECONDEXPANSION:\nall: $$(eval MODE ?= first)\n")
+        with self.session() as session:
+            native = session.make("all", definitions=("MODE",))
+        self.assertEqual(native.semantics["definitions"]["global"]["MODE"]["value"], "first")
+        with self.assertRaisesRegex(MakeProbeError, "external-default declaration has a dynamic name"):
+            self.observe()
+
     def test_unknown_mode_accepts_only_equivalent_assignment_constructs(self):
         assignment = "  override _VALIDATION_OWNERSHIP_FLAGS := \\\n\t$(strip $(MAKEFLAGS) $(MFLAGS) $(GNUMAKEFLAGS))"
         self.assertIn(assignment, (ROOT / "Makefile").read_text())

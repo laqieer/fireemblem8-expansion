@@ -772,6 +772,29 @@ contexts still use the actual native producer and original source contracts.
 Unused shell results remain unexpanded; safe ordinary shell assignments are
 not blanket-banned, and late expanded values are not substituted as evidence.
 
+Append RHS timing comes from the original binding, not a fixed operator list
+or the final native flavor. `+=` expands immediately for an existing simple
+variable; a recursive or originally undefined binding keeps the appended body
+deferred. Each original source occurrence carries that decision and assignment
+applicability into consumption, emitted-default retention and define handling.
+GNU write precedence is separate: even a rejected simple assignment or append
+to an override-origin simple variable can expand its RHS. Ignored deferred
+bodies do not become execution evidence. An empty append can also preserve the
+previous origin rather than adopting `override`.
+
+Target-specific histories retain their own bindings. A new target-specific
+append does not borrow a global simple flavor, while original command-line
+precedence remains relevant. Unproven effects invalidate old binding context;
+unknown flavor alternatives cannot silently turn a possible immediate effect
+into an unused body. Literal eval assignment arguments containing only literal
+bytes and paired dollars can carry their original assignment decisions through
+the same seam. This is a bounded syntactic output proof, not evaluation of
+arbitrary functions, computed programs or later native values. Other generated
+append contexts with surviving references reject when their original timing
+is unproven. Invocation/mode guards remain conservative even for a proven
+literal emitted assignment. One expansion of a paired-dollar eval spelling
+must not be mistaken for executing that returned spelling.
+
 Mode failures report their actual visitor path, logical statement and physical
 line span, plus the first unproven source site/input name. The error chain and
 failure classification remain, without dumping variable or environment values.

@@ -49,7 +49,7 @@ MODE_ASSIGNMENT, MODE_TARGET_ASSIGNMENT = (
     for pattern in (ASSIGNMENT, TARGET_ASSIGNMENT)
 )
 DEFINE = re.compile(rf"^\s*(?:(?:export|override|private)\s+)*define\s+({IDENTIFIER})")
-SECONDARY = re.compile(rf"\$\$(?:\(({IDENTIFIER})|\{{({IDENTIFIER})\}})")
+SECONDARY = re.compile(rf"\$\$(?:\(({IDENTIFIER})(?=[:)])|\{{({IDENTIFIER})(?=[:}}]))")
 NAME_PART = re.compile(rf"\$\(({IDENTIFIER})\)|\$\{{({IDENTIFIER})\}}")
 MAKE_SPACE = " \t\r\n\v\f"
 # GNU Make 4.3's intrinsic function namespace; candidate load is not admitted.
@@ -66,7 +66,12 @@ PURE_VALUE_FUNCTIONS = MAKE_FUNCTIONS - {
 INVOCATION_CONTROL_READS = frozenset(("MAKECMDGOALS", "MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKEOVERRIDES"))
 EMPTY_RESULT_FUNCTIONS = frozenset(("error", "warning", "info", "eval"))
 SIMPLE_ASSIGNMENT_OPERATORS = frozenset((":=", "::="))
-IMMEDIATE_RHS_OPERATORS = SIMPLE_ASSIGNMENT_OPERATORS | {"!="}
+
+
+class _AssignmentEffect(NamedTuple):
+    applies: bool | None
+    immediate: bool | None
+    emitted: tuple = ()
 
 
 class MakeSourceUnit(NamedTuple):
@@ -75,6 +80,8 @@ class MakeSourceUnit(NamedTuple):
     native_literal_header: bool = False
     conditional_depth: int = 0
     active: bool | None = True
+    assignment: _AssignmentEffect | None = None
+    emitted: tuple = ()
 
 
 class _SourceUnitStream(NamedTuple):
@@ -126,6 +133,9 @@ class _MakeSourceMode:
     site: _SourceSite | None = None
     first_uncertainty: tuple | None = None
     last_effect_input: str | None = None
+    target_definitions: dict = field(default_factory=dict)
+    binding_versions: dict = field(default_factory=dict)
+    version: int = 0
 
     def __post_init__(self):
         self.definitions = {
@@ -133,8 +143,26 @@ class _MakeSourceMode:
             for name, value in self.definitions.items()
         }
 
-    def binding(self, name):
-        if name not in self.definitions:
+    def binding(self, name, scope=None):
+        definitions = self.definitions if scope is None else self.target_definitions.get(scope, {})
+        if name in definitions:
+            if self.binding_versions.get((scope, name), 0) != self.version:
+                return frozenset((UNPROVEN_BINDING,))
+            return definitions[name]
+        if scope is not None:
+            # A new target-specific append does not inherit a global simple
+            # flavor. Original command-line precedence is still applicable.
+            if self.version:
+                values = frozenset((UNPROVEN_BINDING,))
+            elif name in self.forced:
+                values = frozenset(
+                    value if value.origin == "command line"
+                    else UNPROVEN_BINDING if value.origin == "unknown" else UNDEFINED_BINDING
+                    for value in self.binding(name)
+                )
+            else:
+                values = frozenset((UNDEFINED_BINDING,))
+        else:
             record = (
                 self.original_input(name)
                 if self.original_namespace_valid and self.original_input is not None else None
@@ -143,16 +171,21 @@ class _MakeSourceMode:
                 values = frozenset((UNPROVEN_BINDING,))
             else:
                 values = frozenset((_ModeBinding(record["origin"], record["flavor"], record["value"]),))
-            self.definitions[name] = values
-        return self.definitions[name]
+        self.retain_binding(name, values, scope)
+        return values
 
-    def retain_binding(self, name, values):
+    def retain_binding(self, name, values, scope=None):
+        definitions = self.definitions if scope is None else self.target_definitions.setdefault(scope, {})
         values = frozenset(values)
-        if self.budget is not None and values != self.definitions.get(name):
+        if self.budget is not None and (
+            values != definitions.get(name) or self.binding_versions.get((scope, name), 0) != self.version
+        ):
             self.budget.charge("cache", len(encoded((
-                name, sorted(((value.origin, value.flavor, value.value) for value in values), key=encoded),
+                scope, name, self.version,
+                sorted(((value.origin, value.flavor, value.value) for value in values), key=encoded),
             ))))
-        self.definitions[name] = values
+        definitions[name] = values
+        self.binding_versions[scope, name] = self.version
 
     def literal_text(self, expression, active=()):
         self.checkpoint()
@@ -189,10 +222,12 @@ class _MakeSourceMode:
         if self.budget is not None:
             self.budget.remaining()
 
-    def uncertain(self, reason="unproven effect"):
+    def uncertain(self, reason="unproven effect", *, bindings=True):
         if self.posix is not True and self.first_uncertainty is None:
             self.first_uncertainty = (self.site, reason, self.last_effect_input)
         self.last_effect_input = None
+        if bindings:
+            self.version += 1
         self.original_namespace_valid = False
         self.control_values.clear()
         self.control_metadata.clear()
@@ -333,57 +368,149 @@ class _MakeSourceMode:
                         pending.append((dependency, binding.value, False))
         return False
 
-    def assign(self, name, operator, value, *, override=False, active=True):
-        if active is False or name in self.forced and not override:
-            return
+    def evaluate(self, expression, *, active=True):
+        self.checkpoint()
+        function = _make_function(expression)
+        if function is not None and function[0] == "eval" and len(function[1]) == 1:
+            body = function[1][0]
+            # Only literal bytes and paired dollars prove the emitted program.
+            # This is not expansion of variable values or arbitrary functions.
+            if "$" not in body.replace("$$", ""):
+                body = strip_comment(body.replace("$$", "$"))
+                assignment = MODE_ASSIGNMENT.fullmatch(body)
+                target_assignment = MODE_TARGET_ASSIGNMENT.fullmatch(body)
+                try:
+                    if assignment is not None:
+                        effect = self.assign(
+                            assignment["name"], assignment["operator"], assignment["value"],
+                            override="override" in body[:assignment.start("name")].split(), active=active,
+                        )
+                    elif target_assignment is not None:
+                        effect = self.assign_targets(
+                            target_assignment,
+                            override="override" in body[target_assignment.end("target"):target_assignment.start("name")].split(),
+                            active=active,
+                        )
+                    else:
+                        effect = None
+                except RecursionError as error:
+                    raise MakeProbeError("unproven nested emitted assignment context") from error
+                if effect is not None:
+                    self.uncertain("emitted assignment invalidates invocation controls", bindings=False)
+                    return ((body, effect),)
+        if self.effectful(expression):
+            self.uncertain()
+        return ()
+
+    def assign(self, name, operator, value, *, override=False, active=True, scope=None, literal_body=False):
+        if active is False:
+            return _AssignmentEffect(False, False)
+        definitions = self.definitions if scope is None else self.target_definitions.get(scope, {})
         previous = (
-            self.binding(name) if operator in {"?=", "+=", "undefine"} or active is None
-            else self.definitions.get(name, ())
+            self.binding(name, scope)
+            if operator in {"?=", "+=", "undefine"} or active is None
+            or name in definitions or name in self.forced or self.version else ()
         )
-        if operator == "?=" and previous and all(item.flavor not in {"undefined", "unknown"} for item in previous):
-            return
-        if name in INVOCATION_CONTROL_READS:
+        definitions = self.definitions if scope is None else self.target_definitions.get(scope, {})
+        choices = previous or (UNDEFINED_BINDING,)
+        actions = []
+        for before in choices:
+            applies = (
+                None if before.origin == "unknown"
+                else override or before.origin not in {"override", "command line"}
+            )
+            if operator == "?=" and before.flavor not in {"undefined", "unknown"}:
+                applies = False
+            if operator == "+=":
+                immediate = None if before.flavor == "unknown" else before.flavor == "simple"
+            else:
+                immediate = operator in SIMPLE_ASSIGNMENT_OPERATORS or operator == "!="
+            actions.append((before, applies, immediate))
+
+        def joined(values):
+            values = set(values)
+            return values.pop() if len(values) == 1 else None
+
+        effect = _AssignmentEffect(joined(row[1] for row in actions), joined(row[2] for row in actions))
+        if name in INVOCATION_CONTROL_READS and scope is None and effect.applies is not False:
             self.control_reads.clear()
             self.control_values.clear()
             self.control_metadata.clear()
         origin = "override" if override else "file"
-        value = value.lstrip(MAKE_SPACE)
+        if not literal_body:
+            value = value.lstrip(MAKE_SPACE)
+        version = self.version
+        # GNU expands simple/shell RHSs before write-precedence rejection.
+        # Append expansion instead depends on the original binding's flavor.
+        emitted = ()
+        if effect.immediate is not False:
+            if scope is not None and references(value):
+                self.uncertain("unproven target-specific RHS expansion context")
+            emitted = self.evaluate(value, active=active)
+        if emitted and definitions.get(name, ()) != previous:
+            self.uncertain("emitted assignment changes its enclosing destination")
         result = set(previous) if active is None else set()
-        choices = previous or (UNDEFINED_BINDING,)
-        for before in choices:
-            if before.origin == "override" and not override:
-                result.add(before)
-            elif operator == "undefine":
+        for before, applies, immediate in actions:
+            if applies is not True:
+                result.add(before if self.version == version else UNPROVEN_BINDING)
+            if applies is False:
+                continue
+            if operator == "undefine":
                 result.add(UNDEFINED_BINDING)
-            elif operator == "?=" and before.flavor not in {"undefined", "unknown"}:
-                result.add(before)
             elif operator == "!=":
-                if self.effectful(value):
-                    self.uncertain()
                 # The shell runs now, but its output becomes a recursive Make
                 # body. Neither the command text nor a later value proves it.
                 result.add(_ModeBinding(origin, "recursive", None))
-            elif operator in SIMPLE_ASSIGNMENT_OPERATORS or operator == "+=" and before.flavor == "simple":
-                if self.effectful(value):
-                    self.uncertain()
-                literal = value if "$" not in value else None
+            elif operator in SIMPLE_ASSIGNMENT_OPERATORS or operator == "+=" and immediate is True:
+                literal = (
+                    value[:len(value) - len(value.lstrip(MAKE_SPACE))] + value[len(value.rstrip(MAKE_SPACE)):]
+                    if emitted else value if "$" not in value else None
+                )
                 if operator == "+=":
-                    literal = before.value + " " + literal if before.value is not None and literal is not None else None
+                    if literal in {"", None}:
+                        result.add(before)
+                    if literal == "":
+                        continue
+                    literal = (
+                        (before.value + " " if before.value else "") + literal
+                        if before.value is not None and literal is not None else None
+                    )
                 result.add(_ModeBinding(origin, "simple", literal))
             elif operator == "+=":
                 if before.flavor == "unknown":
-                    if self.effectful(value):
-                        self.uncertain()
                     result.add(UNPROVEN_BINDING)
+                elif not value and before.flavor != "undefined":
+                    result.add(before)
                 elif before.value is None:
                     result.add(_ModeBinding(origin, "recursive", None))
                 else:
-                    result.add(_ModeBinding(origin, "recursive", (before.value + " " if before.flavor != "undefined" else "") + value))
+                    result.add(_ModeBinding(origin, "recursive", (before.value + " " if before.value else "") + value))
             else:
                 if operator == "?=" and before.flavor == "unknown":
                     result.add(before)
                 result.add(_ModeBinding(origin, "recursive", value))
-        self.retain_binding(name, result)
+        if self.version != version:
+            result.add(UNPROVEN_BINDING)
+        self.retain_binding(name, result, scope)
+        return effect._replace(emitted=emitted)
+
+    def assign_targets(self, assignment, *, override=False, active=True):
+        target = assignment["target"].strip(MAKE_SPACE)
+        if not target or any(character in target for character in "$%*?[]\\;|"):
+            self.uncertain("unproven target-specific assignment context")
+            return _AssignmentEffect(None, None)
+        effects = []
+        for scope in re.findall(r"[^ \t\r\n\v\f]+", target):
+            self.checkpoint()
+            effects.append(self.assign(
+                assignment["name"], assignment["operator"], assignment["value"],
+                override=override, active=active, scope=scope,
+            ))
+        result = _AssignmentEffect(*(
+            effects[0][index] if all(effect[index] == effects[0][index] for effect in effects) else None
+            for index in range(2)
+        ))
+        return result._replace(emitted=tuple(item for effect in effects for item in effect.emitted))
 
 
 def _condition_operands(arguments):
@@ -538,8 +665,10 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
             if active is True:
                 pending_posix = False
 
-    def contextual_unit(line, body=None):
-        return MakeSourceUnit(line, body, conditional_depth=len(conditions), active=active)
+    def contextual_unit(line, body=None, assignment=None, emitted=()):
+        return MakeSourceUnit(
+            line, body, conditional_depth=len(conditions), active=active, assignment=assignment, emitted=emitted,
+        )
 
     for chunk in chunks:
         raw = chunk.text
@@ -547,8 +676,9 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
         mode.checkpoint()
         include_request = None
         line = raw if raw.startswith("\t") else mode.collapse(raw, construct=True)
-        header = strip_comment(line).strip(MAKE_SPACE)
-        assignment = None if raw.startswith("\t") else MODE_ASSIGNMENT.fullmatch(header)
+        declaration = strip_comment(line)
+        header = declaration.strip(MAKE_SPACE)
+        assignment = None if raw.startswith("\t") else MODE_ASSIGNMENT.fullmatch(declaration)
         if not raw.startswith("\t") and not assignment and re.match(r"^(?:(?:export|override|private)[ \t]+)*define(?:[ \t]|$)", header) and not re.fullmatch(
             rf"(?:(?:export|override|private)[ \t]+)*define[ \t]+{IDENTIFIER}[ \t]*(?:(?:\?=|::=|:=|\+=|!=|=)[ \t]*)?",
             header,
@@ -614,30 +744,34 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
                 raise MakeProbeError("Make source has an unterminated define body")
             mode.site = header_site._replace(end=body_chunk.end)
             body = "\n".join(body)
-            mode.assign(
+            effect = mode.assign(
                 definition[1], header[definition.end():].strip(MAKE_SPACE) or "=", body,
-                override="override" in header[:definition.start(1)].split(), active=active,
+                override="override" in header[:definition.start(1)].split(), active=active, literal_body=True,
             )
-            yield contextual_unit(line, body)
+            yield contextual_unit(line, body, effect)
         else:
+            effect = None
+            emitted = ()
             if not raw.startswith("\t") and active is not False:
                 if assignment:
-                    mode.assign(
+                    effect = mode.assign(
                         assignment["name"], assignment["operator"], assignment["value"],
-                        override="override" in header[:assignment.start("name")].split(), active=active,
+                        override="override" in declaration[:assignment.start("name")].split(), active=active,
                     )
-                elif MODE_TARGET_ASSIGNMENT.fullmatch(header):
-                    target_assignment = MODE_TARGET_ASSIGNMENT.fullmatch(header)
-                    if target_assignment["operator"] in IMMEDIATE_RHS_OPERATORS | {"+="} and mode.effectful(target_assignment["value"]):
-                        mode.uncertain()
+                elif MODE_TARGET_ASSIGNMENT.fullmatch(declaration):
+                    target_assignment = MODE_TARGET_ASSIGNMENT.fullmatch(declaration)
+                    effect = mode.assign_targets(
+                        target_assignment,
+                        override="override" in declaration[target_assignment.end("target"):target_assignment.start("name")].split(),
+                        active=active,
+                    )
                 else:
                     undefined = re.fullmatch(r"(override[ \t]+)?undefine[ \t]+(" + IDENTIFIER + ")", header)
                     if undefined:
                         mode.assign(undefined[2], "undefine", "", override=bool(undefined[1]), active=active)
                     if _unproven_assignment_destination(header):
                         mode.uncertain()
-                    if mode.effectful(header):
-                        mode.uncertain()
+                    emitted = mode.evaluate(header, active=active)
                     included = _include_names(header, mode)
                     if included is not False:
                         if include is None:
@@ -655,7 +789,7 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
                             if mode.posix is not True and (active is None or not known_context):
                                 raise MakeProbeError("unproven conditional/include .POSIX activation")
                             pending_posix = True
-            yield contextual_unit(line)
+            yield contextual_unit(line, assignment=effect, emitted=emitted)
             if include_request is not None:
                 include(*include_request)
     if conditions:
@@ -1407,11 +1541,13 @@ def source_census(
         prefix = " ".join(word for word in line[:definition.start(1)].split() if word != "define")
         retain_defaults(prefix + " " + line[definition.start(1):])
 
-    def retain_assignment(assignment, *, expanded_input=False):
+    def retain_assignment(assignment, *, expanded_input=False, stores=True):
         if expanded_input and not retain_once("assignment", assignment[0]):
             return
         name, value = assignment["name"], assignment["value"]
         retain_defaults(assignment[0])
+        if not stores:
+            return
         dependencies.setdefault(name, set())
         if not expanded_input or "$" not in value:
             dependencies[name].update(references(value))
@@ -1422,6 +1558,25 @@ def source_census(
         )
         if not expanded_input or "$" not in value:
             expressions.setdefault(name, []).append(value)
+
+    def retain_rhs(name, value, effect):
+        if effect is None:
+            raise MakeProbeError("Make assignment lacks its original source context")
+        if effect.immediate is None and "$" in value:
+            raise MakeProbeError("unproven original Make append RHS timing")
+        if effect.applies is False and effect.immediate is False:
+            return
+        immediate = effect.immediate is True
+        eval_requests.append((None if immediate else name, value, effect.emitted))
+        if immediate:
+            consumed_expressions.append(value)
+        if any(body.startswith(("eval ", "eval\t")) for body in make_expressions(value)):
+            if immediate:
+                graph.update(references(value))
+                graph_expressions.append(value)
+                stage_sinks.append(value)
+            else:
+                deferred_evals.add(name)
 
     if reference_units is None:
         reference_units = _source_units(sources, assignments=source_assignments, budget=budget, target=source_target)
@@ -1450,7 +1605,7 @@ def source_census(
             inline_names = references(inline_recipe)
             all_names.update(inline_names)
             consumed_expressions.append(inline_recipe)
-            eval_requests.append((None, inline_recipe))
+            eval_requests.append((None, inline_recipe, ()))
             if "$(eval" in inline_recipe or "${eval" in inline_recipe:
                 graph.update(inline_names)
                 graph_expressions.append(inline_recipe)
@@ -1461,78 +1616,57 @@ def source_census(
         if start and unit.body is not None:
             defining = start.group(1)
             retain_define_default(line, start)
-            dependencies.setdefault(defining, set())
-            expressions.setdefault(defining, [])
             operator = line[start.end():].strip(MAKE_SPACE)
-            definitions.setdefault(defining, []).append(
-                unit.body if operator in {"", "=", ":=", "::=", "?="} else None
-            )
+            retain_rhs(defining, unit.body, unit.assignment)
+            if unit.assignment.applies is False and unit.assignment.immediate is False:
+                continue
             names = references(unit.body) | references(unit.body.replace("$$", "$"))
             all_names.update(names)
-            dependencies[defining].update(names)
-            expressions[defining].append(unit.body)
+            if unit.assignment.applies is not False:
+                definitions.setdefault(defining, []).append(
+                    unit.body if operator in {"", "=", ":=", "::=", "?="} else None
+                )
+                dependencies.setdefault(defining, set()).update(names)
+                expressions.setdefault(defining, []).append(unit.body)
             introspection.update(name for _, _, name in _literal_metadata(unit.body))
-            immediate = operator in IMMEDIATE_RHS_OPERATORS
-            if immediate:
-                consumed_expressions.append(unit.body)
-            if "$(eval" in unit.body or "${eval" in unit.body:
-                eval_requests.append((None if immediate else defining, unit.body))
-                if immediate:
-                    graph.update(names)
-                    graph_expressions.append(unit.body)
-                    stage_sinks.append(unit.body)
-                else:
-                    deferred_evals.add(defining)
             continue
-        names = references(line)
-        all_names.update(names)
-        introspection.update(name for _, _, name in _literal_metadata(line))
         assignment = None if raw.startswith("\t") else ASSIGNMENT.match(line)
         target_assignment = None if raw.startswith("\t") else TARGET_ASSIGNMENT.match(line)
+        relevant = (
+            not (assignment or target_assignment)
+            or unit.assignment is None
+            or unit.assignment.applies is not False or unit.assignment.immediate is not False
+        )
+        names = references(line) if relevant else set()
+        all_names.update(names)
+        if relevant:
+            introspection.update(name for _, _, name in _literal_metadata(line))
         if assignment:
-            retain_assignment(assignment)
-            immediate = assignment["operator"] in IMMEDIATE_RHS_OPERATORS
-            eval_requests.append((None if immediate else assignment["name"], assignment["value"]))
-            eval_raw_expressions.setdefault(assignment["value"], set()).add(assignment["value"].lstrip(MAKE_SPACE))
-            if immediate:
-                consumed_expressions.append(assignment["value"])
+            retain_rhs(assignment["name"], assignment["value"], unit.assignment)
+            retain_assignment(assignment, stores=unit.assignment.applies is not False)
+            if relevant:
+                eval_raw_expressions.setdefault(assignment["value"], set()).add(assignment["value"].lstrip(MAKE_SPACE))
             if line.lstrip(MAKE_SPACE).startswith("export "):
                 recipe.update(names)
                 consumed_expressions.append("$(" + assignment["name"] + ")")
-            if "$(eval" in assignment["value"] or "${eval" in assignment["value"]:
-                if immediate:
-                    graph.update(names)
-                    graph_expressions.append(assignment["value"])
-                    stage_sinks.append(assignment["value"])
-                else:
-                    deferred_evals.add(assignment["name"])
         elif target_assignment:
-            retain_assignment(target_assignment)
-            immediate = target_assignment["operator"] in IMMEDIATE_RHS_OPERATORS
-            eval_requests.append((None if immediate else target_assignment["name"], target_assignment["value"]))
-            eval_raw_expressions.setdefault(target_assignment["value"], set()).add(target_assignment["value"].lstrip(MAKE_SPACE))
-            if immediate:
-                consumed_expressions.append(target_assignment["value"])
+            retain_rhs(target_assignment["name"], target_assignment["value"], unit.assignment)
+            retain_assignment(target_assignment, stores=unit.assignment.applies is not False)
+            if relevant:
+                eval_raw_expressions.setdefault(target_assignment["value"], set()).add(target_assignment["value"].lstrip(MAKE_SPACE))
             graph.update(references(target_assignment["target"]))
             graph_expressions.append(target_assignment["target"])
             consumed_expressions.append(target_assignment["target"])
-            if "$(eval" in target_assignment["value"] or "${eval" in target_assignment["value"]:
-                if immediate:
-                    graph.update(names)
-                    graph_expressions.append(target_assignment["value"])
-                    stage_sinks.append(target_assignment["value"])
-                else:
-                    deferred_evals.add(target_assignment["name"])
         elif raw.startswith("\t"):
             consumed_expressions.append(line)
-            eval_requests.append((None, line))
+            eval_requests.append((None, line, ()))
             (graph if "$(eval" in line or "${eval" in line else recipe).update(names)
             if "$(eval" in line or "${eval" in line:
                 graph_expressions.append(line)
                 stage_sinks.append(line)
         else:
             consumed_expressions.append(line)
-            eval_requests.append((None, line))
+            eval_requests.append((None, line, unit.emitted))
             graph.update(names)
             graph_expressions.append(line.replace("$$", "$"))
             if "$(eval" in line or "${eval" in line:
@@ -1540,9 +1674,10 @@ def source_census(
             separators = _rule_separators(line)
             if (
                 secondary_expansion and separators and not unit.native_literal_header
-                and "$(eval" not in line and "${eval" not in line
+                and not any(body.startswith(("eval ", "eval\t")) for body in make_expressions(line))
             ):
                 stage_sinks.append(line[separators[0] + 1:].replace("$$", "$"))
+                eval_requests.append((None, line[separators[0] + 1:].replace("$$", "$"), ()))
             conditional = CONDITIONAL_NAME.match(line)
             if conditional and "$" in conditional[1]:
                 graph_expressions.append("$(" + conditional[1] + ")")
@@ -1582,8 +1717,14 @@ def source_census(
             assignment = ASSIGNMENT.fullmatch(line) or TARGET_ASSIGNMENT.fullmatch(line)
             definition = DEFINE.match(line) if unit.body is not None else None
             if assignment:
-                retain_assignment(assignment, expanded_input=True)
+                if assignment["operator"] == "+=" and "$$" in assignment["value"]:
+                    # Escaped eval output needs the original emitted statement's
+                    # binding, not this fresh parser or a final native flavor.
+                    raise MakeProbeError("unproven emitted Make append RHS timing")
+                retain_assignment(assignment, expanded_input=True, stores=unit.assignment.applies is not False)
             elif definition:
+                if line[definition.end():].strip(MAKE_SPACE) == "+=" and "$$" in unit.body:
+                    raise MakeProbeError("unproven emitted Make append RHS timing")
                 if retain_once("define", (line, unit.body)):
                     retain_define_default(line, definition)
                     definitions.setdefault(definition[1], []).append(unit.body if "$" not in unit.body else None)
@@ -1595,6 +1736,26 @@ def source_census(
             elif line and not _rule_separators(line):
                 return False
         return True
+
+    def retain_emitted_assignments(records):
+        for line, effect in records:
+            assignment = ASSIGNMENT.fullmatch(line) or TARGET_ASSIGNMENT.fullmatch(line)
+            if assignment is None:
+                raise MakeProbeError("unproven emitted assignment destination")
+            if not retain_once("bound-assignment", (line, effect)):
+                continue
+            retain_assignment(assignment, stores=effect.applies is not False)
+            retain_rhs(assignment["name"], assignment["value"], effect)
+            if effect.applies is not False or effect.immediate is not False:
+                all_names.update(references(assignment["value"]))
+                introspection.update(name for _, _, name in _literal_metadata(assignment["value"]))
+                eval_raw_expressions.setdefault(assignment["value"], set()).add(assignment["value"].lstrip(MAKE_SPACE))
+            if "target" in assignment.groupdict():
+                names = references(assignment["target"])
+                all_names.update(names)
+                graph.update(names)
+                graph_expressions.append(assignment["target"])
+                consumed_expressions.append(assignment["target"])
 
     consumed, execution_roots, execution_dependencies = set(), set(), {}
 
@@ -1635,15 +1796,19 @@ def source_census(
         extend_known(stage_roots, deferred_evals & consumed)
 
         ambiguous_history, proven_eval_expressions = False, set()
-        for owner, expression in eval_requests:
+        for owner, expression, emitted in eval_requests:
             if owner is not None and owner not in consumed:
                 continue
-            bodies = [body[5:].lstrip(MAKE_SPACE) for body in make_expressions(expression.replace("$$", "$"))
-                      if body.startswith(("eval ", "eval\t"))]
             proven = True
-            for body in bodies:
-                if not retain_eval_history(body):
-                    ambiguous_history, proven = True, False
+            if emitted:
+                retain_emitted_assignments(emitted)
+                bodies = emitted
+            else:
+                bodies = [body[5:].lstrip(MAKE_SPACE) for body in make_expressions(expression)
+                          if body.startswith(("eval ", "eval\t"))]
+                for body in bodies:
+                    if not retain_eval_history(body):
+                        ambiguous_history, proven = True, False
             if bodies and proven:
                 proven_eval_expressions.add(expression)
                 proven_eval_expressions.update(eval_raw_expressions.get(expression, ()))
