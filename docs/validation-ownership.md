@@ -762,6 +762,16 @@ literal-path `wildcard` includes may use the captured source/generated namespace
 to prove an empty or present outcome; unresolved patterns/context still reject.
 This is not Python evaluation of general Make functions or arbitrary globbing.
 
+Assignment timing and resulting flavor are distinct contracts. GNU Make `!=`
+executes its RHS immediately but creates a recursive variable, unlike
+`:=`/`::=`. If the original shell output cannot be bound safely, mode analysis
+retains a recursive unknown body: a later read may execute Make functions and
+cannot be treated as simple-variable inertness. Appending to that recursive
+unknown retains its uncertainty. RHS effects, define/eval/modifier and target
+contexts still use the actual native producer and original source contracts.
+Unused shell results remain unexpanded; safe ordinary shell assignments are
+not blanket-banned, and late expanded values are not substituted as evidence.
+
 Mode failures report their actual visitor path, logical statement and physical
 line span, plus the first unproven source site/input name. The error chain and
 failure classification remain, without dumping variable or environment values.

@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import shutil
@@ -196,6 +197,15 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.assertFalse(session.budget.children)
         self.assertIsNone(session.base)
         return result["all"], queried
+
+    def shell_assignment_contract(self, *, effectful=True):
+        producer = (
+            """python3 -c 'print(chr(36)+"(eval .POSIX:)")'"""
+            if effectful else """python3 -c 'print("first")'"""
+        )
+        return producer, {"fixture": {
+            "id": "shell-assignment-fixture", "command_regex": re.escape(producer), "input_files": [],
+        }}
 
     def test_conditionals_and_finite_origins_are_native_make_observations(self):
         self.add("Makefile", "MODE ?= one\nall: $(MODE)\none two: ;\n")
@@ -996,6 +1006,112 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.assertIn("[UNDEFINED]", message)
         self.assertNotIn("CPPFLAGS :=", message)
         self.assertIsInstance(rejected.exception.__cause__, MakeProbeError)
+
+    def test_recursive_shell_assignment_cannot_hide_conditional_defaults(self):
+        from scripts.validation_ownership.graph_commands import MakeCommands
+        producer, contracts = self.shell_assignment_contract()
+        self.add("Makefile", "PAYLOAD != " + producer + "\nRESULT := $(PAYLOAD)\n"
+                 "ifeq (alpha  \\\n beta,alpha beta)\nIGNORED = yes\nelse\nMODE ?= first\nendif\n"
+                 "all: $(MODE)\n\t@echo $(MODE)\nfirst second: ;\n")
+        self.assertEqual(self.ordinary("MODE=first"), b"first\n")
+        self.assertEqual(self.ordinary("MODE=second"), b"second\n")
+        with self.session() as session:
+            commands = MakeCommands(session, contracts)
+            native = [
+                session.make("all", definitions=("PAYLOAD",), assignments=(("command-line", "MODE", value),),
+                             commands=commands)
+                for value in ("first", "second")
+            ]
+        self.assertEqual([value.semantics["files"][0]["prerequisites"][0]["name"] for value in native], ["first", "second"])
+        self.assertEqual(native[0].semantics["definitions"]["global"]["PAYLOAD"], {
+            "value": "$(eval .POSIX:)", "origin": "file", "flavor": "recursive",
+        })
+        self.assertEqual(len(native[0].semantics["dynamic_commands"]), 1)
+        for domains in ({}, {"MODE": {"kind": "explicit", "values": ["first", "second"]}}):
+            with self.session() as session:
+                with self.assertRaisesRegex(MakeProbeError, "unproven.*mode"):
+                    run_probe(session.loader, {"all"}, domains, contracts, session=session)
+            self.assertFalse(session.budget.children)
+            self.assertIsNone(session.base)
+
+    def test_shell_assignment_flavor_is_preserved_through_defines_eval_and_modifiers(self):
+        from scripts.validation_ownership.graph_commands import MakeCommands
+        producer, contracts = self.shell_assignment_contract()
+        declarations = (
+            "PAYLOAD != " + producer + "\n",
+            "private PAYLOAD != " + producer + "\n",
+            "export PAYLOAD != " + producer + "\n",
+            "override PAYLOAD != " + producer + "\n",
+            "define PAYLOAD !=\n" + producer + "\nendef\n",
+            "$(eval PAYLOAD != " + producer + ")\n",
+            "PAYLOAD != " + producer + "\nPAYLOAD += literal\n",
+        )
+        for declaration in declarations:
+            with self.subTest(declaration=declaration):
+                source = declaration + "RESULT := $(PAYLOAD)\nCPPFLAGS := first \\\n second\n"
+                source += "$(info $(value CPPFLAGS))\nall: ;\n"
+                self.add("Makefile", source)
+                self.assertEqual(self.ordinary().splitlines()[0], b"first  second")
+                with self.session() as session:
+                    native = session.make("all", definitions=("PAYLOAD", "CPPFLAGS"), commands=MakeCommands(session, contracts))
+                self.assertEqual(native.semantics["definitions"]["global"]["PAYLOAD"]["flavor"], "recursive")
+                self.assertIn("$(eval .POSIX:)", native.semantics["definitions"]["global"]["PAYLOAD"]["value"])
+                self.assertEqual(native.semantics["definitions"]["global"]["CPPFLAGS"]["value"], "first  second")
+                with self.session() as session:
+                    with self.assertRaisesRegex(MakeProbeError, "unproven.*mode"):
+                        run_probe(session.loader, {"all"}, {}, contracts, session=session)
+
+    def test_safe_unused_shell_results_and_simple_shell_snapshots_remain_supported(self):
+        from scripts.validation_ownership.graph_commands import MakeCommands
+        producer, contracts = self.shell_assignment_contract()
+        source = "PAYLOAD != " + producer + "\nCPPFLAGS := first \\\n second\nall:\n"
+        source += "\t@printf '%s\\n' '$(flavor PAYLOAD)' '$(value PAYLOAD)' '$(value CPPFLAGS)'\n"
+        self.add("Makefile", source)
+        self.assertEqual(self.ordinary(), b"recursive\n$(eval .POSIX:)\nfirst second\n")
+        with self.session() as session:
+            result = run_probe(session.loader, {"all"}, {}, contracts, session=session)["all"]
+        self.assertEqual(result["record"]["variants"][0]["record"]["definitions"]["global"]["PAYLOAD"]["flavor"], "recursive")
+        for operator in (":=", "::="):
+            with self.subTest(operator=operator):
+                source = "PAYLOAD " + operator + " $(shell " + producer + ")\nRESULT := $(PAYLOAD)\n"
+                source += "CPPFLAGS := first \\\n second\nall:\n\t@printf '%s\\n' '$(value CPPFLAGS)'\n"
+                self.add("Makefile", source)
+                self.assertEqual(self.ordinary(), b"first second\n")
+                with self.session() as session:
+                    native = session.make("all", definitions=("PAYLOAD", "CPPFLAGS"), commands=MakeCommands(session, contracts))
+                    self.assertEqual(native.semantics["definitions"]["global"]["PAYLOAD"]["flavor"], "simple")
+                    self.assertEqual(native.semantics["definitions"]["global"]["PAYLOAD"]["value"], "$(eval .POSIX:)")
+                    run_probe(session.loader, {"all"}, {}, contracts, session=session)
+        producer, contracts = self.shell_assignment_contract(effectful=False)
+        self.add("Makefile", "PAYLOAD != " + producer + "\nall: $(PAYLOAD)\nfirst: ;\n")
+        with self.session() as session:
+            result = run_probe(session.loader, {"all"}, {}, contracts, session=session)["all"]
+        self.assertEqual(result["record"]["variants"][0]["record"]["files"][0]["prerequisites"], [
+            {"name": "first", "order_only": False},
+        ])
+
+    def test_immediate_define_rhs_effects_and_target_shell_flavor_remain_native(self):
+        from scripts.validation_ownership.graph_commands import MakeCommands
+        producer, contracts = self.shell_assignment_contract(effectful=False)
+        for operator, body in ((":=", "$(eval MODE ?= first)"), ("::=", "$(eval MODE ?= first)"),
+                               ("!=", "$(eval MODE ?= first)" + producer)):
+            with self.subTest(operator=operator):
+                self.add("Makefile", "define UNUSED " + operator + "\n" + body
+                         + "\nendef\nall: $(MODE)\nfirst: ;\n")
+                with self.session() as session:
+                    native = session.make("all", definitions=("MODE", "UNUSED"), commands=MakeCommands(session, contracts))
+                self.assertEqual(native.semantics["definitions"]["global"]["MODE"]["value"], "first")
+                self.assertEqual(native.semantics["definitions"]["global"]["UNUSED"]["flavor"],
+                                 "recursive" if operator == "!=" else "simple")
+                with self.session() as session:
+                    with self.assertRaises(MakeProbeError):
+                        run_probe(session.loader, {"all"}, {}, contracts, session=session)
+        self.add("Makefile", "all: PAYLOAD != " + producer + "\nall:\n\t@echo $(PAYLOAD)\n")
+        self.assertEqual(self.ordinary(), b"first\n")
+        with self.session() as session:
+            native = session.make("all", definitions=("PAYLOAD",), commands=MakeCommands(session, contracts))
+            self.assertEqual(native.semantics["definitions"]["global"]["PAYLOAD"]["origin"], "undefined")
+            self.assertEqual(native.semantics["definitions"]["files"][0]["variables"]["PAYLOAD"]["flavor"], "recursive")
 
     def test_unknown_mode_accepts_only_equivalent_assignment_constructs(self):
         assignment = "  override _VALIDATION_OWNERSHIP_FLAGS := \\\n\t$(strip $(MAKEFLAGS) $(MFLAGS) $(GNUMAKEFLAGS))"

@@ -4235,6 +4235,38 @@ large unused dependency graph through lazy metadata/conditional operations;
 the native body must stay unexpanded and analysis must honor the existing
 deadline without recursion growth or extra observations.
 
+For shell-assignment flavor, admit an exact in-memory Python fixture producer
+printing `chr(36)+"(eval .POSIX:)"`, and use it as the RHS of `PAYLOAD !=`.
+Then assign `RESULT := $(PAYLOAD)`, test the continued
+`ifeq (alpha` plus two spaces/backslash-LF/space/`beta,alpha beta)`, and put
+`MODE ?= first` in the else branch. Provide `all: $(MODE)` with an echo recipe
+and real first/second targets. Ordinary/native Make must report recursive
+PAYLOAD containing the literal eval and select first/second under CLI MODE.
+Exact471d instead treated the shell result as inert simple data and accepted
+empty default/domain baseline authority. The corrected unproven expansion must
+reject without discarding the real producer execution or substituting a later
+value.
+
+Repeat through define and eval forms, export/private/override modifiers and a
+subsequent `+=`. Use recipe-less raw-metadata controls for exported effectful
+payloads so the fixture does not re-expand them during recipe environment
+construction. Native CPPFLAGS after the payload expansion contains two spaces,
+not the census's old one-space value. Compare `:= $(shell ...)` and
+`::= $(shell ...)` using the same actual producer: their results are simple,
+do not re-expand that returned eval and retain normal continuation behavior.
+An unused `!=` result remains recursive and raw through flavor/value metadata;
+a safe literal shell result still supports an ordinary prerequisite. Immediate
+define RHS evals must retain their default-sealing meaning, and target-scoped
+shell assignments retain their native file/global distinction.
+
+Restore only the old simple classification of `!=` in an isolated mutation.
+The permanent regression must fail by recovering the actual empty
+default/domain baseline, and the raw CPPFLAGS mismatch must reappear.
+These are exact fixture-contract controls, not changes to the production
+registry or claims of a current live-registry occurrence. All original
+observations, native receipts, source/capture protections, counters and
+deadlines remain; no baseline9/10 or complete-report allocation is reopened.
+
 For assignment origin, provide environment MAYBE=literal while the source
 assigns `MAYBE = $(eval .POSIX:)`, then evaluates `RESULT := $(MAYBE)` before
 the continued FIRST. Ordinary/native FIRST has four spaces between words;

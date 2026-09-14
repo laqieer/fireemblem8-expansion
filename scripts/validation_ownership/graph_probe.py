@@ -65,6 +65,8 @@ PURE_VALUE_FUNCTIONS = MAKE_FUNCTIONS - {
 }
 INVOCATION_CONTROL_READS = frozenset(("MAKECMDGOALS", "MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKEOVERRIDES"))
 EMPTY_RESULT_FUNCTIONS = frozenset(("error", "warning", "info", "eval"))
+SIMPLE_ASSIGNMENT_OPERATORS = frozenset((":=", "::="))
+IMMEDIATE_RHS_OPERATORS = SIMPLE_ASSIGNMENT_OPERATORS | {"!="}
 
 
 class MakeSourceUnit(NamedTuple):
@@ -355,10 +357,16 @@ class _MakeSourceMode:
                 result.add(UNDEFINED_BINDING)
             elif operator == "?=" and before.flavor not in {"undefined", "unknown"}:
                 result.add(before)
-            elif operator in {":=", "::=", "!="} or operator == "+=" and before.flavor == "simple":
+            elif operator == "!=":
                 if self.effectful(value):
                     self.uncertain()
-                literal = value if "$" not in value and operator != "!=" else None
+                # The shell runs now, but its output becomes a recursive Make
+                # body. Neither the command text nor a later value proves it.
+                result.add(_ModeBinding(origin, "recursive", None))
+            elif operator in SIMPLE_ASSIGNMENT_OPERATORS or operator == "+=" and before.flavor == "simple":
+                if self.effectful(value):
+                    self.uncertain()
+                literal = value if "$" not in value else None
                 if operator == "+=":
                     literal = before.value + " " + literal if before.value is not None and literal is not None else None
                 result.add(_ModeBinding(origin, "simple", literal))
@@ -367,6 +375,8 @@ class _MakeSourceMode:
                     if self.effectful(value):
                         self.uncertain()
                     result.add(UNPROVEN_BINDING)
+                elif before.value is None:
+                    result.add(_ModeBinding(origin, "recursive", None))
                 else:
                     result.add(_ModeBinding(origin, "recursive", (before.value + " " if before.flavor != "undefined" else "") + value))
             else:
@@ -618,7 +628,7 @@ def make_source_units(text, *, mode=None, include=None, known_context=True, sour
                     )
                 elif MODE_TARGET_ASSIGNMENT.fullmatch(header):
                     target_assignment = MODE_TARGET_ASSIGNMENT.fullmatch(header)
-                    if target_assignment["operator"] in {":=", "::=", "!=", "+="} and mode.effectful(target_assignment["value"]):
+                    if target_assignment["operator"] in IMMEDIATE_RHS_OPERATORS | {"+="} and mode.effectful(target_assignment["value"]):
                         mode.uncertain()
                 else:
                     undefined = re.fullmatch(r"(override[ \t]+)?undefine[ \t]+(" + IDENTIFIER + ")", header)
@@ -1462,9 +1472,17 @@ def source_census(
             dependencies[defining].update(names)
             expressions[defining].append(unit.body)
             introspection.update(name for _, _, name in _literal_metadata(unit.body))
+            immediate = operator in IMMEDIATE_RHS_OPERATORS
+            if immediate:
+                consumed_expressions.append(unit.body)
             if "$(eval" in unit.body or "${eval" in unit.body:
-                deferred_evals.add(defining)
-                eval_requests.append((defining, unit.body))
+                eval_requests.append((None if immediate else defining, unit.body))
+                if immediate:
+                    graph.update(names)
+                    graph_expressions.append(unit.body)
+                    stage_sinks.append(unit.body)
+                else:
+                    deferred_evals.add(defining)
             continue
         names = references(line)
         all_names.update(names)
@@ -1473,7 +1491,7 @@ def source_census(
         target_assignment = None if raw.startswith("\t") else TARGET_ASSIGNMENT.match(line)
         if assignment:
             retain_assignment(assignment)
-            immediate = assignment["operator"] in {":=", "::=", "!="}
+            immediate = assignment["operator"] in IMMEDIATE_RHS_OPERATORS
             eval_requests.append((None if immediate else assignment["name"], assignment["value"]))
             eval_raw_expressions.setdefault(assignment["value"], set()).add(assignment["value"].lstrip(MAKE_SPACE))
             if immediate:
@@ -1490,7 +1508,7 @@ def source_census(
                     deferred_evals.add(assignment["name"])
         elif target_assignment:
             retain_assignment(target_assignment)
-            immediate = target_assignment["operator"] in {":=", "::=", "!="}
+            immediate = target_assignment["operator"] in IMMEDIATE_RHS_OPERATORS
             eval_requests.append((None if immediate else target_assignment["name"], target_assignment["value"]))
             eval_raw_expressions.setdefault(target_assignment["value"], set()).add(target_assignment["value"].lstrip(MAKE_SPACE))
             if immediate:
