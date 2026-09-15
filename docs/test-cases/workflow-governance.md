@@ -4993,6 +4993,51 @@ valid identifier. Restore only the old preference for final observed values
 and require these controls to detect omitted FLAGS. Preserve direct,
 target-local and unchanged native finite-name positives.
 
+For the template-mode ordering regression, retain the actual recursive
+`GENERATED_DATA_LINK_TABLE_RULES` definition/call followed by the actual
+multiline `GENERATED_DATA_CONFIG_INPUTS_units` declaration. Use the existing
+bounded alpha/beta inputs, original-input witness and logical-chunk helpers.
+Blank-pad omitted post-call source rather than introducing artificial
+continuations. Physical source positions help attribution, but native values,
+effects and graph behavior are the oracle, not line numbers or macro spelling.
+
+Require the normal-GNU small planner to finish with the exact ordinary/native
+single-space config value and matching target, recipe and prerequisite
+projection. Keep the short positive and renamed definition/call. An actual
+preceding `.POSIX` declaration must retain its different double-space raw
+value. The single-line layout variant is a diagnostic control, not permission
+to flatten production source. Restoring only old late mode certification must
+recover the meaningful-continuation rejection while native execution succeeds;
+restoring the proof must reproduce the positive.
+
+Test original initializer claims against GNU for prefix/suffix percent
+substitution, literal-word substitution, nonmatches and empty matches. Claims
+with altered values reject. Snapshot arguments at the assignment, then rewrite
+their source and verify that a native value is still checked against the old
+arguments. Do not add that relation to ordinary literal/condition evaluation.
+Extra initializer/alias whitespace cannot disappear from an exact claim.
+An oversized or unresolved initializer has no certificate; untouched unused
+source is not rejected merely to manufacture a template fact.
+
+For non-circularity, use a staged config initializer that activates `.POSIX`
+and resets itself to a harmless final path. Add a later raw continuation and a
+mode-sensitive condition writing that input again. Native final values may
+look valid, but the original staged input must not receive a mode-neutral
+certificate, and the source must still reject. A blanket foreach/call
+exemption is not a positive. Keep unsafe emitted/special targets, unproved
+origins, late macro/input writes, changed/repeated occurrences and genuine
+effects as negatives. Preserve metadata-only error/shell bodies as lazy,
+original snapshot aliases, namespace/wildcard checks and the existing
+512-name/context, byte, deadline and cleanup boundaries. The complete
+source/history/phase and graph certificate remains mandatory after this
+per-occurrence mode proof.
+
+Run the four `test_template_mode_*` / `test_template_initializer_claims_*`
+methods with directly coupled existing template/native/history controls.
+These source-only fixtures do not rerun a repository graph or establish
+production resource fit. Closed baseline14 and all earlier allocations remain
+closed; these checks do not allocate another baseline, provider or H1 run.
+
 For the real framework template contract, copy the complete current
 `GENERATED_DATA_LINK_TABLE_RULES` and
 `GENERATED_DATA_MODERN_OVERRIDE_RULES` definitions and their actual

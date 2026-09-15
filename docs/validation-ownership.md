@@ -1132,6 +1132,41 @@ another reference, line, rule or assignment. Deferred recipe references and
 automatic-variable substitutions remain recipe context; deferred operations
 or additional unbound scope references do not acquire template authority.
 
+Mode effects are proved at each original call occurrence, before a later
+mode-sensitive source continuation is collapsed. The shared foreach/eval/call
+parser proves that the statement itself expands only to whitespace. The
+original recursive body, parameter values and interpolated header/recipe
+inputs must separately prove ordinary confined targets and no introduced
+Make program or special parser target. Only that proof preserves the incoming
+known mode and namespace; an already unknown context is never reset.
+
+The proof normally uses current original literals. A simple initializer whose
+ordinary value remains unknown may retain one narrow template-only native-claim
+contract: literal/direct-reference arguments to a single `patsubst` are captured
+at the original assignment, and a later raw native value must match that exact
+bounded substitution relation, including GNU whitespace and empty matches.
+Patterns/replacements with unproved escaping or multiple percent operators
+remain unsupported. Bare aliases may retain the same snapshot, but extra
+literal whitespace is not discarded. This does not add function evaluation to
+ordinary source conditions or the literal-value resolver, nor accept a final
+value simply because it looks plausible. A literal-directory wildcard can
+instead retain an original namespace header-safety bound; that is not an
+exact value and cannot supply parameters or target names.
+
+Original versions, precedence and unknown/provisional alternatives invalidate
+or withhold those facts. Header inputs cannot contain syntax/staged dollars;
+recipe inputs cannot introduce Make expansion or new source lines. A staged
+input that activates `.POSIX` and then rewrites itself to a clean final value
+therefore cannot certify neutrality. A mode-sensitive later condition cannot
+hide an invalidating write by borrowing a provisional GNU mode.
+
+Final graph authority is still deferred to the complete original source,
+definition/input history, native body/namespace and template-reference checks.
+The per-call effect proof does not waive late writes, repeated definitions,
+source/remake ownership, phase/export/default obligations or special targets.
+Native metadata queries and retained/expanded proof data spend the existing
+shared budget; the bounded verifier does not build an unbounded output string.
+
 The supported header wildcard has one confined literal directory and a single
 ordinary pattern. GNU Make supplies its actual result; the proof conservatively
 checks that the directory's admitted source/generated names cannot introduce
