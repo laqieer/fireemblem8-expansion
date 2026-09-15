@@ -3911,6 +3911,10 @@ game behavior needs a compensating change.
     batches. Direct compressed-worker and oversized wire declarations must
     also reject. Retain stricter caller bounds, real matching/schema results,
     the original dialect, deadline, memory and cleanup controls.
+    Preserve actual positive and empty-match worker responses, then add an
+    undeclared field to each otherwise valid final JSON envelope. Both must
+    reject before caching, mark the shared budget failed and prevent another
+    launch or cached response. Exact envelopes must still return their indices.
 12. For the immutable verifier Git-read correction, run the three focused
     commands listed under Automation below. Start at a clean source checkout;
     these commands create actual owned Git repositories and extracted trusted

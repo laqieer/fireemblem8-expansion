@@ -1410,6 +1410,11 @@ The worker executes from this same verified module file rather than repeating
 its program text in every argv; isolated startup and the pre-parse memory
 limit remain in force.
 
+Successful worker responses have exact envelopes: `fullmatch` contains only
+`ok` and `indices`; compile/schema responses contain only `ok`. Unknown fields
+reject before indices can enter the match cache, fail the shared report
+budget, and cannot be reused for a later match.
+
 All command patterns are evaluated as one batch for a concrete command; exact
 completed match results are reused only within that matcher/report lifetime.
 Repeating a cached match after deadline/failure/closure still fails. Metadata

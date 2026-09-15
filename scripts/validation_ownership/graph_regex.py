@@ -131,6 +131,8 @@ def evaluate(budget: ProbeBudget, operation: str, payload):
         detail = final.get("error", "worker failed")
         raise MakeProbeError(f"ownership {operation} validation failed: {detail}")
     if operation == "fullmatch":
+        if set(final) != {"ok", "indices"}:
+            budget.reject("ownership regex worker returned unexpected fields")
         indices = final.get("indices")
         if (
             not isinstance(indices, list) or any(type(index) is not int for index in indices)

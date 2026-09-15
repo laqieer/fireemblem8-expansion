@@ -318,6 +318,37 @@ class GraphRegexTests(unittest.TestCase):
             validate_patterns(budget, ("^a$",))
         self.assertFalse(budget.children)
 
+    def test_success_envelopes_reject_extra_fields_before_caching_matches(self):
+        for command, expected in (("yes", (0,)), ("no", ())):
+            with self.subTest(command=command):
+                positive = self.budget()
+                self.assertEqual(CommandPatterns(positive, ("^yes$",)).fullmatch(command), expected)
+                self.assertFalse(positive.children)
+                budget = self.budget()
+                matcher = CommandPatterns(budget, ("^yes$",))
+                execute = budget.run
+
+                def altered(*args, **kwargs):
+                    completed = execute(*args, **kwargs)
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    records = [json.loads(line) for line in completed.stdout.splitlines()]
+                    self.assertEqual(set(records[-1]), {"ok", "indices"})
+                    self.assertEqual(tuple(records[-1]["indices"]), expected)
+                    records[-1]["unexpected"] = {"not_declared": True}
+                    completed.stdout = b"\n".join(encoded(record) for record in records) + b"\n"
+                    return completed
+
+                with mock.patch.object(budget, "run", side_effect=altered):
+                    with self.assertRaisesRegex(MakeProbeError, "unexpected fields"):
+                        matcher.fullmatch(command)
+                self.assertTrue(budget.failed)
+                self.assertFalse(budget.children)
+                self.assertEqual(matcher.matches, {})
+                runs = budget.runs
+                with self.assertRaises(MakeProbeError):
+                    matcher.fullmatch(command)
+                self.assertEqual(budget.runs, runs)
+
 
 if __name__ == "__main__":
     unittest.main()
