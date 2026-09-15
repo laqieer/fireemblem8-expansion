@@ -413,8 +413,8 @@ remain active. Parsed CI controls require exactly one full/fallback execution
 owner in `build` after dependencies and build tools; metadata-only/review-first
 events do not execute it. Removing/duplicating/disabling the command, moving it
 to `host-tests`, selecting host-only mode or omitting prerequisites rejects.
-Equivalent command quoting/continuation remains valid. This is gate 33 with
-all earlier gates retained and no extra job or timeout increase.
+Equivalent command quoting/continuation remains valid. This brings the mirrored
+inventory to 33 gates, retaining every earlier gate without an extra job or timeout increase.
 
 This subcase extends the existing profile and ownership contracts without
 changing gameplay, save, locale, generated schemas or ABI. Its dependencies are
