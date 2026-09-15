@@ -1663,21 +1663,23 @@ def _require_staged_reference_contract(expressions, *, allow_eval=False, origina
                 continue
 
 
+def _make_reference_base(body, *, call=False):
+    depth, end = 0, len(body)
+    for position, character in enumerate(body):
+        if character in "({":
+            depth += 1
+        elif character in ")}":
+            depth -= 1
+        elif not depth and (character == "," and call or character.isspace() or character == ":"):
+            end = position if call or character == ":" else 0
+            break
+    return body[:end]
+
+
 def computed_selectors(line):
     for body in make_expressions(line):
         call = re.match(r"call[ \t]+", body)
-        if call:
-            body = body[call.end():]
-        depth, end = 0, len(body)
-        for position, character in enumerate(body):
-            if character in "({":
-                depth += 1
-            elif character in ")}":
-                depth -= 1
-            elif not depth and (character == "," and call or character.isspace() or character == ":"):
-                end = position if call or character == ":" else 0
-                break
-        head = body[:end]
+        head = _make_reference_base(body[call.end():] if call else body, call=bool(call))
         if "$" in head:
             yield head
 
@@ -2192,14 +2194,22 @@ def source_census(
         raise MakeProbeError("graph dependency has an unresolved computed selector")
     expanded_recipe = closure(recipe, dependencies)
     stage_graph = closure(stage_roots | set().union(*(references(value) for value in stage_sinks)), dependencies)
-    if reference_units.remade and SOURCE_HISTORY_CONTROLS & (
-        closure(all_names | graph | recipe, dependencies) | definitions.keys()
-    ):
-        raise MakeProbeError("unproven restart-sensitive Make source history")
+    if reference_units.remade or reference_units.literal_modules:
+        body_consumers = closure(consumed | set(template_graph_inputs), execution_dependencies)
+        # Resolved graph selectors include ifdef's second, name-selected read.
+        # Metadata endpoints are reads, not instructions to execute their bodies.
+        read_names = graph | recipe | body_consumers
+        for name in body_consumers:
+            read_names.update(dependencies.get(name, ()))
+        if reference_units.remade and SOURCE_HISTORY_CONTROLS & (
+            closure(all_names | graph | recipe, dependencies) | definitions.keys() | read_names
+        ):
+            raise MakeProbeError("unproven restart-sensitive Make source history")
     if reference_units.literal_modules:
         _certify_literal_bindings(
-            reference_units.literal_modules, consumed_expressions, consumed, expressions,
+            reference_units.literal_modules, consumed_expressions, body_consumers, expressions,
             definitions, observed_values, defaults, exports, ambiguous_assignment, budget,
+            read_names=read_names,
         )
     return {
         "all": closure(all_names | graph | recipe, dependencies),
@@ -2229,7 +2239,7 @@ def source_census(
 
 def _certify_literal_bindings(
     modules, roots, consumed, expressions, definitions, observed_values, defaults, exports,
-    ambiguous_assignment, budget,
+    ambiguous_assignment, budget, *, read_names,
 ):
     writes = {name: value for module in modules for name, value in module.bindings}
     if ambiguous_assignment:
@@ -2240,14 +2250,17 @@ def _certify_literal_bindings(
         if definitions.get(name) != [value]:
             raise MakeProbeError("literal binding module has another original definition")
     readers = [*roots, *(value for name in consumed for value in expressions.get(name, ()))]
-    names = set()
+    names = set(read_names)
     for expression in readers:
         if budget is not None:
             budget.remaining()
         names.update(references(expression))
         for body in make_expressions(expression):
             function = re.match(r"([^ \t\r\n\v\f]+)[ \t\r\n\v\f]+", body)
-            if body == ".VARIABLES" or function and function[1] in {"file", "wildcard", "realpath", "eval", "guile"}:
+            if (
+                _make_reference_base(body) == ".VARIABLES"
+                or function and function[1] in {"file", "wildcard", "realpath", "eval", "guile"}
+            ):
                 raise MakeProbeError("literal binding module has an opaque program/data/universe consumer")
         try:
             names.update(selected_names((expression,), definitions, observed_values))

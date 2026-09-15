@@ -4456,6 +4456,65 @@ exports and file/presence readers. Unrelated unexported deferred error/shell
 bodies remain unused; unsupported active I/O or program effects remain explicit
 rejections.
 
+For the two binding-read closure regressions, keep that same production fixture
+and GNU Make4.3/Python3.12 source-only profile. Start each run with the generated
+file absent; do not add a default declaration or candidate `info`/`printf`
+observer. Immediately after the include, use each of these consumers separately:
+
+```make
+SELECTOR = ASSET_BANIM_INCBIN_CONSUMERS
+ifdef $(SELECTOR)
+PHASE_LABEL := final
+else
+PHASE_LABEL := first
+endif
+export PHASE_LABEL
+```
+
+```make
+PHASE_LABEL := $(filter ASSET_BANIM_INCBIN_CONSUMERS,$(.VARIABLES:%=%))
+export PHASE_LABEL
+```
+
+1. Inspect trusted native producer dispatch environments and raw
+   `definitions=("PHASE_LABEL",)` metadata, including the `all` file context.
+   PHASE_LABEL must be present in both actual first-pass dispatch environments:
+   `first` for the conditional, the empty string for the universe case. Final
+   global/file metadata is file-origin, simple-flavor, with respectively `final`
+   and `ASSET_BANIM_INCBIN_CONSUMERS`. Empty is not absent. Require identical
+   347-byte generated output, real publication and MAKE_RESTARTS=1.
+2. Run `test_consumers_aliases_metadata_exports_and_universe_cannot_be_pruned`.
+   Both certificate/census and complete small-fixture `run_probe` must reject
+   before graph authority. Repeat literal/computed ifdef/ifndef, transitive
+   selectors, direct/braced/parenthesized universe and substitution forms,
+   referenced substitution operands, and reached origin/flavor/value aliases.
+   The census's resolved conditional read must not disappear at certification.
+   Protect computed immediate restart-control reads too.
+3. Keep non-interfering generic metadata and the actual emitter positive.
+   Observe origin/flavor/value of an unused body containing a generated read,
+   universe read and shell marker; export only the resulting metadata snapshots.
+   Native first/final values must agree, raw body bytes remain raw, no marker
+   appears, and the complete small planner still accepts. Unknown computed
+   bodies before the producer guard remain earlier phase-proof failures. The
+   same bodies after the guard and final literal rule reach consumer rejection;
+   moving this fixture input is not permission to weaken phase proof.
+4. Run `test_certificate_and_phase_obligations_have_independent_removal_controls`.
+   Independently discard only the resolved certificate reads, then restore only
+   whole-expression universe comparison. Each corresponding no-default fixture
+   must recover its false certificate and complete small `run_probe` admission;
+   the other intact consumer guard still rejects. Exact1e5 preimages used
+   14runs/3states and 13runs/2states respectively. Restore each guard and require
+   rejection again. Unlike FIRST_PASS_ONLY, these controls have no independent
+   unsealed-default gate masking the small-graph admission.
+
+The existing method selectors in the catalog cover these assertions; they are
+not new full-repository graph/report, verifier, diagnostic or H1 allocations.
+Dependencies and reset rules are the original source/input/phase/native
+producer contract and automatic fixture/session cleanup. Feature/profile,
+save, locale and modern/archival ROM interactions are none. Preserve all
+original limits and the shared deadline; record earlier fixture failures
+honestly, not as consumer-certificate evidence.
+
 Alter the phase target, add another possible rule owner or an extra first-phase
 assignment, omit the empty source witness, or override a written name. Reject
 before authority. Original source/input/publication, primary/list/export,
@@ -4474,7 +4533,7 @@ host-only controls are not a new full graph/verifier/H1 measurement; baselines
 1-13 remain consumed/closed.
 
 Load the literal-binding module through ordinary unittest module discovery.
-Its collected cases must belong to that module and have unique IDs; reused
+Its eight collected cases must belong to that module and have unique IDs; reused
 Make-probe fixture cases remain in their original module, not a second copy
 here. Run `test_module_discovery_collects_only_owned_cases`, then exercise the
 real production-emitter fixture. Restoring a globally imported fixture

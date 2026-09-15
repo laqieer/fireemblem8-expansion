@@ -16,6 +16,16 @@ from scripts.validation_ownership.tests import test_make_probe
 
 
 ROOT = Path(__file__).resolve().parents[3]
+ASSET_BINDING = "ASSET_BANIM_INCBIN_CONSUMERS"
+CONDITIONAL_CONSUMER = (
+    "SELECTOR = ASSET_BANIM_INCBIN_CONSUMERS\n"
+    "ifdef $(SELECTOR)\nPHASE_LABEL := final\nelse\nPHASE_LABEL := first\nendif\n"
+    "export PHASE_LABEL\n"
+)
+UNIVERSE_CONSUMER = (
+    "PHASE_LABEL := $(filter ASSET_BANIM_INCBIN_CONSUMERS,$(.VARIABLES:%=%))\n"
+    "export PHASE_LABEL\n"
+)
 
 
 class LiteralBindingModuleTests(unittest.TestCase):
@@ -37,6 +47,7 @@ class LiteralBindingModuleTests(unittest.TestCase):
                 modules.add(type(case).__module__)
                 identifiers.append(case.id())
         self.assertEqual(modules, {__name__})
+        self.assertEqual(len(identifiers), 8)
         self.assertEqual(len(identifiers), len(set(identifiers)))
 
     def generic(self, content="INVENTORY_ITEMS := alpha beta\nENTRY_TOTAL := 2\n", *, prefix="", suffix=""):
@@ -48,7 +59,7 @@ class LiteralBindingModuleTests(unittest.TestCase):
                  "else\n$(INC): ;\nendif\n" + suffix + "all: ;\n")
         return commands
 
-    def production(self, *, consumer=""):
+    def production(self, *, consumer="", late_consumer=""):
         case = self.fixture
         manifest = "assets/manifest.json"
         records = load_manifest(str(ROOT / manifest))
@@ -71,7 +82,7 @@ class LiteralBindingModuleTests(unittest.TestCase):
             "-include $(OUT)\n" + consumer + ".PHONY: FORCE\nFORCE:\n"
             "ifeq ($(MAKE_RESTARTS),)\n$(OUT): FORCE\n"
             "\t@mkdir -p \"$(dir $@)\"\n\t" + command + "\n"
-            "else\n$(OUT): ;\nendif\nall: ;\n"
+            "else\n$(OUT): ;\nendif\nall: ;\n" + late_consumer
         )
         case.add("Makefile", source)
         registry = json.loads((ROOT / ".github/validation-ownership-make-dynamics.json").read_text())
@@ -80,25 +91,81 @@ class LiteralBindingModuleTests(unittest.TestCase):
 
     def observe(self, factory, *, names=(), assignments=()):
         case = self.fixture
-        with case.session() as session:
-            commands = factory(session)
-            native = session.make(
-                "all", makefile="Makefile", variables=("MAKEFILE_LIST", "MAKE_RESTARTS"),
-                definitions=names, assignments=assignments, commands=commands,
-            )
-            self.native = native
-            sources = graph_probe._loaded_sources(session, native, primary_source="Makefile")
-            units, inputs, scoped = graph_probe._prepare_rule_templates(
-                session, "all", assignments, commands, native, sources, primary_source="Makefile",
-            )
-            self.units = units
-            usage = graph_probe.source_census(
-                sources, reference_units=units, source_assignments=assignments, source_target="all",
-                template_graph_inputs=inputs, template_scoped=scoped, budget=session.budget,
-            )
-        self.assertIsNone(session.base)
-        self.assertFalse(session.budget.children)
+        session = case.session()
+        try:
+            with session:
+                commands = factory(session)
+                native = session.make(
+                    "all", makefile="Makefile", variables=("MAKEFILE_LIST", "MAKE_RESTARTS"),
+                    definitions=names, assignments=assignments, commands=commands,
+                )
+                self.native = native
+                sources = graph_probe._loaded_sources(session, native, primary_source="Makefile")
+                units, inputs, scoped = graph_probe._prepare_rule_templates(
+                    session, "all", assignments, commands, native, sources, primary_source="Makefile",
+                )
+                self.units = units
+                usage = graph_probe.source_census(
+                    sources, reference_units=units, source_assignments=assignments, source_target="all",
+                    template_graph_inputs=inputs, template_scoped=scoped, budget=session.budget,
+                )
+        finally:
+            self.assertIsNone(session.base)
+            self.assertFalse(session.budget.children)
+            self.assertFalse(session.budget.producer_waiters)
         return usage
+
+    def small_probe(self, contracts):
+        session = self.fixture.session()
+        try:
+            with session:
+                try:
+                    return graph_probe.run_probe(
+                        session.loader, {"all"}, {}, contracts, session=session, scoped_variable_names={"@"},
+                    )["all"]
+                finally:
+                    self.probe_accounting = (session.budget.runs, session.budget.states)
+        finally:
+            self.assertIsNone(session.base)
+            self.assertFalse(session.budget.children)
+            self.assertFalse(session.budget.producer_waiters)
+
+    def assert_phase_values(self, output, first, final):
+        self.assertEqual(len(self.native.generated), 1)
+        self.assertEqual(self.native.generated[0].path, output)
+        self.assertEqual(len(self.native.generated[0].data), 347)
+        self.assertEqual(self.native.semantics["domains"]["MAKE_RESTARTS"],
+                         {"origin": "environment", "flavor": "recursive", "value": "1"})
+        definition = {"origin": "file", "flavor": "simple", "value": final}
+        self.assertEqual(self.native.semantics["definitions"]["global"]["PHASE_LABEL"], definition)
+        self.assertEqual(self.native.semantics["definitions"]["files"],
+                         [{"target": "all", "variables": {"PHASE_LABEL": definition}}])
+        contexts = self.native.semantics["native_dispatches"]
+        self.assertEqual(len(contexts), 2)
+        self.assertEqual([context["arguments"] for context in contexts],
+                         [event["arguments"] for event in self.native.events])
+        for context in contexts:
+            self.assertIn("PHASE_LABEL", context["environment"])
+            self.assertEqual(context["environment"]["PHASE_LABEL"], first)
+        self.assertFalse((self.fixture.root / output).exists())
+
+    def assert_production_read_rejects(
+        self, consumer, first, final, *, complete=False, after_phase=False,
+        rejection="literal binding module.*consumer",
+    ):
+        factory, _, output, contracts = self.production(
+            consumer="" if after_phase else consumer, late_consumer=consumer if after_phase else "",
+        )
+        with self.assertRaisesRegex(MakeProbeError, rejection):
+            self.observe(factory, names=("PHASE_LABEL",))
+        self.assert_phase_values(output, first, final)
+        statements = [graph_probe.ASSIGNMENT.fullmatch(chunk.text)
+                      for chunk in graph_probe._make_logical_chunks(consumer)]
+        self.assertFalse(any(statement and statement["operator"] == "?=" for statement in statements))
+        if complete:
+            with self.assertRaisesRegex(MakeProbeError, rejection):
+                self.small_probe(contracts)
+        return self.native.generated[0].data
 
     def test_generic_unconsumed_literal_module_closes_all_obligations(self):
         for content in (
@@ -136,11 +203,28 @@ class LiteralBindingModuleTests(unittest.TestCase):
         self.assertEqual(ordinary.splitlines()[2:], expected.splitlines()[2:])
         self.assertEqual(len(self.native.events), 2)
         self.assertEqual(self.native.semantics["files"][0]["prerequisites"], [])
-        with self.fixture.session() as session:
-            result = graph_probe.run_probe(
-                session.loader, {"all"}, {}, contracts, session=session, scoped_variable_names={"@"},
-            )["all"]
+        result = self.small_probe(contracts)
         self.assertEqual(result["record"]["includes"], ["Makefile", output])
+        body = "$(ASSET_BANIM_INCBIN_CONSUMERS)$(.VARIABLES:%=%)$(shell touch marker)"
+        consumer = (
+            "UNREAD = " + body + "\n"
+            "KIND := $(origin UNREAD)\nFLAVOR := ${flavor UNREAD}\nRAW := $(value UNREAD)\n"
+            "ALIAS = $(origin UNREAD)\n"
+            "ifeq ($(ALIAS),file)\nPHASE_LABEL := stable\nendif\n"
+            "export KIND FLAVOR RAW PHASE_LABEL\n"
+        )
+        factory, _, output, contracts = self.production(consumer=consumer)
+        usage = self.observe(factory, names=("KIND", "FLAVOR", "RAW", "PHASE_LABEL"))
+        self.assertEqual(usage["literal_binding_modules"], (output,))
+        self.assertEqual(self.native.generated[0].data, expected.encode())
+        for name, value in (("KIND", "file"), ("FLAVOR", "recursive"), ("RAW", body), ("PHASE_LABEL", "stable")):
+            self.assertEqual(self.native.semantics["definitions"]["global"][name],
+                             {"origin": "file", "flavor": "simple", "value": value})
+            for context in self.native.semantics["native_dispatches"]:
+                self.assertIn(name, context["environment"])
+                self.assertEqual(context["environment"][name], value)
+        self.assertEqual(self.small_probe(contracts)["record"]["includes"], ["Makefile", output])
+        self.assertFalse((self.fixture.root / "marker").exists())
 
     def test_first_pass_default_and_export_remain_visible_obligations(self):
         consumer = (
@@ -155,6 +239,59 @@ class LiteralBindingModuleTests(unittest.TestCase):
         self.assertTrue(any(context["environment"].get("FIRST_PASS_ONLY") == "first" for context in contexts))
 
     def test_consumers_aliases_metadata_exports_and_universe_cannot_be_pruned(self):
+        generated = {
+            self.assert_production_read_rejects(CONDITIONAL_CONSUMER, "first", "final", complete=True),
+            self.assert_production_read_rejects(UNIVERSE_CONSUMER, "", ASSET_BINDING, complete=True),
+        }
+        for declarations, condition, first_branch, second_branch in (
+            ("", "ifdef " + ASSET_BINDING, "final", "first"),
+            ("SELECTOR = " + ASSET_BINDING + "\n", "ifndef ${SELECTOR}", "first", "final"),
+            ("SELECTOR = " + ASSET_BINDING + "\nALIAS = ${SELECTOR}\nNEXT = $(ALIAS)\n",
+             "ifdef $(NEXT)", "final", "first"),
+        ):
+            consumer = (
+                declarations + condition + "\nPHASE_LABEL := " + first_branch
+                + "\nelse\nPHASE_LABEL := " + second_branch + "\nendif\nexport PHASE_LABEL\n"
+            )
+            with self.subTest(consumer=consumer):
+                generated.add(self.assert_production_read_rejects(consumer, "first", "final"))
+        for declarations, expression, computed in (
+            ("", "$(.VARIABLES)", False),
+            ("", "${.VARIABLES}", False),
+            ("", "${.VARIABLES:%=%}", False),
+            ("UNIVERSE = $(.VARIABLES:%=%)\nALIAS = ${UNIVERSE}\nSELECTOR = ALIAS\n", "$($(SELECTOR))", True),
+            ("PATTERN = %\nREPLACEMENT = %\n", "$(.VARIABLES:${PATTERN}=$(REPLACEMENT))", False),
+        ):
+            consumer = (declarations + "PHASE_LABEL := $(filter " + ASSET_BINDING + "," + expression
+                        + ")\nexport PHASE_LABEL\n")
+            with self.subTest(expression=expression):
+                if computed:
+                    generated.add(self.assert_production_read_rejects(
+                        consumer, "", ASSET_BINDING,
+                        rejection="literal binding phase must contain one producer rule",
+                    ))
+                generated.add(self.assert_production_read_rejects(
+                    consumer, "", ASSET_BINDING, after_phase=computed,
+                ))
+        for expression, first, final, computed in (
+            ("$(" + ASSET_BINDING + ":%=%)", "", "LORM_SP1_PROOF", False),
+            ("${${SELECTOR}:%=%}", "", "LORM_SP1_PROOF", True),
+            ("$(origin " + ASSET_BINDING + ")", "undefined", "file", False),
+            ("${flavor " + ASSET_BINDING + "}", "undefined", "simple", False),
+            ("$(value " + ASSET_BINDING + ")", "", "LORM_SP1_PROOF", False),
+        ):
+            consumer = (
+                "SELECTOR = " + ASSET_BINDING + "\nALIAS = " + expression
+                + "\nNEXT = ${ALIAS}\nPHASE_LABEL := $(NEXT)\nexport PHASE_LABEL\n"
+            )
+            with self.subTest(expression=expression):
+                if computed:
+                    generated.add(self.assert_production_read_rejects(
+                        consumer, first, final,
+                        rejection="literal binding phase must contain one producer rule",
+                    ))
+                generated.add(self.assert_production_read_rejects(consumer, first, final, after_phase=computed))
+        self.assertEqual(len(generated), 1)
         cases = (
             ("", "READ := $(INVENTORY_ITEMS)\n"),
             ("ALIAS = $(INVENTORY_ITEMS)\n", "READ := $(ALIAS)\n"),
@@ -163,6 +300,9 @@ class LiteralBindingModuleTests(unittest.TestCase):
             ("", "READ := $(flavor INVENTORY_ITEMS)\n"),
             ("", "READ := $(value INVENTORY_ITEMS)\n"),
             ("", "READ := $(.VARIABLES)\n"),
+            ("NAME = .VARIABLES\n", "READ := ${${NAME}:%=%}\n"),
+            ("NAME = MAKE_RESTARTS\n", "READ := $($(NAME):%=%)\n"),
+            ("NAME = $(subst X,INVENTORY_ITEMS,X)\n", "READ := $($(NAME):%=%)\n"),
             ("", "export INVENTORY_ITEMS\n"),
             ("", "export\n"),
             ("", "READ := $(file <build/include.mk)\n"),
@@ -212,6 +352,37 @@ class LiteralBindingModuleTests(unittest.TestCase):
             self.observe(factory)
 
     def test_certificate_and_phase_obligations_have_independent_removal_controls(self):
+        certify = graph_probe._certify_literal_bindings
+        reference_base = graph_probe._make_reference_base
+
+        def without_resolved_reads(*args, **kwargs):
+            return certify(*args, **{**kwargs, "read_names": ()})
+
+        def whole_body_universe(body, **kwargs):
+            base = reference_base(body, **kwargs)
+            return body if base == ".VARIABLES" else base
+
+        generated = set()
+        for attribute, restored, consumer, first, final in (
+            ("_certify_literal_bindings", without_resolved_reads, CONDITIONAL_CONSUMER, "first", "final"),
+            ("_make_reference_base", whole_body_universe, UNIVERSE_CONSUMER, "", ASSET_BINDING),
+        ):
+            with self.subTest(restored=attribute):
+                factory, _, output, contracts = self.production(consumer=consumer)
+                with patch.object(graph_probe, attribute, restored):
+                    usage = self.observe(factory, names=("PHASE_LABEL",))
+                    self.assert_phase_values(output, first, final)
+                    self.assertEqual(usage["literal_binding_modules"], (output,))
+                    self.assertEqual(usage["defaults"], set())
+                    result = self.small_probe(contracts)
+                    self.assertEqual(result["record"]["includes"], ["Makefile", output])
+                generated.add(self.native.generated[0].data)
+                self.assert_production_read_rejects(consumer, first, final, complete=True)
+        self.assertEqual(len(generated), 1)
+        with patch.object(graph_probe, "_certify_literal_bindings", without_resolved_reads):
+            self.assert_production_read_rejects(UNIVERSE_CONSUMER, "", ASSET_BINDING)
+        with patch.object(graph_probe, "_make_reference_base", whole_body_universe):
+            self.assert_production_read_rejects(CONDITIONAL_CONSUMER, "first", "final")
         factory = self.generic()
         with patch.object(graph_probe, "_literal_binding_include", return_value=None):
             with self.assertRaisesRegex(MakeProbeError, "unproven generated include source history"):

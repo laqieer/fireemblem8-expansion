@@ -907,6 +907,17 @@ unproved file/wildcard/realpath or emitted-program operations reject rather than
 receiving a normal-mode or final-value default. These restrictions are explicit
 eligibility boundaries, not an implementation of arbitrary Make replay.
 
+Certification retains the original census's resolved graph reads, including
+the variable selected by `ifdef $(SELECTOR)` / `ifndef ${SELECTOR}`, rather
+than checking only the selector's spelling. Transitive execution edges and
+their metadata-read endpoints join that closure; a metadata endpoint does not
+cause its body to execute. The restart/source-control guard also receives
+resolved immediate reads, including computed substitution references. The
+shared reference parser separates a substitution's base name from its pattern
+and replacement, so `.VARIABLES` and `.VARIABLES:%=%` are equally observable
+universe reads in either delimiter style or a reached alias. Unsupported
+computed names and unknown phase/data/program contexts still reject.
+
 This admits the actual asset-discovery emitter's five literal metadata
 assignments in an uninstrumented, non-interfering candidate. Its captured-source
 renderer and native publication agree byte-for-byte; ordinary CLI discovery
@@ -917,6 +928,19 @@ Consumer and phase obligations must close before graph authority is granted.
 The same context/name bounds, source/cache/control charges and shared deadline
 apply. Baseline13 remains closed; this certificate does not claim full repository
 eligibility or resource fit.
+
+The source-only read-closure regression also preserves two no-default controls:
+the computed conditional exports PHASE_LABEL=first to the actual producer but
+has final raw value `final`; filtering the identity-substituted universe exports
+an empty PHASE_LABEL but has final raw value `ASSET_BANIM_INCBIN_CONSUMERS`.
+Both retain the same 347-byte production output. Corrected certification and
+the complete small-fixture planner reject both. Independently restoring either
+old read omission recovers that fixture's false certificate and small graph
+admission, not a whole-repository report. Dependencies are the existing parsed
+source stream, original input/phase evidence, registered producer and native
+observations; other feature/profile conflicts are none. No native ABI, generated
+format, permission, resource budget, CI policy or game/save/locale/ROM/RAM
+contract changes.
 
 Assignment timing and resulting flavor are distinct contracts. GNU Make `!=`
 executes its RHS immediately but creates a recursive variable, unlike
