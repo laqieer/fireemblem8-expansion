@@ -3515,6 +3515,195 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 session.make("all")
         self.assertFalse(budget.children)
 
+    def framework_template_continuation(self, *, renamed=False, posix=False, flattened=False):
+        self.framework_templates(renamed=renamed)
+        self.original_input_witness()
+        macro = "GENERATED_DATA_LINK_TABLE_RULES"
+        name = "GENERATED_DATA_CONFIG_INPUTS_units"
+        chunks = list(graph_probe._make_logical_chunks((ROOT / "generated_data.mk").read_text()))
+        caller = next(chunk for chunk in chunks if chunk.text.startswith("$(foreach ") and macro in chunk.text)
+        continuation = next(chunk for chunk in chunks if chunk.text.startswith(name + " :="))
+        source = self.original_target_slices("generated_data.mk", (), "define " + macro, caller.text)
+        for chunk in chunks:
+            if caller.end < chunk.start < continuation.start:
+                source += "\n" * (chunk.end - chunk.start + 1)
+        tail = continuation.text
+        if flattened:
+            tail = graph_probe._collapse_make_continuations(tail, posix=False)
+        source += tail + "\n"
+        if renamed:
+            source = source.replace(macro, "PROJECT_" + macro)
+        self.add("generated_data.mk", source)
+        parent = (self.root / "Makefile").read_text()
+        if posix:
+            parent = ".POSIX:\n" + parent
+        self.add("Makefile", parent + "measure:\n\t@printf '%s\\n' '$(value " + name + ")'\n")
+        expected = graph_probe.ASSIGNMENT.fullmatch(
+            graph_probe._collapse_make_continuations(continuation.text, posix=posix),
+        )["value"].lstrip(graph_probe.MAKE_SPACE)
+        return name, expected
+
+    def test_template_mode_proof_precedes_actual_dependent_continuation(self):
+        for renamed, posix, flattened in ((False, False, False), (True, False, False),
+                                          (False, True, False), (False, False, True)):
+            with self.subTest(renamed=renamed, posix=posix, flattened=flattened):
+                name, expected = self.framework_template_continuation(
+                    renamed=renamed, posix=posix, flattened=flattened,
+                )
+                self.assertEqual(self.ordinary(target="measure"), (expected + "\n").encode())
+                with self.session() as session:
+                    native = session.make("all", variables=("MAKEFILE_LIST",), definitions=(name,))
+                self.assertEqual(native.semantics["definitions"]["global"][name],
+                                 {"origin": "file", "flavor": "simple", "value": expected})
+                self.assertEqual(native.semantics["domains"]["MAKEFILE_LIST"]["value"].split(),
+                                 ["Makefile", "generated_data.mk", "modern.mk"])
+                actual = self.observe_framework()["record"]["variants"][0]["record"]
+                projection = lambda files: [
+                    {key: item[key] for key in ("target", "recipe", "prerequisites")} for item in files
+                ]
+                self.assertEqual(projection(actual["files"]), projection(native.semantics["files"]))
+                if not posix and not flattened:
+                    with patch.object(graph_probe._TemplateModeProof, "__call__", return_value=False):
+                        with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation"):
+                            self.observe_framework()
+                    self.assertEqual(self.observe_framework()["record"]["variants"][0]["record"], actual)
+
+    def test_template_mode_proof_rejects_original_effects_and_concealed_writes(self):
+        name, _ = self.framework_template_continuation()
+        parent = (self.root / "Makefile").read_text()
+        key = "GENERATED_DATA_CONFIG_INPUTS_alpha"
+        staged = key + " := $$(eval .POSIX:)$$(eval " + key + " := include/alpha.h)include/alpha.h"
+        self.add("Makefile", parent.replace(key + " := include/alpha.h", staged))
+        with self.session() as session:
+            native = session.make("all", definitions=(key, name))
+        self.assertEqual(native.semantics["definitions"]["global"][key]["value"], "include/alpha.h")
+        self.assertIn("  ", native.semantics["definitions"]["global"][name]["value"])
+        with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation"):
+            self.observe_framework()
+
+        self.framework_templates()
+        self.add("include/later.h", "/* captured late dependency */\n")
+        parent = (self.root / "Makefile").read_text().replace(key + " := include/alpha.h", staged)
+        parent += "LATE = first \\\n second\nifeq ($(LATE),first  second)\n" + key + " := include/later.h\nendif\n"
+        self.add("Makefile", parent)
+        with self.session() as session:
+            native = session.make("all", definitions=(key, "LATE"))
+        self.assertEqual(native.semantics["definitions"]["global"][key]["value"], "include/later.h")
+        self.assertEqual(native.semantics["definitions"]["global"]["LATE"]["value"], "first  second")
+        with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation"):
+            self.observe_framework()
+
+        for suffix in ("GENERATED_DATA_LINKED_TABLES := alpha\n",
+                       "GENERATED_DATA_LINK_TABLE_RULES = ignored\n"):
+            with self.subTest(suffix=suffix):
+                self.framework_template_continuation()
+                self.add("Makefile", (self.root / "Makefile").read_text() + suffix)
+                with self.assertRaises(MakeProbeError):
+                    self.observe_framework()
+        self.framework_template_continuation()
+        self.add("Makefile", "$(eval EARLIER_EFFECT := one)\n" + (self.root / "Makefile").read_text())
+        with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation"):
+            self.observe_framework()
+        self.framework_template_continuation()
+        with patch.object(graph_probe._TemplateModeProof, "native_value", return_value={
+            "origin": "file", "flavor": "simple", "value": "beta",
+        }):
+            with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation"):
+                self.observe_framework()
+        name, _ = self.framework_template_continuation()
+        self.add("Makefile", (self.root / "Makefile").read_text().replace(
+            "src/data_alpha.c src/data_beta.c", "src/data_POSIX.c",
+        ).replace("all: $(MODERN_OUTPUT_DIR)/src/data_$(SELECTED_TABLE).o", "all: ;"))
+        self.add("generated_data.mk", (self.root / "generated_data.mk").read_text().replace(
+            "$(GENERATED_DATA_OUT_DIR)/data_$(1).c:", ".$(1):",
+        ))
+        with self.session() as session:
+            native = session.make("all", definitions=(name,))
+        self.assertIn("  ", native.semantics["definitions"]["global"][name]["value"])
+        with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation"):
+            self.observe_framework()
+
+    def test_template_mode_inputs_keep_snapshot_and_occurrence_versions(self):
+        self.framework_template_continuation()
+        parent = (self.root / "Makefile").read_text()
+        self.add("Makefile", "UNREAD = $(error unused)$(shell touch marker)\nMETA := $(origin UNREAD)\n" + parent.replace(
+            "include generated_data.mk",
+            "GENERATED_DATA_LINKED_HAND_SOURCES := src/data_beta.c\ninclude generated_data.mk",
+        ))
+        actual = self.observe_framework()
+        self.assertIn("build/generated/data/data_alpha.c", {
+            dependency["name"] for item in actual["record"]["variants"][0]["record"]["files"]
+            for dependency in item["prerequisites"]
+        })
+        self.assertFalse((self.root / "marker").exists())
+        self.framework_template_continuation()
+        self.add("Makefile", (self.root / "Makefile").read_text().replace(
+            "include generated_data.mk", "TABLE_SNAPSHOT := $(GENERATED_DATA_LINKED_TABLES)\ninclude generated_data.mk",
+        ))
+        self.add("generated_data.mk", (self.root / "generated_data.mk").read_text().replace(
+            "$(foreach t,$(GENERATED_DATA_LINKED_TABLES),", "$(foreach t,$(TABLE_SNAPSHOT),",
+        ))
+        self.assertEqual(self.observe_framework()["record"]["includes"],
+                         ["Makefile", "generated_data.mk", "modern.mk"])
+        self.framework_template_continuation()
+        self.add("Makefile", (self.root / "Makefile").read_text().replace(
+            "include generated_data.mk", "include generated_data.mk\ninclude generated_data.mk",
+        ))
+        with self.assertRaises(MakeProbeError):
+            self.observe_framework()
+        self.framework_template_continuation()
+        source = (self.root / "generated_data.mk").read_text()
+        caller = next(chunk.text for chunk in graph_probe._make_logical_chunks(source)
+                      if chunk.text.startswith("$(foreach "))
+        self.add("generated_data.mk", source.replace(caller, caller + "\nGENERATED_DATA_LINKED_TABLES := alpha\n" + caller))
+        with self.assertRaises(MakeProbeError):
+            self.observe_framework()
+
+    def test_template_initializer_claims_match_gnu_and_retain_bounds(self):
+        budget = ProbeBudget()
+        try:
+            for pattern, replacement, words in (
+                ("src/data_%.c", "%", "src/data_alpha.c src/data_beta.c"),
+                ("%", "prefix_%_suffix", "alpha beta"),
+                ("%.c", "%.o", "one.c other.s two.c"),
+                ("same", "changed", "same other same"),
+                ("a%b", "%", "ab axb other"),
+                ("same", "", "same  other same"),
+                ("%", "", "one two"),
+            ):
+                with self.subTest(pattern=pattern, replacement=replacement, words=words):
+                    self.add("Makefile", "VALUE := $(patsubst " + pattern + "," + replacement + "," + words
+                             + ")\nall:\n\t@printf '%s\\n' '$(VALUE)'\n")
+                    ordinary = self.ordinary().decode().removesuffix("\n")
+                    with self.session() as session:
+                        native = session.make("all", variables=("VALUE",))
+                    value = native.semantics["domains"]["VALUE"]["value"]
+                    self.assertEqual(value, ordinary)
+                    self.assertTrue(graph_probe._matches_original_patsubst((pattern, replacement, words), value, budget))
+                    self.assertFalse(graph_probe._matches_original_patsubst(
+                        (pattern, replacement, words), value + " wrong", budget,
+                    ))
+            mode = _MakeSourceMode(budget=budget, template_mode=lambda *args: False)
+            mode.assign("NAMES", "=", "src/data_alpha.c")
+            mode.assign("TABLES", ":=", "$(patsubst src/data_%.c,%,$(NAMES))")
+            self.assertIsNone(mode.literal_text("$(TABLES)"))
+            proof = mode.template_values["TABLES"][1]
+            mode.assign("PADDED", ":=", "$(patsubst src/data_%.c,%,$(NAMES)) ")
+            mode.assign("PADDED_ALIAS", ":=", "$(TABLES) ")
+            self.assertNotIn("PADDED", mode.template_values)
+            self.assertNotIn("PADDED_ALIAS", mode.template_values)
+            mode.assign("NAMES", "=", "src/data_beta.c")
+            self.assertTrue(graph_probe._matches_original_patsubst(proof[1], "alpha", budget))
+            self.assertFalse(graph_probe._matches_original_patsubst(proof[1], "beta", budget))
+            mode.assign("WORDS", "=", " ".join("word" + str(index) for index in range(512)))
+            self.assertIsNotNone(mode.template_initializer("$(patsubst %,prefix_%,$(WORDS))"))
+            mode.assign("WORDS", "+=", "one_more")
+            self.assertIsNone(mode.template_initializer("$(patsubst %,prefix_%,$(WORDS))"))
+        finally:
+            budget.close()
+        with self.assertRaisesRegex(MakeProbeError, "aggregate probe deadline"):
+            graph_probe._matches_original_patsubst(("%", "%", ""), "", budget)
+
 
 if __name__ == "__main__":
     unittest.main()

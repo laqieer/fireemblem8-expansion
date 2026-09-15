@@ -173,6 +173,8 @@ class _MakeSourceMode:
     binding_versions: dict = field(default_factory=dict)
     version: int = 0
     reads: set = field(default_factory=set)
+    template_values: dict = field(default_factory=dict)
+    template_mode: object = None
 
     def __post_init__(self):
         self.definitions = {
@@ -484,6 +486,69 @@ class _MakeSourceMode:
             return True
         return None
 
+    def template_argument(self, expression, active=()):
+        self.checkpoint()
+        if "$" not in expression:
+            return expression
+        reference = NAME_PART.fullmatch(expression)
+        if reference is None:
+            return None
+        name = reference[1] or reference[2]
+        if name in active or len(active) >= 512:
+            return None
+        self.retain_reads((name,))
+        bindings = self.binding(name)
+        if len(bindings) != 1:
+            return None
+        binding = next(iter(bindings))
+        if binding.flavor == "undefined":
+            return ""
+        if binding.flavor == "simple":
+            return binding.value
+        if binding.flavor == "recursive" and binding.value is not None:
+            return self.template_argument(binding.value, (*active, name))
+        return None
+
+    def template_initializer(self, expression):
+        if (
+            self.template_mode is None or not self.original_namespace_valid
+            or expression != expression.strip(MAKE_SPACE)
+        ):
+            return None
+        forwarded = NAME_PART.fullmatch(expression)
+        if forwarded:
+            name = forwarded[1] or forwarded[2]
+            record = self.template_values.get(name)
+            if record is not None and record[0] == self.version:
+                return record[1]
+        function = _make_function(expression)
+        if function is None:
+            return None
+        operation, arguments = function
+        if operation not in {"patsubst", "wildcard"}:
+            return None
+        try:
+            values = tuple(self.template_argument(argument) for argument in arguments)
+        except RecursionError:
+            return None
+        if any(value is None for value in values):
+            return None
+        if operation == "patsubst" and len(values) == 3:
+            pattern, replacement, words = values
+            if (
+                pattern.count("%") > 1 or replacement.count("%") > 1
+                or not all(re.fullmatch(r"[A-Za-z0-9_./%+-]*", value) for value in values[:2])
+            ):
+                return None
+            for index, _ in enumerate(re.finditer(r"[^ \t\r\n\v\f]+", words)):
+                self.checkpoint()
+                if index >= 512:
+                    return None
+            return operation, values
+        if operation == "wildcard" and len(values) == 1 and self.namespace is not None:
+            return _template_wildcard_bound(values[0], self.namespace, self.budget)
+        return None
+
     def effectful(self, expression):
         self.last_effect_input = None
         pending, active, complete = [(None, expression, False)], set(), set()
@@ -603,6 +668,7 @@ class _MakeSourceMode:
             value = value.lstrip(MAKE_SPACE)
         version = self.version
         literal_choices = None
+        template_value = None
         if scope is None and (
             operator in SIMPLE_ASSIGNMENT_OPERATORS or operator == "+=" and effect.immediate is True
         ):
@@ -610,6 +676,8 @@ class _MakeSourceMode:
                 literal_choices = self.literal_values(value)
             except RecursionError:
                 literal_choices = None
+            if operator in SIMPLE_ASSIGNMENT_OPERATORS and literal_choices is None:
+                template_value = self.template_initializer(value)
         # GNU expands simple/shell RHSs before write-precedence rejection.
         # Append expansion instead depends on the original binding's flavor.
         emitted = ()
@@ -665,6 +733,15 @@ class _MakeSourceMode:
         if self.version != version:
             result.add(UNPROVEN_BINDING)
         self.retain_binding(name, result, scope)
+        if scope is None and effect.applies is not False:
+            self.template_values.pop(name, None)
+            if (
+                active is True and effect.applies is True and self.version == version
+                and self.original_namespace_valid and template_value is not None
+            ):
+                if self.budget is not None:
+                    self.budget.charge("cache", len(encoded((name, version, template_value))))
+                self.template_values[name] = version, template_value
         return effect._replace(emitted=emitted)
 
     def assign_targets(self, assignment, *, override=False, active=True):
@@ -1028,11 +1105,15 @@ def make_source_units(
                     if _unproven_assignment_destination(header):
                         mode.uncertain()
                     function = _make_function(header)
-                    empty_result = function is not None and function[0] in EMPTY_RESULT_FUNCTIONS
+                    neutral_template = bool(
+                        mode.template_mode is not None and active is True and known_context
+                        and mode.template_mode(mode, header)
+                    )
+                    empty_result = neutral_template or function is not None and function[0] in EMPTY_RESULT_FUNCTIONS
                     target_posix = (
                         mode.target_posix(header) if not empty_result and not MAKE_DIRECTIVE.match(header) else False
                     )
-                    emitted = mode.evaluate(header, active=active)
+                    emitted = () if neutral_template else mode.evaluate(header, active=active)
                     included = _include_names(header, mode)
                     if included is not False:
                         if include is None:
@@ -1056,7 +1137,7 @@ def make_source_units(
 
 def _source_units(
     sources, *, assignments=(), budget=None, target=None, original_input=None, namespace=None,
-    read_order=None, remade=False, native_exports=(), literal_modules=(),
+    read_order=None, remade=False, native_exports=(), literal_modules=(), template_mode=None,
 ):
     decoded = {}
     mode = _MakeSourceMode(
@@ -1065,6 +1146,7 @@ def _source_units(
         budget=budget,
         original_input=original_input,
         namespace=namespace,
+        template_mode=template_mode,
     )
     if target is not None:
         mode.bind_invocation(target)
@@ -1424,6 +1506,247 @@ def _literal_binding_phases(units, observation, budget):
     return frozenset(tests)
 
 
+def _template_header_data(value):
+    return not any(
+        character in "$\\#;:=|" or ord(character) < 32 and character != "\t" for character in value
+    )
+
+
+def _template_wildcard_bound(pattern, namespace, budget=None):
+    if budget is not None:
+        budget.remaining()
+    if not _template_header_data(pattern) or any(character in pattern for character in MAKE_SPACE + "[]~"):
+        return None
+    try:
+        relative_path(pattern)
+    except MakeProbeError:
+        return None
+    parent = PurePosixPath(pattern).parent
+    if any(character in str(parent) for character in "*?"):
+        return None
+    for name in namespace:
+        if budget is not None:
+            budget.remaining()
+        if PurePosixPath(name).parent == parent and not _template_header_data(name):
+            return None
+    return "header-bound", (pattern,)
+
+
+def _matches_original_patsubst(arguments, candidate, budget):
+    """Check a native claim against already-bound literal initializer arguments."""
+    budget.remaining()
+    pattern, replacement, words = arguments
+    if "%" not in pattern:
+        offset, previous = 0, 0
+        for match in re.finditer(r"[^ \t\r\n\v\f]+", words):
+            budget.remaining()
+            parts = words[previous:match.start()], replacement if match[0] == pattern else match[0]
+            for part in parts:
+                if not candidate.startswith(part, offset):
+                    return False
+                offset += len(part)
+            previous = match.end()
+        return candidate[offset:] == words[previous:]
+    offset, first = 0, True
+    for match in re.finditer(r"[^ \t\r\n\v\f]+", words):
+        budget.remaining()
+        word = match[0]
+        prefix, suffix = pattern.split("%")
+        matched = word.startswith(prefix) and word.endswith(suffix) and len(word) >= len(prefix) + len(suffix)
+        stem = word[len(prefix):len(word) - len(suffix) if suffix else len(word)]
+        parts = (word,)
+        if matched and "%" in replacement:
+            before, after = replacement.split("%")
+            parts = before, stem, after
+        elif matched:
+            parts = (replacement,)
+        if matched and not replacement:
+            continue
+        if not first:
+            if not candidate.startswith(" ", offset):
+                return False
+            offset += 1
+        first = False
+        for part in parts:
+            if not candidate.startswith(part, offset):
+                return False
+            offset += len(part)
+    return offset == len(candidate)
+
+
+def _rule_template_call(expression):
+    function = _make_function(expression)
+    if function is None or function[0] != "foreach" or len(function[1]) != 3:
+        return None
+    variable, values, action = function[1]
+    evaluated = _make_function(action)
+    invoked = _make_function(evaluated[1][0]) if evaluated and evaluated[0] == "eval" and len(evaluated[1]) == 1 else None
+    if invoked is None or invoked[0] != "call":
+        return None
+    arguments = [argument.strip(MAKE_SPACE) for argument in invoked[1]]
+    variable = variable.strip(MAKE_SPACE)
+    if (
+        not re.fullmatch(IDENTIFIER, variable) or len(arguments) != 2
+        or arguments[1] not in {"$(" + variable + ")", "${" + variable + "}"}
+        or not re.fullmatch(IDENTIFIER, arguments[0]) or arguments[0] in MAKE_FUNCTIONS
+    ):
+        raise MakeProbeError("unproven parameterized rule-template invocation")
+    return variable, values.strip(MAKE_SPACE), arguments[0]
+
+
+def _charge_template_expansion(budget, body, word, recipe_count):
+    parameter_count = body.count("$(1)") + body.count("${1}")
+    budget.charge("cache", len(encoded(body)) + parameter_count * (len(word) - 4) + 10 * (recipe_count + 1))
+
+
+class _TemplateModeProof:
+    def __init__(self, session, target, state, commands, observation, primary_source, observe_dispatch):
+        self.session, self.target, self.state = session, target, state
+        self.commands, self.observation = commands, observation
+        self.primary_source, self.observe_dispatch = primary_source, observe_dispatch
+        self.records = {}
+
+    def native_value(self, name):
+        if name not in self.records:
+            actual = self.session.make(
+                self.target, makefile=self.primary_source, definitions=(name,), assignments=self.state,
+                commands=self.commands, observe_recipe_dispatch=self.observe_dispatch,
+            )
+            _stable_native_context(self.observation.semantics, actual.semantics)
+            records = actual.semantics["definitions"]["global"]
+            self.session.budget.charge("cache", len(encoded(records)))
+            self.records.update(records)
+        return self.records[name]
+
+    def value(self, mode, name, *, active=()):
+        mode.checkpoint()
+        if name in active or len(active) >= 512:
+            return None
+        mode.retain_reads((name,))
+        bindings = mode.binding(name)
+        if len(bindings) != 1:
+            return None
+        binding = next(iter(bindings))
+        try:
+            literal = mode.literal_text("$(" + name + ")")
+        except RecursionError:
+            return None
+        if literal is not None:
+            return literal
+        if binding.flavor == "recursive" and binding.value is not None:
+            forwarded = NAME_PART.fullmatch(binding.value)
+            if forwarded:
+                return self.value(mode, forwarded[1] or forwarded[2], active=(*active, name))
+        record = mode.template_values.get(name)
+        if binding.flavor != "simple" or record is None or record[0] != mode.version:
+            return None
+        kind, arguments = record[1]
+        if kind != "patsubst":
+            return None
+        native = self.native_value(name)
+        if native["origin"] != binding.origin or native["flavor"] != "simple":
+            return None
+        if _matches_original_patsubst(arguments, native["value"], self.session.budget):
+            return native["value"]
+        return None
+
+    def header_data(self, mode, name, active=()):
+        mode.checkpoint()
+        if name in active or len(active) >= 512:
+            return False
+        value = self.value(mode, name)
+        if value is not None:
+            return _template_header_data(value)
+        bindings = mode.binding(name)
+        if len(bindings) != 1:
+            return False
+        binding = next(iter(bindings))
+        if binding.flavor == "recursive" and binding.value is not None:
+            forwarded = NAME_PART.fullmatch(binding.value)
+            if forwarded:
+                return self.header_data(mode, forwarded[1] or forwarded[2], (*active, name))
+        record = mode.template_values.get(name)
+        return bool(
+            binding.flavor == "simple" and record is not None and record[0] == mode.version
+            and record[1][0] == "header-bound"
+        )
+
+    def text(self, mode, expression):
+        result = expression
+        for match in reversed(list(NAME_PART.finditer(expression))):
+            value = self.value(mode, match[1] or match[2])
+            if value is None:
+                return None
+            result = result[:match.start()] + value + result[match.end():]
+        return None if "$" in result else result
+
+    def __call__(self, mode, expression):
+        self.session.budget.remaining()
+        if mode.posix is None or not mode.original_namespace_valid:
+            return False
+        call = _rule_template_call(expression)
+        if call is None:
+            return False
+        variable, values, macro_name = call
+        macro = mode.binding(macro_name)
+        if len(macro) != 1:
+            return False
+        macro = next(iter(macro))
+        if macro.origin not in {"file", "override"} or macro.flavor != "recursive" or macro.value is None:
+            return False
+        parameter = self.text(mode, values.strip(MAKE_SPACE))
+        if parameter is None:
+            return False
+        words = []
+        for match in re.finditer(r"[^ \t\r\n\v\f]+", parameter):
+            mode.checkpoint()
+            if len(words) >= 512:
+                raise MakeProbeError("original template parameters exceed the existing context bound")
+            words.append(match[0])
+        if any(not re.fullmatch(IDENTIFIER, word) for word in words):
+            return False
+        self.session.budget.charge("cache", len(encoded(macro.value)))
+        left, right, recipes = _rule_template_parts(macro.value)
+        for word in words:
+            mode.checkpoint()
+            _charge_template_expansion(self.session.budget, macro.value, word, len(recipes))
+            substitute = lambda value: value.replace("$(1)", word).replace("${1}", word)
+            target = self.text(mode, substitute(left))
+            if target is None:
+                return False
+            target = target.strip(MAKE_SPACE)
+            targets = _make_target_words(target)
+            if (
+                targets is None or len(targets) != 1 or targets[0].startswith(".")
+                or any(character in target for character in MAKE_SPACE + "%*?[]")
+                or not _template_header_data(target)
+            ):
+                return False
+            relative_path(target)
+            prerequisite = substitute(right)
+            names = _template_reference_names(prerequisite)
+            for name in names:
+                if name == variable or not self.header_data(mode, name):
+                    return False
+            for body in make_expressions(prerequisite):
+                wildcard = re.fullmatch(r"wildcard[ \t]+(.*)", body, re.S)
+                if wildcard:
+                    pattern = self.text(mode, wildcard[1])
+                    if pattern is None or mode.namespace is None or _template_wildcard_bound(
+                        pattern, mode.namespace, self.session.budget,
+                    ) is None:
+                        return False
+            for recipe in recipes:
+                for name in _template_reference_names(substitute(recipe), recipe=True):
+                    value = self.value(mode, name)
+                    if name == variable or value is None or any(
+                        character == "$" or ord(character) < 32 and character != "\t" for character in value
+                    ):
+                        return False
+        self.session.budget.charge("cache", len(encoded((mode.site, mode.version, mode.posix, macro_name, words))))
+        return True
+
+
 def _prepare_rule_templates(
     session, target, state, commands, observation, sources, *, primary_source,
     observe_dispatch=False, external_names=(),
@@ -1448,10 +1771,12 @@ def _prepare_rule_templates(
     namespace.update(parent.as_posix() for name in tuple(namespace) for parent in PurePosixPath(name).parents if parent.as_posix() != ".")
     namespace.update(session.snapshot.gitlink_roots)
     session.budget.charge("cache", len(encoded(sorted(namespace))))
+    template_mode = _TemplateModeProof(session, target, state, commands, observation, primary_source, observe_dispatch)
     units = _source_units(
         sources, assignments=state, budget=session.budget, target=target,
         original_input=original_input, namespace=frozenset(namespace),
         read_order=read_order, remade=remade, native_exports=native_exports, literal_modules=literal_modules,
+        template_mode=template_mode,
     )
     if literal_modules:
         units = units._replace(phase_tests=_literal_binding_phases(units, observation, session.budget))
@@ -1473,26 +1798,14 @@ def _prepare_rule_templates(
             match = DEFINE.match(header)
             if match:
                 macros.setdefault(match[1], []).append((path, index, unit))
-        function = _make_function(header) if unit.body is None and not header.startswith("\t") else None
-        if function is None or function[0] != "foreach" or len(function[1]) != 3:
+        call = _rule_template_call(header) if unit.body is None and not header.startswith("\t") else None
+        if call is None:
             continue
-        variable, values, action = function[1]
-        variable = variable.strip(MAKE_SPACE)
-        evaluated = _make_function(action)
-        invoked = _make_function(evaluated[1][0]) if evaluated and evaluated[0] == "eval" and len(evaluated[1]) == 1 else None
-        if invoked is None or invoked[0] != "call":
-            continue
-        arguments = [argument.strip(MAKE_SPACE) for argument in invoked[1]]
-        if (
-            not re.fullmatch(IDENTIFIER, variable) or len(arguments) != 2
-            or arguments[1] not in {"$(" + variable + ")", "${" + variable + "}"}
-            or not re.fullmatch(IDENTIFIER, arguments[0]) or arguments[0] in MAKE_FUNCTIONS
-        ):
-            raise MakeProbeError("unproven parameterized rule-template invocation")
-        candidates = macros.get(arguments[0], ())
+        variable, values, macro_name = call
+        candidates = macros.get(macro_name, ())
         if len(candidates) != 1 or positions[candidates[0][0], candidates[0][1]] >= positions[path, index]:
             raise MakeProbeError("rule template lacks one original prior definition")
-        callers.append((path, index, variable, values.strip(MAKE_SPACE), candidates[0]))
+        callers.append((path, index, variable, values, candidates[0]))
     if not callers:
         return units, set(), set()
     session.budget.charge("cache", len(encoded([
@@ -1525,7 +1838,7 @@ def _prepare_rule_templates(
             position = positions[path, index] if unit.body is None and not unit.text.startswith("\t") else len(ordered)
             assignments.setdefault(assignment["name"], []).append(position)
             initializers.setdefault(assignment["name"], []).append((assignment["operator"], assignment["value"]))
-    globals_seen = {}
+    globals_seen = template_mode.records
     pure = set()
 
     def require_pure_initializer(name, active=()):
@@ -1615,10 +1928,7 @@ def _prepare_rule_templates(
         for word in words:
             # Admit the reference IR before expanding the parameter into copies
             # of the template. Identifiers are ASCII, so JSON growth is exact.
-            parameter_count = macro.body.count("$(1)") + macro.body.count("${1}")
-            session.budget.charge(
-                "cache", len(encoded(macro.body)) + parameter_count * (len(word) - 4) + 10 * (len(recipes) + 1),
-            )
+            _charge_template_expansion(session.budget, macro.body, word, len(recipes))
             replace_parameter = lambda value: value.replace("$(1)", word).replace("${1}", word)
             target_text, prerequisite_text = replace_parameter(left), replace_parameter(right)
             names = _template_reference_names(target_text) | _template_reference_names(prerequisite_text)
