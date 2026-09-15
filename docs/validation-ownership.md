@@ -1154,6 +1154,10 @@ or additional unbound scope references do not acquire template authority.
 Mode effects are proved at each original call occurrence, before a later
 mode-sensitive source continuation is collapsed. The shared foreach/eval/call
 parser proves that the statement itself expands only to whitespace. The
+loop-variable call argument must retain its exact bytes and match the
+supported bare reference; padding is not trimmed into a different emission.
+Outer expression whitespace does not authorize whitespace inside that payload.
+The
 original recursive body, parameter values and interpolated header/recipe
 inputs must separately prove ordinary confined targets and no introduced
 Make program or special parser target. Only that proof preserves the incoming
@@ -1164,8 +1168,9 @@ ordinary value remains unknown may retain one narrow template-only native-claim
 contract: literal/direct-reference arguments to a single `patsubst` are captured
 at the original assignment, and a later raw native value must match that exact
 bounded substitution relation, including GNU whitespace and empty matches.
-Patterns/replacements with unproved escaping or multiple percent operators
-remain unsupported. Bare aliases may retain the same snapshot, but extra
+Empty patterns, unproved escaping and multiple percent operators remain
+unsupported. Empty stems/replacements for the supported nonempty patterns
+retain their actual GNU behavior. Bare aliases may retain the same snapshot, but extra
 literal whitespace is not discarded. This does not add function evaluation to
 ordinary source conditions or the literal-value resolver, nor accept a final
 value simply because it looks plausible. A literal-directory wildcard can
@@ -1178,6 +1183,9 @@ recipe inputs cannot introduce Make expansion or new source lines. A staged
 input that activates `.POSIX` and then rewrites itself to a clean final value
 therefore cannot certify neutrality. A mode-sensitive later condition cannot
 hide an invalidating write by borrowing a provisional GNU mode.
+In particular, a padded call that emits a separate `.POSIX` target and an
+empty-pattern claim followed by a native table-list rewrite both reject.
+Their actual later hidden defaults cannot disappear behind guessed GNU folding.
 
 Final graph authority is still deferred to the complete original source,
 definition/input history, native body/namespace and template-reference checks.

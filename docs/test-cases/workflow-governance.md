@@ -5052,6 +5052,23 @@ Extra initializer/alias whitespace cannot disappear from an exact claim.
 An oversized or unresolved initializer has no certificate; untouched unused
 source is not rejected merely to manufacture a template fact.
 
+Run `test_template_call_payload_padding_cannot_hide_parser_effects` and
+`test_template_empty_pattern_claim_cannot_hide_mode_and_defaults` with the
+existing scoped template variables and genuine witness. Keep unpadded calls
+and harmless outer expression whitespace as positives. Padding around the
+loop reference inside the second call argument must reject, not be trimmed:
+the trailing-space/tab counterexample emits a separate `.POSIX` target,
+double-spaces LATE and defines HIDDEN natively. Those real defaults must not
+be pruned from an accepted small plan.
+
+The empty-pattern initializer `$(patsubst ,POSIX,)` followed by a later
+mode-sensitive clearing of TABLES has the same requirement. Native Make
+emits `.POSIX`, preserves double spacing and defines HIDDEN; neither an empty
+final table list nor an incorrect unchanged-input claim may certify zero
+iterations. Decline empty-pattern certificates and their direct claims.
+Retain the literal special-target rejection and nonempty pattern/empty-stem/
+empty-replacement positives, with ordinary/native raw-value agreement.
+
 For non-circularity, use a staged config initializer that activates `.POSIX`
 and resets itself to a harmless final path. Add a later raw continuation and a
 mode-sensitive condition writing that input again. Native final values may
@@ -5065,7 +5082,7 @@ original snapshot aliases, namespace/wildcard checks and the existing
 source/history/phase and graph certificate remains mandatory after this
 per-occurrence mode proof.
 
-Run the four `test_template_mode_*` / `test_template_initializer_claims_*`
+Run the six template-mode, initializer and payload/empty-pattern
 methods with directly coupled existing template/native/history controls.
 These source-only fixtures do not rerun a repository graph or establish
 production resource fit. Closed baseline14 and all earlier allocations remain

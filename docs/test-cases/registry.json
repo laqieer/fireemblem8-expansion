@@ -3046,7 +3046,7 @@
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },
         {
-          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_template_mode_proof_precedes_actual_dependent_continuation scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_template_mode_proof_rejects_original_effects_and_concealed_writes scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_template_mode_inputs_keep_snapshot_and_occurrence_versions scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_template_initializer_claims_match_gnu_and_retain_bounds -v",
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_template_mode_proof_precedes_actual_dependent_continuation scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_template_mode_proof_rejects_original_effects_and_concealed_writes scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_template_mode_inputs_keep_snapshot_and_occurrence_versions scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_template_initializer_claims_match_gnu_and_retain_bounds scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_template_call_payload_padding_cannot_hide_parser_effects scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_template_empty_pattern_claim_cannot_hide_mode_and_defaults -v",
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },
         {

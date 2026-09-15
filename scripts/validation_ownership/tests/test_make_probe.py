@@ -3659,6 +3659,67 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         with self.assertRaises(MakeProbeError):
             self.observe_framework()
 
+    def test_template_call_payload_padding_cannot_hide_parser_effects(self):
+        self.original_input_witness()
+        for argument, outer, posix, accepted in (
+            ("$(t)", "", False, True),
+            ("$(t)", "  ", False, True),
+            ("$(t) ", "", True, False),
+            ("$(t)\t", "", True, False),
+            (" $(t)", "", False, False),
+        ):
+            with self.subTest(argument=argument, outer=outer):
+                self.add("Makefile", "define RULE\nout/$(1).POSIX:\nendef\n"
+                         + outer + "$(foreach t,alpha,$(eval $(call RULE," + argument + ")))" + outer + "\n"
+                         "LATE = first \\\n second\nifeq ($(LATE),first  second)\nHIDDEN ?= secret\nendif\nall: ;\n")
+                self.ordinary()
+                with self.session() as session:
+                    native = session.make("all", definitions=("LATE", "HIDDEN"))
+                records = native.semantics["definitions"]["global"]
+                self.assertEqual(records["LATE"]["value"], "first  second" if posix else "first second")
+                self.assertEqual(records["HIDDEN"]["origin"], "file" if posix else "undefined")
+                if posix:
+                    self.assertEqual(records["HIDDEN"]["value"], "secret")
+                if accepted:
+                    self.assertEqual(self.observe(scoped_variable_names={"1", "t"})["all"]["variable_census"]["defaults"], [])
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "rule-template invocation"):
+                        self.observe(scoped_variable_names={"1", "t"})
+
+    def test_template_empty_pattern_claim_cannot_hide_mode_and_defaults(self):
+        self.original_input_witness()
+        for initializer in ("$(patsubst ,POSIX,)", "POSIX"):
+            with self.subTest(initializer=initializer):
+                self.add("Makefile", "TABLES := " + initializer + "\ndefine RULE\n.$(1):\nendef\n"
+                         "$(foreach t,$(TABLES),$(eval $(call RULE,$(t))))\n"
+                         "LATE = first \\\n second\nifeq ($(LATE),first  second)\n"
+                         "TABLES :=\nHIDDEN ?= secret\nendif\nall: ;\n")
+                self.ordinary()
+                with self.session() as session:
+                    native = session.make("all", definitions=("LATE", "TABLES", "HIDDEN"))
+                records = native.semantics["definitions"]["global"]
+                self.assertEqual(records["LATE"]["value"], "first  second")
+                self.assertEqual(records["TABLES"]["value"], "")
+                self.assertEqual(records["HIDDEN"], {"origin": "file", "flavor": "recursive", "value": "secret"})
+                with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation"):
+                    self.observe(scoped_variable_names={"1", "t"})
+        budget = ProbeBudget()
+        try:
+            mode = _MakeSourceMode(budget=budget, template_mode=lambda *args: False)
+            self.assertIsNone(mode.template_initializer("$(patsubst ,POSIX,)"))
+            for words in ("", " ", "word", "word "):
+                with self.subTest(words=words):
+                    self.add("Makefile", "VALUE := $(patsubst ,POSIX," + words + ")\n"
+                             "all:\n\t@printf '%s\\n' '$(VALUE)'\n")
+                    ordinary = self.ordinary().decode().removesuffix("\n")
+                    with self.session() as session:
+                        native = session.make("all", variables=("VALUE",))
+                    self.assertEqual(native.semantics["domains"]["VALUE"]["value"], ordinary)
+                    for claim in (ordinary, words):
+                        self.assertFalse(graph_probe._matches_original_patsubst(("", "POSIX", words), claim, budget))
+        finally:
+            budget.close()
+
     def test_template_initializer_claims_match_gnu_and_retain_bounds(self):
         budget = ProbeBudget()
         try:

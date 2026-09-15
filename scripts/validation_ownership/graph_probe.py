@@ -536,7 +536,7 @@ class _MakeSourceMode:
         if operation == "patsubst" and len(values) == 3:
             pattern, replacement, words = values
             if (
-                pattern.count("%") > 1 or replacement.count("%") > 1
+                not pattern or pattern.count("%") > 1 or replacement.count("%") > 1
                 or not all(re.fullmatch(r"[A-Za-z0-9_./%+-]*", value) for value in values[:2])
             ):
                 return None
@@ -1536,6 +1536,8 @@ def _matches_original_patsubst(arguments, candidate, budget):
     """Check a native claim against already-bound literal initializer arguments."""
     budget.remaining()
     pattern, replacement, words = arguments
+    if not pattern:
+        return False
     if "%" not in pattern:
         offset, previous = 0, 0
         for match in re.finditer(r"[^ \t\r\n\v\f]+", words):
@@ -1583,7 +1585,10 @@ def _rule_template_call(expression):
     invoked = _make_function(evaluated[1][0]) if evaluated and evaluated[0] == "eval" and len(evaluated[1]) == 1 else None
     if invoked is None or invoked[0] != "call":
         return None
-    arguments = [argument.strip(MAKE_SPACE) for argument in invoked[1]]
+    arguments = [
+        argument.strip(MAKE_SPACE) if index == 0 else argument
+        for index, argument in enumerate(invoked[1])
+    ]
     variable = variable.strip(MAKE_SPACE)
     if (
         not re.fullmatch(IDENTIFIER, variable) or len(arguments) != 2
