@@ -2429,6 +2429,34 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.assertNotEqual(before, after)
 
     def test_rule_template_opaque_parameter_and_context_variants_reject(self):
+        self.framework_templates()
+        projection = lambda files: [
+            {key: item[key] for key in ("target", "recipe", "prerequisites")} for item in files
+        ]
+        baseline = self.observe_framework()["record"]["variants"][0]["record"]
+        self.ordinary()
+        generated = self.root / "build/generated/data/data_alpha.c"
+        object_file = self.root / "build/modern/src/data_alpha.o"
+        expected_c = generated.read_bytes()
+        expected_object = object_file.read_bytes()
+        self.assertEqual(expected_object[:4], b"\x7fELF")
+        self.assertEqual(int.from_bytes(expected_object[18:20], "little"), 40)
+        self.add("Makefile", (self.root / "Makefile").read_text().replace(
+            "include generated_data.mk", "ifeq (yes,yes)\ninclude generated_data.mk\nendif",
+        ))
+        active = self.observe_framework()["record"]["variants"][0]["record"]
+        with self.session() as session:
+            native = session.make("all", variables=("MAKEFILE_LIST",))
+        self.assertEqual(projection(active["files"]), projection(baseline["files"]))
+        self.assertEqual(projection(active["files"]), projection(native.semantics["files"]))
+        self.assertEqual(native.semantics["domains"]["MAKEFILE_LIST"]["value"].split(),
+                         ["Makefile", "generated_data.mk", "modern.mk"])
+        self.ordinary("-B")
+        self.assertEqual(generated.read_bytes(), expected_c)
+        self.assertEqual(object_file.read_bytes(), expected_object)
+        self.add("Makefile", (self.root / "Makefile").read_text().replace("ifeq (yes,yes)", "ifeq (yes,no)"))
+        with self.assertRaisesRegex(MakeProbeError, "No rule to make target"):
+            self.observe_framework()
         cases = (
             ("header-function", "generated_data.mk", "$(wildcard scripts/generated_data/$(1)/*.py)",
              "$(subst Q,Q,$(wildcard scripts/generated_data/$(1)/*.py))"),
@@ -2456,13 +2484,19 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
              ".SECONDEXPANSION:\nNAME = GENERATED_DATA_LINKED_TABLES\nundefine $(NAME)\n"),
             ("wildcard-patterns", "generated_data.mk", "$(wildcard scripts/generated_data/$(1)/*.py)",
              "$(wildcard scripts/generated_data/$(1)/*.py scripts/shared/*.py)"),
-            ("uncertain-include", "Makefile", "include generated_data.mk",
-             "ifeq (yes,yes)\ninclude generated_data.mk\nendif"),
+            ("effectful-include", "Makefile", "include generated_data.mk",
+             "ifeq ($(eval TEMPLATE_CONTEXT := touched),)\ninclude generated_data.mk\nendif"),
         )
         for case, path, old, new in cases:
             with self.subTest(case=case):
                 self.framework_templates()
                 self.add(path, (self.root / path).read_text().replace(old, new))
+                if case == "effectful-include":
+                    with self.session() as session:
+                        native = session.make("all", variables=("MAKEFILE_LIST",), definitions=("TEMPLATE_CONTEXT",))
+                    self.assertEqual(native.semantics["definitions"]["global"]["TEMPLATE_CONTEXT"],
+                                     {"origin": "file", "flavor": "simple", "value": "touched"})
+                    self.assertEqual(projection(native.semantics["files"]), projection(baseline["files"]))
                 with self.assertRaises(MakeProbeError):
                     self.observe_framework()
         self.framework_templates()
@@ -2749,9 +2783,25 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
 
     def test_modern_size_recipe_default_uses_sealed_contract(self):
         name = "MODERN_SIZE"
-        usage = source_census({"modern.mk": (ROOT / "modern.mk").read_bytes()})
-        self.assertIn(name, usage["defaults"])
-        self.assertIn(name, usage["recipe_only"])
+        self.original_input_witness()
+        declarations = self.original_target_slices(
+            "modern.mk", ("MODERN_TOOLCHAIN_ROOT ?=",),
+            "# Resolve modern OBJCOPY consistently", "export MODERN_TOOLCHAIN_ROOT",
+        )
+        consumers = [
+            chunk.text for chunk in graph_probe._make_logical_chunks((ROOT / "modern.mk").read_text())
+            if chunk.text.startswith("\t") and name in graph_probe.references(chunk.text)
+        ]
+        self.assertEqual(len(consumers), 1)
+        self.add("modern-size.mk", declarations)
+        for package in ("scripts", "scripts/workflow_pilot", "scripts/workflow_pilot/tests"):
+            self.add(package + "/__init__.py", "# bounded environment-consumer fixture\n")
+        self.add("scripts/workflow_pilot/tests/arm_review_subjects.py", (
+            "import json,os,unittest\n"
+            "class EnvironmentConsumer(unittest.TestCase):\n"
+            " def test_size(self):\n"
+            "  print(json.dumps({'MODERN_SIZE':os.environ['MODERN_SIZE']}))\n"
+        ))
         contract = json.loads((ROOT / ".github/validation-ownership-make-dynamics.json").read_text())
         self.assertEqual(contract["seal"], reporter._sha256(
             reporter.MAKE_DYNAMIC_SEAL_DOMAIN, reporter.canonical_make_dynamic_payload(contract),
@@ -2761,13 +2811,52 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             "symbolic_recipe_names": contract["prerequisite_domains"]["symbolic_recipe_names"],
         }
         records = []
-        for value in ("arm-none-eabi-size", "/selected/bin/arm-none-eabi-size"):
-            self.add("Makefile", f"{name} ?= {value}\nall:\n\t@echo $({name})\n")
+        for root, value in (("", "arm-none-eabi-size"), ("/selected", "/selected/bin/arm-none-eabi-size")):
+            self.add("Makefile", "PREFIX := arm-none-eabi-\nEXE :=\n"
+                     "MODERN_TOOLCHAIN_ROOT := " + root + "\nMODERN_CC := arm-none-eabi-gcc\n"
+                     "PYTHON := /usr/bin/python3\ninclude modern-size.mk\nall:\n" + consumers[0] + "\n")
+            ordinary = self.ordinary()
+            self.assertEqual(json.loads(ordinary.decode().splitlines()[-1]), {name: value})
+            with self.session() as session:
+                commands = graph_probe.MakeCommands(session, {})
+                original = session.original_make_inputs("all", (name,))
+                native = session.make(
+                    "all", variables=("MAKEFILE_LIST", "MAKE_RESTARTS", name), commands=commands,
+                )
+                sources = graph_probe._loaded_sources(session, native, primary_source="Makefile")
+                units, inputs, scoped = graph_probe._prepare_rule_templates(
+                    session, "all", (), commands, native, sources, primary_source="Makefile",
+                )
+                usage = source_census(
+                    sources, reference_units=units, template_graph_inputs=inputs, template_scoped=scoped,
+                    budget=session.budget, source_target="all",
+                )
+            self.assertEqual(original[name], {"origin": "undefined", "flavor": "undefined", "value": ""})
+            self.assertEqual(native.semantics["domains"][name],
+                             {"origin": "file", "flavor": "recursive", "value": value})
+            self.assertIn(name, usage["defaults"])
+            self.assertIn(name, usage["recipe_only"])
             record = self.observe(**options)["all"]["record"]
-            self.assertEqual(record["symbolic_recipe_names"], [name])
+            self.assertEqual(record["symbolic_recipe_names"], ["MODERN_CC", "MODERN_NM", name])
             self.assertEqual(record["variants"][0]["record"]["domains"][name]["value"], value)
             records.append(record)
         self.assertNotEqual(records[0], records[1])
+        override = "/external/bin/size"
+        self.assertEqual(json.loads(self.ordinary(environment={name: override}).decode().splitlines()[-1]),
+                         {name: override})
+        unconditional = []
+        for chunk in graph_probe._make_logical_chunks(declarations):
+            assignment = graph_probe.ASSIGNMENT.fullmatch(chunk.text)
+            if assignment and assignment["name"] == name:
+                self.assertEqual(assignment["operator"], "?=")
+                unconditional.append(chunk.text[:assignment.start("operator")] + "="
+                                     + chunk.text[assignment.end("operator"):] + "\n")
+            else:
+                unconditional.append(chunk.text + "\n")
+        self.add("modern-size.mk", "".join(unconditional))
+        self.assertEqual(json.loads(self.ordinary(environment={name: override}).decode().splitlines()[-1]),
+                         {name: value})
+        self.add("modern-size.mk", declarations)
         with self.assertRaisesRegex(MakeProbeError, "unsealed external defaults"):
             self.observe(**{**options, "external": set(options["external"]) - {name}})
         for source, error in (

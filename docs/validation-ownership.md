@@ -1204,6 +1204,21 @@ the observed census without spawning closure-expansion variants.
 Tool defaults such as `MODERN_SIZE` are sealed as ambient recipe-only values:
 their actual values affect recipe authority, but neither graph selection nor
 new executable/source admission is granted by that classification.
+Its focused regression retains the actual conditional declarations and recipe
+environment consumer in a source-faithful unit slice with explicit fixture
+parent inputs and genuine original-input evidence. The consumer command is
+unchanged, while a bounded same-named test module observes its environment;
+it does not run the real ARM review suite or selected size executable.
+Both toolchain-root outcomes and environment-default precedence are observed,
+with seal, graph-use and unsealed-neighbor negatives. This is not standalone
+semantic analysis of the whole modern.mk file.
+
+Likewise, a constant-true include around an existing rule template is a
+supported positive. Ordinary generated C/ARM objects and native/planned
+graphs must agree with the unconditional include. A genuinely effectful
+conditional remains an original-source rejection even when GNU Make takes
+that branch. These evidence fixtures add no producer permissions, predicate
+exceptions, resource allowances or broader repository-acceptance claims.
 Definition-dependency expansion is
 scoped to the authoritative sources GNU Make actually loaded, so an alternate
 branch cannot backfill an unobserved selector into another branch's census.

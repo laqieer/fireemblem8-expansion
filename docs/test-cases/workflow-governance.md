@@ -4108,11 +4108,27 @@ census without spawning closure-expansion variants. Reversed domain
 declaration order produces identical authority. State/source/domain/
 combination/depth/time cap fixtures reject rather than returning a partial
 census, with one deadline and aggregate budget shared by the entire report.
-For `MODERN_SIZE`, parse its real `modern.mk` default/recipe-only use and run
-`test_modern_size_recipe_default_uses_sealed_contract`. Different tool paths
-must change native recipe authority. Removing its exact ambient declaration,
-using it as a prerequisite, or adding an unsealed neighboring default must
-reject; no executable or source admission is widened.
+For `MODERN_SIZE`, run `test_modern_size_recipe_default_uses_sealed_contract`
+with the source-faithful conditional tool declarations and actual recipe
+environment consumer extracted from `modern.mk`. Keep original logical chunks
+and comment-pad omitted unrelated parent context; do not analyze all of
+modern.mk as a standalone program or assume a normal parsing mode. Provide
+the fixture's explicit PREFIX/EXE/toolchain/CC/Python parent inputs and genuine
+empty-source witness, then use the normal native source walker and census.
+The actual recipe command is retained on a bounded fixture target; its
+same-named Python test-module stub observes only the supplied environment,
+not the real ARM review suite or the size executable.
+
+Empty and `/selected` toolchain roots must select `arm-none-eabi-size` and
+`/selected/bin/arm-none-eabi-size` in both ordinary child environments and
+native recipe authority. Keep file origin, recursive flavor, conditional
+default and recipe-only census evidence. An environment override must win
+under the original `?=` declarations; changing only those parsed operators to
+`=` must visibly lose that override. Restore the declarations. Preserve the
+actual seal and reject removal of the exact ambient name, graph use of the
+symbolic tool, or an unsealed neighboring default. No executable or source
+admission is widened, and this slice does not prove whole-modern.mk or
+repository-report acceptance.
 Environment-origin graph variants are spawned only for names observed as
 loaded-source defaults or actual undefined authority; explicit graph
 assignments collapse that unrelated environment dimension.
@@ -4913,6 +4929,19 @@ every recorded closure must equal a separate actual native observation.
 Adding a table-specific module must change its real wildcard prerequisites.
 Rename both macros without changing their bodies or callers' semantics:
 the native graph must remain equal, proving there is no symbol-name allowlist.
+
+Wrap the real generated-data template include in `ifeq (yes,yes)`. It is
+provably active, not an uncertainty negative. Require the same target,
+prerequisite and recipe projection from the native observer and small graph
+planner as the unconditional form. Run ordinary GNU builds for both, forcing
+the second build, and compare the generated C and actual ARM ELF object.
+Changing the condition to false must lose the required generated target.
+For the uncertainty negative, use
+`ifeq ($(eval TEMPLATE_CONTEXT := touched),)` around the same include. Native
+Make must still include it, set TEMPLATE_CONTEXT to file/simple/touched and
+produce the same graph, but original effect/source proof must reject.
+Retain every other opaque-template and macro-identity negative; neither
+predicate handling nor original-source guards are relaxed by these fixtures.
 Keep a later `.SECONDEXPANSION` directive, as in the real source ordering;
 also exercise secondary activation before/after an included ordinary rule.
 
