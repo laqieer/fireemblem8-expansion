@@ -3329,8 +3329,11 @@ sys.path.insert(0,sys.argv[1])
 from scripts.validation_ownership import lifecycle
 seen=[]
 state={}
+descriptors=set(os.listdir("/proc/self/fd"))
 def handler(signum,frame):
     assert state["child"].returncode == 0
+    assert lifecycle.owned_children() == []
+    assert set(os.listdir("/proc/self/fd")) == descriptors
     seen.append(signum)
     raise RuntimeError("deferred caller signal")
 signal.signal(signal.SIGTERM,handler)
@@ -7397,6 +7400,285 @@ int main(int argc, char **argv) {
             os.close(read)
             if write is not None:
                 os.close(write)
+
+    def test_watchdog_child_readiness_uses_the_absolute_deadline(self):
+        program = r'''
+import json,os,selectors,signal,sys
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+sys.path.insert(0,sys.argv[1])
+from scripts.validation_ownership import lifecycle
+mode=sys.argv[2]
+removed=mode == "removed"
+if removed:
+    mode="delayed"
+before=set(os.listdir("/proc/self/fd"))
+mask=signal.pthread_sigmask(signal.SIG_BLOCK,())
+handlers={sig:signal.getsignal(sig) for sig in (*lifecycle.TERMINATING,signal.SIGCHLD)}
+reader,writer=os.pipe()
+registered=[]
+wakeups=[]
+waitable=[]
+class ObservedSelector(selectors.DefaultSelector):
+    def register(self,fileobj,events,data=None):
+        if fileobj != 0 and removed:
+            return None
+        key=super().register(fileobj,events,data)
+        if key.fd != 0:
+            fields=dict(line.split(":",1) for line in Path(f"/proc/self/fdinfo/{key.fd}").read_text().splitlines())
+            assert int(fields["Pid"]) == lifecycle.owned_children()[0]
+            assert not os.get_inheritable(key.fd)
+            registered.append(key.fd)
+        return key
+    def select(self,timeout=None):
+        if timeout == 0:
+            return super().select(timeout)
+        keys=list(self.get_map().values())
+        completion=[key for key in keys if key.fd != 0]
+        assert len(completion) == 1, "owned child has no readiness descriptor"
+        assert self.get_key(0).events & selectors.EVENT_READ
+        assert timeout == 5, ("not the absolute deadline remainder",timeout)
+        if mode.startswith("delayed"):
+            os.write(writer,b"x")
+        events=super().select(timeout)
+        assert [(key.fd,bits) for key,bits in events] == [(completion[0].fd,selectors.EVENT_READ)]
+        wakeups.append(completion[0].fd)
+        return events
+terminate=lifecycle.terminate
+def terminating(child):
+    flags=os.WEXITED|os.WNOHANG|os.WNOWAIT
+    first=os.waitid(os.P_PID,child.pid,flags)
+    second=os.waitid(os.P_PID,child.pid,flags)
+    waitable.append((child.returncode,first,second,child.pid))
+    terminate(child)
+if mode == "immediate":
+    argv=["/usr/bin/true"]
+    expected=0
+elif mode == "signal":
+    argv=["/usr/bin/python3","-I","-S","-c","import os,signal; os.kill(os.getpid(),signal.SIGUSR1)"]
+    expected=-signal.SIGUSR1
+else:
+    expected=7 if mode == "delayed-nonzero" else 0
+    argv=["/usr/bin/python3","-I","-S","-c",f"import os; os.read(0,1); os._exit({expected})"]
+try:
+    with patch.object(lifecycle.selectors,"DefaultSelector",ObservedSelector), patch.object(
+        lifecycle,"time",SimpleNamespace(monotonic=lambda:100.0),
+    ), patch.object(lifecycle,"terminate",terminating):
+        result=lifecycle.run(argv,105.0,payload_input=reader if mode.startswith("delayed") else None)
+finally:
+    os.close(reader)
+    os.close(writer)
+    assert lifecycle.owned_children() == []
+    assert set(os.listdir("/proc/self/fd")) == before
+    assert signal.pthread_sigmask(signal.SIG_BLOCK,()) == mask
+    assert {sig:signal.getsignal(sig) for sig in handlers} == handlers
+    if removed:
+        print(json.dumps({"registration_removed":True,"clean":True}))
+assert result == expected
+assert len(registered) == 1
+if mode.startswith("delayed"):
+    assert wakeups == registered
+assert len(waitable) == 1
+returncode,first,second,pid=waitable[0]
+assert returncode is None and first.si_pid == pid and second == first
+print(json.dumps({"status":result,"registrations":len(registered),"wakeups":len(wakeups),"waitable_until_cleanup":True}))
+'''
+        for mode, status in (
+            ("immediate", 0), ("delayed", 0), ("delayed-nonzero", 7),
+            ("signal", -signal.SIGUSR1), ("removed", None),
+        ):
+            with self.subTest(mode=mode), self.owned_process([
+                "/usr/bin/python3", "-I", "-S", "-c", program, str(ROOT), mode,
+            ]) as (child, descriptor):
+                child.wait(timeout=10)
+                errors = child.stderr.read()
+                self.assertEqual(child.returncode, 1 if mode == "removed" else 0, errors)
+                output = child.stdout.read()
+                self.assertTrue(output, errors)
+                evidence = json.loads(output)
+                if mode == "removed":
+                    self.assertIn(b"owned child has no readiness descriptor", errors)
+                    self.assertEqual(evidence, {"registration_removed": True, "clean": True})
+                    continue
+                self.assertEqual(evidence["status"], status)
+                self.assertEqual(evidence["registrations"], 1)
+                self.assertTrue(evidence["waitable_until_cleanup"])
+                if mode.startswith("delayed"):
+                    self.assertEqual(evidence["wakeups"], 1)
+
+    def test_watchdog_pidfd_setup_failures_and_signals_release_ownership(self):
+        program = r'''
+import errno,json,os,selectors,signal,sys,time
+from unittest.mock import patch
+sys.path.insert(0,sys.argv[1])
+from scripts.validation_ownership import lifecycle
+stage,mode=sys.argv[2:4]
+signum=int(sys.argv[4])
+before=set(os.listdir("/proc/self/fd"))
+mask=signal.pthread_sigmask(signal.SIG_BLOCK,())
+handlers={sig:signal.getsignal(sig) for sig in (*lifecycle.TERMINATING,signal.SIGCHLD)}
+primary=OSError(errno.ENOSYS if mode == "unsupported" else errno.EMFILE,"owned pidfd setup failure")
+allocated=[]
+injected=[]
+def inject():
+    injected.append(stage)
+    if mode in {"interrupt","failure-signal"}:
+        os.kill(os.getpid(),signum)
+    if mode != "interrupt":
+        raise primary
+opening=os.pidfd_open
+def pidfd_open(pid,flags=0):
+    if pid == os.getpid():
+        return opening(pid,flags)
+    if stage == "open" and mode != "interrupt":
+        inject()
+    descriptor=opening(pid,flags)
+    allocated.append(descriptor)
+    if stage == "open":
+        inject()
+    return descriptor
+class FailingSelector(selectors.DefaultSelector):
+    def register(self,fileobj,events,data=None):
+        if fileobj in allocated and stage == "register" and mode != "interrupt":
+            inject()
+        key=super().register(fileobj,events,data)
+        if fileobj in allocated and stage == "register":
+            inject()
+        return key
+try:
+    with patch.object(lifecycle.os,"pidfd_open",pidfd_open), patch.object(
+        lifecycle.selectors,"DefaultSelector",FailingSelector,
+    ):
+        try:
+            lifecycle.run(["/usr/bin/true"],time.monotonic()+5)
+        except lifecycle.WatchdogInterrupted:
+            assert mode == "interrupt"
+        except OSError as error:
+            assert mode != "interrupt" and error is primary
+            if mode == "failure-signal":
+                assert len(error.cleanup_errors) == 1
+        else:
+            raise AssertionError("owned setup failure/interruption was ignored")
+finally:
+    assert lifecycle.owned_children() == []
+    assert set(os.listdir("/proc/self/fd")) == before
+    assert signal.pthread_sigmask(signal.SIG_BLOCK,()) == mask
+    assert {sig:signal.getsignal(sig) for sig in handlers} == handlers
+assert injected == [stage]
+assert len(allocated) == (0 if stage == "open" and mode != "interrupt" else 1)
+print(json.dumps({"injections":len(injected),"owned_descriptors":len(allocated),"clean":True}))
+'''
+        controls = [
+            (stage, mode, signal.SIGTERM)
+            for stage in ("open", "register")
+            for mode in ("failure", "failure-signal")
+        ] + [
+            (stage, "interrupt", signum)
+            for stage in ("open", "register")
+            for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)
+        ] + [("open", "unsupported", signal.SIGTERM)]
+        for stage, mode, signum in controls:
+            with self.subTest(stage=stage, mode=mode, signal=signum), self.owned_process([
+                "/usr/bin/python3", "-I", "-S", "-c", program, str(ROOT), stage, mode, str(int(signum)),
+            ]) as (child, descriptor):
+                child.wait(timeout=10)
+                self.assertEqual(child.returncode, 0, child.stderr.read())
+                evidence = json.loads(child.stdout.read())
+                self.assertEqual(evidence["injections"], 1)
+                self.assertTrue(evidence["clean"])
+
+    def test_watchdog_pidfd_cleanup_errors_preserve_primary_and_deferred_signals(self):
+        program = r'''
+import errno,json,os,selectors,signal,sys,time
+from unittest.mock import patch
+sys.path.insert(0,sys.argv[1])
+from scripts.validation_ownership import lifecycle
+stage=sys.argv[2]
+has_primary=sys.argv[3] == "primary"
+initial=set(os.listdir("/proc/self/fd"))
+reader,writer=os.pipe()
+before=set(os.listdir("/proc/self/fd"))
+mask=signal.pthread_sigmask(signal.SIG_BLOCK,())
+primary=OSError(errno.EIO,"owned operation failure")
+secondary=OSError(errno.EIO,"owned cleanup failure after real release")
+allocated=[]
+reaped=[]
+delivered=[]
+opening=os.pidfd_open
+closing=os.close
+terminate=lifecycle.terminate
+def pidfd_open(pid,flags=0):
+    descriptor=opening(pid,flags)
+    if pid != os.getpid():
+        allocated.append(descriptor)
+    return descriptor
+def handler(signum,frame):
+    assert len(reaped) == 1 and reaped[0].returncode is not None
+    assert lifecycle.owned_children() == []
+    assert set(os.listdir("/proc/self/fd")) == before
+    assert signal.pthread_sigmask(signal.SIG_BLOCK,()) == mask
+    delivered.append(signum)
+    raise KeyboardInterrupt("deferred cleanup signal")
+previous=signal.signal(signal.SIGTERM,handler)
+def terminating(child):
+    terminate(child)
+    reaped.append(child)
+    if stage == "terminate":
+        os.kill(os.getpid(),signal.SIGTERM)
+        raise secondary
+def close(descriptor):
+    closing(descriptor)
+    if descriptor in allocated and stage == "close":
+        os.kill(os.getpid(),signal.SIGTERM)
+        raise secondary
+class FailingSelector(selectors.DefaultSelector):
+    def select(self,timeout=None):
+        if timeout and has_primary:
+            raise primary
+        return super().select(timeout)
+    def close(self):
+        super().close()
+        if stage == "selector":
+            os.kill(os.getpid(),signal.SIGTERM)
+            raise secondary
+argv=(["/usr/bin/python3","-I","-S","-c","import os; os.read(0,1)"]
+      if has_primary else ["/usr/bin/true"])
+try:
+    with patch.object(lifecycle.os,"pidfd_open",pidfd_open), patch.object(
+        lifecycle.os,"close",close,
+    ), patch.object(lifecycle,"terminate",terminating), patch.object(
+        lifecycle.selectors,"DefaultSelector",FailingSelector,
+    ):
+        try:
+            lifecycle.run(argv,time.monotonic()+5,payload_input=reader if has_primary else None)
+        except OSError as error:
+            assert error is (primary if has_primary else secondary)
+            assert len(error.cleanup_errors) == (2 if has_primary else 1)
+        else:
+            raise AssertionError("cleanup failure was ignored")
+    assert len(allocated) == 1
+    assert delivered == [signal.SIGTERM]
+    assert signal.getsignal(signal.SIGTERM) is handler
+finally:
+    signal.signal(signal.SIGTERM,previous)
+    os.close(reader)
+    os.close(writer)
+    assert lifecycle.owned_children() == []
+    assert set(os.listdir("/proc/self/fd")) == initial
+    assert signal.pthread_sigmask(signal.SIG_BLOCK,()) == mask
+print(json.dumps({"owned_descriptors":len(allocated),"reaped":len(reaped),"deferred_signals":len(delivered)}))
+'''
+        for stage in ("close", "terminate", "selector"):
+            for primary in ("primary", "no-primary"):
+                with self.subTest(stage=stage, primary=primary), self.owned_process([
+                    "/usr/bin/python3", "-I", "-S", "-c", program, str(ROOT), stage, primary,
+                ]) as (child, descriptor):
+                    child.wait(timeout=10)
+                    self.assertEqual(child.returncode, 0, child.stderr.read())
+                    self.assertEqual(json.loads(child.stdout.read()), {
+                        "owned_descriptors": 1, "reaped": 1, "deferred_signals": 1,
+                    })
 
     def test_watchdog_reaps_owned_orphans_on_completion_eof_deadline_and_signal(self):
         program = (

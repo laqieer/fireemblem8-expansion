@@ -1226,6 +1226,20 @@ reaped before return. The syscall supervisor likewise retains pidfds across
 bootstrap/exit failures; stale numeric tracee records cannot signal a new
 process. Already-reaped handles are never group-signal authority.
 
+The watchdog registers that owned leader's pidfd alongside the caller lifetime
+pipe. Child exit wakes the real selector; it no longer waits for a periodic
+completion tick (#264). The selector waits at most the remaining time on the
+same absolute deadline. Readiness only wakes the existing `WNOWAIT` check:
+it neither reaps the leader early nor replaces group or orphan cleanup.
+An already-exited child keeps its normal, nonzero or signal exit status.
+The existing signal-deferring guard covers selector/child/pidfd acquisition
+and registration. A setup failure stays primary even if unmasking delivers a
+queued interruption. Sole-reaper cleanup, pidfd close and selector close are
+all attempted before restoring caller handlers; a cleanup error or deferred
+signal cannot replace an existing failure. The descriptor is not inherited by
+the payload. Unsupported pidfd APIs/kernel support still reject explicitly;
+there is no polling or numeric-PID fallback and no new host requirement.
+
 The outer caller owns the sole write
 end of a lifetime pipe; its closure (including process death), the original
 aggregate deadline, or a watchdog termination signal triggers privileged
@@ -1251,6 +1265,20 @@ claim a real sudo credential-transition positive. That route requires separate
 exact-candidate evidence on a host where the documented noninteractive sudo
 permission is available; never use a shared development host's credentials or
 change its namespace policy to manufacture the result.
+The focused #264 controls use real immediate and pipe-gated children, inspect
+the kernel pidfd identity/readiness and retained wait status, and supply a
+controlled clock only to check the selector's absolute-deadline argument.
+They remove just child readiness registration as a negative control and inject
+acquisition/registration failures, real setup signals and teardown errors
+after actual resource release. Each path checks owned children, descriptor
+sets and caller signal state. Twenty-short-command before/after measurements
+are supporting performance evidence, not a timing assertion or a claim that
+the complete #180 graph or CI fits its budget. See the existing
+[focused tester procedure](test-cases/workflow-governance.md#focused-watchdog-readiness-regression-264).
+This is an independent foundation correction consumed by #180, not graph or
+#196 extraction work. Other feature/profile conflicts are none; modern and
+archival builds, gameplay, save/config identities, generated game data,
+locales, ROM/RAM and every resource limit remain unchanged.
 The producer suite has a separate real privileged-route control, conditional
 on that existing permission and namespace support. It observes root supervisor
 socket credentials, the non-root guest identities after the real drop, actual
