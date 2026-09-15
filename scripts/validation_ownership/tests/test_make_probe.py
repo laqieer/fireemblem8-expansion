@@ -2544,18 +2544,58 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.assertFalse(session.budget.children)
 
     def test_computed_include_and_unresolved_name_contracts_are_native(self):
+        self.original_input_witness()
         self.add("first.mk", "SELECTED = first\n")
         self.add("second.mk", "SELECTED = second\n")
-        self.add("Makefile", (
-            "FLAGS ?= first\nNAME = FLAGS\ninclude $($(NAME)).mk\n"
-            "all: $(SELECTED)\n\t@echo $(FLAGS)\nfirst second: ;\n"
-        ))
-        self.assertEqual(self.ordinary("FLAGS=first"), b"first\n")
-        self.assertEqual(self.ordinary("FLAGS=second"), b"second\n")
-        with self.assertRaises(MakeProbeError):
-            self.observe(external={"FLAGS"}, symbolic_recipe_names={"FLAGS"})
-        records = self.observe({"FLAGS": {"kind": "explicit", "values": ["first", "second"]}})["all"]
-        self.assertEqual(records["record"]["includes"], ["Makefile", "first.mk", "second.mk"])
+        for declarations, reference, later in (
+            ("NAME = FLAGS\n", "$($(NAME))", ""),
+            ("NAME = FLAGS\n", "${${NAME}}", ""),
+            ("POINTER = FLAGS\nNAME = $(POINTER)\n", "$($(NAME))", ""),
+            ("NAME = FLAGS\nPREFIX_FLAGS = $(FLAGS)\n", "$(PREFIX_$(NAME))", ""),
+            ("POINTER = FLAGS\nNAME := $(POINTER)\nPOINTER = OTHER\nOTHER = first\n", "$($(NAME))", ""),
+            ("NAME = FLAGS\nOTHER = first\n", "$($(NAME))", "NAME = OTHER\n"),
+        ):
+            with self.subTest(declarations=declarations, reference=reference, later=later):
+                self.add("Makefile", "FLAGS ?= first\n" + declarations + "include " + reference + ".mk\n"
+                         "all: $(SELECTED)\n\t@echo $(FLAGS)\nfirst second: ;\n" + later)
+                self.assertEqual(self.ordinary("FLAGS=first"), b"first\n")
+                self.assertEqual(self.ordinary("FLAGS=second"), b"second\n")
+                with self.session() as session:
+                    original = session.original_make_inputs("all", ("FLAGS",))
+                    native = session.make(
+                        "all", assignments=(("command-line", "FLAGS", "second"),),
+                        variables=("MAKEFILE_LIST",), definitions=("NAME", "SELECTED"),
+                    )
+                self.assertEqual(original["FLAGS"], {"origin": "undefined", "flavor": "undefined", "value": ""})
+                self.assertEqual(native.semantics["domains"]["MAKEFILE_LIST"]["value"].split(),
+                                 ["Makefile", "second.mk"])
+                self.assertEqual(native.semantics["files"][0]["prerequisites"][0]["name"], "second")
+                if later:
+                    self.assertEqual(native.semantics["definitions"]["global"]["NAME"]["value"], "OTHER")
+                self.assertFalse(session.budget.children)
+                with self.assertRaisesRegex(MakeProbeError, "symbolic inputs influence the Make graph"):
+                    self.observe(external={"FLAGS"}, symbolic_recipe_names={"FLAGS"})
+                streams = []
+                source_units = graph_probe._source_units
+
+                def retained_reads(*args, **kwargs):
+                    result = source_units(*args, **kwargs)
+                    streams.append(result)
+                    return result
+
+                with patch.object(graph_probe, "_source_units", retained_reads):
+                    records = self.observe({"FLAGS": {"kind": "explicit", "values": ["first", "second"]}})["all"]
+                self.assertTrue({"NAME", "FLAGS"} <= {
+                    name for stream in streams for _, _, unit in stream.ordered for name in unit.reads
+                })
+                self.assertEqual(records["record"]["includes"], ["Makefile", "first.mk", "second.mk"])
+                self.assertEqual(records["prerequisite_domain_census"]["enumerated"], ["FLAGS"])
+                self.assertEqual({
+                    variant["record"]["files"][0]["prerequisites"][0]["name"]
+                    for variant in records["record"]["variants"]
+                }, {"first", "second"})
+
+    def test_opaque_computed_selector_requires_its_declared_native_fallback(self):
         self.add("Makefile", (
             "FLAGS ?= first\nNAME = $(subst X,FLAGS,X)\n"
             "all: $($(NAME))\nfirst second: ;\n"
@@ -2568,6 +2608,101 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             "NAME": {"kind": "tracked-fallback"},
         })["all"]
         self.assertEqual(observed["prerequisite_domain_census"]["enumerated"], ["FLAGS", "NAME"])
+        self.assertEqual({
+            variant["record"]["files"][0]["prerequisites"][0]["name"]
+            for variant in observed["record"]["variants"]
+        }, {"first", "second"})
+
+    def test_original_computed_include_proofs_have_independent_restoration_controls(self):
+        self.original_input_witness()
+        self.add("first.mk", "SELECTED = first\n")
+        self.add("Makefile", "FLAGS ?= first\nNAME = FLAGS\ninclude $($(NAME)).mk\nall: ;\n")
+        with self.assertRaisesRegex(MakeProbeError, "unsealed external defaults"):
+            self.observe()
+        domains = {"FLAGS": {"kind": "explicit", "values": ["first"]}}
+        effectful = _MakeSourceMode.effectful
+        literal_values = _MakeSourceMode.literal_values
+
+        def old_effect_limit(mode, expression):
+            if next(graph_probe.computed_selectors(graph_probe._without_literal_metadata(expression)), None) is not None:
+                mode.last_effect_input = "computed-selector"
+                return True
+            return effectful(mode, expression)
+
+        def old_literal_limit(mode, expression, active=()):
+            if next(graph_probe.computed_selectors(expression), None) is not None:
+                return None
+            return literal_values(mode, expression, active)
+
+        for method, old in (("effectful", old_effect_limit), ("literal_values", old_literal_limit)):
+            with self.subTest(method=method):
+                self.assertEqual(self.observe(domains)["all"]["record"]["includes"], ["Makefile", "first.mk"])
+                with patch.object(_MakeSourceMode, method, old):
+                    with self.assertRaisesRegex(MakeProbeError, "unproven original include outcome"):
+                        self.observe(domains)
+                self.assertEqual(self.observe(domains)["all"]["record"]["includes"], ["Makefile", "first.mk"])
+        witness = "scripts/generated_data/chapterbundle/__init__.py"
+        (self.root / witness).unlink()
+        del self.entries[witness]
+        with self.assertRaisesRegex(MakeProbeError, "unproven original include outcome"):
+            self.observe(domains)
+
+    def test_original_computed_references_keep_unknown_and_metadata_boundaries(self):
+        self.original_input_witness()
+        self.add("first.mk", "SELECTED = first\n")
+        for declaration in (
+            "NAME = $(subst X,FLAGS,X)\n",
+            "NAME = $(UNRESOLVED)\n",
+            "NAME = $(NAME)\n",
+            "NAME = FLAGS\nFLAGS = $(eval SIDE_EFFECT := first)first\n",
+        ):
+            with self.subTest(declaration=declaration):
+                self.add("Makefile", "FLAGS = first\n" + declaration + "include $($(NAME)).mk\nall: ;\n")
+                with self.assertRaises(MakeProbeError):
+                    self.observe({"NAME": {"kind": "tracked-fallback"}})
+        self.add("Makefile", "FLAGS = first\nNAME = .VARIABLES\nall: ;\n"
+                 "READ := $(filter FLAGS,$($(NAME)))\n")
+        with self.assertRaisesRegex(MakeProbeError, "computed selector"):
+            self.observe()
+        self.add("file.mk", "SELECTED = first\n")
+        self.add("Makefile", "UNREAD = $(error unused)$(shell touch marker)\n"
+                 "ALIAS = $(origin UNREAD)\nNAME = ALIAS\nREAD := $($(NAME))\n"
+                 "include $(READ).mk\nall:\n\t@echo $(READ)\n")
+        self.assertEqual(self.ordinary(), b"file\n")
+        with self.session() as session:
+            native = session.make("all", definitions=("UNREAD", "READ"))
+        self.assertEqual(native.semantics["definitions"]["global"]["UNREAD"]["value"],
+                         "$(error unused)$(shell touch marker)")
+        self.assertEqual(native.semantics["definitions"]["global"]["READ"]["value"], "file")
+        self.assertEqual(self.observe()["all"]["record"]["includes"], ["Makefile", "file.mk"])
+        self.assertFalse((self.root / "marker").exists())
+
+    def test_original_computed_reference_context_and_deadline_bounds_are_unchanged(self):
+        budget = ProbeBudget()
+        mode = _MakeSourceMode(budget=budget)
+        try:
+            for index in range(513):
+                mode.assign("VALUE_" + str(index), "=", "same.mk")
+            mode.assign("NAME", "=", "VALUE_0")
+            for index in range(1, 512):
+                mode.assign("NAME", "=", "VALUE_" + str(index), active=None)
+            self.assertEqual(mode.literal_values("$($(NAME))"), frozenset(("same.mk",)))
+            self.assertFalse(mode.effectful("$($(NAME))"))
+            self.assertTrue({"NAME", "VALUE_0", "VALUE_511"} <= mode.reads)
+            mode.assign("NAME", "=", "VALUE_512", active=None)
+            with self.assertRaisesRegex(MakeProbeError, "existing bounded context plan"):
+                mode.literal_values("$($(NAME))")
+            mode.assign("NAME", "=", "$(NAME)")
+            self.assertIsNone(mode.reference_names("$(NAME)"))
+            self.assertTrue(mode.effectful("$($(NAME))"))
+            mode.assign("CHAIN_0", "=", "VALUE_0")
+            for index in range(1, 1100):
+                mode.assign("CHAIN_" + str(index), "=", "$(CHAIN_" + str(index - 1) + ")")
+            self.assertIsNone(mode.reference_names("$(CHAIN_1099)"))
+        finally:
+            budget.close()
+        with self.assertRaisesRegex(MakeProbeError, "aggregate probe deadline"):
+            mode.literal_values("$($(NAME))")
 
     def test_computed_conditional_names_cannot_be_symbolic_recipe_inputs(self):
         self.add("Makefile", (

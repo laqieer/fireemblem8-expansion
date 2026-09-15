@@ -846,6 +846,16 @@ to prove an empty or present outcome; unresolved patterns/context still reject.
 This is not Python evaluation of general Make functions or arbitrary globbing.
 
 Variable-derived include names use that same original literal/reference model.
+Transparent computed references such as `$($(NAME))`, braced equivalents and
+literal prefix/suffix name aliases share one original-name proof between
+effect analysis and value lookup. The proof uses current original bindings,
+including simple snapshots and recursive reads, not final native selector
+values. Name-construction reads, selected bindings and metadata endpoints
+travel with their original source units into source-history and generated-
+binding consumer obligations. Metadata endpoints do not execute their bodies.
+Unknown/cyclic names, unsupported transformations and exhausted context or
+deadline bounds remain unproven.
+
 Only one proven filename sequence is credited; different alternatives,
 effectful/computed transformations and unsupported wildcard/escape/path forms
 remain unproven. `include`, `-include` and `sinclude` retain their filename
@@ -855,6 +865,16 @@ sequence must match native MAKEFILE_LIST and actual file-open evidence;
 missing sources, extra/misordered occurrences, active cycles and changed
 original parsing cannot become absent-file success. The existing empty
 exact-path wildcard proof is distinct from naming an absent optional file.
+
+The source fixture for `FLAGS ?= first; NAME = FLAGS` and a computed include
+must supply the genuine empty-source input witness; absence of that evidence
+is not assumed undefined. Both finite FLAGS values select their actual native
+include/prerequisite, while symbolic or unsealed graph inputs reject. This is
+distinct from an opaque `NAME = $(subst X,FLAGS,X)` in an ordinary prerequisite:
+its existing declared tracked-fallback contract can use GNU's actual selector
+value only under the unchanged original-history guard. It does not grant
+original include/phase authority to arbitrary transformed names. The opaque
+fallback case runs independently, so an include regression cannot hide it.
 
 Source recovery is independently bound to the trusted invocation's explicit
 `makefile` (`-f`) selection, not the first entry of mutable MAKEFILE_LIST.

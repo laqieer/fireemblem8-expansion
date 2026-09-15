@@ -4617,6 +4617,46 @@ records, builtin origin/flavor and exact PATH. Reject invocation-control queries
 and oversized name requests before launch. Witness selection must use actual
 captured zero-byte content, not a trusted filename spelling or a source ledger.
 
+For original computed includes, supply that genuine witness before the
+fixture's `FLAGS ?= first`, retain `NAME = FLAGS`, and include
+`$($(NAME)).mk`. Keep real first.mk/second.mk sources and ordinary/native
+first/second outputs. Missing witness evidence leaves FLAGS unknown even for
+a direct include; do not replace `?=` or assume undefinedness to fix the test.
+With the witness, require the complete small finite planner to retain both
+included files and prerequisites and to classify symbolic FLAGS as a graph
+input. Repeat braced and transitive aliases, prefix-built names, simple
+snapshots followed by input rewrites, and NAME rewritten after its include.
+Assert the original source units retain the actual name/selected-binding reads
+even when later raw NAME differs from the prerequisite already selected.
+
+Run `test_computed_include_and_unresolved_name_contracts_are_native` and the
+separate `test_opaque_computed_selector_requires_its_declared_native_fallback`.
+The latter keeps the original opaque subst expression: without a NAME domain
+it rejects, while declared tracked-fallback enumerates both FLAGS and NAME
+with real first/second prerequisites. An earlier failure cannot hide this
+second case. Keep the existing original-rewrite, stateful/staged-payload and
+command-contract negatives; final native values are not original source proof.
+
+Independently restore the old computed-effect rejection and old literal-name
+lookup limitation. Each must recover the computed-include rejection while
+the other proof stays enabled; restore both and require acceptance again.
+Remove the witness separately and require the default-dependent include to
+reject. Unknown names, cycles, opaque/effectful transformations and computed
+universe names remain rejected. Literal metadata reached through a computed
+ordinary alias must keep its unused error/shell body raw and create no marker.
+Exercise 512 original name alternatives resolving to one filename, reject the
+513th, preserve cyclic/deep-name rejection and the shared expired deadline.
+
+An originally transparent computed alias may now reach generated-binding
+consumer certification rather than an earlier conservative phase rejection.
+Keep its actual first/final native difference and consumer rejection. A
+genuinely opaque name transform before that same producer guard must still
+fail phase proof. This is additional original proof, not a weakened phase
+guard, final-value substitution or blanket error-regex relaxation. The
+literal-binding module still collects only its eight owned cases. These are
+source-only focused fixtures, not a full graph/report/verifier/H1 allocation;
+all source, admission, native, cleanup and resource contracts remain in force.
+
 Exercise an undefined OS condition, original PATH reference, two mode-inert
 simple branch alternatives and a provably empty exact-path wildcard include.
 All must preserve normal continuation behavior. Recursive OS eval, unknown or

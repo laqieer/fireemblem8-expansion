@@ -302,8 +302,10 @@ class LiteralBindingModuleTests(unittest.TestCase):
                         + ")\nexport PHASE_LABEL\n")
             with self.subTest(expression=expression):
                 if computed:
+                    generated.add(self.assert_production_read_rejects(consumer, "", ASSET_BINDING))
                     generated.add(self.assert_production_read_rejects(
-                        consumer, "", ASSET_BINDING,
+                        consumer.replace("SELECTOR = ALIAS\n", "SELECTOR = $(subst X,ALIAS,X)\n"),
+                        "", ASSET_BINDING,
                         rejection="literal binding phase must contain one producer rule",
                     ))
                 generated.add(self.assert_production_read_rejects(

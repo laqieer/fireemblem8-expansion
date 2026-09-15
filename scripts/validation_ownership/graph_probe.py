@@ -106,6 +106,7 @@ class MakeSourceUnit(NamedTuple):
     phase: tuple | None = None
     phase_target: str | None = None
     phase_command: str | None = None
+    reads: tuple = ()
 
 
 class _SourceUnitStream(NamedTuple):
@@ -171,6 +172,7 @@ class _MakeSourceMode:
     target_definitions: dict = field(default_factory=dict)
     binding_versions: dict = field(default_factory=dict)
     version: int = 0
+    reads: set = field(default_factory=set)
 
     def __post_init__(self):
         self.definitions = {
@@ -226,6 +228,29 @@ class _MakeSourceMode:
         values = self.literal_values(expression, active)
         return next(iter(values)) if values is not None and len(values) == 1 else None
 
+    def retain_reads(self, names):
+        added = set(names) - self.reads
+        if added and self.budget is not None:
+            self.budget.charge("cache", len(encoded(sorted(added))))
+        self.reads.update(added)
+
+    def reference_names(self, body, active=()):
+        """Resolve names from this original binding context, never final values."""
+        self.checkpoint()
+        if not self.original_namespace_valid:
+            return None
+        if re.fullmatch(IDENTIFIER, body):
+            return frozenset((body,))
+        if "$" not in body:
+            return None
+        try:
+            names = self.literal_values(body, active)
+        except RecursionError:
+            return None
+        if names is None or not names or any(not re.fullmatch(IDENTIFIER, name) for name in names):
+            return None
+        return names
+
     def literal_values(self, expression, active=()):
         self.checkpoint()
         if not self.original_namespace_valid:
@@ -245,35 +270,36 @@ class _MakeSourceMode:
             if prefix is None:
                 return None
             metadata = None
-            if not re.fullmatch(IDENTIFIER, body):
-                function = _make_function(expression[start:stop])
-                if (
-                    function is None or function[0] not in {"origin", "flavor", "value"}
-                    or len(function[1]) != 1 or not re.fullmatch(IDENTIFIER, function[1][0])
-                ):
+            function = None if re.fullmatch(IDENTIFIER, body) else _make_function(expression[start:stop])
+            if function is not None:
+                if (function[0] not in {"origin", "flavor", "value"} or len(function[1]) != 1
+                        or not re.fullmatch(IDENTIFIER, function[1][0])):
                     return None
                 metadata, body = function[0], function[1][0]
-            if body in active and metadata is None:
+            names = self.reference_names(body, active)
+            if names is None or metadata is None and set(names) & set(active):
                 return None
+            self.retain_reads(names)
             choices = set()
-            for binding in self.binding(body):
-                self.checkpoint()
-                if metadata is not None:
-                    value = getattr(binding, metadata)
-                    if value is None or metadata != "value" and value == "unknown":
+            for name in names:
+                for binding in self.binding(name):
+                    self.checkpoint()
+                    if metadata is not None:
+                        value = getattr(binding, metadata)
+                        if value is None or metadata != "value" and value == "unknown":
+                            return None
+                        choices.add(value)
+                    elif binding.flavor == "undefined":
+                        choices.add("")
+                    elif binding.value is None or binding.flavor == "unknown":
                         return None
-                    choices.add(value)
-                elif binding.flavor == "undefined":
-                    choices.add("")
-                elif binding.value is None or binding.flavor == "unknown":
-                    return None
-                elif binding.flavor == "recursive":
-                    expanded = self.literal_values(binding.value, (*active, body))
-                    if expanded is None:
-                        return None
-                    choices.update(expanded)
-                else:
-                    choices.add(binding.value)
+                    elif binding.flavor == "recursive":
+                        expanded = self.literal_values(binding.value, (*active, name))
+                        if expanded is None:
+                            return None
+                        choices.update(expanded)
+                    else:
+                        choices.add(binding.value)
             if not choices:
                 return None
             combined = set()
@@ -457,11 +483,19 @@ class _MakeSourceMode:
                 if operation and operation[1] not in MAKE_FUNCTIONS - {"call", "eval", "guile"}:
                     self.last_effect_input = name or operation[1]
                     return True
+            self.retain_reads(metadata for _, _, metadata in _literal_metadata(value))
             value = _without_literal_metadata(value)
-            if next(computed_selectors(value), None) is not None:
-                self.last_effect_input = "computed-selector"
-                return True
-            for dependency in references(value):
+            dependencies = references(value)
+            for body in make_expressions(value):
+                if "$" not in _make_reference_base(body):
+                    continue
+                names = self.reference_names(body, tuple(active))
+                if names is None:
+                    self.last_effect_input = "computed-selector"
+                    return True
+                dependencies.update(names)
+            self.retain_reads(dependencies)
+            for dependency in dependencies:
                 if dependency in self.control_reads:
                     continue
                 for binding in self.binding(dependency):
@@ -852,10 +886,11 @@ def make_source_units(
             command = _phase_recipe_text(mode, line, phase_target)
         return MakeSourceUnit(
             line, body, conditional_depth=len(conditions), active=active, assignment=assignment, emitted=emitted, kind=kind,
-            phase=phase, phase_target=target, phase_command=command,
+            phase=phase, phase_target=target, phase_command=command, reads=tuple(sorted(mode.reads)),
         )
 
     for chunk in chunks:
+        mode.reads.clear()
         raw = chunk.text
         mode.site = _SourceSite(source_path, chunk.logical, chunk.start, chunk.end)
         mode.checkpoint()
@@ -1600,7 +1635,9 @@ def _prepare_rule_templates(
     for position, (path, index, unit) in enumerate(ordered):
         replacement_units = [] if (path, index) in omitted else replacements.get((path, index), (unit,))
         for replacement in replacement_units:
-            replacement = replacement._replace(conditional_depth=unit.conditional_depth, active=unit.active)
+            replacement = replacement._replace(
+                conditional_depth=unit.conditional_depth, active=unit.active, reads=unit.reads,
+            )
             session.budget.charge("cache", len(encoded((path, len(prepared), replacement))))
             if position in known_positions:
                 prepared_known.add(len(prepared))
@@ -1851,6 +1888,7 @@ def source_census(
     ambiguous_assignment = False
     observed_values = {} if observed_values is None else observed_values
     stage_sinks, stage_roots = [], set()
+    original_reads = set()
     graph.update(template_graph_inputs)
     all_names.update(template_graph_inputs)
     all_names.update(template_scoped)
@@ -1942,6 +1980,8 @@ def source_census(
             and _empty_restart_test(phase_condition[1], phase_condition[2])
         ):
             continue
+        extend_known(original_reads, unit.reads)
+        all_names.update(unit.reads)
         statement, inline_recipe = (raw, "") if raw.startswith("\t") else split_inline_recipe(raw)
         line = statement if raw.startswith("\t") else strip_comment(statement)
         if not raw.startswith("\t"):
@@ -2198,7 +2238,7 @@ def source_census(
         body_consumers = closure(consumed | set(template_graph_inputs), execution_dependencies)
         # Resolved graph selectors include ifdef's second, name-selected read.
         # Metadata endpoints are reads, not instructions to execute their bodies.
-        read_names = graph | recipe | body_consumers
+        read_names = graph | recipe | body_consumers | original_reads
         for name in body_consumers:
             read_names.update(dependencies.get(name, ()))
         if reference_units.remade and SOURCE_HISTORY_CONTROLS & (
