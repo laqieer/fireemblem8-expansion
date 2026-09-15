@@ -416,7 +416,13 @@ Every existing host CI job and command remains mandatory and unchanged.
 
 Focused controls collect actual test modules without executing their bodies,
 resolve every ownership-namespace path, and bind the two execution owners to
-the parsed workflow's real isolated launcher and mode. Independent oracle
+the existing dependency-free workflow parser's normalized launcher and mode.
+They require no site-installed YAML package under `-I -S -B`. The host-owned
+discovery partition control invokes the actual isolated launcher in a child
+process, collecting rather than executing its suite. Import errors fail, and
+the selected IDs must equal all ordinary module cases minus the separately
+owned native suite without duplicates. Installing a site package or weakening
+`-S` cannot repair that contract. Independent oracle
 probes cover an implementation, a collected regression and a nonrelocated
 native control. Restoring host-only mapping, removing either execution edge,
 or redirecting it to a live host-only owner rejects. Reordering equivalent

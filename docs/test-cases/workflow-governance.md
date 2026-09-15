@@ -3956,7 +3956,8 @@ game behavior needs a compensating change.
     namespace through the real parsed graph model. Each must reach both
     `owner.validation-suite` and `owner.validation-check` in ownership-tests,
     replacing the outdated generic host pair with one owner per family. Compare the selected
-    workflow definitions with parsed YAML and the real isolated launcher modes,
+    workflow definitions with the existing dependency-free workflow parser's
+    normalized commands and real isolated launcher modes,
     not merely a step label. General host tools and the five separately
     collected native modules must keep their old owners without acquiring
     ownership-suite evidence. Restore host-only mapping, remove either new
@@ -3980,6 +3981,17 @@ game behavior needs a compensating change.
     the existing in-memory Runtime and real Git-backed read APIs, not an
     external review provider or current-candidate qualification. Remove only
     owned fixture files at cleanup; no CI, full graph or new allocation runs.
+16. Run
+    `python3 -m unittest tests.workflows.test_ownership_probe.ProbeExecutionOwnershipTests.test_graph_discovery_partitions_all_cases_without_repeating_native_owner -v`.
+    This launches the real `isolated_launcher.py tests` entry under
+    `/usr/bin/python3 -I -S -B` with a collection-only test runner. No test
+    body executes. Require no loader/import errors and compare every selected
+    ID with the ordinary complete module set minus the separately owned
+    native suite, preserving uniqueness. The original module-level PyYAML
+    dependency must fail this child even when ordinary Python can import it.
+    The corrected mapping tests use the approved dependency-free parser and
+    also run under no-site startup. Do not add site paths, install another
+    dependency, drop `-S` or silently discard failed imports.
 
 ### Expected result
 
@@ -4002,6 +4014,9 @@ The one-owner-per-family invariant and all host CI commands remain. The nonreloc
 and unrelated host tools keep their separate mappings. Independent source/test/
 native-control probes, real package collection and parsed workflow commands
 prove this distinction without claiming a successful full workload.
+The actual no-site launcher discovers that complete partition without
+site-installed test dependencies. A collection-only result is not evidence
+that the discovered bodies or the full graph executed.
 
 Reviewed-evolution qualification derives the complete immutable transition
 independently of the caller's path filter, requires exact declared-set equality,
@@ -5411,6 +5426,7 @@ unchanged source bytes/Git state across simulated fixture exceptions.
 - `python3 -m unittest scripts.validation_ownership.tests.test_coordinator_capture.CaptureModuleLifetimeTests -v`
   -- real immutable tool-loading cleanup followed by the CURRENT/BASE graph
   case, partial-load failure, and strict stale-owned-module negatives.
+- `python3 -m unittest tests.workflows.test_ownership_probe.ProbeExecutionOwnershipTests.test_graph_discovery_partitions_all_cases_without_repeating_native_owner -v`
 - `python3 -m unittest scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_initial_qualification_requires_the_complete_immutable_change_set scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_required_path_coverage_rejects_counts_wrong_paths_and_another_root scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_deleted_and_mode_only_paths_require_actual_correct_side_reads scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_explicit_review_context_is_delivered_before_qualification scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_missing_wrong_identity_partial_scope_and_unqualified_expectations_reject scripts.validation_ownership.tests.test_coordinator_capture.IntroductionCaptureTests.test_real_foundation_introduction_is_explicit_not_exact_base -v`
 - `python3 -m unittest scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests.test_ownership_sources_and_collected_regressions_reach_actual_worker scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests.test_ownership_execution_edge_removal_redirect_and_order_controls scripts.validation_ownership.tests.test_literal_bindings.LiteralBindingModuleTests.test_module_discovery_collects_only_owned_cases -v`
 - `python3 -m unittest scripts.validation_ownership.tests.test_ci_verifier.ImmutableBlobBatchTests scripts.validation_ownership.tests.test_ci_verifier.BatchedVerifierSourceTests -v`

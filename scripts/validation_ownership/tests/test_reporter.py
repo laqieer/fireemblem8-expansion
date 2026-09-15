@@ -5,14 +5,11 @@ import importlib
 import io
 import json
 from pathlib import Path
-import shlex
 import tempfile
 import subprocess
 import unittest
 from unittest import mock
 import sys
-
-import yaml
 
 from scripts.validation_ownership import reporter
 from scripts.validation_ownership.authority import (
@@ -151,23 +148,20 @@ class AssetOwnershipTests(unittest.TestCase):
                     retained,
                 )
         workflow_text = (ROOT / ".github/workflows/build.yml").read_text()
-        workflow = yaml.load(workflow_text, Loader=yaml.BaseLoader)
-        _, step_records = reporter._generic_workflow_authorities(workflow_text)
+        _, _, jobs = reporter.workflow_verify._parse_workflow_structure_text(workflow_text)
+        job_steps = {name: steps for name, _, steps in jobs}
         launcher = "scripts/validation_ownership/isolated_launcher.py"
         for owner, mode in (("owner.validation-suite", "tests"), ("owner.validation-check", "check")):
             authority = model["evidence"][owner]["authority"]
             self.assertEqual(authority["kind"], "workflow-step")
             self.assertEqual(authority["job"], "ownership-tests")
-            definition = yaml.load(
-                "\n".join(step_records[(authority["job"], authority["step"])]),
-                Loader=yaml.BaseLoader,
-            )[0]
             steps = [
-                step for step in workflow["jobs"][authority["job"]]["steps"]
-                if step == definition
+                dict(fields) for _, name, fields in job_steps[authority["job"]]
+                if name == authority["step"]
             ]
             self.assertEqual(len(steps), 1)
-            argv = shlex.split(steps[0]["run"])
+            self.assertEqual(len(steps[0]["run"]), 1)
+            argv = steps[0]["run"][0]
             self.assertEqual(argv[0], "/usr/bin/python3")
             index = argv.index(launcher)
             self.assertEqual(set(argv[1:index]), {"-I", "-S", "-B"})
