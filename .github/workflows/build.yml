@@ -1775,6 +1775,12 @@ jobs:
         make generated-data-test
         make generated-data-check
 
+    # This test builds both full object cohorts concurrently in separate roots,
+    # without linking a ROM or replacing the publisher's canonical build.
+    - name: Run concurrent custom-spell profile compile isolation
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
+      run: python3 tools/gba-playtest/tests/test_custom_spell_effect.py --require-profile-isolation
+
     # The linker gate builds the full modern object/ELF/ROM chain, checks
     # deterministic memory budgets, rejects orphan/overflow/cross-overlay
     # errors, and verifies normal plus shifted boot/title behavior, plus

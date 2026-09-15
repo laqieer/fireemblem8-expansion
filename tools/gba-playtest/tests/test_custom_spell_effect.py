@@ -4,6 +4,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -562,7 +563,7 @@ class CustomSpellArmTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
 
-@host_mode.live_artifact_testcase("concurrent custom-spell full-project ROM builds")
+@host_mode.live_artifact_testcase("concurrent custom-spell full-modern object builds")
 class CustomSpellProfileAssetIsolationTests(unittest.TestCase):
     def test_concurrent_enabled_disabled_full_modern_compiles_keep_assets_isolated(self):
         if ARM_CC is None:
@@ -639,5 +640,20 @@ class CustomSpellProfileAssetIsolationTests(unittest.TestCase):
             shutil.rmtree(test_root, ignore_errors=True)
 
 
+def run_required_profile_isolation():
+    suite = unittest.defaultTestLoader.loadTestsFromName(
+        "CustomSpellProfileAssetIsolationTests."
+        "test_concurrent_enabled_disabled_full_modern_compiles_keep_assets_isolated",
+        module=sys.modules[__name__],
+    )
+    result = unittest.TextTestRunner(verbosity=2).run(suite)
+    if result.testsRun != 1 or result.skipped or result.expectedFailures:
+        print("Required profile isolation must execute one test without skips or expected failures.", file=sys.stderr)
+        return 1
+    return 0 if result.wasSuccessful() else 1
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--require-profile-isolation"]:
+        sys.exit(run_required_profile_isolation())
     unittest.main()

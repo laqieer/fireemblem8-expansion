@@ -385,6 +385,43 @@ epoch change is required; all runtime failures already use a vanilla fallback.
 - **Save/cleanup:** the default identity and save epoch remain unchanged.
   Remove only the named build roots if cleanup is needed. No manual criterion.
 
+### Concurrent full-modern object profile isolation
+
+From a source checkout with ARM GCC/binutils, newlib, the host C/C++ compiler,
+libpng/zlib, `pkg-config` and the normal asset-generation Python dependencies:
+
+1. Run `./build_tools.sh`, as the CI `build` worker does before this test.
+2. Ensure `build/test-artifacts/custom-spell-profile-assets` is not in use by
+   another invocation. Run
+   `python3 tools/gba-playtest/tests/test_custom_spell_effect.py --require-profile-isolation`
+   with `GBA_PLAYTEST_HOST_ONLY` unset or `0`.
+3. Require exactly one executed, non-skipped test. It launches two genuine
+   concurrent `make -j2 expansion-modern-all` builds: enabled with the reference
+   manifest and disabled with the default manifest, in separate debug/AAPCS
+   roots. Require separate generated asset namespaces, custom data only in
+   the enabled namespace, and both `custom_spell_effect.o` and
+   `custom_spell_effect_data.o` in each profile.
+4. Confirm the owned profile root is removed after success or failure.
+   These are full relocatable-object builds, not ROM or final-ELF links;
+   canonical release/publisher outputs are not inputs or outputs of this test.
+
+The required entry rejects unavailable compilers, host-only skips, zero or
+multiple selected cases, and test failures (including expected failures).
+The ordinary host discovery still
+skips this class before cleanup or process launch, while configuration tests
+remain active. Parsed CI controls require exactly one full/fallback execution
+owner in `build` after dependencies and build tools; metadata-only/review-first
+events do not execute it. Removing/duplicating/disabling the command, moving it
+to `host-tests`, selecting host-only mode or omitting prerequisites rejects.
+Equivalent command quoting/continuation remains valid. This is gate 33 with
+all earlier gates retained and no extra job or timeout increase.
+
+This subcase extends the existing profile and ownership contracts without
+changing gameplay, save, locale, generated schemas or ABI. Its dependencies are
+the existing modern object build and asset-manifest pipeline; no new feature
+conflicts or manual-only criterion apply. Other asset-generation concurrency
+tests and sequential ROM checks are not replacements for these two full builds.
+
 ## TC-CUSTOM-SPELL-061-003: Strict package conversion
 
 - **Profile:** selected alternate reference manifest with feature `1`.

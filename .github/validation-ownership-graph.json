@@ -235,6 +235,18 @@
       "dependencies": []
     },
     {
+      "id": "surface.custom-spell-profile-tests",
+      "kind": "surface",
+      "label": "Custom-spell concurrent profile regression and host-mode guard",
+      "surface_type": "source",
+      "requirements": [
+        "positive",
+        "adversarial",
+        "compile"
+      ],
+      "dependencies": []
+    },
+    {
       "id": "surface.docs",
       "kind": "surface",
       "label": "Documentation and governance schema",
@@ -383,6 +395,17 @@
         "kind": "workflow-step",
         "job": "host-tests",
         "step": "Run gba-playtest host test suite"
+      }
+    },
+    {
+      "id": "owner.compile-custom-spell-profiles",
+      "kind": "evidence",
+      "label": "Required concurrent full-modern profile object builds",
+      "evidence_type": "compile",
+      "authority": {
+        "kind": "workflow-step",
+        "job": "build",
+        "step": "Run concurrent custom-spell profile compile isolation"
       }
     },
     {
@@ -1063,6 +1086,27 @@
       "source": "surface.host",
       "target": "owner.host-workflow",
       "reason": "Workflow and patch-packaging fixtures reject invalid host inputs and publication contexts."
+    },
+    {
+      "id": "custom-spell-profile-tests.owns-test",
+      "type": "owns-test",
+      "source": "surface.custom-spell-profile-tests",
+      "target": "owner.host-build",
+      "reason": "The host suite retains the configuration and guard controls without launching full builds."
+    },
+    {
+      "id": "custom-spell-profile-tests.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.custom-spell-profile-tests",
+      "target": "owner.host-workflow",
+      "reason": "Parsed CI controls reject missing, duplicate, disabled or misrouted profile execution."
+    },
+    {
+      "id": "custom-spell-profile-tests.compile",
+      "type": "compile-owner",
+      "source": "surface.custom-spell-profile-tests",
+      "target": "owner.compile-custom-spell-profiles",
+      "reason": "The build worker executes the existing enabled/disabled full-modern concurrent object regression exactly once in normal mode."
     },
     {
       "id": "docs.owns-test",
@@ -1888,6 +1932,21 @@
       "exclude": []
     },
     {
+      "id": "paths.custom-spell-profile-tests",
+      "surface": "surface.custom-spell-profile-tests",
+      "include": [
+        {
+          "kind": "exact",
+          "path": "tools/gba-playtest/tests/test_custom_spell_effect.py"
+        },
+        {
+          "kind": "exact",
+          "path": "tools/gba-playtest/tests/host_mode.py"
+        }
+      ],
+      "exclude": []
+    },
+    {
       "id": "paths.host",
       "surface": "surface.host",
       "include": [
@@ -2081,6 +2140,14 @@
         }
       ],
       "exclude": [
+        {
+          "kind": "exact",
+          "path": "tools/gba-playtest/tests/test_custom_spell_effect.py"
+        },
+        {
+          "kind": "exact",
+          "path": "tools/gba-playtest/tests/host_mode.py"
+        },
         {
           "kind": "prefix",
           "path": "scripts/validation_ownership/"

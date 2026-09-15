@@ -2264,7 +2264,7 @@ while candidate eligibility remains bound to that prior full run.
 workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
 pin, and environment semantics, including the pre-fix negative selection.
 
-`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 32 local
+`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 33 local
 gates while requiring complete nine-job source/target equivalence: the retained
 issue #176 jobs remain closed and the identity/router/classifier are closed
 setup-only jobs, never additional local gates. The two ownership checks remain
@@ -3947,7 +3947,7 @@ game behavior needs a compensating change.
     different job. Every changed full run must reject, including after an
     older green run and a later metadata edit. A harmless YAML comment must
     remain valid. Confirm the native probe stays in `extended-host-tests`,
-    all 32 mirrored commands remain, and the build-once master publisher and
+    all 33 mirrored commands remain, and the build-once master publisher and
     required `host-tests`/`build`/`summary` names are unchanged.
 14. From the same clean checkout, run
     `python3 -m unittest scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests.test_ownership_sources_and_collected_regressions_reach_actual_worker scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests.test_ownership_execution_edge_removal_redirect_and_order_controls scripts.validation_ownership.tests.test_literal_bindings.LiteralBindingModuleTests.test_module_discovery_collects_only_owned_cases -v`.
@@ -4041,12 +4041,37 @@ the separate independent coordinator-owned verifier capture (H1), nor relax
 any source/base/result binding, public graph or full-domain acceptance.
 
 With the ARM compiler installed for ownership metadata queries, the explicit
-host-only suite must still skip the concurrent custom-spell full-project
+host-only suite must still skip the concurrent custom-spell full-modern object
 build before artifact cleanup or process launch. Configuration and host
 checks in that module must still run. The host-only regression supplies an
 available compiler and intercepts the first mutating operation: host-only
 mode never reaches it, while normal mode still enters the unchanged build
-body. This is not a claim that the controlled normal-mode probe builds a ROM.
+body. This is not execution evidence for the actual concurrent compile test.
+Its required normal-mode owner is the existing `build` job, not the host job.
+Follow the source-build procedure in
+[TC-CUSTOM-SPELL-061-002](../custom_spell_effects.md#concurrent-full-modern-object-profile-isolation):
+prepare the existing build tools and run
+`python3 tools/gba-playtest/tests/test_custom_spell_effect.py --require-profile-isolation`
+once with the installed ARM/native prerequisites. Require the two real,
+concurrent complete `expansion-modern-all` object cohorts, enabled/reference
+versus disabled/default manifest, isolated generated namespaces, custom-data
+presence/absence, both object assertions per profile and owned-root cleanup.
+This target does not link a ROM or final ELF.
+
+Run the focused `test_custom_spell_profile_*` controls in
+`tests.workflows.test_build_ci_topology` and the required-entry/host-guard
+controls in `tools/gba-playtest/tests/test_host_only_mode.py`. Missing,
+duplicate, disabled, wrong-job or host-only invocation, unavailable compiler,
+empty selection and absent prerequisites must reject; equivalent quoting and
+layout must pass. Check the exact new compile-owner pairs for the profile test
+and host-mode guard against the independent oracle, without assigning this
+owner to all host paths. The old host-only-only route is the negative control:
+it skips the full compile test and is insufficient coverage.
+
+This correction preserves nine jobs, every earlier gate plus gate 33, the
+three protected contexts, master-only build-once publication, and existing
+timeouts. #196 must retain that complete topology and gate set. It does not
+authorize H1/provider/native-AI/diagnostic work or a new measurement allocation.
 
 Resolve the asset implementation package separately from its `tests/` namespace.
 Implementation paths must retain asset host, generation, drift, compilation

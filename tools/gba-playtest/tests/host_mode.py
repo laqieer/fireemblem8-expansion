@@ -32,7 +32,7 @@ Contract:
 * Live/runtime coverage is owned by the runtime + build gates
   (`make expansion-modern-linker-check`,
   `make expansion-modern-itemexpansion-check` -- build.yml `build` job and
-  the last four of the ten scripts/upstream_port/verify.py gates), never by
+  the corresponding scripts/upstream_port/verify.py gates), never by
   this host lane. Nothing here needs a fingerprint refresh or a `clean`.
 
 Classification of every module under tools/gba-playtest/tests:
@@ -54,9 +54,11 @@ Classification of every module under tools/gba-playtest/tests:
   mode-independent (identical in host-only and in normal mode); it never
   reads a ROM/ELF and never treats a pre-existing artifact as an oracle.
 
-  Category B -- ROM-dependent live integration, skipped in host-only mode.
-  This includes tests invoking full project ROM builds, even if their final
-  assertions examine generated assets or object files rather than the ROM.
+  Category B -- repository-artifact integration, skipped in host-only mode.
+  This includes full modern object builds: the concurrent custom-spell profile
+  test runs expansion-modern-all, which builds relocatable objects, not a ROM
+  or final ELF. Its required single-test entry runs separately in build and
+  rejects compiler/host-only skips or zero selected tests.
   Registered in LIVE_TEST_CLASSES below; test_host_only_mode.py fails if a
   registered class is not guarded, or if a module builds a repository ROM
   path without being registered.
@@ -171,11 +173,12 @@ def host_only_enabled(environ: Optional[Mapping[str, str]] = None) -> bool:
 
 def skip_reason(what: str) -> str:
     return (
-        f"{ENV_VAR}=1 host-only mode: {what} is ROM-dependent live "
-        f"integration, skipped before any ROM/ELF/save artifact is touched. "
+        f"{ENV_VAR}=1 host-only mode: {what} is artifact-dependent "
+        f"integration, skipped before any ROM/ELF/save artifact or full-build output is touched. "
         f"Live coverage belongs to the runtime/build gates "
         f"(make expansion-modern-linker-check / "
-        f"expansion-modern-itemexpansion-check)."
+        f"expansion-modern-itemexpansion-check); concurrent profile compile "
+        f"coverage belongs to the required profile-isolation build step."
     )
 
 

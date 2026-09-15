@@ -3,6 +3,24 @@
   "source_case": "TC-WORKFLOW-GATE-OWNERSHIP-001",
   "probes": [
     {
+      "path": "tools/gba-playtest/tests/test_custom_spell_effect.py",
+      "expected_surface": "surface.custom-spell-profile-tests",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-workflow"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-custom-spell-profiles"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-build"}
+      ]
+    },
+    {
+      "path": "tools/gba-playtest/tests/host_mode.py",
+      "expected_surface": "surface.custom-spell-profile-tests",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-workflow"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-custom-spell-profiles"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-build"}
+      ]
+    },
+    {
       "path": "src/bm.c",
       "expected_surface": "surface.runtime",
       "expected_owners": [
@@ -368,5 +386,5 @@
       ]
     }
   ],
-  "seal": "ba957efe158574b4ddfddda91b9d80d85d5e88b884ec1e875ce77e85a199b65d"
+  "seal": "fa88fffeb790cb12f07433358ecf35dcfa6806a04fafc9cd897ce2693d586cd9"
 }

@@ -232,6 +232,14 @@ SUMMARY_RESULTS = (
 MAP_MENU_PRESENTATION_GATE = (
     "make expansion-modern-map-menu-presentation-check -j1"
 )
+CUSTOM_SPELL_PROFILE_COMMAND = (
+    "python3", "tools/gba-playtest/tests/test_custom_spell_effect.py",
+    "--require-profile-isolation",
+)
+CUSTOM_SPELL_PROFILE_PACKAGES = {
+    "build-essential", "binutils-arm-none-eabi", "gcc-arm-none-eabi",
+    "libnewlib-arm-none-eabi", "libpng-dev", "pkg-config",
+}
 WORKFLOW_PILOT_GATE = (
     '"$GITHUB_WORKSPACE/build/host-python/bin/python3" -I '
     "scripts/workflow_pilot/isolated_launcher.py "
@@ -2312,6 +2320,50 @@ def _make_recipe(text: str, target: str) -> str:
     return match.group("recipe")
 
 
+def _custom_spell_profile_errors(text: str) -> list[str]:
+    jobs = _job_blocks(text)
+    owners = [
+        (job, index, step)
+        for job, body in jobs.items()
+        for index, step in enumerate(_step_blocks(body))
+        if _step_name(step) == verify._CUSTOM_SPELL_PROFILE_STEP_NAME
+    ]
+    if len(owners) != 1 or owners[0][0] != "build":
+        return ["profile compile must have exactly one build worker owner"]
+    _, owner_index, step = owners[0]
+    try:
+        verify._parse_job_context("build", jobs["build"])
+        fields = dict(verify._parse_step(step, "build", owner_index)[2])
+        setup = [
+            (index, verify._parse_step(step, "build", index))
+            for index, step in enumerate(_step_blocks(jobs["build"]))
+            if _step_name(step) in {"Install dependencies", "Build tools"}
+        ]
+    except ValueError as error:
+        return [f"profile compile workflow is invalid: {error}"]
+    if fields["run"] != (CUSTOM_SPELL_PROFILE_COMMAND,):
+        return ["profile compile must use the required single-test normal-mode entry"]
+    installers = [
+        (index, dict(fields)) for index, (_, name, fields) in setup
+        if name == "Install dependencies"
+    ]
+    tools = [
+        (index, dict(fields)) for index, (_, name, fields) in setup
+        if name == "Build tools"
+    ]
+    if len(installers) != 1 or installers[0][0] >= owner_index:
+        return ["profile compile requires prior dependency installation"]
+    packages = [
+        command[4:] for command in installers[0][1]["run"]
+        if command[:4] == ("sudo", "apt-get", "install", "-y")
+    ]
+    if len(packages) != 1 or not CUSTOM_SPELL_PROFILE_PACKAGES <= set(packages[0]):
+        return ["profile compile lacks native/ARM query dependencies"]
+    if len(tools) != 1 or tools[0][0] >= owner_index or tools[0][1]["run"] != (("./build_tools.sh",),):
+        return ["profile compile requires prior repository build tools"]
+    return []
+
+
 def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     errors = []
     header = text[: text.index("\njobs:\n")]
@@ -2433,6 +2485,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     errors.extend(_host_environment_errors(jobs["host-tests"]))
     errors.extend(_protected_host_prefix_errors(jobs["host-tests"]))
     errors.extend(_protected_ownership_prefix_errors(jobs["ownership-tests"]))
+    errors.extend(_custom_spell_profile_errors(text))
 
     if (
         "github.event_name == 'pull_request' && "
@@ -2694,6 +2747,125 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             _remote_completion_errors(MAKEFILE.read_text(encoding="utf-8")),
             [],
         )
+
+    def test_custom_spell_profile_owner_rejects_missing_duplicate_disabled_and_wrong_mode(self):
+        self.assertEqual(_custom_spell_profile_errors(self.text), [])
+        build = _job_blocks(self.text)["build"]
+        step = next(step for step in _step_blocks(build)
+                    if _step_name(step) == verify._CUSTOM_SPELL_PROFILE_STEP_NAME)
+        command = " ".join(CUSTOM_SPELL_PROFILE_COMMAND)
+        mutations = {
+            "missing": self.text.replace(step, "", 1),
+            "duplicate": self.text.replace(step, step + step, 1),
+            "disabled": self.text.replace(step, step.replace(FULL_WORKER_STEP_CONDITION, "false"), 1),
+            "advisory": self.text.replace(step, step.replace("      run:", "      continue-on-error: true\n      run:"), 1),
+            "host-only": self.text.replace(command, "GBA_PLAYTEST_HOST_ONLY=1 " + command, 1),
+            "ordinary-skip-capable-runner": self.text.replace("--require-profile-isolation", "CustomSpellProfileAssetIsolationTests", 1),
+        }
+        host = _job_blocks(self.text)["host-tests"]
+        mutations["wrong-job"] = self.text.replace(step, "", 1).replace(host, host + step, 1)
+        for name, changed in mutations.items():
+            with self.subTest(mutation=name):
+                self.assertTrue(_custom_spell_profile_errors(changed))
+        quoted = self.text.replace(
+            "      run: " + command,
+            "      run: |\n        python3 \\\n"
+            '          "tools/gba-playtest/tests/test_custom_spell_effect.py" \\\n'
+            "          '--require-profile-isolation'",
+            1,
+        )
+        self.assertNotEqual(quoted, self.text)
+        self.assertEqual(_custom_spell_profile_errors(quoted), [])
+        self.assertEqual(
+            verify._parse_workflow_structure_text(self.text),
+            verify._parse_workflow_structure_text(quoted),
+        )
+
+    def test_custom_spell_profile_owner_requires_active_dependencies_and_full_routes(self):
+        from scripts.workflow_pilot.tests.test_adaptive_gate import WorkflowTests, workflow_condition
+
+        build = _job_blocks(self.text)["build"]
+        step = next(step for step in _step_blocks(build)
+                    if _step_name(step) == verify._CUSTOM_SPELL_PROFILE_STEP_NAME)
+        fields = dict(verify._parse_step(step, "build", 0)[2])
+        contexts = WorkflowTests()
+        for event, mode in (
+            ("pull_request", "full"), ("push", "full"), ("workflow_dispatch", "full"),
+            ("pull_request", "metadata-only"), ("pull_request", "review-first"),
+        ):
+            with self.subTest(event=event, mode=mode):
+                context = contexts.context(event, mode)
+                self.assertEqual(
+                    workflow_condition(_direct_job_if(build), context)
+                    and workflow_condition(fields["if"], context),
+                    mode == "full",
+                )
+        for event in ("pull_request", "push", "workflow_dispatch"):
+            context = {**contexts.context(event), "needs.event-classifier.result": "failure"}
+            self.assertTrue(workflow_condition(_direct_job_if(build), context))
+            self.assertTrue(workflow_condition(fields["if"], context))
+        installer = next(step for step in _step_blocks(build) if _step_name(step) == "Install dependencies")
+        for package in CUSTOM_SPELL_PROFILE_PACKAGES:
+            with self.subTest(missing_package=package):
+                self.assertTrue(_custom_spell_profile_errors(self.text.replace(
+                    installer, installer.replace(" " + package, "", 1), 1,
+                )))
+        for name in ("Install dependencies", "Build tools"):
+            setup = next(step for step in _step_blocks(build) if _step_name(step) == name)
+            for changed in (
+                self.text.replace(setup, "", 1),
+                self.text.replace(setup, setup.replace(FULL_WORKER_STEP_CONDITION, "false"), 1),
+                self.text.replace(setup, "", 1).replace(step, step + setup, 1),
+            ):
+                with self.subTest(setup=name):
+                    self.assertTrue(_custom_spell_profile_errors(changed))
+
+    def test_custom_spell_profile_graph_scope_and_oracle_are_exact(self):
+        graph = json.loads((ROOT / ".github/validation-ownership-graph.json").read_text())
+        oracle = json.loads((ROOT / "scripts/validation_ownership/probe-oracle.json").read_text())
+        paths = (
+            "tools/gba-playtest/tests/test_custom_spell_effect.py",
+            "tools/gba-playtest/tests/host_mode.py",
+        )
+        expected = {
+            ("owns-test", "owner.host-build"),
+            ("adversarial-control", "owner.host-workflow"),
+            ("compile-owner", "owner.compile-custom-spell-profiles"),
+        }
+        for path in paths:
+            matches = [rule for rule in graph["path_rules"]
+                       if ownership_reporter._path_rule_matches(rule, path, set())]
+            self.assertEqual(len(matches), 1)
+            self.assertEqual(matches[0]["surface"], "surface.custom-spell-profile-tests")
+            self.assertIn({"kind": "exact", "path": path}, matches[0]["include"])
+            probe = next(probe for probe in oracle["probes"] if probe["path"] == path)
+            self.assertEqual(probe["expected_surface"], matches[0]["surface"])
+            self.assertEqual({(item["edge_type"], item["evidence_id"]) for item in probe["expected_owners"]}, expected)
+        control = "tools/gba-playtest/tests/test_scenario.py"
+        self.assertEqual(
+            [rule["surface"] for rule in graph["path_rules"]
+             if ownership_reporter._path_rule_matches(rule, control, set())],
+            ["surface.host"],
+        )
+        node = next(node for node in graph["nodes"] if node["id"] == "owner.compile-custom-spell-profiles")
+        self.assertEqual(node["evidence_type"], "compile")
+        self.assertEqual(node["authority"], {
+            "kind": "workflow-step", "job": "build", "step": verify._CUSTOM_SPELL_PROFILE_STEP_NAME,
+        })
+        entries = {
+            probe["path"]: ownership_reporter.GitTreeEntry(probe["path"], "100644", "blob", "0" * 40)
+            for probe in oracle["probes"]
+        }
+        ownership_reporter.validate_probe_oracle(oracle, graph, entries)
+        edge = next(edge for edge in graph["edges"] if edge["target"] == node["id"])
+        for replacement in (None, "owner.compile-modern"):
+            changed = copy.deepcopy(graph)
+            if replacement is None:
+                changed["edges"] = [item for item in changed["edges"] if item["id"] != edge["id"]]
+            else:
+                next(item for item in changed["edges"] if item["id"] == edge["id"])["target"] = replacement
+            with self.subTest(replacement=replacement), self.assertRaises(ownership_reporter.OwnershipError):
+                ownership_reporter.validate_probe_oracle(oracle, changed, entries)
 
     def test_ownership_worker_keeps_host_coverage_and_owns_three_actions_once(self):
         _, names, parsed = verify._parse_workflow_structure_text(self.text)

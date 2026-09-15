@@ -1052,6 +1052,7 @@ _VALIDATION_OWNERSHIP_CHECK_STEP_NAME = (
 _VALIDATION_OWNERSHIP_BASE_STEP_NAME = (
     "Validate ownership with exact PR-base verifier"
 )
+_CUSTOM_SPELL_PROFILE_STEP_NAME = "Run concurrent custom-spell profile compile isolation"
 _FULL_MODE_ONLY_JOB_STEPS = {
     ("host-tests", "Verify checked-out revision"),
     ("host-tests", "Hydrate workflow-pilot Git authority"),
@@ -1075,6 +1076,7 @@ _FULL_MODE_ONLY_JOB_STEPS = {
     ("build", "Run CodeQL alert regression suite (issue #84)"),
     ("build", "Check default build lane and quickstart legacy glue (issue #15)"),
     ("build", "Check generated-data tables for drift"),
+    ("build", _CUSTOM_SPELL_PROFILE_STEP_NAME),
     ("build", "Build and verify modern target ROMs and linker"),
     ("build", "Boundary/serialization item-ID-expansion + content runtime gate (cap 0xCE)"),
     ("build", "Build and verify all-locales/all-features map menu (issues #49/#168)"),
@@ -1175,6 +1177,7 @@ _EXPECTED_STEP_ROLES = {
         ("gate", "Run CodeQL alert regression suite (issue #84)"),
         ("gate", "Check default build lane and quickstart legacy glue (issue #15)"),
         ("gate", "Check generated-data tables for drift"),
+        ("gate", _CUSTOM_SPELL_PROFILE_STEP_NAME),
         ("gate", "Build and verify modern target ROMs and linker"),
         (
             "gate",
@@ -2533,6 +2536,20 @@ def gates(jobs: int = 2) -> List[Gate]:
             name="generated-data-check",
             command=["make", "generated-data-check"],
             applicable_note="applicable when generated_data.mk-tracked tables exist",
+        ),
+        Gate(
+            name="custom-spell-profile-isolation",
+            command=[
+                "python3",
+                "tools/gba-playtest/tests/test_custom_spell_effect.py",
+                "--require-profile-isolation",
+            ],
+            applicable_note=(
+                "required build-worker compile integration: execute exactly one "
+                "non-skipped concurrent enabled/disabled full modern object-build "
+                "test in separate asset/output roots; no ROM/ELF link or publisher "
+                "output is built or replaced"
+            ),
         ),
         Gate(
             name="modern-linker-check-debug",

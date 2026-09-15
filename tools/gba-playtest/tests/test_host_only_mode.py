@@ -30,6 +30,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import importlib
+import io
 import os
 import shutil
 import subprocess
@@ -693,6 +694,46 @@ class HostOnlyClassificationTests(unittest.TestCase):
                 ignore_errors=True,
             )
             launch.assert_not_called()
+
+    def test_required_profile_entry_rejects_host_only_and_missing_compiler(self):
+        module = importlib.import_module("test_custom_spell_effect")
+        for host_only, compiler in (("1", "/usr/bin/arm-none-eabi-gcc"), ("0", None)):
+            with self.subTest(host_only=host_only, compiler=compiler), \
+                 mock.patch.dict(os.environ, {host_mode.ENV_VAR: host_only}), \
+                 mock.patch.object(module, "ARM_CC", compiler), \
+                 mock.patch.object(module.shutil, "rmtree") as cleanup, \
+                 mock.patch.object(module.subprocess, "Popen") as launch, \
+                 mock.patch("sys.stderr", new_callable=io.StringIO):
+                self.assertEqual(module.run_required_profile_isolation(), 1)
+                cleanup.assert_not_called()
+                launch.assert_not_called()
+
+    def test_required_profile_entry_runs_only_the_exact_case_and_rejects_empty_or_failed_runs(self):
+        module = importlib.import_module("test_custom_spell_effect")
+        test_class = module.CustomSpellProfileAssetIsolationTests
+        method = "test_concurrent_enabled_disabled_full_modern_compiles_keep_assets_isolated"
+        for failure in (None, AssertionError("controlled compile failure")):
+            with self.subTest(failure=failure), _normal_mode(), \
+                 mock.patch.object(test_class, method, autospec=True, return_value=None,
+                                   side_effect=failure) as selected, \
+                 mock.patch("sys.stderr", new_callable=io.StringIO):
+                self.assertEqual(module.run_required_profile_isolation(), int(failure is not None))
+                selected.assert_called_once()
+        for count in (0, 2):
+            with self.subTest(selected_count=count), _normal_mode(), \
+                 mock.patch.object(test_class, method, autospec=True, return_value=None), \
+                 mock.patch.object(unittest.defaultTestLoader, "loadTestsFromName",
+                                   return_value=unittest.TestSuite(test_class(method) for _ in range(count))), \
+                 mock.patch("sys.stderr", new_callable=io.StringIO):
+                self.assertEqual(module.run_required_profile_isolation(), 1)
+
+        @unittest.expectedFailure
+        def expected_failure(_case):
+            raise AssertionError("controlled expected compile failure")
+
+        with _normal_mode(), mock.patch.object(test_class, method, expected_failure), \
+             mock.patch("sys.stderr", new_callable=io.StringIO):
+            self.assertEqual(module.run_required_profile_isolation(), 1)
 
     def test_live_modules_have_no_unregistered_live_entry_point(self):
         """Run EVERY class of the live modules in host-only mode with a

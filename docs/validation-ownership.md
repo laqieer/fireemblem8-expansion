@@ -301,15 +301,31 @@ library-directory queries. The ownership consumer also compiles native
 insufficient; `libpng-dev` supplies its development dependency closure on the
 supported Ubuntu host, and its existing Makefile queries libpng through
 `pkg-config`. Installing the query compiler does not opt the explicit
-`GBA_PLAYTEST_HOST_ONLY=1` suite into full project ROM builds. The concurrent
+`GBA_PLAYTEST_HOST_ONLY=1` suite into full modern object builds. The concurrent
 custom-spell profile build uses the existing live-artifact class guard and
 registry; its configuration/host checks still run, and normal-mode build
-behavior is unchanged. Use the existing
+workload is unchanged. Its sole normal-mode CI owner is now the existing
+`build` worker's required profile-isolation step. The strict single-test entry
+rejects missing compilers, host-only skips and empty selection. Both complete
+`expansion-modern-all` builds remain concurrent in separate enabled/disabled
+roots; they produce relocatable objects, not a ROM or final ELF. This restores
+coverage rather than moving the workload back into the near-limit host job.
+Use the existing
 [pinned host Python environment](workflow-pilot.md) for local host tests.
 Both `user-namespace` and the supported `sudo-drop` launcher are valid
 observations. Missing native dependencies or unavailable confinement remain
 errors; a platform-specific mode assertion must not turn a supported fallback
 into a failure.
+
+The profile test module and `tools/gba-playtest/tests/host_mode.py` have exact
+selectors in `surface.custom-spell-profile-tests`. They retain their host
+positive/adversarial owners and add `owner.compile-custom-spell-profiles`,
+bound to the actual required `build` step. Independent oracle probes require
+all three pairs; unrelated host paths do not acquire this compile owner.
+The local mirror contains 33 gates, including every previous gate. Nine jobs,
+the protected three contexts, publisher build-once behavior and existing
+90/60-minute bounds remain unchanged. This compile evidence is not H1 or a
+whole-graph/runtime acceptance substitute.
 
 ## Typed contract
 
