@@ -958,7 +958,7 @@ def make_source_units(
                         raise MakeProbeError("Make parsing-mode context has an unproven else")
                     if nested:
                         keyword, arguments = nested[1], nested[2]
-                        choice = mode.condition(keyword, arguments)
+                        choice = None if eligible is False else mode.condition(keyword, arguments)
                     else:
                         choice = True
                         conditions[-1][2] = True
@@ -966,7 +966,7 @@ def make_source_units(
                     active = _mode_and(eligible, choice)
                 else:
                     eligible = active
-                    choice = mode.condition(keyword, arguments)
+                    choice = None if eligible is False else mode.condition(keyword, arguments)
                     conditions.append([active, choice, False])
                     active = _mode_and(active, choice)
                 if eligible is not False and not phase_test and mode.effectful(arguments):

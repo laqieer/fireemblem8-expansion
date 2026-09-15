@@ -2990,6 +2990,31 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         with self.assertRaisesRegex(MakeProbeError, "unsealed undefined"):
             self.observe()
 
+    def test_ineligible_original_conditions_do_not_read_operands(self):
+        self.original_input_witness()
+        name = "UNREACHED_" + "X" * 120
+        for keyword in ("ifeq", "ifneq"):
+            for kind, outer, nested, ending, active_outer in (
+                ("nested", "ifeq (yes,no)", "", "\nendif", "ifeq (yes,yes)"),
+                ("else-if", "ifeq (yes,yes)", "else ", "", "ifeq (yes,no)"),
+            ):
+                with self.subTest(keyword=keyword, kind=kind):
+                    source = outer + "\n" + nested + keyword + " ($(" + name + "),yes)\nendif" + ending + "\nall: ;\n"
+                    self.add("Makefile", source)
+                    self.ordinary()
+                    with self.session() as session:
+                        native = session.make("all", variables=("MAKEFILE_LIST",))
+                    result = self.observe()["all"]
+                    self.assertEqual(native.semantics["domains"]["MAKEFILE_LIST"]["value"].split(), ["Makefile"])
+                    self.assertEqual(result["record"]["includes"], ["Makefile"])
+                    self.assertEqual(result["prerequisite_domain_census"]["used"], [])
+                    self.assertEqual(result["record"]["variants"][0]["record"]["files"][0]["prerequisites"],
+                                     native.semantics["files"][0]["prerequisites"])
+                    self.add("Makefile", source.replace(outer, active_outer, 1))
+                    self.ordinary()
+                    with self.assertRaisesRegex(MakeProbeError, "invalid original Make input name"):
+                        self.observe()
+
     def test_original_file_condition_comparisons_keep_control_and_resource_bounds(self):
         budget = ProbeBudget()
         mode = _MakeSourceMode(budget=budget)

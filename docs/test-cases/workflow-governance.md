@@ -4175,6 +4175,17 @@ invalidated engine/history facts. Preserve native delayed POSIX folding, the
 This is bounded original predicate evidence, not whole-report acceptance;
 the independent aggregate control-byte blocker is not waived or enlarged.
 
+Run `test_ineligible_original_conditions_do_not_read_operands` with the genuine
+witness. Put a130-character GNU variable name inside both a conditional nested
+under a false parent and an else-if after a true branch, for equality and
+inequality. Ordinary GNU and the complete small planner must succeed with
+only Makefile, no added domain and unchanged prerequisites. Flip each outer
+condition to make that operand active: ordinary GNU still succeeds, but the
+observer must retain its existing invalid-input-name rejection. The pre-fix
+observer incorrectly queried even the skipped operands. Structural conditional
+matching and reads for an eligible predicate whose result is false remain;
+neither the128-character active name bound nor uncertain-context guards change.
+
 For `MODERN_SIZE`, run `test_modern_size_recipe_default_uses_sealed_contract`
 with the source-faithful conditional tool declarations and actual recipe
 environment consumer extracted from `modern.mk`. Keep original logical chunks
@@ -5458,6 +5469,7 @@ unchanged source bytes/Git state across simulated fixture exceptions.
   -- real immutable tool-loading cleanup followed by the CURRENT/BASE graph
   case, partial-load failure, and strict stale-owned-module negatives.
 - `python3 -m unittest tests.workflows.test_ownership_probe.ProbeExecutionOwnershipTests.test_graph_discovery_partitions_all_cases_without_repeating_native_owner -v`
+- `python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_ineligible_original_conditions_do_not_read_operands -v`
 - `python3 -m unittest scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_initial_qualification_requires_the_complete_immutable_change_set scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_required_path_coverage_rejects_counts_wrong_paths_and_another_root scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_deleted_and_mode_only_paths_require_actual_correct_side_reads scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_explicit_review_context_is_delivered_before_qualification scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_missing_wrong_identity_partial_scope_and_unqualified_expectations_reject scripts.validation_ownership.tests.test_coordinator_capture.IntroductionCaptureTests.test_real_foundation_introduction_is_explicit_not_exact_base -v`
 - `python3 -m unittest scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests.test_ownership_sources_and_collected_regressions_reach_actual_worker scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests.test_ownership_execution_edge_removal_redirect_and_order_controls scripts.validation_ownership.tests.test_literal_bindings.LiteralBindingModuleTests.test_module_discovery_collects_only_owned_cases -v`
 - `python3 -m unittest scripts.validation_ownership.tests.test_ci_verifier.ImmutableBlobBatchTests scripts.validation_ownership.tests.test_ci_verifier.BatchedVerifierSourceTests -v`

@@ -799,6 +799,11 @@ consumer closure, so a false baseline condition cannot erase the input whose
 next finite value loads another source. Only the skipped body is omitted.
 No final native value, arbitrary function interpreter or guessed undefined
 input is used for this original proof.
+In contrast, a predicate under a proven-false enclosing context is not read.
+Nested conditionals and `else ifeq`/`else ifneq` clauses after a proven-true
+branch retain structural matching but do not resolve operands or request
+original metadata. Potentially executable predicates still require proof;
+making a skipped operand active retains every original input-name bound.
 
 Generated target spelling is not itself mode uncertainty. The collector proves
 the original parse-stage target result through literal concatenation, named
