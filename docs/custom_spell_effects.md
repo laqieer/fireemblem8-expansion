@@ -387,7 +387,8 @@ epoch change is required; all runtime failures already use a vanilla fallback.
 
 ### Concurrent full-modern object profile isolation
 
-From a Linux source checkout with pidfd/waitid and child-subreaper support,
+From a Linux source checkout with pidfd/waitid, child-subreaper and
+`renameat2(RENAME_NOREPLACE)` support,
 ARM GCC/binutils, newlib, the host C/C++ compiler, libpng/zlib, `pkg-config`
 and the normal asset-generation Python dependencies:
 
@@ -407,7 +408,9 @@ and the normal asset-generation Python dependencies:
    are closed before the exact owned profile root is removed. Ordinary test
    failures and timeouts still clean up. Uncertain process/stream cleanup or
    a substituted root fails explicitly and retains the root instead; do not
-   delete it or retry over it while writers may remain.
+   delete it or retry over it while writers may remain. A final pin-close
+   failure remains non-success and retains any still-live descriptor, even
+   when the already-empty owned directory has been unlinked.
    These are full relocatable-object builds, not ROM or final-ELF links;
    canonical release/publisher outputs are not inputs or outputs of this test.
 
@@ -473,6 +476,55 @@ malicious processes escaping their session.
    `python3 -m scripts.generated_data.idspace generate` and commit its derived
    audits. Require `python3 -m scripts.generated_data.idspace check` and the
    existing ID-space output-drift tests; do not hand-edit audit digests.
+
+### Root identity and interrupt boundaries
+
+The [5686491976 root follow-through](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5686491976)
+closes the check/delete gap and extends interrupt-safe pin ownership through
+final closure. A pathname `lstat` comparison followed by pathname `rmtree`
+does not bind traversal: a replacement at that boundary was deleted while
+the displaced original survived. The correction makes a no-overwrite claim
+into an exclusive same-parent cleanup directory, verifies the moved entry
+against the already-open root pin, and walks only directory descriptors.
+It never recursively traverses a newly resolved public root pathname.
+A wrong claim is restored without overwriting a newer namespace entry; if
+restoration cannot be done safely, all displaced/replacement data and the
+owned cleanup namespace remain retained with explicit failure.
+
+The existing interrupt-deferral primitive now spans root open/registration
+through final close. Every acquired descriptor is registered with its actual
+identity. Closure errors distinguish a still-live acquired pin from an
+already-closed or replaced descriptor, so no live pin is represented only by
+an unowned sentinel. Retained ownership blocks another run at the same root
+even if its old directory is already unlinked; a retry cannot overwrite the
+only record of a live pin. A cleanup failure keeps its primary exception chain;
+the earlier SIGINT reproduction already retained the original RuntimeError
+in its context, so diagnostic loss is not claimed.
+
+1. Run `python3 tools/gba-playtest/tests/test_host_only_mode.py ProfileProcessLifecycleTests -v`.
+2. Substitute real marked directories at the post-check claim boundary and
+   again at FD traversal entry. Require failure and preservation of both the
+   unrelated replacement and the original pinned contents. A competing new
+   public entry must never be overwritten during claim restoration.
+3. Exercise a nested owned tree and external symlink targets. Only the owned
+   tree is removed, all pins close, and external markers survive.
+4. Deliver actual SIGINT after real root open but before normal assignment,
+   and immediately before final root close. Inspect actual open FDs and the
+   retained ownership record: every acquired live pin must be tracked or
+   closed. Inject final-close errors both before and after the real close;
+   require non-success, accurate descriptor state and the original exception
+   chain, not merely a mocked ordering assertion.
+5. Keep all earlier process/host/staged-helper and census controls. The exact
+   original helper fails the new bounded controls; independent outer fixture
+   cleanup settles only its own processes, pins and disposable directories.
+   No repeat full-object build is needed for this root-only correction when
+   unchanged commands/manifests/assertions and the real-runner controls pass.
+
+The private cleanup claim is not a new sandbox or general lifecycle service.
+The shared raw-diff primitives and their resource bounds are unchanged.
+Nine jobs, all 33 gates, the single 600-second work deadline and shared
+five-second failure teardown remain. Baselines 1-14 stay closed; baseline 15
+is unallocated pending independent corrected-source review.
 
 This subcase extends the existing profile and ownership contracts without
 changing gameplay, save, locale, generated schemas or ABI. Its dependencies are

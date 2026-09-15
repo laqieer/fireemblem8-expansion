@@ -328,6 +328,16 @@ the protected three contexts, publisher build-once behavior and existing
 90/60-minute bounds remain unchanged. This compile evidence is not H1 or a
 whole-graph/runtime acceptance substitute.
 
+The root-boundary correction in
+[5686491976](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5686491976)
+keeps recursive profile cleanup bound to its actual directory pin through a
+verified no-overwrite cleanup claim and FD-relative traversal, not a checked
+then re-resolved pathname. Real acquisition/final-close SIGINT and close-error
+fixtures inspect live descriptors and retained identity state. Namespace
+drift remains failure with unrelated replacement/displaced content preserved.
+These bounded controls retain the existing workload, process ownership,
+shared helper source, PID census classification and all measurement limits.
+
 The profile runner's [owned-process follow-through](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5683697584)
 uses separate regular capture files, one shared 600-second work deadline and
 the existing raw-diff tool's pidfd/subreaper quiescence primitives. It does not

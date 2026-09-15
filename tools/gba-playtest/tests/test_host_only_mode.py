@@ -660,6 +660,7 @@ class ProfileProcessLifecycleTests(unittest.TestCase):
         self.threads = set(threading.enumerate())
         self.real_popen = subprocess.Popen
         self.real_rmtree = shutil.rmtree
+        self.root_pins = []
         self.addCleanup(self.cleanup_fixture)
 
     def command(self, source):
@@ -695,15 +696,19 @@ class ProfileProcessLifecycleTests(unittest.TestCase):
         with self.raw._child_reaper():
             retained = self.module._RETAINED_PROFILE_BUILDS.get(self.root)
             if retained is not None:
-                root_fd, builds = retained
+                root_state, builds = retained
                 for build in builds:
                     if build.process is not None and build.leader_fd < 0 and not build.settled:
                         build.leader_fd = os.pidfd_open(build.process.pid)
                 errors = self.module._close_profile_builds(builds, time.monotonic() + 3)
                 if errors:
                     raise AssertionError(f"controlled profile cleanup still unconfirmed: {errors}")
-                if root_fd >= 0:
-                    os.close(root_fd)
+                if isinstance(root_state, int):
+                    if root_state >= 0:
+                        os.close(root_state)
+                else:
+                    for key in tuple(root_state.pins):
+                        self.module._close_profile_pin(root_state, key)
                 del self.module._RETAINED_PROFILE_BUILDS[self.root]
             for _process, descriptor in self.observed:
                 try:
@@ -724,7 +729,55 @@ class ProfileProcessLifecycleTests(unittest.TestCase):
         for stream in self.streams:
             if hasattr(stream, "close"):
                 stream.close()
+        for descriptor, expected in self.root_pins:
+            try:
+                actual = os.fstat(descriptor)
+            except OSError:
+                continue
+            if os.path.samestat(actual, expected):
+                os.close(descriptor)
         self.real_rmtree(self.directory)
+
+    def assert_root_pins_owned_or_closed(self):
+        retained = self.module._RETAINED_PROFILE_BUILDS.get(self.root)
+        if retained is None:
+            tracked = set()
+        elif isinstance(retained[0], int):
+            tracked = {retained[0]} if retained[0] >= 0 else set()
+        else:
+            tracked = {descriptor for descriptor, _ in retained[0].pins.values()}
+        for descriptor, expected in self.root_pins:
+            try:
+                actual = os.fstat(descriptor)
+            except OSError as error:
+                self.assertEqual(error.errno, 9)
+                continue
+            if os.path.samestat(actual, expected):
+                self.assertIn(descriptor, tracked, "live acquired root pin is not retained")
+
+    def record_root_open(self, *, interrupt=False):
+        opening = os.open
+        def open_root(path, flags, *args, **kwargs):
+            descriptor = opening(path, flags, *args, **kwargs)
+            if Path(path) == self.root:
+                self.root_pins.append((descriptor, os.fstat(descriptor)))
+                if interrupt:
+                    os.kill(os.getpid(), signal.SIGINT)
+            return descriptor
+        return open_root
+
+    def assert_chain_contains(self, error, primary):
+        pending = [error]
+        seen = set()
+        while pending:
+            current = pending.pop()
+            if current is primary:
+                return
+            if current is None or id(current) in seen:
+                continue
+            seen.add(id(current))
+            pending.extend((current.__cause__, current.__context__))
+        self.fail("primary exception is absent from the exception chain")
 
     def signal_commands(self, *, require_signal=False):
         first = """
@@ -811,14 +864,14 @@ os.write(2, b'second-stderr')
                 raise original
             return self.watch(*args, **kwargs)
 
-        def remove(path, *args, **kwargs):
-            if Path(path) == self.root:
-                self.assert_quiescent()
-                removals.append(path)
-            return self.real_rmtree(path, *args, **kwargs)
+        removing = self.module._remove_profile_root
+        def remove(path, owner):
+            self.assert_quiescent()
+            removals.append(path)
+            return removing(path, owner)
 
         with mock.patch.object(self.module.subprocess, "Popen", side_effect=launch), \
-             mock.patch.object(self.module.shutil, "rmtree", side_effect=remove):
+             mock.patch.object(self.module, "_remove_profile_root", side_effect=remove):
             with self.assertRaises(OSError) as caught:
                 with self.module.profile_builds(
                     (self.command("import time; time.sleep(30)"),) * 2, self.root, timeout=1,
@@ -862,10 +915,10 @@ time.sleep(30)
                 self.observed.append((None, os.pidfd_open(pid)))
             return process
 
-        def remove(path, *args, **kwargs):
-            if Path(path) == self.root:
-                self.assert_quiescent()
-            return self.real_rmtree(path, *args, **kwargs)
+        removing = self.module._remove_profile_root
+        def remove(path, owner):
+            self.assert_quiescent()
+            return removing(path, owner)
 
         reap = self.raw._reap_leader
         def checked_reap(process):
@@ -874,7 +927,7 @@ time.sleep(30)
             return reap(process)
 
         with mock.patch.object(self.module.subprocess, "Popen", side_effect=launch), \
-             mock.patch.object(self.module.shutil, "rmtree", side_effect=remove), \
+             mock.patch.object(self.module, "_remove_profile_root", side_effect=remove), \
              mock.patch.object(self.raw, "_reap_leader", side_effect=checked_reap):
             with self.assertRaises(subprocess.TimeoutExpired):
                 with self.module.profile_builds(
@@ -895,7 +948,8 @@ time.sleep(30)
                     self.fail("timeout must not reach assertions")
         self.assertIsInstance(caught.exception.__cause__, subprocess.TimeoutExpired)
         self.assertTrue(self.root.is_dir())
-        root_fd, builds = self.module._RETAINED_PROFILE_BUILDS[self.root]
+        root_state, builds = self.module._RETAINED_PROFILE_BUILDS[self.root]
+        root_fd = root_state.pins["root"][0]
         self.assertEqual(os.fstat(root_fd).st_ino, self.root.stat().st_ino)
         for build in builds:
             self.assertIsNone(build.process.returncode)
@@ -958,6 +1012,205 @@ time.sleep(30)
         self.assertIsNone(self.observed[0][0].returncode)
         self.assertTrue(self.root.is_dir())
         self.assertTrue(all(stream.closed for stream in self.streams))
+
+    def test_post_check_replacement_at_cleanup_boundary_preserves_both_directories(self):
+        displaced = self.directory / "displaced"
+        injected = []
+
+        def replace():
+            self.assert_quiescent()
+            self.root.rename(displaced)
+            self.root.mkdir()
+            (self.root / "foreign-marker").write_text("preserve replacement")
+            injected.append(True)
+
+        renaming = getattr(self.module, "_rename_profile_directory", None)
+        def claim(source_fd, source, target_fd, target):
+            if source == self.root.name and target == "root" and not injected:
+                replace()
+            return renaming(source_fd, source, target_fd, target)
+
+        def legacy_remove(path, *args, **kwargs):
+            if Path(path) == self.root and not injected:
+                replace()
+            return self.real_rmtree(path, *args, **kwargs)
+
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch), \
+             mock.patch.object(self.module, "_rename_profile_directory", side_effect=claim, create=True), \
+             mock.patch.object(self.module.shutil, "rmtree", side_effect=legacy_remove):
+            with self.assertRaises(self.raw.ProcessCleanupError):
+                with self.module.profile_builds(
+                    (self.command("print('first')"), self.command("print('second')")),
+                    self.root, timeout=1,
+                ):
+                    (self.root / "original-marker").write_text("preserve original")
+        self.assertEqual(injected, [True])
+        self.assertEqual((self.root / "foreign-marker").read_text(), "preserve replacement")
+        self.assertEqual((displaced / "original-marker").read_text(), "preserve original")
+        root_state, _ = self.module._RETAINED_PROFILE_BUILDS[self.root]
+        self.assertTrue(os.path.samestat(os.fstat(root_state.pins["root"][0]), displaced.stat()))
+        self.assert_quiescent()
+
+    def test_namespace_drift_at_fd_traversal_boundary_preserves_original_contents(self):
+        scanning = os.scandir
+        injected = []
+        original = []
+        def scan(descriptor):
+            if isinstance(descriptor, int) and original and not injected and os.path.samestat(
+                    os.fstat(descriptor), original[0]):
+                self.assert_quiescent()
+                if self.root.exists():
+                    self.root.rename(self.directory / "displaced")
+                self.root.mkdir()
+                (self.root / "foreign-marker").write_text("replacement")
+                injected.append(descriptor)
+            return scanning(descriptor)
+
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch), \
+             mock.patch.object(self.module.os, "scandir", side_effect=scan):
+            with self.assertRaises(self.raw.ProcessCleanupError):
+                with self.module.profile_builds(
+                    (self.command("print('first')"), self.command("print('second')")),
+                    self.root, timeout=1,
+                ):
+                    (self.root / "original-marker").write_text("original")
+                    original.append(self.root.stat())
+        self.assertEqual(len(injected), 1)
+        self.assertEqual((self.root / "foreign-marker").read_text(), "replacement")
+        root_state, _ = self.module._RETAINED_PROFILE_BUILDS[self.root]
+        descriptor = root_state if isinstance(root_state, int) else root_state.pins["root"][0]
+        self.assertTrue(os.path.samestat(os.fstat(descriptor), original[0]))
+        self.assertGreater(os.stat("original-marker", dir_fd=descriptor).st_size, 0)
+        self.assert_quiescent()
+
+    def test_recursive_fd_cleanup_removes_only_owned_tree_and_closes_all_pins(self):
+        outside = self.directory / "outside"
+        outside.mkdir()
+        (outside / "preserve").write_text("not owned by profile")
+        before_fds = set(os.listdir("/proc/self/fd"))
+        source = """
+from pathlib import Path
+import sys
+root = Path(sys.argv[1]) / 'owned'
+directory = root / 'nested' / 'deeper'
+directory.mkdir(parents=True)
+(directory / 'artifact').write_text('owned output')
+"""
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.module.profile_builds(
+                (self.command(source), self.command("print('other build')")),
+                self.root, timeout=1,
+            ) as results:
+                self.assertEqual([result.returncode for result in results], [0, 0])
+                (self.root / "outside-link").symlink_to(outside, target_is_directory=True)
+        self.assert_quiescent()
+        self.assertEqual((outside / "preserve").read_text(), "not owned by profile")
+        self.assertEqual(set(self.directory.iterdir()), {outside})
+        self.assertEqual(set(os.listdir("/proc/self/fd")), before_fds | {
+            str(descriptor) for _, descriptor in self.observed
+        })
+
+    def test_claim_restore_never_overwrites_a_new_namespace_entry(self):
+        displaced = self.directory / "original"
+        renaming = self.module._rename_profile_directory
+        injected = []
+        def claim(source_fd, source, target_fd, target):
+            if source == self.root.name and target == "root" and not injected:
+                self.root.rename(displaced)
+                self.root.mkdir()
+                (self.root / "first-replacement").write_text("first")
+                renaming(source_fd, source, target_fd, target)
+                self.root.mkdir()
+                (self.root / "second-replacement").write_text("second")
+                injected.append(True)
+                return
+            return renaming(source_fd, source, target_fd, target)
+
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch), \
+             mock.patch.object(self.module, "_rename_profile_directory", side_effect=claim):
+            with self.assertRaises(self.raw.ProcessCleanupError):
+                with self.module.profile_builds(
+                    (self.command("print('first')"), self.command("print('second')")),
+                    self.root, timeout=1,
+                ):
+                    (self.root / "original-marker").write_text("original")
+        owner, _ = self.module._RETAINED_PROFILE_BUILDS[self.root]
+        self.assertEqual((displaced / "original-marker").read_text(), "original")
+        self.assertEqual((self.root / "second-replacement").read_text(), "second")
+        self.assertEqual((self.directory / owner.holder_name / "root" / "first-replacement").read_text(), "first")
+        self.assert_quiescent()
+
+    def test_actual_sigint_after_root_open_never_loses_acquired_pin(self):
+        with mock.patch.object(self.module.os, "open", side_effect=self.record_root_open(interrupt=True)), \
+             mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.assertRaises((KeyboardInterrupt, self.raw.ProcessCleanupError)):
+                with self.module.profile_builds(
+                    (self.command("print('unused')"),) * 2, self.root, timeout=1,
+                ):
+                    self.fail("root acquisition interrupt must precede launches")
+        self.assertEqual(len(self.root_pins), 1)
+        self.assertEqual(self.observed, [])
+        self.assert_root_pins_owned_or_closed()
+
+    def test_actual_sigint_at_final_root_close_closes_or_retains_pin_and_primary(self):
+        closing = os.close
+        injected = []
+        primary = RuntimeError("original body failure")
+        def close(descriptor):
+            if self.root_pins and descriptor == self.root_pins[0][0] and not injected:
+                injected.append(True)
+                os.kill(os.getpid(), signal.SIGINT)
+            return closing(descriptor)
+
+        with mock.patch.object(self.module.os, "open", side_effect=self.record_root_open()), \
+             mock.patch.object(self.module.os, "close", side_effect=close), \
+             mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.assertRaises(KeyboardInterrupt) as caught:
+                with self.module.profile_builds(
+                    (self.command("print('first')"), self.command("print('second')")),
+                    self.root, timeout=1,
+                ):
+                    raise primary
+        self.assertEqual(injected, [True])
+        self.assert_chain_contains(caught.exception, primary)
+        self.assert_root_pins_owned_or_closed()
+        self.assert_quiescent()
+
+    def test_final_root_close_failure_tracks_actual_descriptor_state(self):
+        for close_first in (False, True):
+            with self.subTest(close_first=close_first):
+                closing = os.close
+                injected = []
+                primary = RuntimeError("original body failure")
+                pin_offset = len(self.root_pins)
+                def close(descriptor):
+                    if len(self.root_pins) > pin_offset and descriptor == self.root_pins[pin_offset][0] and not injected:
+                        injected.append(True)
+                        if close_first:
+                            closing(descriptor)
+                        raise OSError("controlled root close failure")
+                    return closing(descriptor)
+                with mock.patch.object(self.module.os, "open", side_effect=self.record_root_open()), \
+                     mock.patch.object(self.module.os, "close", side_effect=close), \
+                     mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+                    with self.assertRaises((OSError, self.raw.ProcessCleanupError)) as caught:
+                        with self.module.profile_builds(
+                            (self.command("print('first')"), self.command("print('second')")),
+                            self.root, timeout=1,
+                        ):
+                            raise primary
+                self.assertEqual(injected, [True])
+                self.assert_chain_contains(caught.exception, primary)
+                self.assert_root_pins_owned_or_closed()
+                self.assert_quiescent()
+                if not self.root.exists():
+                    with self.assertRaises(FileExistsError):
+                        with self.module.profile_builds((), self.root):
+                            self.fail("an unlinked retained pin must not be overwritten by another run")
+                retained = self.module._RETAINED_PROFILE_BUILDS.pop(self.root, None)
+                if retained is not None and not isinstance(retained[0], int):
+                    for key in tuple(retained[0].pins):
+                        self.module._close_profile_pin(retained[0], key)
 
 
 class HostOnlyClassificationTests(unittest.TestCase):

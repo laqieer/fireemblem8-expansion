@@ -4110,6 +4110,27 @@ it returns to the original all-class skip result without touching artifacts.
 Keep the normal-mode stale-ROM negative and actual process PID/cleanup tests.
 These focused checks do not execute the full generated-data or ROM suite.
 
+The [5686491976 root-identity correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5686491976)
+adds post-check replacement and actual root-open/final-close SIGINT controls
+to the same `ProfileProcessLifecycleTests`. Cleanup must claim without
+overwrite, verify against the retained root pin, and traverse only pinned
+directory descriptors. A replaced public root is never freshly resolved for
+recursive deletion; namespace drift preserves replacement/original data and
+safe retained ownership, rather than reporting success.
+Inspect actual live descriptor identities on acquisition interruption and
+final close failure, including failures after the real close. Every live pin
+is retained or closed, and the original exception chain survives. Root-pin
+closure can fail after the empty directory is gone; its retained record must
+describe that actual still-open descriptor, not pretend a root name or -1
+sentinel supplies ownership.
+The bounded preimage controls must expose deletion/false success and both
+untracked-FD intervals, with independent safe fixture cleanup. Keep the
+reviewed PID exclusion, staged real module/init pair and canonical drift
+checks unchanged; regenerate changed audits only with the existing generator.
+This is not a new graph/provider/H1 run or allocation: no broad compile,
+ROM/archival suite or repeat full-object profile build is required, and
+baseline 15 remains unallocated until independent source review closes it.
+
 Resolve the asset implementation package separately from its `tests/` namespace.
 Implementation paths must retain asset host, generation, drift, compilation
 and linked-consumer owners without inventing manual judgments. `assets.mk`

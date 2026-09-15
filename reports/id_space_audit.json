@@ -2660,7 +2660,7 @@
       "domain": "character",
       "key": "tools/gba-playtest/tests/test_host_only_mode.py|tool-symbol|character|pid",
       "kind": "tool-symbol",
-      "line": 861,
+      "line": 914,
       "path": "tools/gba-playtest/tests/test_host_only_mode.py",
       "reason": "Operating-system grandchild process identifier in bounded profile-lifecycle tests, read from an owned fixture and passed to os.pidfd_open; it is not a Fire Emblem character ID or generated-data consumer.",
       "record_count": 256,
@@ -21753,7 +21753,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "e7e4083a673d2f183d5672a3c407a2fa7323088f642d40185a9f23cacdebb4a3",
+  "digest": "08c9c4a68994b29df003627b38b229e25a5404c15ca4c895888249b377552480",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,
