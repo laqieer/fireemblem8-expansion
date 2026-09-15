@@ -199,9 +199,10 @@ class ReviewedEvolutionQualification:
         for path in REVIEW_CHECKER_PATHS:
             tools.tool_tree.oid(path)
         try:
-            tools.model.require_candidate_path_coverage(
-                report, tools.candidate_changes(self.base_sha, self.candidate_sha, paths=self.changed_paths),
-            )
+            changes = tools.candidate_changes(self.base_sha, self.candidate_sha)
+            if tuple(sorted(change.path for change in changes.changes)) != self.changed_paths:
+                raise ValueError("declared changed-path scope differs from the complete immutable transition")
+            tools.model.require_candidate_path_coverage(report, changes)
         except (AttributeError, ValueError) as error:
             raise MakeProbeError(f"reviewed evolution lacks actual changed-path coverage: {error}") from error
 

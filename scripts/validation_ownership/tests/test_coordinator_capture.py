@@ -468,6 +468,37 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         with self.assertRaisesRegex(MakeProbeError, "explicit review context"):
             qualification.validate_binding(state, record, pr)
 
+    def test_initial_qualification_requires_the_complete_immutable_change_set(self):
+        deleted, mode_only = "src/data/table.json", "scripts/bash_parser.py"
+        (self.fixture.root / deleted).unlink()
+        (self.fixture.root / mode_only).chmod(0o755)
+        head = self.fixture.commit("Add deleted and mode-only qualification scope controls")
+        tools = ReviewTools(GitTree(self.fixture.root, self.case["head"]), self.fixture.root)
+        changes = tools.candidate_changes(self.case["base"], head)
+        paths = tuple(sorted(change.path for change in changes.changes))
+        reads = tuple(
+            (change.path, side) for change in changes.changes for side in change.required_reads()
+        )
+        _, _, _, _, _, qualification, _ = self.coordinator(
+            head=head, paths=paths, reads=reads, session_changes={"files": len(paths)},
+        )
+        self.assertEqual(qualification.changed_paths, paths)
+        for kind, omitted in (
+            ("added", "docs/reviewed_evolution.md"),
+            ("modified", "Makefile"),
+            ("deleted", deleted),
+            ("mode-only", mode_only),
+        ):
+            self.assertIn(omitted, paths)
+            partial = tuple(path for path in paths if path != omitted)
+            for read_all in (False, True):
+                with self.subTest(kind=kind, complete_reads=read_all):
+                    with self.assertRaisesRegex(MakeProbeError, "changed-path.*complete"):
+                        self.coordinator(
+                            head=head, paths=partial, reads=reads if read_all else None,
+                            session_changes={"files": len(paths)},
+                        )
+
     def test_required_path_coverage_rejects_counts_wrong_paths_and_another_root(self):
         unrelated = (
             "scripts/bash_parser.py", "scripts/validation_ownership/authority.py",

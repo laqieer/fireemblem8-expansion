@@ -1397,7 +1397,13 @@ review's 200-file capacity before launch; edge/consumer arrays remain 256 and
 the subject cap remains 40. Every path needs actual read coverage from the
 same immutable root/BASE/head pair through the same `ReviewTools.model`
 that created the session. Qualification invokes the shared
-`require_candidate_path_coverage` over `candidate_changes`: added/modified
+`require_candidate_path_coverage` over unfiltered `candidate_changes`.
+The declared path tuple must first equal the complete immutable BASE-to-head
+change set, including added, modified, deleted and mode-only paths. A reviewer
+reading every declared path cannot qualify a coherently narrowed declaration;
+even reading the entire change set does not repair an incomplete explicit
+scope. The same complete requirements object is used for actual read coverage:
+added/modified
 paths need head reads, deleted paths need base blobs, and mode-only changes
 need both sides. Empty or unrelated read sets, wrong roots and runtime file
 counts cannot substitute. The same builder validates the
@@ -1417,6 +1423,13 @@ invalidates the old local capture. The actual
 bounded process result, PID, exit and RSS are retained by the existing handoff
 contract. Missing, stale, failed or mismatched captures and candidate pass
 labels cannot grant acceptance.
+
+The standalone verifier independently rederives that complete change set
+before staging. This remains a separate defense: rejecting incomplete scope
+when qualification is created prevents a misleading qualification that the
+mandatory verifier could not consume. Source-faithful unit fixtures use the
+existing in-memory review runtime, not a new provider allocation or actual
+current-candidate/H1 qualification. Foundation-introduction is unchanged.
 
 A base with no authority remains `bootstrap-not-authoritative`/`authority:none`;
 exit0 is not managed exact-base acceptance. A complete foundation-only BASE is

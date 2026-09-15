@@ -3966,6 +3966,20 @@ game behavior needs a compensating change.
     changing their meaning and require zero oracle errors. Retain exact-path
     removal and unregistered-neighbor failures. No native test bodies, complete
     graph, H1 capture or remote workflow run are performed by these controls.
+15. Run the focused complete-transition qualification command under Automation.
+    In the owned Git fixture, create added, modified, deleted and mode-only
+    paths and complete their actual required-side reads. The full declared
+    scope must qualify. Then omit each path before dispatch, with both a
+    coherently partial read set and a complete read set paired with the
+    incomplete declaration. Each case must reject before qualification returns,
+    despite matching reviewer/context/root/head metadata and sufficient file
+    counts. The pre-fix qualifier accepts all eight omissions; its downstream
+    verifier has a separate complete-diff rejection, so this is not proof of a
+    successful H1 bypass. Preserve wrong-root, missing-read, stale-context,
+    two-sided mode/deletion and foundation-introduction controls. These use
+    the existing in-memory Runtime and real Git-backed read APIs, not an
+    external review provider or current-candidate qualification. Remove only
+    owned fixture files at cleanup; no CI, full graph or new allocation runs.
 
 ### Expected result
 
@@ -3988,6 +4002,13 @@ The one-owner-per-family invariant and all host CI commands remain. The nonreloc
 and unrelated host tools keep their separate mappings. Independent source/test/
 native-control probes, real package collection and parsed workflow commands
 prove this distinction without claiming a successful full workload.
+
+Reviewed-evolution qualification derives the complete immutable transition
+independently of the caller's path filter, requires exact declared-set equality,
+and checks actual read coverage over that same complete set. Coherent initial
+omissions and complete reads with partial declarations reject. The later
+standalone-verifier complete-diff guard and foundation-introduction behavior
+remain unchanged.
 
 Immutable verifier batches return exactly the individually read bytes, preserve
 path/mode/gitlink/source authority and reject every trusted-tree or loaded-module
@@ -5390,6 +5411,7 @@ unchanged source bytes/Git state across simulated fixture exceptions.
 - `python3 -m unittest scripts.validation_ownership.tests.test_coordinator_capture.CaptureModuleLifetimeTests -v`
   -- real immutable tool-loading cleanup followed by the CURRENT/BASE graph
   case, partial-load failure, and strict stale-owned-module negatives.
+- `python3 -m unittest scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_initial_qualification_requires_the_complete_immutable_change_set scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_required_path_coverage_rejects_counts_wrong_paths_and_another_root scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_deleted_and_mode_only_paths_require_actual_correct_side_reads scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_explicit_review_context_is_delivered_before_qualification scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_missing_wrong_identity_partial_scope_and_unqualified_expectations_reject scripts.validation_ownership.tests.test_coordinator_capture.IntroductionCaptureTests.test_real_foundation_introduction_is_explicit_not_exact_base -v`
 - `python3 -m unittest scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests.test_ownership_sources_and_collected_regressions_reach_actual_worker scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests.test_ownership_execution_edge_removal_redirect_and_order_controls scripts.validation_ownership.tests.test_literal_bindings.LiteralBindingModuleTests.test_module_discovery_collects_only_owned_cases -v`
 - `python3 -m unittest scripts.validation_ownership.tests.test_ci_verifier.ImmutableBlobBatchTests scripts.validation_ownership.tests.test_ci_verifier.BatchedVerifierSourceTests -v`
   -- actual Git byte equivalence, exact captures/gitlinks, bounded framing and
