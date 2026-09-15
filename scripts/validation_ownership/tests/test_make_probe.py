@@ -1091,36 +1091,52 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         finally:
             budget.close()
         contracts = {uname["expression"]: uname}
+        options = {
+            "declared_external_names": {
+                "TOOLCHAIN", "PREFIX", "CPP", "PYTHON", "HOST_CC",
+                "AUTOTOOLS_CONFIG_MK", "AUTOTOOLS_BUILD_DIR", "EXPANSION_HQ_MIXER",
+            },
+            "ambient_undefined_names": {"OS", "DEVKITARM", "MAKEOVERRIDES", "FE8_ITEM_ID_CAP"},
+            "trusted_builtin_names": {"PATH", "MAKECMDGOALS", "MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS"},
+        }
         with self.session() as session:
-            native = session.make("assets-check", definitions=("CPPFLAGS",), commands=MakeCommands(session, contracts))
+            startup = session.original_make_inputs("assets-check", ("OS", "PATH"))
+            self.assertEqual(startup["OS"], {"origin": "undefined", "flavor": "undefined", "value": ""})
+            self.assertEqual(startup["PATH"]["origin"], "environment")
+            self.assertEqual(startup["PATH"]["value"], ENVIRONMENT["PATH"])
+            native = session.make("assets-check", definitions=("CPPFLAGS", "EXE"), commands=MakeCommands(session, contracts))
             expected = native.semantics["definitions"]["global"]["CPPFLAGS"]["value"]
+            self.assertEqual(native.semantics["definitions"]["global"]["EXE"],
+                             {"origin": "file", "flavor": "simple", "value": ""})
             self.assertEqual(ordinary.stdout, (expected + "\n").encode())
             with patch.object(session, "original_make_inputs", wraps=session.original_make_inputs) as original_inputs:
                 result = run_probe(
-                    session.loader, {"assets-check"}, {}, contracts, session=session,
-                    declared_external_names={
-                        "TOOLCHAIN", "PREFIX", "CPP", "PYTHON", "HOST_CC",
-                        "AUTOTOOLS_CONFIG_MK", "AUTOTOOLS_BUILD_DIR", "EXPANSION_HQ_MIXER",
-                    },
-                    ambient_undefined_names={"OS", "DEVKITARM", "MAKEOVERRIDES", "FE8_ITEM_ID_CAP"},
-                    trusted_builtin_names={"PATH", "MAKECMDGOALS", "MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS"},
+                    session.loader, {"assets-check"}, {}, contracts, session=session, **options,
                 )["assets-check"]
             queried = {name for call in original_inputs.call_args_list for name in call.args[1]}
-            self.assertTrue({"OS", "PATH", "EXE"} <= queried)
+            self.assertTrue({"OS", "PATH"} <= queried)
         record = result["record"]["variants"][0]["record"]
         self.assertEqual(record["definitions"]["global"]["CPPFLAGS"]["value"], expected)
         self.assertIn("-undef -DFE8_ARCHIVAL_BUILD=1", expected)
         self.assertNotIn("-undef  -DFE8_ARCHIVAL_BUILD=1", expected)
         self.assertEqual(len(result["record"]["variants"]), 1)
         self.assertFalse(session.budget.children)
+        witness = "scripts/generated_data/chapterbundle/__init__.py"
+        (self.root / witness).unlink()
+        del self.entries[witness]
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "unproven.*mode"):
+                run_probe(session.loader, {"assets-check"}, {}, contracts, session=session, **options)
 
     def test_original_effect_free_inputs_and_branch_alternatives_do_not_invent_modes(self):
         continuation = "CPPFLAGS := -DFIRST=1 \\\n -DSECOND=2\nall:\n\t@/usr/bin/printf '%s\\n' '$(value CPPFLAGS)'\n"
-        for prefix, expected_input in (
-            ("ifeq ($(OS),Windows_NT)\nEXE := .exe\nelse\nEXE :=\nendif\nAS := as$(EXE)\n", "OS"),
-            ("CHOICE = yes\nifeq ($(CHOICE),yes)\nVALUE := one\nelse\nVALUE := two\nendif\nCOPY := $(VALUE)\n", "VALUE"),
-            ("export PATH := /usr/bin:$(PATH)\n", "PATH"),
-            ("CONFIG = absent.mk\n-include $(wildcard $(CONFIG))\n", None),
+        for prefix, expected_input, expected_value in (
+            ("ifeq ($(OS),Windows_NT)\nEXE := .exe\nelse\nEXE :=\nendif\nAS := as$(EXE)\n", "OS", None),
+            ("CHOICE = yes\nifeq ($(CHOICE),yes)\nVALUE := one\nelse\nVALUE := two\nendif\nCOPY := $(VALUE)\n", None, "one"),
+            ("CHOICE := $(subst X,yes,X)\nifeq ($(CHOICE),yes)\nVALUE := one\nelse\nVALUE := two\nendif\nCOPY := $(VALUE)\n", "VALUE", "one"),
+            ("CHOICE := $(subst X,no,X)\nifeq ($(CHOICE),yes)\nVALUE := one\nelse\nVALUE := two\nendif\nCOPY := $(VALUE)\n", "VALUE", "two"),
+            ("export PATH := /usr/bin:$(PATH)\n", "PATH", None),
+            ("CONFIG = absent.mk\n-include $(wildcard $(CONFIG))\n", None, None),
         ):
             with self.subTest(prefix=prefix):
                 result, queried = self.original_effects_probe(prefix + continuation)
@@ -1129,12 +1145,39 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                     self.assertIn(expected_input, queried)
                 value = result["record"]["variants"][0]["record"]["definitions"]["global"]["CPPFLAGS"]["value"]
                 self.assertEqual(value, "-DFIRST=1 -DSECOND=2")
+                if expected_value is not None:
+                    with self.session() as session:
+                        native = session.make("all", definitions=("VALUE", "COPY"))
+                    for name in ("VALUE", "COPY"):
+                        self.assertEqual(native.semantics["definitions"]["global"][name],
+                                         {"origin": "file", "flavor": "simple", "value": expected_value})
 
     def test_original_input_effect_evidence_does_not_hide_effectful_alternatives(self):
-        continuation = "CPPFLAGS := -DFIRST=1 \\\n -DSECOND=2\nall: ;\n"
+        continuation = "CPPFLAGS := -DFIRST=1 \\\n -DSECOND=2\nall:\n\t@/usr/bin/printf '%s\\n' '$(value CPPFLAGS)'\n"
+        known = "CHOICE = yes\nVALUE = $(eval .POSIX:)\nifeq ($(CHOICE),yes)\nVALUE = literal\nendif\nCOPY := $(VALUE)\n"
+        result, _ = self.original_effects_probe(known + continuation)
+        self.assertEqual(self.ordinary(), b"-DFIRST=1 -DSECOND=2\n")
+        self.assertEqual(result["record"]["variants"][0]["record"]["definitions"]["global"]["CPPFLAGS"]["value"],
+                         "-DFIRST=1 -DSECOND=2")
+        with self.session() as session:
+            native = session.make("all", definitions=("VALUE", "COPY"))
+        self.assertEqual(native.semantics["definitions"]["global"]["VALUE"]["value"], "literal")
+        self.assertEqual(native.semantics["definitions"]["global"]["COPY"]["value"], "literal")
+        for choice, spacing in (("yes", " "), ("no", "  ")):
+            with self.subTest(opaque_choice=choice):
+                source = known.replace("CHOICE = yes", "CHOICE := $(subst X," + choice + ",X)") + continuation
+                self.add("Makefile", source)
+                expected = "-DFIRST=1" + spacing + "-DSECOND=2"
+                self.assertEqual(self.ordinary(), (expected + "\n").encode())
+                with self.session() as session:
+                    native = session.make("all", definitions=("CPPFLAGS", "COPY"))
+                self.assertEqual(native.semantics["definitions"]["global"]["CPPFLAGS"]["value"], expected)
+                self.assertEqual(native.semantics["definitions"]["global"]["COPY"]["value"],
+                                 "literal" if choice == "yes" else "")
+                with self.assertRaisesRegex(MakeProbeError, "unproven.*mode"):
+                    self.original_effects_probe(source)
         cases = (
             "OS = $(eval .POSIX:)Linux\nifeq ($(OS),Windows_NT)\nVALUE = one\nelse\nVALUE = two\nendif\n",
-            "CHOICE = yes\nVALUE = $(eval .POSIX:)\nifeq ($(CHOICE),yes)\nVALUE = literal\nendif\nCOPY := $(VALUE)\n",
             "$(eval OS = $(eval .POSIX:)Linux)\nCOPY := $(OS)\n",
         )
         for prefix in cases:
@@ -1428,8 +1471,28 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             native = session.make("all", definitions=("MODE", "UNUSED"))
         self.assertEqual(native.semantics["definitions"]["global"]["MODE"]["value"], "first")
         self.assertEqual(native.semantics["definitions"]["global"]["UNUSED"]["flavor"], "simple")
-        with self.assertRaisesRegex(MakeProbeError, "unproven original Make append RHS timing"):
+        with self.assertRaisesRegex(MakeProbeError, "unsealed external defaults"):
             self.observe()
+        domains = {"MODE": {"kind": "explicit", "values": ["first"]}}
+        known = self.observe(domains)["all"]
+        self.assertEqual(known["variable_census"]["defaults"], ["MODE"])
+        self.assertEqual(len(known["record"]["variants"]), 2)
+        for variant in known["record"]["variants"]:
+            self.assertEqual(variant["record"]["files"][0]["prerequisites"],
+                             [{"name": "first", "order_only": False}])
+        for choice in ("yes", "no"):
+            with self.subTest(opaque_choice=choice):
+                self.add("Makefile", source.replace("CHOICE = yes", "CHOICE := $(subst X," + choice + ",X)"))
+                self.ordinary()
+                with self.session() as session:
+                    native = session.make("all", definitions=("MODE", "UNUSED"))
+                metadata = native.semantics["definitions"]["global"]
+                self.assertEqual(metadata["UNUSED"]["flavor"], "simple" if choice == "yes" else "recursive")
+                self.assertEqual(metadata["MODE"]["origin"], "file" if choice == "yes" else "undefined")
+                self.assertEqual(native.semantics["files"][0]["prerequisites"],
+                                 [{"name": "first", "order_only": False}] if choice == "yes" else [])
+                with self.assertRaisesRegex(MakeProbeError, "unproven original Make append RHS timing"):
+                    self.observe(domains)
 
     def test_emitted_append_requires_original_timing_and_preserves_expansion_stages(self):
         for operator in ("=", ":="):
@@ -1566,12 +1629,32 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.assertEqual(self.target_mode_fixture("include mode.mk\n"), ["alpha   beta", "alpha   beta"])
 
     def test_unproven_target_results_do_not_gain_final_value_or_normal_mode_authority(self):
+        known = "CHOICE = yes\nTARGET = ordinary\nifeq ($(CHOICE),yes)\nTARGET = .POSIX\nendif\n$(TARGET):\n"
+        self.assertEqual(self.target_mode_fixture(known), ["alpha beta", "alpha   beta"])
+        literal_values = _MakeSourceMode.literal_values
+        alternatives = []
+
+        def record_target(mode, expression, *args, **kwargs):
+            values = literal_values(mode, expression, *args, **kwargs)
+            if expression == "$(TARGET)" and values is not None:
+                alternatives.append(frozenset(values))
+            return values
+
+        for choice in ("yes", "no"):
+            with self.subTest(opaque_choice=choice):
+                alternatives.clear()
+                source = known.replace("CHOICE = yes", "CHOICE := $(subst X," + choice + ",X)")
+                with patch.object(_MakeSourceMode, "literal_values", record_target):
+                    with self.assertRaisesRegex(MakeProbeError, "unproven.*mode"):
+                        self.target_mode_fixture(source)
+                self.assertIn(frozenset({"ordinary", ".POSIX"}), alternatives)
+                self.assertEqual(self.last_target_values,
+                                 ["alpha beta", "alpha   beta"] if choice == "yes" else ["alpha beta"] * 2)
         for source, witness in (
             ("$(UNPROVEN):\n", False),
             ("TARGET := $(subst MARK,.POSIX,MARK)\n$(TARGET):\nTARGET = ordinary\n", True),
             ("TARGET := $(if yes,ordinary)\n$(TARGET):\n", True),
             ("TARGET = $(eval .POSIX:)ordinary\n$(TARGET):\n", True),
-            ("CHOICE = yes\nTARGET = ordinary\nifeq ($(CHOICE),yes)\nTARGET = .POSIX\nendif\n$(TARGET):\n", True),
             ("wild*:\n", True),
             ("TARGET = .POSIX:\n$(TARGET) ;\n", True),
             ("TARGET = ordinary: .POSIX\n$(TARGET)\n", True),
@@ -1580,6 +1663,10 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             (".POSIX\\&: ;\n", True),
         ):
             with self.subTest(source=source):
+                if not witness:
+                    path = "scripts/generated_data/chapterbundle/__init__.py"
+                    (self.root / path).unlink()
+                    del self.entries[path]
                 with self.assertRaisesRegex(MakeProbeError, "unproven.*mode"):
                     self.target_mode_fixture(source, witness=witness)
                 self.assertEqual(len(self.last_target_values), 2)
@@ -1603,19 +1690,40 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             self.target_mode_fixture("RULE = ordinary\nNAME = RULE\n$(origin $(NAME)):\n")
 
     def test_original_target_value_alternatives_keep_the_existing_context_bound(self):
+        literal_values = _MakeSourceMode.literal_values
         for width in (9, 10):
-            with self.subTest(width=width):
-                source = "CHOICE = yes\n"
-                for index in range(width):
-                    name = "PART_" + str(index)
-                    source += name + " = a\nifeq ($(CHOICE),yes)\n" + name + " = b\nendif\n"
-                source += "TARGET := out/" + "".join("$(PART_" + str(index) + ")" for index in range(width)) + "\n$(TARGET):\n"
-                if width == 9:
-                    self.assertEqual(self.target_mode_fixture(source), ["alpha beta", "alpha beta"])
-                else:
-                    with self.assertRaisesRegex(MakeProbeError, "existing bounded context plan"):
-                        self.target_mode_fixture(source)
-                    self.assertEqual(self.last_target_values, ["alpha beta", "alpha beta"])
+            for opaque in (False, True):
+                with self.subTest(width=width, opaque=opaque):
+                    source = "" if opaque else "CHOICE = yes\n"
+                    for index in range(width):
+                        name = "PART_" + str(index)
+                        choice = "CHOICE_" + str(index) if opaque else "CHOICE"
+                        if opaque:
+                            source += choice + " := $(subst X,yes,X)\n"
+                        source += name + " = a\nifeq ($(" + choice + "),yes)\n" + name + " = b\nendif\n"
+                    expression = "out/" + "".join("$(PART_" + str(index) + ")" for index in range(width))
+                    source += "TARGET := " + expression + "\n$(TARGET):\n"
+                    sizes = []
+
+                    def record_plan(mode, text, *args, **kwargs):
+                        values = literal_values(mode, text, *args, **kwargs)
+                        if text == expression and values is not None:
+                            sizes.append(len(values))
+                        return values
+
+                    with patch.object(_MakeSourceMode, "literal_values", record_plan):
+                        if opaque and width == 10:
+                            with self.assertRaisesRegex(MakeProbeError, "existing bounded context plan"):
+                                self.target_mode_fixture(source)
+                            self.assertEqual(self.last_target_values, ["alpha beta"] * 2)
+                        else:
+                            self.assertEqual(self.target_mode_fixture(source), ["alpha beta"] * 2)
+                            self.assertIn(512 if opaque else 1, sizes)
+                    target = "out/" + "b" * width
+                    with self.session() as session:
+                        native = session.make(target, definitions=("TARGET",))
+                    self.assertEqual(native.semantics["definitions"]["global"]["TARGET"]["value"], target)
+                    self.assertEqual(native.semantics["files"][0]["target"], target)
 
     def test_variable_include_names_join_actual_sources_and_empty_lists(self):
         self.add("child.mk", "CHILD = ordinary\n")
@@ -1679,11 +1787,42 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
     def test_unproven_and_missing_include_outcomes_do_not_become_empty_success(self):
         self.add("ordinary.mk", "VALUE = ordinary\n")
         self.add("posix.mk", ".POSIX:\n")
+        literal_values = _MakeSourceMode.literal_values
+        alternatives = []
+
+        def record_include(mode, expression, *args, **kwargs):
+            values = literal_values(mode, expression, *args, **kwargs)
+            if expression == "$(INC)" and values is not None:
+                alternatives.append(frozenset(values))
+            return values
+
+        for kind, known, expected_values, expected_visits in (
+            ("selection", "CHOICE = yes\nINC = ordinary.mk\nifeq ($(CHOICE),yes)\nINC = posix.mk\nendif\ninclude $(INC)\n",
+             ["alpha   beta"] * 2, ["Makefile", "posix.mk"]),
+            ("presence", "CHOICE = yes\nINC = ordinary.mk\nifeq ($(CHOICE),yes)\ninclude $(INC)\nendif\n",
+             ["alpha beta"] * 2, ["Makefile", "ordinary.mk"]),
+        ):
+            self.assertEqual(self.target_mode_fixture(known), expected_values)
+            self.assertEqual(self.last_include_observation.semantics["domains"]["MAKEFILE_LIST"]["value"].split(),
+                             expected_visits)
+            for choice in ("yes", "no"):
+                with self.subTest(kind=kind, opaque_choice=choice):
+                    alternatives.clear()
+                    source = known.replace("CHOICE = yes", "CHOICE := $(subst X," + choice + ",X)")
+                    with patch.object(_MakeSourceMode, "literal_values", record_include):
+                        with self.assertRaises(MakeProbeError):
+                            self.target_mode_fixture(source)
+                    visits = expected_visits if choice == "yes" else (
+                        ["Makefile", "ordinary.mk"] if kind == "selection" else ["Makefile"]
+                    )
+                    self.assertEqual(self.last_include_observation.semantics["domains"]["MAKEFILE_LIST"]["value"].split(),
+                                     visits)
+                    self.assertEqual(self.last_target_values, expected_values if choice == "yes" else ["alpha beta"] * 2)
+                    if kind == "selection":
+                        self.assertIn(frozenset({"ordinary.mk", "posix.mk"}), alternatives)
         for source in (
             "INC := $(subst X,ordinary.mk,X)\ninclude $(INC)\n",
-            "CHOICE = yes\nINC = ordinary.mk\nifeq ($(CHOICE),yes)\nINC = posix.mk\nendif\ninclude $(INC)\n",
             "INC = $(eval .POSIX:)ordinary.mk\ninclude $(INC)\n",
-            "CHOICE = yes\nINC = ordinary.mk\nifeq ($(CHOICE),yes)\ninclude $(INC)\nendif\n",
             "INC = ./*.mk\n-include $(INC)\n",
         ):
             with self.subTest(source=source):

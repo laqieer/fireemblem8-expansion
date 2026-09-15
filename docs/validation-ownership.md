@@ -890,6 +890,25 @@ alternatives: undefined and simple bindings are mode-inert, while recursive
 alternatives keep their original expressions and are checked through current
 dependencies. Unknown or effectful alternatives are not discarded. This
 preserves the OS/EXE/PATH chain without selecting a guessed conditional value.
+Once original OS selects the non-Windows branch, that source supplies
+file/simple/empty EXE directly; a redundant original EXE query is not required.
+Native OS/PATH receipts, native/source EXE and raw CPPFLAGS agreement remain
+the evidence, and removing the genuine witness still rejects.
+
+Uncertainty controls must remain genuinely unresolved as the original proof
+becomes more precise. Literal `CHOICE = yes` equalities are known positives,
+including overwrites that remove an older deferred effect before consumption.
+The focused controls use effect-free `CHOICE := $(subst X,yes,X)` and its `no`
+counterpart for a deliberately opaque original value. Native yes/no behavior
+then distinguishes immediate/deferred append timing, alternative values,
+possible POSIX effects, include visits and target modes. Declared MODE input
+does not rescue an append whose original timing is still unknown.
+Distinct opaque CHOICE inputs retain two PART alternatives each: the target
+plan has512 alternatives at width9 and rejects width10, while known-choice
+width9/10 cases each have one result. These are original abstract alternatives,
+not hundreds of native states. No resolver, permission or bound is weakened
+to keep an old fixture's uncertainty label.
+
 Original input lookup is invalidated by unproven namespace effects. Exact,
 literal-path `wildcard` includes may use the captured source/generated namespace
 to prove an empty or present outcome; unresolved patterns/context still reject.

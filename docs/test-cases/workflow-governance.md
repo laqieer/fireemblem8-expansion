@@ -4394,8 +4394,37 @@ Require both the native setup observation and `run_probe` through template/sourc
 analysis to succeed under original limits. Native OS is undefined, PATH comes
 from the original controlled environment, and CPPFLAGS retains one internal
 space before `-DFE8_ARCHIVAL_BUILD=1`. Do not trim that value to obtain equality.
+The proven non-Windows branch establishes file/simple/empty EXE; require that
+native/source fact rather than a redundant original-input EXE query. Removing
+the genuine empty witness must still reject original OS/mode evidence.
 Baseline10 scope5657444621/run34793282205/result5657482497 remains consumed and
 closed; these small fixtures are not a new complete graph allocation.
+
+Run the seven-method proven/opaque-condition fixture command under Automation.
+Keep literal `CHOICE = yes` equalities as positives: a simple append runs its
+RHS immediately, VALUE/COPY are source-known, and a known overwrite can remove
+an older deferred POSIX effect before use. Preserve the unsealed-MODE
+negative, then supply the existing one-value MODE contract and require the
+native flavor/prerequisite result and complete small-planner variants.
+
+For genuine uncertainty use the effect-free opaque initializer
+`CHOICE := $(subst X,yes,X)` and its `no` counterpart. Their original values
+remain unknown without invalidating the namespace; native values differ.
+Opaque append timing must reject even with MODE sealed, while native yes/no
+distinguishes simple/immediate from recursive/deferred behavior. Mode-inert
+alternatives retain VALUE input evidence and native one/two values. Potential
+deferred effects reject in both abstract cases: native yes overwrites safely,
+whereas native no executes the retained POSIX effect and changes raw spacing.
+
+Retain known include/target selections as positives with exact original
+mode/visit outcomes. Opaque include-selection alternatives must be exactly
+ordinary.mk/posix.mk and reject; opaque include presence must reject whether
+native execution visits ordinary.mk or only Makefile, even when printed
+values agree. Opaque target alternatives ordinary/.POSIX likewise reject
+while preserving native delayed-POSIX versus normal values. Keep missing-
+witness negatives isolated from witnesses created by earlier positive cases.
+Original reflected-value observation wrappers must return the real values
+unchanged, not inject a proof decision.
 
 For the closed baseline11 regression, retain the original
 `GENERATED_DATA_OUT_DIR` and initial items-config declarations plus the
@@ -4442,9 +4471,12 @@ unsupported contexts.
 Use literal origin/flavor lookups on unused error/shell bodies as target names:
 the bodies stay unread and no marker is created. Literal value lookup may
 prove raw literal target data, not arbitrary computed introspection. Exercise
-512 retained original value alternatives and reject the next larger product
+known-choice width9/10 targets as cardinality-one positives. With distinct
+effect-free opaque CHOICE inputs, observe512 retained original value
+alternatives at width9 and reject the next larger product at width10
 through the existing context bound; keep the original deadline and native
-combined-name/frame controls.
+combined-name/frame controls. These are abstract target alternatives, not512
+native graph states; ordinary/native target output must still agree.
 
 Restore only the old punctuation-based target classifier in an isolated
 mutation. The same original and renamed slices must recover the continuation
@@ -4782,10 +4814,11 @@ simple branch alternatives and a provably empty exact-path wildcard include.
 All must preserve normal continuation behavior. Recursive OS eval, unknown or
 effectful branch alternatives and unresolved/generated include context still
 reject. Source changes cannot be repaired by arbitrary end-of-run values or
-fresh original inputs after an unproven namespace mutation. Independently remove
-native original-input proof, branch-alternative retention and original include
-outcome proof: each must restore the full Tools-prefix compatibility rejection
-while ordinary/native CPPFLAGS remains valid.
+fresh original inputs after an unproven namespace mutation. Remove the genuine
+original-input witness to recover the Tools-prefix rejection while native
+CPPFLAGS remains valid. The separate opaque branch and include controls must
+retain their own real alternative/visit evidence; do not require every such
+mutation to break a Tools branch whose original OS equality is already known.
 
 For diagnostics, introduce an unproven input before a mode-sensitive
 continuation in a small named Makefile. Check the actual path, logical ordinal,
@@ -5468,6 +5501,7 @@ unchanged source bytes/Git state across simulated fixture exceptions.
 - `python3 -m unittest scripts.validation_ownership.tests.test_coordinator_capture.CaptureModuleLifetimeTests -v`
   -- real immutable tool-loading cleanup followed by the CURRENT/BASE graph
   case, partial-load failure, and strict stale-owned-module negatives.
+- `python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_append_uses_original_inputs_and_retains_unknown_branch_timing scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_complete_actual_tools_prefix_has_original_input_effect_evidence scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_effect_free_inputs_and_branch_alternatives_do_not_invent_modes scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_input_effect_evidence_does_not_hide_effectful_alternatives scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_target_value_alternatives_keep_the_existing_context_bound scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_unproven_and_missing_include_outcomes_do_not_become_empty_success scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_unproven_target_results_do_not_gain_final_value_or_normal_mode_authority -v`
 - `python3 -m unittest tests.workflows.test_ownership_probe.ProbeExecutionOwnershipTests.test_graph_discovery_partitions_all_cases_without_repeating_native_owner -v`
 - `python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_ineligible_original_conditions_do_not_read_operands -v`
 - `python3 -m unittest scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_initial_qualification_requires_the_complete_immutable_change_set scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_required_path_coverage_rejects_counts_wrong_paths_and_another_root scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_deleted_and_mode_only_paths_require_actual_correct_side_reads scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_explicit_review_context_is_delivered_before_qualification scripts.validation_ownership.tests.test_coordinator_capture.ReviewedEvolutionCaptureTests.test_missing_wrong_identity_partial_scope_and_unqualified_expectations_reject scripts.validation_ownership.tests.test_coordinator_capture.IntroductionCaptureTests.test_real_foundation_introduction_is_explicit_not_exact_base -v`
