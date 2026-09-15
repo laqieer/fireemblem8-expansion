@@ -396,12 +396,33 @@ second inventory registry.
 
 Unit-test discovery is a separate boundary. The literal-binding test module
 `scripts/validation_ownership/tests/test_literal_bindings.py` has an exact
-`paths.host` declaration, retaining `surface.host` and the same owner set as
+`paths.ownership` declaration, retaining `surface.ownership` and the same owner set as
 the Make-probe and graph-command test modules. Its eight discoverable cases do
 not themselves grant graph admission. Removing only that declaration leaves
 the generic prefix match but rejects admission, as does a neighboring
 unregistered test path. This is ordinary exact ownership, not a verifier
 bootstrap/runtime allowlist entry or a change to the Git-derived cohort.
+
+The ownership implementation, support files and collected regression modules
+resolve through that dedicated surface to `owner.validation-suite` and
+`owner.validation-check` in `ownership-tests`, replacing their outdated generic
+host pair and preserving one owner per evidence family. Moving the suite's job without moving
+these path-to-evidence edges is an incomplete report even when full CI still
+requires the worker. The five native regression modules excluded by the
+ownership package's real `load_tests` remain separate under their existing
+host mapping; the new rule does not claim those bodies run in ownership-tests.
+General host tooling likewise does not acquire ownership-suite evidence.
+Every existing host CI job and command remains mandatory and unchanged.
+
+Focused controls collect actual test modules without executing their bodies,
+resolve every ownership-namespace path, and bind the two execution owners to
+the parsed workflow's real isolated launcher and mode. Independent oracle
+probes cover an implementation, a collected regression and a nonrelocated
+native control. Restoring host-only mapping, removing either execution edge,
+or redirecting it to a live host-only owner rejects. Reordering equivalent
+rules, nodes and edges remains valid. Existing exact-selector removal and
+unregistered-neighbor controls still reject; the namespace prefix is not new
+semantic admission.
 
 Includes and explicit excludes still form a partition: zero matches are
 unknown, multiple rule/exclusion matches are ambiguous, and a prefix-only

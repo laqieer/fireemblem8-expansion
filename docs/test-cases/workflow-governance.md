@@ -3949,6 +3949,23 @@ game behavior needs a compensating change.
     remain valid. Confirm the native probe stays in `extended-host-tests`,
     all 32 mirrored commands remain, and the build-once master publisher and
     required `host-tests`/`build`/`summary` names are unchanged.
+14. From the same clean checkout, run
+    `python3 -m unittest scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests.test_ownership_sources_and_collected_regressions_reach_actual_worker scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests.test_ownership_execution_edge_removal_redirect_and_order_controls scripts.validation_ownership.tests.test_literal_bindings.LiteralBindingModuleTests.test_module_discovery_collects_only_owned_cases -v`.
+    Collect the actual ownership package suite without running its bodies.
+    Resolve its collected modules and the ownership implementation/support
+    namespace through the real parsed graph model. Each must reach both
+    `owner.validation-suite` and `owner.validation-check` in ownership-tests,
+    replacing the outdated generic host pair with one owner per family. Compare the selected
+    workflow definitions with parsed YAML and the real isolated launcher modes,
+    not merely a step label. General host tools and the five separately
+    collected native modules must keep their old owners without acquiring
+    ownership-suite evidence. Restore host-only mapping, remove either new
+    execution edge, and redirect it to a live host-only owner; each must fail
+    required-owner or independently authored oracle checks. Combining old and
+    new owners in the same family must still reject as ambiguous. Reorder rules/nodes/edges without
+    changing their meaning and require zero oracle errors. Retain exact-path
+    removal and unregistered-neighbor failures. No native test bodies, complete
+    graph, H1 capture or remote workflow run are performed by these controls.
 
 ### Expected result
 
@@ -3964,6 +3981,13 @@ the typed generated-data registry; gate commands derive from existing Make
 targets, workflow jobs/steps, and tester cases rather than a duplicate command
 list. Both ownership commands are required, scrubbed `ownership-tests` gates and
 members of the complete upstream gate inventory.
+
+Ownership framework and collected regression paths reach their actual
+relocated execution owners through `surface.ownership`, not host-only evidence.
+The one-owner-per-family invariant and all host CI commands remain. The nonrelocated native test modules
+and unrelated host tools keep their separate mappings. Independent source/test/
+native-control probes, real package collection and parsed workflow commands
+prove this distinction without claiming a successful full workload.
 
 Immutable verifier batches return exactly the individually read bytes, preserve
 path/mode/gitlink/source authority and reject every trusted-tree or loaded-module
@@ -4601,14 +4625,16 @@ same focused method parses the actual ownership graph and calls
 `_path_rule_matches`, `_path_admission_sources` and `_path_admission`, without
 building a full graph or launching native Make. Require the new module and
 existing `test_make_probe.py` / `test_graph_commands.py` siblings to select
-only `paths.host` / `surface.host` with `exact-ownership-rule` admission.
+only `paths.ownership` / `surface.ownership` with `exact-ownership-rule` admission.
 Remove only the new module's exact selector in the parsed rule: its prefix
 match remains, but admission must reject. A neighboring unregistered
 `test_unregistered_literal_bindings.py` must likewise reject. The original
 module was unit-discovered yet failed this independent graph boundary; do not
 repair it by changing the introduction cohort, broadening a prefix or adding
-verifier bootstrap/runtime permissions. Existing host owners and CI job
-authority remain unchanged by this exact-path declaration.
+verifier bootstrap/runtime permissions. The separate execution-owner controls
+above require the relocated ownership suite/check pair rather than outdated
+generic host ownership or path admission alone. Unrelated host/native mappings
+and every existing CI command remain unchanged.
 
 Make the candidate Makefile itself raise an error, then query original inputs
 through the native empty-witness route: no candidate program or recipe may run.
@@ -5335,6 +5361,7 @@ unchanged source bytes/Git state across simulated fixture exceptions.
 - `python3 -m unittest scripts.validation_ownership.tests.test_coordinator_capture.CaptureModuleLifetimeTests -v`
   -- real immutable tool-loading cleanup followed by the CURRENT/BASE graph
   case, partial-load failure, and strict stale-owned-module negatives.
+- `python3 -m unittest scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests.test_ownership_sources_and_collected_regressions_reach_actual_worker scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests.test_ownership_execution_edge_removal_redirect_and_order_controls scripts.validation_ownership.tests.test_literal_bindings.LiteralBindingModuleTests.test_module_discovery_collects_only_owned_cases -v`
 - `python3 -m unittest scripts.validation_ownership.tests.test_ci_verifier.ImmutableBlobBatchTests scripts.validation_ownership.tests.test_ci_verifier.BatchedVerifierSourceTests -v`
   -- actual Git byte equivalence, exact captures/gitlinks, bounded framing and
   copies, no cross-context reuse, real protected launch counts, per-file

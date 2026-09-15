@@ -14,6 +14,30 @@
       ]
     },
     {
+      "path": "scripts/validation_ownership/graph_probe.py",
+      "expected_surface": "surface.ownership",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.validation-check"},
+        {"edge_type": "owns-test", "evidence_id": "owner.validation-suite"}
+      ]
+    },
+    {
+      "path": "scripts/validation_ownership/tests/test_literal_bindings.py",
+      "expected_surface": "surface.ownership",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.validation-check"},
+        {"edge_type": "owns-test", "evidence_id": "owner.validation-suite"}
+      ]
+    },
+    {
+      "path": "scripts/validation_ownership/tests/test_foundation.py",
+      "expected_surface": "surface.host",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-workflow"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-build"}
+      ]
+    },
+    {
       "path": "scripts/check_docs.py",
       "expected_surface": "surface.host",
       "expected_owners": [
@@ -344,5 +368,5 @@
       ]
     }
   ],
-  "seal": "7d820e691be1f10fab3ec58645472dfc7e509001680fad02822f308c2e7bd4fb"
+  "seal": "ba957efe158574b4ddfddda91b9d80d85d5e88b884ec1e875ce77e85a199b65d"
 }

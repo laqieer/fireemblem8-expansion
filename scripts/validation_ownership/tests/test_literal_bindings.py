@@ -56,20 +56,20 @@ class LiteralBindingModuleTests(unittest.TestCase):
             loader = AuthorityLoader(ROOT, entries, "HEAD", budget=budget)
             sources = reporter._path_admission_sources(loader, set())
 
-            def host_rule(path):
+            def ownership_rule(path):
                 matches = [rule for rule in graph["path_rules"]
                            if reporter._path_rule_matches(rule, path, set())]
                 self.assertEqual([(rule["id"], rule["surface"]) for rule in matches],
-                                 [("paths.host", "surface.host")])
+                                 [("paths.ownership", "surface.ownership")])
                 return matches[0]
 
             path = Path(__file__).resolve().relative_to(ROOT).as_posix()
             for owned in (path, "scripts/validation_ownership/tests/test_make_probe.py",
                           "scripts/validation_ownership/tests/test_graph_commands.py"):
                 self.assertIn(owned, entries)
-                self.assertEqual(reporter._path_admission(owned, host_rule(owned), sources),
+                self.assertEqual(reporter._path_admission(owned, ownership_rule(owned), sources),
                                  "exact-ownership-rule")
-            rule = host_rule(path)
+            rule = ownership_rule(path)
             without_exact = {**rule, "include": [
                 selector for selector in rule["include"]
                 if selector != {"kind": "exact", "path": path}
@@ -80,7 +80,7 @@ class LiteralBindingModuleTests(unittest.TestCase):
             neighbor = "scripts/validation_ownership/tests/test_unregistered_literal_bindings.py"
             self.assertNotIn(neighbor, entries)
             with self.assertRaisesRegex(reporter.OwnershipError, "lacks semantic admission"):
-                reporter._path_admission(neighbor, host_rule(neighbor), sources)
+                reporter._path_admission(neighbor, ownership_rule(neighbor), sources)
         finally:
             budget.close()
             self.assertFalse(budget.children)

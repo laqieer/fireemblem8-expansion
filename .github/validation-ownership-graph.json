@@ -213,6 +213,17 @@
       "dependencies": []
     },
     {
+      "id": "surface.ownership",
+      "kind": "surface",
+      "label": "Ownership framework and collected regressions",
+      "surface_type": "source",
+      "requirements": [
+        "positive",
+        "adversarial"
+      ],
+      "dependencies": []
+    },
+    {
       "id": "surface.host",
       "kind": "surface",
       "label": "Host tooling and tests",
@@ -1026,6 +1037,20 @@
       "reason": "Pull-request template ownership drift is checked by the required graph gate."
     },
     {
+      "id": "ownership.owns-test",
+      "type": "owns-test",
+      "source": "surface.ownership",
+      "target": "owner.validation-suite",
+      "reason": "The dedicated ownership worker executes the framework's collected behavioral regressions."
+    },
+    {
+      "id": "ownership.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.ownership",
+      "target": "owner.validation-check",
+      "reason": "The ownership worker rejects incomplete or stale whole-tree ownership contracts."
+    },
+    {
       "id": "host.owns-test",
       "type": "owns-test",
       "source": "surface.host",
@@ -1744,32 +1769,12 @@
       "exclude": []
     },
     {
-      "id": "paths.host",
-      "surface": "surface.host",
+      "id": "paths.ownership",
+      "surface": "surface.ownership",
       "include": [
         {
           "kind": "prefix",
-          "path": "scripts/"
-        },
-        {
-          "kind": "prefix",
-          "path": "tests/"
-        },
-        {
-          "kind": "prefix",
-          "path": "tools/"
-        },
-        {
-          "kind": "exact",
-          "path": "scripts/host_python.py"
-        },
-        {
-          "kind": "exact",
-          "path": "scripts/modernize/package_ci_patch.sh"
-        },
-        {
-          "kind": "exact",
-          "path": "scripts/modernize/tests/test_archival_dependencies.py"
+          "path": "scripts/validation_ownership/"
         },
         {
           "kind": "exact",
@@ -1813,15 +1818,102 @@
         },
         {
           "kind": "exact",
-          "path": "scripts/validation_ownership/tests/test_foundation.py"
-        },
-        {
-          "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_graph_commands.py"
         },
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_graph_report.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_literal_bindings.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/producer_channel.py"
+        }
+      ],
+      "exclude": [
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_producer.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_dependency.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_metadata_transport.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_content_publication.py"
+        }
+      ]
+    },
+    {
+      "id": "paths.ownership-native",
+      "surface": "surface.host",
+      "include": [
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_producer.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_dependency.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_metadata_transport.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_content_publication.py"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.host",
+      "surface": "surface.host",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": "scripts/"
+        },
+        {
+          "kind": "prefix",
+          "path": "tests/"
+        },
+        {
+          "kind": "prefix",
+          "path": "tools/"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/host_python.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/modernize/package_ci_patch.sh"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/modernize/tests/test_archival_dependencies.py"
         },
         {
           "kind": "exact",
@@ -1893,14 +1985,6 @@
         },
         {
           "kind": "exact",
-          "path": "scripts/validation_ownership/tests/test_make_probe.py"
-        },
-        {
-          "kind": "exact",
-          "path": "scripts/validation_ownership/tests/test_literal_bindings.py"
-        },
-        {
-          "kind": "exact",
           "path": "scripts/workflow_pilot/candidate_evidence.py"
         },
         {
@@ -1965,26 +2049,6 @@
         },
         {
           "kind": "exact",
-          "path": "scripts/validation_ownership/producer_channel.py"
-        },
-        {
-          "kind": "exact",
-          "path": "scripts/validation_ownership/tests/test_dependency.py"
-        },
-        {
-          "kind": "exact",
-          "path": "scripts/validation_ownership/tests/test_metadata_transport.py"
-        },
-        {
-          "kind": "exact",
-          "path": "scripts/validation_ownership/tests/test_content_publication.py"
-        },
-        {
-          "kind": "exact",
-          "path": "scripts/validation_ownership/tests/test_producer.py"
-        },
-        {
-          "kind": "exact",
           "path": "scripts/workflow_pilot/adaptive_gate.py"
         },
         {
@@ -2017,6 +2081,10 @@
         }
       ],
       "exclude": [
+        {
+          "kind": "prefix",
+          "path": "scripts/validation_ownership/"
+        },
         {
           "kind": "prefix",
           "path": "scripts/generated_data/"

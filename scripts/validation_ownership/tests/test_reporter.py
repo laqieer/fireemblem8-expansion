@@ -5,11 +5,14 @@ import importlib
 import io
 import json
 from pathlib import Path
+import shlex
 import tempfile
 import subprocess
 import unittest
 from unittest import mock
 import sys
+
+import yaml
 
 from scripts.validation_ownership import reporter
 from scripts.validation_ownership.authority import (
@@ -102,6 +105,117 @@ class AssetOwnershipTests(unittest.TestCase):
             with self.subTest(path=path):
                 actual = reporter._resolve_path(path, self.graph, model)
                 self.assertNotIn("target-scenario", {owner["edge_type"] for owner in actual["owners"]})
+
+    def test_ownership_sources_and_collected_regressions_reach_actual_worker(self):
+        from scripts.validation_ownership import tests as ownership_tests
+
+        model = self.model()
+        pending = [ownership_tests.load_tests(unittest.TestLoader(), unittest.TestSuite(), "test_*.py")]
+        collected = set()
+        while pending:
+            case = pending.pop()
+            if isinstance(case, unittest.TestSuite):
+                pending.extend(case)
+            else:
+                collected.add(type(case).__module__.replace(".", "/") + ".py")
+        self.assertIn("scripts/validation_ownership/tests/test_literal_bindings.py", collected)
+        native = {
+            "scripts/validation_ownership/tests/" + name + ".py"
+            for name in (
+                "test_foundation", "test_producer", "test_dependency",
+                "test_metadata_transport", "test_content_publication",
+            )
+        }
+        self.assertTrue(native.isdisjoint(collected))
+        paths = {path for path in self.entries if path.startswith("scripts/validation_ownership/")} - native
+        self.assertTrue(collected <= paths)
+        retained = {("owns-test", "owner.host-build"), ("adversarial-control", "owner.host-workflow")}
+        execution = {
+            ("owns-test", "owner.validation-suite"),
+            ("adversarial-control", "owner.validation-check"),
+        }
+        for path in sorted(paths):
+            with self.subTest(path=path):
+                actual = reporter._resolve_path(path, self.graph, model)
+                self.assertEqual(actual["surface"], "surface.ownership")
+                self.assertEqual(
+                    {(owner["edge_type"], owner["evidence_id"]) for owner in actual["owners"]},
+                    execution,
+                )
+        for path in sorted(native | {"scripts/host_python.py", "scripts/check_docs.py"}):
+            with self.subTest(unrelated=path):
+                actual = reporter._resolve_path(path, self.graph, model)
+                self.assertEqual(actual["surface"], "surface.host")
+                self.assertEqual(
+                    {(owner["edge_type"], owner["evidence_id"]) for owner in actual["owners"]},
+                    retained,
+                )
+        workflow_text = (ROOT / ".github/workflows/build.yml").read_text()
+        workflow = yaml.load(workflow_text, Loader=yaml.BaseLoader)
+        _, step_records = reporter._generic_workflow_authorities(workflow_text)
+        launcher = "scripts/validation_ownership/isolated_launcher.py"
+        for owner, mode in (("owner.validation-suite", "tests"), ("owner.validation-check", "check")):
+            authority = model["evidence"][owner]["authority"]
+            self.assertEqual(authority["kind"], "workflow-step")
+            self.assertEqual(authority["job"], "ownership-tests")
+            definition = yaml.load(
+                "\n".join(step_records[(authority["job"], authority["step"])]),
+                Loader=yaml.BaseLoader,
+            )[0]
+            steps = [
+                step for step in workflow["jobs"][authority["job"]]["steps"]
+                if step == definition
+            ]
+            self.assertEqual(len(steps), 1)
+            argv = shlex.split(steps[0]["run"])
+            self.assertEqual(argv[0], "/usr/bin/python3")
+            index = argv.index(launcher)
+            self.assertEqual(set(argv[1:index]), {"-I", "-S", "-B"})
+            self.assertEqual(argv[index + 1], mode)
+
+    def test_ownership_execution_edge_removal_redirect_and_order_controls(self):
+        edges = [
+            edge for edge in self.graph["edges"]
+            if edge["source"] == "surface.ownership"
+            and edge["target"] in {"owner.validation-suite", "owner.validation-check"}
+        ]
+        self.assertEqual(len(edges), 2)
+        for edge in edges:
+            for remove in (True, False):
+                with self.subTest(edge=edge["id"], remove=remove):
+                    graph = copy.deepcopy(self.graph)
+                    if remove:
+                        graph["edges"] = [item for item in graph["edges"] if item["id"] != edge["id"]]
+                    else:
+                        next(item for item in graph["edges"] if item["id"] == edge["id"])["target"] = "owner.host-config"
+                    if remove:
+                        with self.assertRaisesRegex(reporter.OwnershipError, "missing owner edges"):
+                            self.model(graph)
+                    else:
+                        model = self.model(graph)
+                        with self.assertRaises(reporter.OwnershipError):
+                            reporter.validate_probe_oracle(self.oracle, graph, self.entries)
+                            reporter._measure(self.oracle, graph, model)
+        ambiguous = copy.deepcopy(self.graph)
+        ambiguous["edges"].append({
+            **edges[0], "id": "ambiguous.ownership", "target": "owner.host-build",
+        })
+        with self.assertRaisesRegex(reporter.OwnershipError, "ambiguous owners"):
+            self.model(ambiguous)
+        old_mapping = copy.deepcopy(self.graph)
+        next(rule for rule in old_mapping["path_rules"] if rule["id"] == "paths.ownership")["surface"] = "surface.host"
+        model = self.model(old_mapping)
+        reporter.validate_probe_oracle(self.oracle, old_mapping, self.entries)
+        with self.assertRaises(reporter.OwnershipError):
+            reporter._measure(self.oracle, old_mapping, model)
+        reordered = copy.deepcopy(self.graph)
+        for key in ("nodes", "edges", "path_rules"):
+            reordered[key].reverse()
+        model = self.model(reordered)
+        reporter.validate_probe_oracle(self.oracle, reordered, self.entries)
+        measured = reporter._measure(self.oracle, reordered, model)
+        self.assertEqual(measured["false_positive_selections"], 0)
+        self.assertEqual(measured["false_negative_selections"], 0)
 
     def test_new_framework_sources_keep_precise_existing_owners(self):
         model = self.model()
