@@ -4096,6 +4096,13 @@ The real OS grandchild PID is not an extensible game character ID, but the
 unchanged token-level census must still report it and require its exact
 reviewed-exclusion row with a functional reason. Removing that row restores
 the classification failure; do not rename the variable or loosen scan rules.
+After editing the classification source, regenerate its committed ID-space
+outputs with `python3 -m scripts.generated_data.idspace generate`, then run
+`python3 -m scripts.generated_data.idspace check` and
+`python3 -m unittest scripts.generated_data.tests.test_idspace.OutputDriftTests -v`.
+Preserve the stale-output preimage and inspect the generated delta: this
+non-game PID changes census/audit metadata, not caps, table counts or C layout.
+The consumer coverage check alone is not the separate generated-output gate.
 Run `python3 tools/gba-playtest/tests/test_host_only_mode.py HostOnlyStagedWorktreeSubprocessTests ProfileProcessLifecycleTests -v`.
 The hermetic stale-artifact tree must stage the actual process module/package
 init. Removing the copied helper makes the subprocess fail import; restoring

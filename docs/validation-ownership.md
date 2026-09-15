@@ -346,6 +346,10 @@ artifacts. This is real dependency closure, not a live-root fallback.
 The new OS `pid` test symbol remains visible to the extensible-ID census and
 has one explicit reviewed-exclusion explaining its pidfd/process role.
 Renaming it to evade scanning or weakening the census is not a repair.
+Classification changes also require the canonical
+`python3 -m scripts.generated_data.idspace generate` output update and its
+separate check. The OS-PID exclusion changes only audit/census metadata;
+default caps, record counts and the generated C ABI header remain unchanged.
 
 ## Typed contract
 

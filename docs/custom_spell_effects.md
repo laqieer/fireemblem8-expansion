@@ -469,6 +469,10 @@ malicious processes escaping their session.
    and package init; missing-helper import fails, restoration returns to
    host-only skipping, and all stale artifacts remain unchanged. No identifier
    rename, scanner waiver or live source fallback supplies that evidence.
+   After changing a classification, run
+   `python3 -m scripts.generated_data.idspace generate` and commit its derived
+   audits. Require `python3 -m scripts.generated_data.idspace check` and the
+   existing ID-space output-drift tests; do not hand-edit audit digests.
 
 This subcase extends the existing profile and ownership contracts without
 changing gameplay, save, locale, generated schemas or ABI. Its dependencies are
