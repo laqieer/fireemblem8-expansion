@@ -182,42 +182,54 @@ def run(argv, deadline, *, lifetime=0, payload_input=None):
     prctl(36, 1)  # PR_SET_CHILD_SUBREAPER; reap orphaned descendants as well.
     parent = os.getpid()
     child = None
+    completion_fd = None
+    selector = None
     handlers = {}
     primary = None
+    mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+
+    def launch():
+        nonlocal child, completion_fd, selector
+        selector = selectors.DefaultSelector()
+        selector.register(lifetime, selectors.EVENT_READ)
+        if selector.select(0):
+            raise BrokenPipeError("caller lifetime ended before namespace launch")
+        child = subprocess.Popen(
+            argv, stdin=subprocess.DEVNULL if payload_input is None else payload_input,
+            close_fds=True,
+            start_new_session=True, preexec_fn=lambda: parent_death(parent, mask),
+        )
+        completion_fd = os.pidfd_open(child.pid)
+        selector.register(completion_fd, selectors.EVENT_READ)
+
     try:
         handlers[signal.SIGCHLD] = signal.signal(signal.SIGCHLD, signal.SIG_DFL)
         for sig in TERMINATING:
             handlers[sig] = signal.signal(sig, interrupted)
-        with selectors.DefaultSelector() as selector:
-            selector.register(lifetime, selectors.EVENT_READ)
-            if selector.select(0):
-                raise BrokenPipeError("caller lifetime ended before namespace launch")
-            mask = signal.pthread_sigmask(signal.SIG_BLOCK, TERMINATING)
-            try:
-                child = subprocess.Popen(
-                    argv, stdin=subprocess.DEVNULL if payload_input is None else payload_input,
-                    close_fds=True,
-                    start_new_session=True, preexec_fn=lambda: parent_death(parent, mask),
-                )
-            finally:
-                signal.pthread_sigmask(signal.SIG_SETMASK, mask)
-            while True:
-                # WNOWAIT retains the group leader until privileged cleanup.
-                if os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
-                    break
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise TimeoutError("aggregate probe deadline exhausted in namespace watchdog")
-                if selector.select(min(remaining, 0.05)):
-                    raise BrokenPipeError("caller lifetime ended during namespace execution")
+        # The existing signal-deferring guard also makes acquisition atomic:
+        # retain setup errors if unmasking delivers a queued interruption.
+        finish_cleanup([launch])
+        while True:
+            # WNOWAIT retains the group leader until privileged cleanup.
+            if os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("aggregate probe deadline exhausted in namespace watchdog")
+            if any(key.fd == lifetime for key, _ in selector.select(remaining)):
+                raise BrokenPipeError("caller lifetime ended during namespace execution")
     except BaseException as error:
         primary = error
         raise
     finally:
-        finish_cleanup(
-            [] if child is None else [lambda: terminate(child)],
-            primary=primary, handlers=handlers,
-        )
+        actions = []
+        if child is not None:
+            actions.append(lambda: terminate(child))
+        if completion_fd is not None:
+            actions.append(lambda: os.close(completion_fd))
+        if selector is not None:
+            actions.append(selector.close)
+        finish_cleanup(actions, primary=primary, handlers=handlers)
     return child.returncode
 
 

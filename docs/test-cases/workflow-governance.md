@@ -3729,7 +3729,8 @@ game behavior needs a compensating change.
 
 ### Feature and configuration
 
-Issue [#206](https://github.com/laqieer/fireemblem8-expansion/issues/206);
+Issues [#206](https://github.com/laqieer/fireemblem8-expansion/issues/206) and
+[#264](https://github.com/laqieer/fireemblem8-expansion/issues/264);
 supported Linux x86-64 source checkout, GNU Make 4.3, Python 3, a static-capable
 host C compiler, C++ compiler for native-tool controls, and working private
 namespaces on Linux 5.12 or later. See the [foundation contract](../ownership-probe-foundation.md).
@@ -3823,6 +3824,9 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
    namespaces. Budget/interruption controls require a payload-start marker and
    the intended error, not an early launcher failure. Real capsule namespace
    execution remains a separate production-path check.
+   For #264, also run the focused readiness procedure below: actual child
+   pidfd readiness, not a completion polling interval, must wake that same
+   watchdog while the caller lifetime pipe remains independently active.
 10. Capture Make's parsed ELF interpreter and runtime closure, then run the real
     Make observation with only an Arch-shaped, non-multiarch `/usr/lib` library
     layout. Require the authentic prerequisite/value and read-only captured
@@ -3969,6 +3973,90 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
     controls. Real compiler and Make dispatch positives must remain accepted;
     every negative must remove owned children, channels, cache and scratch.
 
+### Focused watchdog readiness regression (#264)
+
+**Prerequisites and reset:** use the supported source checkout and existing
+Linux pidfd/Python signal APIs with readable private proc child/FD state.
+The measured environment is Linux x86-64, GNU Make 4.3 and Python 3.12; this
+fix adds no host requirement. These same-UID lifecycle fixtures need neither
+namespace privileges nor a ROM. Start without another child in each isolated
+watchdog process. All fixtures use owned pipes/processes and ignored
+`build/test-artifacts`; the test harness reaps its processes and removes only
+its fixture roots. Preserve failing logs before rerunning; never kill by
+process name or remove another checkout's files.
+
+1. Run the focused command below. The readiness case starts `/usr/bin/true`,
+   real pipe-gated children returning 0 and 7, and a child exiting by SIGUSR1.
+   Keep the caller lifetime writer open and use a different pipe for payload
+   input. Check that the registered pidfd identifies the owned child in kernel
+   FD metadata, is non-inheritable, and produces `EVENT_READ` when that child
+   exits. A controlled clock supplies a five-second deadline remainder to the
+   real selector; this is an argument/FD-event assertion, not a wall-time
+   threshold. Two `WNOWAIT` observations must still see the same leader before
+   sole-reaper teardown; return statuses must be 0, 7 and `-SIGUSR1` as applicable.
+2. The same case removes only the child pidfd's selector registration in an
+   isolated negative run. The still-live lifetime pipe cannot supply child
+   completion readiness, so the readiness contract must fail, while owned
+   cleanup still succeeds. Restoring the old 50 ms completion tick must also
+   fail the deadline-argument assertion. No production bypass or faster
+   polling interval is an accepted alternative.
+3. Inject pidfd acquisition exhaustion and unsupported-kernel errors after a
+   real launch, plus selector registration failure. Deliver SIGHUP, SIGINT
+   and SIGTERM during acquisition and registration. Combine setup failure
+   with a pending signal: the original exception must remain primary and the
+   interruption must remain diagnostic evidence. No path may leave an owned
+   child, pidfd or selector, change caller handlers/masks, or silently retry.
+4. Inject a reported close or terminate failure **after real release**, with
+   and without an existing operation error. Include selector close, and send
+   a real signal during teardown. Every remaining close/reap must run before
+   the restored caller handler observes the resource state; primary errors
+   retain precedence and cleanup/signal diagnostics remain attached. These
+   deliberate post-release error controls do not claim that an OS-denied
+   termination succeeded.
+5. Keep the coupled controls: independent lifetime EOF, the actual aggregate
+   deadline, signal teardown, orphaned and escaped descendants, stale-PID
+   canaries, binary stdin and no inherited payload FD. Missing pidfd/kernel
+   or lifetime support must reject before launch. The privileged-route adapter
+   runs the real watchdog without invoking sudo; it is not a credential-
+   transition proof. All tests must pass together.
+
+```sh
+python3 -m unittest \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_watchdog_child_readiness_uses_the_absolute_deadline \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_watchdog_pidfd_setup_failures_and_signals_release_ownership \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_watchdog_pidfd_cleanup_errors_preserve_primary_and_deferred_signals \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_watchdog_teardown_delivers_signal_after_sole_reaping \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_watchdog_payload_stdin_is_binary_and_separate_from_lifetime \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_missing_pidfd_support_rejects_before_payload_or_tracee_launch \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_watchdog_rejects_missing_lifetime_and_kernel_support_before_launch \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_watchdog_reaps_owned_orphans_on_completion_eof_deadline_and_signal \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_reaped_process_handles_never_signal_an_unrelated_owned_canary \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_tracee_cleanup_uses_pinned_identity_after_numeric_pid_reuse \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_budget_normal_completion_reaps_group_and_escaped_descendants \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_budget_launch_interruption_waits_for_handle_ownership \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_privileged_budget_uses_real_watchdog_without_running_sudo \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_privileged_lifetime_closes_on_budget_rejection_and_interruption \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_privileged_cleanup_delegates_before_wait_and_never_hides_permission_errors \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_cleanup_preserves_a_callers_already_blocked_signal_mask \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_budget_payload_does_not_inherit_the_temporary_setup_mask \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_budget_cleanup_defers_signal_until_children_and_pipes_are_closed -v
+```
+
+**Expected and pre-fix results:** real child readiness and the original absolute
+deadline replace periodic completion polling, with unchanged lifetime and sole-
+reaper semantics. The pre-fix watchdog has no child readiness FD in its selector,
+so the permanent actual-FD regression fails; a registration-only removal fails
+the same contract. Isolated before/after runs of 20 short commands can support
+the performance diagnosis, but no exact runtime threshold belongs in this case.
+
+**Interactions and limitations:** #264 is an independent foundation fix used by
+#180; it does not prove the full graph, extraction #196, whole-CI runtime or a
+real sudo transition. Other game/profile conflicts are none. No resource limit,
+counter, permission, namespace, protocol or authority changes; no save migration,
+generated game data, locale, ROM/RAM, modern debug/release or archival change.
+All assertions are deterministic host automation; no manual-only criterion or
+human approval applies. A normal revert of the dedicated fix is the rollback.
+
 ### Expected result
 
 The real consumer reports the native localization prerequisite and exactly the
@@ -3984,6 +4072,9 @@ and every failure clears owned processes, channels, mappings and caches.
 The pre-fix native Make processes really forge the inherited test channel;
 unconfined source functions really read/stat/enumerate undeclared fixture
 paths; a per-process timeout really admits work beyond a single total budget.
+The #264 pre-fix selector contains only the caller lifetime pipe, so a real
+child exit cannot wake it; the new real-FD and removal controls pin that defect
+without using a fragile elapsed-time threshold.
 These controls are restricted to disposable test inputs and are not a
 production bypass switch. Normal positive behavior is tested alongside every
 boundary; no failure is converted to successful evidence.
