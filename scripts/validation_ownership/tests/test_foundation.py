@@ -86,6 +86,8 @@ class FoundationTests(unittest.TestCase):
         self.assertFalse(session.cache)
         self.assertFalse(session.mappings)
         self.assertFalse(session.native_tools)
+        self.assertFalse(session.runtime_tools)
+        self.assertFalse(session.runtime_query_profiles)
         self.assertFalse(session._views)
         self.assertFalse(session.make_runtime)
         self.assertFalse(session.runtime_inputs)
@@ -1054,6 +1056,39 @@ class FoundationTests(unittest.TestCase):
             self.assertGreater(session.processes_used, used[1])
             self.assertFalse((session.runtime_root / canonical.lstrip("/")).exists())
         self.assert_clean(session)
+
+    def test_absent_stock_dispatch_alias_remains_absent_without_weakening_image_conflicts(self):
+        from scripts.validation_ownership import make_probe
+
+        original = "/bin/ownership-absent-dispatch-" + secrets.token_hex(12)
+        canonical = "/usr/bin/" + Path(original).name
+        self.assertFalse(Path(original).exists())
+        self.assertFalse(Path(canonical).exists())
+        self.add("Makefile", (
+            f"ORIGINAL := $(wildcard {original})\n"
+            f"CANONICAL := $(wildcard {canonical})\n"
+            "all: ;\n"
+        ))
+        aliases = (*make_probe.ALIASES, canonical)
+        with patch.object(make_probe, "ALIASES", aliases):
+            with self.session(runtime_files=(original,)) as session:
+                captured, = session.runtime_inputs
+                self.assertIsNone(captured.data)
+                self.assertEqual(captured.canonical, canonical)
+                self.assertEqual(captured.aliases, (("/bin", "usr/bin"),))
+                self.assertNotIn(original, session.runtime_dispatch)
+                self.assertFalse((session.runtime_root / canonical.lstrip("/")).exists())
+                result = session.make("all", variables=("ORIGINAL", "CANONICAL"))
+                self.assertEqual(result.semantics["domains"]["ORIGINAL"]["value"], "")
+                self.assertEqual(result.semantics["domains"]["CANONICAL"]["value"], "")
+            self.assert_clean(session)
+            direct = self.session(runtime_files=(canonical,))
+            with self.assertRaisesRegex(
+                MakeProbeError, "^runtime input conflicts with trusted execution image$",
+            ):
+                with direct:
+                    self.fail("direct reserved helper image collision was admitted")
+            self.assert_clean(direct)
 
     def test_stock_runtime_alias_absence_keeps_component_and_operation_boundaries(self):
         original = "/bin/ownership-absence-boundary-" + secrets.token_hex(12)
@@ -6761,7 +6796,7 @@ int main(int argc, char **argv) {
                             self.assertEqual(session.budget.runs, runs)
                         self.assert_clean(session)
 
-    def ordinary_assignment_context(self, assignments, names):
+    def ordinary_assignment_context(self, assignments, names, exported=()):
         environment, cli = dict(ENVIRONMENT), []
         for origin, name, value in assignments:
             if origin == "environment":
@@ -6773,13 +6808,15 @@ int main(int argc, char **argv) {
             cwd=self.root, env=environment, capture_output=True, check=True, timeout=10,
         )
         lines = normal.stdout.decode("utf-8").splitlines()
-        self.assertEqual(len(lines), 1 + 3*len(names), normal.stdout)
+        offset = 1 + 3*len(names)
+        self.assertEqual(len(lines), offset + len(exported), normal.stdout)
         return (
             [{"name": name, "order_only": False} for name in lines[0].split()],
             {
                 name: dict(zip(("value", "origin", "flavor"), lines[1 + index*3:4 + index*3]))
                 for index, name in enumerate(names)
             },
+            dict(zip(exported, lines[offset:])),
         )
 
     def test_equivalent_assignment_order_preserves_actual_make_identity(self):
@@ -6787,6 +6824,7 @@ int main(int argc, char **argv) {
             "all: $(B)\n"
             "\t@printf '%s\\n' '$^' '$(A)' '$(origin A)' '$(flavor A)' "
             "'$(B)' '$(origin B)' '$(flavor B)'\n"
+            "\t@printf '%s\\n' \"$$MAKEFLAGS\"\n"
             "one-two: ;\n"
         ))
         for origins in (
@@ -6798,18 +6836,28 @@ int main(int argc, char **argv) {
                 normal, observed = [], []
                 with self.session() as session:
                     for order in (assignments, tuple(reversed(assignments))):
-                        context = self.ordinary_assignment_context(order, ("A", "B"))
+                        context = self.ordinary_assignment_context(order, ("A", "B"), ("MAKEFLAGS",))
                         result = session.make("all", variables=("A", "B"), assignments=order)
                         self.assertEqual(result.semantics["files"][0]["prerequisites"], context[0])
                         self.assertEqual(result.semantics["domains"], context[1])
+                        self.assertEqual(len(result.semantics["native_dispatches"]), 2)
+                        for dispatch in result.semantics["native_dispatches"]:
+                            self.assertEqual(dispatch["environment"]["MAKEFLAGS"], context[2]["MAKEFLAGS"])
                         self.assertEqual(result.events, ())
                         normal.append(context)
                         observed.append(result)
                 self.assert_clean(session)
-                self.assertEqual(normal[0], normal[1])
+                self.assertEqual(normal[0][:2], normal[1][:2])
                 self.assertEqual(observed[0].execution_digest, observed[1].execution_digest)
-                self.assertEqual(observed[0].semantic_digest, observed[1].semantic_digest)
-                self.assertEqual(observed[0].semantics, observed[1].semantics)
+                if origins == ("command-line", "command-line"):
+                    self.assertNotEqual(normal[0][2]["MAKEFLAGS"], normal[1][2]["MAKEFLAGS"])
+                    self.assertNotEqual(observed[0].semantics["native_dispatches"],
+                                        observed[1].semantics["native_dispatches"])
+                    self.assertNotEqual(observed[0].semantic_digest, observed[1].semantic_digest)
+                else:
+                    self.assertEqual(normal[0], normal[1])
+                    self.assertEqual(observed[0].semantic_digest, observed[1].semantic_digest)
+                    self.assertEqual(observed[0].semantics, observed[1].semantics)
 
     def test_assignment_identity_preserves_values_origins_and_observed_order(self):
         names = ("A", "B", "STATE")
@@ -6868,6 +6916,7 @@ int main(int argc, char **argv) {
             "ifneq ($(findstring --no-print-directory,$(MAKEFLAGS)),)",
             "ifneq ($(origin LD_PRELOAD),undefined)",
             "ifneq ($(origin VO_OBSERVE_TARGET),undefined)",
+            "ifneq ($(origin VO_OBSERVE_RAW_NAMES),undefined)",
             "ifneq ($(origin SOURCE_DATE_EPOCH),undefined)",
         )
         for condition in controls:
@@ -7005,6 +7054,11 @@ int main(int argc, char **argv) {
                         self.assertEqual(len(observed.events), 1)
                         self.assertEqual(observed.events[0]["match"], 0)
                         self.assertEqual(observed.stdout, b"")
+                        contexts = observed.semantics["native_dispatches"]
+                        self.assertEqual({item["kind"] for item in contexts}, {"value", "recipe"})
+                        self.assertTrue(all(item["environment"]["HOME"] == "/nonexistent" for item in contexts))
+                        self.assertTrue(all(not any(name.startswith("VO_") for name in item["environment"])
+                                            for item in contexts))
                     self.assert_clean(session)
 
     def test_recursive_and_makefile_remake_dispatch_still_requires_real_mappings(self):
@@ -7051,8 +7105,8 @@ int main(int argc, char **argv) {
             self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "observed")
             self.assertTrue(all(event["match"] >= 0 for event in result.events))
         self.assert_clean(session)
-        from scripts.validation_ownership.syscall_guard import VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA
-        for marker in (VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA):
+        from scripts.validation_ownership.syscall_guard import VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_JOB_POLICY
+        for marker in (VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_JOB_POLICY):
             with self.subTest(marker=marker):
                 session = self.session()
                 with self.assertRaisesRegex(MakeProbeError, "unauthenticated"):
@@ -9193,21 +9247,32 @@ print(json.dumps({"owned_descriptors":len(allocated),"reaped":len(reaped),"defer
 
     def test_direct_argument_boundaries_cannot_collide_and_quote_refactors_survive(self):
         registration = Command(("/usr/bin/printf", "%s", "a b"))
-        commands = {
-            "printf %s 'a b'": registration,
-            'printf "%s" "a b"': registration,
-        }
+        direct = ("printf %s 'a b'", "printf '%s' 'a b'", r"printf %s a\ b")
+        shell = 'printf "%s" "a b"'
+        commands = dict.fromkeys((*direct, shell), registration)
         values = []
-        for expression in ("printf %s 'a b'", 'printf "%s" "a b"'):
+        for expression in (*direct, shell):
             # Isolate argv semantics from the separate identity of recipe-owning
             # source bytes: this goal deliberately has no recipe.
             self.add("Makefile", "VALUE := $(shell " + expression + ")\n.PHONY: all\nall:\n")
             with self.session() as session:
                 result = session.make("all", variables=("VALUE",), commands=commands)
                 self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "a b")
-                values.append(result.semantic_digest)
+                dispatch, = result.semantics["native_dispatches"]
+                self.assertEqual(dispatch["kind"], "value")
+                if expression in direct:
+                    self.assertEqual(dispatch["executable"], "/usr/bin/printf")
+                    self.assertEqual(dispatch["arguments"], ["printf", "%s", "a b"])
+                else:
+                    self.assertEqual(dispatch["executable"], "/bin/sh")
+                    self.assertEqual(dispatch["arguments"], ["/bin/sh", "-c", expression])
+                values.append(result)
             self.assert_clean(session)
-        self.assertEqual(values[0], values[1])
+        self.assertEqual(len({result.semantic_digest for result in values[:3]}), 1)
+        for result in values[1:]:
+            self.assertEqual(result.semantics["domains"], values[0].semantics["domains"])
+            self.assertEqual(result.semantics["dynamic_commands"], values[0].semantics["dynamic_commands"])
+        self.assertNotEqual(values[0].semantic_digest, values[-1].semantic_digest)
         self.add("Makefile", "VALUE := $(shell printf %s a b)\nall: ;\n")
         session = self.session()
         with self.assertRaisesRegex(MakeProbeError, "unregistered eager"):
@@ -9499,7 +9564,9 @@ class PendingAdmissionTests(unittest.TestCase):
                         "import sys; print(sum(len(value) for value in sys.argv[1:-1]),sys.argv[-1])",
                         "a" * 60000, "b" * 60000, str(index),
                     ))
-                    size = len(encoded([command.argv, (), (), (), (), command.publication_policy]))
+                    size = len(encoded([
+                        command.argv, (), (), (), (), command.publication_policy, None, None,
+                    ]))
                     self.assertLess(size, MAX_PENDING_RECORD_BYTES)
                     expected += size
                     result = session.command(command)
@@ -9530,7 +9597,7 @@ class PendingAdmissionTests(unittest.TestCase):
         command = Command(tuple(argv), code=("reader.py",), sources=(source,), directories=(".",))
         fixed = len(encoded([
             command.argv, command.code, command.sources, command.directories,
-            command.outputs, command.publication_policy,
+            command.outputs, command.publication_policy, None, None,
         ]))
         argv.append("x" * (limit + 1 - fixed - 3))
         command = replace(command, argv=tuple(argv))
@@ -9538,7 +9605,7 @@ class PendingAdmissionTests(unittest.TestCase):
         self.assertTrue(all(len(value.encode()) <= 65536 for value in command.argv))
         self.assertEqual(len(encoded([
             command.argv, command.code, command.sources, command.directories,
-            command.outputs, command.publication_policy,
+            command.outputs, command.publication_policy, None, None,
         ])), limit + 1)
         with self.session(budget) as session:
             before = budget.bytes.get("pending", 0)

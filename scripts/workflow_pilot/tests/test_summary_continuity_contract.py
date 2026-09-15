@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import ast
 import re
 import unittest
 from pathlib import Path
 
 from scripts.workflow_pilot import (
+    candidate_evidence,
     summary_continuity_contract,
 )
 
@@ -58,6 +60,28 @@ class SummaryContinuityContractTests(unittest.TestCase):
         summary_continuity_contract.validate_summary_continuity_script(
             self._summary_script()
         )
+
+    def test_reviewed_worker_sets_reject_missing_ownership_evidence(self):
+        source = summary_continuity_contract.summary_continuity_python_source(self._summary_script())
+        sets = {
+            node.targets[0].id: ast.literal_eval(node.value.args[0])
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.Assign) and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id in {"FULL_JOB_NAMES", "METADATA_JOB_NAMES"}
+        }
+        self.assertEqual(sets["FULL_JOB_NAMES"], candidate_evidence.KNOWN_JOB_IDS)
+        self.assertEqual(
+            sets["METADATA_JOB_NAMES"],
+            candidate_evidence.KNOWN_JOB_IDS - {"event-classifier"} | {"metadata-classifier"},
+        )
+        locations = list(re.finditer(r'"ownership-tests",', source))
+        self.assertEqual(len(locations), 3)
+        for location in locations:
+            with self.subTest(offset=location.start()):
+                changed = source[:location.start()] + source[location.end():]
+                with self.assertRaisesRegex(ValueError, "AST differs"):
+                    summary_continuity_contract.validate_summary_continuity_python(changed)
 
     def test_raw_identity_rejects_nonsemantic_whitespace_and_comment_drift(self):
         script = self._summary_script()

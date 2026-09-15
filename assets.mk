@@ -36,11 +36,9 @@ ASSET_OUTPUT_MK := $(ASSET_OUTPUT_DIR)/asset_manifest.mk
 ASSET_DISCOVERY_KEY := $(subst /,_,$(subst .,_,$(ASSET_OUTPUT_DIR)))
 ASSET_DISCOVERY_MK := $(ASSET_DISCOVERY_ROOT)/$(ASSET_DISCOVERY_KEY).mk
 ASSET_MANIFEST_SOURCE_STAMP := $(ASSET_DISCOVERY_MK)
-ASSET_PORTRAIT_INCBIN_CONSUMERS ?=
-ASSET_TMX_INCBIN_CONSUMERS ?=
-ASSET_BANIM_INCBIN_CONSUMERS ?=
-ASSET_CUSTOM_SPELL_INCBIN_CONSUMERS ?=
+ifneq ($(MAKECMDGOALS),validation-ownership-check)
 -include $(ASSET_DISCOVERY_MK)
+endif
 
 # Every modern build root/profile owns an independent generated asset tree.
 # Compile-time path definitions select that tree for the existing source-owned
@@ -165,7 +163,8 @@ $(ASSET_OUTPUT_DIR)/tmx/%.mar $(ASSET_OUTPUT_DIR)/tmx/%.json &: $(ASSET_OUTPUT_M
 # instead of Make remaking this include before the target runs. Any ordinary
 # build goal (including bare `make`) still remakes and includes it before the
 # dependency graph is resolved.
-ASSET_MAINTENANCE_GOALS := assets-validate assets-generate assets-check assets-clean assets-test
+ASSET_MAINTENANCE_GOALS := assets-validate assets-generate assets-check assets-clean assets-test \
+	validation-ownership-check
 ifneq ($(MAKECMDGOALS),)
 ifneq ($(filter-out $(ASSET_MAINTENANCE_GOALS),$(MAKECMDGOALS)),)
 -include $(ASSET_OUTPUT_MK)

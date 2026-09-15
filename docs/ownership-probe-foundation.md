@@ -222,6 +222,48 @@ GNU Make's native recursive-command flags conservatively require registered
 results for their dispatches, rather than silently suppressing recursion.
 The fixed process/resource bounds still include interceptor children.
 
+Every Make observation includes `native_dispatches`: the actual scheduled
+executable/argv/cwd, ordered dispatch identity, recipe/value classification,
+failure-ignore state and complete effective environment at the authenticated
+interceptor exec boundary. Export membership and values come from GNU Make's
+actual `envp`, including target-specific export and inherited unexport behavior,
+not a source-name scan or another expansion of unused variables. No host
+environment or observer bootstrap variables are inherited. Values are not
+redacted or replaced with a claimed semantic equivalent. Duplicate/malformed
+environment names and excessive vectors reject. Both vectors share the
+existing 64 KiB frame bound, each retains the 1,024-entry bound, and strings
+retain the 4,096-byte bound. Native observations, JSON transport, retained
+semantics and graph caches spend their existing counters without refunds.
+
+The graph's lifecycle consumer may additionally select
+`ProbeSession.make(..., observe_recipe_dispatch=True)` for the validated
+`recipe_dispatches` projection. It retains each complete recipe context,
+including sequence, kind and environment, rather than dropping startup
+authority. These are dispatch observations, not execution
+of candidate recipes; metadata-only suppression is unchanged. Effective error
+policy comes from GNU Make's active job `noerror` bit, which combines target
+`COMMANDS_NOERROR`, command flags and expanded leading `-`, plus the global
+ignore flag. The observer reads that job at the real `wait`/`waitpid` return,
+before GNU Make updates or frees it. Authenticated native receipts bind the
+waited namespace PID to the helper's actual kernel `getpid` result and dispatch
+sequence. Missing, duplicate, malformed or unmatched receipts reject; PIDs are
+not owner identity. All receipt traffic retains observation/byte accounting.
+An unrelated scoped `.IGNORE` is not global ignore authority.
+The graph uses these records only with its closed ordinary dispatcher,
+captured source identity and session/model binding. It does not acquire
+permission to execute arbitrary consumer code or reset its report budget.
+
+`ProbeSession.make(..., definitions=("NAME",))` observes literal GNU
+`$(value NAME)` together with origin/flavor in global and actual file scopes.
+Those records live under `semantics["definitions"]`, separate from expanded
+`domains`/file `variables`. Raw and expanded requests cannot overlap, and
+their combined count keeps the original 512-name admission. Identifier and
+128-character bounds are unchanged. Raw observation does not expand an unused
+body; normal Make parsing/recipe evaluation still occurs. The private selector
+is removed before Make imports its environment and survives genuine Make
+re-exec only through the existing trusted bootstrap. Raw result, decoded and
+retained/cached bytes keep their original counters and limits.
+
 Make's runtime is captured once per session from its actual ELF interpreter
 and that trusted interpreter's bounded `--list` dependency closure. Canonical
 system tool/library paths, resolved aliases and their ancestors must be
@@ -701,6 +743,16 @@ commit's complete bounded source tree; original paths such as
 and their blobs. Existing loader and Snapshot reads group those blobs by origin
 under the same report budget; no second loader/session/sandbox is constructed.
 
+`AuthorityLoader.read_blobs(paths, label)` exposes that same bounded parser
+for a selected immutable read, returning an exact path-to-bytes map only after
+all requested responses validate. It requires the actual capture, never a
+detached dictionary or a fabricated partial Snapshot. Direct reads charge
+framing and copied payloads to `output`; Snapshot charges them to `snapshot`.
+Each stream uses the existing aggregate category bound while each blob keeps
+its independent file bound. Requests and launcher arguments retain `pending`
+charges and the original deadline. No cross-call cache is retained; live
+callers continue to use the uncached no-follow `read_blob` API.
+
 The database must be an existing canonical absolute directory without symlink
 components. Unrequested links, wrong/unavailable/non-commit objects, a working
 checkout substituted for a database, escaping/conflicting names and nonregular
@@ -739,13 +791,16 @@ Two identities deliberately serve different purposes:
   repeated events use them. Every speculative command still requires complete
   authority, successful source accounting and the same aggregate charges/cache.
 
-Unique-name assignment metadata is canonicalized by name, retaining each
-origin and value. Environment and command-line assignments, including mixed
-origins and recursive references, therefore have the same semantic identity
-when reordering them leaves the native target/domain observations equivalent.
-The executed argv and environment application order are **not** reordered.
-Order-sensitive Make observations, such as a `MAKEOVERRIDES` value or a
-prerequisite selected from it, remain intact and continue to change the digest.
+Unique-name request metadata is canonicalized by name, retaining each origin
+and value. Equal variable values/origins/flavors and prerequisites do not imply
+equal complete native identity: reordering CLI assignments changes exported
+`MAKEFLAGS`, which an ordinary recipe can observe. Actual executable/argv,
+environment bytes and application order are **not** sorted or masked.
+Only genuinely equal complete native contexts retain equal semantic digests.
+Likewise, quoting forms with identical direct `printf` argv remain equivalent,
+while a form that makes GNU Make select `/bin/sh -c` retains a different native
+context despite equal registered-command output and variable semantics.
+Order-sensitive `MAKEOVERRIDES` or prerequisite observations also remain intact.
 This does not expand the metadata-only recipe contract into production recipe
 execution or artifact validation.
 
@@ -753,6 +808,15 @@ Do not hash the whole `MakeObservation` when computing an owner identity:
 consume `semantic_digest`, not `execution_digest`. These are ephemeral
 execution/semantic boundaries, not committed source ledgers or ROM identity
 requirements.
+
+`MakeObservation.file_open_attempts` retains unique `(resolved_path,
+syscall_spelling)` pairs for the live Make process's repository file-open
+requests, including requests whose absence Make ignores. These are attempted
+opens, not successful reads; directory enumeration and actual kernel statuses
+retain their existing separate observations. The spelling is what Make passed
+to the syscall after its own normalization, not reconstructed Makefile text.
+The records use the existing protected observation channel and cumulative
+bookkeeping allowance, without granting additional access.
 
 ## Aggregate lifetime and resources
 
@@ -863,8 +927,9 @@ an attempted launch before a pre-`Popen` rejection, as before.
 Caller-side states, argv and serialized Python objects can already exist
 before admission; this is not a claim that their allocation was prevented.
 No coordinator AS/NNP policy or aggregate host-RAM guarantee is added.
-The graph planner's use of this shared seam belongs to #180's later normal
-integration, not this foundation root. Dependencies are the existing budget,
+The graph planner uses the same seam for newly queued replacement states;
+repeated queries share admission without counting queued states as executions.
+Dependencies are the existing budget,
 producer and view APIs; other feature/profile conflicts are none. Save/config,
 generated content, locale, ROM/GBA RAM and modern/archival behavior are unchanged.
 

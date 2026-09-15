@@ -8,6 +8,7 @@ import unittest
 
 from jsonschema import Draft202012Validator
 
+from scripts.validation_ownership.coordinator_capture import reviewed_evolution_scope
 from scripts.workflow_pilot import adaptive_gate as gate, agent_handoff as handoff
 from scripts.workflow_pilot import coordinator_observations as observations, raw_diff_check as raw
 from scripts.workflow_pilot.tests.test_agent_handoff import GitFixture, at_offset
@@ -27,6 +28,30 @@ if value != {'value': 7}:
     raise SystemExit(7)
 print(json.dumps({'protocol_changes': 1}))
 """
+
+
+def review_qualification(local, paths, edges, consumers, *, checker=None):
+    checker = checker or local["base_sha"]
+    return {
+        "schema_version": 1,
+        "case_id": "TC-WORKFLOW-GATE-OWNERSHIP-001",
+        "repository": local["repository"],
+        "pull_request": local["pr_number"],
+        "base_sha": local["base_sha"],
+        "candidate_sha": local["head_sha"],
+        "worktree": local["worktree"],
+        "checker_revision": checker,
+        "changed_paths": list(paths),
+        "changed_edge_ids": list(edges),
+        "affected_consumers": list(consumers),
+        "review_scope": sorted(reviewed_evolution_scope(checker, paths, edges, consumers)),
+        "review_task": "actual runtime task",
+        "reviewer": "independent reviewer",
+        "review_started_at": local["registered_at"],
+        "review_completed_at": observations.utc_now(),
+        "coordinator_id": local["coordinator_id"],
+        "git_identity": copy.deepcopy(local["git_identity"]),
+    }
 
 
 class CoordinatorLocalTests(unittest.TestCase):
@@ -222,3 +247,152 @@ class CoordinatorLocalTests(unittest.TestCase):
             self.assertFalse(validator.is_valid(state))
             with self.assertRaises(ValueError):
                 handoff.validate_state(state)
+
+    def test_review_qualification_uses_the_existing_local_record_schema(self):
+        local = self.complete()
+        qualification = review_qualification(
+            local,
+            (".github/validation-ownership-graph.json",),
+            ("source.owns-test",),
+            ("surface.source",),
+        )
+        local["review_qualification"] = qualification
+        validator = Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()))
+        self.assertTrue(validator.is_valid(self.state))
+        handoff.validate_state(self.state)
+        for field in ("case_id", "repository", "pull_request", "candidate_sha", "base_sha", "worktree",
+                      "coordinator_id", "git_identity"):
+            changed = copy.deepcopy(self.state)
+            changed["candidates"][0]["local_validation"]["review_qualification"][field] = (
+                "TC-WORKFLOW-OTHER-001" if field == "case_id"
+                else "other/repository" if field == "repository"
+                else 999 if field == "pull_request"
+                else "f" * 40 if field in {"candidate_sha", "base_sha"}
+                else "/" if field == "worktree"
+                else "other" if field == "coordinator_id"
+                else {**qualification["git_identity"], "inode": qualification["git_identity"]["inode"] + 1}
+            )
+            if field == "case_id":
+                self.assertFalse(validator.is_valid(changed))
+            with self.assertRaises(ValueError):
+                handoff.validate_state(changed)
+
+    def test_local_and_review_git_identity_match_schema_numeric_bounds(self):
+        self.complete()
+        validator = Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()))
+        for qualified in (False, True):
+            valid = copy.deepcopy(self.state)
+            local = valid["candidates"][0]["local_validation"]
+            local["git_identity"].update(device=0, inode=1)
+            if qualified:
+                local["review_qualification"] = review_qualification(
+                    local, (".github/validation-ownership-graph.json",),
+                    ("source.owns-test",), ("surface.source",),
+                )
+                gate.validate_review_qualification(local["review_qualification"])
+            self.assertTrue(validator.is_valid(valid))
+            handoff.validate_state(valid)
+            for field, value in (
+                ("inode", 0), ("inode", -1), ("inode", False),
+                ("device", -1), ("device", False),
+            ):
+                with self.subTest(qualified=qualified, field=field, value=value):
+                    changed = copy.deepcopy(valid)
+                    changed_local = changed["candidates"][0]["local_validation"]
+                    changed_local["git_identity"][field] = value
+                    if qualified:
+                        changed_local["review_qualification"]["git_identity"][field] = value
+                        with self.assertRaises(ValueError):
+                            gate.validate_review_qualification(changed_local["review_qualification"])
+                    self.assertFalse(validator.is_valid(changed))
+                    with self.assertRaises(ValueError):
+                        handoff.validate_state(changed)
+
+    def test_actual_full_graph_scope_fits_both_unchanged_subject_caps(self):
+        local = self.complete()
+        graph = json.loads((ROOT / ".github/validation-ownership-graph.json").read_text())
+        paths = (".github/validation-ownership-graph.json", "external-policy.txt")
+        edges = tuple(sorted(edge["id"] for edge in graph["edges"]))
+        consumers = tuple(sorted(
+            node["id"] for node in graph["nodes"] if node["kind"] == "surface"
+        ))
+        self.assertGreater(1 + len(paths) + len(edges) + len(consumers), 40)
+        qualification = review_qualification(local, paths, edges, consumers)
+        self.assertEqual(len(qualification["review_scope"]), 4)
+        gate.validate_review_qualification(qualification)
+
+        local["review_qualification"] = qualification
+        handoff_schema = Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()))
+        self.assertTrue(handoff_schema.is_valid(self.state))
+        handoff.validate_state(self.state)
+        code_only = review_qualification(local, ("scripts/validation_ownership/ci_verifier.py",), (), ())
+        local["review_qualification"] = code_only
+        self.assertTrue(handoff_schema.is_valid(self.state))
+        handoff.validate_state(self.state)
+        for key in ("changed_edge_ids", "affected_consumers"):
+            local["review_qualification"] = {**code_only, key: ["unexpected"]}
+            self.assertFalse(handoff_schema.is_valid(self.state))
+            with self.assertRaises(ValueError):
+                handoff.validate_state(self.state)
+        local["review_qualification"] = qualification
+        review_schema = Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/review_family.schema.json").read_text()))
+        request = {
+            "schema_version": 1,
+            "repository": qualification["repository"],
+            "pull_request": qualification["pull_request"],
+            "base_sha": qualification["base_sha"],
+            "candidate_sha": qualification["candidate_sha"],
+            "subjects": [
+                {"case_id": qualification["case_id"], "subject": subject}
+                for subject in qualification["review_scope"]
+            ],
+            "findings": [],
+        }
+        self.assertTrue(review_schema.is_valid(request))
+        boundary = review_qualification(
+            local, tuple(f"scope/file-{index:03d}" for index in range(200)),
+            tuple(f"edge-{index:03d}" for index in range(256)),
+            tuple(f"consumer-{index:03d}" for index in range(256)),
+        )
+        local["review_qualification"] = boundary
+        self.assertTrue(handoff_schema.is_valid(self.state))
+        handoff.validate_state(self.state)
+        boundary["changed_paths"].append("scope/overflow")
+        self.assertFalse(handoff_schema.is_valid(self.state))
+        with self.assertRaises(ValueError):
+            handoff.validate_state(self.state)
+        local["review_qualification"] = qualification
+
+        for key, changed_value in (
+            ("checker_revision", "f" * 40),
+            ("changed_paths", [*qualification["changed_paths"], "other.txt"]),
+            ("changed_edge_ids", [*qualification["changed_edge_ids"], "other.edge"]),
+            ("affected_consumers", [*qualification["affected_consumers"], "surface.other"]),
+        ):
+            changed = copy.deepcopy(qualification)
+            changed[key] = sorted(changed_value) if isinstance(changed_value, list) else changed_value
+            with self.subTest(key=key), self.assertRaisesRegex(
+                    ValueError, "scope differs"):
+                gate.validate_review_qualification(changed)
+        for key in ("changed_paths", "changed_edge_ids", "affected_consumers"):
+            partial = copy.deepcopy(qualification)
+            partial[key] = partial[key][1:]
+            with self.subTest(partial=key), self.assertRaisesRegex(ValueError, "scope differs"):
+                gate.validate_review_qualification(partial)
+            missing = copy.deepcopy(qualification)
+            del missing[key]
+            with self.subTest(missing=key), self.assertRaises(ValueError):
+                gate.validate_review_qualification(missing)
+        legacy = copy.deepcopy(qualification)
+        legacy["review_scope"] = [
+            "TC-WORKFLOW-GATE-OWNERSHIP-001/checker:" + qualification["checker_revision"],
+            "TC-WORKFLOW-GATE-OWNERSHIP-001/path:" + qualification["changed_paths"][0],
+            "TC-WORKFLOW-GATE-OWNERSHIP-001/edge:" + qualification["changed_edge_ids"][0],
+            "TC-WORKFLOW-GATE-OWNERSHIP-001/consumer:" + qualification["affected_consumers"][0],
+        ]
+        with self.assertRaisesRegex(ValueError, "scope differs"):
+            gate.validate_review_qualification(legacy)

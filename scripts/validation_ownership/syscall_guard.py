@@ -53,9 +53,9 @@ MAP_ANONYMOUS = 0x20
 # Fixed placement, loader hints and stacks do not alias pages or change their
 # size. Growing/huge-page and unknown flags cannot bypass 4 KiB reservations.
 MMAP_FLAGS = 3 | 0x10 | MAP_ANONYMOUS | 0x800 | 0x1000 | 0x20000 | 0x100000
-VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE = (
+VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY = (
     0x564F4D4B00000001, 0x564F4D4B00000002, 0x564F4D4B00000003, 0x564F4D4B00000004,
-    0x564F4D4B00000005,
+    0x564F4D4B00000005, 0x564F4D4B00000006,
 )
 VO_RECIPE, VO_VALUE, VO_VALIDATE = 0x564F4D4B00000011, 0x564F4D4B00000012, 0x564F4D4B00000013
 VO_LIVE = 0x564F4D4B00000014
@@ -116,6 +116,25 @@ def cstring(pid, address):
                 raise Violation("pathname is not strict UTF-8") from error
         result.extend(word)
     raise Violation("pathname exceeds bound")
+
+
+def recipe_arguments(pid, address, *, label="argument", byte_limit=SYSCALL_MEMORY_LIMIT, allow_empty=False):
+    arguments = []
+    size = 0
+    for index in range(1025):
+        pointer = int.from_bytes(memory(pid, address + 8 * index, 8), "little")
+        if not pointer:
+            if not arguments and not allow_empty:
+                raise Violation("empty native recipe " + label + " vector")
+            return arguments
+        if index == 1024:
+            break
+        value = cstring(pid, pointer)
+        size += len(value.encode("utf-8")) + 1
+        if size > byte_limit:
+            break
+        arguments.append(value)
+    raise Violation("native recipe " + label + " vector exceeds its frame bound")
 
 
 def directory_entries(data, *, wide):
@@ -183,6 +202,8 @@ class Process:
     break_end: int = 0
     dispatch: tuple | None = None
     helper_kind: int = 0
+    native_dispatch_sequence: int | None = None
+    namespace_pid: int | None = None
     observer_ready: bool = False
     memory_group: int = 0
     memory_limit: int = 0
@@ -257,6 +278,7 @@ class Policy:
         self.live_process_peak = 0
         self.make_pid = 0
         self.make_restarts = 0
+        self.dispatch_sequence = 0
         self.executable = set(config["executables"])
         self.executable.update(self.resolve(path) for path in config["executables"])
         self.runtime_closure = set(config.get("runtime_closure", ()))
@@ -293,6 +315,9 @@ class Policy:
             }
             self.dependency_stat_probes = {
                 self.resolve(path) for path in dependency["runtime_stat_probes"]
+            }
+            self.dependency_metadata_descendants = {
+                self.resolve(path).rstrip("/") for path in dependency["metadata_descendants"]
             }
             self.dependency_loader_probes = {self.resolve(path) for path in self.loader_probes}
             self.dependency_interpreter = self.resolve(dependency["runtime_interpreter"])
@@ -1208,7 +1233,13 @@ class Policy:
         )
         driver = (
             operation == "metadata"
-            and path in self.dependency_stat_probes | self.dependency_directories
+            and (
+                path in self.dependency_stat_probes | self.dependency_directories
+                or any(
+                    path.startswith(directory + "/")
+                    for directory in self.dependency_metadata_descendants
+                )
+            )
             and state.dependency_image == self.config["dependency"]["executables"][0]
             and origin in {
                 self.dependency_image_ids[state.dependency_image],
@@ -1237,8 +1268,14 @@ class Policy:
             and mode is not None and stat.S_ISREG(mode)
             or operation == "metadata" and path in self.dependency_directories
             and mode is not None and stat.S_ISDIR(mode)
+            or operation == "metadata" and path in self.dependency_stat_probes
+            and self.dependency_negative_purpose(state, path, operation)
+            or operation == "metadata" and any(
+                path.startswith(directory + "/")
+                for directory in self.dependency_metadata_descendants
+            ) and self.dependency_negative_purpose(state, path, operation)
             or mode is None and (
-                operation == "metadata" and path in self.dependency_stat_probes | self.dependency_directories
+                operation == "metadata" and path in self.dependency_directories
                 or operation in {"read", "metadata"} and path in self.dependency_loader_probes
             ) and self.dependency_negative_purpose(state, path, operation)
         )
@@ -1454,7 +1491,7 @@ class Policy:
         state.observations.clear()
         state.observation_needs_bytes = False
         trusted = self.observer(state, r)
-        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE}:
+        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY}:
             if a == VO_QUERY_KIND:
                 if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE, VO_LIVE}:
                     raise Violation("unauthenticated interceptor kind query")
@@ -1495,9 +1532,16 @@ class Policy:
                     if b or c or state.observer_ready:
                         raise Violation("invalid observer bootstrap notification")
                     state.observer_ready = True
+                elif a == VO_JOB_POLICY:
+                    if (
+                        state.role != "make" or pid != self.make_pid or not state.observer_ready
+                        or not 0 < b < 1 << 31 or c not in {0, 1, 2, 3}
+                    ):
+                        raise Violation("invalid native Make job policy")
+                    self.observe("accessed", "make-job-policy:" + encoded([b, c]).decode("ascii"))
                 elif b:
                     path = self.path(pid, state, b)
-                    if path not in self.executable or path == "/control/interceptor" or c not in {0, 1}:
+                    if path not in self.executable or path == "/control/interceptor" or c not in {0, 1, 2, 3}:
                         raise Violation(f"untrusted executable dispatch: {path}")
                     if self.runtime_metadata(path, parents=False):
                         self.check_optional_make_spelling(state, path, "execute")
@@ -1519,6 +1563,12 @@ class Policy:
             writing = creating or bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_TRUNC))
             operation = "write" if writing else "metadata" if state.role == "helper" and flags & os.O_PATH else "read"
             self.check(state, path, operation, observer=trusted)
+            if (
+                state.role == "make" and state.observer_ready and operation == "read"
+                and not flags & (os.O_DIRECTORY | os.O_PATH)
+                and (path == "/repo" or path.startswith("/repo/"))
+            ):
+                self.observe("accessed", "make-open:" + encoded([path, state.path_context[0]]).decode("ascii"))
             if creating:
                 self.reserve_creation()
             state.pending = ("open", path)
@@ -1655,8 +1705,26 @@ class Policy:
                     role = "helper"
                     source, required = state.dispatch
                     state.helper_kind = VO_VALUE if (
-                        required or source == "/usr/bin/make" or self.fd(state, 1) == "<pipe>"
+                        required & 1 or source == "/usr/bin/make" or self.fd(state, 1) == "<pipe>"
                     ) else VO_RECIPE
+                    arguments = recipe_arguments(pid, b)
+                    remaining = SYSCALL_MEMORY_LIMIT - sum(len(value.encode("utf-8")) + 1 for value in arguments)
+                    environment = {}
+                    for value in recipe_arguments(
+                        pid, c, label="environment", byte_limit=remaining, allow_empty=True,
+                    ):
+                        name, separator, content = value.partition("=")
+                        if not separator or not name or name in environment:
+                            raise Violation("malformed or duplicate native Make export")
+                        environment[name] = content
+                    self.dispatch_sequence += 1
+                    state.native_dispatch_sequence = self.dispatch_sequence
+                    self.observe("accessed", "make-dispatch:" + encoded({
+                        "sequence": self.dispatch_sequence, "environment": environment,
+                        "kind": "recipe" if state.helper_kind == VO_RECIPE else "value",
+                        "executable": source, "arguments": arguments,
+                        "cwd": state.cwd, "global_ignore_errors": bool(required & 2),
+                    }).decode("ascii"))
                     if state.helper_kind == VO_VALUE and self.config.get("producer_endpoint"):
                         state.helper_kind = VO_LIVE
                     state.dispatch = None
@@ -1833,6 +1901,13 @@ class Policy:
         elif operation == "cwd":
             state.cwd = value
         elif operation == "helper_kind":
+            if state.native_dispatch_sequence is not None and value == state.helper_kind:
+                if not 0 < result < 1 << 31 or state.namespace_pid not in {None, result}:
+                    raise Violation("invalid native helper PID identity")
+                state.namespace_pid = result
+                self.observe("accessed", "make-helper:" + encoded([
+                    state.native_dispatch_sequence, result,
+                ]).decode("ascii"))
             r.rax = value
             ptrace(SETREGS, pid, 0, ctypes.byref(r))
         elif operation == "directory":

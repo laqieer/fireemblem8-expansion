@@ -114,19 +114,20 @@ required Build CI and Copilot review running concurrently. When those
 candidate gates are clean, merge directly; the merge automatically starts the
 expanded Build CI on `master`.
 
-Both PR and master Build runs execute `host-tests`, `build`,
-`extended-host-tests`, `legacy`, and the seconds-only fail-closed `summary` in
-parallel. Master additionally packages the already-built release ROM in
+Both full PR and master Build runs execute `host-tests`, `ownership-tests`,
+`build`, `extended-host-tests`, and `legacy` in parallel, followed by the
+fail-closed `summary`. Master additionally packages the already-built release ROM in
 master-only steps of `build`. Artifact, documentation, generated-data, localization, crosswalk,
 raw-closure, and modern debug/release runtime evidence run only in their
-existing Build owners; no duplicate Matrix path or manual dispatch exists. The
-expected combined-gate wall clock is approximately 35–40 minutes because the
-jobs run in parallel; that operational range is not a duration assertion.
+existing Build owners; no duplicate Matrix path exists. Input-free candidate
+dispatch uses the same full graph. Ownership begins with its own 60-minute
+budget, while the host budget stays 60 minutes; combined timing requires
+complete same-revision hosted measurements, not a sum of older runs.
 Repository branch protection or rulesets should require this workflow's
 canonical `host-tests`, `build`, and `summary` contexts, while leaving
 independent security/review contexts unchanged. Metadata-only PR edits keep
 those existing required names green by running only the trusted no-checkout
-continuity attestation in `host-tests`/`build`; `extended-host-tests` and
+continuity attestation in `host-tests`/`build`; `ownership-tests`, `extended-host-tests` and
 `legacy` stay platform-skipped, the required `summary` context advances to the
 later metadata continuity run, and candidate eligibility still remains bound
 to the newest prior complete full Build CI run.
@@ -176,6 +177,25 @@ separately deliverable contracts, create explicit dependent sub-issues first;
 then each sub-issue receives its own branch, frozen contract, PR, validation,
 merge, post-merge Build verification, issue closure, and
 `make remote-completion-check`.
+
+For ownership-graph lifecycle changes, use
+[TC-WORKFLOW-GATE-OWNERSHIP-001](docs/test-cases/workflow-governance.md#tc-workflow-gate-ownership-001-resolve-every-admitted-path-to-complete-validation-ownership).
+Keep real consumer dispatch, trusted-source binding and the nonrecursive
+shared checker coherent. No-op positive fixtures, copied role labels or
+source fingerprints alone cannot prove artifact necessity. Preserve actual
+public-route references and independent no-op/redirect/substitution mutations;
+describe dispatch verification separately from consumer execution.
+Coordinator capture must bind BASE, owned worktree, candidate and required
+check inside the executor in every mode; wrapper-only identity checks are
+insufficient, and reviewed qualifications are additional.
+Make authority must retain native recipe data and actual scheduled export
+membership/values. Close computed names through literal/finite selector
+evidence or reject them; do not infer recipe-only use from the outer variable
+name. Lifecycle dispatch parsing must respect shell word-boundary comments and
+validate original path components in the selected source namespace before
+normalizing them.
+Complete tests and documentation remain in the issue's full review scope,
+including when a predeclared genuinely indivisible review exception applies.
 
 ### Worked umbrella and stack example
 

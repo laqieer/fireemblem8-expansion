@@ -1,6 +1,7 @@
 """Keep the complete native probe suite in one required, parallel CI owner."""
 
 import importlib
+import json
 import shlex
 import subprocess
 import unittest
@@ -108,6 +109,54 @@ class ProbeExecutionOwnershipTests(unittest.TestCase):
         self.assertTrue(native)
         self.assertTrue(workflow)
         self.assertEqual(native & workflow, set())
+
+    def test_graph_discovery_partitions_all_cases_without_repeating_native_owner(self):
+        directory = ROOT / "scripts/validation_ownership/tests"
+        loader = unittest.TestLoader()
+        native = {
+            name
+            for module in PROBE_TEST_MODULES
+            for name in case_ids(loader.loadTestsFromModule(importlib.import_module(module)))
+        }
+        script = (
+            "import json,runpy,sys,unittest\n"
+            "class Collector:\n"
+            " def __init__(self, **options): pass\n"
+            " def run(self, suite):\n"
+            "  if unittest.defaultTestLoader.errors:\n"
+            "   raise ValueError('\\n'.join(unittest.defaultTestLoader.errors))\n"
+            "  pending,selected=[suite],[]\n"
+            "  while pending:\n"
+            "   case=pending.pop()\n"
+            "   if isinstance(case, unittest.TestSuite): pending.extend(case)\n"
+            "   else: selected.append(case.id())\n"
+            "  print(json.dumps(selected))\n"
+            "  return unittest.TestResult()\n"
+            "unittest.TextTestRunner=Collector\n"
+            "sys.argv=[sys.argv[1], 'tests']\n"
+            "runpy.run_path(sys.argv[0], run_name='__main__')\n"
+        )
+        collected = subprocess.run(
+            ["/usr/bin/python3", "-I", "-S", "-B", "-c", script,
+             str(ROOT / "scripts/validation_ownership/isolated_launcher.py")],
+            cwd=ROOT, capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(collected.returncode, 0, collected.stderr)
+        graph = json.loads(collected.stdout)
+        complete = {
+            name
+            for path in directory.glob("test_*.py")
+            for name in case_ids(loader.loadTestsFromModule(importlib.import_module(
+                "scripts.validation_ownership.tests." + path.stem,
+            )))
+        }
+        self.assertEqual(loader.errors, [])
+        self.assertTrue(native)
+        self.assertTrue(graph)
+        duplicated = sorted(native & set(graph))
+        self.assertEqual(len(duplicated), 0, duplicated[:5])
+        self.assertEqual(len(graph), len(set(graph)))
+        self.assertEqual(set(graph), complete - native)
 
     def native_dependencies(self, text):
         steps = topology._step_blocks(topology._job_blocks(text)["extended-host-tests"])

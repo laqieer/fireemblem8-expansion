@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from scripts.upstream_port import verify
+from scripts.workflow_pilot import candidate_evidence
 
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
 CHECKOUT_PIN = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
@@ -39,7 +40,7 @@ def _job_block(text, name):
 
 def _contract_errors(text):
     errors = []
-    for name in ("host-tests", "build", "extended-host-tests", "legacy"):
+    for name in candidate_evidence.WORKER_JOB_IDS:
         job = _job_block(text, name)
         if not job:
             errors.append(f"missing {name} job")
@@ -125,8 +126,7 @@ class BuildCiCheckoutContractTests(unittest.TestCase):
         self.assertIn("needs.event-identity.outputs.fallback_sha", EXPECTED_SHA)
         self.assertEqual(checkouts, {
             "event-router": "${{ needs.event-identity.outputs.classifier_ref }}",
-            **{name: EXPECTED_SHA for name in
-               ("host-tests", "build", "extended-host-tests", "legacy")},
+            **{name: EXPECTED_SHA for name in candidate_evidence.WORKER_JOB_IDS},
         })
         for raw_ref in (
             "${{ github.sha }}",
