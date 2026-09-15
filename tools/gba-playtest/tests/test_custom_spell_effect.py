@@ -596,6 +596,7 @@ class _ProfileRoot:
     pins: dict[object, tuple[int, os.stat_result | None]] = field(default_factory=dict)
     holder_name: str | None = None
     claimed: bool = False
+    published: bool = False
 
 
 _DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -695,13 +696,30 @@ def _clear_profile_directory(owner, descriptor, check_namespace):
     check_namespace()
 
 
-def _remove_profile_root(test_root, owner):
+def _initialize_profile_root(test_root, owner, checkpoint):
     parent_fd = _open_profile_pin(owner, "parent", test_root.parent)
-    _profile_namespace_matches(owner, test_root, claimed=False)
+    checkpoint()
     holder_name = f".{test_root.name}.cleanup-{secrets.token_hex(12)}"
     os.mkdir(holder_name, 0o700, dir_fd=parent_fd)
     owner.holder_name = holder_name
     holder_fd = _open_profile_pin(owner, "holder", holder_name, dir_fd=parent_fd)
+    checkpoint()
+    # The root is still private when its identity is acquired. Publication
+    # never opens or adopts whichever object occupies the public name.
+    os.mkdir("root", 0o700, dir_fd=holder_fd)
+    _open_profile_pin(owner, "root", "root", dir_fd=holder_fd)
+    checkpoint()
+    _rename_profile_directory(holder_fd, "root", parent_fd, test_root.name)
+    owner.published = True
+    _profile_namespace_matches(owner, test_root, claimed=False)
+    checkpoint()
+
+
+def _remove_profile_root(test_root, owner):
+    parent_fd = owner.pins["parent"][0]
+    holder_fd = owner.pins["holder"][0]
+    holder_name = owner.holder_name
+    _profile_namespace_matches(owner, test_root, claimed=False)
     # Claim into an exclusive private namespace, then verify the moved entry
     # against the existing pin. A replaced public name is never traversed.
     _rename_profile_directory(parent_fd, test_root.name, holder_fd, "root")
@@ -776,14 +794,12 @@ def profile_builds(commands, test_root, *, timeout=600):
         if test_root in _RETAINED_PROFILE_BUILDS:
             raise FileExistsError(errno.EEXIST, "profile ownership is still retained", test_root)
         test_root.parent.mkdir(parents=True, exist_ok=True)
-        test_root.mkdir(mode=0o700)
         owner = _ProfileRoot()
         builds = []
         cleanup_errors = []
         failure = None
         try:
-            _open_profile_pin(owner, "root", test_root)
-            checkpoint()
+            _initialize_profile_root(test_root, owner, checkpoint)
             with process_ownership._child_reaper():
                 try:
                     deadline = time.monotonic() + timeout
@@ -799,11 +815,16 @@ def profile_builds(commands, test_root, *, timeout=600):
                     pending = {}
                     for index, command in enumerate(commands):
                         remaining()
+                        _profile_namespace_matches(owner, test_root, claimed=False)
                         build = _ProfileBuild()
                         builds.append(build)
                         # Regular files cannot impose a pipe-capacity dependency on
                         # the other build. They retain unlimited, attributed logs.
-                        build.output = (test_root / f"build-{index}.log").open("x+")
+                        build.output = open(
+                            f"build-{index}.log", "x+",
+                            opener=lambda path, flags: os.open(
+                                path, flags, dir_fd=owner.pins["root"][0]),
+                        )
                         build.process = subprocess.Popen(
                             command, cwd=str(ROOT), stdin=subprocess.DEVNULL,
                             stdout=build.output, stderr=subprocess.STDOUT, start_new_session=True,
@@ -838,6 +859,15 @@ def profile_builds(commands, test_root, *, timeout=600):
                     cleanup_errors.extend(_close_profile_builds(builds, time.monotonic() + 5))
         except BaseException as error:
             failure = error
+        if not owner.published:
+            if owner.pins or owner.holder_name is not None:
+                _RETAINED_PROFILE_BUILDS[test_root] = (owner, builds)
+                raise process_ownership.ProcessCleanupError(
+                    f"profile private initialization/publication failed; retained {owner.holder_name} for {test_root}"
+                ) from failure
+            if failure is not None:
+                raise failure
+            raise process_ownership.ProcessCleanupError("profile publication did not complete")
         if "root" not in owner.pins:
             cleanup_errors.append(process_ownership.ProcessCleanupError("profile root identity is unavailable"))
         if cleanup_errors:

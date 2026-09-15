@@ -759,7 +759,7 @@ class ProfileProcessLifecycleTests(unittest.TestCase):
         opening = os.open
         def open_root(path, flags, *args, **kwargs):
             descriptor = opening(path, flags, *args, **kwargs)
-            if Path(path) == self.root:
+            if Path(path) == self.root or (os.fspath(path) == "root" and kwargs.get("dir_fd") is not None):
                 self.root_pins.append((descriptor, os.fstat(descriptor)))
                 if interrupt:
                     os.kill(os.getpid(), signal.SIGINT)
@@ -1109,6 +1109,185 @@ directory.mkdir(parents=True)
         self.assertEqual(set(os.listdir("/proc/self/fd")), before_fds | {
             str(descriptor) for _, descriptor in self.observed
         })
+
+    def test_initial_pin_never_adopts_an_intervening_public_root(self):
+        opening = os.open
+        displaced = self.directory / "displaced-before-pin"
+        observation = {}
+        def open_root(path, flags, *args, **kwargs):
+            public = Path(path) == self.root
+            private = os.fspath(path) == "root" and kwargs.get("dir_fd") is not None
+            if (public or private) and not observation:
+                descriptor = opening(path, flags, *args, **kwargs)
+                created = os.fstat(descriptor)
+                marker = opening("original-marker", os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                                 0o600, dir_fd=descriptor)
+                os.write(marker, b"original")
+                os.close(marker)
+                os.close(descriptor)
+                if public:
+                    self.root.rename(displaced)
+                self.root.mkdir()
+                (self.root / "foreign-marker").write_text("replacement")
+                descriptor = opening(path, flags, *args, **kwargs)
+                acquired = os.fstat(descriptor)
+                observation.update(
+                    private=private,
+                    created_identity=(created.st_dev, created.st_ino),
+                    acquired_identity=(acquired.st_dev, acquired.st_ino),
+                )
+                return descriptor
+            return opening(path, flags, *args, **kwargs)
+
+        self.initial_publication_observation = observation
+        with mock.patch.object(self.module.os, "open", side_effect=open_root), \
+             mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.assertRaises(self.raw.ProcessCleanupError):
+                with self.module.profile_builds(
+                    (self.command("print('first')"), self.command("print('second')")),
+                    self.root, timeout=1,
+                ):
+                    pass
+        self.assertTrue(observation["private"])
+        self.assertEqual(observation["created_identity"], observation["acquired_identity"])
+        self.assertEqual(self.observed, [])
+        self.assertEqual((self.root / "foreign-marker").read_text(), "replacement")
+        owner, builds = self.module._RETAINED_PROFILE_BUILDS[self.root]
+        self.assertEqual(builds, [])
+        self.assertFalse(owner.published)
+        self.assertEqual(
+            (self.directory / owner.holder_name / "root" / "original-marker").read_text(),
+            "original",
+        )
+        self.assertEqual(os.fstat(owner.pins["root"][0]).st_ino, observation["created_identity"][1])
+
+    def test_publication_collision_preserves_private_root_and_allows_owned_recovery(self):
+        renaming = self.module._rename_profile_directory
+        injected = []
+        def publish(source_fd, source, target_fd, target):
+            if source == "root" and target == self.root.name and not injected:
+                self.root.mkdir()
+                (self.root / "foreign-marker").write_text("replacement")
+                injected.append(True)
+            return renaming(source_fd, source, target_fd, target)
+
+        with mock.patch.object(self.module, "_rename_profile_directory", side_effect=publish), \
+             mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.assertRaises(self.raw.ProcessCleanupError) as caught:
+                with self.module.profile_builds(
+                    (self.command("print('first')"), self.command("print('second')")),
+                    self.root, timeout=1,
+                ):
+                    self.fail("colliding publication must not start a build")
+        self.assertIsInstance(caught.exception.__cause__, FileExistsError)
+        self.assertEqual(self.observed, [])
+        self.assertEqual((self.root / "foreign-marker").read_text(), "replacement")
+        owner, _ = self.module._RETAINED_PROFILE_BUILDS[self.root]
+        private = self.directory / owner.holder_name / "root"
+        self.assertTrue(os.path.samestat(os.fstat(owner.pins["root"][0]), private.stat()))
+        with self.assertRaises(FileExistsError):
+            with self.module.profile_builds((), self.root):
+                self.fail("retained private ownership must block an implicit retry")
+        for key in tuple(owner.pins):
+            self.module._close_profile_pin(owner, key)
+        self.real_rmtree(self.directory / owner.holder_name)
+        self.real_rmtree(self.root)
+        del self.module._RETAINED_PROFILE_BUILDS[self.root]
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.module.profile_builds(
+                (self.command("print('recovered first')"), self.command("print('recovered second')")),
+                self.root, timeout=1,
+            ) as results:
+                self.assertEqual([result.returncode for result in results], [0, 0])
+        self.assert_quiescent()
+        self.assertEqual(list(self.directory.iterdir()), [])
+
+    def test_private_initialization_and_publication_failures_retain_all_created_ownership(self):
+        for phase in ("parent-pin", "holder-pin", "root-pin", "publication"):
+            with self.subTest(phase=phase):
+                opening = self.module._open_profile_pin
+                renaming = self.module._rename_profile_directory
+                original = OSError(f"controlled {phase} failure")
+                def acquire(owner, key, *args, **kwargs):
+                    if phase == key + "-pin":
+                        raise original
+                    return opening(owner, key, *args, **kwargs)
+                def publish(*args):
+                    if phase == "publication":
+                        raise original
+                    return renaming(*args)
+                with mock.patch.object(self.module, "_open_profile_pin", side_effect=acquire), \
+                     mock.patch.object(self.module, "_rename_profile_directory", side_effect=publish), \
+                     mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+                    with self.assertRaises((OSError, self.raw.ProcessCleanupError)) as caught:
+                        with self.module.profile_builds(
+                            (self.command("print('unused')"),) * 2, self.root, timeout=1,
+                        ):
+                            self.fail("failed private setup must not enter the workload")
+                self.assert_chain_contains(caught.exception, original)
+                self.assertEqual(self.observed, [])
+                self.assertFalse(self.root.exists())
+                retained = self.module._RETAINED_PROFILE_BUILDS.get(self.root)
+                if phase == "parent-pin":
+                    self.assertIsNone(retained)
+                    self.assertEqual(list(self.directory.iterdir()), [])
+                else:
+                    self.assertIsNotNone(retained)
+                    owner, _ = retained
+                    self.assertTrue((self.directory / owner.holder_name).is_dir())
+                    for descriptor, identity in owner.pins.values():
+                        self.assertTrue(os.path.samestat(os.fstat(descriptor), identity))
+                    for key in tuple(owner.pins):
+                        self.module._close_profile_pin(owner, key)
+                    self.real_rmtree(self.directory / owner.holder_name)
+                    del self.module._RETAINED_PROFILE_BUILDS[self.root]
+
+    def test_sigint_after_real_publication_keeps_registered_identity_through_cleanup(self):
+        renaming = self.module._rename_profile_directory
+        injected = []
+        def publish(source_fd, source, target_fd, target):
+            result = renaming(source_fd, source, target_fd, target)
+            if source == "root" and target == self.root.name and not injected:
+                injected.append(True)
+                os.kill(os.getpid(), signal.SIGINT)
+            return result
+        with mock.patch.object(self.module, "_rename_profile_directory", side_effect=publish), \
+             mock.patch.object(self.module.os, "open", side_effect=self.record_root_open()), \
+             mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.assertRaises(KeyboardInterrupt):
+                with self.module.profile_builds(
+                    (self.command("print('unused')"),) * 2, self.root, timeout=1,
+                ):
+                    self.fail("publication interrupt must precede workload entry")
+        self.assertEqual(injected, [True])
+        self.assertEqual(self.observed, [])
+        self.assert_root_pins_owned_or_closed()
+        self.assertEqual(list(self.directory.iterdir()), [])
+
+    def test_post_publication_namespace_drift_cannot_adopt_or_launch_into_replacement(self):
+        renaming = self.module._rename_profile_directory
+        displaced = self.directory / "displaced-after-publication"
+        injected = []
+        def publish(source_fd, source, target_fd, target):
+            result = renaming(source_fd, source, target_fd, target)
+            if source == "root" and target == self.root.name and not injected:
+                self.root.rename(displaced)
+                self.root.mkdir()
+                (self.root / "foreign-marker").write_text("replacement")
+                injected.append(True)
+            return result
+        with mock.patch.object(self.module, "_rename_profile_directory", side_effect=publish), \
+             mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.assertRaises(self.raw.ProcessCleanupError):
+                with self.module.profile_builds(
+                    (self.command("print('unused')"),) * 2, self.root, timeout=1,
+                ):
+                    self.fail("drift must be rejected before workload entry")
+        self.assertEqual(self.observed, [])
+        owner, _ = self.module._RETAINED_PROFILE_BUILDS[self.root]
+        self.assertTrue(owner.published)
+        self.assertTrue(os.path.samestat(os.fstat(owner.pins["root"][0]), displaced.stat()))
+        self.assertEqual((self.root / "foreign-marker").read_text(), "replacement")
 
     def test_claim_restore_never_overwrites_a_new_namespace_entry(self):
         displaced = self.directory / "original"

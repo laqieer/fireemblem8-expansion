@@ -338,6 +338,15 @@ drift remains failure with unrelated replacement/displaced content preserved.
 These bounded controls retain the existing workload, process ownership,
 shared helper source, PID census classification and all measurement limits.
 
+The subsequent [5687542201 publication correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5687542201)
+establishes the root pin privately before publishing the public name with
+no overwrite. It reuses the same private holder for verified cleanup, opens
+captures relative to the known root pin, and refuses intervening public
+entries before workload entry. Private initialization/publication failures
+retain all acquired ownership and the primary exception; the old public
+create/open sequence is an explicit wrong-inode/false-success control.
+The private namespace is trusted, not an interpreter/same-user sandbox.
+
 The profile runner's [owned-process follow-through](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5683697584)
 uses separate regular capture files, one shared 600-second work deadline and
 the existing raw-diff tool's pidfd/subreaper quiescence primitives. It does not

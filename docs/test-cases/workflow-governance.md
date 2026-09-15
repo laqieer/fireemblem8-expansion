@@ -4131,6 +4131,22 @@ This is not a new graph/provider/H1 run or allocation: no broad compile,
 ROM/archival suite or repeat full-object profile build is required, and
 baseline 15 remains unallocated until independent source review closes it.
 
+The [5687542201 initial-publication correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5687542201)
+requires creation and pinning inside the exclusive private holder before
+no-overwrite publication of the public profile root. A public `mkdir`
+followed by `open` can adopt a different object and is not identity evidence.
+Use the same real-runner `ProfileProcessLifecycleTests` to compare actual
+created/acquired inode/device identities and original/replacement markers,
+publication collision/refusal and independent owned recovery, private setup
+failure, publication interruption and post-publication drift. Conflicts
+must not launch children or adopt/delete the intervening entry; initialized
+private pins/namespaces remain closed or explicitly retained with the
+original failure chain. Preserve the corrected cleanup claim, FD traversal,
+prior signal/close/process tests and qualified CI/resource contracts.
+This relies on trusted private/session namespaces, not arbitrary same-user
+private mutation or interpreter control. No full compile/graph/provider run
+or measurement allocation follows from these focused controls.
+
 Resolve the asset implementation package separately from its `tests/` namespace.
 Implementation paths must retain asset host, generation, drift, compilation
 and linked-consumer owners without inventing manual judgments. `assets.mk`

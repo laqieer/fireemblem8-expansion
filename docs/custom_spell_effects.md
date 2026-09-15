@@ -394,8 +394,9 @@ and the normal asset-generation Python dependencies:
 
 1. Run `./build_tools.sh`, as the CI `build` worker does before this test.
 2. Require `build/test-artifacts/custom-spell-profile-assets` to be absent.
-   The runner creates it exclusively and never removes an existing or
-   previously retained root to start another run. Run
+   The runner creates and pins it inside its private holder, then publishes
+   it without overwrite. It never adopts, removes or replaces an intervening
+   public entry or a previously retained root to start another run. Run
    `python3 tools/gba-playtest/tests/test_custom_spell_effect.py --require-profile-isolation`
    with `GBA_PLAYTEST_HOST_ONLY` unset or `0`.
 3. Require exactly one executed, non-skipped test. It launches two genuine
@@ -525,6 +526,49 @@ The shared raw-diff primitives and their resource bounds are unchanged.
 Nine jobs, all 33 gates, the single 600-second work deadline and shared
 five-second failure teardown remain. Baselines 1-14 stay closed; baseline 15
 is unallocated pending independent corrected-source review.
+
+### Initial private ownership and publication
+
+The [5687542201 initial-publication follow-through](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5687542201)
+closes the earlier interval between exclusive public `mkdir` and initial
+root `open`. Exclusive creation alone did not identify the later-opened
+object: a replacement was pinned and subsequently deleted as if it were the
+created root. The root is now created and pinned while still inside the
+exclusive private holder. Only afterward does `renameat2(RENAME_NOREPLACE)`
+publish that exact object under the public name. An intervening public entry
+causes failure without being adopted, overwritten, traversed or deleted.
+The same holder is reused by the already-verified cleanup claim, and capture
+files are opened relative to the established root FD.
+
+Private initialization and publication failures retain every acquired pin
+and created private namespace with the original failure chain. A failure
+before any ownership exists propagates without fabricating retained state.
+Publication is registered under the existing interrupt-deferral boundary;
+post-publication identity checks precede workload entry. The public pathname
+is never reopened to establish ownership. The trust boundary is the private
+holder/root and owned sessions, not a sandbox against arbitrary same-user
+private-resource mutation or control of the interpreter.
+
+1. Run `python3 tools/gba-playtest/tests/test_host_only_mode.py ProfileProcessLifecycleTests -v`.
+2. Intervene at the original creation-to-initial-pin boundary and record
+   actual created/acquired device/inode identities and both markers. The old
+   helper pins the replacement, runs both children and deletes its marker;
+   the corrected helper keeps the private created identity, refuses
+   conflicting publication and starts no child.
+3. Insert a public entry immediately before no-overwrite publication.
+   Require preservation of it and all private ownership. After the
+   independent fixture settles/closes only its own retained resources and
+   removes its controlled collision, a normal new run must publish and clean
+   successfully.
+4. Inject private parent/holder/root pin and publication failures, actual
+   SIGINT after real publication, and a changed public entry immediately
+   afterward. Require accurate retained or closed ownership and the original
+   error; no falsely adopted root may reach a child.
+5. Retain all prior nested cleanup, namespace claim/restore, SIGINT/close,
+   process, host-only, strict-entry and staged-import controls. Regenerate
+   changed census audits canonically without renaming PID symbols or
+   changing their reviewed classification. These bounded checks need no
+   full profile compile, graph, provider/H1 or new allocation.
 
 This subcase extends the existing profile and ownership contracts without
 changing gameplay, save, locale, generated schemas or ABI. Its dependencies are
