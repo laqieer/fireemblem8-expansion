@@ -2398,7 +2398,7 @@
       "id": "TC-WORKFLOW-REVIEW-FIRST-001",
       "title": "Gate expensive Builds after accepted review",
       "feature_id": "workflow-governance",
-      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/181"],
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/181", "https://github.com/laqieer/fireemblem8-expansion/issues/265"],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-review-first-001-gate-expensive-builds-after-accepted-review",
       "profiles": ["Locked host Python and source checkout", "Coordinator-owned disposable PRs on a dependency-ready base"],
@@ -2434,6 +2434,10 @@
         },
         {
           "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_live_pause -v",
+          "evidence": "scripts/workflow_pilot/tests/test_live_pause.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_live_pause.DiscoveryTests.test_module_discovery_contains_only_owned_cases -v",
           "evidence": "scripts/workflow_pilot/tests/test_live_pause.py"
         }
       ]

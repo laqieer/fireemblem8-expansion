@@ -446,6 +446,16 @@ existing topology, publisher, metadata, schema and review selectors cover
 their directly coupled integration contracts. The coordinator records the
 actual disposable-PR exercise separately; fixtures are never pilot samples.
 
+Load `test_live_pause` and `test_adaptive_gate` through ordinary unittest
+module collection. Their case IDs must be disjoint; fixture reuse must not
+collect imported adaptive-gate cases a second time. Run
+`test_live_pause.DiscoveryTests.test_module_discovery_contains_only_owned_cases`,
+then both original module suites. Every original case remains in its owning
+module. Restoring a global imported fixture TestCase must make the collection
+guard fail. Remove that temporary binding afterward; do not drop scenarios or
+change CI budgets to reduce the count. This is source-only collection evidence,
+not a remote pause exercise or a claim that the full host workload fits.
+
 ### Cleanup and limitations
 
 Local HTTP/task records are controlled fixtures, not actual GitHub reviewer
