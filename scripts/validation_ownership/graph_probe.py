@@ -457,8 +457,32 @@ class _MakeSourceMode:
         except RecursionError:
             return None
         if left is None or right is None:
+            equal = self.literal_comparison(operands, (left, right))
+        else:
+            equal = left == right
+        return None if equal is None else equal == (keyword == "ifeq")
+
+    def literal_comparison(self, operands, controls):
+        self.checkpoint()
+        if not self.original_namespace_valid:
             return None
-        return (left == right) == (keyword == "ifeq")
+        try:
+            left, right = (
+                frozenset((control,)) if control is not None else self.literal_values(operand)
+                for operand, control in zip(operands, controls)
+            )
+        except RecursionError:
+            return None
+        if left is None or right is None or not left or not right:
+            return None
+        # Source assignments cannot refresh invalidated engine/history facts.
+        if self.reads & (SOURCE_HISTORY_CONTROLS | (INVOCATION_CONTROL_READS - self.control_reads)):
+            return None
+        if left.isdisjoint(right):
+            return False
+        if len(left) == len(right) == 1:
+            return True
+        return None
 
     def effectful(self, expression):
         self.last_effect_input = None
@@ -947,7 +971,8 @@ def make_source_units(
                     active = _mode_and(active, choice)
                 if eligible is not False and not phase_test and mode.effectful(arguments):
                     mode.uncertain()
-            yield contextual_unit(line)
+            # The predicate is read in its enclosing context, even when its body is skipped.
+            yield contextual_unit(line)._replace(active=active if keyword == "endif" else eligible)
             if keyword == "endif" and not conditions:
                 phase, phase_target = None, None
             continue

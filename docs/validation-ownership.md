@@ -782,6 +782,24 @@ conditions in Python. Inactive branches cannot enable the mode. A variable
 named `.POSIX` or a target-specific variable assignment is not a `.POSIX`
 rule.
 
+Ordinary `ifeq`/`ifneq` operands can also use the existing bounded original
+literal/reference resolver. The trusted invocation-control path remains first;
+otherwise current original operand alternatives must all agree. Equal
+singletons prove equality and disjoint alternatives prove inequality without
+constructing a Cartesian product. Overlapping mixed alternatives remain
+unknown. File-origin values, simple snapshots and recursive reads retain their
+original versions; metadata reads remain non-executing body observations.
+Invalidated invocation controls and source-history controls do not acquire new
+authority through this fallback. Opaque/effectful values, unresolved names and
+exhausted bounds still reject.
+
+The predicate's reads belong to its enclosing eligible context even when its
+body is proven false. They remain in graph/domain and generated-binding
+consumer closure, so a false baseline condition cannot erase the input whose
+next finite value loads another source. Only the skipped body is omitted.
+No final native value, arbitrary function interpreter or guessed undefined
+input is used for this original proof.
+
 Generated target spelling is not itself mode uncertainty. The collector proves
 the original parse-stage target result through literal concatenation, named
 references (including short/braced spellings), paired dollars and literal

@@ -4144,6 +4144,37 @@ census without spawning closure-expansion variants. Reversed domain
 declaration order produces identical authority. State/source/domain/
 combination/depth/time cap fixtures reject rather than returning a partial
 census, with one deadline and aggregate budget shared by the entire report.
+
+For the original branch-loaded positive, retain `MODE ?= one`,
+`ifeq ($(MODE),two)` and the actual branch.mk containing `BRANCH ?= selected`.
+Supply the genuine existing empty-source witness. Original MODE/BRANCH must
+be natively undefined before source evaluation. Ordinary/native MODE=one must
+omit branch.mk and have no prerequisite; MODE=two must read it and select
+`selected`. The complete small fixed point must use/enumerate MODE and BRANCH,
+and every explicit BRANCH state must retain its MODE=two parent. The false
+baseline predicate still consumes MODE and must not disappear from the census.
+
+Run `test_branch_loaded_domains_reach_a_bounded_fixed_point` and the original
+file-condition methods. Exercise direct, braced, transitive and computed
+references; supported parenthesized/quoted equality and inequality; simple
+snapshots versus recursive values; and rewrites after source selection.
+Compare native include/prerequisite records with ordinary outputs. A later
+raw MODE must not replace the original operand used for the include.
+Keep literal metadata of an unused error/shell body lazy and verify no marker.
+Finite disjoint alternatives may prove inequality; mixed equal/unequal
+alternatives remain unknown even when one native execution selects a value.
+
+Remove only the ordinary-operand proof and recover the witness-backed
+branch-loaded rejection; the trusted MAKECMDGOALS path must still work.
+Restore it and recover the exact positive, then remove the witness and require
+rejection again. Unknown/effectful/opaque operands, unsealed defaults or
+undefined names, symbolic graph inputs and computed universe names retain
+their respective rejection boundaries. Source assignments cannot refresh
+invalidated engine/history facts. Preserve native delayed POSIX folding, the
+512-alternative/513th rejection, cycles and the original expired deadline.
+This is bounded original predicate evidence, not whole-report acceptance;
+the independent aggregate control-byte blocker is not waived or enlarged.
+
 For `MODERN_SIZE`, run `test_modern_size_recipe_default_uses_sealed_contract`
 with the source-faithful conditional tool declarations and actual recipe
 environment consumer extracted from `modern.mk`. Keep original logical chunks

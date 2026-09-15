@@ -2046,7 +2046,7 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
     def test_unproven_generated_conditional_and_include_modes_reject(self):
         values = "FIRST = alpha  \\\n  \\\n beta\nSECOND = alpha  \\\n  \\\n beta\n"
         for source, includes, expected, proven in (
-            ("SWITCH = yes\nifeq ($(SWITCH),yes)\n.POSIX:\nendif\n" + values, {}, ["alpha beta", "alpha    beta"], False),
+            ("SWITCH = yes\nifeq ($(SWITCH),yes)\n.POSIX:\nendif\n" + values, {}, ["alpha beta", "alpha    beta"], True),
             ("$(eval .POSIX:)\n" + values, {}, ["alpha    beta"] * 2, False),
             ("MODE_PREFIX = .PO\nMODE_SUFFIX = SIX\n$(MODE_PREFIX)$(MODE_SUFFIX):\n" + values,
              {}, ["alpha beta", "alpha    beta"], True),
@@ -2869,17 +2869,153 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                     self.observe(**options)
 
     def test_branch_loaded_domains_reach_a_bounded_fixed_point(self):
+        self.original_input_witness()
         self.add("Makefile", "MODE ?= one\nifeq ($(MODE),two)\ninclude branch.mk\nendif\nall: ;\n")
         self.add("branch.mk", "BRANCH ?= selected\nall: $(BRANCH)\nselected: ;\n")
-        result = self.observe({
+        with self.session() as session:
+            original = session.original_make_inputs("all", ("MODE", "BRANCH"))
+            for value in ("one", "two"):
+                self.ordinary("MODE=" + value)
+                native = session.make(
+                    "all", assignments=(("command-line", "MODE", value),),
+                    variables=("MAKEFILE_LIST",), definitions=("BRANCH",),
+                )
+                self.assertEqual(native.semantics["domains"]["MAKEFILE_LIST"]["value"].split(),
+                                 ["Makefile"] + (["branch.mk"] if value == "two" else []))
+                self.assertEqual(native.semantics["files"][0]["prerequisites"],
+                                 [{"name": "selected", "order_only": False}] if value == "two" else [])
+                self.assertEqual(native.semantics["definitions"]["global"]["BRANCH"], {
+                    "origin": "file" if value == "two" else "undefined",
+                    "flavor": "recursive" if value == "two" else "undefined",
+                    "value": "selected" if value == "two" else "",
+                })
+        self.assertEqual(original, {
+            name: {"origin": "undefined", "flavor": "undefined", "value": ""} for name in ("MODE", "BRANCH")
+        })
+        domains = {
             "MODE": {"kind": "explicit", "values": ["one", "two"]},
             "BRANCH": {"kind": "tracked-fallback"},
-        })
+        }
+        result = self.observe(domains)
         self.assertEqual(result["all"]["prerequisite_domain_census"]["used"], ["BRANCH", "MODE"])
-        self.assertTrue(any(
-            any(item[1] == "BRANCH" for item in variant["state"])
-            for variant in result["all"]["record"]["variants"]
-        ))
+        self.assertEqual(result["all"]["prerequisite_domain_census"]["enumerated"], ["BRANCH", "MODE"])
+        self.assertEqual(result["all"]["record"]["includes"], ["Makefile", "branch.mk"])
+        branch_states = []
+        for variant in result["all"]["record"]["variants"]:
+            state = {name: value for _, name, value in variant["state"]}
+            self.assertEqual(variant["record"]["files"][0]["prerequisites"],
+                             [{"name": "selected", "order_only": False}] if state.get("MODE") == "two" else [])
+            if "BRANCH" in state:
+                branch_states.append(state)
+        self.assertEqual(branch_states, [{"MODE": "two", "BRANCH": "selected"}])
+        with patch.object(_MakeSourceMode, "literal_comparison", return_value=None):
+            with self.assertRaisesRegex(MakeProbeError, "unproven original include outcome"):
+                self.observe(domains)
+            mode = _MakeSourceMode()
+            mode.bind_invocation("all")
+            self.assertTrue(mode.condition("ifeq", "($(MAKECMDGOALS),all)"))
+        self.assertEqual(self.observe(domains), result)
+        witness = "scripts/generated_data/chapterbundle/__init__.py"
+        (self.root / witness).unlink()
+        del self.entries[witness]
+        with self.assertRaisesRegex(MakeProbeError, "unproven original include outcome"):
+            self.observe(domains)
+
+    def test_original_file_conditions_preserve_native_operands_and_history(self):
+        self.original_input_witness()
+        self.add("yes.mk", "SELECTED = first\n")
+        self.add("no.mk", "SELECTED = second\n")
+        alternatives = (
+            "MODE = one\nCHOICE = present\nifdef CHOICE\nMODE = one\nelse\nMODE = two\nendif\n"
+        )
+        for prefix, condition, later, expected in (
+            ("MODE = one\n", "ifeq ($(MODE),one)", "", "first"),
+            ("MODE = one\n", "ifneq (${MODE},one)", "", "second"),
+            ("MODE = a b\n", "ifeq '$(MODE)' \"a b\"", "", "first"),
+            ("MODE = a b\n", "ifneq \"${MODE}\" 'other value'", "", "first"),
+            ("VALUE = one\nMODE = $(VALUE)\n", "ifeq ($(MODE),one)", "", "first"),
+            ("NAME = MODE\nMODE = one\n", "ifeq ($($(NAME)),one)", "", "first"),
+            ("VALUE = one\nMODE := $(VALUE)\nVALUE = two\n", "ifeq ($(MODE),one)", "", "first"),
+            ("VALUE = one\nMODE = $(VALUE)\nVALUE = two\n", "ifeq ($(MODE),one)", "", "second"),
+            ("MODE = one\n", "ifeq ($(MODE),one)", "MODE = two\n", "first"),
+            ("MODE = all\n", "ifeq ($(strip $(MAKECMDGOALS)),$(MODE))", "", "first"),
+            ("UNREAD = $(error unused)$(shell touch marker)\nMODE = $(origin UNREAD)\n",
+             "ifeq ($(MODE),file)", "", "first"),
+            (alternatives, "ifneq ($(MODE),missing)", "", "first"),
+            (alternatives, "ifeq ($(MODE),missing)", "", "second"),
+        ):
+            with self.subTest(prefix=prefix, condition=condition, later=later):
+                self.add("Makefile", prefix + condition + "\ninclude yes.mk\nelse\ninclude no.mk\nendif\n"
+                         + later + "all: $(SELECTED)\n\t@echo $(SELECTED)\nfirst second: ;\n")
+                self.assertEqual(self.ordinary(), (expected + "\n").encode())
+                with self.session() as session:
+                    native = session.make("all", variables=("MAKEFILE_LIST",), definitions=("MODE",))
+                result = self.observe(trusted_builtin_names={"MAKECMDGOALS"})["all"]["record"]
+                selected = "yes.mk" if expected == "first" else "no.mk"
+                self.assertEqual(native.semantics["domains"]["MAKEFILE_LIST"]["value"].split(),
+                                 ["Makefile", selected])
+                self.assertEqual(result["includes"], ["Makefile", selected])
+                self.assertEqual(result["variants"][0]["record"]["files"][0]["prerequisites"],
+                                 native.semantics["files"][0]["prerequisites"])
+                self.assertEqual(native.semantics["files"][0]["prerequisites"][0]["name"], expected)
+                if later:
+                    self.assertEqual(native.semantics["definitions"]["global"]["MODE"]["value"], "two")
+                self.assertFalse((self.root / "marker").exists())
+
+    def test_original_file_conditions_keep_ambiguous_and_opaque_reads_unproven(self):
+        self.original_input_witness()
+        self.add("yes.mk", "SELECTED = first\n")
+        self.add("no.mk", "SELECTED = second\n")
+        for prefix, condition, expected in (
+            ("MODE = one\nCHOICE = present\nifdef CHOICE\nMODE = one\nelse\nMODE = two\nendif\n",
+             "ifeq ($(MODE),one)", "first"),
+            ("MODE = $(subst X,one,X)\n", "ifeq ($(MODE),one)", "first"),
+            ("MODE = $(eval EFFECT := changed)one\n", "ifeq ($(MODE),one)", "first"),
+        ):
+            with self.subTest(prefix=prefix):
+                self.add("Makefile", prefix + condition + "\ninclude yes.mk\nelse\ninclude no.mk\nendif\n"
+                         "all: $(SELECTED)\n\t@echo $(SELECTED)\nfirst second: ;\n")
+                self.assertEqual(self.ordinary(), (expected + "\n").encode())
+                with self.session() as session:
+                    native = session.make("all", variables=("MAKEFILE_LIST",), definitions=("MODE", "EFFECT"))
+                self.assertEqual(native.semantics["domains"]["MAKEFILE_LIST"]["value"].split(), ["Makefile", "yes.mk"])
+                with self.assertRaisesRegex(MakeProbeError, "unproven original include outcome"):
+                    self.observe()
+        self.add("Makefile", "MODE ?= one\nifeq ($(MODE),one)\ninclude yes.mk\nendif\nall: ;\n")
+        with self.assertRaisesRegex(MakeProbeError, "unsealed external defaults"):
+            self.observe()
+        with self.assertRaisesRegex(MakeProbeError, "symbolic inputs influence"):
+            self.observe(external={"MODE"}, symbolic_recipe_names={"MODE"})
+        self.add("Makefile", "ifeq ($(UNSEALED),)\ninclude yes.mk\nendif\nall: ;\n")
+        with self.assertRaisesRegex(MakeProbeError, "unsealed undefined"):
+            self.observe()
+
+    def test_original_file_condition_comparisons_keep_control_and_resource_bounds(self):
+        budget = ProbeBudget()
+        mode = _MakeSourceMode(budget=budget)
+        try:
+            mode.assign("LEFT", "=", "left_0")
+            for index in range(1, 512):
+                mode.assign("LEFT", "=", "left_" + str(index), active=None)
+            self.assertTrue(mode.condition("ifneq", "($(LEFT),right)"))
+            self.assertFalse(mode.condition("ifeq", "($(LEFT),right)"))
+            self.assertIsNone(mode.condition("ifeq", "($(LEFT),left_0)"))
+            self.assertIn("LEFT", mode.reads)
+            mode.assign("LEFT", "=", "left_512", active=None)
+            with self.assertRaisesRegex(MakeProbeError, "existing bounded context plan"):
+                mode.condition("ifeq", "($(LEFT),right)")
+            mode.assign("LEFT", "=", "$(LEFT)")
+            self.assertIsNone(mode.condition("ifeq", "($(LEFT),right)"))
+            mode.assign("NAME", "=", ".VARIABLES")
+            self.assertIsNone(mode.condition("ifeq", "($($(NAME)),right)"))
+            for name in ("MAKEFILE_LIST", "MAKE_RESTARTS", "MAKECMDGOALS"):
+                mode.assign(name, "=", "forged")
+                mode.reads.clear()
+                self.assertIsNone(mode.condition("ifeq", "($(" + name + "),forged)"))
+        finally:
+            budget.close()
+        with self.assertRaisesRegex(MakeProbeError, "aggregate probe deadline"):
+            mode.condition("ifeq", "($(LEFT),right)")
 
     def test_unloaded_source_does_not_backfill_census(self):
         self.add("Makefile", "all: ;\n")

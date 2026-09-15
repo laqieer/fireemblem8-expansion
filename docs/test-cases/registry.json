@@ -2990,6 +2990,10 @@
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_branch_loaded_domains_reach_a_bounded_fixed_point scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_file_conditions_preserve_native_operands_and_history scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_file_conditions_keep_ambiguous_and_opaque_reads_unproven scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_file_condition_comparisons_keep_control_and_resource_bounds -v",
+          "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_invocation_supports_the_actual_make_guard_prefix scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_unknown_mode_accepts_only_equivalent_assignment_constructs scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_unknown_mode_does_not_normalize_meaningful_values_or_define_data scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_control_facts_do_not_survive_source_changes_or_unknown_eval -v",
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },
