@@ -317,7 +317,8 @@ observations. Missing native dependencies or unavailable confinement remain
 errors; a platform-specific mode assertion must not turn a supported fallback
 into a failure.
 
-The profile test module and `tools/gba-playtest/tests/host_mode.py` have exact
+The profile test module, `tools/gba-playtest/tests/host_mode.py` and its reused
+`scripts/workflow_pilot/raw_diff_check.py` process primitives have exact
 selectors in `surface.custom-spell-profile-tests`. They retain their host
 positive/adversarial owners and add `owner.compile-custom-spell-profiles`,
 bound to the actual required `build` step. Independent oracle probes require
@@ -326,6 +327,16 @@ The local mirror contains 33 gates, including every previous gate. Nine jobs,
 the protected three contexts, publisher build-once behavior and existing
 90/60-minute bounds remain unchanged. This compile evidence is not H1 or a
 whole-graph/runtime acceptance substitute.
+
+The profile runner's [owned-process follow-through](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5683697584)
+uses separate regular capture files, one shared 600-second work deadline and
+the existing raw-diff tool's pidfd/subreaper quiescence primitives. It does not
+inherit that tool's unrelated 4 MiB cap. Partial launch, timeout and interruption
+settle complete owned sessions before captures and artifacts are removed;
+unverified cleanup retains the pinned identities and exact root. Bounded
+Python-child regressions prove post-output overlap and dependency completion,
+not merely two PIDs or a successful historical Make run. The actual original
+full-object workload and its single required entry remain unchanged.
 
 ## Typed contract
 

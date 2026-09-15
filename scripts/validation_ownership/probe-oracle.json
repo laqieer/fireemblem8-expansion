@@ -3,6 +3,15 @@
   "source_case": "TC-WORKFLOW-GATE-OWNERSHIP-001",
   "probes": [
     {
+      "path": "scripts/workflow_pilot/raw_diff_check.py",
+      "expected_surface": "surface.custom-spell-profile-tests",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-workflow"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-custom-spell-profiles"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-build"}
+      ]
+    },
+    {
       "path": "tools/gba-playtest/tests/test_custom_spell_effect.py",
       "expected_surface": "surface.custom-spell-profile-tests",
       "expected_owners": [
@@ -386,5 +395,5 @@
       ]
     }
   ],
-  "seal": "fa88fffeb790cb12f07433358ecf35dcfa6806a04fafc9cd897ce2693d586cd9"
+  "seal": "f569d16211164015ba0f9373afde9b6275845a28db4f310a6398d0439e000122"
 }

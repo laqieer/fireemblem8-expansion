@@ -2826,6 +2826,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         paths = (
             "tools/gba-playtest/tests/test_custom_spell_effect.py",
             "tools/gba-playtest/tests/host_mode.py",
+            "scripts/workflow_pilot/raw_diff_check.py",
         )
         expected = {
             ("owns-test", "owner.host-build"),

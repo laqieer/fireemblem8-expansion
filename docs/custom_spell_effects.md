@@ -387,12 +387,14 @@ epoch change is required; all runtime failures already use a vanilla fallback.
 
 ### Concurrent full-modern object profile isolation
 
-From a source checkout with ARM GCC/binutils, newlib, the host C/C++ compiler,
-libpng/zlib, `pkg-config` and the normal asset-generation Python dependencies:
+From a Linux source checkout with pidfd/waitid and child-subreaper support,
+ARM GCC/binutils, newlib, the host C/C++ compiler, libpng/zlib, `pkg-config`
+and the normal asset-generation Python dependencies:
 
 1. Run `./build_tools.sh`, as the CI `build` worker does before this test.
-2. Ensure `build/test-artifacts/custom-spell-profile-assets` is not in use by
-   another invocation. Run
+2. Require `build/test-artifacts/custom-spell-profile-assets` to be absent.
+   The runner creates it exclusively and never removes an existing or
+   previously retained root to start another run. Run
    `python3 tools/gba-playtest/tests/test_custom_spell_effect.py --require-profile-isolation`
    with `GBA_PLAYTEST_HOST_ONLY` unset or `0`.
 3. Require exactly one executed, non-skipped test. It launches two genuine
@@ -401,7 +403,11 @@ libpng/zlib, `pkg-config` and the normal asset-generation Python dependencies:
    roots. Require separate generated asset namespaces, custom data only in
    the enabled namespace, and both `custom_spell_effect.o` and
    `custom_spell_effect_data.o` in each profile.
-4. Confirm the owned profile root is removed after success or failure.
+4. Confirm all owned sessions are empty and reaped and their output captures
+   are closed before the exact owned profile root is removed. Ordinary test
+   failures and timeouts still clean up. Uncertain process/stream cleanup or
+   a substituted root fails explicitly and retains the root instead; do not
+   delete it or retry over it while writers may remain.
    These are full relocatable-object builds, not ROM or final-ELF links;
    canonical release/publisher outputs are not inputs or outputs of this test.
 
@@ -415,6 +421,47 @@ events do not execute it. Removing/duplicating/disabling the command, moving it
 to `host-tests`, selecting host-only mode or omitting prerequisites rejects.
 Equivalent command quoting/continuation remains valid. This brings the mirrored
 inventory to 33 gates, retaining every earlier gate without an extra job or timeout increase.
+The compile test is ordinal 21 in that inventory, not ordinal 33.
+
+### Profile output and process-lifecycle controls
+
+The [#180 lifecycle follow-through](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5683697584)
+removes the dependency caused by serially draining two bounded stdout pipes.
+Separate regular `build-0.log`/`build-1.log` captures let both children write
+without waiting for the other child's exit; output remains attributed to its
+original command. There is no reader thread or executor to outlive teardown,
+and the unrelated Git capturer's 4 MiB output cap is not inherited.
+One absolute 600-second work/capture deadline begins before the first launch,
+including acquisition; each child does not get a new 600-second wait.
+
+The runner reuses `scripts/workflow_pilot/raw_diff_check.py`'s pidfd,
+subreaper, interrupt and owned-session quiescence primitives without changing
+that tool's capture policy. Each child has a separate owned session. Its
+leader remains waitable until all session descendants, including children
+that change process groups, have been terminated and reaped. Failure cleanup
+has one bounded five-second teardown grace, not a renewed build budget.
+Capture handles close only after attempted tree teardown; the root is deleted
+only after every tree and capture is confirmed settled. On uncertainty, pinned
+state and the root are retained, and cleanup diagnostics preserve the original
+failure as their cause. This is trusted-build ownership, not a sandbox for
+malicious processes escaping their session.
+
+1. Run `python3 tools/gba-playtest/tests/test_host_only_mode.py ProfileProcessLifecycleTests -v`.
+2. Require the bounded child's write to exceed the measured pipe capacity,
+   with its post-output progress witnessed while the first child is active.
+   Require a first child depending on that signal to complete. These use
+   explicit progress/exit witnesses, not a speed-only oracle.
+3. Inject second-launch failure, first-acquisition deadline exhaustion,
+   interruption and timeout with a live grandchild in a different process
+   group. Require no remaining child, reader or capture before root removal.
+4. Inject unavailable identity/cleanup observation and root substitution.
+   Require failure, retained waitable identities/root and no deletion of
+   replacement contents; the fixture only disposes of retained work after
+   removing its controlled fault and proving quiescence.
+5. Keep the existing host-only and strict-entry controls, then run the real
+   required profile test once using the earlier command and record timing and
+   cleanup. A passing real Make run does not refute the conditional pipe or
+   failure-path defects; the bounded old serial lifecycle fails these controls.
 
 This subcase extends the existing profile and ownership contracts without
 changing gameplay, save, locale, generated schemas or ABI. Its dependencies are

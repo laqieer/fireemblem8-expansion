@@ -4045,8 +4045,8 @@ host-only suite must still skip the concurrent custom-spell full-modern object
 build before artifact cleanup or process launch. Configuration and host
 checks in that module must still run. The host-only regression supplies an
 available compiler and intercepts the first mutating operation: host-only
-mode never reaches it, while normal mode still enters the unchanged build
-body. This is not execution evidence for the actual concurrent compile test.
+mode never reaches it, while normal mode still enters the full-build
+runner. This is not execution evidence for the actual concurrent compile test.
 Its required normal-mode owner is the existing `build` job, not the host job.
 Follow the source-build procedure in
 [TC-CUSTOM-SPELL-061-002](../custom_spell_effects.md#concurrent-full-modern-object-profile-isolation):
@@ -4068,10 +4068,26 @@ and host-mode guard against the independent oracle, without assigning this
 owner to all host paths. The old host-only-only route is the negative control:
 it skips the full compile test and is insufficient coverage.
 
-This correction preserves nine jobs, every earlier gate plus gate 33, the
+This correction preserves nine jobs and the complete 33-gate inventory, the
 three protected contexts, master-only build-once publication, and existing
 timeouts. #196 must retain that complete topology and gate set. It does not
 authorize H1/provider/native-AI/diagnostic work or a new measurement allocation.
+
+The [5683697584 follow-through](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5683697584)
+also requires the bounded `ProfileProcessLifecycleTests` procedure in
+`test_host_only_mode.py`. Output beyond measured pipe capacity must not delay
+the second child's post-output progress until the first exits; a first-child
+dependency on that signal must complete. Second-launch failure, shared-deadline
+exhaustion, interruption and timeout must settle complete owned sessions and
+capture handles before artifact deletion. Unavailable cleanup/identity proof
+or a replaced root must fail and retain the root, preserving the primary
+failure. Separate regular capture files avoid blocked pipe readers and retain
+per-command attribution without the unrelated Git output cap. Linux pidfd
+identities and waitable leaders remain retained through session teardown.
+Run the real full-object profile test once after the focused controls; earlier
+successful Make runs do not establish these failure paths. The compile entry
+is ordinal 21 within the 33-gate inventory; neither jobs, budgets, publication,
+nor any H1/provider/native-AI/diagnostic or measurement allocation changes.
 
 Resolve the asset implementation package separately from its `tests/` namespace.
 Implementation paths must retain asset host, generation, drift, compilation

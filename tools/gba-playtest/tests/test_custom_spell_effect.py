@@ -1,17 +1,30 @@
 """Issue #77 configuration, dispatch, resource, and ARM-object checks."""
 
 import json
+import os
 import re
+import select
 import shutil
+import signal
+import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TextIO
 
 import host_mode
 
 ROOT = Path(__file__).resolve().parents[3]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.workflow_pilot import raw_diff_check as process_ownership
+
 SOURCE = ROOT / "src" / "custom_spell_effect.c"
 DATA_SOURCE = ROOT / "src" / "data" / "custom_spell_effect_data.c"
 DISPATCH = ROOT / "src" / "banim-efxmagic.c"
@@ -563,6 +576,148 @@ class CustomSpellArmTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
 
+@dataclass
+class _ProfileBuild:
+    output: TextIO | None = None
+    process: subprocess.Popen | None = None
+    leader_fd: int = -1
+    settled: bool = False
+
+
+# An unverified session must keep its waitable leader/pidfd, not just its number.
+_RETAINED_PROFILE_BUILDS = {}
+
+
+def _finish_profile_build(build, deadline):
+    if build.process is None or build.settled:
+        return
+    if build.process.returncode is not None:
+        raise process_ownership.ProcessCleanupError("profile leader was reaped before session quiescence")
+    if build.leader_fd < 0:
+        os.waitid(os.P_PID, build.process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        try:
+            os.killpg(build.process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        raise process_ownership.ProcessCleanupError(
+            "profile pidfd unavailable; waitable leader identity retained")
+    process_ownership._terminate_owned(build.process, build.leader_fd, True, deadline)
+    process_ownership._reap_leader(build.process)
+    build.settled = True
+
+
+def _close_profile_builds(builds, deadline):
+    errors = []
+    for build in builds:
+        try:
+            _finish_profile_build(build, deadline)
+        except BaseException as error:
+            errors.append(error)
+    for build in builds:
+        if build.output is not None:
+            try:
+                build.output.close()
+            except BaseException as error:
+                errors.append(error)
+        if build.settled and build.leader_fd >= 0:
+            descriptor, build.leader_fd = build.leader_fd, -1
+            try:
+                os.close(descriptor)
+            except BaseException as error:
+                errors.append(error)
+    return errors
+
+
+@contextmanager
+def profile_builds(commands, test_root, *, timeout=600):
+    test_root.parent.mkdir(parents=True, exist_ok=True)
+    test_root.mkdir(mode=0o700)
+    root_fd = -1
+    builds = []
+    cleanup_errors = []
+    failure = None
+    try:
+        root_fd = os.open(test_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        with process_ownership._interruptible() as checkpoint, process_ownership._child_reaper():
+            try:
+                deadline = time.monotonic() + timeout
+
+                def remaining():
+                    checkpoint()
+                    value = deadline - time.monotonic()
+                    if value <= 0:
+                        raise subprocess.TimeoutExpired(commands, timeout)
+                    return value
+
+                poller = select.poll()
+                pending = {}
+                for index, command in enumerate(commands):
+                    remaining()
+                    build = _ProfileBuild()
+                    builds.append(build)
+                    # Regular files cannot impose a pipe-capacity dependency on
+                    # the other build. They retain unlimited, attributed logs.
+                    build.output = (test_root / f"build-{index}.log").open("x+")
+                    build.process = subprocess.Popen(
+                        command, cwd=str(ROOT), stdin=subprocess.DEVNULL,
+                        stdout=build.output, stderr=subprocess.STDOUT, start_new_session=True,
+                    )
+                    build.leader_fd = os.pidfd_open(build.process.pid)
+                    checkpoint()
+                    pending[build.leader_fd] = build
+                    poller.register(build.leader_fd, select.POLLIN)
+                while pending:
+                    for descriptor, events in poller.poll(max(1, int(min(remaining(), 0.05) * 1000))):
+                        if not events & select.POLLIN:
+                            raise process_ownership.ProcessCleanupError("profile leader identity is unavailable")
+                        build = pending[descriptor]
+                        _finish_profile_build(build, min(deadline, time.monotonic() + 5))
+                        poller.unregister(descriptor)
+                        del pending[descriptor]
+                results = []
+                for build in builds:
+                    build.output.seek(0)
+                    chunks = []
+                    while True:
+                        remaining()
+                        chunk = build.output.read(65536)
+                        if not chunk:
+                            break
+                        chunks.append(chunk)
+                    results.append(subprocess.CompletedProcess(
+                        build.process.args, build.process.returncode, "".join(chunks),
+                    ))
+                yield results
+            finally:
+                cleanup_errors.extend(_close_profile_builds(builds, time.monotonic() + 5))
+    except BaseException as error:
+        failure = error
+    if root_fd < 0:
+        cleanup_errors.append(process_ownership.ProcessCleanupError("profile root identity is unavailable"))
+    if cleanup_errors:
+        _RETAINED_PROFILE_BUILDS[test_root] = (root_fd, builds)
+        error = process_ownership.ProcessCleanupError(
+            f"profile cleanup unconfirmed; retained {test_root}: "
+            + "; ".join(str(item) or type(item).__name__ for item in cleanup_errors)
+        )
+        raise error from (failure if failure is not None else cleanup_errors[0])
+    try:
+        expected = os.fstat(root_fd)
+        actual = test_root.lstat()
+        if not stat.S_ISDIR(actual.st_mode) or (
+                actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
+            raise process_ownership.ProcessCleanupError("profile root identity changed")
+        shutil.rmtree(test_root)
+    except BaseException as error:
+        _RETAINED_PROFILE_BUILDS[test_root] = (root_fd, builds)
+        raise process_ownership.ProcessCleanupError(
+            f"profile root cleanup failed; retained {test_root}: {error}"
+        ) from (failure if failure is not None else error)
+    os.close(root_fd)
+    if failure is not None:
+        raise failure
+
+
 @host_mode.live_artifact_testcase("concurrent custom-spell full-modern object builds")
 class CustomSpellProfileAssetIsolationTests(unittest.TestCase):
     def test_concurrent_enabled_disabled_full_modern_compiles_keep_assets_isolated(self):
@@ -572,8 +727,6 @@ class CustomSpellProfileAssetIsolationTests(unittest.TestCase):
         test_root = ROOT / "build" / "test-artifacts" / "custom-spell-profile-assets"
         enabled_root = test_root / "enabled"
         disabled_root = test_root / "disabled"
-        shutil.rmtree(test_root, ignore_errors=True)
-        test_root.mkdir(parents=True)
         commands = (
             [
                 "make",
@@ -597,20 +750,9 @@ class CustomSpellProfileAssetIsolationTests(unittest.TestCase):
                 "EXPANSION_CUSTOM_SPELL_EFFECTS=0",
             ],
         )
-        processes = [
-            subprocess.Popen(
-                command,
-                cwd=str(ROOT),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-            for command in commands
-        ]
-        try:
-            outputs = [process.communicate(timeout=600)[0] for process in processes]
-            for process, output in zip(processes, outputs):
-                self.assertEqual(process.returncode, 0, output)
+        with profile_builds(commands, test_root) as results:
+            for result in results:
+                self.assertEqual(result.returncode, 0, result.stdout)
 
             enabled_assets = list((enabled_root / "generated" / "assets").glob(
                 "*/asset_manifest.mk"
@@ -632,12 +774,6 @@ class CustomSpellProfileAssetIsolationTests(unittest.TestCase):
                 self.assertTrue(
                     (root / "debug" / "aapcs" / "src" / "data" / "custom_spell_effect_data.o").is_file()
                 )
-        finally:
-            for process in processes:
-                if process.poll() is None:
-                    process.kill()
-                    process.wait()
-            shutil.rmtree(test_root, ignore_errors=True)
 
 
 def run_required_profile_isolation():

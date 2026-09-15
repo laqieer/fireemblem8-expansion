@@ -1942,6 +1942,10 @@
         {
           "kind": "exact",
           "path": "tools/gba-playtest/tests/host_mode.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/raw_diff_check.py"
         }
       ],
       "exclude": []
@@ -1985,10 +1989,6 @@
         {
           "kind": "exact",
           "path": "scripts/workflow_pilot/coordinator_observations.py"
-        },
-        {
-          "kind": "exact",
-          "path": "scripts/workflow_pilot/raw_diff_check.py"
         },
         {
           "kind": "exact",
@@ -2147,6 +2147,10 @@
         {
           "kind": "exact",
           "path": "tools/gba-playtest/tests/host_mode.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/raw_diff_check.py"
         },
         {
           "kind": "prefix",

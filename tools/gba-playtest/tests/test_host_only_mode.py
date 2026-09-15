@@ -31,11 +31,16 @@ import ast
 import hashlib
 import importlib
 import io
+import json
 import os
+import select
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -640,6 +645,321 @@ class HostOnlyEnvContractTests(unittest.TestCase):
         self.assertIn("expansion-modern-itemexpansion-check", reason)
 
 
+@unittest.skipUnless(sys.platform == "linux" and hasattr(os, "pidfd_open"),
+                     "profile session ownership requires Linux pidfds")
+class ProfileProcessLifecycleTests(unittest.TestCase):
+    def setUp(self):
+        self.module = importlib.import_module("test_custom_spell_effect")
+        self.raw = self.module.process_ownership
+        parent = host_mode.REPO_ROOT / "build" / "test-artifacts"
+        parent.mkdir(parents=True, exist_ok=True)
+        self.directory = Path(tempfile.mkdtemp(prefix="profile-process-controls-", dir=parent))
+        self.root = self.directory / "owned"
+        self.observed = []
+        self.streams = []
+        self.threads = set(threading.enumerate())
+        self.real_popen = subprocess.Popen
+        self.real_rmtree = shutil.rmtree
+        self.addCleanup(self.cleanup_fixture)
+
+    def command(self, source):
+        return [sys.executable, "-I", "-S", "-u", "-c", source, str(self.directory)]
+
+    def watch(self, *args, **kwargs):
+        process = self.real_popen(*args, **kwargs)
+        self.observed.append((process, os.pidfd_open(process.pid)))
+        stream = kwargs.get("stdout")
+        self.streams.append(stream if hasattr(stream, "close") else process.stdout)
+        return process
+
+    def wait_file(self, name):
+        path = self.directory / name
+        deadline = time.monotonic() + 3
+        while not path.exists():
+            if time.monotonic() >= deadline:
+                self.fail(f"child did not publish {name}")
+            time.sleep(0.005)
+        return path
+
+    def assert_quiescent(self):
+        for process, descriptor in self.observed:
+            poller = select.poll()
+            poller.register(descriptor, select.POLLIN)
+            self.assertTrue(poller.poll(0), f"live profile process {process}")
+            with self.assertRaises(ChildProcessError):
+                os.waitid(os.P_PIDFD, descriptor, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        self.assertTrue(all(stream is None or stream.closed for stream in self.streams))
+        self.assertFalse(set(threading.enumerate()) - self.threads)
+
+    def cleanup_fixture(self):
+        with self.raw._child_reaper():
+            retained = self.module._RETAINED_PROFILE_BUILDS.get(self.root)
+            if retained is not None:
+                root_fd, builds = retained
+                for build in builds:
+                    if build.process is not None and build.leader_fd < 0 and not build.settled:
+                        build.leader_fd = os.pidfd_open(build.process.pid)
+                errors = self.module._close_profile_builds(builds, time.monotonic() + 3)
+                if errors:
+                    raise AssertionError(f"controlled profile cleanup still unconfirmed: {errors}")
+                if root_fd >= 0:
+                    os.close(root_fd)
+                del self.module._RETAINED_PROFILE_BUILDS[self.root]
+            for _process, descriptor in self.observed:
+                try:
+                    signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            for process, descriptor in self.observed:
+                poller = select.poll()
+                poller.register(descriptor, select.POLLIN)
+                self.assertTrue(poller.poll(3000), "controlled process could not be stopped")
+                try:
+                    result = os.waitid(os.P_PIDFD, descriptor, os.WEXITED)
+                    if process is not None:
+                        process.returncode = result.si_status if result.si_code == os.CLD_EXITED else -result.si_status
+                except ChildProcessError:
+                    pass
+                os.close(descriptor)
+        for stream in self.streams:
+            if hasattr(stream, "close"):
+                stream.close()
+        self.real_rmtree(self.directory)
+
+    def signal_commands(self, *, require_signal=False):
+        first = """
+import os, sys, time
+from pathlib import Path
+root = Path(sys.argv[1])
+(root / 'first-ready').write_text(str(os.getpid()))
+deadline = time.monotonic() + 2
+while not (root / 'progress').exists() and time.monotonic() < deadline:
+    time.sleep(0.005)
+received = (root / 'progress').exists()
+(root / 'first-exited').touch()
+print('first-output')
+"""
+        if require_signal:
+            first += "\nsys.exit(0 if received else 3)\n"
+        second = """
+import fcntl, json, os, sys, time
+from pathlib import Path
+root = Path(sys.argv[1])
+deadline = time.monotonic() + 2
+while not (root / 'first-ready').exists():
+    if time.monotonic() >= deadline:
+        raise RuntimeError('first child did not start')
+    time.sleep(0.005)
+read_fd, write_fd = os.pipe()
+capacity = fcntl.fcntl(write_fd, fcntl.F_GETPIPE_SZ)
+os.close(read_fd)
+os.close(write_fd)
+try:
+    capacity = fcntl.fcntl(1, fcntl.F_GETPIPE_SZ)
+except OSError:
+    pass
+payload = b'x' * (capacity + 4096)
+offset = 0
+while offset < len(payload):
+    offset += os.write(1, payload[offset:])
+active = not (root / 'first-exited').exists()
+(root / 'progress').write_text(json.dumps({'capacity': capacity, 'written': offset, 'first_active': active}))
+os.write(2, b'second-stderr')
+"""
+        return self.command(first), self.command(second)
+
+    def test_output_beyond_pipe_capacity_progresses_before_first_exit(self):
+        before_fds = set(os.listdir("/proc/self/fd"))
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.module.profile_builds(self.signal_commands(), self.root, timeout=3) as results:
+                witness = json.loads((self.directory / "progress").read_text())
+                self.assertGreater(witness["written"], witness["capacity"])
+                self.assertTrue(witness["first_active"])
+                self.assertEqual([result.returncode for result in results], [0, 0])
+                self.assertEqual(results[0].stdout, "first-output\n")
+                self.assertEqual(results[1].stdout, "x" * witness["written"] + "second-stderr")
+        self.assert_quiescent()
+        self.assertFalse(self.root.exists())
+        self.assertEqual(set(os.listdir("/proc/self/fd")), before_fds | {
+            str(descriptor) for _, descriptor in self.observed
+        })
+
+    def test_first_child_dependency_on_post_output_signal_completes(self):
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.module.profile_builds(self.signal_commands(require_signal=True), self.root, timeout=0.75) as results:
+                self.assertEqual([result.returncode for result in results], [0, 0])
+        self.assert_quiescent()
+        self.assertFalse(self.root.exists())
+
+    def test_capture_does_not_borrow_the_git_four_mib_limit(self):
+        size = 4 * 1024 * 1024 + 17
+        commands = (self.command(f"import sys; sys.stdout.write('a' * {size})"),
+                    self.command("print('other-build')"))
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.module.profile_builds(commands, self.root, timeout=3) as results:
+                self.assertEqual(results[0].stdout, "a" * size)
+                self.assertEqual(results[1].stdout, "other-build\n")
+        self.assert_quiescent()
+
+    def test_second_launch_failure_settles_first_and_closes_captures_before_removal(self):
+        original = OSError("controlled second Popen failure")
+        removals = []
+
+        def launch(*args, **kwargs):
+            if self.observed:
+                self.streams.append(kwargs["stdout"])
+                raise original
+            return self.watch(*args, **kwargs)
+
+        def remove(path, *args, **kwargs):
+            if Path(path) == self.root:
+                self.assert_quiescent()
+                removals.append(path)
+            return self.real_rmtree(path, *args, **kwargs)
+
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=launch), \
+             mock.patch.object(self.module.shutil, "rmtree", side_effect=remove):
+            with self.assertRaises(OSError) as caught:
+                with self.module.profile_builds(
+                    (self.command("import time; time.sleep(30)"),) * 2, self.root, timeout=1,
+                ):
+                    self.fail("partial launch must not reach assertions")
+        self.assertIs(caught.exception, original)
+        self.assert_quiescent()
+        self.assertEqual(removals, [self.root])
+        self.assertFalse(self.root.exists())
+
+    def test_slow_first_acquisition_cannot_reset_deadline_or_start_second(self):
+        def launch(*args, **kwargs):
+            process = self.watch(*args, **kwargs)
+            time.sleep(0.3)
+            return process
+
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=launch):
+            with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                with self.module.profile_builds(
+                    (self.command("import time; time.sleep(30)"),) * 2, self.root, timeout=0.2,
+                ):
+                    self.fail("expired acquisition budget must not be renewed")
+        self.assertEqual(caught.exception.timeout, 0.2)
+        self.assertEqual(len(self.observed), 1)
+        self.assert_quiescent()
+        self.assertFalse(self.root.exists())
+
+    def test_timeout_reaps_changed_group_grandchild_before_artifact_cleanup(self):
+        grandchild = "import os,time; os.setpgrp(); time.sleep(30)"
+        parent = f"""
+import json, os, subprocess, sys, time
+from pathlib import Path
+child = subprocess.Popen([sys.executable, '-I', '-S', '-c', {grandchild!r}])
+Path(sys.argv[1], 'grandchild').write_text(str(child.pid))
+time.sleep(30)
+"""
+        def launch(*args, **kwargs):
+            process = self.watch(*args, **kwargs)
+            if len(self.observed) == 1:
+                pid = int(self.wait_file("grandchild").read_text())
+                self.observed.append((None, os.pidfd_open(pid)))
+            return process
+
+        def remove(path, *args, **kwargs):
+            if Path(path) == self.root:
+                self.assert_quiescent()
+            return self.real_rmtree(path, *args, **kwargs)
+
+        reap = self.raw._reap_leader
+        def checked_reap(process):
+            self.assertIsNotNone(os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT))
+            self.assertEqual(list(self.raw._owned_descriptors(process.pid, True)), [])
+            return reap(process)
+
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=launch), \
+             mock.patch.object(self.module.shutil, "rmtree", side_effect=remove), \
+             mock.patch.object(self.raw, "_reap_leader", side_effect=checked_reap):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                with self.module.profile_builds(
+                    (self.command(parent), self.command("import time; time.sleep(30)")), self.root, timeout=0.3,
+                ):
+                    self.fail("timeout must not reach assertions")
+        self.assert_quiescent()
+        self.assertFalse(self.root.exists())
+
+    def test_uncertain_cleanup_keeps_root_and_waitable_identity_with_primary_error(self):
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch), \
+             mock.patch.object(self.raw, "_terminate_owned",
+                               side_effect=self.raw.ProcessCleanupError("controlled uncertain cleanup")):
+            with self.assertRaises(self.raw.ProcessCleanupError) as caught:
+                with self.module.profile_builds(
+                    (self.command("import time; time.sleep(30)"),) * 2, self.root, timeout=0.15,
+                ):
+                    self.fail("timeout must not reach assertions")
+        self.assertIsInstance(caught.exception.__cause__, subprocess.TimeoutExpired)
+        self.assertTrue(self.root.is_dir())
+        root_fd, builds = self.module._RETAINED_PROFILE_BUILDS[self.root]
+        self.assertEqual(os.fstat(root_fd).st_ino, self.root.stat().st_ino)
+        for build in builds:
+            self.assertIsNone(build.process.returncode)
+            self.assertIsNone(os.waitid(os.P_PIDFD, build.leader_fd, os.WEXITED | os.WNOHANG | os.WNOWAIT))
+            self.assertTrue(build.output.closed)
+        with self.assertRaises(FileExistsError):
+            with self.module.profile_builds((), self.root):
+                self.fail("retained root must not be reused or removed")
+
+    def test_interrupt_after_acquisition_settles_owned_session(self):
+        open_pidfd = os.pidfd_open
+        def interrupt(pid):
+            descriptor = open_pidfd(pid)
+            if self.observed and pid == self.observed[0][0].pid:
+                os.kill(os.getpid(), signal.SIGINT)
+            return descriptor
+
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch), \
+             mock.patch.object(self.module.os, "pidfd_open", side_effect=interrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                with self.module.profile_builds(
+                    (self.command("import time; time.sleep(30)"),) * 2, self.root, timeout=1,
+                ):
+                    self.fail("interruption must not reach assertions")
+        self.assert_quiescent()
+        self.assertFalse(self.root.exists())
+
+    def test_replaced_root_is_retained_instead_of_removing_unowned_content(self):
+        displaced = self.directory / "original"
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.assertRaises(self.raw.ProcessCleanupError):
+                with self.module.profile_builds(
+                    (self.command("print('first')"), self.command("print('second')")),
+                    self.root, timeout=1,
+                ):
+                    self.root.rename(displaced)
+                    self.root.mkdir()
+                    (self.root / "preserve").write_text("replacement")
+        self.assert_quiescent()
+        self.assertEqual((self.root / "preserve").read_text(), "replacement")
+        self.assertTrue(displaced.is_dir())
+
+    def test_pidfd_acquisition_failure_retains_unreaped_identity_and_root(self):
+        open_pidfd = os.pidfd_open
+        original = OSError("controlled pidfd acquisition failure")
+        def acquire(pid):
+            if self.observed:
+                raise original
+            return open_pidfd(pid)
+
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch), \
+             mock.patch.object(self.module.os, "pidfd_open", side_effect=acquire):
+            with self.assertRaises(self.raw.ProcessCleanupError) as caught:
+                with self.module.profile_builds(
+                    (self.command("import time; time.sleep(30)"),) * 2, self.root, timeout=1,
+                ):
+                    self.fail("failed identity acquisition cannot proceed")
+        self.assertIs(caught.exception.__cause__, original)
+        self.assertEqual(len(self.observed), 1)
+        self.assertIsNone(self.observed[0][0].returncode)
+        self.assertTrue(self.root.is_dir())
+        self.assertTrue(all(stream.closed for stream in self.streams))
+
+
 class HostOnlyClassificationTests(unittest.TestCase):
     """Category A vs. Category B is explicit, complete and enforced."""
 
@@ -673,7 +993,8 @@ class HostOnlyClassificationTests(unittest.TestCase):
         module = importlib.import_module("test_custom_spell_effect")
         test_class = module.CustomSpellProfileAssetIsolationTests
         with mock.patch.object(module, "ARM_CC", "/usr/bin/arm-none-eabi-gcc"), \
-             mock.patch.object(module.shutil, "rmtree", side_effect=OSError("blocked cleanup")) as cleanup, \
+             mock.patch.object(module.Path, "mkdir", side_effect=OSError("blocked setup")) as setup, \
+             mock.patch.object(module.shutil, "rmtree") as cleanup, \
              mock.patch.object(module.subprocess, "Popen") as launch:
             with _host_only():
                 result = _run_case(test_class)
@@ -681,6 +1002,7 @@ class HostOnlyClassificationTests(unittest.TestCase):
             self.assertEqual(result.failures, [])
             self.assertEqual(result.testsRun, 0)
             self.assertTrue(result.skipped)
+            setup.assert_not_called()
             cleanup.assert_not_called()
             launch.assert_not_called()
 
@@ -689,10 +1011,8 @@ class HostOnlyClassificationTests(unittest.TestCase):
             self.assertEqual(result.testsRun, 1)
             self.assertEqual(len(result.errors), 1)
             self.assertEqual(result.skipped, [])
-            cleanup.assert_called_once_with(
-                module.ROOT / "build" / "test-artifacts" / "custom-spell-profile-assets",
-                ignore_errors=True,
-            )
+            setup.assert_called_once_with(parents=True, exist_ok=True)
+            cleanup.assert_not_called()
             launch.assert_not_called()
 
     def test_required_profile_entry_rejects_host_only_and_missing_compiler(self):
