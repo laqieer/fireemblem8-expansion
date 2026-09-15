@@ -1361,6 +1361,10 @@ class HostOnlyStagedWorktreeSubprocessTests(unittest.TestCase):
             cls.tree / "scripts" / "localization",
             ignore=ignore,
         )
+        process_support = cls.tree / "scripts" / "workflow_pilot"
+        process_support.mkdir()
+        for name in ("__init__.py", "raw_diff_check.py"):
+            shutil.copy2(REPO_ROOT / "scripts" / "workflow_pilot" / name, process_support / name)
         shutil.copy2(REPO_ROOT / "config.mk", cls.tree / "config.mk")
         cls.staged = []
         for index, relative in enumerate(_STAGED_ARTIFACT_RELATIVE_PATHS):
@@ -1405,6 +1409,20 @@ class HostOnlyStagedWorktreeSubprocessTests(unittest.TestCase):
         for module_name, class_name in host_mode.LIVE_TEST_CLASSES:
             self.assertIn(f"{module_name}.{class_name}", result.stdout)
         self.assertNotIn("no mGBA core recognizes ROM", result.stdout)
+        support = self.tree / "scripts" / "workflow_pilot" / "raw_diff_check.py"
+        removed = support.with_suffix(".absent")
+        support.rename(removed)
+        targets = ["test_custom_spell_effect.CustomSpellProfileAssetIsolationTests"]
+        try:
+            missing = self._run_live_classes(host_only=True, targets=targets)
+        finally:
+            removed.rename(support)
+        self.assertNotEqual(missing.returncode, 0, missing.stdout)
+        self.assertIn("raw_diff_check", missing.stdout)
+        restored = self._run_live_classes(host_only=True, targets=targets)
+        self.assertEqual(restored.returncode, 0, restored.stdout)
+        self.assertIn("Ran 0 tests", restored.stdout)
+        self.assertIn("OK (skipped=1)", restored.stdout)
         for path in self.staged:
             self.assertTrue(path.is_file(), f"host-only mode deleted {path}")
             self.assertEqual(

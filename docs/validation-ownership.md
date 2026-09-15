@@ -338,6 +338,15 @@ Python-child regressions prove post-output overlap and dependency completion,
 not merely two PIDs or a successful historical Make run. The actual original
 full-object workload and its single required entry remain unchanged.
 
+The host-only stale-artifact fixture stages the actual
+`scripts.workflow_pilot` package init and `raw_diff_check` module alongside
+its existing dependencies. Removing that staged helper must fail import;
+restoring it restores all host-only skips without touching the staged
+artifacts. This is real dependency closure, not a live-root fallback.
+The new OS `pid` test symbol remains visible to the extensible-ID census and
+has one explicit reviewed-exclusion explaining its pidfd/process role.
+Renaming it to evade scanning or weakening the census is not a repair.
+
 ## Typed contract
 
 Surface nodes use the closed types `source`, `schema`, `configuration`,

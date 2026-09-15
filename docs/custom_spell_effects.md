@@ -462,6 +462,13 @@ malicious processes escaping their session.
    required profile test once using the earlier command and record timing and
    cleanup. A passing real Make run does not refute the conditional pipe or
    failure-path defects; the bounded old serial lifecycle fails these controls.
+6. Run the existing consumer census check and its classification-coverage
+   tests, plus `HostOnlyStagedWorktreeSubprocessTests`. The OS grandchild
+   `pid` symbol must keep its explicit non-game-ID exclusion in the existing
+   classification map. The staged tree must include the real process helper
+   and package init; missing-helper import fails, restoration returns to
+   host-only skipping, and all stale artifacts remain unchanged. No identifier
+   rename, scanner waiver or live source fallback supplies that evidence.
 
 This subcase extends the existing profile and ownership contracts without
 changing gameplay, save, locale, generated schemas or ABI. Its dependencies are

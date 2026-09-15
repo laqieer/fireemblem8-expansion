@@ -4089,6 +4089,20 @@ successful Make runs do not establish these failure paths. The compile entry
 is ordinal 21 within the 33-gate inventory; neither jobs, budgets, publication,
 nor any H1/provider/native-AI/diagnostic or measurement allocation changes.
 
+For the profile-helper integration, run
+`python3 -m scripts.generated_data.consumer_census check` and
+`python3 -m unittest scripts.generated_data.tests.test_consumer_census.ClassificationCoverageTests -v`.
+The real OS grandchild PID is not an extensible game character ID, but the
+unchanged token-level census must still report it and require its exact
+reviewed-exclusion row with a functional reason. Removing that row restores
+the classification failure; do not rename the variable or loosen scan rules.
+Run `python3 tools/gba-playtest/tests/test_host_only_mode.py HostOnlyStagedWorktreeSubprocessTests ProfileProcessLifecycleTests -v`.
+The hermetic stale-artifact tree must stage the actual process module/package
+init. Removing the copied helper makes the subprocess fail import; restoring
+it returns to the original all-class skip result without touching artifacts.
+Keep the normal-mode stale-ROM negative and actual process PID/cleanup tests.
+These focused checks do not execute the full generated-data or ROM suite.
+
 Resolve the asset implementation package separately from its `tests/` namespace.
 Implementation paths must retain asset host, generation, drift, compilation
 and linked-consumer owners without inventing manual judgments. `assets.mk`
