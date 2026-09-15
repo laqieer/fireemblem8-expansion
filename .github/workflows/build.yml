@@ -480,7 +480,7 @@ jobs:
   # `build`, and `summary` contexts. Metadata-only PR edits therefore run only
   # a trusted no-checkout continuity attestation in `host-tests`/`build`;
   # every existing checkout/install/test/build step remains full/fallback-only.
-  # `extended-host-tests` and `legacy` stay platform-skipped for metadata
+  # `ownership-tests`, `extended-host-tests`, and `legacy` stay platform-skipped for metadata
   # edits, the required `summary` context advances to the later metadata
   # continuity run, and candidate eligibility still remains bound to the
   # newest prior complete full Build CI run.
@@ -998,6 +998,89 @@ jobs:
         PYTHONPATH: ''
       run: /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py baseline --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json > /dev/null
 
+    # Issue #18 host-lane closure fix: the scripts/localization package's
+    # own pure-stdlib unit test suite (schema/pseudo/catalog/generate/CLI/
+    # determinism, plus the host-native resolver-behavior and
+    # vanilla-isolation source-audit tests, which self-skip without a host
+    # `cc`) -- see localization.mk's `localization-test` target, whose own
+    # comment already named it a CI-suitable gate before this step actually
+    # wired it in. Python/stdlib only (no arm-none-eabi toolchain, no
+    # ROM/linker rebuild), so it stays in this fast host lane; it does not
+    # overlap the localization-runtime-*-check scenarios in the `build`
+    # job below (those require a real booted ROM and are reached through
+    # expansion-modern-linker-check's own dependency list, not this step).
+    - name: Run localization host test suite (issue #18)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
+      run: python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"
+
+    # The full-game payload has a separate source format from the expansion
+    # catalog. Its test target includes the typed rendered-width registry,
+    # metrics-aware generated-break validation, and native text consumer
+    # checks, so an overfull JA/ZH stream cannot pass the default CI lane.
+    - name: Run full-game localization width contract (issue #18)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
+      run: |
+        make game-localization-test
+        python3 -m scripts.localization.game_locales check
+        python3 -m scripts.localization.game_locales check-crosswalk
+        python3 -m scripts.localization.game_locales check-raw-closure
+
+  # Ownership validation has its own initial 60-minute budget rather than
+  # extending the near-limit host lane. All three coupled actions remain
+  # mandatory on full candidate/master/manual and exact-identity fallback runs.
+  ownership-tests:
+    needs: [event-identity, event-classifier]
+    if: ${{ always() && needs.event-identity.result == 'success' && ((needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha))) || (github.event_name == 'workflow_dispatch' && needs.event-identity.outputs.fallback_kind == 'workflow_dispatch' && needs.event-identity.outputs.fallback_sha == github.sha && github.sha != '' && (needs.event-classifier.result == 'failure' || (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'true' && needs.event-classifier.outputs.expected_head == github.sha)))) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
+        fetch-depth: 0
+        submodules: recursive
+        persist-credentials: false
+
+    - name: Verify checked-out revision
+      run: |
+        ACTUAL_SHA="$(git rev-parse HEAD)"
+        printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
+        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"
+
+    - name: Hydrate workflow-pilot Git authority
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
+      env:
+        BASH_ENV: ''
+        ENV: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+      run: /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py hydrate --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected-head "$EXPECTED_BUILD_SHA"
+
+    - name: Install ownership-query dependencies
+      run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi gcc-arm-none-eabi libmgba-dev libnewlib-arm-none-eabi libpng-dev pkg-config
+
     # A candidate must not supply the verifier that authorizes its own graph.
     # Once the exact PR base contains issue #180's base verifier, extract that
     # complete tree and enter only its gate/package against the checked-out
@@ -1218,33 +1301,6 @@ jobs:
         PATH: /usr/bin:/bin
         PYTHONPATH: ''
       run: /usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py check --repository-root "$GITHUB_WORKSPACE"
-
-    # Issue #18 host-lane closure fix: the scripts/localization package's
-    # own pure-stdlib unit test suite (schema/pseudo/catalog/generate/CLI/
-    # determinism, plus the host-native resolver-behavior and
-    # vanilla-isolation source-audit tests, which self-skip without a host
-    # `cc`) -- see localization.mk's `localization-test` target, whose own
-    # comment already named it a CI-suitable gate before this step actually
-    # wired it in. Python/stdlib only (no arm-none-eabi toolchain, no
-    # ROM/linker rebuild), so it stays in this fast host lane; it does not
-    # overlap the localization-runtime-*-check scenarios in the `build`
-    # job below (those require a real booted ROM and are reached through
-    # expansion-modern-linker-check's own dependency list, not this step).
-    - name: Run localization host test suite (issue #18)
-      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
-      run: python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"
-
-    # The full-game payload has a separate source format from the expansion
-    # catalog. Its test target includes the typed rendered-width registry,
-    # metrics-aware generated-break validation, and native text consumer
-    # checks, so an overfull JA/ZH stream cannot pass the default CI lane.
-    - name: Run full-game localization width contract (issue #18)
-      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
-      run: |
-        make game-localization-test
-        python3 -m scripts.localization.game_locales check
-        python3 -m scripts.localization.game_locales check-crosswalk
-        python3 -m scripts.localization.game_locales check-raw-closure
 
   # Ubuntu libmGBA ROM/runtime gate: builds the full modern object/ELF/ROM
   # chain for both supported configs (debug, release; AAPCS only -- see
@@ -1911,7 +1967,7 @@ jobs:
   summary:
     name: summary
     if: always()
-    needs: [event-identity, event-classifier, host-tests, build, extended-host-tests, legacy]
+    needs: [event-identity, event-classifier, host-tests, ownership-tests, build, extended-host-tests, legacy]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -1932,6 +1988,7 @@ jobs:
       PUSH_SHA: ${{ github.event.after }}
       RAW_PUSH_SHA: ${{ github.sha }}
       HOST_TESTS_RESULT: ${{ needs.host-tests.result }}
+      OWNERSHIP_TESTS_RESULT: ${{ needs.ownership-tests.result }}
       BUILD_RESULT: ${{ needs.build.result }}
       EXTENDED_HOST_TESTS_RESULT: ${{ needs.extended-host-tests.result }}
       LEGACY_RESULT: ${{ needs.legacy.result }}
@@ -1954,6 +2011,7 @@ jobs:
           echo "| event-identity | $FALLBACK_IDENTITY_RESULT ($FALLBACK_KIND) |"
           echo "| event-classifier | $CLASSIFIER_RESULT ($CLASSIFICATION) |"
           echo "| host-tests | $HOST_TESTS_RESULT |"
+          echo "| ownership-tests | $OWNERSHIP_TESTS_RESULT |"
           echo "| build | $BUILD_RESULT |"
           echo "| extended-host-tests | $EXTENDED_HOST_TESTS_RESULT |"
           echo "| legacy | $LEGACY_RESULT |"
@@ -1964,7 +2022,7 @@ jobs:
              [ "$GITHUB_EVENT_NAME" = "pull_request" ] && \
              [ "$FALLBACK_KIND" = "pull_request" ] && \
              [ "$FALLBACK_SHA" = "$PR_HEAD_SHA" ]; then
-            for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \
+            for result in "$HOST_TESTS_RESULT" "$OWNERSHIP_TESTS_RESULT" "$BUILD_RESULT" \
               "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
             do
               if [ "$result" != "success" ]; then
@@ -1980,7 +2038,7 @@ jobs:
              [ "$FALLBACK_KIND" = "push" ] && \
              [ "$FALLBACK_SHA" = "$PUSH_SHA" ] && \
              [ "$FALLBACK_SHA" = "$RAW_PUSH_SHA" ]; then
-            for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \
+            for result in "$HOST_TESTS_RESULT" "$OWNERSHIP_TESTS_RESULT" "$BUILD_RESULT" \
               "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
             do
               if [ "$result" != "success" ]; then
@@ -1991,7 +2049,7 @@ jobs:
             echo "Build event classifier failed after exact-push fallback jobs completed" >&2
             exit 1
           fi
-          for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \
+          for result in "$HOST_TESTS_RESULT" "$OWNERSHIP_TESTS_RESULT" "$BUILD_RESULT" \
             "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
           do
             if [ "$result" != "skipped" ]; then
@@ -2039,7 +2097,7 @@ jobs:
            [ "$FULL_FALLBACK" = "true" ] && [ "$HEAD_VALID" = "true" ] && \
            [ "$IDENTITY_VALID" = "false" ] && [ -n "$PR_HEAD_SHA" ] && \
            [ "$CLASSIFIED_BUILD_SHA" = "$PR_HEAD_SHA" ]; then
-          for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \
+          for result in "$HOST_TESTS_RESULT" "$OWNERSHIP_TESTS_RESULT" "$BUILD_RESULT" \
             "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
           do
             if [ "$result" != "success" ]; then
@@ -2082,6 +2140,7 @@ jobs:
           test "$RUN_EXPENSIVE" = "false"
           test "$HOST_TESTS_RESULT" = "success"
           test "$BUILD_RESULT" = "success"
+          test "$OWNERSHIP_TESTS_RESULT" = "skipped"
           test "$EXTENDED_HOST_TESTS_RESULT" = "skipped"
           test "$LEGACY_RESULT" = "skipped"
           echo "Review-first preflight complete; accepted clean review/security must precede full Build." >&2
@@ -2099,7 +2158,7 @@ jobs:
               exit 1
             fi
           done
-          for result in "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
+          for result in "$OWNERSHIP_TESTS_RESULT" "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
           do
             if [ "$result" != "skipped" ]; then
               echo "metadata-only expensive Build worker was not skipped: $result" >&2
@@ -2145,6 +2204,7 @@ jobs:
                   "event-router",
                   "event-classifier",
                   "host-tests",
+                  "ownership-tests",
                   "build",
                   "extended-host-tests",
                   "legacy",
@@ -2157,6 +2217,7 @@ jobs:
                   "event-router",
                   "metadata-classifier",
                   "host-tests",
+                  "ownership-tests",
                   "build",
                   "extended-host-tests",
                   "legacy",
@@ -2728,7 +2789,7 @@ jobs:
               if names == METADATA_JOB_NAMES or names == (
                   FULL_JOB_NAMES - {"event-classifier"} | {"review-first-classifier"}
               ):
-                  for name in ("extended-host-tests", "legacy"):
+                  for name in ("ownership-tests", "extended-host-tests", "legacy"):
                       status, conclusion, runner_name, _started_at = by_name[name]
                       if (
                           status != "completed"
@@ -2958,7 +3019,7 @@ jobs:
           echo "unknown Build event classification output" >&2
           exit 1
         fi
-        for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" "$EXTENDED_HOST_TESTS_RESULT" \
+        for result in "$HOST_TESTS_RESULT" "$OWNERSHIP_TESTS_RESULT" "$BUILD_RESULT" "$EXTENDED_HOST_TESTS_RESULT" \
           "$LEGACY_RESULT"
         do
           if [ "$result" != "success" ]; then

@@ -662,6 +662,7 @@ def workflow_tester_topology_violations(text):
         "current-metadata": frozenset(
             {
                 "host-tests",
+                "ownership-tests",
                 "build",
                 "extended-host-tests",
                 "legacy",
@@ -676,6 +677,7 @@ def workflow_tester_topology_violations(text):
         "live-title-metadata": frozenset(
             {
                 "host-tests",
+                "ownership-tests",
                 "build",
                 "extended-host-tests",
                 "legacy",
@@ -688,6 +690,7 @@ def workflow_tester_topology_violations(text):
         "live-restore-metadata": frozenset(
             {
                 "host-tests",
+                "ownership-tests",
                 "build",
                 "extended-host-tests",
                 "legacy",
@@ -739,6 +742,7 @@ def workflow_tester_topology_violations(text):
         "canonical skipped worker contexts",
         "each skipped with no runner",
         "all four workers are exactly `skipped`",
+        "all five workers are exactly `skipped`",
     )
     normalized_body = normalize_policy(body_case)
     for claim in forbidden_claims:
@@ -886,7 +890,7 @@ def live_title_probe_violations(text):
             "assert isinstance(started_at, str)",
         ),
         "metadata-worker-no-start": (
-            'metadata_skipped_ids = {"extended-host-tests", "legacy"}',
+            'metadata_skipped_ids = {"ownership-tests", "extended-host-tests", "legacy"}',
             'started_at = job["started_at"]',
             'assert job["conclusion"] == "skipped"',
             "assert started_at is None or isinstance(started_at, str)",
@@ -1103,7 +1107,7 @@ def classifier_bootstrap_contract_violations(text):
     )
     exact_head_workers = re.compile(
         incomplete_base
-        + r" .*?(?:all four workers|the four workers) .*?"
+        + r" .*?(?:all five workers|the five workers) .*?"
         r"(?:that exact head|that head)"
     )
     failed_summary = re.compile(
@@ -3979,7 +3983,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             workflow_tester_topology_violations(semantic_names),
         )
 
-    def test_metadata_adapter_docs_require_two_adapter_two_skipped_contract(self):
+    def test_metadata_adapter_docs_require_two_adapter_three_skipped_contract(self):
         documents = {
             "workflow-pilot": WORKFLOW_PILOT_PATH.read_text(encoding="utf-8"),
             "framework-support": FRAMEWORK_SUPPORT_PATH.read_text(encoding="utf-8"),
@@ -3991,6 +3995,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "runner-backed",
             "body/title-only",
             "GITHUB_EVENT_PATH",
+            "ownership-tests",
             "extended-host-tests",
             "legacy",
             "platform-skipped",
@@ -4006,7 +4011,9 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "canonical skipped worker contexts",
             "each skipped with no runner",
             "all four workers are exactly `skipped`",
+            "all five workers are exactly `skipped`",
             "skip the four expensive workers",
+            "skip the five expensive workers",
         )
         for name, text in documents.items():
             normalized = normalize_policy(text)
@@ -4078,6 +4085,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "event-router",
             "event-classifier",
             "host-tests",
+            "ownership-tests",
             "build",
             "extended-host-tests",
             "legacy",
@@ -4092,6 +4100,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "summary",
         )
         metadata_skipped_names = (
+            "ownership-tests",
             "extended-host-tests",
             "legacy",
             "patch-release",
@@ -4721,7 +4730,7 @@ printf '%s\t%s\t%s\n' "$result" \
             "literal `=` and `;`",
             "every backslash",
             "`-1` or `0` seconds",
-            "eight-job-without-summary",
+            "nine-job topology without summary",
             "active `updated_at` is not a live completion bound",
             "Completed runs refresh exact run authority",
             "deterministic fake `gh`",

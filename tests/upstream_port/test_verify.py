@@ -6,6 +6,7 @@ import re
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from scripts.upstream_port import cli, verify as verify_mod
@@ -158,6 +159,51 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             )
         )
 
+    def test_ownership_worker_has_two_local_gates_and_closed_target_setup(self):
+        original = Path(BUILD_WORKFLOW_PATH).read_text()
+        structure = verify_mod._parse_workflow_structure_text(original)
+        ownership = next(steps for job, _, steps in structure[2] if job == "ownership-tests")
+        self.assertEqual(
+            [(role, name) for role, name, _ in ownership],
+            [
+                ("setup", None),
+                ("setup", "Verify checked-out revision"),
+                ("setup", "Hydrate workflow-pilot Git authority"),
+                ("setup", "Install ownership-query dependencies"),
+                ("setup", verify_mod._VALIDATION_OWNERSHIP_BASE_STEP_NAME),
+                ("gate", _VALIDATION_OWNERSHIP_TEST_STEP_NAME),
+                ("gate", _VALIDATION_OWNERSHIP_CHECK_STEP_NAME),
+            ],
+        )
+        self.assertEqual(len(verify_mod.gates()), 32)
+        job = topology_tests._job_blocks(original)["ownership-tests"]
+        artifact_root = Path(REPO_ROOT) / "build/test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="verify-ownership-", dir=artifact_root) as temporary:
+            target = Path(temporary)
+            workflow = target / ".github/workflows/build.yml"
+            workflow.parent.mkdir(parents=True)
+            workflow.write_text(original)
+            verify_mod._require_target_gate_equivalence(str(target))
+            mutations = [
+                job.replace(step, "", 1) for step in topology_tests._step_blocks(job)
+            ]
+            mutations.extend(job.replace(old, new, 1) for old, new in (
+                ('--repository-root "$GITHUB_WORKSPACE"', '--repository-root /tmp/other'),
+                ('--base-sha "$EXPECTED_BASE_SHA"', '--base-sha "$EXPECTED_CANDIDATE_SHA"'),
+                ('--trusted-root "$trusted_root"', '--trusted-root "$GITHUB_WORKSPACE"'),
+                ('test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"', 'test "$ACTUAL_SHA" = "$ACTUAL_SHA"'),
+                ("gcc-arm-none-eabi", "clang"),
+                ("        PATH: /usr/bin:/bin", "        PATH: /tmp/untrusted"),
+                ("        fetch-depth: 0", "        fetch-depth: 1"),
+            ))
+            for changed in mutations:
+                with self.subTest(mutation=changed[:80]):
+                    self.assertNotEqual(changed, job)
+                    workflow.write_text(original.replace(job, changed, 1))
+                    with self.assertRaises(ValueError):
+                        verify_mod._require_target_gate_equivalence(str(target))
+
     def test_issue_7_17_docs_governance_is_a_standalone_workflow_step_not_a_verify_gate(self):
         """Docs governance stays outside the current 32-gate candidate mirror
         while remaining required, argv-identical, and immediately after the
@@ -239,7 +285,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         localization_index = ordered_unique_steps.index(_LOCALIZATION_HOST_STEP_NAME)
         self.assertEqual(
             ordered_unique_steps[localization_index - 1],
-            _VALIDATION_OWNERSHIP_CHECK_STEP_NAME,
+            _WORKFLOW_PILOT_BASELINE_STEP_NAME,
         )
 
     def test_issue_18_full_game_width_contract_is_in_mirrored_gate_set(self):
@@ -487,13 +533,13 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "workflow-contract-tests",
                 "workflow-pilot-reporter-tests",
                 "workflow-pilot-baseline",
-                "validation-ownership-tests",
-                "validation-ownership-check",
                 "localization-host-suite",
                 "game-localization-width-contract",
                 "game-localization-catalog-check",
                 "game-localization-crosswalk-check",
                 "game-localization-raw-closure-check",
+                "validation-ownership-tests",
+                "validation-ownership-check",
                 "artifact-guard-tests",
                 "artifact-guard",
                 "codeql-alerts-test",
@@ -516,14 +562,9 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "legacy-payload-identity",
             ],
         )
-        # The merged CI runs the fast `host-tests` lane textually before the
-        # ROM `build` job, so the host-only gates are first. The first six
-        # remain pure Python/native checks; the seventh runs the source-only
-        # ownership Make target and the ninth runs the full-game localization
-        # Make target, but neither builds a ROM.
-        # stay host-only -- never a ROM/linker `make` build (that belongs
-        # solely to the modern-linker gates) -- so the fast host job and the
-        # ROM build job never duplicate work.
+        # host-tests and ownership-tests precede the ROM build in the local
+        # mirror. The first six gates remain Python/native checks; localization
+        # then invokes Make before the standalone ownership launcher gates.
         for g in verify_mod.gates()[:6]:
             self.assertNotIn("make", g.command)
             self.assertNotIn("expansion-modern-linker-check", g.command)
@@ -533,9 +574,9 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             text = " ".join(f.read().split())
 
         for clause in (
-            "four combined workers run in parallel",
+            "five combined workers run in parallel",
             "event identity validator, event router, and mode-specific "
-            "classifier check precede the four",
+            "classifier check precede the five",
             "`summary` is their fail-closed join",
             "install both the supported modern toolchain",
             "explicit archival `make legacy` prerequisites",
@@ -1140,6 +1181,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "event-router",
                 "event-classifier",
                 "host-tests",
+                "ownership-tests",
                 "build",
                 "extended-host-tests",
                 "legacy",
@@ -1811,7 +1853,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                         "summary",
                         "needs",
                         "    needs: [event-identity, event-classifier, "
-                        "host-tests, build, "
+                        "host-tests, ownership-tests, build, "
                         "extended-host-tests, legacy]",
                         "    needs: [build, host-tests, legacy]",
                 ),

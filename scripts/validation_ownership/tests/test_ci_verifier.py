@@ -588,7 +588,7 @@ class BasePinnedVerifierTests(unittest.TestCase):
         disabled = step.replace(marker, marker + "      if: false\n", 1)
         decoy = "  ownership-decoy:\n    if: false\n    runs-on: ubuntu-latest\n    steps:\n" + step
         for candidate in (
-            text.replace(step, disabled, 1).replace("  host-tests:\n", decoy + "  host-tests:\n", 1),
+            text.replace(step, disabled, 1).replace("  ownership-tests:\n", decoy + "  ownership-tests:\n", 1),
             text.replace(step, step + step, 1),
         ):
             with self.subTest(candidate=candidate[:120]), self.assertRaises(MakeProbeError):
@@ -600,6 +600,48 @@ class BasePinnedVerifierTests(unittest.TestCase):
         marker = ci_verifier.BASE_STEP_MARKER
         changed = text.replace(marker, marker + "      # Same executed step mapping.\n", 1)
         self.assertEqual(ci_verifier._base_step(text), ci_verifier._base_step(changed))
+
+    def test_base_step_guard_requires_ownership_job_even_after_parsing(self):
+        root = Path(__file__).resolve().parents[3]
+        text = (root / reporter.BUILD_WORKFLOW_PATH).read_text()
+        context, names, jobs = reporter.workflow_verify._parse_workflow_structure_text(text)
+        selected = next(job for job in jobs if job[0] == "ownership-tests")
+        base_step = next(step for step in selected[2] if step[1] == ci_verifier.BASE_STEP_NAME)
+        for wrong_job in ("host-tests", "build", "extended-host-tests", "legacy", "summary"):
+            changed_jobs = tuple(
+                (job, fields, tuple(step for step in steps if step != base_step)
+                 + ((base_step,) if job == wrong_job else ()))
+                for job, fields, steps in jobs
+            )
+            with (
+                self.subTest(wrong_job=wrong_job),
+                patch.object(
+                    reporter.workflow_verify, "_parse_workflow_structure_text",
+                    return_value=(context, names, changed_jobs),
+                ),
+                self.assertRaisesRegex(MakeProbeError, "one PR-base verifier in ownership-tests"),
+            ):
+                ci_verifier._base_step(text)
+        self.assertEqual(ci_verifier._base_step(text), (selected[1], base_step[0], base_step[2]))
+
+    def test_base_step_equality_preserves_exact_base_staging_authority(self):
+        root = Path(__file__).resolve().parents[3]
+        text = (root / reporter.BUILD_WORKFLOW_PATH).read_text()
+        loader = lambda source: SimpleNamespace(read_blob=lambda *_args: source.encode("utf-8"))
+        commented = text.replace(
+            ci_verifier.BASE_STEP_MARKER,
+            ci_verifier.BASE_STEP_MARKER + "      # Same base staging behavior.\n",
+            1,
+        )
+        ci_verifier._verify_base_step(loader(commented), loader(text))
+        candidate_archive = text.replace(
+            '/usr/bin/git archive --format=tar "$EXPECTED_BASE_SHA"',
+            '/usr/bin/git archive --format=tar "$EXPECTED_CANDIDATE_SHA"',
+            1,
+        )
+        self.assertNotEqual(candidate_archive, text)
+        with self.assertRaisesRegex(MakeProbeError, "changed the exact PR-base verifier staging step"):
+            ci_verifier._verify_base_step(loader(candidate_archive), loader(text))
 
     def test_scanner_build_contract_preserves_make_semantics_and_rejects_redirects(self):
         root = Path(__file__).resolve().parents[3]

@@ -410,7 +410,7 @@ class GateTests(unittest.TestCase):
         jobs = []
         for index, job_id in enumerate(sorted(candidate_evidence.KNOWN_JOB_IDS)):
             name = classifier if job_id == "event-classifier" else job_id
-            verdict = ("skipped" if mode == "review-first" and job_id in {"legacy", "extended-host-tests"}
+            verdict = ("skipped" if mode == "review-first" and job_id in candidate_evidence.METADATA_SKIPPED_JOB_IDS
                        else "failure" if mode == "review-first" and job_id == "summary" else "success")
             jobs.append(github.JobState(
                 index + 1, run_id, name, "completed", verdict,

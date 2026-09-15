@@ -184,10 +184,10 @@ you manually applied whatever you accepted) — it never builds, checks out,
 or executes the upstream ref/tree.** It orchestrates all 32 current-master
 mirrored verifier gates in fail-fast order. `.github/workflows/build.yml`
 carries the same 32 commands with argv/order preserved across its combined
-host, modern, extended-host, and archival jobs, plus the deliberately
+host, ownership, modern, extended-host, and archival jobs, plus the deliberately
 standalone issues #7/#17 documentation-governance workflow gate described
 below. A no-checkout event identity validator, event router, and mode-specific
-classifier check precede the four combined workers in CI; the four combined
+classifier check precede the five combined workers in CI; the five combined
 workers run in parallel after that decision, and `summary` is their
 fail-closed join. Metadata-only PR edits do not invoke local `verify` or those
 workers. Local `verify` runs the same 32 gates in its
@@ -205,7 +205,7 @@ baseline's `--repository-root`; there is no per-step working-directory
 override. Before either a dry run or execution, the source tool parses the
 target checkout's Build workflow as bounded UTF-8 data without importing or
 executing target Python. The event identity validator, event router,
-mode-specific classifier, and four reviewed worker jobs must have
+mode-specific classifier, and five reviewed worker jobs must have
 the exact same complete ordered step sequences as the source: step count,
 unique required names, setup-versus-gate role, action and immutable SHA, run
 argv, `env`/`with` mappings, direct fields, and no working-directory override.
@@ -231,7 +231,7 @@ reviewed names, runner, timeout, outputs, environment,
 dependencies/conditions, and steps. Each combined job contains only its
 identity/classifier dependencies and fail-closed condition, `runs-on: ubuntu-latest`,
 its exact allowlisted environment, and `steps`. The comprehensive `build` job
-has `timeout-minutes: 90`; `host-tests`, `extended-host-tests`, and `legacy`
+has `timeout-minutes: 90`; `host-tests`, `ownership-tests`, `extended-host-tests`, and `legacy`
 remain 60 minutes, while identity/router/classifier and summary remain 5.
 Classifier authority uses direct PR-base or push identities, with a
 trusted-default-branch failure bootstrap only when PR base identity is absent
@@ -244,7 +244,7 @@ push classification requires the corresponding validated push kind/SHA.
 Workers accept either a complete current classifier head/base pair or the
 explicit fail-closed state for a valid exact PR head with an
 incomplete/malformed/incoherent base, and check out only that exact validated
-head during normal classification. The latter state audits all four workers
+head during normal classification. The latter state audits all five workers
 and then fails summary; a valid base SHA may remain diagnostic data but cannot
 authorize a checkout.
 Base refs are bounded to 1024 UTF-8 bytes. Python applies grammar equivalent to
@@ -272,12 +272,23 @@ Containers, services, strategies/matrices, permissions, defaults, dependency
 or condition substitutions, deployment environment, concurrency, reusable-job
 `uses`/secrets, custom shell context, unknown fields, and complex, duplicate,
 or reordered keys fail before dry-run.
-The complete eight-job structure retains all four validation workers,
+The complete nine-job structure retains all five validation workers,
 identity/router/classifier and summary. The normal `build` job additionally
 contains two authenticated master-push-only packaging/upload steps, not new
 local gates: the mirror still executes exactly 32 gates. Their conditions,
 secret scope, existing-output packaging invocation and pinned patch-only
 upload remain parsed contracts.
+
+The dedicated `ownership-tests` worker has its own exact-head checkout,
+revision comparison, Git-authority hydration and native/ARM query dependencies.
+It owns the exact-PR-base verifier, isolated ownership regression suite and
+public graph check together, with an initial 60-minute bound. The two launcher
+commands follow all retained `host-tests` gates in the local 32-gate order;
+base staging and dependency setup remain CI-only setup, not new local gates.
+Metadata-only/review-first events skip this worker. Every full/fallback
+summary predicate includes its result; missing, skipped, failed, cancelled or
+timed-out ownership cannot earn full-run credit or reuse an older green run.
+The split does not provide the independent coordinator-owned verifier capture.
 
 Dry-run validates that workflow wiring and describes the gates; it does not
 execute or certify the behavior of invoked helpers. Its results have

@@ -179,7 +179,7 @@ the consumers' independent protected-principal/deployment requirements.
 4. Execute the actual parsed Build job guards and preflight shell steps.
    Initial review-first runs only the fast path, while concurrent, dispatched
    full and master events retain all four comprehensive worker jobs and all
-   eight total jobs. Wrong head/base/decision identity fails preflight.
+   nine total jobs. Wrong head/base/decision identity fails preflight.
    Execute the no-checkout dispatch bootstrap with a pre-feature default tree,
    a genuine feature-containing integration base and a child whose launcher
    would fail if executed. Require exact base checkout and a parsed
@@ -269,7 +269,7 @@ the consumers' independent protected-principal/deployment requirements.
    feature-parent bootstrap when the default tree predates adaptive gating.
 9. Execute the existing metadata summary against disposable local HTTP
    responses for a full dispatch and its current merge base. It retains
-   complete eight-job success; missing/wrong/foreign marker or stale base
+   complete nine-job success; missing/wrong/foreign marker or stale base
    cannot stand in for full candidate evidence.
 10. In owned Git repositories, publish an unpaused default decision and create
     H, then normally publish a pause to the current default branch without
@@ -392,7 +392,7 @@ these PRs as merged pilot samples.
    Record one existing #178 watcher and run exactly
    `timeout 90m gh run watch "$RUN_ID" --interval 30 --exit-status` as an
    attached asynchronous shell. No reasoning agent waits. Verify exactly one
-   input-free full dispatch and all eight completed jobs, with no publisher
+   input-free full dispatch and all nine completed jobs, with no publisher
    on the PR/dispatch. Reassess fresh review/security/criteria before eligibility.
 8. Owner-push a real second change. Observe supersession and prove that the
    earlier full success and earlier review/security cannot authorize the new
@@ -1934,11 +1934,11 @@ issue rather than this repository.
 
 The synthetic non-master-base pull request selects the mandatory
 `event-identity` setup before `event-router`, `event-classifier`, the existing
-`host-tests`, `build`, `extended-host-tests`, `legacy`, and fail-closed
+`host-tests`, `ownership-tests`, `build`, `extended-host-tests`, `legacy`, and fail-closed
 `summary` jobs.
 
 - **Parsed full-PR job set:** {`event-identity`, `event-router`,
-  `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
+  `event-classifier`, `host-tests`, `ownership-tests`, `build`, `extended-host-tests`, `legacy`,
   `summary`}.
 
 Every candidate worker still checks out and verifies
@@ -2058,13 +2058,13 @@ availability or grant credentials.
    - **Parsed preserved pre-fix body-only job set:** {`host-tests`, `build`,
      `extended-host-tests`, `legacy`, `summary`}.
    - **Parsed current metadata-only job/check set:** {`event-identity`,
-     `event-router`, `metadata-classifier`, `host-tests`, `build`,
+     `event-router`, `metadata-classifier`, `host-tests`, `ownership-tests`, `build`,
      `extended-host-tests`, `legacy`, `summary`}.
    The pre-fix graph therefore starts all four expensive workers and summary;
    the current graph retains both mandatory setup contexts, preserves the live
    canonical `host-tests`/`build`/`summary` required contexts through trusted
    branch-protection continuity adapters plus the summary continuity proof,
-   keeps canonical skipped `extended-host-tests`/`legacy` plus canonical
+   keeps canonical skipped `ownership-tests`/`extended-host-tests`/`legacy` plus canonical
    skipped patch publication, and uses only the running metadata classifier
    attestation beyond those existing required names.
 
@@ -2072,7 +2072,7 @@ availability or grant credentials.
 
 Body-only, title-only, and combined body/title edits emit
 `event-identity`, `event-router`, `metadata-classifier`, the canonical
-worker checks `host-tests`, `build`, `extended-host-tests`, and `legacy`,
+worker checks `host-tests`, `ownership-tests`, `build`, `extended-host-tests`, and `legacy`,
 plus canonical `summary`. The trusted metadata-only path
 starts runners for `host-tests` and `build`, but those two jobs execute only a
 fixed no-checkout continuity attestation that validates exact event identity,
@@ -2084,7 +2084,7 @@ JSON. Missing, malformed, duplicate, base-retarget,
 unknown, empty, or unchanged body/title changes reject both adapters. Every
 existing
 checkout/install/test/build step in those jobs is full/fallback-only and
-remains skipped. `extended-host-tests` and `legacy` stay platform-skipped with
+remains skipped. `ownership-tests`, `extended-host-tests` and `legacy` stay platform-skipped with
 no runner. Live branch protection remains unchanged and therefore still
 requires canonical `host-tests`, `build`, `summary`, and the independent
 GitGuardian context. Metadata `summary` succeeds only after a trusted
@@ -2115,7 +2115,7 @@ The summary succeeds only when classifier status is `success`, the classified
 SHA equals the event's validated exact `pull_request.head.sha`, event number
 matches the exact `refs/pull/<number>/merge` ref, suppression is exactly false,
 `host-tests`/`build` succeed through the trusted continuity adapters, and
-`extended-host-tests`/`legacy` are exactly `skipped`, and the
+`ownership-tests`/`extended-host-tests`/`legacy` are exactly `skipped`, and the
 trusted Actions API proof classifies exact prior runs newest-first so only the
 newest conclusively full run with the same repository, PR number,
 authoritative base SHA, and immutable head SHA can authorize continuity.
@@ -2129,17 +2129,17 @@ successes never override a newer failed, cancelled, in-progress, or malformed
 full run.
 
 Base-only edits, mixed edits, unknown and incomplete change records, `opened`,
-`synchronize`, and `reopened` select the classifier, all four expensive
+`synchronize`, and `reopened` select the classifier, all five expensive
 workers, and summary at the exact PR head. A `master` push additionally selects
 the existing patch publisher and runs the complete graph from its separate
 push SHA. Malformed/duplicate/non-finite JSON or another classifier failure with a
-validated authoritative PR head runs all four workers at that exact head under
+validated authoritative PR head runs all five workers at that exact head under
 their canonical worker names, then summary still fails to expose the classifier
 defect. A classifier failure on a
-master push with validated `github.sha` runs all four workers and the publisher
+master push with validated `github.sha` runs all five workers and the publisher
 at that exact push SHA, then summary still fails. Any
 missing, empty, malformed, or event-mismatched base ref/SHA with a valid exact
-PR head runs all four workers at that head and fails normal summary; a
+PR head runs all five workers at that head and fails normal summary; a
 syntactically valid direct base SHA may remain diagnostic output but is never
 checkout authority. Missing, malformed, stale, or spoofed PR head or missing
 push SHA starts no combined worker/publisher and fails summary.
@@ -2152,11 +2152,11 @@ Base refs are bounded to 1024 UTF-8 bytes and must satisfy full
 is not used, and lone `@` is rejected. Python applies the equivalent grammar
 without a subprocess; the trusted bootstrap quotes the full ref to system Git
 and never checks it out. Invalid base refs are incomplete identity: a valid
-exact head runs all four workers and fails summary; an invalid head runs none.
+exact head runs all five workers and fails summary; an invalid head runs none.
 The classifier executes from the verified current PR base SHA; a missing base
 uses the trusted default branch only to report invalid identity, while a base
 without the new classifier uses the explicit strict bootstrap. The original
-#177 workflow had no final-dispatch route; #181 now preserves all eight jobs
+#177 workflow had no final-dispatch route; the current graph preserves all nine jobs
 through its input-free dispatch and integration-base bootstrap, covered by
 `TC-WORKFLOW-REVIEW-FIRST-001`.
 The classifier bootstrap may use the trusted default branch when PR base
@@ -2264,11 +2264,22 @@ while candidate eligibility remains bound to that prior full run.
 workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
 pin, and environment semantics, including the pre-fix negative selection.
 
-`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 31 local
-gates while requiring complete eight-job source/target equivalence: the retained
+`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 32 local
+gates while requiring complete nine-job source/target equivalence: the retained
 issue #176 jobs remain closed and the identity/router/classifier are closed
 setup-only jobs, never additional local gates. The two ownership checks remain
-part of the host gate set.
+part of the `ownership-tests` gate set. The dedicated worker has its own
+exact-head checkout, revision comparison, Git hydration and native/ARM setup;
+its three coupled actions run once without changing the native extended-host
+owner. The initial ownership and retained host budgets are both 60 minutes.
+Replay full PR/master/manual and exact-fallback routes, then replace the
+ownership result with failure, cancellation, timeout, unexpected skip or
+missing evidence. Every full admission must fail, including continuity with
+an older green run. Metadata-only/review-first routes require its platform
+skip, not an ownership attestation. Remove its summary dependency, disable or
+duplicate the job/steps, move the verifier back to host-tests, or substitute
+checkout/root/base/environment; the parsed mirror and actual summary must
+reject while the unchanged metadata adapters retain their required contexts.
 
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
 parses the frozen PR template/body and comment collection, requiring exactly
@@ -2669,7 +2680,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    ```
 
    - **Parsed live opened-run job set:** {`event-identity`, `event-router`,
-     `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
+     `event-classifier`, `host-tests`, `ownership-tests`, `build`, `extended-host-tests`, `legacy`,
      `summary`}.
 3. Snapshot prior IDs, apply the title-only mutation through the owner REST
    endpoint, then discover, watch, and save its distinct metadata run:
@@ -2695,13 +2706,13 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    ```
 
    - **Parsed live title-edit job/check set:** {`event-identity`,
-     `event-router`, `metadata-classifier`, `host-tests`, `build`,
+     `event-router`, `metadata-classifier`, `host-tests`, `ownership-tests`, `build`,
      `extended-host-tests`, `legacy`, `summary`}.
 
    Every raw REST job record is scanned before normalization. Duplicate API
    IDs, duplicate names/stable IDs, unknown jobs, a metadata `host-tests` or
    `build` record without a runner-backed `success` conclusion, or a metadata
-   `extended-host-tests`/`legacy` record with a runner or non-`skipped`
+   `ownership-tests`/`extended-host-tests`/`legacy` record with a runner or non-`skipped`
    conclusion fail. GitHub may stamp `started_at` on a platform-skipped record;
    that timestamp is admissible only when `runner_name` is null and the
    conclusion is exactly `skipped`. Every metadata worker record is included
@@ -2741,7 +2752,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    ```
 
    - **Parsed live title-restore job/check set:** {`event-identity`,
-     `event-router`, `metadata-classifier`, `host-tests`, `build`,
+     `event-router`, `metadata-classifier`, `host-tests`, `ownership-tests`, `build`,
      `extended-host-tests`, `legacy`, `summary`}.
 5. Normalize all three real runs and execute the candidate evaluator's full,
    metadata-only, combined, failed-full, and missing-full assertions:
@@ -2784,6 +2795,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
            "event-classifier": "event-classifier",
            "metadata-classifier": "event-classifier",
            "host-tests": "host-tests",
+           "ownership-tests": "ownership-tests",
            "build": "build",
            "extended-host-tests": "extended-host-tests",
            "legacy": "legacy",
@@ -2792,18 +2804,20 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
        }
        workers = {
            "host-tests",
+           "ownership-tests",
            "build",
            "extended-host-tests",
            "legacy",
        }
        metadata_adapter_ids = {"host-tests", "build"}
-       metadata_skipped_ids = {"extended-host-tests", "legacy"}
+       metadata_skipped_ids = {"ownership-tests", "extended-host-tests", "legacy"}
        required_names = (
            {
                "event-identity",
                "event-router",
                "event-classifier",
                "host-tests",
+               "ownership-tests",
                "build",
                "extended-host-tests",
                "legacy",
@@ -2815,6 +2829,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
                "event-router",
                "metadata-classifier",
                "host-tests",
+               "ownership-tests",
                "build",
                "extended-host-tests",
                "legacy",
@@ -3008,7 +3023,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    full Build succeeds; an active rerun appearing in either later snapshot
    defers the edit. A second-snapshot refusal stops before creating an intent
    or taking the third snapshot.
-   Exercise queued zero-job, one-job, current eight-job-without-summary,
+   Exercise queued zero-job, one-job, current nine-job topology without summary,
    unknown partial, provable active metadata-only, empty/missing-binding active
    queued/in-progress, terminal unbound, explicit-other, and
    multiple/contradictory binding shapes.
@@ -3834,8 +3849,9 @@ game behavior needs a compensating change.
    Invoke the actual launcher/reporter from the repository's parent using
    both absolute and relative repository-root arguments. Require the same
    complete report coverage; a symlink root must still reject before payload.
-   Prepend an inert copied verifier step while disabling the real host step,
-   then duplicate the verifier within its host job. The structural staging
+   Prepend an inert copied verifier step while disabling the real ownership step,
+   then duplicate the verifier within `ownership-tests` or move it back to
+   `host-tests`. The structural staging
    guard must reject both, while a nonsemantic YAML comment remains stable.
    Complete the canonical
    [coordinator-owned review and capture procedure](../validation-ownership.md#coordinator-owned-review-and-capture)
@@ -3867,7 +3883,7 @@ game behavior needs a compensating change.
    must still explain the nonempty host owner pair. A `patch-release` job
    authority must reject as stale. Run
    `python3 -m unittest tests.workflows.test_patch_release_workflow -v`
-   to exercise the parsed eight-job/full-gate contract and the actual packaging
+   to exercise the parsed nine-job/full-gate contract and the actual packaging
    helper with owned synthetic inputs. Require one profile build, no build by
    packaging, authenticated master-only publication, correct source/profile,
    real BPS round trip, patch-only outputs, private cleanup and visible
@@ -3913,6 +3929,26 @@ game behavior needs a compensating change.
     but the single-batch launch property is lost. Keep before/after stage
     timings as supplementary evidence only; do not raise limits or replace
     the complete standalone drift test with a shortened or mocked verifier.
+13. Exercise the dedicated ownership CI worker without launching the public
+    graph or independent H1 capture:
+    `python3 -m unittest tests.workflows.test_build_ci_topology tests.upstream_port.test_verify scripts.workflow_pilot.tests.test_candidate_evidence scripts.workflow_pilot.tests.test_summary_continuity_contract -v`,
+    then `actionlint .github/workflows/build.yml`.
+    Parse the actual nine-job YAML: all prior host steps must remain, and the
+    exact-PR-base verifier, isolated suite and public graph check must each
+    have exactly one scheduled owner, `ownership-tests`, after that job's own
+    exact-head checkout, revision comparison, Git hydration and native/ARM
+    dependency setup. Both host and ownership timeouts must remain 60 minutes.
+    Replay full PR, master push and manual routes and validated exact-head
+    fallbacks; metadata-only/review-first must skip the new worker, while
+    classifier/base identity failures still fail summary even if workers pass.
+    Mutate ownership success to failure, cancellation, timeout, skip and
+    missing; remove its summary dependency, disable or duplicate a step,
+    substitute checkout/root/base/environment, and move ownership back to a
+    different job. Every changed full run must reject, including after an
+    older green run and a later metadata edit. A harmless YAML comment must
+    remain valid. Confirm the native probe stays in `extended-host-tests`,
+    all 32 mirrored commands remain, and the build-once master publisher and
+    required `host-tests`/`build`/`summary` names are unchanged.
 
 ### Expected result
 
@@ -3926,7 +3962,7 @@ documentation governance; `.github/CODEOWNERS` selects the named fail-closed
 external-enforcement exclusion only. Generated paths derive from
 the typed generated-data registry; gate commands derive from existing Make
 targets, workflow jobs/steps, and tester cases rather than a duplicate command
-list. Both ownership commands are required, scrubbed `host-tests` gates and
+list. Both ownership commands are required, scrubbed `ownership-tests` gates and
 members of the complete upstream gate inventory.
 
 Immutable verifier batches return exactly the individually read bytes, preserve
@@ -3936,6 +3972,13 @@ is reaped with its streams closed even on a rejected Git response. The full
 standalone drift regression still exercises all source content, missing-file,
 mode and symlink mutations before scanner-session entry. The representative
 document-serialization report remains semantically unchanged.
+
+The ownership workload no longer consumes the near-limit host job's serial
+budget. This is an initial nine-job, separate-60-minute routing contract, not
+proof of a completed hosted duration. A new 60-minute timeout remains a
+failure requiring measured follow-up. Moving candidate YAML does not satisfy
+the separate independent coordinator-owned verifier capture (H1), nor relax
+any source/base/result binding, public graph or full-domain acceptance.
 
 With the ARM compiler installed for ownership metadata queries, the explicit
 host-only suite must still skip the concurrent custom-spell full-project

@@ -7,10 +7,27 @@ semantic ownership that Git history cannot derive reliably.
 
 The graph is observational. It reports additive owners and review invalidation;
 it does not execute a selected gate, skip a gate, or narrow local checks.
-Build CI requires the ownership suite and whole-tree check in `host-tests`,
+Build CI requires the ownership suite and whole-tree check in `ownership-tests`,
 but those checks only validate this contract. Any use for narrower validation
 requires a later independently accepted issue with non-inferiority evidence.
 Issue #181 is parallel and does not consume or authorize this graph.
+
+The dedicated worker keeps the exact-PR-base verifier, isolated regression
+suite and public graph check together. It performs its own exact-head checkout,
+revision comparison, Git-authority hydration and native/ARM query dependency
+setup. It runs on full PR, master-push, manual and exact-identity fallback
+routes; metadata-only/review-first events platform-skip it without gaining
+full-run evidence. All nine Build jobs remain present, with the existing
+`host-tests`/`build`/`summary` branch-protection contexts unchanged. Full summary
+and trusted prior-run evidence require ownership success in that same exact
+run; missing, skipped, failed, cancelled or timed-out ownership rejects.
+
+The initial ownership budget is 60 minutes, separate from the unchanged
+60-minute host budget. The split addresses the measured serial host overload
+without dropping tests, moving the native probe owner or raising a timeout.
+Only complete same-revision hosted runs can establish its eventual timing;
+another timeout remains a failure. This job is ordinary CI invocation evidence,
+not the independent coordinator-owned verifier capture (H1).
 
 Graph test discovery uses unittest's package `load_tests` protocol to exclude
 the foundation, producer, dependency and metadata codec modules. They run once in
@@ -419,7 +436,7 @@ tests, and `.github/PULL_REQUEST_TEMPLATE.md` to documentation governance.
 named fail-closed external-GitHub-enforcement exclusion rather than a circular
 ownership-test claim.
 
-The eight-job Build retains both ownership host gates and the complete mirrored
+The nine-job Build retains both ownership gates in `ownership-tests` and the complete mirrored
 local gate inventory. Patch packaging is a master-only step in `build`, not a separate
 publisher job or local gate. The existing `surface.host` mapping covers
 `scripts/modernize/package_ci_patch.sh` and
@@ -1244,7 +1261,7 @@ by GNU Make. The tests demonstrate that difference with real file/preload and
 dry-run effects, not a source-spelling assertion.
 
 Candidate CI does not use these candidate-authored modules as its own trust
-root. On pull requests, `host-tests` first checks the exact GitHub PR-base
+root. On pull requests, `ownership-tests` first checks the exact GitHub PR-base
 commit for only the stable bootstrap sentinels needed to distinguish
 no-authority, foundation-only, and verifier-owned BASE states. When the BASE
 already carries `scripts/validation_ownership/ci_verifier.py`, the hosted step

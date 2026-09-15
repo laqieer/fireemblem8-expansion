@@ -58,7 +58,7 @@ MASTER_PUBLISHER_CONDITION = (
     "needs.event-identity.outputs.fallback_sha == github.event.after && "
     "needs.event-identity.outputs.fallback_sha == github.sha }}"
 )
-COMBINED_WORKERS = ("host-tests", "build", "extended-host-tests", "legacy")
+COMBINED_WORKERS = candidate_evidence.WORKER_JOB_IDS
 METADATA_ADAPTER_JOBS = candidate_evidence.METADATA_ADAPTER_JOB_IDS
 METADATA_SKIPPED_JOBS = candidate_evidence.METADATA_SKIPPED_JOB_IDS
 CLASSIFIER_JOB = "event-classifier"
@@ -82,8 +82,7 @@ METADATA_CLASSIFIER_FAILURE_CHECKS = set(COMBINED_WORKERS) | {
 }
 REQUIRED_BUILD_CONTEXTS = frozenset(candidate_evidence.REQUIRED_BUILD_CONTEXTS)
 SUMMARY_NEEDS = (
-    "needs: [event-identity, event-classifier, host-tests, build, "
-    "extended-host-tests, legacy]"
+    "needs: [" + ", ".join(("event-identity", "event-classifier") + COMBINED_WORKERS) + "]"
 )
 WORKER_NEEDS = "needs: [event-identity, event-classifier]"
 FULL_WORKER_STEP_CONDITION = (
@@ -225,6 +224,7 @@ PULL_REQUEST_ACTIONS = ("opened", "synchronize", "reopened", "edited")
 PUSH_TRIGGER = 'push:\n    branches: [ "master" ]'
 SUMMARY_RESULTS = (
     '"$HOST_TESTS_RESULT"',
+    '"$OWNERSHIP_TESTS_RESULT"',
     '"$BUILD_RESULT"',
     '"$EXTENDED_HOST_TESTS_RESULT"',
     '"$LEGACY_RESULT"',
@@ -346,6 +346,7 @@ METADATA_ADAPTER_ENV = (
 )
 COMBINED_JOB_ENV = {
     "host-tests": (HOST_ENV_LINE,),
+    "ownership-tests": (HOST_ENV_LINE,),
     "build": (HOST_ENV_LINE,),
     "extended-host-tests": (HOST_ENV_LINE,),
     "legacy": (
@@ -1126,6 +1127,7 @@ def _summary_full_jobs(
         _summary_job("event-router", "success"),
         _summary_job("event-classifier", "success"),
         _summary_job("host-tests", "success"),
+        _summary_job("ownership-tests", "success"),
         _summary_job("build", "success"),
         _summary_job("extended-host-tests", "success"),
         _summary_job("legacy", "success"),
@@ -1151,6 +1153,7 @@ def _summary_metadata_jobs() -> list[dict]:
         _summary_job(candidate_evidence.METADATA_CLASSIFIER, "success"),
         _summary_job("host-tests", "success"),
         _summary_job("build", "success"),
+        _summary_job("ownership-tests", "skipped", runner_name=None, started_at=None),
         _summary_job("extended-host-tests", "skipped", runner_name=None, started_at=None),
         _summary_job("legacy", "skipped", runner_name=None, started_at=None),
         _summary_job("patch-release", "skipped", runner_name=None, started_at=None),
@@ -1198,6 +1201,7 @@ def _summary_metadata_env(**overrides: str) -> dict[str, str]:
         "HOST_TESTS_RESULT": "success",
         "IDENTITY_VALID": "true",
         "LEGACY_RESULT": "skipped",
+        "OWNERSHIP_TESTS_RESULT": "skipped",
         "PATCH_RELEASE_RESULT": "skipped",
         "PR_BASE_SHA": SUMMARY_TEST_BASE_SHA,
         "PR_BASE_REF": "master",
@@ -1210,6 +1214,27 @@ def _summary_metadata_env(**overrides: str) -> dict[str, str]:
         "RUN_ID": str(SUMMARY_TEST_RUN_ID),
         "RUN_NUMBER": str(SUMMARY_TEST_RUN_NUMBER),
     }
+    env.update(overrides)
+    return env
+
+
+def _summary_full_env(event: str = "pull_request", **overrides: str) -> dict[str, str]:
+    env = _summary_metadata_env(
+        CLASSIFICATION="full",
+        RUN_EXPENSIVE="true",
+        **{name.strip('"$'): "success" for name in SUMMARY_RESULTS},
+    )
+    if event != "pull_request":
+        env.update(
+            GITHUB_EVENT_NAME=event,
+            GITHUB_REF="refs/heads/master" if event == "push" else "refs/heads/candidate",
+            FALLBACK_KIND=event,
+            RAW_PUSH_SHA=SUMMARY_TEST_HEAD_SHA,
+            PUSH_SHA=SUMMARY_TEST_HEAD_SHA if event == "push" else "",
+            PR_HEAD_SHA="",
+            PR_BASE_SHA="",
+            CLASSIFIED_BASE_SHA="",
+        )
     env.update(overrides)
     return env
 
@@ -1453,6 +1478,9 @@ def _base_step_has_bootstrap_sentinel_loop(step: str) -> bool:
 
 
 def _base_step_has_scrubbed_environment(step: str) -> bool:
+    fields = _direct_step_mapping_fields(step)
+    if fields is None or len(fields) != 4 or set(fields) != {"name", "if", "env", "run"}:
+        return False
     lines = step.splitlines()
     try:
         env_index = lines.index("      env:")
@@ -1695,6 +1723,43 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
         "host-tests protected pre-pilot step sequence differs from reviewed "
         "actions, commands, fields, order, or scrubbed environments"
     ]
+
+
+def _protected_ownership_prefix_errors(job: str) -> list[str]:
+    steps = _step_blocks(job)
+    if len(steps) != 7:
+        return ["ownership-tests must contain its four setup and three ownership steps"]
+    expected = (
+        _checkout_step_is_exact(steps[0]),
+        _run_step_is_exact(
+            steps[1],
+            "Verify checked-out revision",
+            (
+                'ACTUAL_SHA="$(git rev-parse HEAD)"',
+                "printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"",
+                'test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"',
+            ),
+        ),
+        _run_step_is_exact(
+            steps[2],
+            "Hydrate workflow-pilot Git authority",
+            (WORKFLOW_PILOT_AUTHORITY_HYDRATION,),
+            if_expression=FULL_WORKER_STEP_CONDITION,
+            env_lines=SCRUBBED_STEP_ENV,
+        ),
+        _run_step_is_exact(
+            steps[3],
+            "Install ownership-query dependencies",
+            (
+                "sudo apt-get update && sudo apt-get install -y "
+                "build-essential binutils-arm-none-eabi gcc-arm-none-eabi "
+                "libmgba-dev libnewlib-arm-none-eabi libpng-dev pkg-config",
+            ),
+        ),
+    )
+    if all(expected):
+        return []
+    return ["ownership-tests protected checkout, revision, hydration or dependencies differ"]
 
 
 def _has_execution_defaults(text: str, workflow_scope: bool) -> bool:
@@ -2282,6 +2347,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         "event-router": 5,
         "event-classifier": 5,
         "host-tests": 60,
+        "ownership-tests": 60,
         "build": 90,
         "extended-host-tests": 60,
         "legacy": 60,
@@ -2304,6 +2370,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         "event-router",
         "event-classifier",
         "host-tests",
+        "ownership-tests",
         "build",
         "extended-host-tests",
         "legacy",
@@ -2365,6 +2432,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
 
     errors.extend(_host_environment_errors(jobs["host-tests"]))
     errors.extend(_protected_host_prefix_errors(jobs["host-tests"]))
+    errors.extend(_protected_ownership_prefix_errors(jobs["ownership-tests"]))
 
     if (
         "github.event_name == 'pull_request' && "
@@ -2501,18 +2569,18 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         VALIDATION_OWNERSHIP_CHECK_GATE,
     ):
         if not _contains_exact_command(
-            jobs["host-tests"],
+            jobs["ownership-tests"],
             command,
             if_expression=FULL_WORKER_STEP_CONDITION,
             env_lines=VALIDATION_OWNERSHIP_STEP_ENV,
         ):
             errors.append(
-                f"candidate host lost exact validation ownership evidence: {command}"
+                f"ownership-tests lost exact validation ownership evidence: {command}"
             )
-    host_steps = _step_blocks(jobs["host-tests"])
+    ownership_steps = _step_blocks(jobs["ownership-tests"])
     base_steps = [
         step
-        for step in host_steps
+        for step in ownership_steps
         if f"    - name: {VALIDATION_OWNERSHIP_BASE_STEP}\n" in step
     ]
     if (
@@ -2524,14 +2592,14 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         or not _base_step_has_bootstrap_sentinel_loop(base_steps[0])
     ):
         errors.append(
-            "candidate host lost exact PR-base validation ownership authority"
+            "ownership-tests lost exact PR-base validation ownership authority"
         )
     for name in (
         "Run validation ownership regression suite (issue #180)",
         "Validate validation ownership graph (issue #180)",
     ):
         matching = [
-            step for step in host_steps if f"    - name: {name}\n" in step
+            step for step in ownership_steps if f"    - name: {name}\n" in step
         ]
         if (
             len(matching) != 1
@@ -2540,6 +2608,19 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             errors.append(
                 f"validation ownership step {name!r} changes its scrubbed environment"
             )
+    for name in (
+        VALIDATION_OWNERSHIP_BASE_STEP,
+        "Run validation ownership regression suite (issue #180)",
+        "Validate validation ownership graph (issue #180)",
+    ):
+        owners = [
+            job_name
+            for job_name, job in jobs.items()
+            for step in _step_blocks(job)
+            if _step_name(step) == name
+        ]
+        if owners != ["ownership-tests"]:
+            errors.append(f"ownership step {name!r} must be owned once by ownership-tests")
     if not _contains_exact_command(
         jobs["host-tests"],
         WORKFLOW_PILOT_AUTHORITY_HYDRATION,
@@ -2613,6 +2694,188 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             _remote_completion_errors(MAKEFILE.read_text(encoding="utf-8")),
             [],
         )
+
+    def test_ownership_worker_keeps_host_coverage_and_owns_three_actions_once(self):
+        _, names, parsed = verify._parse_workflow_structure_text(self.text)
+        self.assertEqual(set(names), {
+            "event-identity", "event-router", "event-classifier", "host-tests",
+            "ownership-tests", "build", "extended-host-tests", "legacy", "summary",
+        })
+        self.assertEqual(len(names), 9)
+        jobs = {name: (context, steps) for name, context, steps in parsed}
+        self.assertEqual(
+            [name for _, name, _ in jobs["host-tests"][1]],
+            [
+                "Attest review-first preflight",
+                "Attest metadata-only branch-protection continuity",
+                None,
+                "Verify checked-out revision",
+                "Hydrate workflow-pilot Git authority",
+                "Install host and ownership-query dependencies",
+                "Run gba-playtest host test suite",
+                "Run upstream-port tooling test suite",
+                "Run workflow contract test suite",
+                "Run workflow-pilot reporter regression suite (issue #176)",
+                "Validate workflow-pilot baseline against checked-out Git history",
+                "Run localization host test suite (issue #18)",
+                "Run full-game localization width contract (issue #18)",
+            ],
+        )
+        owned = (
+            VALIDATION_OWNERSHIP_BASE_STEP,
+            "Run validation ownership regression suite (issue #180)",
+            "Validate validation ownership graph (issue #180)",
+        )
+        for name in owned:
+            owners = [
+                job for job, _, steps in parsed
+                for _, step_name, _ in steps if step_name == name
+            ]
+            self.assertEqual(owners, ["ownership-tests"])
+        self.assertEqual(
+            [name for _, name, _ in jobs["ownership-tests"][1]],
+            [None, "Verify checked-out revision", "Hydrate workflow-pilot Git authority",
+             "Install ownership-query dependencies", *owned],
+        )
+        for job in ("host-tests", "ownership-tests"):
+            self.assertEqual(dict(jobs[job][0])["timeout-minutes"], "60")
+        graph = json.loads((ROOT / ".github/validation-ownership-graph.json").read_text())
+        nodes = {node["id"]: node for node in graph["nodes"]}
+        for identifier, step in zip(("owner.validation-suite", "owner.validation-check"), owned[1:]):
+            self.assertEqual(nodes[identifier]["authority"], {
+                "kind": "workflow-step", "job": "ownership-tests", "step": step,
+            })
+        self.assertEqual(nodes["owner.host-workflow"]["authority"]["job"], "host-tests")
+
+    def test_ownership_worker_setup_and_action_substitutions_fail_closed(self):
+        job = _job_blocks(self.text)["ownership-tests"]
+        steps = _step_blocks(job)
+        mutations = {}
+        for index, step in enumerate(steps):
+            mutations[f"missing-step-{index}"] = job.replace(step, "", 1)
+            mutations[f"duplicate-step-{index}"] = job.replace(step, step + step, 1)
+            key = "      run:" if "      run:" in step else "      with:"
+            mutations[f"disabled-step-{index}"] = job.replace(
+                step, step.replace(key, "      if: false\n" + key, 1), 1,
+            )
+        for old, new in (
+            (f"        ref: {EXPECTED_BUILD_SHA_EXPRESSION}", "        ref: ${{ github.sha }}"),
+            ("        fetch-depth: 0", "        fetch-depth: 1"),
+            ("        submodules: recursive", "        submodules: false"),
+            ("        persist-credentials: false", "        persist-credentials: true"),
+            ("      with:\n", "      with:\n        path: other-root\n"),
+            ('test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"', 'test "$ACTUAL_SHA" = "$ACTUAL_SHA"'),
+            ('--repository-root "$GITHUB_WORKSPACE"', '--repository-root /tmp/other'),
+            ('--expected-head "$EXPECTED_BUILD_SHA"', '--expected-head "$EXPECTED_BASE_SHA"'),
+            ("        PATH: /usr/bin:/bin", "        PATH: /tmp/untrusted"),
+            ("        BASH_ENV: ''", "        BASH_ENV: build/mask.sh"),
+            (VALIDATION_OWNERSHIP_BASE_SHA_ENV, VALIDATION_OWNERSHIP_BASE_SHA_ENV.replace(
+                "needs.event-classifier.outputs.expected_base", "needs.event-classifier.outputs.expected_head")),
+            (VALIDATION_OWNERSHIP_CANDIDATE_SHA_ENV, VALIDATION_OWNERSHIP_CANDIDATE_SHA_ENV.replace(
+                "needs.event-classifier.outputs.expected_head", "needs.event-classifier.outputs.expected_base")),
+            ('--base-sha "$EXPECTED_BASE_SHA"', '--base-sha "$EXPECTED_CANDIDATE_SHA"'),
+            ('--trusted-root "$trusted_root"', '--trusted-root "$GITHUB_WORKSPACE"'),
+        ):
+            self.assertIn(old, job)
+            mutations[old] = job.replace(old, new, 1)
+        for package in (
+            "build-essential", "binutils-arm-none-eabi", "gcc-arm-none-eabi",
+            "libmgba-dev", "libnewlib-arm-none-eabi", "libpng-dev", "pkg-config",
+        ):
+            mutations[f"missing-{package}"] = job.replace(" " + package, "", 1)
+        for name, changed_job in mutations.items():
+            with self.subTest(mutation=name):
+                self.assertNotEqual(changed_job, job)
+                self.assertTrue(_errors(self.text.replace(job, changed_job, 1), False))
+
+        for step in steps[4:]:
+            for target in ("host-tests", "build", "extended-host-tests", "legacy"):
+                for duplicate in (False, True):
+                    with self.subTest(step=_step_name(step), wrong_owner=target, duplicate=duplicate):
+                        changed = self.text if duplicate else self.text.replace(job, job.replace(step, "", 1), 1)
+                        destination = _job_blocks(changed)[target]
+                        changed = changed.replace(destination, destination + step, 1)
+                        self.assertTrue(_errors(changed, False))
+                        with self.assertRaises(ValueError):
+                            verify._parse_workflow_structure_text(changed)
+
+    def test_ownership_worker_routes_real_conditions_like_full_workers(self):
+        from scripts.workflow_pilot.tests.test_adaptive_gate import WorkflowTests, workflow_condition
+
+        contexts = WorkflowTests()
+        jobs = _job_blocks(self.text)
+        for event in ("pull_request", "push", "workflow_dispatch"):
+            full = contexts.context(event)
+            cases = [
+                ("full", full, set(COMBINED_WORKERS)),
+                ("classifier-fallback", {**full, "needs.event-classifier.result": "failure"},
+                 set(COMBINED_WORKERS)),
+            ]
+            for mode in ("metadata-only", "review-first"):
+                cases.append((mode, contexts.context(event, mode),
+                              set(METADATA_ADAPTER_JOBS) if event == "pull_request" else set()))
+            for field, value in (
+                ("needs.event-identity.result", "failure"),
+                ("needs.event-identity.outputs.fallback_sha", "c" * 40),
+                ("needs.event-classifier.outputs.expected_head", "c" * 40),
+                ("needs.event-classifier.result", "cancelled"),
+                ("needs.event-classifier.result", "skipped"),
+            ):
+                cases.append((field, {**full, field: value}, set()))
+            if event == "pull_request":
+                cases.append(("incomplete-base", {
+                    **full, "needs.event-classifier.outputs.expected_base": "",
+                    "needs.event-classifier.outputs.identity_valid": "false",
+                    "needs.event-classifier.outputs.full_fallback": "true",
+                }, set(COMBINED_WORKERS)))
+            for name, context, expected in cases:
+                with self.subTest(event=event, route=name):
+                    active = {
+                        job for job in COMBINED_WORKERS
+                        if workflow_condition(_direct_job_if(jobs[job]), context)
+                    }
+                    self.assertEqual(active, expected)
+                    for step in _step_blocks(jobs["ownership-tests"])[4:]:
+                        fields = dict(verify._parse_step(step, "ownership-tests", 4)[2])
+                        selected = "ownership-tests" in active and workflow_condition(fields["if"], context)
+                        self.assertEqual(selected, "ownership-tests" in expected)
+
+    def test_ownership_summary_result_matrix_cannot_grant_partial_full_credit(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        routes = [
+            (event, _summary_full_env(event), True)
+            for event in ("pull_request", "push", "workflow_dispatch")
+        ]
+        routes.extend(
+            (event + "-classifier-fallback", _summary_full_env(event, CLASSIFIER_RESULT="failure"), False)
+            for event in ("pull_request", "push", "workflow_dispatch")
+        )
+        routes.append(("incomplete-base", _summary_full_env(
+            FULL_FALLBACK="true", IDENTITY_VALID="false", CLASSIFIED_BASE_SHA="", PR_BASE_SHA="",
+        ), False))
+        with tempfile.TemporaryDirectory(prefix="ownership-summary-", dir=artifact_root) as temporary:
+            for route, environment, may_succeed in routes:
+                for result in ("success", "failure", "cancelled", "timed_out", "skipped", "", None):
+                    with self.subTest(route=route, ownership_result=result):
+                        env = {
+                            **os.environ, **environment,
+                            "GITHUB_STEP_SUMMARY": str(Path(temporary) / "summary.md"),
+                        }
+                        if result is None:
+                            env.pop("OWNERSHIP_TESTS_RESULT", None)
+                        else:
+                            env["OWNERSHIP_TESTS_RESULT"] = result
+                        actual = subprocess.run(
+                            ["/bin/bash", "-e", "-o", "pipefail", "-c", script],
+                            cwd=ROOT, env=env, capture_output=True, text=True, timeout=10,
+                        )
+                        self.assertEqual(actual.returncode == 0, may_succeed and result == "success", actual.stderr)
+                        self.assertIn(
+                            f"| ownership-tests | {result or ''} |",
+                            (Path(temporary) / "summary.md").read_text(),
+                        )
 
     def test_protected_environment_is_exact_and_cannot_mask_python(self):
         workflow_env_variants = (
@@ -3690,7 +3953,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertIn(body_only["payload"]["action"], _pull_request_actions(header))
         pre_fix_text = PRE_FIX_WORKFLOW.read_text(encoding="utf-8")
         pre_fix_jobs = _pre_fix_triggered_jobs(pre_fix_text, body_only)
-        self.assertEqual(pre_fix_jobs - {"summary"}, set(COMBINED_WORKERS))
+        self.assertEqual(
+            pre_fix_jobs - {"summary"},
+            {"host-tests", "build", "extended-host-tests", "legacy"},
+        )
         self.assertIn("summary", pre_fix_jobs)
         self.assertNotIn("event-classifier", pre_fix_jobs)
         self.assertEqual(
@@ -5368,6 +5634,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "event-router": 5,
             "event-classifier": 5,
             "host-tests": 60,
+            "ownership-tests": 60,
             "build": 90,
             "extended-host-tests": 60,
             "legacy": 60,
@@ -5810,61 +6077,25 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertTrue(any("summary must depend" in error for error in _errors(changed, False)))
 
     def test_summary_requires_each_worker_dependency_and_result_check(self):
-        for worker, changed_needs in (
-            (
-                "host-tests",
-                "needs: [event-identity, event-classifier, build, "
-                "extended-host-tests, legacy]",
-            ),
-            (
-                "build",
-                "needs: [event-identity, event-classifier, host-tests, "
-                "extended-host-tests, legacy]",
-            ),
-            (
-                "extended-host-tests",
-                "needs: [event-identity, event-classifier, host-tests, "
-                "build, legacy]",
-            ),
-            (
-                "legacy",
-                "needs: [event-identity, event-classifier, host-tests, "
-                "build, extended-host-tests]",
-            ),
-        ):
+        for worker in COMBINED_WORKERS:
+            changed_needs = "needs: [" + ", ".join(
+                ("event-identity", "event-classifier")
+                + tuple(name for name in COMBINED_WORKERS if name != worker)
+            ) + "]"
             with self.subTest(need=worker):
                 changed = self.text.replace(SUMMARY_NEEDS, changed_needs, 1)
                 self.assertTrue(
                     any("summary must depend" in error for error in _errors(changed, False))
                 )
         final_loop = (
-            'for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" '
+            'for result in "$HOST_TESTS_RESULT" "$OWNERSHIP_TESTS_RESULT" "$BUILD_RESULT" '
             '"$EXTENDED_HOST_TESTS_RESULT" \\\n'
             '          "$LEGACY_RESULT"'
         )
-        for missing, replacement in (
-            (
-                '"$HOST_TESTS_RESULT"',
-                'for result in "$BUILD_RESULT" "$EXTENDED_HOST_TESTS_RESULT" \\\n'
-                '          "$LEGACY_RESULT"',
-            ),
-            (
-                '"$BUILD_RESULT"',
-                'for result in "$HOST_TESTS_RESULT" "$EXTENDED_HOST_TESTS_RESULT" \\\n'
-                '          "$LEGACY_RESULT"',
-            ),
-            (
-                '"$EXTENDED_HOST_TESTS_RESULT"',
-                'for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \\\n'
-                '          "$LEGACY_RESULT"',
-            ),
-            (
-                '"$LEGACY_RESULT"',
-                'for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" '
-                '"$EXTENDED_HOST_TESTS_RESULT"',
-            ),
-        ):
+        self.assertIn(final_loop, self.text)
+        for missing in SUMMARY_RESULTS:
             with self.subTest(result_check=missing):
+                replacement = final_loop.replace(missing, "")
                 changed = self.text.replace(final_loop, replacement, 1)
                 self.assertTrue(
                     any("summary loop omits" in error for error in _errors(changed, False))
@@ -5973,8 +6204,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             )
         )
 
-    def test_validation_ownership_gates_are_required_host_steps(self):
-        host_tests = _job_blocks(self.text)["host-tests"]
+    def test_validation_ownership_gates_are_required_ownership_steps(self):
+        ownership_tests = _job_blocks(self.text)["ownership-tests"]
         for command in (
             VALIDATION_OWNERSHIP_TEST_GATE,
             VALIDATION_OWNERSHIP_CHECK_GATE,
@@ -5982,7 +6213,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertTrue(
                     _contains_exact_command(
-                        host_tests,
+                        ownership_tests,
                         command,
                         if_expression=FULL_WORKER_STEP_CONDITION,
                         env_lines=VALIDATION_OWNERSHIP_STEP_ENV,
@@ -5991,27 +6222,27 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 changed = self.text.replace(f"      run: {command}\n", "      run: true\n", 1)
                 self.assertTrue(
                     any(
-                        "candidate host lost exact validation ownership evidence"
+                        "ownership-tests lost exact validation ownership evidence"
                         in error
                         for error in _errors(changed, False)
                     )
                 )
 
     def test_validation_ownership_verifier_is_exact_base_pinned(self):
-        host_tests = _job_blocks(self.text)["host-tests"]
+        ownership_tests = _job_blocks(self.text)["ownership-tests"]
         self.assertEqual(
             set(VALIDATION_OWNERSHIP_BASE_BOOTSTRAP_PATHS),
             set(ownership_ci_verifier.BASE_BOOTSTRAP_SENTINELS),
         )
         self.assertLess(
-            host_tests.index(VALIDATION_OWNERSHIP_BASE_STEP),
-            host_tests.index(
+            ownership_tests.index(VALIDATION_OWNERSHIP_BASE_STEP),
+            ownership_tests.index(
                 "Run validation ownership regression suite (issue #180)"
             ),
         )
         step = next(
             item
-            for item in _step_blocks(host_tests)
+            for item in _step_blocks(ownership_tests)
             if _step_name(item) == VALIDATION_OWNERSHIP_BASE_STEP
         )
         script = _multiline_step_script(step)
@@ -6086,10 +6317,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 )
 
     def test_validation_ownership_base_scratch_ignores_candidate_build_symlink(self):
-        host_tests = _job_blocks(self.text)["host-tests"]
+        ownership_tests = _job_blocks(self.text)["ownership-tests"]
         step = next(
             item
-            for item in _step_blocks(host_tests)
+            for item in _step_blocks(ownership_tests)
             if _step_name(item) == VALIDATION_OWNERSHIP_BASE_STEP
         )
         script = _multiline_step_script(step)
@@ -6170,10 +6401,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             ownership_reporter.cleanup_validation_scratch(scratch)
 
     def test_validation_ownership_hosted_introduction_and_partial_modes(self):
-        host_tests = _job_blocks(self.text)["host-tests"]
+        ownership_tests = _job_blocks(self.text)["ownership-tests"]
         step = next(
             item
-            for item in _step_blocks(host_tests)
+            for item in _step_blocks(ownership_tests)
             if _step_name(item) == VALIDATION_OWNERSHIP_BASE_STEP
         )
         script = _multiline_step_script(step)
@@ -6852,6 +7083,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "HOST_TESTS_RESULT": "success",
             "IDENTITY_VALID": "true",
             "LEGACY_RESULT": "success",
+            "OWNERSHIP_TESTS_RESULT": "success",
             "PR_BASE_SHA": "2" * 40,
             "PR_HEAD_SHA": "1" * 40,
             "PUSH_SHA": "",
@@ -6879,6 +7111,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "EXTENDED_HOST_TESTS_RESULT": "skipped",
             "HOST_TESTS_RESULT": "skipped",
             "LEGACY_RESULT": "skipped",
+            "OWNERSHIP_TESTS_RESULT": "skipped",
         }
         missing_base = {
             **full,
@@ -6916,6 +7149,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     "FALLBACK_SHA": "",
                     "HOST_TESTS_RESULT": "skipped",
                     "LEGACY_RESULT": "skipped",
+                    "OWNERSHIP_TESTS_RESULT": "skipped",
                     "PATCH_RELEASE_RESULT": "skipped",
                 },
                 1,
@@ -7222,6 +7456,42 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     script, environment=_summary_metadata_env(), routes=routes,
                 )
                 self.assertEqual(completed.returncode, expected, completed.stderr)
+
+    def test_ownership_metadata_summary_rejects_partial_newest_full_before_older_green(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        full = [job for job in _summary_full_jobs() if job["name"] != "patch-release"]
+        for result in ("success", "failure", "cancelled", "timed_out", "skipped", None):
+            with self.subTest(newest_ownership_result=result):
+                latest = copy.deepcopy(full)
+                ownership = next(job for job in latest if job["name"] == "ownership-tests")
+                if result is None:
+                    latest.remove(ownership)
+                else:
+                    ownership["conclusion"] = result
+                routes = {
+                    _summary_runs_path(): _summary_response(_summary_api_payload("workflow_runs", [
+                        _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                        _summary_workflow_run(8101, created_at=_summary_timestamp(7),
+                                              run_started_at=_summary_timestamp(8)),
+                        _summary_workflow_run(8100, created_at=_summary_timestamp(6),
+                                              run_started_at=_summary_timestamp(7)),
+                    ])),
+                    _summary_jobs_path(8101): _summary_response(_summary_api_payload("jobs", latest)),
+                    _summary_jobs_path(8100): _summary_response(_summary_api_payload("jobs", full)),
+                }
+                actual, requests = _run_summary_with_api(
+                    script, environment=_summary_metadata_env(), routes=routes,
+                )
+                self.assertEqual(actual.returncode == 0, result == "success", actual.stderr)
+                self.assertNotIn(_summary_jobs_path(8100), [request["path"] for request in requests])
+        for result in ("success", "failure", "cancelled", ""):
+            with self.subTest(current_metadata_ownership_result=result):
+                actual, requests = _run_summary_with_api(
+                    script, environment=_summary_metadata_env(OWNERSHIP_TESTS_RESULT=result), routes={},
+                )
+                self.assertNotEqual(actual.returncode, 0)
+                self.assertIn("metadata-only expensive Build worker was not skipped", actual.stderr)
+                self.assertEqual(requests, [])
 
     def test_summary_runtime_metadata_only_requires_current_run_observation(self):
         script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
@@ -7889,7 +8159,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         _summary_api_payload("jobs", full_success)
                     ),
                 },
-                "metadata-only summary prior run 8101 metadata job extended-host-tests is malformed",
+                "metadata-only summary prior run 8101 metadata job",
                 [
                     _summary_runs_path(page=1),
                     _summary_jobs_path(8101),
@@ -9505,6 +9775,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     "HOST_TESTS_RESULT": "success",
                     "IDENTITY_VALID": "true",
                     "LEGACY_RESULT": "success",
+                    "OWNERSHIP_TESTS_RESULT": "success",
                     "PATCH_RELEASE_RESULT": "success",
                     "PR_BASE_SHA": "",
                     "PR_HEAD_SHA": "",

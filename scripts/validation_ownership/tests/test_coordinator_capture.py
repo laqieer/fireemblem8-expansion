@@ -359,7 +359,7 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         jobs = []
         for index, key in enumerate(sorted(candidate_evidence.KNOWN_JOB_IDS), 1):
             name = gate.PREFLIGHT_CLASSIFIER if preflight and key == "event-classifier" else key
-            skipped = preflight and key in {"extended-host-tests", "legacy"}
+            skipped = preflight and key in candidate_evidence.METADATA_SKIPPED_JOB_IDS
             failure = preflight and key == "summary"
             jobs.append(github.JobState(
                 number * 100 + index,

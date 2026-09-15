@@ -17,6 +17,7 @@ from scripts.validation_ownership.authority import (
 )
 from scripts.validation_ownership.budget import Limits, ProbeBudget
 from scripts.validation_ownership.graph_report import check
+from scripts.workflow_pilot import candidate_evidence
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -291,13 +292,14 @@ class AssetOwnershipTests(unittest.TestCase):
             with self.assertRaises(reporter.OwnershipError):
                 self.model(graph)
 
-    def test_all_112_domain_declarations_and_eight_jobs_are_preserved(self):
+    def test_all_112_domain_declarations_and_nine_jobs_are_preserved(self):
         domains = reporter.load_make_prerequisite_domains(self.loader, required=True)
         self.assertEqual(len(domains), 112)
         self.assertEqual(sum(item["kind"] == "tracked-fallback" for item in domains.values()), 111)
         self.assertEqual(domains["NODEP"]["values"], ["", "0", "1"])
         jobs, _ = reporter._workflow_authorities(self.loader, strict=True)
-        self.assertEqual(len(jobs), 8)
+        self.assertEqual(set(jobs), candidate_evidence.KNOWN_JOB_IDS)
+        self.assertEqual(len(jobs), 9)
         self.assertNotIn("patch-release", jobs)
 
     def test_packaging_sources_and_explicit_base_deletion_keep_complete_owners(self):

@@ -114,7 +114,7 @@ output file or substitutes for the explicit BPS apply command.
    base identity and download transport, not target or metadata validation.
 2. Confirm the parsed workflow invokes the canonical profile once, packaging
    runs no Make target, and packaging/upload select only a successful,
-   authenticated master push. All four validation workers remain mandatory.
+   authenticated master push. All five validation workers remain mandatory.
 3. Exercise wrong base, target, metadata and commit, failed partial download,
    unexpected artifact files and failed verification. Each must fail without
    private URL/base data in public output, and remove its private input.

@@ -823,7 +823,7 @@ class SafetyProducerTests(unittest.TestCase):
                     job["name"] = "review-first-classifier" if preflight else "event-classifier"
                     job["steps"] = [{"name": gate.binding_name(metadata.PR_NUMBER, head, f.cause, "master"),
                                      "status": "completed", "conclusion": "success"}]
-                if preflight and job["name"] in {"extended-host-tests", "legacy"}:
+                if preflight and job["name"] in gate.candidate_evidence.METADATA_SKIPPED_JOB_IDS:
                     job.update(conclusion="skipped", runner_name=None, runner_id=None,
                                runner_group_id=None, runner_group_name=None)
                 if preflight and job["name"] == "summary":
@@ -859,7 +859,10 @@ class SafetyProducerTests(unittest.TestCase):
         pr = refresh()
         initial = gate.fetch_decision(f, pr, 1)
         runs = api.list_candidate_runs(f, pr, include_dispatch=True)
-        self.assertEqual((runs[0].mode, len(runs[0].jobs)), ("review-first", 8))
+        self.assertEqual(
+            (runs[0].mode, len(runs[0].jobs)),
+            ("review-first", len(gate.candidate_evidence.KNOWN_JOB_IDS)),
+        )
         with observations.locked_state(f.state_path) as state:
             record = gate.begin_observed_candidate(f, state, pr.number)
             self.assertEqual(record["decision_oid"], initial.decision_oid)

@@ -4,7 +4,7 @@ after a maintainer has manually applied a port batch.
 WARNING (see docs/upstream-porting.md): this command builds and checks the
 repository's *own* current working tree/commit. It never builds, checks out,
 or executes the canonical upstream ref/tree. It is a thin, literal mirror of
-the four combined workers in `.github/workflows/build.yml`. Before execution,
+the five combined workers in `.github/workflows/build.yml`. Before execution,
 it parses the selected target checkout's workflow as data and requires exact
 semantic equivalence with both the source workflow and this module's reviewed
 gate list; target Python is never imported. The event identity, router,
@@ -44,7 +44,7 @@ _SOURCE_ROOT = os.path.realpath(
     os.path.join(os.path.dirname(__file__), "..", "..")
 )
 _BUILD_WORKFLOW_RELATIVE = os.path.join(".github", "workflows", "build.yml")
-_COMBINED_JOBS = ("host-tests", "build", "extended-host-tests", "legacy")
+_COMBINED_JOBS = ("host-tests", "ownership-tests", "build", "extended-host-tests", "legacy")
 _METADATA_ADAPTER_JOBS = ("host-tests", "build")
 _EVENT_IDENTITY_JOB = "event-identity"
 _EVENT_ROUTER_JOB = "event-router"
@@ -946,6 +946,7 @@ _EXPECTED_JOB_ENV = {
         ),
     ),
     "host-tests": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
+    "ownership-tests": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
     "build": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
     "extended-host-tests": (
         ("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),
@@ -984,6 +985,7 @@ _EXPECTED_JOB_ENV = {
                 ("HOST_TESTS_RESULT", "${{ needs.host-tests.result }}"),
                 ("IDENTITY_VALID", "${{ needs.event-classifier.outputs.identity_valid }}"),
                 ("LEGACY_RESULT", "${{ needs.legacy.result }}"),
+                ("OWNERSHIP_TESTS_RESULT", "${{ needs.ownership-tests.result }}"),
                 ("PR_BASE_REF", "${{ github.event.pull_request.base.ref }}"),
                 ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
                 ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
@@ -1026,6 +1028,7 @@ _NON_GATE_STEP_NAMES = {
     "Hydrate workflow-pilot Git authority",
     "Validate ownership with exact PR-base verifier",
     "Install host and ownership-query dependencies",
+    "Install ownership-query dependencies",
     "Install dependencies",
     "Build tools",
     "Install extended host dependencies",
@@ -1058,9 +1061,10 @@ _FULL_MODE_ONLY_JOB_STEPS = {
     ("host-tests", "Run workflow contract test suite"),
     ("host-tests", _WORKFLOW_PILOT_TEST_STEP_NAME),
     ("host-tests", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
-    ("host-tests", _VALIDATION_OWNERSHIP_BASE_STEP_NAME),
-    ("host-tests", _VALIDATION_OWNERSHIP_TEST_STEP_NAME),
-    ("host-tests", _VALIDATION_OWNERSHIP_CHECK_STEP_NAME),
+    ("ownership-tests", "Hydrate workflow-pilot Git authority"),
+    ("ownership-tests", _VALIDATION_OWNERSHIP_BASE_STEP_NAME),
+    ("ownership-tests", _VALIDATION_OWNERSHIP_TEST_STEP_NAME),
+    ("ownership-tests", _VALIDATION_OWNERSHIP_CHECK_STEP_NAME),
     ("host-tests", "Run localization host test suite (issue #18)"),
     ("host-tests", "Run full-game localization width contract (issue #18)"),
     ("build", "Verify checked-out revision"),
@@ -1147,11 +1151,17 @@ _EXPECTED_STEP_ROLES = {
         ("gate", "Run workflow contract test suite"),
         ("gate", _WORKFLOW_PILOT_TEST_STEP_NAME),
         ("gate", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
+        ("gate", "Run localization host test suite (issue #18)"),
+        ("gate", "Run full-game localization width contract (issue #18)"),
+    ),
+    "ownership-tests": (
+        ("setup", None),
+        ("setup", "Verify checked-out revision"),
+        ("setup", "Hydrate workflow-pilot Git authority"),
+        ("setup", "Install ownership-query dependencies"),
         ("setup", _VALIDATION_OWNERSHIP_BASE_STEP_NAME),
         ("gate", _VALIDATION_OWNERSHIP_TEST_STEP_NAME),
         ("gate", _VALIDATION_OWNERSHIP_CHECK_STEP_NAME),
-        ("gate", "Run localization host test suite (issue #18)"),
-        ("gate", "Run full-game localization width contract (issue #18)"),
     ),
     "build": (
         ("setup", _PREFLIGHT_STEP_NAME),
@@ -1586,8 +1596,9 @@ def _parse_job_context(job_name, body):
                 if job_name == "event-classifier"
                 else "[event-identity, event-classifier]"
                 if job_name in _COMBINED_JOBS
-                else "[event-identity, event-classifier, host-tests, build, "
-                "extended-host-tests, legacy]"
+                else "[" + ", ".join(
+                    (_EVENT_IDENTITY_JOB, _EVENT_CLASSIFIER_JOB) + _COMBINED_JOBS
+                ) + "]"
             )
             if value != expected or nested:
                 raise ValueError(f"job {job_name!r} needs differs")
@@ -2335,40 +2346,6 @@ def gates(jobs: int = 2) -> List[Gate]:
             ),
         ),
         Gate(
-            name="validation-ownership-tests",
-            command=[
-                "/usr/bin/python3",
-                "-I",
-                "-S",
-                "-B",
-                "scripts/validation_ownership/isolated_launcher.py",
-                "tests",
-            ],
-            applicable_note=(
-                "issue #180 host lane: isolated fail-closed ownership graph "
-                "schema, path-mode, authority, mutation, and lifecycle tests"
-            ),
-        ),
-        Gate(
-            name="validation-ownership-check",
-            command=[
-                "/usr/bin/python3",
-                "-I",
-                "-S",
-                "-B",
-                "scripts/validation_ownership/isolated_launcher.py",
-                "check",
-                "--repository-root",
-                "$GITHUB_WORKSPACE",
-            ],
-            applicable_note=(
-                "issue #180 host lane: validates exact Git-tree coverage, "
-                "independent probes, and executable lifecycle through the "
-                "trusted standalone entry before any Make evaluation, without "
-                "narrowing or executing graph-selected gates"
-            ),
-        ),
-        Gate(
             name="localization-host-suite",
             command=[
                 "python3",
@@ -2426,6 +2403,41 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "check-raw-closure",
             ],
             applicable_note="Build host lane closure check for unresolved raw full-game locale content",
+        ),
+        Gate(
+            name="validation-ownership-tests",
+            command=[
+                "/usr/bin/python3",
+                "-I",
+                "-S",
+                "-B",
+                "scripts/validation_ownership/isolated_launcher.py",
+                "tests",
+            ],
+            applicable_note=(
+                "issue #180 dedicated ownership-tests worker: isolated "
+                "fail-closed ownership graph schema, path-mode, authority, "
+                "mutation, and lifecycle tests"
+            ),
+        ),
+        Gate(
+            name="validation-ownership-check",
+            command=[
+                "/usr/bin/python3",
+                "-I",
+                "-S",
+                "-B",
+                "scripts/validation_ownership/isolated_launcher.py",
+                "check",
+                "--repository-root",
+                "$GITHUB_WORKSPACE",
+            ],
+            applicable_note=(
+                "issue #180 dedicated ownership-tests worker: validates exact "
+                "Git-tree coverage, independent probes, and executable lifecycle "
+                "through the trusted standalone entry before any Make "
+                "evaluation, without narrowing or executing graph-selected gates"
+            ),
         ),
         Gate(
             name="artifact-guard-tests",

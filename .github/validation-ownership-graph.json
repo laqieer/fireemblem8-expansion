@@ -403,7 +403,7 @@
       "evidence_type": "host",
       "authority": {
         "kind": "workflow-step",
-        "job": "host-tests",
+        "job": "ownership-tests",
         "step": "Run validation ownership regression suite (issue #180)"
       }
     },
@@ -414,7 +414,7 @@
       "evidence_type": "host",
       "authority": {
         "kind": "workflow-step",
-        "job": "host-tests",
+        "job": "ownership-tests",
         "step": "Validate validation ownership graph (issue #180)"
       }
     },

@@ -419,9 +419,9 @@ def _base_step(text: str) -> tuple:
         for role, name, fields in steps
         if name == BASE_STEP_NAME
     ]
-    if len(matches) != 1 or matches[0][0] != "host-tests":
+    if len(matches) != 1 or matches[0][0] != "ownership-tests":
         raise reporter.OwnershipError(
-            "Build workflow requires one PR-base verifier in host-tests"
+            "Build workflow requires one PR-base verifier in ownership-tests"
         )
     return matches[0][1:]
 
