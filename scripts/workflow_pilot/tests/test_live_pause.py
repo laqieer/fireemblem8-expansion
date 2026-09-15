@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -17,9 +18,10 @@ from scripts.workflow_pilot import coordinator_observations as observations, raw
 from scripts.workflow_pilot import event_classifier, pr_metadata as api, reporter
 from scripts.workflow_pilot import review_family as review
 from scripts.workflow_pilot.trusted_review_gate import GitTree, ReviewTools, REVIEW_QUERY
+from scripts.workflow_pilot.tests import test_adaptive_gate
 from scripts.workflow_pilot.tests import test_pr_metadata as metadata
 from scripts.workflow_pilot.tests import test_reporter as reporting
-from scripts.workflow_pilot.tests.test_adaptive_gate import GateTests, decisions
+from scripts.workflow_pilot.tests.test_adaptive_gate import decisions
 from scripts.workflow_pilot.tests.test_agent_handoff import GitFixture, at_offset, git, write_json
 from scripts.workflow_pilot.tests.review_support import Runtime
 
@@ -278,9 +280,24 @@ class CurrentControlTests(unittest.TestCase):
         self.assertIn("moved", selected.reason)
 
 
+class DiscoveryTests(unittest.TestCase):
+    def test_module_discovery_contains_only_owned_cases(self):
+        pending = [unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__])]
+        modules, identifiers = set(), []
+        while pending:
+            case = pending.pop()
+            if isinstance(case, unittest.TestSuite):
+                pending.extend(case)
+            else:
+                modules.add(type(case).__module__)
+                identifiers.append(case.id())
+        self.assertEqual(modules, {__name__})
+        self.assertEqual(len(identifiers), len(set(identifiers)))
+
+
 class PauseTransitionTests(unittest.TestCase):
     def setUp(self):
-        self.fixture = GateTests()
+        self.fixture = test_adaptive_gate.GateTests()
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
 
