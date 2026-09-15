@@ -132,6 +132,30 @@ evolution requires a reviewed source revision containing the approved change;
 ordinary candidate source data and the independently approved BASE view remain
 separate. This is a narrow compiler-code authority boundary, not a whole-tree
 identity gate or a committed content-hash ledger.
+
+Verifier-source comparisons use `AuthorityLoader.read_blobs(paths, label)`,
+which requires the loader's actual immutable repository/revision capture and
+original report budget. Each verification stage reads only its selected regular
+blobs, grouped by recorded Git object database through Snapshot's shared batch
+parser. It does not create a partial execution snapshot, materialize unrelated
+repository assets, or retain a cache between stages, reports, or live reads.
+Every selected source and loaded-module file still receives its regularity,
+location, authority and byte comparison; candidate mode/object/path changes
+still reject before scanner-session entry.
+
+Direct batch frames and copied payloads spend `output` bytes; execution
+Snapshot frames and copied payloads spend `snapshot` bytes exactly once each.
+Requests and protected-launch arguments spend `pending` bytes, and worktree
+comparisons retain their `control` charges. The process stream is bounded by
+its existing aggregate category, not by treating several blobs as one file.
+Each parsed blob independently retains `file_bytes`; malformed, missing,
+truncated, wrong-object/type and trailing responses, Git failures, exhausted
+budgets and cleanup failures remain errors. No limit, deadline, lifecycle
+wrapper, native policy, graph meaning or CI timeout changes. The focused
+source-only procedure is part of
+[`TC-WORKFLOW-GATE-OWNERSHIP-001`](test-cases/workflow-governance.md#tc-workflow-gate-ownership-001-resolve-every-admitted-path-to-complete-validation-ownership);
+process-launch counts, not wall-clock thresholds, establish the correction.
+
 The named scanner-build contract admits literal `=`/`:=` assignments, the
 four-source/four-header `g++` profile and the existing scaninc/clean recipes.
 Executable text permits only ASCII space, tab and LF grammar; NUL, CR,

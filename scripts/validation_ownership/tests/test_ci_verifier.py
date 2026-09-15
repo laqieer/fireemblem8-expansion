@@ -1,5 +1,7 @@
 import copy
+from contextlib import contextmanager
 import errno
+import importlib.util
 from io import StringIO
 import json
 import os
@@ -11,12 +13,412 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from scripts.validation_ownership import ci_verifier, reporter
-from scripts.validation_ownership.authority import ENVIRONMENT
-from scripts.validation_ownership.budget import MakeProbeError
+from scripts.validation_ownership import budget as budget_module, ci_verifier, reporter
+from scripts.validation_ownership.authority import (
+    AuthorityLoader, ENVIRONMENT, GitlinkSource, GitTreeEntries, Snapshot, git_tree_entries,
+)
+from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
 from .report_fixture import (
     ReportFixture, reviewed_code_evolution_case, reviewed_evolution_case, reviewed_exclusion_case,
 )
+
+
+@contextmanager
+def protected_launches():
+    launching = budget_module.subprocess.Popen
+    children = []
+
+    def launch(argv, *args, **kwargs):
+        child = launching(argv, *args, **kwargs)
+        children.append(child)
+        return child
+
+    with patch.object(budget_module.subprocess, "Popen", side_effect=launch):
+        yield children
+    for child in children:
+        if child.poll() is None or not all(
+            stream.closed for stream in (child.stdin, child.stdout, child.stderr)
+        ):
+            raise AssertionError("protected Git launch was not reaped and closed")
+
+
+class ImmutableBlobBatchTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = (
+            Path(__file__).resolve().parents[3] / "build/test-artifacts/verifier-git-batch"
+            / secrets.token_hex(12)
+        )
+        self.root = self.directory / "repo"
+        self.root.mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, self.directory)
+        self.git("init", "--quiet")
+
+    def git(self, *args, root=None):
+        return subprocess.run(
+            ["/usr/bin/git", "-C", str(root or self.root),
+             "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", *args],
+            env={**ENVIRONMENT, "TMPDIR": str(self.directory),
+                 "GIT_AUTHOR_NAME": "Fixture", "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
+                 "GIT_COMMITTER_NAME": "Fixture", "GIT_COMMITTER_EMAIL": "fixture@example.invalid"},
+            check=True, capture_output=True, timeout=15,
+        ).stdout
+
+    def add(self, name, data):
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        return path
+
+    def capture(self, *, budget=None, revision=None, gitlinks=()):
+        budget = budget or ProbeBudget()
+        self.addCleanup(budget.close)
+        if revision is None:
+            self.git("add", "-A")
+            revision = self.git("write-tree").decode().strip()
+        return AuthorityLoader(
+            self.root, git_tree_entries(self.root, revision, budget=budget, gitlinks=gitlinks),
+            revision, budget=budget,
+        )
+
+    def inputs(self):
+        expected = {"empty": b"", "directory/with space": b"\0\xff\nbinary\n", "caf\u00e9.py": b"VALUE = 1\n"}
+        for name, data in expected.items():
+            self.add(name, data)
+        (self.root / "caf\u00e9.py").chmod(0o755)
+        return expected
+
+    def frame(self, loader, expected):
+        return b"".join(
+            f"{loader.entries[name].object_id} blob {len(data)}\n".encode() + data + b"\n"
+            for name, data in expected.items()
+        )
+
+    def test_selected_bytes_and_snapshot_share_parser_and_actual_accounting(self):
+        expected = self.inputs()
+        loader = self.capture()
+        budget = loader.budget
+        clock = budget.started, budget.deadline
+        output, pending = budget.bytes["output"], budget.bytes["pending"]
+        with protected_launches() as children:
+            self.assertEqual(loader.read_blobs(expected, "selected"), expected)
+        self.assertEqual(len(children), 1)
+        self.assertIn("--batch", children[0].args)
+        self.assertIn("lifecycle.py", Path(children[0].args[4]).name)
+        self.assertEqual(
+            budget.bytes["output"] - output,
+            len(self.frame(loader, expected)) + sum(map(len, expected.values())),
+        )
+        self.assertEqual(
+            budget.bytes["pending"] - pending,
+            sum(len(loader.entries[name].object_id) + 1 for name in expected)
+            + sum(len(os.fsencode(arg)) + 1 for arg in children[0].args),
+        )
+        self.assertEqual((budget.started, budget.deadline), clock)
+        self.assertFalse(budget.children)
+        self.assertNotIn("cache", budget.bytes)
+        for name, data in expected.items():
+            self.assertEqual(loader.read_blob(name, "single-file control"), data)
+        snapshot_before = budget.bytes.get("snapshot", 0)
+        with protected_launches() as children:
+            snapshot = Snapshot(loader, budget)
+        self.assertEqual(len(children), 1)
+        self.assertEqual(snapshot.files, expected)
+        self.assertEqual(snapshot.modes["caf\u00e9.py"], "100755")
+        self.assertEqual(
+            budget.bytes["snapshot"] - snapshot_before,
+            len(self.frame(loader, expected)) + sum(map(len, expected.values()))
+            + sum(len(name.encode()) + 64 for name in expected),
+        )
+
+    def test_per_file_restoration_loses_batching_without_changing_bytes(self):
+        expected = self.inputs()
+        loader = self.capture()
+        with protected_launches() as batched:
+            self.assertEqual(loader.read_blobs(expected, "batch control"), expected)
+        with protected_launches() as original:
+            self.assertEqual(
+                {name: loader.read_blob(name, "restored single-file control") for name in expected},
+                expected,
+            )
+        self.assertEqual(len(batched), 1)
+        self.assertEqual(len(original), len(expected))
+
+    def test_selected_reads_do_not_capture_unrequested_large_blobs(self):
+        self.add("selected", b"owned")
+        self.add("unrequested", b"x" * 4096)
+        loader = self.capture(budget=ProbeBudget(Limits(file_bytes=1024)))
+        self.assertEqual(loader.read_blobs(["selected"], "selected"), {"selected": b"owned"})
+        for read in (lambda: loader.read_blobs(["unrequested"], "large"),
+                     lambda: Snapshot(loader, loader.budget)):
+            with self.assertRaisesRegex(MakeProbeError, "file bound"):
+                read()
+            self.assertFalse(loader.budget.children)
+
+    def test_combined_stream_is_not_a_file_and_aggregate_copies_still_count(self):
+        expected = {"one": b"a" * 1024, "two": b"b" * 1024}
+        for name, data in expected.items():
+            self.add(name, data)
+        loader = self.capture(budget=ProbeBudget(Limits(file_bytes=1024)))
+        self.assertGreater(len(self.frame(loader, expected)), loader.budget.limits.file_bytes)
+        self.assertEqual(loader.read_blobs(expected, "combined"), expected)
+        cap = loader.budget.bytes["output"]
+        for adjustment in (0, -1):
+            bounded = self.capture(budget=ProbeBudget(Limits(file_bytes=1024, output_bytes=cap + adjustment)))
+            with protected_launches():
+                if adjustment == 0:
+                    self.assertEqual(bounded.read_blobs(expected, "exact output bound"), expected)
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "aggregate output byte"):
+                        bounded.read_blobs(expected, "copied payload over bound")
+            self.assertFalse(bounded.budget.children)
+        for category in ("total_bytes", "snapshot_bytes"):
+            bounded = self.capture(budget=ProbeBudget(Limits(**{category: 4096})))
+            with protected_launches(), self.assertRaisesRegex(MakeProbeError, "aggregate .*byte"):
+                Snapshot(bounded, bounded.budget)
+            self.assertFalse(bounded.budget.children)
+        self.assertEqual(Snapshot(loader, loader.budget).files, expected)
+
+    def test_every_context_spends_its_own_budget_and_keeps_capture_identity(self):
+        expected = self.inputs()
+        original = self.capture()
+        same_budget = self.capture(budget=original.budget, revision=original.revision)
+        independent = self.capture(revision=original.revision)
+        for loader in (original, original, same_budget, independent):
+            before = loader.budget.runs, loader.budget.bytes["output"]
+            clock = loader.budget.started, loader.budget.deadline
+            with protected_launches() as children:
+                self.assertEqual(loader.read_blobs(expected, "context"), expected)
+            self.assertEqual(len(children), 1)
+            self.assertEqual(loader.budget.runs, before[0] + 1)
+            self.assertGreater(loader.budget.bytes["output"], before[1])
+            self.assertEqual((loader.budget.started, loader.budget.deadline), clock)
+        for root, revision in ((self.directory, original.revision), (self.root, "0" * 40)):
+            with self.assertRaisesRegex(MakeProbeError, "captured repository/revision"):
+                AuthorityLoader(root, original.entries, revision, budget=original.budget)
+        for entries in (dict(original.entries), original.entries.copy()):
+            with self.assertRaisesRegex(MakeProbeError, "capture's report budget"):
+                AuthorityLoader(self.root, entries, original.revision, budget=original.budget)
+        with self.assertRaisesRegex(MakeProbeError, "capture's report budget"):
+            AuthorityLoader(self.root, original.entries, original.revision, budget=independent.budget)
+        detached = AuthorityLoader(
+            self.root, GitTreeEntries(original.entries, budget=original.budget),
+            original.revision, budget=original.budget,
+        )
+        live = AuthorityLoader(self.root, original.entries, budget=original.budget)
+        for invalid in (detached, live):
+            with protected_launches() as children, self.assertRaisesRegex(MakeProbeError, "actual immutable capture"):
+                invalid.read_blobs(expected, "not immutable")
+            self.assertEqual(len(children), 0)
+        self.add("empty", b"changed")
+        self.assertEqual(live.read_blob("empty", "live read"), b"changed")
+        self.assertEqual(original.read_blobs(["empty"], "captured read"), {"empty": b""})
+        changed = self.capture(budget=original.budget)
+        self.assertNotEqual(changed.revision, original.revision)
+        self.assertEqual(changed.read_blobs(["empty"], "changed capture"), {"empty": b"changed"})
+        self.assertEqual(original.read_blobs(["empty"], "original capture"), {"empty": b""})
+        original.budget.close()
+        with protected_launches() as children, self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
+            same_budget.read_blobs(expected, "closed capture")
+        self.assertEqual(len(children), 0)
+        self.assertEqual(independent.read_blobs(expected, "independent lifetime"), expected)
+
+    def test_entry_and_pending_limits_reject_before_launch(self):
+        expected = self.inputs()
+        (self.root / "link").symlink_to("empty")
+        loader = self.capture()
+        for selected in (["missing"], ["link"], ["../empty"]):
+            with protected_launches() as children, self.assertRaises(MakeProbeError):
+                loader.read_blobs(selected, "invalid selected path")
+            self.assertEqual(len(children), 0)
+        for category, amount in (("entries", 4), ("pending_bytes", 4096)):
+            bounded = self.capture(budget=ProbeBudget(Limits(**{category: amount})))
+            if category == "pending_bytes":
+                bounded.budget.charge("pending", amount - bounded.budget.bytes["pending"])
+            with protected_launches() as children, self.assertRaisesRegex(MakeProbeError, "entry bound|pending byte"):
+                bounded.read_blobs(list(expected) * 2 if category == "entries" else expected, "bounded")
+            self.assertEqual(len(children), 0)
+            self.assertTrue(bounded.budget.failed)
+        bounded = self.capture(budget=ProbeBudget(Limits(runs=1)))
+        with protected_launches() as children, self.assertRaisesRegex(MakeProbeError, "process-launch budget"):
+            bounded.read_blobs(expected, "capture already spent the run")
+        self.assertEqual(len(children), 0)
+        self.assertTrue(bounded.budget.failed)
+
+    def test_gitlink_batches_keep_database_and_recorded_revision(self):
+        self.add("same", b"superproject")
+        module = self.directory / "module"
+        module.mkdir()
+        self.git("init", "--quiet", root=module)
+        (module / "same").write_bytes(b"pinned")
+        self.git("add", "same", root=module)
+        self.git("commit", "--quiet", "-m", "Pinned module", root=module)
+        pin = self.git("rev-parse", "HEAD", root=module).decode().strip()
+        self.git("add", "same")
+        self.git("update-index", "--add", "--cacheinfo", f"160000,{pin},module")
+        revision = self.git("write-tree").decode().strip()
+        (module / "same").write_bytes(b"later")
+        self.git("commit", "--quiet", "-am", "Later module", root=module)
+        loader = self.capture(
+            revision=revision, gitlinks=(GitlinkSource("module", module / ".git"),),
+        )
+        expected = {"same": b"superproject", "module/same": b"pinned"}
+        with protected_launches() as children:
+            self.assertEqual(loader.read_blobs(expected, "gitlink"), expected)
+        self.assertEqual(len(children), 2)
+        self.assertEqual(sum("--git-dir" in child.args for child in children), 1)
+        self.assertIn(str(module / ".git"), children[1].args)
+        self.assertEqual(Snapshot(loader, loader.budget).files, expected)
+        with self.assertRaisesRegex(MakeProbeError, "regular Git blob"):
+            loader.read_blobs(["module"], "gitlink is not a blob")
+
+    def test_malformed_streams_reject_for_both_consumers_after_real_git_cleanup(self):
+        self.add("owned", b"payload")
+        loader = self.capture()
+        raw = self.frame(loader, {"owned": b"payload"})
+        _, payload = raw.split(b"\n", 1)
+        oid = loader.entries["owned"].object_id.encode()
+        mutations = {
+            "missing": oid + b" missing\n",
+            "header": b"",
+            "malformed": b"not a header\n",
+            "wrong-oid": raw.replace(oid, b"0" * len(oid), 1),
+            "wrong-type": raw.replace(b" blob ", b" tree ", 1),
+            "size": oid + b" blob -1\n" + payload,
+            "huge-size": oid + b" blob " + b"9" * 5000 + b"\n",
+            "truncated": raw[:-2],
+            "terminator": raw[:-1] + b"x",
+            "trailing": raw + b"x",
+            "duplicate": raw + raw,
+        }
+        for name, malformed in mutations.items():
+            for snapshot in (False, True):
+                with self.subTest(mutation=name, snapshot=snapshot):
+                    bounded = self.capture(revision=loader.revision)
+                    running = bounded.budget.run
+
+                    def corrupt(*args, **kwargs):
+                        result = running(*args, **kwargs)
+                        self.assertEqual(result.stdout, raw)
+                        return subprocess.CompletedProcess(result.args, result.returncode, malformed, result.stderr)
+
+                    with protected_launches() as children, patch.object(bounded.budget, "run", side_effect=corrupt):
+                        with self.assertRaises(MakeProbeError):
+                            if snapshot:
+                                Snapshot(bounded, bounded.budget)
+                            else:
+                                bounded.read_blobs(["owned"], "corrupt")
+                    self.assertEqual(len(children), 1)
+                    self.assertFalse(bounded.budget.children)
+        self.assertEqual(loader.read_blobs(["owned"], "restored"), {"owned": b"payload"})
+
+    def test_real_missing_object_failed_git_and_stream_overflow_close_children(self):
+        self.add("owned", b"x" * 4096)
+        for failure in ("missing-object", "failed-git", "stream-overflow"):
+            with self.subTest(failure=failure):
+                loader = self.capture(budget=ProbeBudget(Limits(file_bytes=1024, output_bytes=2048)))
+                target = None
+                if failure == "missing-object":
+                    oid = loader.entries["owned"].object_id
+                    target = self.root / ".git/objects" / oid[:2] / oid[2:]
+                elif failure == "failed-git":
+                    target = self.root / ".git/HEAD"
+                saved = target.read_bytes() if target else None
+                try:
+                    if target:
+                        target.unlink()
+                    with protected_launches(), self.assertRaises(MakeProbeError):
+                        loader.read_blobs(["owned"], failure)
+                    self.assertFalse(loader.budget.children)
+                finally:
+                    if target:
+                        target.write_bytes(saved)
+
+    def test_loaded_module_checks_keep_each_real_source_and_reject_drift(self):
+        self.add("scripts/owned.py", b"VALUE = 1\n")
+        loader = self.capture()
+        trusted = self.directory / "trusted"
+        (trusted / "scripts").mkdir(parents=True)
+        path = trusted / "scripts/owned.py"
+        path.write_bytes(b"VALUE = 1\n")
+        spec = importlib.util.spec_from_file_location("scripts.owned", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        modules = {"scripts.owned": module, "scripts.alias": module}
+        with patch.object(ci_verifier.sys, "modules", modules):
+            control_before = loader.budget.bytes["control"]
+            with protected_launches() as children:
+                self.assertEqual(ci_verifier._verify_loaded_modules(trusted, loader), ["scripts/owned.py"] * 2)
+            self.assertEqual(len(children), 1)
+            self.assertEqual(loader.budget.bytes["control"] - control_before, 2 * path.stat().st_size)
+            for mutation in ("bytes", "missing", "extra", "foreign", "non-python"):
+                with self.subTest(mutation=mutation):
+                    source = path
+                    if mutation == "bytes":
+                        path.write_bytes(b"VALUE = 2\n")
+                    elif mutation == "missing":
+                        path.unlink()
+                    else:
+                        source = (
+                            self.directory / "foreign.py" if mutation == "foreign"
+                            else trusted / ("scripts/extra.py" if mutation == "extra" else "scripts/owned.txt")
+                        )
+                        source.write_bytes(b"VALUE = 1\n")
+                    module.__file__ = str(source)
+                    with self.assertRaises((MakeProbeError, FileNotFoundError)):
+                        ci_verifier._verify_loaded_modules(trusted, loader)
+                    path.write_bytes(b"VALUE = 1\n")
+                    module.__file__ = str(path)
+            self.assertEqual(ci_verifier._verify_loaded_modules(trusted, loader), ["scripts/owned.py"] * 2)
+        self.assertFalse(loader.budget.children)
+
+
+class BatchedVerifierSourceTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = ReportFixture()
+        self.addCleanup(self.fixture.close)
+        self.revision = self.fixture.git("rev-parse", "HEAD").decode().strip()
+
+    def loader(self):
+        budget = ProbeBudget()
+        self.addCleanup(budget.close)
+        return ci_verifier.capture(self.fixture.root, self.revision, budget)
+
+    def test_each_verifier_stage_batches_actual_processes_without_skipping_sources(self):
+        trusted = self.fixture.extract_revision(self.revision, "trusted")
+        loader = self.loader()
+        with protected_launches() as children:
+            paths = ci_verifier._trusted_paths(trusted, loader)
+        self.assertEqual(paths, ci_verifier._trusted_namespace(loader))
+        self.assertGreater(len(paths), 1)
+        self.assertEqual(len(children), 1)
+        for _ in range(2):
+            with protected_launches() as children:
+                modules = ci_verifier._verify_loaded_modules(ci_verifier.TRUSTED_ROOT, loader)
+            self.assertIn(ci_verifier.CI_VERIFIER_PATH, modules)
+            self.assertIn("scripts/check_docs.py", modules)
+            self.assertGreater(len(modules), 1)
+            self.assertEqual(len(children), 1)
+        self.assertFalse(loader.budget.children)
+
+    def test_trusted_worktree_drift_still_rejects_all_selected_files(self):
+        for mutation in ("bytes", "missing", "symlink", "directory", "extra"):
+            with self.subTest(mutation=mutation):
+                trusted = self.fixture.extract_revision(self.revision, "trusted-" + mutation)
+                target = trusted / ci_verifier.CI_VERIFIER_PATH
+                if mutation == "bytes":
+                    target.write_bytes(target.read_bytes() + b"\n# changed\n")
+                elif mutation == "extra":
+                    target.with_name("unadmitted.py").write_bytes(b"VALUE = 1\n")
+                else:
+                    target.unlink()
+                    if mutation == "directory":
+                        target.mkdir()
+                    elif mutation == "symlink":
+                        target.symlink_to("reporter.py")
+                loader = self.loader()
+                with self.assertRaises(MakeProbeError):
+                    ci_verifier._trusted_paths(trusted, loader)
+                self.assertFalse(loader.budget.children)
 
 
 class BasePinnedVerifierTests(unittest.TestCase):

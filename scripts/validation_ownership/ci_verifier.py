@@ -346,6 +346,7 @@ def _trusted_paths(trusted_root: Path, base_loader: reporter.AuthorityLoader) ->
         raise reporter.OwnershipError(
             "exact base lacks the complete validation ownership verifier"
         )
+    blobs = base_loader.read_blobs(sorted(paths), "trusted verifier identity")
     for path in sorted(paths):
         base_loader.entry(path, "trusted verifier source")
         target = trusted_root / path
@@ -353,10 +354,7 @@ def _trusted_paths(trusted_root: Path, base_loader: reporter.AuthorityLoader) ->
             raise reporter.OwnershipError(
                 f"trusted verifier path {path!r} is missing or not regular"
             )
-        if base_loader.budget.read_bytes(target, "control") != base_loader.read_blob(
-            path,
-            "trusted verifier identity",
-        ):
+        if base_loader.budget.read_bytes(target, "control") != blobs[path]:
             raise reporter.OwnershipError(
                 f"trusted verifier path {path!r} differs from the exact base"
             )
@@ -381,6 +379,7 @@ def _verify_loaded_modules(
     base_loader: reporter.AuthorityLoader,
 ) -> list[str]:
     result = []
+    sources = []
     for name, module in sorted(sys.modules.items()):
         if not name.startswith("scripts"):
             continue
@@ -398,14 +397,14 @@ def _verify_loaded_modules(
             raise reporter.OwnershipError(
                 f"trusted module {name!r} lacks base source authority"
             )
-        if base_loader.budget.read_bytes(path, "control") != base_loader.read_blob(
-            relative,
-            "trusted module identity",
-        ):
+        result.append(relative)
+        sources.append((name, path, relative))
+    blobs = base_loader.read_blobs(result, "trusted module identity")
+    for name, path, relative in sources:
+        if base_loader.budget.read_bytes(path, "control") != blobs[relative]:
             raise reporter.OwnershipError(
                 f"trusted module {name!r} differs from the exact base"
             )
-        result.append(relative)
     return result
 
 

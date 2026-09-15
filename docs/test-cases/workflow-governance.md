@@ -3885,6 +3885,24 @@ game behavior needs a compensating change.
     batches. Direct compressed-worker and oversized wire declarations must
     also reject. Retain stricter caller bounds, real matching/schema results,
     the original dialect, deadline, memory and cleanup controls.
+12. For the immutable verifier Git-read correction, run the three focused
+    commands listed under Automation below. Start at a clean source checkout;
+    these commands create actual owned Git repositories and extracted trusted
+    trees, not a full-repository report. Compare empty, binary, executable,
+    Unicode and space-containing paths with individual `git cat-file` reads,
+    including an explicitly captured gitlink whose checkout has advanced.
+    Count real protected `Popen` launches: each selected object database
+    requires one batch per verification stage, rather than one process per
+    path. Repeat with the same budget and with independent captures; every
+    read must spend its own bytes/runs without changing the original clock.
+    Select small inputs beside an unrequested oversized blob, then select the
+    oversized blob itself. Two valid files whose combined stream exceeds one
+    file limit must pass, but the per-file, aggregate stream/copy, pending,
+    entry and run bounds must reject at their actual boundaries.
+    Inspect the permanent per-file restoration control: bytes stay identical
+    but the single-batch launch property is lost. Keep before/after stage
+    timings as supplementary evidence only; do not raise limits or replace
+    the complete standalone drift test with a shortened or mocked verifier.
 
 ### Expected result
 
@@ -3900,6 +3918,14 @@ the typed generated-data registry; gate commands derive from existing Make
 targets, workflow jobs/steps, and tester cases rather than a duplicate command
 list. Both ownership commands are required, scrubbed `host-tests` gates and
 members of the complete upstream gate inventory.
+
+Immutable verifier batches return exactly the individually read bytes, preserve
+path/mode/gitlink/source authority and reject every trusted-tree or loaded-module
+substitution. Framing and retained payload copies are charged, and every child
+is reaped with its streams closed even on a rejected Git response. The full
+standalone drift regression still exercises all source content, missing-file,
+mode and symlink mutations before scanner-session entry. The representative
+document-serialization report remains semantically unchanged.
 
 With the ARM compiler installed for ownership metadata queries, the explicit
 host-only suite must still skip the concurrent custom-spell full-project
@@ -3949,6 +3975,18 @@ Unknown paths or edge types, uncovered or overlapping path patterns, cycles,
 duplicate or ambiguous owners, stale Make/workflow/tester/generated/manual
 targets, missing profiles or negative controls, and every removed or
 redirected edge family fail with the missing contract named.
+
+For the Git-read correction, add an extra trusted package file; remove or
+replace a selected file with changed bytes, a directory or symlink; and supply
+missing, extra, changed, non-Python or foreign loaded-module sources. All must
+reject, including aliases of one loaded source. Corrupt actual batch responses
+with missing/malformed headers, wrong object IDs/types/sizes, truncated payloads,
+missing terminators or trailing/duplicate records. Remove an actual fixture
+object or its Git repository authority, then exceed a real stream budget:
+none may produce a partial successful result or leave an owned child running.
+Restoring per-file reads must preserve these identity comparisons but fail the
+launch-count regression. Restoring the batch restores that regression without
+refreshing an oracle or suppressing mutations.
 
 The pre-fix graph assigned every A/V path, including title graphics, sound,
 review-only previews and handoff metadata, to
@@ -5088,6 +5126,10 @@ structure, the generated-data registry, tester-case registry, and manual
 handoff contract. Issue #181 is parallel and not a dependency. There is no
 feature flag and no gameplay, runtime, save, localization payload, generated
 game data, ABI, ROM/RAM, modern debug/release, or archival behavior change.
+The immutable Git-read correction reuses the existing authority/budget
+foundation; issue #264's lifecycle-launch performance work is independent and
+not required by this correction. Native/generated-binding semantics, process
+policy, CI topology/timeouts and publisher limits remain unchanged.
 
 The graph does not execute selected gates and cannot skip or narrow validation.
 A later independently accepted issue must prove selection non-inferiority
@@ -5114,6 +5156,15 @@ unchanged source bytes/Git state across simulated fixture exceptions.
 - `python3 -m unittest scripts.validation_ownership.tests.test_coordinator_capture.CaptureModuleLifetimeTests -v`
   -- real immutable tool-loading cleanup followed by the CURRENT/BASE graph
   case, partial-load failure, and strict stale-owned-module negatives.
+- `python3 -m unittest scripts.validation_ownership.tests.test_ci_verifier.ImmutableBlobBatchTests scripts.validation_ownership.tests.test_ci_verifier.BatchedVerifierSourceTests -v`
+  -- actual Git byte equivalence, exact captures/gitlinks, bounded framing and
+  copies, no cross-context reuse, real protected launch counts, per-file
+  restoration, malformed-stream and trusted/live-module rejection/cleanup.
+- `python3 -m unittest scripts.validation_ownership.tests.test_ci_verifier.ReviewedEvolutionVerifierTests.test_trusted_sources_reject_candidate_drift_before_session -v`
+  -- the unchanged exhaustive fresh standalone verifier regression, including
+  every candidate source's content, absence, mode and symlink mutation.
+- `python3 -m unittest scripts.validation_ownership.tests.test_graph_report.GraphReportTests.test_document_serialization_without_semantic_change_does_not_invalidate -v`
+  -- one real small CURRENT/BASE report, not a full repository measurement.
 
 The focused A/V fixtures also execute the title fingerprint comparator with
 missing/changed framebuffer controls, the actual presentation runner's
@@ -5137,6 +5188,13 @@ native dependencies must still fail.
 Scratch fixtures are bounded beneath ignored
 `build/test-artifacts/validation-ownership` and are removed automatically. No
 remote state is read or changed. No manual-only criterion applies.
+The Git-read controls additionally own unique directories beneath
+`build/test-artifacts/verifier-git-batch` and `build/test-artifacts/full-report`;
+their cleanup removes those exact fixtures after reaping children, including
+failure cases. Never delete another run's directory to reset a test. Retain
+benchmark logs outside the committed source and remove only owned scratch
+artifacts when finished. These focused results do not certify full graph,
+calibration, H1, native review, or whole Build CI performance.
 
 Rollback is a normal revert of issue #180's dedicated commit; existing broader
 validation behavior is unchanged.

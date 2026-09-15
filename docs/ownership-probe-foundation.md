@@ -743,6 +743,16 @@ commit's complete bounded source tree; original paths such as
 and their blobs. Existing loader and Snapshot reads group those blobs by origin
 under the same report budget; no second loader/session/sandbox is constructed.
 
+`AuthorityLoader.read_blobs(paths, label)` exposes that same bounded parser
+for a selected immutable read, returning an exact path-to-bytes map only after
+all requested responses validate. It requires the actual capture, never a
+detached dictionary or a fabricated partial Snapshot. Direct reads charge
+framing and copied payloads to `output`; Snapshot charges them to `snapshot`.
+Each stream uses the existing aggregate category bound while each blob keeps
+its independent file bound. Requests and launcher arguments retain `pending`
+charges and the original deadline. No cross-call cache is retained; live
+callers continue to use the uncached no-follow `read_blob` API.
+
 The database must be an existing canonical absolute directory without symlink
 components. Unrequested links, wrong/unavailable/non-commit objects, a working
 checkout substituted for a database, escaping/conflicting names and nonregular
