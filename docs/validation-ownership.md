@@ -943,6 +943,10 @@ shared reference parser separates a substitution's base name from its pattern
 and replacement, so `.VARIABLES` and `.VARIABLES:%=%` are equally observable
 universe reads in either delimiter style or a reached alias. Unsupported
 computed names and unknown phase/data/program contexts still reject.
+Literal `call` targets use the same call-aware base parsing: `$(call .VARIABLES)`
+and its braced/argument form cannot hide a universe read, even after the
+verified phase guard and final rule. A missing default declaration does not
+make the resulting first/final process-input difference safe.
 
 This admits the actual asset-discovery emitter's five literal metadata
 assignments in an uninstrumented, non-interfering candidate. Its captured-source

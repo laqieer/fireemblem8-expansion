@@ -309,6 +309,12 @@ class LiteralBindingModuleTests(unittest.TestCase):
                 generated.add(self.assert_production_read_rejects(
                     consumer, "", ASSET_BINDING, after_phase=computed,
                 ))
+        for expression in ("$(call .VARIABLES)", "${call .VARIABLES,unused}"):
+            consumer = "PHASE_LABEL := $(filter " + ASSET_BINDING + "," + expression + ")\nexport PHASE_LABEL\n"
+            with self.subTest(late_call=expression):
+                generated.add(self.assert_production_read_rejects(
+                    consumer, "", ASSET_BINDING, complete=True, after_phase=True,
+                ))
         for expression, first, final, computed in (
             ("$(" + ASSET_BINDING + ":%=%)", "", "LORM_SP1_PROOF", False),
             ("${${SELECTOR}:%=%}", "", "LORM_SP1_PROOF", True),
@@ -337,6 +343,7 @@ class LiteralBindingModuleTests(unittest.TestCase):
             ("", "READ := $(value INVENTORY_ITEMS)\n"),
             ("", "READ := $(.VARIABLES)\n"),
             ("NAME = .VARIABLES\n", "READ := ${${NAME}:%=%}\n"),
+            ("NAME = .VARIABLES\n", "READ := $(call $(NAME))\n"),
             ("NAME = MAKE_RESTARTS\n", "READ := $($(NAME):%=%)\n"),
             ("NAME = $(subst X,INVENTORY_ITEMS,X)\n", "READ := $($(NAME):%=%)\n"),
             ("", "export INVENTORY_ITEMS\n"),

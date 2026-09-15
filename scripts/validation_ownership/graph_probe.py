@@ -2257,8 +2257,9 @@ def _certify_literal_bindings(
         names.update(references(expression))
         for body in make_expressions(expression):
             function = re.match(r"([^ \t\r\n\v\f]+)[ \t\r\n\v\f]+", body)
+            call = function is not None and function[1] == "call"
             if (
-                _make_reference_base(body) == ".VARIABLES"
+                _make_reference_base(body[function.end():] if call else body, call=call) == ".VARIABLES"
                 or function and function[1] in {"file", "wildcard", "realpath", "eval", "guile"}
             ):
                 raise MakeProbeError("literal binding module has an opaque program/data/universe consumer")

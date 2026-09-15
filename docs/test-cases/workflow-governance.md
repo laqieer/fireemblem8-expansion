@@ -4469,6 +4469,19 @@ retains current FORCE/include, target/POSIX/input/metadata/shell/append,
 name/admission/deadline and import behavior; it is not full graph/verifier/H1
 acceptance or a new diagnostic allocation.
 
+For call-form universe reads, place
+`PHASE_LABEL := $(filter ASSET_BANIM_INCBIN_CONSUMERS,$(call .VARIABLES))`
+and `export PHASE_LABEL` after the verified first-pass guard and final rule.
+Repeat with `${call .VARIABLES,unused}`. Use the unchanged production emitter
+and no default declaration: actual first producer environments have a present
+empty label, while final raw metadata names the generated binding. Both
+certification and the complete small probe must reject; the earlier phase
+guard or an independent default gate must not supply that negative result.
+Restoring only the omitted call-target handling recovers the false small-probe
+admission with the same 347-byte output. Keep the same-position substitution
+form and the unconsumed emitter as negative/positive controls, then restore
+the guard and clean owned fixtures. This does not establish full graph fit.
+
 For the generated literal-binding-module certificate, use a clean isolated
 Makefile that does not print or inspect the generated names. Include the
 initially absent metadata file and retain the actual empty-MAKE_RESTARTS
