@@ -3087,6 +3087,10 @@
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_composed_header_bound_accepts_actual_four_table_source scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_composed_header_bound_removal_recovers_original_refusal scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_composed_header_bounds_snapshot_references_without_becoming_values scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_composed_header_bounds_require_every_original_fragment scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_composed_header_bounds_keep_native_defaults_exports_and_reads -v",
+          "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_native_ignore_error_policy_matches_actual_gnu_jobs scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_native_job_policy_requires_complete_pid_bound_receipts -v",
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },

@@ -523,7 +523,7 @@ class _MakeSourceMode:
                 return record[1]
         function = _make_function(expression)
         if function is None:
-            return None
+            return self.template_header_composition(expression)
         operation, arguments = function
         if operation not in {"patsubst", "wildcard"}:
             return None
@@ -548,6 +548,64 @@ class _MakeSourceMode:
         if operation == "wildcard" and len(values) == 1 and self.namespace is not None:
             return _template_wildcard_bound(values[0], self.namespace, self.budget)
         return None
+
+    def template_header_reference(self, name, active=()):
+        self.checkpoint()
+        if not self.original_namespace_valid or name in active or len(active) >= 512:
+            return False
+        self.retain_reads((name,))
+        bindings = self.binding(name)
+        if len(bindings) != 1:
+            return False
+        binding = next(iter(bindings))
+        try:
+            literal = self.literal_text("$(" + name + ")")
+        except RecursionError:
+            return False
+        if literal is not None:
+            return _template_header_data(literal)
+        if binding.flavor == "recursive" and binding.value is not None:
+            forwarded = NAME_PART.fullmatch(binding.value)
+            if forwarded:
+                return self.template_header_reference(forwarded[1] or forwarded[2], (*active, name))
+        record = self.template_values.get(name)
+        return bool(
+            binding.flavor == "simple" and record is not None and record[0] == self.version
+            and record[1][0] == "header-bound"
+        )
+
+    def template_header_composition(self, expression):
+        self.checkpoint()
+        if not self.original_namespace_valid:
+            return None
+        try:
+            spans = sorted(_make_expression_spans(expression, require_complete=True),
+                           key=lambda item: (item[0], -item[1]))
+        except _UnresolvedName:
+            return None
+        if not spans:
+            return None
+        previous = 0
+        for start, stop, _ in spans:
+            self.checkpoint()
+            if start < previous:
+                continue
+            if not _template_header_data(expression[previous:start]):
+                return None
+            part = expression[start:stop]
+            reference = NAME_PART.fullmatch(part)
+            if reference:
+                # Only assignment-time evidence may supply a referenced bound.
+                if not self.template_header_reference(reference[1] or reference[2]):
+                    return None
+            else:
+                function = _make_function(part)
+                if function is None or function[0] != "wildcard" or self.template_initializer(part) is None:
+                    return None
+            previous = stop
+        if not _template_header_data(expression[previous:]):
+            return None
+        return "header-bound", ("composition", expression)
 
     def effectful(self, expression):
         self.last_effect_input = None

@@ -5191,6 +5191,54 @@ These source-only fixtures do not rerun a repository graph or establish
 production resource fit. Closed baseline14 and all earlier allocations remain
 closed; these checks do not allocate another baseline, provider or H1 run.
 
+For composed header-safety bounds, run the five
+`test_composed_header_bound*` methods in the existing Make-probe module.
+Keep the actual classes/items/supports/characters linked-source declarations,
+their original simple initializers, the complete recursive definition/call,
+all nine literal characters-config paths and its asset-script wildcard.
+Retain the genuine empty original-input witness and the real later multiline
+units-config declaration using logical-chunk selection and blank padding.
+The fixture's explicit Python parent input, tiny four-table JSON and generator,
+and namespace-only Python files are disclosed fixture inputs, not recovered
+baseline15 target/state locals or the production generator implementation.
+
+Require ordinary GNU and native observation to agree on the four table names,
+the complete characters prerequisite list and the unnormalized raw late
+continuation. The complete bounded small planner must retain the same native
+target, recipe and prerequisite projection. Keep the short source and renamed
+macro controls, and run the normal late fixture generator to inspect its
+actual generated C. Disable only header composition: the mixed initializer
+must lose its fact, its header check must fail, and the real late continuation
+must reject while ordinary GNU values remain unchanged. Restore composition
+and recover the identical positive. A later safe config rewrite must still
+fail the final original-assignment-history certificate even though native
+final metadata contains that safe value.
+
+Exercise adjacent fragments, literal separators, parenthesized/braced
+references, bare aliases and supported wildcards. Check every component:
+unsafe punctuation, dollars, newlines, effectful functions, universe reads,
+unknown/cyclic references, malformed expressions and unsafe wildcard namespace
+members cannot contribute a bound. Snapshot reference safety at the original
+simple assignment; a later unsafe referent must not replace that snapshot or
+authorize a new one. Conditional/default/append or namespace-uncertain inputs
+must not gain composed facts. Check retained original reads and the shared
+deadline. A bound may prove a prerequisite region safe, but must fail as an
+exact loop parameter, target, comparison operand, recipe input or native-value
+claim; a native-value query is not allowed to repair it.
+
+Use a small native template with `PREFIX ?= first.h`, finite first/second
+header choices, a wildcard snapshot through a bare alias and exported composed
+HEADER. For every planned state compare actual ordinary output, native raw
+HEADER, its process-environment membership/value and the full prerequisite
+list. PREFIX must remain an enumerated graph dependency and visible default;
+omitting its declaration or calling it recipe-only symbolic must reject.
+Metadata-only reads of an unused error/shell body must stay lazy. Preserve the
+earlier payload, empty-pattern, original-effect, phase/export/default, 512-name
+and teardown controls. Keep all session children/waiters and fixture paths
+cleaned on positive, negative and removal paths. These checks neither rerun a
+full graph/report nor increase a budget; all baselines1-15 remain closed and
+no baseline16, provider or H1 allocation follows from this case.
+
 For the real framework template contract, copy the complete current
 `GENERATED_DATA_LINK_TABLE_RULES` and
 `GENERATED_DATA_MODERN_OVERRIDE_RULES` definitions and their actual

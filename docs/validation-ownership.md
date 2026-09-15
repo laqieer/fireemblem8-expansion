@@ -1236,6 +1236,18 @@ value simply because it looks plausible. A literal-directory wildcard can
 instead retain an original namespace header-safety bound; that is not an
 exact value and cannot supply parameters or target names.
 
+An original simple assignment can compose that header-safety bound from
+literal fragments, supported bare references and supported wildcard
+expressions. Every literal separator and every component must prove safe;
+unknown, malformed, effectful or staged components are not empty strings.
+References use the original assignment-time literals or current-version
+header bounds, including existing bare aliases, never a later native value.
+The actual mixed characters-config initializer (nine literal paths followed
+by an asset-script wildcard) uses this generic composition, not a table,
+macro or filename exemption. Recursive compositions and appends do not gain
+new snapshot semantics. Bounds cannot supply exact template parameters,
+targets, comparison operands, recipe values or native-value claims.
+
 Original versions, precedence and unknown/provisional alternatives invalidate
 or withhold those facts. Header inputs cannot contain syntax/staged dollars;
 recipe inputs cannot introduce Make expansion or new source lines. A staged
@@ -1269,6 +1281,11 @@ shared/table-specific Python and config prerequisites, real fixture C
 generation and ARM object compilation. These prove those template contracts,
 not the production generator implementation or full-repository graph/resource
 fit; the complete production, verifier and H1 gates remain separate.
+The composed-header regression retains all four actual default linked-table
+declarations, the mixed characters inputs and the later meaningful units
+continuation. Short and renamed controls, composition-only removal, original
+snapshot/type boundaries and finite default/export/read-closure checks keep
+that evidence distinct from any unrecorded full-run target or planner state.
 
 Recipe observation preserves read kind through ordinary references, aliases
 and captured exports. Literal `origin`, `flavor` and `value` operands use

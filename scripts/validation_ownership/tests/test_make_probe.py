@@ -3766,5 +3766,269 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             graph_probe._matches_original_patsubst(("%", "%", ""), "", budget)
 
 
+    def production_header_template_fixture(self, *, late=True, renamed=False):
+        self.framework_templates()
+        self.original_input_witness()
+        config = "GENERATED_DATA_CONFIG_INPUTS_characters"
+        tail_name = "GENERATED_DATA_CONFIG_INPUTS_units"
+        macro = "GENERATED_DATA_LINK_TABLE_RULES"
+        chunks = list(graph_probe._make_logical_chunks((ROOT / "generated_data.mk").read_text()))
+        first = next(chunk.start for chunk in chunks if chunk.text == "define " + macro)
+        call = next(chunk for chunk in chunks if chunk.text.startswith("$(foreach ") and macro in chunk.text)
+        tail = next(chunk for chunk in chunks if chunk.text.startswith(tail_name + " :="))
+        wanted = {
+            "GENERATED_DATA_PY", "GENERATED_DATA_OUT_DIR", "GENERATED_DATA_LINKED_HAND_SOURCES",
+            "GENERATED_DATA_LINKED_TABLES", "GENERATED_DATA_CONFIG_INPUTS_classes",
+            "GENERATED_DATA_CONFIG_INPUTS_items", "GENERATED_DATA_ITEM_CAP_STAMP",
+            "GENERATED_DATA_ACTIVE_HEADER", "GENERATED_DATA_CONFIG_INPUTS_supports", config,
+            "GENERATED_DATA_SHARED_PY_SOURCES",
+        }
+        source = []
+        character_rhs = None
+        for chunk in chunks:
+            if chunk.start > (tail.end if late else call.end):
+                break
+            assignment = graph_probe.ASSIGNMENT.fullmatch(
+                graph_probe._collapse_make_continuations(chunk.text, posix=False),
+            )
+            if assignment and assignment["name"] == config:
+                character_rhs = assignment["value"].lstrip(graph_probe.MAKE_SPACE)
+            if (assignment and assignment["name"] in wanted
+                    or first <= chunk.start <= call.end or late and chunk.start == tail.start):
+                source.append(chunk.text + "\n")
+            else:
+                source.append("\n" * (chunk.end - chunk.start + 1))
+        selected = "".join(source)
+        if renamed:
+            selected = selected.replace(macro, "PROJECT_" + macro)
+        self.add("generated_data.mk", selected)
+        tail_measurement = "$(value " + tail_name + ")" if late else ""
+        self.add("Makefile", "PYTHON := /usr/bin/python3\ninclude generated_data.mk\n"
+                 "all: $(GENERATED_DATA_OUT_DIR)/data_characters.c\n"
+                 "measure:\n\t@printf '%s\\n' '$(value " + config + ")' '" + tail_measurement + "'\n")
+        for table in ("classes", "items", "supports", "characters"):
+            self.add("src/data/" + table + ".json", '{"value":1}\n')
+            for path in (ROOT / "scripts/generated_data" / table).glob("*.py"):
+                self.add(path.relative_to(ROOT).as_posix(), "# namespace-only table script fixture\n")
+        for path in (ROOT / "scripts/generated_data").glob("*.py"):
+            relative = path.relative_to(ROOT).as_posix()
+            if relative not in self.entries:
+                self.add(relative, "# namespace-only shared script fixture\n")
+        for path in (ROOT / "scripts/assets").glob("*.py"):
+            self.add(path.relative_to(ROOT).as_posix(), "# namespace-only asset script fixture\n")
+        self.assertIsNotNone(character_rhs)
+        wildcard = next(graph_probe._make_expression_spans(character_rhs))
+        literal_paths = character_rhs[:wildcard[0]].split()
+        self.assertEqual(len(literal_paths), 9)
+        for path in literal_paths:
+            self.add(path, (ROOT / path).read_text())
+        return config, tail_name, literal_paths
+
+    def test_composed_header_bound_accepts_actual_four_table_source(self):
+        for late, renamed in ((False, False), (True, False), (True, True)):
+            with self.subTest(late=late, renamed=renamed):
+                config, tail, literals = self.production_header_template_fixture(late=late, renamed=renamed)
+                ordinary = self.ordinary(target="measure").decode().splitlines()
+                asset_paths = sorted(name for name in self.entries
+                                     if Path(name).parent.as_posix() == "scripts/assets" and name.endswith(".py"))
+                self.assertEqual(ordinary[0].split(), [*literals, *asset_paths])
+                with self.session() as session:
+                    native = session.make(
+                        "all", variables=("MAKEFILE_LIST", "GENERATED_DATA_LINKED_TABLES"),
+                        definitions=(config, tail),
+                    )
+                self.assertEqual(native.semantics["domains"]["GENERATED_DATA_LINKED_TABLES"]["value"].split(),
+                                 ["classes", "items", "supports", "characters"])
+                self.assertEqual(native.semantics["definitions"]["global"][config]["value"], ordinary[0])
+                self.assertEqual(native.semantics["definitions"]["global"][tail]["value"], ordinary[1])
+                result = self.observe(scoped_variable_names={"1", "t", "@", "@D"},
+                                      symbolic_recipe_names={"GENERATED_DATA_PY"})["all"]["record"]
+                projection = lambda files: [
+                    {key: item[key] for key in ("target", "recipe", "prerequisites")} for item in files
+                ]
+                self.assertEqual(projection(result["variants"][0]["record"]["files"]),
+                                 projection(native.semantics["files"]))
+                self.assertEqual(result["includes"], ["Makefile", "generated_data.mk"])
+                if late and not renamed:
+                    self.ordinary()
+                    self.assertEqual((self.root / "build/generated/data/data_characters.c").read_text(),
+                                     "const int data_characters=1;\n")
+
+    def test_composed_header_bound_removal_recovers_original_refusal(self):
+        config, _, _ = self.production_header_template_fixture()
+        options = {"scoped_variable_names": {"1", "t", "@", "@D"},
+                   "symbolic_recipe_names": {"GENERATED_DATA_PY"}}
+        positive = self.observe(**options)["all"]
+        ordinary = self.ordinary(target="measure")
+        checked = []
+        header_data = graph_probe._TemplateModeProof.header_data
+
+        def actual_header(proof, mode, name, active=()):
+            result = header_data(proof, mode, name, active)
+            if name == config:
+                checked.append((result, mode.template_values.get(name)))
+            return result
+
+        with patch.object(_MakeSourceMode, "template_header_composition", return_value=None), \
+             patch.object(graph_probe._TemplateModeProof, "header_data", actual_header):
+            with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation"):
+                self.observe(**options)
+        self.assertEqual(checked, [(False, None)])
+        self.assertEqual(self.ordinary(target="measure"), ordinary)
+        self.assertEqual(self.observe(**options)["all"], positive)
+        self.add("include/later.h", "/* late source input */\n")
+        self.add("Makefile", (self.root / "Makefile").read_text() + config + " := include/later.h\n")
+        with self.session() as session:
+            native = session.make("all", definitions=(config,))
+        self.assertEqual(native.semantics["definitions"]["global"][config]["value"], "include/later.h")
+        with self.assertRaisesRegex(MakeProbeError, "original global assignment context"):
+            self.observe(**options)
+
+    def test_composed_header_bounds_snapshot_references_without_becoming_values(self):
+        self.add("Makefile", "all: ;\n")
+        budget = ProbeBudget()
+        mode = _MakeSourceMode(budget=budget, namespace=frozenset(("include/a.h", "include/b.h")),
+                               template_mode=lambda *args: False)
+        try:
+            mode.assign("PREFIX", "=", "literal.h")
+            mode.assign("PATTERN", "=", "include/*.h")
+            mode.assign("FILES", ":=", "$(wildcard $(PATTERN))")
+            mode.assign("ALIAS", "=", "$(FILES)")
+            expression = "before.h $(PREFIX)\t${ALIAS} after.h $(wildcard include/*.h)"
+            mode.assign("COMPOSED", ":=", expression)
+            self.assertEqual(mode.template_values["COMPOSED"][1][0], "header-bound")
+            self.assertTrue({"PREFIX", "PATTERN", "FILES", "ALIAS"} <= mode.reads)
+            mode.assign("COPIED", ":=", "$(COMPOSED)")
+            self.assertEqual(mode.template_values["COPIED"][1], mode.template_values["COMPOSED"][1])
+            with self.session() as session:
+                proof = graph_probe._TemplateModeProof(session, "all", (), None, None, "Makefile", False)
+                with patch.object(proof, "native_value", side_effect=AssertionError("bound used as native claim")):
+                    self.assertTrue(proof.header_data(mode, "COMPOSED"))
+                    self.assertIsNone(proof.value(mode, "COMPOSED"))
+                    self.assertIsNone(proof.text(mode, "$(COMPOSED)"))
+                    self.assertIsNone(mode.literal_values("$(COMPOSED)"))
+                    self.assertIsNone(mode.condition("ifeq", "($(COMPOSED),safe)"))
+                    self.assertIsNone(mode.target_posix("$(COMPOSED):"))
+                    mode.assign("RULE", "=", "out/$(1): $(COMPOSED)")
+                    call = "$(foreach t,alpha,$(eval $(call RULE,$(t))))"
+                    self.assertTrue(proof(mode, call))
+                    self.assertFalse(proof(mode, call.replace("t,alpha,", "t,$(COMPOSED),")))
+                    mode.assign("RULE", "=", "$(COMPOSED)/$(1):")
+                    self.assertFalse(proof(mode, call))
+                    mode.assign("RULE", "=", "out/$(1):\n\t@printf '%s' '$(COMPOSED)'")
+                    self.assertFalse(proof(mode, call))
+                mode.assign("FILES", ":=", "unsafe:header")
+                self.assertTrue(proof.header_data(mode, "COMPOSED"))
+                self.assertIsNone(mode.template_initializer("before $(FILES) after"))
+                mode.assign("RECURSIVE", "=", "before $(COPIED) after")
+                self.assertNotIn("RECURSIVE", mode.template_values)
+                mode.assign("CONDITIONAL", ":=", "before $(COPIED) after", active=None)
+                self.assertNotIn("CONDITIONAL", mode.template_values)
+                mode.assign("DEFAULT", "?=", "before $(COPIED) after")
+                self.assertNotIn("DEFAULT", mode.template_values)
+                mode.assign("COMPOSED", "+=", "more.h")
+                self.assertNotIn("COMPOSED", mode.template_values)
+                mode.uncertain("unproved namespace change")
+                self.assertIsNone(mode.template_initializer("before $(COPIED) after"))
+        finally:
+            budget.close()
+        with self.assertRaisesRegex(MakeProbeError, "aggregate probe deadline"):
+            mode.template_header_composition("before $(wildcard include/*.h)")
+
+    def test_composed_header_bounds_require_every_original_fragment(self):
+        budget = ProbeBudget()
+        try:
+            mode = _MakeSourceMode(budget=budget, namespace=frozenset(("include/a.h",)),
+                                   template_mode=lambda *args: False)
+            mode.assign("SAFE", "=", "safe.h")
+            mode.assign("FILES", ":=", "$(wildcard include/*.h)")
+            mode.assign("BAD", ":=", "$$(eval .POSIX:)")
+            mode.assign("CYCLE", "=", "$(CYCLE)")
+            for expression in (
+                "$(SAFE) ${wildcard include/*.h}",
+                "$(wildcard include/*.h)middle${SAFE}",
+                "${SAFE}${FILES}$(wildcard include/*.h)tail",
+            ):
+                with self.subTest(expression=expression):
+                    self.assertEqual(mode.template_initializer(expression)[0], "header-bound")
+            for expression in (
+                "bad: $(wildcard include/*.h)",
+                "bad= $(wildcard include/*.h)",
+                "bad; $(wildcard include/*.h)",
+                "bad# $(wildcard include/*.h)",
+                "bad| $(wildcard include/*.h)",
+                "bad\\ $(wildcard include/*.h)",
+                "bad\n$(wildcard include/*.h)",
+                "bad\0$(wildcard include/*.h)",
+                "safe $$(wildcard include/*.h)",
+                "safe $(eval X := changed) $(wildcard include/*.h)",
+                "safe $(shell echo safe.h)",
+                "safe $(call .VARIABLES)",
+                "safe $(.VARIABLES:%=%)",
+                "safe $(MISSING) $(wildcard include/*.h)",
+                "safe $(BAD) $(wildcard include/*.h)",
+                "safe $(CYCLE) $(wildcard include/*.h)",
+                "safe $(wildcard $(MISSING))",
+                "safe $(wildcard include/*.h",
+            ):
+                with self.subTest(expression=expression):
+                    self.assertIsNone(mode.template_initializer(expression))
+            mode.namespace = frozenset(("include/a.h", "include/unsafe:header.h"))
+            self.assertIsNone(mode.template_initializer("safe $(wildcard include/*.h)"))
+            mode.namespace = None
+            self.assertIsNone(mode.template_initializer("safe $(wildcard include/*.h)"))
+        finally:
+            budget.close()
+
+    def test_composed_header_bounds_keep_native_defaults_exports_and_reads(self):
+        self.original_input_witness()
+        for path in ("first.h", "second.h", "last.h", "include/a.h", "include/b.h"):
+            self.add(path, "/* fixture dependency */\n")
+        self.add("Makefile", (
+            "PREFIX ?= first.h\nFILES := $(wildcard include/*.h)\nALIAS = $(FILES)\n"
+            "HEADER := $(PREFIX) ${ALIAS} last.h\nexport HEADER\n"
+            "UNREAD = $(error unused body expanded)$(shell touch marker)\nMETA := $(origin UNREAD)\n"
+            "define RULE\nout/$(1): $(HEADER)\nendef\n"
+            "$(foreach t,alpha,$(eval $(call RULE,$(t))))\n"
+            "LATE = first \\\n second\nall: out/alpha\n"
+            "\t@printf '%s\\n' \"$$HEADER\" '$(value LATE)' '$(META)'\n"
+        ))
+        options = {"scoped_variable_names": {"1", "t"}}
+        domains = {"PREFIX": {"kind": "explicit", "values": ["first.h", "second.h"]}}
+        result = self.observe(domains, **options)["all"]
+        self.assertIn("PREFIX", result["variable_census"]["defaults"])
+        self.assertIn("PREFIX", result["prerequisite_domain_census"]["enumerated"])
+        observed_prefixes = set()
+        with self.session() as session:
+            for variant in result["record"]["variants"]:
+                state = variant["state"]
+                ordinary = self.ordinary(
+                    *(name + "=" + value for origin, name, value in state if origin == "command-line"),
+                    environment={name: value for origin, name, value in state if origin == "environment"},
+                ).decode().splitlines()
+                native = session.make(
+                    "all", assignments=state, definitions=("HEADER", "PREFIX", "UNREAD"),
+                )
+                records = native.semantics["definitions"]["global"]
+                expected = records["PREFIX"]["value"] + " include/a.h include/b.h last.h"
+                observed_prefixes.add(records["PREFIX"]["value"])
+                self.assertEqual(ordinary, [expected, "first second", "file"])
+                self.assertEqual(records["HEADER"], {"origin": "file", "flavor": "simple", "value": expected})
+                self.assertIn("$(error unused body expanded)", records["UNREAD"]["value"])
+                actual = variant["record"]
+                files = {item["target"]: item for item in actual["files"]}
+                self.assertEqual([item["name"] for item in files["out/alpha"]["prerequisites"]],
+                                 expected.split())
+                self.assertEqual(actual["native_dispatches"][0]["environment"]["HEADER"], expected)
+                self.assertEqual(actual["native_dispatches"], native.semantics["native_dispatches"])
+        self.assertEqual(observed_prefixes, {"first.h", "second.h"})
+        self.assertFalse((self.root / "marker").exists())
+        with self.assertRaisesRegex(MakeProbeError, "unsealed external defaults.*PREFIX"):
+            self.observe(**options)
+        with self.assertRaisesRegex(MakeProbeError, "symbolic inputs influence the Make graph.*PREFIX"):
+            self.observe(external={"PREFIX"}, symbolic_recipe_names={"PREFIX"}, **options)
+        self.assertFalse((self.root / "marker").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
