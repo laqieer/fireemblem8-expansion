@@ -8,8 +8,8 @@ from unittest.mock import patch
 from scripts.assets.manifest import (
     discovery_sources, load_manifest, render_discovery_artifact, render_discovery_makefile,
 )
-from scripts.validation_ownership import graph_probe
-from scripts.validation_ownership.authority import GitTreeEntry
+from scripts.validation_ownership import graph_probe, reporter
+from scripts.validation_ownership.authority import AuthorityLoader, GitTreeEntry, git_tree_entries
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.graph_commands import CODE_PREFIXES, MakeCommands
 from scripts.validation_ownership.tests import test_make_probe
@@ -49,6 +49,42 @@ class LiteralBindingModuleTests(unittest.TestCase):
         self.assertEqual(modules, {__name__})
         self.assertEqual(len(identifiers), 8)
         self.assertEqual(len(identifiers), len(set(identifiers)))
+        graph = reporter.load_json(ROOT / reporter.GRAPH_PATH)
+        budget = ProbeBudget()
+        try:
+            entries = git_tree_entries(ROOT, budget=budget)
+            loader = AuthorityLoader(ROOT, entries, "HEAD", budget=budget)
+            sources = reporter._path_admission_sources(loader, set())
+
+            def host_rule(path):
+                matches = [rule for rule in graph["path_rules"]
+                           if reporter._path_rule_matches(rule, path, set())]
+                self.assertEqual([(rule["id"], rule["surface"]) for rule in matches],
+                                 [("paths.host", "surface.host")])
+                return matches[0]
+
+            path = Path(__file__).resolve().relative_to(ROOT).as_posix()
+            for owned in (path, "scripts/validation_ownership/tests/test_make_probe.py",
+                          "scripts/validation_ownership/tests/test_graph_commands.py"):
+                self.assertIn(owned, entries)
+                self.assertEqual(reporter._path_admission(owned, host_rule(owned), sources),
+                                 "exact-ownership-rule")
+            rule = host_rule(path)
+            without_exact = {**rule, "include": [
+                selector for selector in rule["include"]
+                if selector != {"kind": "exact", "path": path}
+            ]}
+            self.assertTrue(reporter._path_rule_matches(without_exact, path, set()))
+            with self.assertRaisesRegex(reporter.OwnershipError, "lacks semantic admission"):
+                reporter._path_admission(path, without_exact, sources)
+            neighbor = "scripts/validation_ownership/tests/test_unregistered_literal_bindings.py"
+            self.assertNotIn(neighbor, entries)
+            with self.assertRaisesRegex(reporter.OwnershipError, "lacks semantic admission"):
+                reporter._path_admission(neighbor, host_rule(neighbor), sources)
+        finally:
+            budget.close()
+            self.assertFalse(budget.children)
+            self.assertFalse(budget.producer_waiters)
 
     def generic(self, content="INVENTORY_ITEMS := alpha beta\nENTRY_TOTAL := 2\n", *, prefix="", suffix=""):
         case = self.fixture

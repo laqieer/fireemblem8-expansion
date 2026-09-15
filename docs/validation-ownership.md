@@ -377,6 +377,15 @@ positive/adversarial/build/runtime roles. Known post-introduction framework
 components have explicit entries in their existing semantic rules, not a
 second inventory registry.
 
+Unit-test discovery is a separate boundary. The literal-binding test module
+`scripts/validation_ownership/tests/test_literal_bindings.py` has an exact
+`paths.host` declaration, retaining `surface.host` and the same owner set as
+the Make-probe and graph-command test modules. Its eight discoverable cases do
+not themselves grant graph admission. Removing only that declaration leaves
+the generic prefix match but rejects admission, as does a neighboring
+unregistered test path. This is ordinary exact ownership, not a verifier
+bootstrap/runtime allowlist entry or a change to the Git-derived cohort.
+
 Includes and explicit excludes still form a partition: zero matches are
 unknown, multiple rule/exclusion matches are ambiguous, and a prefix-only
 new path lacks semantic admission. All three are errors. Admission is checked

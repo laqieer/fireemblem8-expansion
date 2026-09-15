@@ -4540,6 +4540,20 @@ real production-emitter fixture. Restoring a globally imported fixture
 TestCase must make the collection guard fail without dropping any original
 Make-probe test or changing a CI budget.
 
+Separately require semantic graph admission for that discovered module. The
+same focused method parses the actual ownership graph and calls
+`_path_rule_matches`, `_path_admission_sources` and `_path_admission`, without
+building a full graph or launching native Make. Require the new module and
+existing `test_make_probe.py` / `test_graph_commands.py` siblings to select
+only `paths.host` / `surface.host` with `exact-ownership-rule` admission.
+Remove only the new module's exact selector in the parsed rule: its prefix
+match remains, but admission must reject. A neighboring unregistered
+`test_unregistered_literal_bindings.py` must likewise reject. The original
+module was unit-discovered yet failed this independent graph boundary; do not
+repair it by changing the introduction cohort, broadening a prefix or adding
+verifier bootstrap/runtime permissions. Existing host owners and CI job
+authority remain unchanged by this exact-path declaration.
+
 Make the candidate Makefile itself raise an error, then query original inputs
 through the native empty-witness route: no candidate program or recipe may run.
 Retain raw environment values containing an unused error body, native undefined

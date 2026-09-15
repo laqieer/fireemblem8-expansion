@@ -1897,6 +1897,10 @@
         },
         {
           "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_literal_bindings.py"
+        },
+        {
+          "kind": "exact",
           "path": "scripts/workflow_pilot/candidate_evidence.py"
         },
         {
