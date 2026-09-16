@@ -952,6 +952,11 @@ class ProbeSession:
         for match in re.finditer(r"[^ \t\r\n\v\f]+", patterns):
             self.budget.remaining()
             pattern = match[0]
+            self.budget.charge("cache", len(encoded(pattern)))
+            raw_basename = pattern.rsplit("/", 1)[-1].encode("utf-8")
+            if _star_name(raw_basename, b".") or _star_name(raw_basename, b".."):
+                # scandir's materialized members do not represent GNU's logical entries.
+                raise _NamespaceUnavailable("original wildcard can match unrepresented logical dot entries")
             try:
                 relative_path(pattern)
             except MakeProbeError as error:
@@ -960,7 +965,6 @@ class ProbeSession:
             basename = PurePosixPath(pattern).name
             if "*" in directory:
                 raise _NamespaceUnavailable("original wildcard requires a literal directory")
-            self.budget.charge("cache", len(encoded(pattern)))
             names = self._invariant_directory(capture, directory)
             for forbidden in capture.image.forbidden:
                 if PurePosixPath(forbidden).parent.as_posix() == directory and _star_name(

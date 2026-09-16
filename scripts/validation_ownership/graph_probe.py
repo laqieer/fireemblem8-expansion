@@ -674,8 +674,8 @@ class _MakeSourceMode:
                 return None
             if operation == "findstring":
                 return values[0] if values[0] in values[1] else ""
-            patterns = values[0].split() if operation == "filter-out" else ()
-            if any(not _supported_patsubst(pattern, "") for pattern in patterns):
+            patterns = _original_filter_patterns(values[0], self.budget) if operation == "filter-out" else ()
+            if patterns is None:
                 return None
 
             def parts():
@@ -1768,6 +1768,32 @@ def _template_wildcard_bound(pattern, namespace, budget=None):
     return "header-bound", (pattern,)
 
 
+def _foreach_read_bindings(expression, budget=None):
+    """Return possible local names, or no closed global-literal context."""
+    names = set()
+    try:
+        for start, stop, body in _make_expression_spans(expression, staged=True, require_complete=True):
+            if budget is not None:
+                budget.remaining()
+            if not re.match(r"foreach[ \t\r\n\v\f]", body):
+                continue
+            try:
+                function = _make_function(expression[start:stop])
+            except MakeProbeError:
+                return None
+            if function is None or len(function[1]) != 3:
+                return None
+            name = function[1][0].strip(MAKE_SPACE)
+            if not re.fullmatch(IDENTIFIER, name):
+                return None
+            if name not in names and budget is not None:
+                budget.charge("cache", len(encoded(name)))
+            names.add(name)
+    except _UnresolvedName:
+        return None
+    return names
+
+
 def _prune_and(expression, resolve=None, budget=None):
     """Reference-analysis form only; immutable source text is retained separately."""
     spans = sorted(_make_expression_spans(expression), key=lambda item: (item[0], -item[1]))
@@ -1856,6 +1882,20 @@ def _supported_patsubst(pattern, replacement):
         pattern and pattern.count("%") <= 1 and replacement.count("%") <= 1
         and all(re.fullmatch(r"[A-Za-z0-9_./%+-]*", value) for value in (pattern, replacement))
     )
+
+
+def _original_filter_patterns(value, budget):
+    patterns = []
+    for match in re.finditer(r"[^ \t\r\n\v\f]+", value):
+        if budget is not None:
+            budget.remaining()
+        pattern = match[0]
+        if not _supported_patsubst(pattern, ""):
+            return None
+        if budget is not None:
+            budget.charge("cache", len(encoded(pattern)))
+        patterns.append(pattern)
+    return patterns
 
 
 def _patsubst_word(pattern, word):
@@ -2890,6 +2930,12 @@ def source_census(
                 if budget is not None:
                     budget.charge("cache", len(encoded((name, constant))))
                 constant_writes.setdefault(name, []).append(constant)
+        for expression in (unit.text,) if unit.body is None else (unit.text, unit.body):
+            local_bindings = _foreach_read_bindings(expression, budget)
+            if local_bindings is None:
+                unknown_writer = True
+            else:
+                unsafe_constants.update(local_bindings)
         for body in make_expressions(unit.body if unit.body is not None else unit.text):
             if body.startswith(("call ", "call\t", "guile ", "guile\t")):
                 unknown_writer = True

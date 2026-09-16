@@ -5367,6 +5367,64 @@ and lazy error/eval/shell bodies through simple, recursive, exported and
 recipe reads. A target-local override, a possible dynamic writer or an earlier
 parse-time read must prevent whole-source literal pruning.
 
+Run the six indexed logical-entry, foreach-scope and C-whitespace soundness
+regressions in `AuthoritativeMakeProbeTests` before accepting the seven-leaf
+checkpoint. Use the genuine original-input witness and the unchanged small
+fixture/session budgets. Preserve the following three pre-fix programs without
+adding a recipe read of HIDDEN or an unrelated declared default that would
+mask the failure:
+
+1. Create `src/ordinary.c` with no hidden files. Set
+   `MATCH := $(wildcard src/.*)`, condition `HIDDEN ?= secret` on nonempty
+   MATCH, and print only MATCH in the recipe. Ordinary GNU and native raw
+   MATCH must be `src/. src/..`; native HIDDEN must be
+   file/recursive/secret. The issuer must decline the raw dot-matching
+   pattern, the source census must retain HIDDEN, and the complete small
+   planner must reject the unsealed default. Repeat with a real
+   `src/.hidden.c`, with braced/referenced patterns and renamed variables.
+   The hidden-file variant includes both logical entries plus the real file;
+   do not claim that its pre-fix nonempty condition was false. Literal
+   `src/.`, `src/..` and star patterns that could match either remain
+   unsupported. `src/*.c`, `src/.hidden*` and `src/.*c` must continue to agree
+   with GNU, including empty and duplicate results.
+2. Define `EMPTY :=`, `VALUE = $(and $(EMPTY),$(UNUSED))` and
+   `UNUSED = $(eval HIDDEN ?= secret)visible`; print
+   `$(foreach EMPTY,nonempty,$(VALUE))`. Ordinary GNU must print `visible`,
+   native HIDDEN must be file/recursive/secret, and global EMPTY must still
+   be file/simple/empty after the loop. Retain the original recursive VALUE
+   body, its UNUSED read and the HIDDEN default. Repeat with renamed/braced,
+   nested, referenced/computed and short-reference binders, and a called
+   definition containing the loop. Literal local names must not borrow their
+   global constants; unknown binders must prevent whole-source pruning.
+   Called bodies already had an unknown-writer boundary and are preservation
+   controls, not newly claimed pre-fix admissions.
+3. Put U+00A0 between `a` and `b` in the first operand of
+   `$(filter-out ...,a b)`, assign the result to MATCH, and use the same
+   nonempty condition and MATCH-only recipe as the first case. Under
+   `LC_ALL=C`, ordinary/native MATCH must be `a b`, not empty, and native
+   HIDDEN must be file/recursive/secret. The unchanged unsupported pattern
+   must decline, retain the HIDDEN obligation and reject the small plan.
+   Repeat through a braced pattern reference, a renamed result and U+2003.
+   ASCII space/tab patterns, supported non-ASCII text operands, `strip`,
+   substring `findstring` and `and` must retain GNU byte and empty semantics.
+   A literal or referenced U+00A0 first operand is nonempty and cannot prune
+   an actually executed deferred effect.
+
+Remove each correction independently while retaining the other two and all
+original source/native/budget guards. Restore the old omission of logical
+entries, global-through-local assumption, or Unicode pattern splitting to
+recover the respective false accepted `defaults: []` small plan. Re-enable the
+correction and recover rejection without changing source or native results.
+Keep the global-only empty-operand lazy positive, an unrelated foreach binder,
+an already captured simple snapshot despite later local shadowing, metadata-only
+unused error/shell bodies and actual export membership. Native
+metadata must not execute an otherwise unused body. Record actual values,
+defaults, reads and rejection separately from diagnostic wording or source
+locations, and clean fixture paths, session children and producer waiters on
+every path. These are complete bounded counterexamples, not evidence of a
+whole-report bypass or permission for message publication/rename/namespace
+changes; the separate real message-source hold and unallocated17 remain.
+
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while
 native per-file raw metadata remains `$(FLAGS)`. Do not eagerly copy the

@@ -3162,6 +3162,10 @@
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_wildcard_logical_entries_keep_hidden_default_obligations scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_wildcard_logical_entry_boundary_matches_gnu scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_foreach_local_bindings_cannot_prune_deferred_hidden_defaults scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_foreach_read_scope_keeps_unshadowed_and_metadata_bodies_lazy scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_filter_patterns_keep_c_whitespace_default_obligations scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_c_word_boundaries_keep_exact_values_and_lazy_reads -v",
+          "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_native_ignore_error_policy_matches_actual_gnu_jobs scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_native_job_policy_requires_complete_pid_bound_receipts -v",
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },

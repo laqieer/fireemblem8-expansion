@@ -4906,6 +4906,306 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                                  {"origin": "file", "flavor": "recursive", "value": "$(FLAGS)"})
             self.observe()
 
+    def read_closure_census(self, names):
+        from scripts.validation_ownership.graph_commands import MakeCommands
+        with self.session() as session:
+            commands = MakeCommands(session, {})
+            native = session.make(
+                "all", variables=("MAKEFILE_LIST", "MAKE_RESTARTS"), definitions=names, commands=commands,
+            )
+            sources = graph_probe._loaded_sources(session, native, primary_source="Makefile")
+            units, inputs, scoped = graph_probe._prepare_rule_templates(
+                session, "all", (), commands, native, sources, primary_source="Makefile",
+            )
+            usage = source_census(
+                sources, reference_units=units, source_target="all",
+                template_graph_inputs=inputs, template_scoped=scoped, budget=session.budget,
+            )
+        self.assertIsNone(session.base)
+        self.assertFalse(session.budget.children)
+        self.assertFalse(session.budget.producer_waiters)
+        return usage, native
+
+    def reject_unsealed_read_default(self):
+        with self.session() as session:
+            with self.assertRaises(MakeProbeError) as rejected:
+                run_probe(session.loader, {"all"}, {}, {}, session=session)
+            accounting = (session.budget.runs, session.budget.states)
+        self.assertIsNone(session.base)
+        self.assertFalse(session.budget.children)
+        self.assertFalse(session.budget.producer_waiters)
+        return {"error": str(rejected.exception), "runs_states": accounting}
+
+    def test_original_wildcard_logical_entries_keep_hidden_default_obligations(self):
+        self.original_input_witness()
+        self.last_soundness_cases = []
+        matcher = make_probe._star_name
+
+        def without_logical_entries(pattern, name):
+            return False if name in {b".", b".."} else matcher(pattern, name)
+
+        for name, directory, prelude, expression in (
+            ("MATCH", "src", "", "$(wildcard src/.*)"),
+            ("SELECTED", "assets", "DIRECTORY := assets\nPATTERN = ${DIRECTORY}/.*\n",
+             "${wildcard ${PATTERN}}"),
+            ("MATCH", "src", "PATTERN := src/.*\nALIAS := $(PATTERN)\n", "$(wildcard $(ALIAS))"),
+        ):
+            with self.subTest(name=name, directory=directory, expression=expression):
+                self.add(directory + "/ordinary.c", "admitted source\n")
+                self.add("Makefile", (
+                    prelude + name + " := " + expression + "\n"
+                    "ifneq ($(" + name + "),)\nHIDDEN ?= secret\nendif\n"
+                    "all:\n\t@printf '%s\\n' '$(" + name + ")'\n"
+                ))
+                expected = directory + "/. " + directory + "/.."
+                self.assertEqual(self.ordinary(), (expected + "\n").encode())
+                usage, native = self.read_closure_census(("HIDDEN", name))
+                records = native.semantics["definitions"]["global"]
+                self.assertEqual(records[name], {"origin": "file", "flavor": "simple", "value": expected})
+                self.assertEqual(records["HIDDEN"], {"origin": "file", "flavor": "recursive", "value": "secret"})
+                self.assertIn("HIDDEN", usage["defaults"])
+                fixed = self.reject_unsealed_read_default()
+                with patch.object(make_probe, "_star_name", without_logical_entries):
+                    preimage = self.observe()["all"]
+                    self.assertEqual(preimage["variable_census"]["defaults"], [])
+                    removed_accounting = self.last_accounting
+                self.reject_unsealed_read_default()
+                self.last_soundness_cases.append({
+                    "expression": expression, "native": records, "fixed": fixed,
+                    "removal_defaults": preimage["variable_census"]["defaults"],
+                    "removal_runs_states": removed_accounting,
+                })
+
+    def test_original_wildcard_logical_entry_boundary_matches_gnu(self):
+        self.original_input_witness()
+        self.add("src/a.c", "ordinary\n")
+        patterns = {
+            "DOT": "src/.*", "DOTS": "src/..*", "LITERAL_DOT": "src/.",
+            "NORMAL": "src/*.c", "HIDDEN_NAMES": "src/.hidden*", "DOT_SUFFIX": "src/.*c",
+        }
+        for hidden in (False, True):
+            with self.subTest(hidden=hidden):
+                if hidden:
+                    self.add("src/.hidden.c", "hidden\n")
+                expected_hidden = "src/.hidden.c" if hidden else ""
+                expected = {
+                    "DOT": "src/. src/.." + (" src/.hidden.c" if hidden else ""),
+                    "DOTS": "src/..", "LITERAL_DOT": "src/.", "NORMAL": "src/a.c",
+                    "HIDDEN_NAMES": expected_hidden, "DOT_SUFFIX": expected_hidden,
+                }
+                self.add("Makefile", (
+                    "".join(name + " := $(wildcard " + pattern + ")\n" for name, pattern in patterns.items())
+                    + "ifneq ($(DOT),)\nHIDDEN ?= secret\nendif\nall:\n\t@printf '%s\\n' "
+                    + " ".join("'$(" + name + ")'" for name in patterns) + "\n"
+                ))
+                self.assertEqual(self.ordinary(), ("\n".join(expected.values()) + "\n").encode())
+                with self.session() as session:
+                    native = session.make(
+                        "all", variables=("MAKEFILE_LIST", "MAKE_RESTARTS"), definitions=(*patterns, "HIDDEN"),
+                    )
+                    token = session._original_namespace(native, target="all", makefile="Makefile")
+                    records = native.semantics["definitions"]["global"]
+                    for name, value in expected.items():
+                        self.assertEqual(records[name]["value"], value)
+                    self.assertEqual(records["HIDDEN"],
+                                     {"origin": "file", "flavor": "recursive", "value": "secret"})
+                    for pattern in ("src/.*", "src/.**", "src/..*", "src/.", "src/..", "src/*.c src/.*"):
+                        with self.subTest(pattern=pattern):
+                            with self.assertRaises(make_probe._NamespaceUnavailable):
+                                session._original_wildcard(token, pattern)
+                    for name in ("NORMAL", "HIDDEN_NAMES", "DOT_SUFFIX"):
+                        self.assertEqual(session._original_wildcard(token, patterns[name]), expected[name])
+                self.assertIsNone(session.base)
+                self.assertFalse(session.budget.children)
+                self.assertFalse(session.budget.producer_waiters)
+                self.reject_unsealed_read_default()
+                self.add("Makefile", (
+                    "VALUE := $(wildcard src/*.c src/.hidden* src/.*c)\n"
+                    "all:\n\t@printf '%s\\n' '$(VALUE)'\n"
+                ))
+                safe = "src/a.c" + (" src/.hidden.c src/.hidden.c" if hidden else "")
+                self.assertEqual(self.ordinary(), (safe + "\n").encode())
+                self.assertEqual(self.observe()["all"]["variable_census"]["defaults"], [])
+
+    def test_foreach_local_bindings_cannot_prune_deferred_hidden_defaults(self):
+        self.original_input_witness()
+        self.last_soundness_cases = []
+        for label, empty, value, unused, prelude, expression, body, closed in (
+            ("literal", "EMPTY", "VALUE", "UNUSED", "", "$(foreach EMPTY,nonempty,$(VALUE))",
+             "$(and $(EMPTY),$(UNUSED))", True),
+            ("renamed-braced", "VOID", "SELECTED", "DEFERRED", "", "${foreach VOID,nonempty,${SELECTED}}",
+             "${and ${VOID},${DEFERRED}}", True),
+            ("nested", "EMPTY", "VALUE", "UNUSED", "OUTER := global\n",
+             "$(foreach OUTER,once,$(foreach EMPTY,nonempty,$(VALUE)))", "$(and $(EMPTY),$(UNUSED))", True),
+            ("referenced", "EMPTY", "VALUE", "UNUSED", "BINDER := EMPTY\n",
+             "$(foreach ${BINDER},nonempty,$(VALUE))", "$(and $(EMPTY),$(UNUSED))", False),
+            ("computed", "EMPTY", "VALUE", "UNUSED", "PREFIX := EMP\nTAIL := TY\n",
+             "$(foreach $(PREFIX)$(TAIL),nonempty,$(VALUE))", "$(and $(EMPTY),$(UNUSED))", False),
+            ("short", "EMPTY", "VALUE", "UNUSED", "N := EMPTY\n",
+             "$(foreach $N,nonempty,$(VALUE))", "$(and $(EMPTY),$(UNUSED))", False),
+            ("called", "EMPTY", "VALUE", "UNUSED",
+             "define BODY\n$(foreach EMPTY,nonempty,$(VALUE))\nendef\n",
+             "$(call BODY)", "$(and $(EMPTY),$(UNUSED))", False),
+            ("target-specific-preservation", "EMPTY", "VALUE", "UNUSED", "all: EMPTY = nonempty\n",
+             "$(VALUE)", "$(and $(EMPTY),$(UNUSED))", True),
+        ):
+            with self.subTest(label=label):
+                self.add("Makefile", (
+                    "SAFE := unchanged\n" + empty + " :=\n" + value + " = " + body + "\n"
+                    + unused + " = $(eval HIDDEN ?= secret)visible\n" + prelude
+                    + "all:\n\t@printf '%s\\n' '" + expression + "'\n"
+                ))
+                self.assertEqual(self.ordinary(), b"visible\n")
+                usage, native = self.read_closure_census(("HIDDEN", empty, value))
+                records = native.semantics["definitions"]["global"]
+                self.assertEqual(records["HIDDEN"], {"origin": "file", "flavor": "recursive", "value": "secret"})
+                self.assertEqual(records[empty], {"origin": "file", "flavor": "simple", "value": ""})
+                self.assertEqual(records[value], {"origin": "file", "flavor": "recursive", "value": body})
+                self.assertIn("HIDDEN", usage["defaults"])
+                self.assertIn(unused, usage["execution_dependencies"][value])
+                self.assertNotIn(empty, usage["read_constants"])
+                if closed:
+                    self.assertEqual(usage["read_constants"]["SAFE"], "unchanged")
+                else:
+                    self.assertEqual(usage["read_constants"], {})
+                fixed = self.reject_unsealed_read_default()
+                row = {"case": label, "native": records, "fixed": fixed}
+                if label in {"literal", "renamed-braced"}:
+                    with patch.object(graph_probe, "_foreach_read_bindings", return_value=set()):
+                        preimage = self.observe()["all"]
+                        self.assertEqual(preimage["variable_census"]["defaults"], [])
+                        row.update(removal_defaults=[], removal_runs_states=self.last_accounting)
+                    self.reject_unsealed_read_default()
+                self.last_soundness_cases.append(row)
+
+    def test_foreach_read_scope_keeps_unshadowed_and_metadata_bodies_lazy(self):
+        self.original_input_witness()
+        for operator, expression in (
+            ("=", "$(VALUE)"), ("=", "$(foreach ITEM,once,$(VALUE))"),
+            (":=", "$(foreach EMPTY,once,$(VALUE))"),
+        ):
+            with self.subTest(operator=operator, expression=expression):
+                self.add("Makefile", (
+                    "EMPTY :=\nVALUE " + operator + " $(and $(EMPTY),$(UNUSED))\n"
+                    "UNUSED = $(eval HIDDEN ?= secret)$(error unused body)$(shell touch marker)\n"
+                    "export VISIBLE = $(VALUE)\nall:\n\t@printf '%s\\n' '" + expression + "' \"$$VISIBLE\"\n"
+                ))
+                self.assertEqual(self.ordinary(), b"\n\n")
+                usage, native = self.read_closure_census(("HIDDEN", "UNUSED"))
+                self.assertEqual(native.semantics["definitions"]["global"]["HIDDEN"],
+                                 {"origin": "undefined", "flavor": "undefined", "value": ""})
+                if operator == ":=":
+                    self.assertNotIn("EMPTY", usage["read_constants"])
+                else:
+                    self.assertEqual(usage["read_constants"]["EMPTY"], "")
+                self.assertNotIn("UNUSED", usage["execution_dependencies"]["VALUE"])
+                self.assertEqual(usage["defaults"], set())
+                result = self.observe()["all"]
+                self.assertEqual(result["variable_census"]["defaults"], [])
+                record = result["record"]["variants"][0]["record"]
+                self.assertEqual(record["native_dispatches"][0]["environment"]["VISIBLE"], "")
+                self.assertNotIn("UNUSED", record["domains"])
+                self.assertFalse((self.root / "marker").exists())
+        body = "$(foreach $(error unconsumed binder),once,$(shell touch marker))"
+        self.add("Makefile", (
+            "BODY = " + body + "\nall:\n\t@printf '%s\\n' '$(origin BODY)' '$(flavor BODY)'\n"
+        ))
+        self.assertEqual(self.ordinary(), b"file\nrecursive\n")
+        usage, native = self.read_closure_census(("BODY",))
+        self.assertEqual(native.semantics["definitions"]["global"]["BODY"]["value"], body)
+        self.assertEqual(usage["read_constants"], {})
+        self.observe()
+        self.assertFalse((self.root / "marker").exists())
+        for expression, expected in (
+            ("$(foreach EMPTY,word,$(foreach OTHER,word,$(VALUE)))", {"EMPTY", "OTHER"}),
+            ("$$(foreach EMPTY,word,$$(VALUE))", {"EMPTY"}),
+            ("${foreach ${BINDER},word,${VALUE}}", None),
+            ("$(foreach $(error unconsumed),word,$(VALUE))", None),
+            ("$(foreach EMPTY,word", None),
+        ):
+            self.assertEqual(graph_probe._foreach_read_bindings(expression), expected)
+
+    def test_original_filter_patterns_keep_c_whitespace_default_obligations(self):
+        self.original_input_witness()
+        self.last_soundness_cases = []
+        parser = graph_probe._original_filter_patterns
+
+        def unicode_split_preimage(value, budget):
+            return parser(" ".join(value.split()), budget)
+
+        for label, separator, name, referenced in (
+            ("nbsp", chr(0xA0), "MATCH", False),
+            ("renamed-reference", chr(0xA0), "SELECTED", True),
+            ("em-space", chr(0x2003), "MATCH", False),
+        ):
+            with self.subTest(label=label):
+                pattern = "a" + separator + "b"
+                prelude = "PATTERN := " + pattern + "\n" if referenced else ""
+                expression = "${filter-out ${PATTERN},a b}" if referenced else "$(filter-out " + pattern + ",a b)"
+                self.add("Makefile", (
+                    prelude + name + " := " + expression + "\n"
+                    "ifneq ($(" + name + "),)\nHIDDEN ?= secret\nendif\n"
+                    "all:\n\t@printf '%s\\n' '$(" + name + ")'\n"
+                ))
+                self.assertEqual(self.ordinary(), b"a b\n")
+                usage, native = self.read_closure_census(("HIDDEN", name))
+                records = native.semantics["definitions"]["global"]
+                self.assertEqual(records[name], {"origin": "file", "flavor": "simple", "value": "a b"})
+                self.assertEqual(records["HIDDEN"], {"origin": "file", "flavor": "recursive", "value": "secret"})
+                self.assertIsNone(parser(pattern, None))
+                self.assertIn("HIDDEN", usage["defaults"])
+                fixed = self.reject_unsealed_read_default()
+                with patch.object(graph_probe, "_original_filter_patterns", unicode_split_preimage):
+                    preimage = self.observe()["all"]
+                    self.assertEqual(preimage["variable_census"]["defaults"], [])
+                    removed_accounting = self.last_accounting
+                self.reject_unsealed_read_default()
+                self.last_soundness_cases.append({
+                    "case": label, "native": records, "fixed": fixed,
+                    "removal_defaults": [], "removal_runs_states": removed_accounting,
+                })
+
+    def test_original_c_word_boundaries_keep_exact_values_and_lazy_reads(self):
+        self.original_input_witness()
+        nbsp = chr(0xA0)
+        cases = {
+            "ASCII": ("$(filter-out a\tb,a b a b)", ""),
+            "EMPTY_FILTER": ("$(filter-out , a\tb a )", "a b a"),
+            "WORDS": ("$(filter-out a,a" + nbsp + "b a b)", "a" + nbsp + "b b"),
+            "STRIPPED": ("$(strip \t a" + nbsp + "b \t c \t)", "a" + nbsp + "b c"),
+            "SUBSTRING": ("$(findstring " + nbsp + ",a" + nbsp + "b)", nbsp),
+            "BOOLEAN": ("$(and " + nbsp + ",visible)", "visible"),
+            "FINAL": ("$(and yes," + nbsp + ")", nbsp),
+        }
+        source = "".join(name + " := " + expression + "\n" for name, (expression, _) in cases.items())
+        source += "all:\n\t@printf '%s\\n' " + " ".join("'$(" + name + ")'" for name in cases) + "\n"
+        self.add("Makefile", source)
+        self.assertEqual(self.ordinary(), ("\n".join(value for _, value in cases.values()) + "\n").encode())
+        usage, native = self.read_closure_census(tuple(cases))
+        mode = _MakeSourceMode(template_mode=lambda *args: False)
+        list(make_source_units(source, mode=mode))
+        for name, (expression, value) in cases.items():
+            self.assertEqual(native.semantics["definitions"]["global"][name]["value"], value)
+            self.assertEqual(mode.exact_initializer_value(expression), value)
+            self.assertEqual(mode.exact_reference(name), value)
+        self.assertEqual(usage["defaults"], set())
+        self.assertEqual(self.observe()["all"]["variable_census"]["defaults"], [])
+        for expression in ("$(and " + nbsp + ",$(UNUSED))", "${and ${NONBREAK},${UNUSED}}"):
+            with self.subTest(expression=expression):
+                self.add("Makefile", (
+                    "NONBREAK := " + nbsp + "\nVALUE = " + expression + "\n"
+                    "UNUSED = $(eval HIDDEN ?= secret)visible\nall:\n\t@printf '%s\\n' '$(VALUE)'\n"
+                ))
+                self.assertEqual(self.ordinary(), b"visible\n")
+                usage, native = self.read_closure_census(("HIDDEN", "NONBREAK", "VALUE"))
+                records = native.semantics["definitions"]["global"]
+                self.assertEqual(records["NONBREAK"]["value"], nbsp)
+                self.assertEqual(records["HIDDEN"], {"origin": "file", "flavor": "recursive", "value": "secret"})
+                self.assertEqual(usage["read_constants"]["NONBREAK"], nbsp)
+                self.assertIn("UNUSED", usage["execution_dependencies"]["VALUE"])
+                self.assertIn("HIDDEN", usage["defaults"])
+                self.reject_unsealed_read_default()
+
 
 if __name__ == "__main__":
     unittest.main()

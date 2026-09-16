@@ -1303,6 +1303,12 @@ whitespace filenames decline explicitly. Members, matches and assembled text
 spend the existing budgets. A simple assignment snapshots the result; a
 recursive/default body evaluates against its original operands at each use.
 Neither a missing proof nor a header-only wildcard bound is an empty list.
+GNU's logical directory entries `.` and `..` are not materialized `scandir`
+members. A raw final-component pattern that could match either entry therefore
+declines before path normalization: `src/.*` cannot certify an empty result
+even when the source directory has no hidden files. This adds no parent or
+directory-entry authority. Ordinary `src/*.c` and nonlogical hidden-name
+patterns such as `src/.hidden*` and `src/.*c` keep their exact semantics.
 
 Only invariant queried namespaces qualify. Unrelated build publication can
 remain harmless, but source filename/parent creation, removal, replacement or
@@ -1319,6 +1325,17 @@ derived literal target scopes. Read/effect analysis retains immutable source
 separately from proven lazy read forms. Deferred recipe reads may use only
 whole-source immutable literal operands with no target-specific/dynamic writer
 or earlier parse-time consumption; a later value cannot prune earlier reads.
+Possible `foreach` locals, including nested or potentially emitted binders,
+exclude their names from that global-literal context. Computed or unclosed
+binders disable whole-source literal pruning; called bodies retain the existing
+unknown-writer boundary. Discovering a possible binder does not expand its
+unused body or change immutable source. An empty global `EMPTY` cannot hide a
+deferred effect when a consuming loop locally binds `EMPTY` to nonempty text.
+The exact word operations tokenize with GNU's explicit C whitespace, not
+Python's Unicode whitespace. In particular, a U+00A0 between filter patterns
+does not become an ASCII separator: the unchanged unsupported token declines.
+Supported text operands, `strip`, substring matching and lazy `and` preserve
+non-ASCII bytes rather than trimming or splitting them as Unicode whitespace.
 Target-local `+=` remains recursive, including its global inheritance and
 later RHS lookup even when the global variable is simple.
 
@@ -1397,6 +1414,13 @@ Moving a derived-list consumer after that directive deliberately reaches the
 unchanged staged-reference guard; exact target-mode proof does not waive
 secondary value provenance. These distinctions do not assert that all eight
 complete production contexts or a full report have been measured.
+The logical-dot, local-binder and C-whitespace regressions additionally retain
+actual GNU/native HIDDEN definitions and complete small-planner rejection.
+Independent removal of each correction recovers its false empty-default
+admission; that is bounded counterexample evidence, not a whole-report bypass.
+These corrections do not authorize live message-source publication, tracked
+header writes, directory-entry relocation or a changed raw-source wildcard
+namespace.
 
 Recipe observation preserves read kind through ordinary references, aliases
 and captured exports. Literal `origin`, `flavor` and `value` operands use
