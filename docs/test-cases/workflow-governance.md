@@ -5367,7 +5367,7 @@ and lazy error/eval/shell bodies through simple, recursive, exported and
 recipe reads. A target-local override, a possible dynamic writer or an earlier
 parse-time read must prevent whole-source literal pruning.
 
-Run the eight indexed logical-entry, foreach-scope and C-whitespace soundness
+Run the eleven indexed logical-entry, foreach-scope and C-whitespace soundness
 regressions in `AuthoritativeMakeProbeTests` before accepting the seven-leaf
 checkpoint. Use the genuine original-input witness and the unchanged small
 fixture/session budgets. Preserve the following three pre-fix programs without
@@ -5379,6 +5379,31 @@ unchanged and the unused error body must not execute. Conversely, keep real
 local foreach bindings in tab recipes, inline recipes, define-body data and
 escaped-hash assignments: those must retain the actual HIDDEN obligation
 and reject, not disappear under a global comment stripper.
+
+Also exercise the parse-time, not just deferred-recipe, local scope. Define
+`EMPTY :=`, `VALUE = $(and $(EMPTY),$(UNUSED))`,
+`UNUSED = $(eval .POSIX:)`, then
+`TRIGGER := $(foreach EMPTY,nonempty,$(VALUE))`. Follow it with a continued
+`LATE = first \` / ` second`, condition `HIDDEN ?= secret` on LATE equalling
+`first  second` (two spaces), and use `all: ;` without a diagnostic recipe.
+Ordinary GNU succeeds; native LATE must have two spaces and HIDDEN must be
+file/recursive/secret. Original effect analysis must retain the local
+uncertainty before folding that continuation, and the complete small planner
+must reject rather than accept `defaults=[]`. Preserve braced/nested,
+referenced-binder, escaped-hash, immediately expanded define-body, local
+`value` metadata and repeated global/local VALUE occurrences. Keep the
+substitution-reference form rejected too. Removing only the scoped operand
+protection must reproduce the original literal and metadata false admissions.
+
+Outside the loop, global-empty VALUE must stay inert, while global-nonempty
+must retain the `.POSIX` effect. Keep an unrelated local binder, an already
+captured simple VALUE and a genuinely empty loop inert; compare native
+LATE/HIDDEN and complete small-plan admission. The direct effect controls
+also distinguish a global effect used in a loop's name/list from that name's
+simple local use in the body, preserve unused metadata-only effects, and
+hold a computed selector that depends on local scope. Do not infer any of
+these original facts from the final native value or repair a pruned source
+stream only in its final census.
 
 The original three pre-fix programs are:
 

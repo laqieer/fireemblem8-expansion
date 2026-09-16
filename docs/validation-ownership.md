@@ -1336,6 +1336,17 @@ ignored, but tab/inline recipes and define-body data retain their expressions.
 Escaped hash data is preserved. A dollar or fake binder in an ignored comment
 cannot disable a valid lazy-read proof; a real local binding after hash data
 must still retain its hidden effects and defaults.
+Parse-time effect traversal carries a separate local scope at each occurrence,
+including through recursive variable bodies. Foreach name/list operands use
+the incoming scope; only its body sees the simple local binding. A known-empty
+list does not consume the body. Lazy operand proofs in that body may use an
+original global fact only when its bounded read closure cannot touch a local
+name, including through literal metadata. Global and local traversals do not
+share a completed proof. Unsupported computed local selectors remain unproven.
+This happens before later source folding and conditional pruning: an empty
+global cannot hide a locally triggered `.POSIX` eval and erase a later default.
+Unshadowed globals, simple snapshots and metadata-only reads keep their lazy
+behavior. This is not authority to replay arbitrary local values or effects.
 The exact word operations tokenize with GNU's explicit C whitespace, not
 Python's Unicode whitespace. In particular, a U+00A0 between filter patterns
 does not become an ASCII separator: the unchanged unsupported token declines.

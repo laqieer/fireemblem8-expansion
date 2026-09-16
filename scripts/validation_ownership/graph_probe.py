@@ -763,25 +763,86 @@ class _MakeSourceMode:
             return None
         return "header-bound", ("composition", expression)
 
+    def effect_initializer_value(self, expression, local):
+        if local:
+            pending, seen = [expression], set()
+            while pending:
+                self.checkpoint()
+                value = pending.pop()
+                if next(computed_selectors(value), None) is not None or references(value) & local:
+                    return None
+                for name in references(_without_literal_metadata(value)):
+                    if name in seen:
+                        continue
+                    seen.add(name)
+                    self.retain_reads((name,))
+                    for binding in self.binding(name):
+                        if binding.flavor == "recursive" and binding.value is not None:
+                            pending.append(binding.value)
+        return self.exact_initializer_value(expression)
+
     def effectful(self, expression):
         self.last_effect_input = None
-        pending, active, complete = [(None, expression, False)], set(), set()
+        pending, active, complete = [(None, expression, False, frozenset())], set(), set()
         while pending:
             self.checkpoint()
-            name, value, finished = pending.pop()
+            name, value, finished, local = pending.pop()
+            identity = name, local
             if finished:
-                active.remove(name)
-                complete.add((name, value))
+                active.remove(identity)
+                complete.add((name, value, local))
                 continue
             if name is not None:
-                if (name, value) in complete:
+                if (name, value, local) in complete:
                     continue
-                if name in active:
+                if identity in active:
                     self.last_effect_input = name
                     return True
-                active.add(name)
-                pending.append((name, value, True))
-            value = _prune_and(value, self.exact_initializer_value, self.budget)
+                active.add(identity)
+                pending.append((name, value, True, local))
+            value = _prune_and(
+                value, lambda argument: self.effect_initializer_value(argument, local), self.budget,
+            )
+            pieces, previous, covered = [], 0, 0
+            for start, stop, _ in sorted(_make_expression_spans(value), key=lambda item: (item[0], -item[1])):
+                if start < covered:
+                    continue
+                covered = stop
+                function = _make_function(value[start:stop])
+                if function is None:
+                    continue
+                operation, arguments = function
+                if operation not in MAKE_FUNCTIONS - {"call", "eval", "guile"}:
+                    self.last_effect_input = name or operation
+                    return True
+                if operation == "foreach":
+                    if len(arguments) != 3:
+                        self.last_effect_input = "foreach-scope"
+                        return True
+                    binder = self.effect_initializer_value(arguments[0].strip(MAKE_SPACE), local)
+                    if binder is None or re.fullmatch(IDENTIFIER, binder) is None:
+                        self.last_effect_input = "foreach-scope"
+                        return True
+                    words = self.effect_initializer_value(arguments[1], local)
+                    # Only the body sees the simple local; name/list expansion
+                    # still has the incoming scope and its possible effects.
+                    if words is None or words.strip(MAKE_SPACE):
+                        scoped = local | {binder}
+                        if self.budget is not None:
+                            self.budget.charge("cache", len(encoded(sorted(scoped))))
+                        pending.append((None, arguments[2], False, scoped))
+                    pending.extend((None, argument, False, local) for argument in arguments[:2])
+                elif operation in {"origin", "flavor", "value"}:
+                    self.retain_reads(metadata for _, _, metadata in _literal_metadata(value[start:stop])
+                                      if metadata not in local)
+                    if not tuple(_literal_metadata(value[start:stop])):
+                        pending.extend((None, argument, False, local) for argument in arguments)
+                else:
+                    pending.extend((None, argument, False, local) for argument in arguments)
+                pieces.append(value[previous:start])
+                previous = stop
+            if pieces:
+                value = _join_make_text((*pieces, value[previous:]), self.budget)
             for body in make_expressions(value):
                 operation = re.match(r"([^ \t\r\n\v\f]+)[ \t\r\n\v\f]+", body)
                 if operation and operation[1] not in MAKE_FUNCTIONS - {"call", "eval", "guile"}:
@@ -793,11 +854,12 @@ class _MakeSourceMode:
             for body in make_expressions(value):
                 if "$" not in _make_reference_base(body):
                     continue
-                names = self.reference_names(body, tuple(active))
+                names = None if local else self.reference_names(body, tuple(item[0] for item in active))
                 if names is None:
                     self.last_effect_input = "computed-selector"
                     return True
                 dependencies.update(names)
+            dependencies.difference_update(local)
             self.retain_reads(dependencies)
             for dependency in dependencies:
                 if dependency in self.control_reads:
@@ -807,7 +869,7 @@ class _MakeSourceMode:
                         self.last_effect_input = dependency
                         return True
                     if binding.flavor == "recursive":
-                        pending.append((dependency, binding.value, False))
+                        pending.append((dependency, binding.value, False, local))
         return False
 
     def evaluate(self, expression, *, active=True):

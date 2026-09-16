@@ -5174,6 +5174,84 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 self.assertNotIn("EMPTY", usage["read_constants"])
                 self.reject_unsealed_read_default()
 
+    def test_foreach_parse_time_scope_cannot_hide_posix_and_later_defaults(self):
+        self.original_input_witness()
+        local = "$(foreach EMPTY,nonempty,$(VALUE))"
+        for label, prelude, trigger, operand in (
+            ("literal", "", local, "$(EMPTY)"),
+            ("nested-braced", "", "${foreach OUTER,once,${foreach EMPTY,nonempty,${VALUE}}}", "$(EMPTY)"),
+            ("referenced-binder", "BINDER := EMPTY\n", "$(foreach $(BINDER),nonempty,$(VALUE))", "$(EMPTY)"),
+            ("escaped-hash", "", "\\# " + local, "$(EMPTY)"),
+            ("define-body", "define BODY\n# " + local + "\nendef\n", "$(BODY)", "$(EMPTY)"),
+            ("local-metadata", "", local, "$(value EMPTY)"),
+            ("shared-binding", "", "$(VALUE)" + local + "$(VALUE)", "$(EMPTY)"),
+            ("substitution-reference", "BASE := unchanged\n", "$(BASE:" + local + "=x)", "$(EMPTY)"),
+        ):
+            with self.subTest(role=label):
+                self.add("Makefile", (
+                    "EMPTY :=\nVALUE = $(and " + operand + ",$(UNUSED))\n"
+                    "UNUSED = $(eval .POSIX:)\n" + prelude + "TRIGGER := " + trigger + "\n"
+                    "LATE = first \\\n second\nifeq ($(LATE),first  second)\nHIDDEN ?= secret\nendif\nall: ;\n"
+                ))
+                self.ordinary()
+                with self.session() as session:
+                    native = session.make("all", definitions=("EMPTY", "LATE", "HIDDEN"))
+                records = native.semantics["definitions"]["global"]
+                self.assertEqual(records["EMPTY"], {"origin": "file", "flavor": "simple", "value": ""})
+                self.assertEqual(records["LATE"],
+                                 {"origin": "file", "flavor": "recursive", "value": "first  second"})
+                self.assertEqual(records["HIDDEN"],
+                                 {"origin": "file", "flavor": "recursive", "value": "secret"})
+                self.reject_unsealed_read_default()
+                if label in {"literal", "local-metadata"}:
+                    with patch.object(
+                        _MakeSourceMode, "effect_initializer_value",
+                        lambda mode, value, local: mode.exact_initializer_value(value),
+                    ):
+                        self.assertEqual(self.observe()["all"]["variable_census"]["defaults"], [])
+                    self.reject_unsealed_read_default()
+
+    def test_foreach_parse_time_scope_preserves_global_and_unshadowed_laziness(self):
+        self.original_input_witness()
+        for operator, trigger in (
+            ("=", "$(VALUE)"),
+            ("=", "$(foreach ITEM,once,$(VALUE))"),
+            (":=", "$(foreach EMPTY,nonempty,$(VALUE))"),
+            ("=", "$(foreach EMPTY,,$(VALUE))"),
+        ):
+            with self.subTest(operator=operator, trigger=trigger):
+                self.add("Makefile", (
+                    "EMPTY :=\nUNUSED = $(eval .POSIX:)\n"
+                    "VALUE " + operator + " $(and $(EMPTY),$(UNUSED))\nTRIGGER := " + trigger + "\n"
+                    "LATE = first \\\n second\nifeq ($(LATE),first  second)\nHIDDEN ?= secret\nendif\nall: ;\n"
+                ))
+                self.ordinary()
+                with self.session() as session:
+                    native = session.make("all", definitions=("LATE", "HIDDEN"))
+                records = native.semantics["definitions"]["global"]
+                self.assertEqual(records["LATE"],
+                                 {"origin": "file", "flavor": "recursive", "value": "first second"})
+                self.assertEqual(records["HIDDEN"],
+                                 {"origin": "undefined", "flavor": "undefined", "value": ""})
+                self.assertEqual(self.observe()["all"]["variable_census"]["defaults"], [])
+
+    def test_foreach_effect_scope_keeps_operand_effects_and_local_metadata_separate(self):
+        for definitions, expression, expected in (
+            ({"EMPTY": "", "VALUE": "$(and $(EMPTY),$(UNUSED))", "UNUSED": "$(eval .POSIX:)"},
+             "$(foreach EMPTY,nonempty,$(VALUE))", True),
+            ({"EMPTY": "", "VALUE": "$(and $(value EMPTY),$(UNUSED))", "UNUSED": "$(eval .POSIX:)"},
+             "$(foreach EMPTY,nonempty,$(VALUE))", True),
+            ({"ITEM": "$(eval .POSIX:)"}, "$(foreach ITEM,once,$(ITEM))", False),
+            ({"ITEM": "$(eval .POSIX:)"}, "$(foreach ITEM,$(ITEM),constant)", True),
+            ({"ITEM": "$(eval .POSIX:)LOCAL"}, "$(foreach $(ITEM),once,constant)", True),
+            ({"UNUSED": "$(eval .POSIX:)"}, "$(foreach ITEM,,$(UNUSED))", False),
+            ({"UNUSED": "$(eval .POSIX:)"}, "$(value UNUSED)", False),
+            ({"EMPTY": "", "SELECTOR": "EMPTY", "UNUSED": "$(eval .POSIX:)"},
+             "$(foreach SELECTOR,UNUSED,$($(SELECTOR)))", True),
+        ):
+            with self.subTest(expression=expression):
+                self.assertEqual(_MakeSourceMode(definitions=definitions).effectful(expression), expected)
+
     def test_original_filter_patterns_keep_c_whitespace_default_obligations(self):
         self.original_input_witness()
         self.last_soundness_cases = []
