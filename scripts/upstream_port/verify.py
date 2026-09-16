@@ -1147,6 +1147,7 @@ _EXPECTED_STEP_ROLES = {
         ("gate", "Run ownership-probe process suite"),
         ("gate", "Run CJK font gates"),
         ("gate", "Run multilang texttools codec gates"),
+        ("gate", "Run text generator atomic publication tests (issue #268)"),
         ("gate", "Run configuration and linker-budget gates"),
     ),
     "legacy": (
@@ -2635,6 +2636,18 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "-v",
             ],
             applicable_note="combined-gate unique multilang texttools codec coverage",
+        ),
+        Gate(
+            name="textprocess-publication-tests",
+            command=[
+                "python3", "-m", "unittest",
+                "scripts.texttools.tests.test_textprocess_publication", "-v",
+            ],
+            applicable_note=(
+                "issue #268 extended host gate: actual buffered text producers, "
+                "concurrent complete-file readers, host compiler syntax checks "
+                "and atomic per-file publication/failure cleanup; no ROM build"
+            ),
         ),
         Gate(
             name="expansion-config-gates",

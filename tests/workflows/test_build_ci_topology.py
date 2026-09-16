@@ -2100,6 +2100,49 @@ def _make_recipe(text: str, target: str) -> str:
     return match.group("recipe")
 
 
+TEXT_PUBLICATION_STEP = "Run text generator atomic publication tests (issue #268)"
+TEXT_PUBLICATION_COMMAND = (
+    "python3", "-m", "unittest", "scripts.texttools.tests.test_textprocess_publication", "-v",
+)
+
+
+def _text_publication_owner_errors(text: str) -> list[str]:
+    jobs = _job_blocks(text)
+    owners = [
+        (name, index, step)
+        for name, body in jobs.items()
+        for index, step in enumerate(_step_blocks(body))
+        if _step_name(step) == TEXT_PUBLICATION_STEP
+    ]
+    if len(owners) != 1 or owners[0][0] != "extended-host-tests":
+        return ["text publication requires exactly one extended-host-tests owner"]
+    name, index, step = owners[0]
+    try:
+        verify._parse_job_context(name, jobs[name])
+        fields = dict(verify._parse_step(step, name, index)[2])
+        setup = [
+            (position, dict(verify._parse_step(item, name, position)[2]))
+            for position, item in enumerate(_step_blocks(jobs[name]))
+            if _step_name(item) == "Install extended host dependencies"
+        ]
+    except ValueError as error:
+        return [f"text publication owner context is invalid: {error}"]
+    if fields["run"] != (TEXT_PUBLICATION_COMMAND,):
+        return ["text publication must select its exact module, not renamed/broader discovery"]
+    if len(setup) != 1 or setup[0][0] >= index:
+        return ["text publication requires prior host compiler setup"]
+    installs = [
+        command[8:] for command in setup[0][1]["run"]
+        if command[:8] == ("sudo", "apt-get", "update", "&&", "sudo", "apt-get", "install", "-y")
+    ]
+    if len(installs) != 1 or "build-essential" not in installs[0]:
+        return ["text publication host compiler dependency is absent"]
+    steps = _step_blocks(jobs[name])
+    if index == 0 or _step_name(steps[index - 1]) != "Run multilang texttools codec gates":
+        return ["text publication must retain its adjacent, separate codec owner"]
+    return []
+
+
 def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     errors = []
     header = text[: text.index("\njobs:\n")]
@@ -2313,6 +2356,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             errors.append(f"summary loop omits required result: {result}")
 
     extended_host = jobs["extended-host-tests"]
+    errors.extend(_text_publication_owner_errors(text))
     for command in (
         "make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test",
         "python3 -m unittest discover -s scripts/texttools/tests -p 'test_multilang_codec*.py' -v",
@@ -2422,6 +2466,35 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             _remote_completion_errors(MAKEFILE.read_text(encoding="utf-8")),
             [],
         )
+
+    def test_text_publication_has_one_closed_extended_host_owner(self):
+        self.assertEqual(_text_publication_owner_errors(self.text), [])
+        job = _job_blocks(self.text)["extended-host-tests"]
+        step = next(item for item in _step_blocks(job) if _step_name(item) == TEXT_PUBLICATION_STEP)
+        command = " ".join(TEXT_PUBLICATION_COMMAND)
+        mutations = {
+            "missing": self.text.replace(step, "", 1),
+            "duplicate": self.text.replace(step, step + step, 1),
+            "disabled": self.text.replace(step, step.replace("      run:", "      if: false\n      run:"), 1),
+            "advisory": self.text.replace(step, step.replace("      run:", "      continue-on-error: true\n      run:"), 1),
+            "broad-discovery": self.text.replace(command, "python3 -m unittest discover -s scripts/texttools/tests -v", 1),
+            "codec-disguise": self.text.replace("scripts.texttools.tests.test_textprocess_publication", "scripts.texttools.tests.test_multilang_codec_publication", 1),
+        }
+        for target in ("host-tests", "build", "legacy"):
+            changed = self.text.replace(step, "", 1)
+            destination = _job_blocks(changed)[target]
+            mutations["wrong-owner-" + target] = changed.replace(destination, destination + step, 1)
+        setup = next(item for item in _step_blocks(job) if _step_name(item) == "Install extended host dependencies")
+        mutations["missing-cc"] = self.text.replace(setup, setup.replace(" build-essential", "", 1), 1)
+        mutations["disabled-setup"] = self.text.replace(setup, setup.replace("      run:", "      if: false\n      run:"), 1)
+        for name, changed in mutations.items():
+            with self.subTest(mutation=name):
+                self.assertTrue(_text_publication_owner_errors(changed))
+        quoted = self.text.replace(command, 'python3 -m unittest "scripts.texttools.tests.test_textprocess_publication" -v', 1)
+        self.assertEqual(_text_publication_owner_errors(quoted), [])
+        self.assertEqual(verify._parse_workflow_structure_text(quoted), verify._parse_workflow_structure_text(self.text))
+        self.assertEqual(len(_job_blocks(self.text)), 8)
+        self.assertEqual(len(verify.gates()), 31)
 
     def test_protected_environment_is_exact_and_cannot_mask_python(self):
         workflow_env_variants = (

@@ -1605,6 +1605,9 @@ jobs:
     - name: Run multilang texttools codec gates
       run: python3 -m unittest discover -s scripts/texttools/tests -p 'test_multilang_codec*.py' -v
 
+    - name: Run text generator atomic publication tests (issue #268)
+      run: python3 -m unittest scripts.texttools.tests.test_textprocess_publication -v
+
     - name: Run configuration and linker-budget gates
       run: |
         python3 -m unittest discover -s scripts/modernize/tests -p 'test_expansion_config.py' -v
