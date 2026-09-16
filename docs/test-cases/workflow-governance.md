@@ -3791,6 +3791,18 @@ game behavior needs a compensating change.
   the existing pinned host Python environment, and the manual-handoff
   contract unchanged. No token, ROM, emulator, or remote workflow is required.
 
+### Lifecycle time controls
+
+Run `python3 -m unittest scripts.validation_ownership.tests.test_reporter.ArtifactLifecycleTests -v`.
+The deterministic controls supply a fixed test clock to the actual lifecycle
+validator; production uses host UTC, with no candidate clock override. Keep
+history before the check and put expiry after the last history but before,
+equal to, and after the check. The first two must reject a non-Delete artifact;
+future and null expiry must pass. A future Delete cannot excuse current
+expiry. A valid past Delete must still satisfy every proof and strict UTC
+timestamp rule. The old history-time comparison admits the expired controls;
+neither sleeping nor changing the machine clock is needed.
+
 ### Actions
 
 1. Run

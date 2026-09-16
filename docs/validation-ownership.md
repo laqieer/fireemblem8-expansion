@@ -655,7 +655,13 @@ The graph remains report-only and does not reduce any broader validation.
 
 The graph uses issue #176's admission fields: one owner, executable consumer,
 unique decision, consistency check, bounded maintenance estimate, deletion
-criterion, expiry, and disposition history. Checkpoint, dependency-change, and
+criterion, expiry, and disposition history. Expiry validation uses the trusted
+host UTC instant captured for that metadata
+check, not a disposition timestamp or a candidate-supplied clock. Future
+disposition history is invalid. A non-deleted artifact whose expiry is at or
+before that instant rejects; null expiry remains valid. A past Delete still
+requires its existing deletion-proof semantics. This is an instant-specific
+validation, not a perpetual freshness lease. Checkpoint, dependency-change, and
 pre-graduation triggers each have one later proof bound to the artifact,
 dependency edge or decision authority. The public check uses its bounded
 session under the isolated launcher. Before any proof is credited, the

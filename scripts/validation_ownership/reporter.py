@@ -17,6 +17,7 @@ import sys
 import tempfile
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -1739,6 +1740,7 @@ def _validate_lifecycle(
     evidence_nodes: dict[str, dict[str, Any]],
     edge_ids: set[str],
 ) -> None:
+    validation_time = datetime.now(timezone.utc)
     if (
         artifact["estimated_maintenance_minutes"]
         > artifact["max_maintenance_minutes"]
@@ -1760,6 +1762,8 @@ def _validate_lifecycle(
         if previous is not None and recorded <= previous:
             raise OwnershipError("artifact history is not strictly chronological")
         previous = recorded
+    if previous is not None and previous > validation_time:
+        raise OwnershipError("artifact history follows validation time")
     current = histories[-1]["disposition"]
     if artifact["expires_at"] is not None:
         try:
@@ -1768,7 +1772,7 @@ def _validate_lifecycle(
             )
         except pilot_reporter.PilotDataError as error:
             raise OwnershipError(str(error)) from error
-        if previous is not None and expiry <= previous and current != "Delete":
+        if expiry <= validation_time and current != "Delete":
             raise OwnershipError("expired artifact is not deleted")
 
     by_id = {}
