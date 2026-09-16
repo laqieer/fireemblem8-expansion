@@ -48,6 +48,7 @@
       "workflow-governance",
       "expansion-locale-selection",
       "full-game-localization",
+      "atomic-text-publication",
       "locale-preference-persistence",
       "localized-text-input-ui",
       "localization-profile-validation",
@@ -57,6 +58,18 @@
     "deferred_issues": []
   },
   "features": [
+    {
+      "id": "atomic-text-publication",
+      "title": "Atomic shared text output publication",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/268"
+      ],
+      "reference": "docs/text_generation.md",
+      "status": "current",
+      "required_cases": [
+        "TC-TEXT-ATOMIC-PUBLICATION-001"
+      ]
+    },
     {
       "id": "tester-case-catalog",
       "title": "Indexed tester-facing case catalog",
@@ -758,6 +771,39 @@
     }
   ],
   "cases": [
+    {
+      "id": "TC-TEXT-ATOMIC-PUBLICATION-001",
+      "title": "Publish complete shared text outputs",
+      "feature_id": "atomic-text-publication",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/268"
+      ],
+      "document": "docs/text_generation.md",
+      "anchor": "tc-text-atomic-publication-001-publish-complete-shared-text-outputs",
+      "profiles": [
+        "Host textprocess CLI with utf8 or cp932 source encoding",
+        "Two concurrent same-input producers sharing header and C output names"
+      ],
+      "purpose": "Prevent readers from observing truncated or in-progress generated header/C files while retaining all serial bytes, message IDs and Huffman formats.",
+      "prerequisites": "Python 3, a host cc compiler/preprocessor, and owned temporary synthetic text/control roots with complete prior header/C outputs and a minimal global.h.",
+      "actions": "Run python3 -m unittest scripts.texttools.tests.test_textprocess_publication -v. Observe the actual unmodified renderers at naturally visible buffered-write boundaries, force two actual producer processes to overlap through IPC barriers, and read/compile each final path at publication boundaries. Compare serial bytes and encodings, exercise other-cwd/space paths, modes/umask and unchanged regeneration, then inject parse/render/stage/write/close/replace/cleanup failures.",
+      "expected_result": "Both final files are always complete old or complete new per-file versions, both same-input producers succeed with serial-equivalent bytes, both stages finish rendering/closing before publication, and no owned staging remains after ordinary success/failure. Existing permission bits and unchanged-output inode/mtime are preserved. The explicit extended-host step runs exactly once while all prior 30 gates remain in the 31-gate/eight-job workflow.",
+      "negative_control": "The exact preimage producer or a disposable removal of atomic publication exposes naturally buffered partial-header/C data and real reader compiler failures. Pre-publication failures cannot alter old outputs; a later per-file replace failure cannot roll back another writer's complete committed file.",
+      "interactions": "Depends only on existing text/Huffman/Make interfaces and host compiler. Independent issue180 consumes the production fix after integration; its profiles and workflow are not modified here. No other feature conflicts.",
+      "save_compatibility": "No message-ID, codec/layout, game rule, save, ABI, locale catalog, item-cap or profile-identity change.",
+      "cleanup": "The suite settles its own producer processes and removes only its owned fixture directory. Production cleanup unlinks only unique invocation-owned staged paths and propagates cleanup errors.",
+      "limitations": "Atomicity is per file, not a header/C multi-file transaction, crash-durability guarantee or different-input configuration isolation. Filesystem metadata beyond normal permission bits and concurrent symlink retargeting are not promised. No ROM/ARM runtime or manual criterion is required.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.texttools.tests.test_textprocess_publication -v",
+          "evidence": "scripts/texttools/tests/test_textprocess_publication.py"
+        },
+        {
+          "command": "python3 -m unittest tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_text_publication_has_one_closed_extended_host_owner tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests -v",
+          "evidence": "tests/workflows/test_build_ci_topology.py"
+        }
+      ]
+    },
     {
       "id": "TC-CATALOG-001",
       "title": "Tester-case catalog foundation",
