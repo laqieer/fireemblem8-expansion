@@ -1331,6 +1331,11 @@ binders disable whole-source literal pruning; called bodies retain the existing
 unknown-writer boundary. Discovering a possible binder does not expand its
 unused body or change immutable source. An empty global `EMPTY` cannot hide a
 deferred effect when a consuming loop locally binds `EMPTY` to nonempty text.
+Binder and dynamic-writer scans use parsed Make roles: ordinary comments are
+ignored, but tab/inline recipes and define-body data retain their expressions.
+Escaped hash data is preserved. A dollar or fake binder in an ignored comment
+cannot disable a valid lazy-read proof; a real local binding after hash data
+must still retain its hidden effects and defaults.
 The exact word operations tokenize with GNU's explicit C whitespace, not
 Python's Unicode whitespace. In particular, a U+00A0 between filter patterns
 does not become an ASCII separator: the unchanged unsupported token declines.

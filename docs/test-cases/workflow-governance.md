@@ -5367,12 +5367,20 @@ and lazy error/eval/shell bodies through simple, recursive, exported and
 recipe reads. A target-local override, a possible dynamic writer or an earlier
 parse-time read must prevent whole-source literal pruning.
 
-Run the six indexed logical-entry, foreach-scope and C-whitespace soundness
+Run the eight indexed logical-entry, foreach-scope and C-whitespace soundness
 regressions in `AuthoritativeMakeProbeTests` before accepting the seven-leaf
 checkpoint. Use the genuine original-input witness and the unchanged small
 fixture/session budgets. Preserve the following three pre-fix programs without
 adding a recipe read of HIDDEN or an unrelated declared default that would
-mask the failure:
+mask the failure. Also add standalone, assignment-tail and rule-header Make
+comments containing lone dollars or fake binder/call/eval expressions to the
+global-empty lazy fixture. Ordinary/native/planned behavior must remain
+unchanged and the unused error body must not execute. Conversely, keep real
+local foreach bindings in tab recipes, inline recipes, define-body data and
+escaped-hash assignments: those must retain the actual HIDDEN obligation
+and reject, not disappear under a global comment stripper.
+
+The original three pre-fix programs are:
 
 1. Create `src/ordinary.c` with no hidden files. Set
    `MATCH := $(wildcard src/.*)`, condition `HIDDEN ?= secret` on nonempty

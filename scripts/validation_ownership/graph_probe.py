@@ -2930,21 +2930,28 @@ def source_census(
                 if budget is not None:
                     budget.charge("cache", len(encoded((name, constant))))
                 constant_writes.setdefault(name, []).append(constant)
-        for expression in (unit.text,) if unit.body is None else (unit.text, unit.body):
+        if unit.text.startswith("\t"):
+            scope_expressions = (unit.text,)
+        else:
+            header, inline_recipe = split_inline_recipe(unit.text)
+            scope_expressions = (strip_comment(header), inline_recipe)
+        if unit.body is not None:
+            scope_expressions += (unit.body,)
+        for expression in scope_expressions:
             local_bindings = _foreach_read_bindings(expression, budget)
             if local_bindings is None:
                 unknown_writer = True
             else:
                 unsafe_constants.update(local_bindings)
-        for body in make_expressions(unit.body if unit.body is not None else unit.text):
-            if body.startswith(("call ", "call\t", "guile ", "guile\t")):
-                unknown_writer = True
-            if body.startswith(("eval ", "eval\t")):
-                assignment = ASSIGNMENT.fullmatch(body[5:].lstrip(MAKE_SPACE))
-                if assignment is None:
+            for body in make_expressions(expression):
+                if body.startswith(("call ", "call\t", "guile ", "guile\t")):
                     unknown_writer = True
-                else:
-                    unsafe_constants.add(assignment["name"])
+                if body.startswith(("eval ", "eval\t")):
+                    assignment = ASSIGNMENT.fullmatch(body[5:].lstrip(MAKE_SPACE))
+                    if assignment is None:
+                        unknown_writer = True
+                    else:
+                        unsafe_constants.add(assignment["name"])
     read_constants = {} if unknown_writer else {
         name: values[0] for name, values in constant_writes.items()
         if name not in unsafe_constants and len(values) == 1 and values[0] is not None

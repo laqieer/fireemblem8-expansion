@@ -5125,6 +5125,55 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         ):
             self.assertEqual(graph_probe._foreach_read_bindings(expression), expected)
 
+    def test_ignored_make_comments_do_not_disable_lazy_read_constants(self):
+        self.original_input_witness()
+        for comment, empty, target in (
+            ("# literal dollar $\n", "EMPTY :=\n", "all:\n"),
+            ("", "EMPTY := # literal dollar $\n", "all:\n"),
+            ("", "EMPTY :=\n", "all: # literal dollar $\n"),
+            ("# $(foreach $(error unused),once,$(VALUE))\n", "EMPTY :=\n", "all:\n"),
+            ("# $(call unused) $(eval EMPTY := changed)\n", "EMPTY :=\n", "all:\n"),
+        ):
+            with self.subTest(comment=comment, empty=empty, target=target):
+                self.add("Makefile", (
+                    comment + empty + "VALUE = $(and $(EMPTY),$(UNUSED))\n"
+                    "UNUSED = $(error unreachable)$(shell touch marker)\n"
+                    + target + "\t@printf '%s\\n' '$(VALUE)'\n"
+                ))
+                self.assertEqual(self.ordinary(), b"\n")
+                usage, native = self.read_closure_census(("VALUE", "UNUSED", "HIDDEN"))
+                result = self.observe()["all"]
+                self.assertEqual(usage["read_constants"]["EMPTY"], "")
+                self.assertNotIn("UNUSED", usage["execution_dependencies"]["VALUE"])
+                self.assertEqual(result["variable_census"]["defaults"], [])
+                self.assertEqual(native.semantics["definitions"]["global"]["UNUSED"]["value"],
+                                 "$(error unreachable)$(shell touch marker)")
+                self.assertFalse((self.root / "marker").exists())
+
+    def test_make_hash_data_retains_local_binders_and_hidden_defaults(self):
+        self.original_input_witness()
+        local = "$(foreach EMPTY,nonempty,$(VALUE))"
+        for label, extra, recipe in (
+            ("recipe", "", "all:\n\t@printf '%s\\n' '# " + local + "'\n"),
+            ("inline", "", "all: ; @printf '%s\\n' '# " + local + "'\n"),
+            ("define", "define BODY\n# " + local + "\nendef\n",
+             "all:\n\t@printf '%s\\n' '$(BODY)'\n"),
+            ("escaped", "BODY = \\# " + local + "\n",
+             "all:\n\t@printf '%s\\n' '$(BODY)'\n"),
+        ):
+            with self.subTest(role=label):
+                self.add("Makefile", (
+                    "EMPTY :=\nVALUE = $(and $(EMPTY),$(UNUSED))\n"
+                    "UNUSED = $(eval HIDDEN ?= secret)visible\n" + extra + recipe
+                ))
+                self.assertEqual(self.ordinary(), b"# visible\n")
+                usage, native = self.read_closure_census(("HIDDEN",))
+                self.assertEqual(native.semantics["definitions"]["global"]["HIDDEN"],
+                                 {"origin": "file", "flavor": "recursive", "value": "secret"})
+                self.assertIn("HIDDEN", usage["defaults"])
+                self.assertNotIn("EMPTY", usage["read_constants"])
+                self.reject_unsealed_read_default()
+
     def test_original_filter_patterns_keep_c_whitespace_default_obligations(self):
         self.original_input_witness()
         self.last_soundness_cases = []
