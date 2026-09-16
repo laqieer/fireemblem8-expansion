@@ -99,6 +99,30 @@ def validate_dispatch_context(value, arguments=None):
     return value
 
 
+def validate_job_context(value, sequence=None):
+    if (
+        not isinstance(value, dict) or set(value) != {"sequence", "kind", "target", "command_line"}
+        or type(value["sequence"]) is not int or value["sequence"] < 1
+        or sequence is not None and value["sequence"] != sequence
+        or not isinstance(value["kind"], str) or value["kind"] not in {"recipe", "expansion"}
+    ):
+        raise ChannelError("malformed or unbound native job context")
+    if value["kind"] == "expansion":
+        if value["target"] is not None or value["command_line"] is not None:
+            raise ChannelError("expansion context claims a recipe target")
+    elif (
+        not isinstance(value["target"], str) or not value["target"] or "\0" in value["target"]
+        or type(value["command_line"]) is not int or not 0 <= value["command_line"] < 1 << 32
+    ):
+        raise ChannelError("native recipe context lacks its target/index")
+    try:
+        if value["target"] is not None and len(value["target"].encode("utf-8", "strict")) > 4096:
+            raise ChannelError("native recipe target exceeds its existing bound")
+    except UnicodeEncodeError as error:
+        raise ChannelError("native recipe target is not strict UTF-8") from error
+    return value
+
+
 class ProducerChannel:
     def __init__(self, connection, *, deadline, limit, charge=None):
         self.connection = connection

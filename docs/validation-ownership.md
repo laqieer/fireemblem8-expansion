@@ -128,6 +128,11 @@ environment only during their own execution; direct/registration-time helpers
 and existing canonical-environment adapters retain their previous behavior.
 Cache identity includes the environment actually used. GNU 4.3's parse-time
 `shell` environment is not guessed from final export declarations.
+The same live context now carries the actual native recipe target/command
+ordinal or target-less expansion kind. Real pre-read/pre-wait hooks supply
+it after GNU has linked the job; it is not reconstructed from argv, directory
+spelling or a source line number. The host associates records by exact
+dispatch sequence rather than the order of metadata strings.
 
 This is still **not** complete live-message graph support. The five real
 per-dispatch header-remake steps and authenticated original-read-phase source

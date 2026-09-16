@@ -8,7 +8,7 @@ from scripts.validation_ownership.authority import ENVIRONMENT
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.graph_commands import MakeCommands
 from scripts.validation_ownership.make_probe import Command
-from scripts.validation_ownership.producer_channel import ChannelError, validate_dispatch_context
+from scripts.validation_ownership.producer_channel import ChannelError, validate_dispatch_context, validate_job_context
 from scripts.validation_ownership.python_commands import text_generation_command
 from scripts.validation_ownership.tests import test_content_publication as content_tests
 
@@ -130,6 +130,10 @@ class TextProducerTests(unittest.TestCase):
             self.assertEqual(contexts[0]["environment"]["TEXT_CONTEXT"], "source-export")
             self.assertTrue(contexts[0]["rebuilding_makefiles"])
             self.assertEqual(contexts[0]["kind"], "value")
+            self.assertEqual(contexts[0]["job"], {
+                "sequence": contexts[0]["sequence"], "kind": "recipe",
+                "target": "src/msg_data.c", "command_line": 1,
+            })
             self.assertTrue(contexts[1]["rebuilding_makefiles"])
             self.assertFalse(session._live_dispatches)
             self.assertFalse(session._issued_dispatches)
@@ -251,6 +255,11 @@ class TextProducerTests(unittest.TestCase):
                 observed.semantics["native_dispatches"][0]["environment"]["CONTEXT_VALUE"]
                 for observed in (first, second)
             ], ["first", "second"])
+            self.assertTrue(all(
+                observed.semantics["native_dispatches"][0]["job"]["kind"] == "expansion"
+                and observed.semantics["native_dispatches"][0]["job"]["target"] is None
+                for observed in (first, second)
+            ))
             self.assertEqual(session.command(command).stdout, b"absent\n")
         self.fixture.assert_clean(session)
 
@@ -323,6 +332,68 @@ class TextProducerTests(unittest.TestCase):
                 )
         self.fixture.assert_clean(session)
         self.assertFalse(session._issued_context_commands)
+
+    def test_native_job_target_and_ordinal_do_not_come_from_identical_argv(self):
+        for parallel in (False, True):
+            self.fixture.add("Makefile", (
+                ("MAKEFLAGS += -j2\n" if parallel else "")
+                + "all: one two\none two:\n\t@printf '%s\\n' same\n\t@printf '%s\\n' same\n"
+            ))
+            with self.subTest(parallel=parallel), self.fixture.session() as session:
+                observed = session.make("all")
+                contexts = observed.semantics["native_dispatches"]
+                self.assertEqual(len(contexts), 4)
+                self.assertEqual({tuple(item["arguments"]) for item in contexts}, {("printf", "%s\\n", "same")})
+                self.assertEqual(
+                    sorted((item["job"]["target"], item["job"]["command_line"]) for item in contexts),
+                    [("one", 1), ("one", 2), ("two", 1), ("two", 2)],
+                )
+                self.assertTrue(all(item["job"]["kind"] == "recipe" for item in contexts))
+            self.fixture.assert_clean(session)
+
+    def test_job_context_schema_and_actual_wire_mismatch_reject(self):
+        good = {"sequence": 1, "kind": "recipe", "target": "actual", "command_line": 1}
+        self.assertEqual(validate_job_context(good, 1), good)
+        for bad in (
+            {**good, "sequence": True}, {**good, "sequence": 2},
+            {**good, "kind": []}, {**good, "kind": "expansion"},
+            {**good, "target": None}, {**good, "command_line": True},
+            {**good, "command_line": -1}, {**good, "extra": 1},
+        ):
+            with self.assertRaises(ChannelError):
+                validate_job_context(bad, 1)
+        self.fixture.add("writer.py", "print('actual')\n")
+        self.fixture.add("Makefile", "VALUE := $(shell python3 writer.py)\nall: ;\n")
+        with self.fixture.session() as session:
+            run = session.budget.run
+            def intercept(argv, **options):
+                handler = options.get("producer_handler")
+                if handler is not None:
+                    def changed(packet):
+                        request = json.loads(packet)
+                        if request.get("kind") == "request":
+                            request["job"]["sequence"] += 1
+                        return handler(json.dumps(request, separators=(",", ":")).encode())
+                    options["producer_handler"] = changed
+                return run(argv, **options)
+            with patch.object(session.budget, "run", intercept):
+                with self.assertRaises(MakeProbeError):
+                    session.make("all", commands={"python3 writer.py": Command(
+                        ("/usr/bin/python3", "/repo/writer.py"), code=("writer.py",),
+                    )})
+        self.fixture.assert_clean(session)
+
+    def test_candidate_cannot_emit_a_native_job_context_notification(self):
+        body = (
+            "import ctypes,os\n"
+            "record=(ctypes.c_uint64*3)(os.getpid(),0,0)\n"
+            "ctypes.CDLL(None).syscall(39,ctypes.c_uint64(0x564f4d4b00000007),"
+            "ctypes.byref(record),24)\n"
+        )
+        with self.fixture.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "unauthenticated"):
+                session.command(Command(("/usr/bin/python3", "-c", body)))
+        self.fixture.assert_clean(session)
 
 
 if __name__ == "__main__":

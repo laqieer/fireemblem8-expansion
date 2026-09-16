@@ -31,7 +31,7 @@ if __package__:
     from . import private_install as install_protocol
     from .producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
-        publication_identity, validate_publication_identity, validate_dispatch_context,
+        publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
     )
 else:
     from authority import _event_command, _read_events, encoded, parse_json
@@ -40,7 +40,7 @@ else:
     import private_install as install_protocol
     from producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
-        publication_identity, validate_publication_identity, validate_dispatch_context,
+        publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
     )
 
 
@@ -61,6 +61,7 @@ VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY = (
 )
 VO_RECIPE, VO_VALUE, VO_VALIDATE = 0x564F4D4B00000011, 0x564F4D4B00000012, 0x564F4D4B00000013
 VO_LIVE = 0x564F4D4B00000014
+VO_JOB_CONTEXT = 0x564F4D4B00000007
 STACK_LIMIT = 16 * 1024 * 1024
 SYSCALL_MEMORY_LIMIT = 65536
 
@@ -206,6 +207,7 @@ class Process:
     helper_kind: int = 0
     native_dispatch_sequence: int | None = None
     native_dispatch_context: dict | None = None
+    native_job_context: dict | None = None
     namespace_pid: int | None = None
     observer_ready: bool = False
     memory_group: int = 0
@@ -310,6 +312,7 @@ class Policy:
         self.total_processes = 0
         self.live_process_peak = 0
         self.make_pid = 0
+        self.closed_processes = set()
         self.make_restarts = 0
         self.dispatch_sequence = 0
         self.executable = set(config["executables"])
@@ -860,6 +863,47 @@ class Policy:
         return state.role == "make" and any(
             start <= registers.rip < end for start, end in state.observer_ranges
         )
+
+    def observe_job_context(self, pid, state, pointer, size):
+        if state.role != "make" or pid != self.make_pid or not state.observer_ready or size != 24:
+            raise Violation("invalid native job-context sender or frame")
+        record = memory(pid, pointer, size)
+        self.charge_metadata(size)
+        child_pid, target_pointer, command_line = (
+            int.from_bytes(record[offset:offset + 8], "little") for offset in (0, 8, 16)
+        )
+        if not 0 < child_pid < 1 << 31 or command_line >= 1 << 32 or child_pid == self.make_pid:
+            raise Violation("invalid native job-context process/index")
+        child = self.processes.get(child_pid)
+        if child is None:
+            if child_pid in self.closed_processes:
+                return
+            raise Violation("native job context refers to an untracked process")
+        if child.role not in {"make", "helper"}:
+            raise Violation("native job context refers to a non-Make child")
+        if child.namespace_pid is not None and child.namespace_pid != child_pid:
+            raise Violation("native job context differs from the observed namespace PID")
+        target = cstring(pid, target_pointer) if target_pointer else None
+        if target_pointer and not target or not target_pointer and command_line:
+            raise Violation("native job context has an invalid target/index")
+        context = {
+            "kind": "recipe" if target is not None else "expansion",
+            "target": target, "command_line": command_line if target is not None else None,
+        }
+        if child.native_job_context is not None and child.native_job_context != context:
+            raise Violation("native job context changed for its actual process")
+        child.native_job_context = context
+        self.emit_job_context(child)
+
+    def emit_job_context(self, state):
+        if state.native_job_context is None or state.native_dispatch_sequence is None:
+            return
+        context = {"sequence": state.native_dispatch_sequence, **state.native_job_context}
+        try:
+            validate_job_context(context)
+        except ChannelError as error:
+            raise Violation(str(error)) from error
+        self.observe("accessed", "make-job-context:" + encoded(context).decode("ascii"))
 
     def resolve(self, name, *, follow_final=True):
         # Only trusted, immutable symlinks remain: candidate symlinks and
@@ -1706,7 +1750,7 @@ class Policy:
         state.observations.clear()
         state.observation_needs_bytes = False
         trusted = self.observer(state, r)
-        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY}:
+        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY, VO_JOB_CONTEXT}:
             if a == VO_QUERY_KIND:
                 if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE, VO_LIVE}:
                     raise Violation("unauthenticated interceptor kind query")
@@ -1743,7 +1787,9 @@ class Policy:
             else:
                 if not trusted:
                     raise Violation("unauthenticated Make dispatch notification")
-                if a == VO_READY:
+                if a == VO_JOB_CONTEXT:
+                    self.observe_job_context(pid, state, b, c)
+                elif a == VO_READY:
                     if b or c or state.observer_ready:
                         raise Violation("invalid observer bootstrap notification")
                     state.observer_ready = True
@@ -1944,6 +1990,7 @@ class Policy:
                     except ChannelError as error:
                         raise Violation(str(error)) from error
                     state.native_dispatch_context = context
+                    self.emit_job_context(state)
                     self.observe("accessed", "make-dispatch:" + encoded({
                         **context, "kind": "recipe" if state.helper_kind == VO_RECIPE else "value",
                         "global_ignore_errors": bool(required & 2),
@@ -2130,7 +2177,7 @@ class Policy:
             state.cwd = value
         elif operation == "helper_kind":
             if state.native_dispatch_sequence is not None and value == state.helper_kind:
-                if not 0 < result < 1 << 31 or state.namespace_pid not in {None, result}:
+                if not 0 < result < 1 << 31 or result != pid or state.namespace_pid not in {None, result}:
                     raise Violation("invalid native helper PID identity")
                 state.namespace_pid = result
                 self.observe("accessed", "make-helper:" + encoded([
@@ -2278,6 +2325,9 @@ def supervise(config, drop_privileges):
             )
             del processes[stopped]
             state.close()
+            if config["mode"] == "make":
+                policy.charge_metadata(16)
+                policy.closed_processes.add(stopped)
             vfork_waiters.pop(stopped, None)
             release_vfork(stopped)
             if stopped == pid:
@@ -2430,12 +2480,15 @@ def supervise(config, drop_privileges):
         sequence = policy.producer_issued
         if state.native_dispatch_context is None:
             raise Violation("live producer has no authenticated native dispatch context")
+        if state.native_job_context is None:
+            raise Violation("live producer has no actual native job/expansion context")
         request = {
             "kind": "request", "scope": config["producer_scope"], "sequence": sequence,
             "completed": policy.producer_completed, "frame": state.producer_frame.hex(),
             "counters": policy.counters(), "reserved": policy.reservations(),
             "publication": policy.publication_confirmation,
             "dispatch": state.native_dispatch_context,
+            "job": {"sequence": state.native_dispatch_sequence, **state.native_job_context},
         }
         raw = channel.exchange(
             encoded(request),
@@ -2529,7 +2582,18 @@ def supervise(config, drop_privileges):
                 raise Violation("aggregate probe deadline exhausted in syscall supervisor")
             if channel is not None:
                 channel.ensure_idle()
-            if policy.producer_requests and processes[policy.producer_requests[0]].producer_ready:
+            if policy.producer_requests:
+                requested = processes[policy.producer_requests[0]]
+                parent = processes.get(policy.make_pid)
+                if (
+                    requested.producer_ready and requested.native_job_context is None and parent is not None
+                    and (parent.kernel_call == 61 or parent.kernel_call in {0, 17, 19} and parent.kernel_io == "<pipe>")
+                ):
+                    raise Violation("native read/wait boundary lacks the required job-context hook")
+            if (
+                policy.producer_requests and processes[policy.producer_requests[0]].producer_ready
+                and processes[policy.producer_requests[0]].native_job_context is not None
+            ):
                 fulfill_producer()
                 continue
             stopped, status = os.waitpid(-1, os.WNOHANG | WALL)

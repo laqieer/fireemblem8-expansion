@@ -38,7 +38,7 @@ from . import private_install as install_protocol
 from .producer_channel import (
     ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
     publication_identity, validate_publication_confirmation,
-    validate_dispatch_context,
+    validate_dispatch_context, validate_job_context,
 )
 
 
@@ -123,6 +123,7 @@ class _LiveDispatch:
     cwd: str
     environment: tuple
     rebuilding: bool
+    job: tuple
     snapshot: object
     tree: Path
     epoch: int
@@ -1756,7 +1757,8 @@ class ProbeSession:
                 return None
             if (
                 set(request) != {
-                    "kind", "scope", "sequence", "completed", "frame", "counters", "reserved", "publication", "dispatch",
+                    "kind", "scope", "sequence", "completed", "frame", "counters", "reserved", "publication",
+                    "dispatch", "job",
                 }
                 or request["kind"] != "request" or type(request["sequence"]) is not int
                 or request["sequence"] != sequence + 1 or type(request["completed"]) is not int
@@ -1770,6 +1772,7 @@ class ProbeSession:
                 raise MakeProbeError("invalid producer request event")
             try:
                 context = validate_dispatch_context(request["dispatch"], events[0]["arguments"])
+                job = validate_job_context(request["job"], context["sequence"])
             except ChannelError as error:
                 raise MakeProbeError(str(error)) from error
             reserved = request["reserved"]
@@ -1794,12 +1797,13 @@ class ProbeSession:
             self.pending_commands_peak = max(
                 self.pending_commands_peak, reserved["pending"] + sum(item["pending"] for item in self.parked_capsules),
             )
-            self.budget.charge("cache", len(encoded(context)))
+            self.budget.charge("cache", len(encoded((context, job))))
             self.parked_capsules.append(reserved)
             live = _LiveDispatch(
                 config["producer_scope"], context["sequence"], tuple(context["arguments"]),
                 context["cwd"], tuple(sorted(context["environment"].items())),
-                context["rebuilding_makefiles"], self.snapshot, self.tree, self._namespace_epoch,
+                context["rebuilding_makefiles"], (job["kind"], job["target"], job["command_line"]),
+                self.snapshot, self.tree, self._namespace_epoch,
             )
             self._issued_dispatches.add(live)
             self._live_dispatches.append(live)
@@ -3045,8 +3049,19 @@ class ProbeSession:
                     ],
                 }
             contexts = []
-            helpers, policies = {}, {}
+            helpers, policies, jobs = {}, {}, {}
             for value in observed["accessed"]:
+                if value.startswith("make-job-context:"):
+                    try:
+                        job = validate_job_context(parse_json(
+                            value[len("make-job-context:"):].encode("ascii"), "native job context",
+                        ))
+                    except ChannelError as error:
+                        raise MakeProbeError(str(error)) from error
+                    if job["sequence"] in jobs:
+                        raise MakeProbeError("duplicate native job-context sequence")
+                    jobs[job["sequence"]] = job
+                    continue
                 if value.startswith(("make-helper:", "make-job-policy:")):
                     kind, payload = value.split(":", 1)
                     record = parse_json(payload.encode("ascii"), "native Make job binding")
@@ -3091,11 +3106,13 @@ class ProbeSession:
             if (
                 set(helpers) != {item["sequence"] for item in contexts}
                 or len(set(helpers.values())) != len(helpers) or set(helpers.values()) != set(policies)
+                or set(jobs) != {item["sequence"] for item in contexts}
             ):
                 raise MakeProbeError("native Make job policy evidence is incomplete")
             for item in contexts:
+                item["job"] = jobs[item["sequence"]]
                 policy = policies[helpers[item["sequence"]]]
-                if item["kind"] == "recipe" and not policy & 2:
+                if item["kind"] == "recipe" and (not policy & 2 or item["job"]["kind"] != "recipe"):
                     raise MakeProbeError("native recipe lacks its actual GNU Make job")
                 item.pop("global_ignore_errors")
                 item["ignore_errors"] = bool(policy & 1)

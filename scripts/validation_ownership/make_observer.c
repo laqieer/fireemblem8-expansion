@@ -86,6 +86,7 @@ extern void chop_commands(struct CommandsView *);
 extern int rebuilding_makefiles;
 extern int ignore_errors_flag;
 extern struct ChildView *children;
+extern pid_t shell_function_pid;
 extern char **environ;
 
 #define MAX_NODES 4096
@@ -263,6 +264,62 @@ static void observe_job_policy(pid_t pid, const int *status)
     raw_call(SYS_getpid, VO_JOB_POLICY, pid, flags);
 }
 
+static void observe_job_contexts(void)
+{
+    struct ChildView *child;
+    uint64_t record[3];
+    size_t count = 0;
+    if (!make_pid || (!children && shell_function_pid <= 0)
+        || raw_call(SYS_getpid, 0, 0, 0) != make_pid)
+        return;
+    for (child = children; child; child = child->next)
+    {
+        if (++count > MAX_NODES)
+            fail();
+        if (child->pid <= 0)
+            continue;
+        if (!child->file || !child->file->name)
+            fail();
+        record[0] = child->pid;
+        record[1] = (uintptr_t)child->file->name;
+        record[2] = child->command_line;
+        raw_call(SYS_getpid, VO_JOB_CONTEXT, (long)record, sizeof(record));
+    }
+    if (shell_function_pid > 0)
+    {
+        record[0] = shell_function_pid;
+        record[1] = 0;
+        record[2] = 0;
+        raw_call(SYS_getpid, VO_JOB_CONTEXT, (long)record, sizeof(record));
+    }
+}
+
+ssize_t read(int descriptor, void *buffer, size_t size)
+{
+    static ssize_t (*original)(int, void *, size_t);
+    int error = errno;
+    if (!original)
+        original = dlsym(RTLD_NEXT, "read");
+    if (!original)
+        fail();
+    observe_job_contexts();
+    errno = error;
+    return original(descriptor, buffer, size);
+}
+
+ssize_t __read_chk(int descriptor, void *buffer, size_t size, size_t buffer_size)
+{
+    static ssize_t (*original)(int, void *, size_t, size_t);
+    int error = errno;
+    if (!original)
+        original = dlsym(RTLD_NEXT, "__read_chk");
+    if (!original)
+        fail();
+    observe_job_contexts();
+    errno = error;
+    return original(descriptor, buffer, size, buffer_size);
+}
+
 pid_t wait(int *status)
 {
     static pid_t (*original)(int *);
@@ -272,6 +329,7 @@ pid_t wait(int *status)
         original = dlsym(RTLD_NEXT, "wait");
     if (!original)
         fail();
+    observe_job_contexts();
     pid = original(status);
     error = errno;
     observe_job_policy(pid, status);
@@ -288,6 +346,7 @@ pid_t waitpid(pid_t selected, int *status, int options)
         original = dlsym(RTLD_NEXT, "waitpid");
     if (!original)
         fail();
+    observe_job_contexts();
     pid = original(selected, status, options);
     error = errno;
     observe_job_policy(pid, status);

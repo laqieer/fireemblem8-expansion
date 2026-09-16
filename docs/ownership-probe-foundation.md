@@ -246,6 +246,18 @@ inherit that environment. Caller records, stale contexts and malformed wire
 fields cannot replace it. This is dispatch authority only, not a read-pass
 identifier or an original-entry namespace/input certificate.
 
+Every dispatch also has a native `job` association: recipe target and actual
+command ordinal, or an explicitly target-less shell expansion. The observer
+samples GNU's real child list and shell-function PID before wait/waitpid and
+the read/fortified-read boundary. This occurs after first-job linkage, unlike
+the earlier spawn point. The supervisor binds it to the actual tracked
+process and dispatch sequence; a bare PID is never adopted by a later process.
+A live request waits for that real context without prematurely parking the
+native parent. Missing hooks at a blocked read/wait boundary fail closed.
+Forged sender IPs, untracked processes, conflicting contexts and malformed or
+mismatched sequences reject. Identical argv across different targets does not
+erase target identity. These job records are not Makefile read-pass receipts.
+
 The graph's lifecycle consumer may additionally select
 `ProbeSession.make(..., observe_recipe_dispatch=True)` for the validated
 `recipe_dispatches` projection. It retains each complete recipe context,

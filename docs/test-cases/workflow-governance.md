@@ -5553,6 +5553,17 @@ producer registration. Preserve native error-policy, export and cache tests.
 All original numeric limits and case IDs remain unchanged; read-pass/source
 authority and the five-step header pipeline are not supplied by these tests.
 
+For native job identity, keep the first recipe command, later commands,
+parallel targets with identical argv, shell expansion and include-remake
+controls. Require actual target/ordinal associations even when argv cannot
+distinguish targets. Use a real Makefile parallel setting; the public
+assignment API's refusal of execution-authority MAKEFLAGS overrides remains
+unchanged. Corrupt a live job sequence or submit an authenticated-notification
+tag from an ordinary candidate command: both must reject. Wait/read hooks
+must include the real fortified read entry without bypassing its libc bounds.
+Missing context is a hold, never a guessed job or source epoch. Record
+stopped/incomplete exploratory hook runs and their cleanup honestly.
+
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while
 native per-file raw metadata remains `$(FLAGS)`. Do not eagerly copy the
