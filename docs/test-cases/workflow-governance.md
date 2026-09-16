@@ -1331,6 +1331,11 @@ The [namespace-image CI extension](#namespace-image-ci-regression-correction)
 also exercises this case's nested recorder: account separately for legitimate
 identity-only revalidation, preserve the two real created/retained outcomes,
 and reject unknown record shapes without assuming a helper-call count.
+The catalog must also retain the whole content-publication suite and its
+source evidence when supplemental automation is added or reordered. Run the
+catalog guard below: reversing the records or preserving argv through shell
+quoting/whitespace changes must pass; removing the whole-suite record while
+focused records remain must fail. Record order is not a coverage requirement.
 
 - **Feature / issue:** `workflow-governance` /
   [#258](https://github.com/laqieer/fireemblem8-expansion/issues/258).
@@ -1391,6 +1396,8 @@ bounds and fail-closed ownership/protocol checks remain intact.
 
 - `python3 -m unittest scripts.validation_ownership.tests.test_content_publication -v`
   -- `scripts/validation_ownership/tests/test_content_publication.py`.
+- `python3 -m unittest scripts.docs_check_tests.test_check_docs.TesterCaseRegistryTests.test_content_publication_suite_guard_ignores_order_but_rejects_omission -v`
+  -- order-independent whole-suite coverage, with an omission negative control.
 - `python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_declared_output_results_are_retained_only_by_actual_owners scripts.validation_ownership.tests.test_producer.ProducerTests.test_generated_publication_creation_mapping_cache_and_write_charges_are_cumulative scripts.validation_ownership.tests.test_producer.ProducerTests.test_nested_scope_inherits_ownership_and_preserves_all_file_stat_fields scripts.validation_ownership.tests.test_producer.ProducerTests.test_invalid_request_rejects_before_any_producer_execution scripts.validation_ownership.tests.test_producer.ProducerTests.test_invalid_reply_never_retries_an_effectful_producer -v`
   -- existing producer/lifetime/protocol compatibility.
 
