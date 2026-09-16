@@ -323,10 +323,32 @@ selectors in `surface.custom-spell-profile-tests`. They retain their host
 positive/adversarial owners and add `owner.compile-custom-spell-profiles`,
 bound to the actual required `build` step. Independent oracle probes require
 all three pairs; unrelated host paths do not acquire this compile owner.
-The local mirror contains 33 gates, including every previous gate. Nine jobs,
+The local mirror contains 34 gates, including every previous gate. Nine jobs,
 the protected three contexts, publisher build-once behavior and existing
 90/60-minute bounds remain unchanged. This compile evidence is not H1 or a
 whole-graph/runtime acceptance substitute.
+
+The [5692844782 master integration](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5692844782)
+retains the independent [atomic text publisher](text_generation.md) and its
+single explicit `extended-host-tests` command. Exact implementation and test
+selectors resolve to `surface.text-publication`, with positive evidence from
+`owner.host-text-publication` and adversarial workflow evidence from
+`owner.host-workflow`. The generic host suite does not execute this new module.
+Actual unittest collection, parsed job/command ownership and two independent
+oracle probes bind that scope without broadening other texttools paths.
+The new documentation has its own exact documentation-governance admission.
+Removing exact admission or redirecting either owner rejects; all previous
+oracle probes and both parent command inventories remain.
+
+The native source-closure control imports the actual captured standalone
+producer and sibling `huffman`, then exercises its real staging context
+(including `secrets`, `stat` and `contextlib`) at the existing default budget.
+Omitting the sibling code must reject rather than read a live-checkout copy.
+This is not full publication inside a native capsule: the unchanged native
+guard rejects the producer's `os.replace`, as an explicit separate negative
+control. Ordinary text publication and concurrent object builds execute in
+their existing host/build owners; this integration grants no new native
+rename authority or quota.
 
 The root-boundary correction in
 [5686491976](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5686491976)

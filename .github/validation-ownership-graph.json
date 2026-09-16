@@ -247,6 +247,17 @@
       "dependencies": []
     },
     {
+      "id": "surface.text-publication",
+      "kind": "surface",
+      "label": "Atomic text producer and its scheduled regression suite",
+      "surface_type": "source",
+      "requirements": [
+        "positive",
+        "adversarial"
+      ],
+      "dependencies": []
+    },
+    {
       "id": "surface.docs",
       "kind": "surface",
       "label": "Documentation and governance schema",
@@ -406,6 +417,17 @@
         "kind": "workflow-step",
         "job": "build",
         "step": "Run concurrent custom-spell profile compile isolation"
+      }
+    },
+    {
+      "id": "owner.host-text-publication",
+      "kind": "evidence",
+      "label": "Atomic text publication regression gate",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "workflow-step",
+        "job": "extended-host-tests",
+        "step": "Run text generator atomic publication tests (issue #268)"
       }
     },
     {
@@ -1107,6 +1129,20 @@
       "source": "surface.custom-spell-profile-tests",
       "target": "owner.compile-custom-spell-profiles",
       "reason": "The build worker executes the existing enabled/disabled full-modern concurrent object regression exactly once in normal mode."
+    },
+    {
+      "id": "text-publication.owns-test",
+      "type": "owns-test",
+      "source": "surface.text-publication",
+      "target": "owner.host-text-publication",
+      "reason": "The explicit extended-host step executes the real producer and reader, overlap, codec, failure and cleanup regressions."
+    },
+    {
+      "id": "text-publication.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.text-publication",
+      "target": "owner.host-workflow",
+      "reason": "The workflow contract suite rejects missing, duplicate, disabled or misrouted publication execution."
     },
     {
       "id": "docs.owns-test",
@@ -1951,6 +1987,21 @@
       "exclude": []
     },
     {
+      "id": "paths.text-publication",
+      "surface": "surface.text-publication",
+      "include": [
+        {
+          "kind": "exact",
+          "path": "scripts/texttools/textprocess.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/texttools/tests/test_textprocess_publication.py"
+        }
+      ],
+      "exclude": []
+    },
+    {
       "id": "paths.host",
       "surface": "surface.host",
       "include": [
@@ -2142,6 +2193,14 @@
       "exclude": [
         {
           "kind": "exact",
+          "path": "scripts/texttools/textprocess.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/texttools/tests/test_textprocess_publication.py"
+        },
+        {
+          "kind": "exact",
           "path": "tools/gba-playtest/tests/test_custom_spell_effect.py"
         },
         {
@@ -2174,6 +2233,10 @@
       "id": "paths.docs",
       "surface": "surface.docs",
       "include": [
+        {
+          "kind": "exact",
+          "path": "docs/text_generation.md"
+        },
         {
           "kind": "exact",
           "path": "docs/ownership-probe-foundation.md"

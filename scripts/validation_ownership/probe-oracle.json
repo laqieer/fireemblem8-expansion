@@ -3,6 +3,22 @@
   "source_case": "TC-WORKFLOW-GATE-OWNERSHIP-001",
   "probes": [
     {
+      "path": "scripts/texttools/textprocess.py",
+      "expected_surface": "surface.text-publication",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-workflow"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-text-publication"}
+      ]
+    },
+    {
+      "path": "scripts/texttools/tests/test_textprocess_publication.py",
+      "expected_surface": "surface.text-publication",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-workflow"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-text-publication"}
+      ]
+    },
+    {
       "path": "scripts/workflow_pilot/raw_diff_check.py",
       "expected_surface": "surface.custom-spell-profile-tests",
       "expected_owners": [
@@ -395,5 +411,5 @@
       ]
     }
   ],
-  "seal": "f569d16211164015ba0f9373afde9b6275845a28db4f310a6398d0439e000122"
+  "seal": "5730ecc8fe5fa57c9bb4a54f0972390db2f2e946f880c1d98d2afd7e67b072c7"
 }

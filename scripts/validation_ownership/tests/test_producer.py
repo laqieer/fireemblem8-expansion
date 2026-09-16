@@ -110,6 +110,50 @@ class ProducerTests(unittest.TestCase):
         mode = "100755" if source.stat().st_mode & 0o111 else "100644"
         self.fixture.add(path, source.read_bytes(), mode=mode)
 
+    def test_textprocess_imports_and_staging_consume_only_captured_python_sources(self):
+        paths = ("scripts/texttools/textprocess.py", "scripts/texttools/huffman.py")
+        for path in paths:
+            self.add_repo_file(path)
+        body = (
+            "sys.path.insert(0,'/repo/scripts/texttools')\n"
+            "import textprocess\n"
+            "with textprocess._staged_output('/work/msg.h', textprocess.write_header,"
+            " [textprocess.Msg(1, [0, 1, 0])]) as output:\n"
+            " with open(output[0]) as staged:\n"
+            "  sys.stdout.write(staged.read())\n"
+        )
+        with self.fixture.session() as session:
+            result = session.command(python_command(session, body, code=paths))
+            self.assertIn(b"#define MSG_001 0x0001", result.stdout)
+            self.assertIn(b"#define MSG_COUNT 0x0001", result.stdout)
+            self.assertTrue(result.stdout.endswith(b"#endif /* MSG_H */\n"))
+            self.assertEqual(set(result.code_consumed), set(paths))
+            self.assertEqual(result.consumed, ())
+            self.assertEqual(result.generated, ())
+        self.fixture.assert_clean(session)
+        with self.fixture.session() as missing_sibling:
+            with self.assertRaises(MakeProbeError):
+                missing_sibling.command(python_command(missing_sibling, body, code=paths[:1]))
+        self.fixture.assert_clean(missing_sibling)
+
+    def test_textprocess_atomic_publication_retains_native_relocation_guard(self):
+        for path in ("scripts/texttools/textprocess.py", "scripts/texttools/huffman.py"):
+            self.add_repo_file(path)
+        self.fixture.add("texts.txt", "#0001\n[X][Y][X]\n#0002\n[Y][X][Y]\n")
+        self.fixture.add("defs.txt", "[X] = 0\n[Y] = 1\n")
+        with self.fixture.session() as session:
+            command = python_command(
+                session,
+                "sys.path.insert(0,'/repo/scripts/texttools');"
+                "import textprocess;"
+                "textprocess.main(['/repo/texts.txt','/repo/defs.txt','/work/msg_data.c','/work/msg.h','utf8'])",
+                code=("scripts/texttools/textprocess.py", "scripts/texttools/huffman.py"),
+                sources=("texts.txt", "defs.txt"), outputs=("msg_data.c", "msg.h"),
+            )
+            with self.assertRaisesRegex(MakeProbeError, "directory-entry relocation is forbidden"):
+                session.command(command)
+        self.fixture.assert_clean(session)
+
     def add_generated_dependency_fixture(self):
         for path in (foundation.ROOT / "scripts" / "generated_data").rglob("*.py"):
             if "tests" not in path.relative_to(foundation.ROOT).parts:

@@ -2364,6 +2364,49 @@ def _custom_spell_profile_errors(text: str) -> list[str]:
     return []
 
 
+TEXT_PUBLICATION_STEP = "Run text generator atomic publication tests (issue #268)"
+TEXT_PUBLICATION_COMMAND = (
+    "python3", "-m", "unittest", "scripts.texttools.tests.test_textprocess_publication", "-v",
+)
+
+
+def _text_publication_owner_errors(text: str) -> list[str]:
+    jobs = _job_blocks(text)
+    owners = [
+        (name, index, step)
+        for name, body in jobs.items()
+        for index, step in enumerate(_step_blocks(body))
+        if _step_name(step) == TEXT_PUBLICATION_STEP
+    ]
+    if len(owners) != 1 or owners[0][0] != "extended-host-tests":
+        return ["text publication requires exactly one extended-host-tests owner"]
+    name, index, step = owners[0]
+    try:
+        verify._parse_job_context(name, jobs[name])
+        fields = dict(verify._parse_step(step, name, index)[2])
+        setup = [
+            (position, dict(verify._parse_step(item, name, position)[2]))
+            for position, item in enumerate(_step_blocks(jobs[name]))
+            if _step_name(item) == "Install extended host dependencies"
+        ]
+    except ValueError as error:
+        return [f"text publication owner context is invalid: {error}"]
+    if fields["run"] != (TEXT_PUBLICATION_COMMAND,):
+        return ["text publication must select its exact module, not renamed/broader discovery"]
+    if len(setup) != 1 or setup[0][0] >= index:
+        return ["text publication requires prior host compiler setup"]
+    installs = [
+        command[8:] for command in setup[0][1]["run"]
+        if command[:8] == ("sudo", "apt-get", "update", "&&", "sudo", "apt-get", "install", "-y")
+    ]
+    if len(installs) != 1 or "build-essential" not in installs[0]:
+        return ["text publication host compiler dependency is absent"]
+    steps = _step_blocks(jobs[name])
+    if index == 0 or _step_name(steps[index - 1]) != "Run multilang texttools codec gates":
+        return ["text publication must retain its adjacent, separate codec owner"]
+    return []
+
+
 def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     errors = []
     header = text[: text.index("\njobs:\n")]
@@ -2581,6 +2624,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             errors.append(f"summary loop omits required result: {result}")
 
     extended_host = jobs["extended-host-tests"]
+    errors.extend(_text_publication_owner_errors(text))
     for command in (
         "make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test",
         "python3 -m unittest discover -s scripts/texttools/tests -p 'test_multilang_codec*.py' -v",
@@ -3049,6 +3093,149 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             f"| ownership-tests | {result or ''} |",
                             (Path(temporary) / "summary.md").read_text(),
                         )
+
+    def test_text_publication_has_one_closed_extended_host_owner(self):
+        self.assertEqual(_text_publication_owner_errors(self.text), [])
+        job = _job_blocks(self.text)["extended-host-tests"]
+        step = next(item for item in _step_blocks(job) if _step_name(item) == TEXT_PUBLICATION_STEP)
+        command = " ".join(TEXT_PUBLICATION_COMMAND)
+        mutations = {
+            "missing": self.text.replace(step, "", 1),
+            "duplicate": self.text.replace(step, step + step, 1),
+            "disabled": self.text.replace(step, step.replace("      run:", "      if: false\n      run:"), 1),
+            "advisory": self.text.replace(step, step.replace("      run:", "      continue-on-error: true\n      run:"), 1),
+            "broad-discovery": self.text.replace(command, "python3 -m unittest discover -s scripts/texttools/tests -v", 1),
+            "codec-disguise": self.text.replace("scripts.texttools.tests.test_textprocess_publication", "scripts.texttools.tests.test_multilang_codec_publication", 1),
+        }
+        for target in ("host-tests", "build", "legacy"):
+            changed = self.text.replace(step, "", 1)
+            destination = _job_blocks(changed)[target]
+            mutations["wrong-owner-" + target] = changed.replace(destination, destination + step, 1)
+        setup = next(item for item in _step_blocks(job) if _step_name(item) == "Install extended host dependencies")
+        mutations["missing-cc"] = self.text.replace(setup, setup.replace(" build-essential", "", 1), 1)
+        mutations["disabled-setup"] = self.text.replace(setup, setup.replace("      run:", "      if: false\n      run:"), 1)
+        for name, changed in mutations.items():
+            with self.subTest(mutation=name):
+                self.assertTrue(_text_publication_owner_errors(changed))
+        quoted = self.text.replace(command, 'python3 -m unittest "scripts.texttools.tests.test_textprocess_publication" -v', 1)
+        self.assertEqual(_text_publication_owner_errors(quoted), [])
+        self.assertEqual(verify._parse_workflow_structure_text(quoted), verify._parse_workflow_structure_text(self.text))
+        self.assertEqual(len(_job_blocks(self.text)), 9)
+        self.assertEqual(len(verify.gates()), 34)
+
+    def test_text_publication_graph_admission_collection_and_oracle_are_exact(self):
+        graph = json.loads((ROOT / ".github/validation-ownership-graph.json").read_text())
+        oracle = json.loads((ROOT / "scripts/validation_ownership/probe-oracle.json").read_text())
+        paths = (
+            "scripts/texttools/textprocess.py",
+            "scripts/texttools/tests/test_textprocess_publication.py",
+        )
+        expected = {
+            ("owns-test", "owner.host-text-publication"),
+            ("adversarial-control", "owner.host-workflow"),
+        }
+        admissions = {name: set() for name in (
+            "initial-graph-cohort", "generated-source-registry", "verifier-runtime-registry",
+        )}
+        for path in (*paths, "docs/text_generation.md"):
+            with self.subTest(path=path):
+                matches = [rule for rule in graph["path_rules"]
+                           if ownership_reporter._path_rule_matches(rule, path, set())]
+                self.assertEqual(len(matches), 1)
+                rule = matches[0]
+                self.assertEqual(rule["surface"], "surface.text-publication" if path in paths else "surface.docs")
+                self.assertEqual(
+                    ownership_reporter._path_admission(path, rule, admissions),
+                    "exact-ownership-rule",
+                )
+                prefix_only = {**rule, "include": [
+                    {"kind": "prefix", "path": path.rpartition("/")[0] + "/"},
+                ]}
+                self.assertTrue(ownership_reporter._path_rule_matches(prefix_only, path, set()))
+                with self.assertRaises(ownership_reporter.OwnershipError):
+                    ownership_reporter._path_admission(path, prefix_only, admissions)
+                if path in paths:
+                    probe = next(item for item in oracle["probes"] if item["path"] == path)
+                    self.assertEqual(probe["expected_surface"], rule["surface"])
+                    self.assertEqual(
+                        {(item["edge_type"], item["evidence_id"]) for item in probe["expected_owners"]},
+                        expected,
+                    )
+        for path in ("scripts/texttools/huffman.py", "scripts/texttools/tests/test_multilang_codec.py"):
+            self.assertEqual(
+                [rule["surface"] for rule in graph["path_rules"]
+                 if ownership_reporter._path_rule_matches(rule, path, set())],
+                ["surface.host"],
+            )
+        authority = next(node["authority"] for node in graph["nodes"]
+                         if node["id"] == "owner.host-text-publication")
+        self.assertEqual(authority, {
+            "kind": "workflow-step", "job": "extended-host-tests", "step": TEXT_PUBLICATION_STEP,
+        })
+        _, _, jobs = verify._parse_workflow_structure_text(self.text)
+        invocations = [
+            (job, name) for job, _, steps in jobs for _, name, fields in steps
+            if TEXT_PUBLICATION_COMMAND in dict(fields).get("run", ())
+        ]
+        self.assertEqual(invocations, [(authority["job"], authority["step"])])
+        loader = unittest.TestLoader()
+        pending = [loader.loadTestsFromName(TEXT_PUBLICATION_COMMAND[3])]
+        self.assertEqual(loader.errors, [])
+        collected = set()
+        while pending:
+            case = pending.pop()
+            if isinstance(case, unittest.TestSuite):
+                pending.extend(case)
+            else:
+                collected.add(type(case).__module__.replace(".", "/") + ".py")
+        self.assertEqual(collected, {paths[1]})
+        entries = {
+            probe["path"]: ownership_reporter.GitTreeEntry(probe["path"], "100644", "blob", "0" * 40)
+            for probe in oracle["probes"]
+        }
+        ownership_reporter.validate_probe_oracle(oracle, graph, entries)
+        edges = [edge for edge in graph["edges"] if edge["source"] == "surface.text-publication"]
+        self.assertEqual({(edge["type"], edge["target"]) for edge in edges}, expected)
+        for edge in edges:
+            for replacement in (None, "owner.host-build"):
+                with self.subTest(edge=edge["id"], replacement=replacement):
+                    changed = copy.deepcopy(graph)
+                    if replacement is None:
+                        changed["edges"] = [item for item in changed["edges"] if item["id"] != edge["id"]]
+                    else:
+                        next(item for item in changed["edges"] if item["id"] == edge["id"])["target"] = replacement
+                    with self.assertRaises(ownership_reporter.OwnershipError):
+                        ownership_reporter.validate_probe_oracle(oracle, changed, entries)
+
+    def test_text_publication_integration_cases_keep_complete_linked_contracts(self):
+        from scripts import check_docs
+
+        registry, errors = check_docs.parse_test_case_registry(ROOT)
+        self.assertEqual(errors, [])
+        identities = {
+            "TC-TEXT-ATOMIC-PUBLICATION-001", "TC-WORKFLOW-GATE-OWNERSHIP-001",
+            "TC-CUSTOM-SPELL-061-002",
+        }
+        cases = [case for case in registry["cases"] if case["id"] in identities]
+        self.assertEqual({case["id"] for case in cases}, identities)
+        feature_ids = {case["feature_id"] for case in cases}
+        features = [
+            {**feature, "required_cases": [identity for identity in feature["required_cases"]
+                                          if identity in identities]}
+            for feature in registry["features"] if feature["id"] in feature_ids
+        ]
+        selected = {
+            "schema_version": registry["schema_version"],
+            "coverage": {"mode": "complete", "expected_feature_ids": sorted(feature_ids), "deferred_issues": []},
+            "features": features,
+            "cases": cases,
+        }
+        with mock.patch.object(check_docs, "parse_test_case_registry", return_value=(selected, [])):
+            self.assertEqual(check_docs.check_test_case_registry(ROOT), [])
+        commands = {case["id"]: {entry["command"] for entry in case["automation"]} for case in cases}
+        self.assertIn(" ".join(TEXT_PUBLICATION_COMMAND), commands["TC-TEXT-ATOMIC-PUBLICATION-001"])
+        for identity in ("TC-WORKFLOW-GATE-OWNERSHIP-001", "TC-CUSTOM-SPELL-061-002"):
+            self.assertIn(" ".join(CUSTOM_SPELL_PROFILE_COMMAND), commands[identity])
 
     def test_protected_environment_is_exact_and_cannot_mask_python(self):
         workflow_env_variants = (

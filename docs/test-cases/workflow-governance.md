@@ -2264,7 +2264,7 @@ while candidate eligibility remains bound to that prior full run.
 workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
 pin, and environment semantics, including the pre-fix negative selection.
 
-`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 33 local
+`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 34 local
 gates while requiring complete nine-job source/target equivalence: the retained
 issue #176 jobs remain closed and the identity/router/classifier are closed
 setup-only jobs, never additional local gates. The two ownership checks remain
@@ -3951,7 +3951,7 @@ game behavior needs a compensating change.
     different job. Every changed full run must reject, including after an
     older green run and a later metadata edit. A harmless YAML comment must
     remain valid. Confirm the native probe stays in `extended-host-tests`,
-    all 33 mirrored commands remain, and the build-once master publisher and
+    all 34 mirrored commands remain, and the build-once master publisher and
     required `host-tests`/`build`/`summary` names are unchanged.
 14. From the same clean checkout, run
     `python3 -m unittest scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests.test_ownership_sources_and_collected_regressions_reach_actual_worker scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests.test_ownership_execution_edge_removal_redirect_and_order_controls scripts.validation_ownership.tests.test_literal_bindings.LiteralBindingModuleTests.test_module_discovery_collects_only_owned_cases -v`.
@@ -4072,10 +4072,41 @@ and host-mode guard against the independent oracle, without assigning this
 owner to all host paths. The old host-only-only route is the negative control:
 it skips the full compile test and is insufficient coverage.
 
-This correction preserves nine jobs and the complete 33-gate inventory, the
+This correction preserves nine jobs and the complete 34-gate inventory, the
 three protected contexts, master-only build-once publication, and existing
 timeouts. #196 must retain that complete topology and gate set. It does not
 authorize H1/provider/native-AI/diagnostic work or a new measurement allocation.
+
+For the [5692844782 normal master integration](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5692844782),
+retain the independent #268 producer, portable reader controls and tracked
+direct-writer negative, together with every prior #180 case and automation
+entry. Run
+`python3 -m unittest tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_text_publication_graph_admission_collection_and_oracle_are_exact scripts.texttools.tests.test_textprocess_publication -v`.
+Collect the actual module from its exact extended-host command and resolve
+only its path and the producer to `surface.text-publication`. Require the
+extended-host positive owner and workflow adversarial owner once each;
+remove or redirect each edge to a generic host owner and require rejection.
+Remove exact new-test/document admission and require rejection despite
+matching prefixes. Preserve all prior oracle probes, add the two independent
+text-path expectations and reseal their combined payload. Compare both parent
+command inventories and case/feature/automation unions, not only the total.
+Then execute the strict concurrent profile command above once: both real
+object-build commands must succeed with the complete shared text outputs
+and original asset assertions/cleanup. Do not serialize, retry or pre-generate
+text to conceal the original partial-header failure. This remains object,
+not ROM/H1/full-graph or measurement-baseline, evidence.
+
+Run
+`python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_textprocess_imports_and_staging_consume_only_captured_python_sources scripts.validation_ownership.tests.test_producer.ProducerTests.test_textprocess_atomic_publication_retains_native_relocation_guard -v`
+for the separate native source-loader boundary. The actual captured module
+and sibling must import and stage a complete header under the unchanged
+budget, record both code consumptions and remove the transient stage.
+Missing sibling authority rejects with no live fallback. Full atomic
+publication in this synthetic capsule still rejects at the pre-existing
+rename guard and cleans the owned session; that negative is not evidence
+that full text publication ran there. The existing host regression and
+normal object-profile command supply full-publication evidence instead.
+No native namespace algorithm or authority is changed to admit the rename.
 
 The [5683697584 follow-through](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5683697584)
 also requires the bounded `ProfileProcessLifecycleTests` procedure in
@@ -4090,7 +4121,7 @@ per-command attribution without the unrelated Git output cap. Linux pidfd
 identities and waitable leaders remain retained through session teardown.
 Run the real full-object profile test once after the focused controls; earlier
 successful Make runs do not establish these failure paths. The compile entry
-is ordinal 21 within the 33-gate inventory; neither jobs, budgets, publication,
+is ordinal 21 within the 34-gate inventory; neither jobs, budgets, publication,
 nor any H1/provider/native-AI/diagnostic or measurement allocation changes.
 
 For the profile-helper integration, run

@@ -44,6 +44,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 ## Entries
 
 <!-- DOCS-INVENTORY:BEGIN -->
+- docs/text_generation.md | laqieer | current | Shared text CLI, atomic per-file publication, and TC-TEXT-ATOMIC-PUBLICATION-001
 - README.md | laqieer | current | Top-level project overview, quick start, and doc-index pointer
 - CONTRIBUTING.md | laqieer | current | Contribution workflow: prep, fast checks, full gates, PR provenance
 - .github/copilot-instructions.md | laqieer | current | GitHub Copilot agent guidance for this repository
