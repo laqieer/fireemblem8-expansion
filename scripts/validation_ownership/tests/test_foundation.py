@@ -9376,6 +9376,222 @@ print(json.dumps({"owned_descriptors":len(allocated),"reaped":len(reaped),"defer
         self.assert_clean(session)
 
 
+class NamespaceImageTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = FoundationTests()
+        self.fixture.setUp()
+
+    def tearDown(self):
+        self.fixture.tearDown()
+
+    def metadata(self, session, fields):
+        return {
+            name: {field: getattr((session.tree / name).stat(), field) for field in fields}
+            for name in (".", "code", "data", "data/nested", "data/value")
+        }
+
+    def metadata_fixture(self):
+        command, fields = self.fixture.static_metadata_fixture()
+        self.fixture.add("data/nested/value", b"deep")
+        return command, fields
+
+    def prime_directory_times(self, session):
+        for name in (".", "code", "data", "data/nested"):
+            os.utime(session.tree / name, ns=(1, 1))
+
+    def assert_capture_keeps_metadata_and_cache(self, session, command, fields):
+        self.prime_directory_times(session)
+        first = session.command(command)
+        self.assertIs(session.command(command), first)
+        before = self.metadata(session, fields)
+        digest, runs = session.snapshot.digest, session.budget.runs
+        charged = session.budget.bytes.get("cache", 0)
+        image = session._capture_namespace_image()
+        self.assertIs(image.snapshot, session.snapshot)
+        self.assertEqual(session.snapshot.digest, digest)
+        self.assertEqual(session.budget.runs, runs)
+        self.assertGreater(session.budget.bytes["cache"], charged)
+        self.assertEqual(self.metadata(session, fields), before)
+        self.assertTrue(session._metadata_matches(first.metadata))
+        self.assertIs(session.command(command), first)
+        self.assertEqual(self.metadata(session, fields), before)
+        self.assertFalse(session._namespace_frames)
+        self.assertFalse(session._namespace_pending)
+
+    def test_direct_capture_preserves_complete_metadata_and_cached_command(self):
+        command, fields = self.metadata_fixture()
+        with self.fixture.session(seconds=30) as session:
+            self.assert_capture_keeps_metadata_and_cache(session, command, fields)
+        self.fixture.assert_clean(session)
+
+    def test_direct_capture_preserves_root_and_nested_selected_view_metadata(self):
+        command, fields = self.metadata_fixture()
+        budget = ProbeBudget(Limits(seconds=30))
+        base = self.fixture.capture_view(budget)
+        self.fixture.add("current-only.txt", "current")
+        current = self.fixture.capture_view(budget)
+        with ProbeSession(current, scratch_root=self.fixture.scratch, budget=budget) as session:
+            with session.select_view(base):
+                self.assert_capture_keeps_metadata_and_cache(session, command, fields)
+            self.assert_capture_keeps_metadata_and_cache(session, command, fields)
+        self.fixture.assert_clean(session)
+
+    def test_removing_only_noatime_recovers_metadata_drift_and_false_cache_miss(self):
+        import fcntl
+
+        command, fields = self.metadata_fixture()
+        opening = ProbeSession._namespace_directory
+        def ordinary_reads(session, name):
+            descriptor = opening(session, name)
+            flags = fcntl.fcntl(descriptor, fcntl.F_GETFL)
+            fcntl.fcntl(descriptor, fcntl.F_SETFL, flags & ~os.O_NOATIME)
+            return descriptor
+        with self.fixture.session(seconds=30) as session:
+            self.prime_directory_times(session)
+            first = session.command(command)
+            self.assertIs(session.command(command), first)
+            before = self.metadata(session, fields)
+            with patch.object(ProbeSession, "_namespace_directory", ordinary_reads):
+                session._capture_namespace_image()
+            after = self.metadata(session, fields)
+            for name in (".", "code", "data", "data/nested"):
+                self.assertEqual(
+                    {field for field in fields if before[name][field] != after[name][field]},
+                    {"st_atime_ns"},
+                )
+            self.assertEqual(before["data/value"], after["data/value"])
+            self.assertFalse(session._metadata_matches(first.metadata))
+            self.assertIsNot(session.command(command), first)
+        self.fixture.assert_clean(session)
+
+    def test_root_and_component_open_errors_close_real_pins_without_fallback(self):
+        self.fixture.add("data/nested/value", b"source")
+        opening = os.open
+        for failing in (".", "data", "nested"):
+            with self.subTest(failing=failing), self.fixture.session() as session:
+                opened, attempts = [], []
+                def deny_noatime(path, flags, *args, **kwargs):
+                    name = "." if os.fspath(path) == str(session.tree) else os.fspath(path)
+                    attempts.append((name, flags))
+                    if name == failing and flags & os.O_NOATIME:
+                        raise PermissionError(errno.EPERM, "metadata-neutral access denied", os.fspath(path))
+                    descriptor = opening(path, flags, *args, **kwargs)
+                    opened.append(descriptor)
+                    return descriptor
+                with patch.object(os, "open", deny_noatime), self.assertRaises(PermissionError):
+                    session._capture_namespace_image()
+                self.assertTrue(any(name == failing for name, _ in attempts))
+                required = os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME
+                self.assertTrue(all(flags & required == required for _, flags in attempts))
+                for descriptor in opened:
+                    with self.assertRaises(OSError) as closed:
+                        os.fstat(descriptor)
+                    self.assertEqual(closed.exception.errno, errno.EBADF)
+                self.assertFalse(session._namespace_images)
+                self.assertFalse(session._namespace_frames)
+                self.assertFalse(session._namespace_pending)
+                session._capture_namespace_image()
+            self.fixture.assert_clean(session)
+
+    def assert_inventory(self, paths, directories):
+        for path in paths:
+            self.fixture.add(path, b"x")
+        with self.fixture.session(entries=4) as session:
+            self.assertEqual(len(session.snapshot.files), len(paths))
+            charged = session.budget.bytes.get("cache", 0)
+            image = session._capture_namespace_image()
+            actual = set(image.members)
+            for directory, children in image.members.items():
+                actual.update(name if directory == "." else directory + "/" + name for name, _ in children)
+            self.assertEqual(set(image.directories), set(directories))
+            self.assertEqual(actual, set(paths) | set(directories))
+            self.assertGreater(session.budget.bytes["cache"], charged)
+            self.assertEqual(session.budget.limits.entries, 4)
+        self.fixture.assert_clean(session)
+
+    def test_full_flat_source_cohort_does_not_pay_an_extra_root_entry(self):
+        self.assert_inventory(("a", "b", "c", "d"), (".",))
+
+    def test_nested_source_cohort_keeps_all_parent_scaffolding(self):
+        self.assert_inventory(("data/nested/a", "data/nested/b", "data/nested/c"),
+                              (".", "data", "data/nested"))
+
+    def test_source_over_limit_still_rejects_before_namespace_capture(self):
+        for name in ("a", "b", "c", "d", "e"):
+            self.fixture.add(name, b"x")
+        session = self.fixture.session(entries=4)
+        with patch.object(session, "_capture_namespace_image", wraps=session._capture_namespace_image) as capture:
+            with self.assertRaisesRegex(MakeProbeError, "snapshot entry count"):
+                with session:
+                    session._capture_namespace_image()
+            capture.assert_not_called()
+        self.fixture.assert_clean(session)
+
+    def test_foreign_member_changed_type_and_incomplete_image_reject(self):
+        for name in ("a", "b", "c"):
+            self.fixture.add(name, b"x")
+        for defect in ("foreign", "directory", "symlink", "missing"):
+            with self.subTest(defect=defect), self.fixture.session(entries=4) as session:
+                if defect == "foreign":
+                    (session.tree / "foreign").write_bytes(b"unadmitted")
+                else:
+                    (session.tree / "a").unlink()
+                    if defect == "directory":
+                        (session.tree / "a").mkdir()
+                    elif defect == "symlink":
+                        (session.tree / "a").symlink_to("b")
+                reason = "incomplete" if defect == "missing" else "differs from admitted"
+                with self.assertRaisesRegex(MakeProbeError, reason):
+                    session._capture_namespace_image()
+            self.fixture.assert_clean(session)
+
+    def test_unreceipted_inherited_output_cannot_enter_namespace_capture(self):
+        from scripts.validation_ownership.make_probe import GeneratedFile
+
+        self.fixture.add("Makefile", "all: ;\n")
+        with self.fixture.session() as session:
+            (session.tree / "unreceipted").write_bytes(b"unreceipted")
+            session.published_sources["unreceipted"] = GeneratedFile("unreceipted", b"unreceipted", 0o644)
+            with patch.object(session, "_capture_namespace_image", wraps=session._capture_namespace_image) as capture:
+                with self.assertRaisesRegex(MakeProbeError, "unreceipted inherited"):
+                    session._begin_namespace("all", "Makefile", ())
+                capture.assert_not_called()
+        self.fixture.assert_clean(session)
+
+    def test_restoring_mixed_source_counter_rejects_both_admitted_cohorts(self):
+        import ast
+        import inspect
+        import textwrap
+
+        original = ProbeSession._capture_namespace_image
+        tree = ast.parse(textwrap.dedent(inspect.getsource(original)))
+        receiver = tree.body[0].args.args[0].arg
+        changed = []
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Compare) and len(node.ops) == len(node.comparators) == 1
+                and isinstance(node.ops[0], ast.GtE)
+                and all(isinstance(item, ast.Call) and isinstance(item.func, ast.Name)
+                        and item.func.id == "len" for item in (node.left, node.comparators[0]))
+            ):
+                node.comparators[0] = ast.parse(receiver + ".budget.limits.entries", mode="eval").body
+                changed.append(node)
+        self.assertEqual(len(changed), 1)
+        replacements = {}
+        exec(compile(ast.fix_missing_locations(tree), original.__code__.co_filename, "exec"),
+             original.__globals__, replacements)
+        suite = unittest.TestSuite(type(self)(name) for name in (
+            "test_full_flat_source_cohort_does_not_pay_an_extra_root_entry",
+            "test_nested_source_cohort_keeps_all_parent_scaffolding",
+        ))
+        result = unittest.TestResult()
+        with patch.object(ProbeSession, "_capture_namespace_image", replacements[original.__name__]):
+            suite.run(result)
+        self.assertEqual((result.testsRun, len(result.failures), len(result.errors)), (2, 0, 2))
+        for _, error in result.errors:
+            self.assertIn("MakeProbeError: original namespace exceeds admitted extent", error)
+
+
 @dataclass(frozen=True)
 class _PendingTrafficLimits(Limits):
     pending_bytes: int = 4 * 1024 * 1024

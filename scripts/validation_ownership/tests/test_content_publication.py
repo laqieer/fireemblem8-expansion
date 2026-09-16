@@ -58,12 +58,70 @@ class ContentPublicationTests(unittest.TestCase):
             outputs=(output,), publication_policy=policy,
         )
 
-    def capture_effects(self, session, values):
+    def capture_effects(self, session, values, *, revalidated=None):
         original = session._verify_effective_output
+        revalidated = [] if revalidated is None else revalidated
         def observe(item, result):
+            fields = set(result)
+            self.assertIn(fields, (
+                {"identity"}, {"effect", "identity", "mode", "path", "sha256", "size"},
+            ))
             original(item, result)
-            values.append(copy.deepcopy(result))
+            if fields == {"identity"}:
+                revalidated.append(tuple(result["identity"]))
+            else:
+                values.append(copy.deepcopy(result))
         return patch.object(session, "_verify_effective_output", observe)
+
+    def test_nested_recorder_accounts_for_revalidation_without_call_count_assumptions(self):
+        capture = type(self).capture_effects
+        revalidated, publications = [], []
+        def recording(case, session, values):
+            publications.append(values)
+            return capture(case, session, values, revalidated=revalidated)
+        with patch.object(type(self), "capture_effects", recording):
+            self.test_nested_content_only_publication_keeps_effective_mode_and_ownership()
+        self.assertTrue(revalidated)
+        actual = {tuple(value["identity"]) for values in publications for value in values}
+        self.assertTrue(set(revalidated) <= actual)
+
+    def test_recorder_rejects_unknown_closed_variant_shapes(self):
+        from scripts.validation_ownership.make_probe import GeneratedFile
+
+        self.fixture.add("output.bin", b"same")
+        with self.fixture.session() as session:
+            path = session.tree / "output.bin"
+            identity = publication_identity(path.stat())
+            item = GeneratedFile("output.bin", b"same", 0o644)
+            output = {
+                "effect": "retained", "identity": identity, "mode": 0o644,
+                "path": "output.bin", "sha256": hashlib.sha256(b"same").hexdigest(), "size": 4,
+            }
+            effects, revalidated = [], []
+            with self.capture_effects(session, effects, revalidated=revalidated):
+                session._verify_effective_output(item, {"identity": identity})
+                session._verify_effective_output(item, output)
+                for wrong in (
+                    {}, {"identity": identity, "extra": True},
+                    {key: value for key, value in output.items() if key != "effect"},
+                    {**output, "extra": True},
+                ):
+                    with self.subTest(fields=set(wrong)), self.assertRaises(AssertionError):
+                        session._verify_effective_output(item, wrong)
+            self.assertEqual(effects, [output])
+            self.assertEqual(set(revalidated), {tuple(identity)})
+        self.fixture.assert_clean(session)
+
+    def test_indiscriminate_recorder_mutation_recovers_original_nested_failure(self):
+        def indiscriminate(case, session, values):
+            original = session._verify_effective_output
+            def observe(item, result):
+                original(item, result)
+                values.append(copy.deepcopy(result))
+            return patch.object(session, "_verify_effective_output", observe)
+        with patch.object(type(self), "capture_effects", indiscriminate):
+            with self.assertRaisesRegex(KeyError, "effect"):
+                self.test_nested_content_only_publication_keeps_effective_mode_and_ownership()
 
     def test_forced_include_converges_and_default_same_byte_effects_remain(self):
         writer = self.writer()

@@ -2938,6 +2938,10 @@
       "limitations": "The graph reports additive ownership and review invalidation only. It does not execute selected gates or authorize narrower local or CI validation; a later independent issue must prove non-inferiority before selection can affect delivery. Runtime ownership is limited to observed consumers, not every file in a graphics namespace; battle and portrait resource probes are not framebuffer/audio oracles. New-path admission derives the initial cohort from the unique graph-introduction tree, not a stored path/blob/hash ledger; missing or ambiguous history rejects. Later paths require explicit ownership or existing generated-source/verifier-runtime registry membership. Parsed 112-domain cardinality and focused asset selection fixtures do not prove complete live Make observation: full-domain graph/oracle/lifecycle/public-gate adoption of the independent issue #206 foundation remains a separate acceptance requirement, including registered native results and generated include outputs reaching the shared Make observer through admitted APIs. Missing native dependencies or unavailable confinement remain errors; both supported namespace modes are valid, and neither an older duplicate probe nor fabricated command output satisfies adoption.",
       "automation": [
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.NamespaceImageTests scripts.validation_ownership.tests.test_producer.ProducerTests.test_direct_namespace_capture_keeps_cached_listing_without_a_make_phase scripts.validation_ownership.tests.test_content_publication.ContentPublicationTests.test_nested_recorder_accounts_for_revalidation_without_call_count_assumptions scripts.validation_ownership.tests.test_content_publication.ContentPublicationTests.test_recorder_rejects_unknown_closed_variant_shapes scripts.validation_ownership.tests.test_content_publication.ContentPublicationTests.test_indiscriminate_recorder_mutation_recovers_original_nested_failure -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_textprocess_imports_and_staging_consume_only_captured_python_sources scripts.validation_ownership.tests.test_producer.ProducerTests.test_textprocess_atomic_publication_retains_native_relocation_guard -v",
           "evidence": "scripts/validation_ownership/tests/test_producer.py"
         },
@@ -4055,6 +4059,10 @@
       "limitations": "The static core does not expose optional P/V/R/D APIs or claim their delivery, the complete #180/PR186 graph, full root/112-domain acceptance or budget calibration. Generated metadata fidelity remains held in P225. Unsupported metadata reuse or native ABIs/platforms reject rather than yielding stale output; no manual-only criterion applies. Isolated short-command timing is supporting evidence, not a flaky runtime threshold or whole-CI speedup claim. Same-UID watchdog adapters are not a real sudo credential-transition proof; reported cleanup errors after actual release do not prove OS-denied teardown succeeds.",
       "automation": [
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.NamespaceImageTests scripts.validation_ownership.tests.test_foundation.FoundationTests.test_changed_metadata_forces_real_execution_without_mutating_validation scripts.validation_ownership.tests.test_foundation.FoundationTests.test_static_metadata_uses_persistent_objects_for_cache_and_native_make -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation -v",
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         },
@@ -4090,6 +4098,10 @@
       "cleanup": "The existing sole-reaper watchdog/supervisor owns both live Make and nested producer lifetimes. EOF, malformed data, death, interruption and budget failure close owned channels, reap children and remove only owned private/output state without retry or counter reset.",
       "limitations": "Implementation checkpoints do not establish full P/root112/calibration/remote completion. Both original V/P combinations use the real merged selector and one budget. Identified direct consumers use explicit source-authored adaptations; arbitrary missing executables are not synthesized. Same-directory read-own-publication remains outside the two-phase contract. The extended worker installs existing ARM binutils for the tiny ordinary linker-output control. Same-UID sudo evidence is not a root credential-transition claim; only a completed separate actual privileged control establishes that route, and unavailable existing permissions stay explicit without host-policy changes. No manual-only criterion is asserted.",
       "automation": [
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_direct_namespace_capture_keeps_cached_listing_without_a_make_phase scripts.validation_ownership.tests.test_producer.ProducerTests.test_cached_and_already_dispatched_listings_follow_live_publication -v",
+          "evidence": "scripts/validation_ownership/tests/test_producer.py"
+        },
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer -v",
           "evidence": "scripts/validation_ownership/tests/test_producer.py"
@@ -4307,6 +4319,10 @@
       "limitations": "No generated publication/reconstruction, native Make registration, optional runtime input or dependency-only compiler. No full180 CURRENT/BASE/112-domain/census/graph/oracle/lifecycle/public-gate or budget-calibration claim. Unsupported hosts/metadata reject; no manual-only criterion.",
       "automation": [
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.NamespaceImageTests.test_direct_capture_preserves_root_and_nested_selected_view_metadata scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_metadata_changes_do_not_hide_behind_shared_bytes -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation -k immutable_view -v",
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         },
@@ -4375,6 +4391,10 @@
       "limitations": "Not blanket output deduplication, bytes-plus-mode comparison, resource-cap selection, aggregate host-RAM proof, full graph acceptance or native AI review. No manual-only criterion.",
       "automation": [
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_content_publication.ContentPublicationTests.test_nested_content_only_publication_keeps_effective_mode_and_ownership scripts.validation_ownership.tests.test_content_publication.ContentPublicationTests.test_nested_recorder_accounts_for_revalidation_without_call_count_assumptions scripts.validation_ownership.tests.test_content_publication.ContentPublicationTests.test_recorder_rejects_unknown_closed_variant_shapes scripts.validation_ownership.tests.test_content_publication.ContentPublicationTests.test_indiscriminate_recorder_mutation_recovers_original_nested_failure scripts.validation_ownership.tests.test_content_publication.ContentPublicationTests.test_effective_confirmation_parser_rejects_invalid_shapes_and_types scripts.validation_ownership.tests.test_content_publication.ContentPublicationTests.test_actual_wire_confirmation_rejects_forged_policy_mode_identity_and_effect -v",
+          "evidence": "scripts/validation_ownership/tests/test_content_publication.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_content_publication -v",
           "evidence": "scripts/validation_ownership/tests/test_content_publication.py"
         },
@@ -4442,6 +4462,10 @@
       "cleanup": "Original session/budget/watchdog cleanup leaves no child, waiter, parked capsule, active view, cache authority or scratch. Preserve preimage and isolated mutation logs; remove only owned fixtures after terminal cleanup.",
       "limitations": "A small real resource-separation case, not full graph fit, sizing, performance, current H1, calibration, native AI review or production acceptance. Typed diagnostic subclasses retain class-field default validation but are not shipping profiles.",
       "automation": [
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.NamespaceImageTests scripts.validation_ownership.tests.test_foundation.ObservationAllowanceTests.test_nested_queries_resume_only_with_capped_shared_residual_grants scripts.validation_ownership.tests.test_foundation.ObservationAllowanceTests.test_failed_resumption_overclaim_rejects_before_observation_settlement scripts.validation_ownership.tests.test_foundation.ObservationAllowanceTests.test_valid_failed_resumption_retains_native_count_bytes_and_error scripts.validation_ownership.tests.test_foundation.ObservationAllowanceTests.test_real_capsules_cross_entries_and_exhaust_independent_lifetime_exactly scripts.validation_ownership.tests.test_foundation.ObservationAllowanceTests.test_surplus_lifetime_does_not_admit_an_oversized_real_capsule scripts.validation_ownership.tests.test_foundation.ObservationAllowanceTests.test_surplus_lifetime_does_not_admit_oversized_source_inventory -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.ObservationAllowanceTests -v",
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"

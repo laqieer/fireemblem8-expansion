@@ -521,6 +521,14 @@ another capsule rejects before launch. A terminal failure also forbids cached
 replay. The separate captured-source entry bound still uses `Limits.entries`;
 source capture is not a filesystem-observation charge.
 
+An original namespace image includes those admitted source entries and their
+derived root/parent directories. Its traversal checks the exact admitted
+namespace extent rather than charging scaffolding as additional source
+entries. Thus a full source cohort remains admissible at its existing source
+limit; foreign entries, substituted types, incomplete images and unreceipted
+inherited publications still reject. Every per-node charge and deadline check
+remains, as do the separate source, creation and observation limits.
+
 Producer checkpoints validate both their capped capsule count and prospective
 effective lifetime total. Parked/nested work spends that same total; resumption
 never exceeds the capsule's initial cap or its settled count plus the remaining
@@ -632,6 +640,15 @@ declaration grants an operation, not selection of a sparse filesystem. Implicit
 source/code ancestors retain permitted metadata but do not become enumerable.
 Directory declarations are type-checked; names-only listing never grants member
 contents. The guard uses the mounted read-only view, never a writable alias.
+
+Host-side original-namespace enumeration also preserves that metadata.
+The shared directory-pin helper uses `O_NOATIME` for root and component pins,
+retaining no-follow, directory and close-on-exec flags. It cannot fall back to
+an ordinary read or restore timestamps afterward. Direct capture without any
+Make/source-phase transition must preserve all recorded stat fields and valid
+cached results, including across selected views; real metadata or membership
+changes still invalidate reuse. See the focused
+[namespace-image CI regression procedure](test-cases/workflow-governance.md#namespace-image-ci-regression-correction).
 
 `ProcessOutput.metadata` contains operation-aware source observations and any
 already-permitted observations of explicitly captured runtime files:

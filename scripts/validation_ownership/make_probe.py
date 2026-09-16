@@ -686,12 +686,13 @@ class ProbeSession:
         self._namespace_tokens.clear()
 
     def _namespace_directory(self, name):
-        descriptor = os.open(self.tree, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME
+        descriptor = os.open(self.tree, flags)
         try:
             if name != ".":
                 for component in relative_path(name).split("/"):
                     following = os.open(
-                        component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                        component, flags,
                         dir_fd=descriptor,
                     )
                     os.close(descriptor)
@@ -740,8 +741,9 @@ class ProbeSession:
                             or name in directories and not stat.S_ISDIR(info.st_mode)
                         ):
                             raise MakeProbeError("original namespace differs from admitted materialization")
-                        if len(found) >= self.budget.limits.entries:
-                            self.budget.reject("original namespace exceeds source entry admission")
+                        # Snapshot bounds source entries, not their derived directory scaffolding.
+                        if len(found) >= len(expected):
+                            self.budget.reject("original namespace exceeds admitted extent")
                         row = entry.name, _namespace_identity(info)
                         self.budget.charge("cache", len(encoded((directory, row))))
                         children.append(row)
