@@ -2002,6 +2002,28 @@ class ProducerTests(unittest.TestCase):
                     self.assertEqual(session.command(reader).stdout, b"current.txt\n")
                 self.fixture.assert_clean(session)
 
+    def test_direct_namespace_capture_keeps_cached_listing_without_a_make_phase(self):
+        self.fixture.add("data/current.txt", "current")
+        self.fixture.add("reader.py", "import os\nprint(' '.join(sorted(os.listdir('data'))))\n")
+        command = Command(
+            ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), directories=("data",),
+        )
+        with self.fixture.session(seconds=30) as session:
+            for name in (".", "data"):
+                os.utime(session.tree / name, ns=(1, 1))
+            first = session.command(command)
+            self.assertEqual(first.stdout, b"current.txt\n")
+            self.assertIs(session.command(command), first)
+            before = {name: (session.tree / name).stat() for name in (".", "data")}
+            runs = session.budget.runs
+            session._capture_namespace_image()
+            self.assertEqual(session.budget.runs, runs)
+            self.assertEqual({name: (session.tree / name).stat() for name in before}, before)
+            self.assertIs(session.command(command), first)
+            self.assertFalse(session._namespace_frames)
+            self.assertFalse(session._namespace_pending)
+        self.fixture.assert_clean(session)
+
     def test_code_ancestor_metadata_tracks_publication_without_granting_enumeration(self):
         self.fixture.add("data/module.py", "VALUE=1\n")
         self.fixture.add("other/current", "other")

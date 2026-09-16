@@ -1327,6 +1327,11 @@ traffic accounting, establish full graph fit or add a manual-only criterion.
 
 ## TC-PROBE-CONTENT-PUBLICATION-001: Preserve content-only publication and Make convergence
 
+The [namespace-image CI extension](#namespace-image-ci-regression-correction)
+also exercises this case's nested recorder: account separately for legitimate
+identity-only revalidation, preserve the two real created/retained outcomes,
+and reject unknown record shapes without assuming a helper-call count.
+
 - **Feature / issue:** `workflow-governance` /
   [#258](https://github.com/laqieer/fireemblem8-expansion/issues/258).
 - **Profile:** Linux x86-64 source checkout with the existing native ownership
@@ -1511,6 +1516,11 @@ policy, aggregate host-RAM claim, new shipping profile, graph/prefix/matrix/
 sizing run, native AI review or automatic retry is part of this case.
 
 ## TC-PROBE-OBSERVATION-ALLOWANCE-001: Separate cumulative observations from capsule and inventory admission
+
+The [namespace-image CI extension](#namespace-image-ci-regression-correction)
+retains this case's original 64-source/128-observation nested and failed-report
+controls. Derived directories must not cause an earlier source-entry rejection
+that prevents the native resumption callbacks from running.
 
 - **Feature / issue:** `workflow-governance` /
   [#262](https://github.com/laqieer/fireemblem8-expansion/issues/262), an
@@ -6037,7 +6047,84 @@ calibration, H1, native review, or whole Build CI performance.
 Rollback is a normal revert of issue #180's dedicated commit; existing broader
 validation behavior is unchanged.
 
+### Namespace-image CI regression correction
+
+The [5696038608 correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5696038608)
+addresses two production namespace regressions and one test-recorder
+incompatibility. Use the existing Linux/Python/native-probe prerequisites and
+owned temporary fixtures; no ROM, new package, profile, privilege or budget
+change is needed.
+
+1. Run the original eight scenarios unchanged:
+
+   ```bash
+   python3 -m unittest \
+     scripts.validation_ownership.tests.test_foundation.FoundationTests.test_changed_metadata_forces_real_execution_without_mutating_validation \
+     scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_metadata_changes_do_not_hide_behind_shared_bytes \
+     scripts.validation_ownership.tests.test_foundation.FoundationTests.test_static_metadata_uses_persistent_objects_for_cache_and_native_make \
+     scripts.validation_ownership.tests.test_foundation.ObservationAllowanceTests.test_nested_queries_resume_only_with_capped_shared_residual_grants \
+     scripts.validation_ownership.tests.test_foundation.ObservationAllowanceTests.test_failed_resumption_overclaim_rejects_before_observation_settlement \
+     scripts.validation_ownership.tests.test_foundation.ObservationAllowanceTests.test_valid_failed_resumption_retains_native_count_bytes_and_error \
+     scripts.validation_ownership.tests.test_content_publication.ContentPublicationTests.test_nested_content_only_publication_keeps_effective_mode_and_ownership \
+     scripts.validation_ownership.tests.test_producer.ProducerTests.test_cached_and_already_dispatched_listings_follow_live_publication -v
+   ```
+
+2. Exercise the added capture and recorder controls:
+
+   ```bash
+   python3 -m unittest \
+     scripts.validation_ownership.tests.test_foundation.NamespaceImageTests \
+     scripts.validation_ownership.tests.test_producer.ProducerTests.test_direct_namespace_capture_keeps_cached_listing_without_a_make_phase \
+     scripts.validation_ownership.tests.test_content_publication.ContentPublicationTests.test_nested_recorder_accounts_for_revalidation_without_call_count_assumptions \
+     scripts.validation_ownership.tests.test_content_publication.ContentPublicationTests.test_recorder_rejects_unknown_closed_variant_shapes \
+     scripts.validation_ownership.tests.test_content_publication.ContentPublicationTests.test_indiscriminate_recorder_mutation_recovers_original_nested_failure -v
+   ```
+
+3. Before the operation, initialize only the owned fixture directories'
+   timestamps. Direct image capture, with no Make query or source-phase
+   transition, must preserve all 13 native stat fields and exact cached
+   command/listing identity at the root, nested directories and selected
+   BASE/restored CURRENT views. Real mtime and publication changes must still
+   invalidate reuse. Deny metadata-neutral access at root and component opens;
+   require an explicit error, no ordinary-open fallback and actual closed
+   descriptors before retry/fixture cleanup.
+4. Keep one tiny source limit fixed at four. A four-file flat cohort and a
+   three-file deeply nested cohort must include their complete root/parent
+   scaffolding. Five sources still reject at Snapshot admission. Extra
+   physical entries, directory/symlink substitutions, missing members and
+   unreceipted inherited output must reject, never produce a partial image.
+   The original 64-source/128-observation tests must now reach their native
+   nested callbacks and retain their original grant, failed-count and byte
+   settlement assertions.
+5. Observe real nested publication. Its validated effects remain exactly
+   created then retained, with the same actual identity and effective mode
+   0600, equal inner/outer generated ownership and original event counts.
+   The verifier's closed identity-only revalidation variant is recorded
+   separately, without requiring a particular call count. Unknown shapes,
+   wrong retained identities/modes and malformed confirmations still fail.
+6. Run the independent breaking controls. Removing only `O_NOATIME` from the
+   actual directory descriptors must recover atime drift and false cache
+   misses. Restoring the mixed source-limit counter must reject both otherwise
+   admitted cohorts. Restoring the indiscriminate test recorder must recover
+   the original missing-`effect` failure, not a different native setup error.
+   The original pre-correction eight-case result was six failures and two
+   errors; preserve that evidence rather than relaxing its assertions.
+
+For the directly coupled boundaries, retain the existing
+`ObservationAllowanceTests` exact-exhaustion, oversized-capsule and
+oversized-source-inventory controls and `ContentPublicationTests` confirmation
+parser/actual-wire mutation controls. These use their original small budgets.
+All cases close owned sessions, descriptors, children and waiters before
+removing their disposable fixtures. This is host regression evidence, not
+full-graph fit, H1, native authority or calibration. Nine jobs, 34 commands,
+publication policy/schema and all original resource limits are unchanged.
+
 ## TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001: Confine and bound authentic probe execution
+
+The [namespace-image CI extension](#namespace-image-ci-regression-correction)
+adds direct metadata/cache and real root/component FD failure controls to this
+case. It preserves complete comparisons, including atime, rather than masking
+fields or restoring metadata after validation.
 
 ### Feature and configuration
 
@@ -6719,6 +6806,10 @@ this dedicated foundation; broader validation remains required.
 
 ## TC-WORKFLOW-PROBE-PRODUCER-001: Preserve live producer context and native remakes
 
+The [namespace-image CI extension](#namespace-image-ci-regression-correction)
+retains the original live-publication listing assertions and adds unchanged
+cache identity across direct namespace capture without any Make phase.
+
 ### Feature and configuration
 
 Issue [#225](https://github.com/laqieer/fireemblem8-expansion/issues/225);
@@ -7273,6 +7364,11 @@ remains; rollback removes the optional layer or fixes forward without widening
 the mandatory core.
 
 ## TC-WORKFLOW-PROBE-VIEWS-001: Select immutable ownership views with one report budget
+
+The [namespace-image CI extension](#namespace-image-ci-regression-correction)
+requires metadata-neutral root/nested capture and genuine cached reuse in the
+selected BASE view and restored CURRENT, retaining real hardlink/metadata
+invalidation and the original lifetime.
 
 ### Feature and configuration
 

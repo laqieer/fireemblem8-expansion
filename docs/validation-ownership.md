@@ -1326,6 +1326,24 @@ Inherited publications must retain their private issued identity. Tokens and
 sealed records cannot be recreated from ordinary data; view changes, expired
 observations, altered context or incomplete captures reject.
 
+The [5696038608 CI correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5696038608)
+keeps namespace observation metadata-neutral. Root and component directory
+pins use `O_NOATIME` with the existing directory/no-follow/close-on-exec
+constraints; failure is explicit, with no ordinary-read fallback or timestamp
+restoration. Complete metadata, including atime, still governs cache reuse.
+The traversal extent is the exact admitted source/publication namespace,
+including its root and derived parents, not a second source-entry quota.
+Snapshot admission, publication creation limits, per-node charges, deadlines,
+membership/types and completeness remain unchanged.
+
+The focused [namespace-image procedure](test-cases/workflow-governance.md#namespace-image-ci-regression-correction)
+preserves direct and selected-view metadata/cache behavior and the original
+native residual-grant callbacks. Publication tests distinguish the closed
+identity-only inherited revalidation record from actual effective publication
+outcomes; they do not remove the inherited verifier or invent publication
+effects. No source-phase, native permission, budget or CI topology change is
+part of this correction.
+
 The exact matcher accepts ordered GNU-whitespace-separated patterns with
 confined literal directories and literal or basename-star final components.
 It preserves C-byte ordering per pattern, duplicates across patterns, hidden
