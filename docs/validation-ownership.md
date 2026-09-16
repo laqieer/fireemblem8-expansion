@@ -108,11 +108,32 @@ Original private-output capture still rejects extra comparison files or missing
 declared results. The existing native process suite owns these controls; graph
 discovery excludes that module rather than importing another `TestCase` alias.
 
-This primitive does **not** close the live-message graph contract. The real
-text/header comparison and C-only publication adapter, five per-dispatch
-header-remake steps, and authenticated original-read-phase source census remain
-separate required integration work. No public header write, public move/removal,
-namespace-image authority or general shell/rename permission is added here.
+The text adapter now uses this primitive for the unmodified
+`textprocess.py`/`huffman.py` render. It selects the main/definition files and
+actual transitive include grammar, not the larger `TEXT_SRC` prerequisite
+inventory. The original relative script name is preserved. Both installs occur
+privately, then bounded no-follow regular reads compare the complete header
+against its immutable tracked input. Mismatch or failure yields no successful
+C publication. The comparison file is removed and only C is a declared output.
+
+Its `if-content-changed-preserve-mode` publication policy appends to the closed
+policy set without changing old indexes or behavior. Equal content retains the
+actual object; changed content retains an existing issued object's mode.
+First creation uses the actual staged mode. The host independently checks the
+effective confirmation against its captured initial version, not a caller's
+mode claim.
+
+Context-aware typed commands receive the actual authenticated dispatch
+environment only during their own execution; direct/registration-time helpers
+and existing canonical-environment adapters retain their previous behavior.
+Cache identity includes the environment actually used. GNU 4.3's parse-time
+`shell` environment is not guessed from final export declarations.
+
+This is still **not** complete live-message graph support. The five real
+per-dispatch header-remake steps and authenticated original-read-phase source
+census remain required integration work. No public header write, public
+move/removal, namespace-image authority or general shell/rename permission is
+provided by the text adapter.
 Registry declaration execution now has an explicit shared-session entry:
 `graph_registry.observe_declarations(loader, session)`. The selected loader
 must be the active public view and own the same budget. It invokes the real

@@ -140,7 +140,8 @@ class ContentPublicationTests(unittest.TestCase):
                             session.make("all", commands={"python3 writer.py": replace(writer, publication_policy=policy)})
                     else:
                         result = session.make(
-                            "all", variables=("MAKE_RESTARTS",), commands={"python3 writer.py": writer},
+                            "all", variables=("MAKE_RESTARTS",),
+                            commands={"python3 writer.py": replace(writer, publication_policy=policy)},
                         )
                         self.assertEqual(result.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
                         self.assertEqual(len(result.events), 2)

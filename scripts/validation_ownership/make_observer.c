@@ -309,7 +309,8 @@ int posix_spawn(pid_t *pid, const char *path, const posix_spawn_file_actions_t *
      * The kernel supervisor authenticates this notification and the child's
      * stdout FD. Recursive/remake contexts conservatively require mappings. */
     raw_call(SYS_getpid, VO_DISPATCH, (long)path,
-             recursive_graph() | (ignore_errors_flag ? 2 : 0));
+             recursive_graph() | (ignore_errors_flag ? 2 : 0)
+             | (rebuilding_makefiles ? VO_DISPATCH_REBUILD : 0));
     status = spawn(pid, VO_INTERCEPTOR, actions, attributes, argv, envp);
     raw_call(SYS_getpid, VO_DISPATCH, 0, 0);
     return status;

@@ -5511,9 +5511,47 @@ Every success/failure path must close supervisor parent/source pins, session
 children, launch records and fixture directories. Native process-suite
 collection must include the new module exactly once; ordinary graph/workflow
 discovery must not import its `TestCase`. The existing case IDs, original
-selectors, nine jobs and34 commands remain unchanged. Public C-only
-verification, header-step publication/retirement and per-read-phase authority
-are still required before any complete live-message or full-report claim.
+selectors, nine jobs and34 commands remain unchanged. The C-only integration
+is exercised below; header-step publication/retirement and per-read-phase
+authority remain required before any complete live-message or full-report claim.
+
+For the real text producer and its dispatch context, run:
+
+```sh
+python3 -m unittest scripts.validation_ownership.tests.test_text_producer -v
+```
+
+Use the unmodified text/huffman files, real default text and definitions, and a
+tracked comparison header produced by the ordinary relative-script invocation.
+Keep the Make-visible C absent before dispatch. Require ordinary/native C
+bytes to agree, both real private installs to complete, and only C to be a
+declared/public output. Repeat with real transitive include files. Cycles,
+missing/escaping/unsupported paths and underdeclared reads must reject.
+For an overdeclared control, use a genuinely unconsumed nested path: a root
+member actually seen by import-directory enumeration is not an unread control.
+
+Change one comparison-header byte and require failure before any C publication
+receipt. Keep the header immutable, preserve its exact generated script line,
+and clean every private comparison/temp file. Exercise a component-level real
+include-remake prerequisite so the actual recipe export and native rebuilding
+bit are observed. Its small readiness include is only a producer/context
+control, not the required real ARM/header pipeline acceptance scenario.
+
+Compare genuine first-create, changed-replace and unchanged-retain
+publications with an issued nondefault mode. The new mode-preserving policy
+must keep that mode for changed content; the old content-only policy must
+still adopt the newly produced mode. Check effective identities and all old
+policy/ownership refusals.
+
+Pass two genuine inherited environments through native Make. The exact
+context-aware primary command must see each value, while registration helpers
+and direct commands remain canonical and cannot reuse the other environment's
+cache result. Do not assume GNU 4.3 passes newly exported file variables into
+parse-time `shell`; use actual native envp or a real recipe control. Corrupt a
+live request's context/argv/rebuilding type and require rejection before
+producer registration. Preserve native error-policy, export and cache tests.
+All original numeric limits and case IDs remain unchanged; read-pass/source
+authority and the five-step header pipeline are not supplied by these tests.
 
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while

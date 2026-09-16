@@ -31,7 +31,7 @@ if __package__:
     from . import private_install as install_protocol
     from .producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
-        publication_identity, validate_publication_identity,
+        publication_identity, validate_publication_identity, validate_dispatch_context,
     )
 else:
     from authority import _event_command, _read_events, encoded, parse_json
@@ -40,7 +40,7 @@ else:
     import private_install as install_protocol
     from producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
-        publication_identity, validate_publication_identity,
+        publication_identity, validate_publication_identity, validate_dispatch_context,
     )
 
 
@@ -205,6 +205,7 @@ class Process:
     dispatch: tuple | None = None
     helper_kind: int = 0
     native_dispatch_sequence: int | None = None
+    native_dispatch_context: dict | None = None
     namespace_pid: int | None = None
     observer_ready: bool = False
     memory_group: int = 0
@@ -744,7 +745,7 @@ class Policy:
                         ):
                             raise Violation("published output identity or type changed")
                     retain = (
-                        policy == "if-content-changed" and current is not None
+                        policy != "replace" and current is not None
                         and current.st_size == size
                         and self._content_matches(source, directory, parts[-1], size, identity)
                     )
@@ -762,6 +763,8 @@ class Policy:
                         mode = stat.S_IMODE(current.st_mode)
                         effect = "retained"
                     else:
+                        if policy == "if-content-changed-preserve-mode" and current is not None:
+                            mode = stat.S_IMODE(current.st_mode)
                         self.written += size
                         if self.written > self.config["write_limit"]:
                             raise Violation("aggregate generated publication byte budget exhausted")
@@ -1753,7 +1756,7 @@ class Policy:
                     self.observe("accessed", "make-job-policy:" + encoded([b, c]).decode("ascii"))
                 elif b:
                     path = self.path(pid, state, b)
-                    if path not in self.executable or path == "/control/interceptor" or c not in {0, 1, 2, 3}:
+                    if path not in self.executable or path == "/control/interceptor" or not 0 <= c <= 7:
                         raise Violation(f"untrusted executable dispatch: {path}")
                     if self.runtime_metadata(path, parents=False):
                         self.check_optional_make_spelling(state, path, "execute")
@@ -1931,11 +1934,19 @@ class Policy:
                         environment[name] = content
                     self.dispatch_sequence += 1
                     state.native_dispatch_sequence = self.dispatch_sequence
-                    self.observe("accessed", "make-dispatch:" + encoded({
+                    context = {
                         "sequence": self.dispatch_sequence, "environment": environment,
-                        "kind": "recipe" if state.helper_kind == VO_RECIPE else "value",
                         "executable": source, "arguments": arguments,
-                        "cwd": state.cwd, "global_ignore_errors": bool(required & 2),
+                        "cwd": state.cwd, "rebuilding_makefiles": bool(required & 4),
+                    }
+                    try:
+                        validate_dispatch_context(context)
+                    except ChannelError as error:
+                        raise Violation(str(error)) from error
+                    state.native_dispatch_context = context
+                    self.observe("accessed", "make-dispatch:" + encoded({
+                        **context, "kind": "recipe" if state.helper_kind == VO_RECIPE else "value",
+                        "global_ignore_errors": bool(required & 2),
                     }).decode("ascii"))
                     if state.helper_kind == VO_VALUE and self.config.get("producer_endpoint"):
                         state.helper_kind = VO_LIVE
@@ -2417,11 +2428,14 @@ def supervise(config, drop_privileges):
             raise Violation("producer context died before request notification")
         policy.producer_issued += 1
         sequence = policy.producer_issued
+        if state.native_dispatch_context is None:
+            raise Violation("live producer has no authenticated native dispatch context")
         request = {
             "kind": "request", "scope": config["producer_scope"], "sequence": sequence,
             "completed": policy.producer_completed, "frame": state.producer_frame.hex(),
             "counters": policy.counters(), "reserved": policy.reservations(),
             "publication": policy.publication_confirmation,
+            "dispatch": state.native_dispatch_context,
         }
         raw = channel.exchange(
             encoded(request),

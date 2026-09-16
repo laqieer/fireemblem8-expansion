@@ -341,12 +341,12 @@ class MakeCommands:
 
     def __getitem__(self, command):
         self.session.budget.remaining()
-        if command in self.registrations:
-            return self.registrations[command]
         matches = self._matches(command)
         if len(matches) != 1:
             raise MakeProbeError(f"command lacks exactly one sealed domain: {command!r}")
         contract = matches[0]
+        if command in self.registrations and contract["id"] != "legacy-text-dry-run-recipe":
+            return self.registrations[command]
         self.session.budget.charge("cache", len(encoded([contract["id"], command])))
         self.requests.append({"id": contract["id"], "command": command})
         registration = self._register(command, contract)
@@ -476,6 +476,13 @@ class MakeCommands:
         )
 
     def _register(self, command, contract):
+        if contract["id"] == "legacy-text-dry-run-recipe":
+            arguments = _simple_words(_shell_tokens(command, "text producer"), "text producer")
+            if (
+                len(arguments) != 7 or arguments[:2] != ["python3", "scripts/texttools/textprocess.py"]
+            ):
+                raise MakeProbeError("text producer differs from its sealed invocation")
+            return shared_python_commands.text_generation_command(self.session, *arguments[2:])
         if contract["id"] == "host-uname":
             if _simple_words(_shell_tokens(command, "uname producer"), "uname producer") != ["uname"]:
                 raise MakeProbeError("uname producer differs from its declared command")

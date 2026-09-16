@@ -9,6 +9,7 @@ def load_tests(loader, standard_tests, pattern):
         "test_foundation", "test_producer", "test_dependency", "test_metadata_transport",
         "test_content_publication",
         "test_private_install",
+        "test_text_producer",
     }
     suite = unittest.TestSuite()
     for path in sorted(Path(__file__).parent.glob(pattern or "test_*.py")):

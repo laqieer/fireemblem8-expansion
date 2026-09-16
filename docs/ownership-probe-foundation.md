@@ -235,6 +235,17 @@ existing 64 KiB frame bound, each retains the 1,024-entry bound, and strings
 retain the 4,096-byte bound. Native observations, JSON transport, retained
 semantics and graph caches spend their existing counters without refunds.
 
+The native record also reports `rebuilding_makefiles` from the trusted
+observer's real GNU state, separately from the overloaded required/live bit.
+Live producer requests carry the same bounded argv/cwd/environment context.
+The host verifies its exact schema and argv agreement with the authenticated
+interceptor frame before registration, then issues an in-process context
+bound to the active callback and view. An explicitly context-aware adapter may
+use it for its exact primary command; unrelated registration helpers do not
+inherit that environment. Caller records, stale contexts and malformed wire
+fields cannot replace it. This is dispatch authority only, not a read-pass
+identifier or an original-entry namespace/input certificate.
+
 The graph's lifecycle consumer may additionally select
 `ProbeSession.make(..., observe_recipe_dispatch=True)` for the validated
 `recipe_dispatches` projection. It retains each complete recipe context,
