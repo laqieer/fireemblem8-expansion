@@ -121,6 +121,7 @@ class AssetOwnershipTests(unittest.TestCase):
             for name in (
                 "test_foundation", "test_producer", "test_dependency",
                 "test_metadata_transport", "test_content_publication",
+                "test_private_install",
             )
         }
         self.assertTrue(native.isdisjoint(collected))
