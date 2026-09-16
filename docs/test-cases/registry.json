@@ -2942,6 +2942,10 @@
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_reporter.ArtifactLifecycleTests -v",
+          "evidence": "scripts/validation_ownership/tests/test_reporter.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_textprocess_imports_and_staging_consume_only_captured_python_sources scripts.validation_ownership.tests.test_producer.ProducerTests.test_textprocess_atomic_publication_retains_native_relocation_guard -v",
           "evidence": "scripts/validation_ownership/tests/test_producer.py"
         },

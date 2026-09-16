@@ -4,6 +4,7 @@ import copy
 import importlib
 import io
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
 import subprocess
@@ -21,6 +22,83 @@ from scripts.workflow_pilot import candidate_evidence
 
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+class ArtifactLifecycleTests(unittest.TestCase):
+    def setUp(self):
+        self.graph = reporter.load_json(ROOT / reporter.GRAPH_PATH)
+        self.now = datetime(2030, 1, 1, tzinfo=timezone.utc)
+        history = self.graph["artifact"]["history"]
+        for index, entry in enumerate(history):
+            entry["recorded_at"] = self.timestamp(self.now - timedelta(days=len(history) - index))
+        triggers = [event for event in self.graph["lifecycle_events"]
+                    if event["type"] in reporter.REQUIRED_PROOF_KINDS]
+        for index, trigger in enumerate(triggers):
+            occurred = self.now - timedelta(days=len(history) + 1) + timedelta(seconds=2 * index)
+            trigger["occurred_at"] = self.timestamp(occurred)
+            proof = next(event for event in self.graph["lifecycle_events"]
+                         if event.get("trigger_event_id") == trigger["id"])
+            proof["occurred_at"] = self.timestamp(occurred + timedelta(seconds=1))
+
+    @staticmethod
+    def timestamp(value):
+        return value.isoformat().replace("+00:00", "Z")
+
+    def validate(self, graph):
+        evidence = {node["id"]: node for node in graph["nodes"] if node["kind"] == "evidence"}
+        with mock.patch.object(reporter, "datetime", create=True) as clock:
+            clock.now.return_value = self.now
+            reporter._validate_lifecycle(
+                graph["artifact"], graph["lifecycle_events"], evidence,
+                {edge["id"] for edge in graph["edges"]},
+            )
+
+    def test_expiry_uses_validation_time_not_last_history(self):
+        for offset in (None, -1, 0, 1):
+            with self.subTest(seconds_from_validation=offset):
+                graph = copy.deepcopy(self.graph)
+                graph["artifact"]["expires_at"] = (
+                    None if offset is None else self.timestamp(self.now + timedelta(seconds=offset))
+                )
+                if offset is not None and offset <= 0:
+                    with self.assertRaises(reporter.OwnershipError):
+                        self.validate(graph)
+                else:
+                    self.validate(graph)
+
+    def test_future_history_cannot_claim_current_disposition(self):
+        for disposition in ("Graduate", "Delete"):
+            with self.subTest(disposition=disposition):
+                graph = copy.deepcopy(self.graph)
+                graph["artifact"]["history"][-1].update(
+                    recorded_at=self.timestamp(self.now + timedelta(seconds=1)),
+                    disposition=disposition,
+                )
+                graph["artifact"]["expires_at"] = (
+                    self.timestamp(self.now - timedelta(seconds=1)) if disposition == "Delete" else None
+                )
+                for proof in graph["lifecycle_events"]:
+                    if proof["type"] == "deletion_proof":
+                        proof["semantic_result"] = "pass" if disposition == "Delete" else "fail"
+                with self.assertRaises(reporter.OwnershipError):
+                    self.validate(graph)
+
+    def test_past_delete_retains_proof_and_timestamp_contracts(self):
+        graph = copy.deepcopy(self.graph)
+        graph["artifact"]["history"][-1]["disposition"] = "Delete"
+        graph["artifact"]["expires_at"] = self.timestamp(self.now - timedelta(days=2))
+        for proof in graph["lifecycle_events"]:
+            if proof["type"] == "deletion_proof":
+                proof["semantic_result"] = "pass"
+        self.validate(graph)
+        invalid = copy.deepcopy(graph)
+        next(event for event in invalid["lifecycle_events"]
+             if event["type"] == "deletion_proof")["semantic_result"] = "fail"
+        with self.assertRaises(reporter.OwnershipError):
+            self.validate(invalid)
+        graph["artifact"]["expires_at"] = self.now.isoformat()
+        with self.assertRaises(reporter.OwnershipError):
+            self.validate(graph)
 
 
 class AssetOwnershipTests(unittest.TestCase):
