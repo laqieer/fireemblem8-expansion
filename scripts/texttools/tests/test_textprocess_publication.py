@@ -1,6 +1,7 @@
 """Atomic text output publication through the real generator and host readers."""
 
 import importlib.util
+from contextlib import contextmanager
 import io
 import json
 import os
@@ -157,8 +158,18 @@ class TextPublicationTests(unittest.TestCase):
     def readers(self):
         header = subprocess.run([self.cc, "-E", "-x", "c", str(self.header)],
                                 capture_output=True, text=True, timeout=10)
-        data = subprocess.run([self.cc, "-fsyntax-only", "-std=c99", str(self.data)],
-                              capture_output=True, text=True, timeout=10)
+        data = subprocess.run(
+            [self.cc, "-fsyntax-only", "-std=c99", "-I", str(self.work), "-x", "c", "-"],
+            input=(
+                f'#include "{self.data.name}"\n'
+                'void text_publication_reader(void) {\n'
+                '    (void) gMsgTable;\n'
+                '    (void) gMsgHuffmanTable;\n'
+                '    (void) gMsgHuffmanTableRoot;\n'
+                '}\n'
+            ),
+            capture_output=True, text=True, timeout=10,
+        )
         return header, data
 
     def observe_buffered_output(self, which):
@@ -192,6 +203,47 @@ class TextPublicationTests(unittest.TestCase):
 
     def test_data_reader_never_observes_natural_buffered_partial_output(self):
         self.observe_buffered_output("data")
+
+    def test_direct_writer_control_exposes_partial_header_and_data_to_real_readers(self):
+        self.seed()
+        self.inputs(5000)
+        expected = self.reference()
+        module = load_generator()
+        observations = {}
+
+        @contextmanager
+        def direct_output(path, writer, *arguments):
+            rendered = io.StringIO()
+            writer(*arguments, rendered)
+
+            def observe(stream):
+                observations[Path(path).name] = (
+                    os.fstat(stream.fileno()).st_size, self.readers(),
+                )
+
+            # The broken publication control is independent of renderer batching.
+            with open(path, "w", encoding="utf-8") as stream:
+                output = ObserveWrites(stream, observe)
+                for line in rendered.getvalue().splitlines(keepends=True):
+                    output.write(line)
+            yield path, path
+
+        with mock.patch.object(module, "_staged_output", side_effect=direct_output):
+            self.generate(module)
+        self.assertEqual(set(observations), {"msg.h", "msg_data.c"})
+        header_size, header_readers = observations["msg.h"]
+        data_size, data_readers = observations["msg_data.c"]
+        self.assertGreater(header_size, 0)
+        self.assertLess(header_size, len(expected[0]))
+        self.assertGreater(data_size, 0)
+        self.assertLess(data_size, len(expected[1]))
+        self.assertNotEqual(header_readers[0].returncode, 0)
+        self.assertIn("unterminated #ifndef", header_readers[0].stderr)
+        self.assertNotEqual(data_readers[1].returncode, 0)
+        self.assertEqual(self.pair(), expected)
+        for result in self.readers():
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_no_staging()
 
     def test_encodings_serial_bytes_permissions_and_unchanged_regeneration(self):
         for encoding in ("utf8", "cp932"):

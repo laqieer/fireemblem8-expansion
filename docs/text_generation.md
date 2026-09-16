@@ -84,10 +84,16 @@ patch publication remain unchanged.
    failure preserves complete already-published or competing-writer outputs;
    no cross-file rollback is expected. Cleanup failures are explicit and never
    justify deleting another invocation's staging.
-5. Run the preimage producer or remove the publication fix in a disposable
-   copy. The natural buffered observer must recover partial-header/C reader
-   failure. The compiler error and complete final output are retained as
-   separate observations, not converted into a successful race test.
+5. The same regression command also runs a deliberately direct-to-final
+   buffered writer using the current serial renderers. Its ordinary buffered
+   line writes must expose partial header/C bytes and real compiler-reader
+   failures. The C reader uses the public message/Huffman globals, rejecting
+   a valid prefix that omits those definitions. Complete final files must
+   then parse and match the serial bytes.
+   This automates the old publication behavior without committing an old
+   source snapshot or depending on the renderers' write-call grouping.
+   The exact preimage producer may also be run in a disposable copy; its
+   recorded failures remain distinct from the fixed publisher's positives.
 
 **Expected result:** all readers see complete per-file versions; generated
 bytes and IDs match the serial reference, and both concurrent same-input
