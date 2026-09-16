@@ -1651,6 +1651,31 @@ class FoundationTests(unittest.TestCase):
             self.root, git_tree_entries(self.root, revision, budget=budget), revision, budget=budget,
         )
 
+    def test_original_namespace_capabilities_expire_across_actual_immutable_views(self):
+        budget = ProbeBudget()
+        self.add("Makefile", "all: ;\n")
+        self.add("src/a.c", "base\n")
+        base = self.capture_view(budget)
+        self.add("src/b.c", "current\n")
+        current = self.capture_view(budget)
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            first = session.make("all")
+            token = session._original_namespace(first, target="all", makefile="Makefile")
+            self.assertEqual(session._original_wildcard(token, "src/*.c"), "src/a.c src/b.c")
+            with session.select_view(base):
+                with self.assertRaisesRegex(MakeProbeError, "forged|expired"):
+                    session._original_wildcard(token, "src/*.c")
+                older = session.make("all")
+                base_token = session._original_namespace(older, target="all", makefile="Makefile")
+                self.assertEqual(session._original_wildcard(base_token, "src/*.c"), "src/a.c")
+            for expired in (token, base_token):
+                with self.assertRaisesRegex(MakeProbeError, "forged|expired"):
+                    session._original_wildcard(expired, "src/*.c")
+            restored = session.make("all")
+            restored_token = session._original_namespace(restored, target="all", makefile="Makefile")
+            self.assertEqual(session._original_wildcard(restored_token, "src/*.c"), "src/a.c src/b.c")
+        self.assert_clean(session)
+
     def deleted_source_views(self, budget):
         old, new = "src/data/deleted_generated.json", "src/data/current_generated.json"
         for name in ("schema.py", "diagnostics.py", "json_loader.py", "validators.py", "shops/schema.py"):

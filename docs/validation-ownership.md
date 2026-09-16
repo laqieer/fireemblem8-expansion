@@ -1256,9 +1256,49 @@ Existing captured `patsubst` relations share their text semantics with that
 path; a native value remains only a claim checked against original operands.
 GNU word/empty-component behavior is preserved: `notdir` is textual, not host
 path normalization, and prefixes and output spacing are not trimmed.
-Unsupported escaping, extra percent operators, unknown/effectful/staged leaves
-and recursive function bodies still decline. Ordinary literal and condition
-evaluation does not gain a general function interpreter.
+Unsupported escaping, extra percent operators and unknown/effectful/staged
+leaves still decline. Supported pure recursive bodies are resolved at use,
+not frozen at definition. This remains a bounded exact algebra, not a general
+Make interpreter.
+
+Exact wildcard leaves require a separate **session-issued original namespace
+capability**. Its initial names, types and lookup identities derive from the
+admitted materialized Snapshot/view, not `mode.namespace`, a caller set, or the
+final generated-file union. The private issuer binds the actual Make
+invocation/state, observation, view epoch and session lifetime. It seals only
+after successful native completion and cleanup, retaining the complete host/
+nested publication and removal history independently of source conditions.
+Inherited publications must retain their private issued identity. Tokens and
+sealed records cannot be recreated from ordinary data; view changes, expired
+observations, altered context or incomplete captures reject.
+
+The exact matcher accepts ordered GNU-whitespace-separated patterns with
+confined literal directories and literal or basename-star final components.
+It preserves C-byte ordering per pattern, duplicates across patterns, hidden
+names, known empty matches and matching directories. Question/bracket/escape/
+tilde/directory-glob forms, unadmitted nonregular lookups and ambiguous raw
+whitespace filenames decline explicitly. Members, matches and assembled text
+spend the existing budgets. A simple assignment snapshots the result; a
+recursive/default body evaluates against its original operands at each use.
+Neither a missing proof nor a header-only wildcard bound is an empty list.
+
+Only invariant queried namespaces qualify. Unrelated build publication can
+remain harmless, but source filename/parent creation, removal, replacement or
+unsafe lookup identity retains a hold even after cleanup restores the initial
+names. GNU may cache an old directory list for the whole process: EARLY, LATE
+and a lazy wildcard can all remain unchanged after a real publication, while
+a second process sees new names. Final directory contents cannot repair that
+missing original authority; no general cache replay or new native query API
+is provided.
+
+The same original exact machinery supports `filter-out`, substring
+`findstring`, `strip`, short-circuit `and`, applicable global-simple `+=` and
+derived literal target scopes. Read/effect analysis retains immutable source
+separately from proven lazy read forms. Deferred recipe reads may use only
+whole-source immutable literal operands with no target-specific/dynamic writer
+or earlier parse-time consumption; a later value cannot prune earlier reads.
+Target-local `+=` remains recursive, including its global inheritance and
+later RHS lookup even when the global variable is simple.
 
 An original target-only fallback can consume these exact snapshots and
 existing verified `patsubst` claims when the incoming mode, namespace and
@@ -1314,26 +1354,27 @@ initializers and static legacy recipe before the late continuation. Separate
 constructor and target-consumer removals recover their original failures.
 Related source support is intentionally narrower than whole-program closure:
 
-| Original target list | Bounded constructor/header support | Remaining original obligation |
+| Original target list | Bounded original ancestor support | Remaining boundary |
 | --- | --- | --- |
 | `generated_data.mk`: `GENERATED_DATA_LINKED_OBJECTS` | Actual four-table `notdir`/`addprefix`/suffix chain and small planner | Full repository source/resource acceptance is separate |
-| `Makefile`: `LEGACY_C_OBJECTS` | Ordinary native value observed; exact proof still declines | `filter-out`, even with literal operands |
-| `Makefile`: `ASM_OBJECTS` | Suffix chain with declared literal `SFILES` and retained secondary prerequisite | Original wildcard/composed `SFILES` is not exact |
-| `Makefile`: `DATA_SRC_C_OBJECTS` | Suffix chain with declared literal source list and retained secondary/preproc prerequisites | Original multi-wildcard source leaf is not exact |
-| `modern.mk`: `MODERN_ALL_DATA_PRE` | `addprefix` plus `.pre.c` suffix | Recursive wildcard default source list |
-| `modern.mk`: `MODERN_ALL_DATA_OBJECTS` | `addprefix` plus `.o` suffix | Same default plus original derived target-specific flags assignment |
-| `modern.mk`: `MODERN_ALL_DATA_ASSET_DEPS` | `addprefix` plus `.assets.d` suffix | Recursive wildcard default and separate producer/include obligations |
-| `modern.mk`: `MODERN_ALL_C_HEADER_DEPS` | `addprefix` plus `.headers.d` suffix | Wildcard/filter inputs, unknown `findstring` condition/append alternatives, append to an exact snapshot |
+| `Makefile`: `LEGACY_C_OBJECTS` | Actual wildcard/filter/source-list/suffix ancestry and `filter-out` | Invariant source image and original input contract required |
+| `Makefile`: `ASM_OBJECTS` | Actual wildcard/composed `SFILES`, suffix and secondary prerequisite syntax | Non-invariant or unadmitted namespace remains held |
+| `Makefile`: `DATA_SRC_C_OBJECTS` | Actual ordered multi-pattern wildcard, suffix and secondary/preproc syntax | Same independent namespace requirement |
+| `modern.mk`: `MODERN_ALL_DATA_PRE` | Actual recursive wildcard default and `.pre.c` constructor | Genuine default/defined-empty and at-use context required |
+| `modern.mk`: `MODERN_ALL_DATA_OBJECTS` | Actual recursive default and derived target-local layout-flags append | Unknown/pattern/empty scopes and unproved RHS effects still decline |
+| `modern.mk`: `MODERN_ALL_DATA_ASSET_DEPS` | Shared original data-leaf mechanism and `.assets.d` constructor | Separate producer/include obligations remain |
+| `modern.mk`: `MODERN_ALL_C_HEADER_DEPS` | Actual source defaults/filter, BGM wildcard/and/strip/findstring ancestry and exact append | Original branch, input and namespace certificates remain mandatory |
 
-The remaining wildcard/default/filter/append/conditional and target-specific
-cases have bounded native-success/source-proof-refusal controls; they are not
-silently repaired from final values. A new full measurement must not be used
-to rediscover these known prerequisites. Secondary fixtures retain the real
+The seven former refusal cases now retain source-faithful fixed and independent
+component-removal evidence, not substituted literal source lists. The bounded
+contexts use disclosed fixture files, tool inputs and benign recipe roles;
+they do not establish complete repository/resource acceptance. Genuine
+namespace changes or unavailable authority remain explicit holds. Secondary fixtures retain the real
 consumer order: the linker dependency is read before `.SECONDEXPANSION`.
 Moving a derived-list consumer after that directive deliberately reaches the
 unchanged staged-reference guard; exact target-mode proof does not waive
 secondary value provenance. These distinctions do not assert that all eight
-complete original contexts are closed.
+complete production contexts or a full report have been measured.
 
 Recipe observation preserves read kind through ordinary references, aliases
 and captured exports. Literal `origin`, `flavor` and `value` operands use

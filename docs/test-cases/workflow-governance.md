@@ -5207,10 +5207,13 @@ the complete characters prerequisite list and the unnormalized raw late
 continuation. The complete bounded small planner must retain the same native
 target, recipe and prerequisite projection. Keep the short source and renamed
 macro controls, and run the normal late fixture generator to inspect its
-actual generated C. Disable only header composition: the mixed initializer
-must lose its fact, its header check must fail, and the real late continuation
-must reject while ordinary GNU values remain unchanged. Restore composition
-and recover the identical positive. A later safe config rewrite must still
+actual generated C. The invariant exact namespace path now independently
+proves this initializer: removing header composition alone must retain the
+positive, and removing exact wildcard authority alone must retain the older
+header-bound positive. Disable both independent paths to recover the missing
+fact, failed header check and real late-continuation rejection while ordinary
+GNU values remain unchanged. Restore either proof and recover the identical
+positive. A later safe config rewrite must still
 fail the final original-assignment-history certificate even though native
 final metadata contains that safe value.
 
@@ -5286,12 +5289,61 @@ declarations with `.pre.c`, `.assets.d` and `.headers.d`, explicit bounded
 literal leaves, and actual secondary/preproc prerequisite syntax. Keep the
 aggregate consumer before `.SECONDEXPANSION`, matching the real linker rule;
 the intentionally late-consumer variant must still hit the staged-reference
-guard despite native graph equality. Record ordinary/native success and
-source refusal for actual required wildcard/default/filter/conditional/append
-and derived target-specific contexts. Do not call those complete original
-contexts supported, weaken their guards or allocate a full run to rediscover
-them. These focused checks leave all baselines1-16 closed and allocate no17,
-provider, H1 or full graph/report work.
+guard despite native graph equality. The seven former source refusals now
+retain full original ancestor slices and component-removal controls, as
+described below. These focused checks leave all baselines1-16 closed and
+allocate no17, provider, H1 or full graph/report work.
+
+For the cohesive seven-leaf closure, obtain namespace authority only from a
+completed real native observation in its owning session. Inspect initial
+materialized regular names, matching directories, known empty/absent results
+and ignored untracked working-tree files. A matching unadmitted symlink or
+unsupported filename/pattern must reject rather than disappear. Try a
+caller-created token, copied observation, forged completed capture, changed
+state/primary/restart, altered private backing and a token from an exited or
+different immutable view. None may issue exact names. Exhaust the existing
+cache budget and require failure before output retention.
+
+Run a registered build-only writer and then a source-directory writer. In the
+latter, publish both `src/z.c` and `src/new.c/child.txt`. Native EARLY, LATE and
+recursive LAZY may all remain `src/a.c` in that process, while the final union
+includes the new file/directory and a second ordinary GNU process sees them.
+The source query must remain held; the unrelated build-only case may qualify.
+Keep nested inherited/retained publications and cleanup restoring original
+membership in the actual history. A conflicting producer identity remains an
+error and cannot seal a partial capture. Do not weaken publication ownership
+to manufacture a replacement sequence.
+
+Retain actual Makefile wildcard lists, composition, generated-source
+exclusion and filter ancestry; DATA's ordered multi-pattern expression;
+modern recursive defaults; original BGM JSON/script availability through
+`and`, `strip` and `findstring`; exact-snapshot append; and the real derived
+`MODERN_CFLAGS` scope. Use the existing registry declarations for default and
+ambient inputs, not an invented empty input or literal substitute for the
+source list. Keep original include/secondary ordering and static headers.
+Compare ordinary/native target values, complete bounded planner projections,
+source reads, defaults, exports and per-file context. Disable each of the
+seven components independently and recover its refusal, then restore the
+identical positive.
+
+Check per-pattern C ordering, duplicate/overlapping patterns, hidden names,
+matching directories and exact empty results. Change an original directory
+variable between uses of a recursive/default wildcard and require different
+appropriate results; defined-empty environment/command-line values must
+continue to suppress `?=`. Test substring rather than word membership,
+duplicate-preserving `filter-out`, GNU `and` whitespace/short-circuit behavior
+and lazy error/eval/shell bodies through simple, recursive, exported and
+recipe reads. A target-local override, a possible dynamic writer or an earlier
+parse-time read must prevent whole-source literal pruning.
+
+For both literal and derived target lists, a new target-local flags append
+must remain recursive: a later RHS change produces `global later`, while
+native per-file raw metadata remains `$(FLAGS)`. Do not eagerly copy the
+global simple flavor. Preserve all original append precedence, POSIX
+first/next-line timing, metadata-only reads, header-bound nonvalue, source
+guards, staged/unknown/cycle, byte/name/deadline and child/waiter checks.
+Keep the current support/hold ledger with these results. A genuinely touched
+or uncertifiable required namespace remains a hold, not full-source success.
 
 For the real framework template contract, copy the complete current
 `GENERATED_DATA_LINK_TABLE_RULES` and

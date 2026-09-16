@@ -17,6 +17,7 @@ import signal
 import stat
 import struct
 import sys
+import weakref
 from collections import Counter
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
@@ -24,6 +25,7 @@ from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path, PurePosixPath
 from threading import get_ident, main_thread
+from types import MappingProxyType
 
 from .authority import (
     AuthorityLoader, ENVIRONMENT, Frames, Snapshot, _command_hash, _event_command,
@@ -160,6 +162,71 @@ class MakeObservation:
     events: tuple[dict, ...]
     generated: tuple[GeneratedFile, ...] = ()
     file_open_attempts: tuple[tuple[str, str], ...] = ()
+
+
+class _NamespaceUnavailable(MakeProbeError):
+    """The original directory cannot supply an invariant exact leaf."""
+
+
+class _OriginalNamespace:
+    """Identity-only token; authority stays in its issuing session."""
+
+
+@dataclass(frozen=True)
+class _NamespaceImage:
+    snapshot: Snapshot
+    tree: Path
+    members: dict
+    directories: dict
+    forbidden: frozenset
+
+
+@dataclass
+class _NamespaceCapture:
+    image: _NamespaceImage
+    epoch: int
+    request: tuple
+    stamps: dict
+    mutations: list
+    native_complete: bool = False
+    closed: bool = False
+    valid: bool = True
+
+
+@dataclass(frozen=True)
+class _SealedNamespace:
+    image: _NamespaceImage
+    epoch: int
+    request: tuple
+    stamps: object
+    mutations: tuple
+
+
+def _namespace_identity(info):
+    return info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid
+
+
+def _namespace_stamp(info):
+    return (*_namespace_identity(info), info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _star_name(pattern, name):
+    if name.startswith(b".") and not pattern.startswith(b"."):
+        return False
+    parts = pattern.split(b"*")
+    if len(parts) == 1:
+        return name == pattern
+    if not name.startswith(parts[0]) or not name.endswith(parts[-1]):
+        return False
+    offset, end = len(parts[0]), len(name) - len(parts[-1])
+    if offset > end:
+        return False
+    for part in parts[1:-1]:
+        found = name.find(part, offset, end)
+        if found < 0:
+            return False
+        offset = found + len(part)
+    return offset <= end
 
 
 def _metadata_records(value, limit, *, runtime_paths=(), runtime_absent=()):
@@ -604,6 +671,315 @@ class ProbeSession:
         self.pending_commands = 0
         self.pending_commands_peak = 0
         self.owner_thread = get_ident()
+        self._namespace_images = {}
+        self._namespace_frames = []
+        self._namespace_pending = {}
+        self._namespace_publications = {}
+        self._namespace_issued = {}
+        self._namespace_tokens = {}
+        self._namespace_epoch = 0
+        self._namespace_mutation_serial = 0
+
+    def _expire_namespaces(self):
+        self._namespace_epoch += 1
+        self._namespace_issued.clear()
+        self._namespace_tokens.clear()
+
+    def _namespace_directory(self, name):
+        descriptor = os.open(self.tree, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            if name != ".":
+                for component in relative_path(name).split("/"):
+                    following = os.open(
+                        component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                        dir_fd=descriptor,
+                    )
+                    os.close(descriptor)
+                    descriptor = following
+            return descriptor
+        except BaseException:
+            os.close(descriptor)
+            raise
+
+    def _capture_namespace_image(self, *, inherited=False):
+        files, directories = set(), {"."}
+        for values, destination in (
+            (self.snapshot.files, files), (self.published_sources if inherited else (), files),
+            (self.snapshot.gitlink_roots, directories),
+        ):
+            for name in values:
+                self.budget.remaining()
+                if name not in destination:
+                    self.budget.charge("cache", len(encoded(name)) + 1)
+                    destination.add(name)
+                for parent in PurePosixPath(name).parents:
+                    value = parent.as_posix()
+                    if value not in directories:
+                        self.budget.charge("cache", len(encoded(value)) + 1)
+                        directories.add(value)
+        expected = files | directories
+        members, identities, found = {}, {}, set()
+        pending = ["."]
+        while pending:
+            self.budget.remaining()
+            directory = pending.pop()
+            descriptor = self._namespace_directory(directory)
+            try:
+                before = os.fstat(descriptor)
+                found.add(directory)
+                identities[directory] = _namespace_identity(before)
+                children = []
+                with os.scandir(descriptor) as entries:
+                    for entry in entries:
+                        self.budget.remaining()
+                        name = entry.name if directory == "." else directory + "/" + entry.name
+                        relative_path(name)
+                        info = entry.stat(follow_symlinks=False)
+                        if name not in expected or (
+                            name in files and not stat.S_ISREG(info.st_mode)
+                            or name in directories and not stat.S_ISDIR(info.st_mode)
+                        ):
+                            raise MakeProbeError("original namespace differs from admitted materialization")
+                        if len(found) >= self.budget.limits.entries:
+                            self.budget.reject("original namespace exceeds source entry admission")
+                        row = entry.name, _namespace_identity(info)
+                        self.budget.charge("cache", len(encoded((directory, row))))
+                        children.append(row)
+                        found.add(name)
+                        if stat.S_ISDIR(info.st_mode):
+                            pending.append(name)
+                if _namespace_stamp(os.fstat(descriptor)) != _namespace_stamp(before):
+                    raise MakeProbeError("original namespace changed during capture")
+                self.budget.charge("cache", len(encoded((directory, identities[directory]))))
+                members[directory] = tuple(sorted(children, key=lambda item: item[0].encode("utf-8")))
+            finally:
+                os.close(descriptor)
+        if found != expected:
+            raise MakeProbeError("original namespace materialization is incomplete")
+        forbidden = frozenset(
+            name for name, entry in self.loader.entries.items()
+            if entry.mode not in {"100644", "100755"}
+            and name not in self.snapshot.absent_paths and name not in self.snapshot.gitlink_roots
+        )
+        self.budget.charge("cache", len(encoded(sorted(forbidden))))
+        return _NamespaceImage(
+            self.snapshot, self.tree, MappingProxyType(members), MappingProxyType(identities), forbidden,
+        )
+
+    def _begin_namespace(self, target, makefile, assignments):
+        if (
+            set(self.published_sources) != set(self._namespace_publications)
+            or set(self.published_versions) != set(self._namespace_publications)
+        ):
+            raise MakeProbeError("original namespace has unreceipted inherited publications")
+        for name, (value, version) in self._namespace_publications.items():
+            if self.published_sources[name] is not value or self.published_versions[name] != version:
+                raise MakeProbeError("original namespace inherited publication identity changed")
+            self._verify_effective_output(value, {"identity": version[2]})
+        key = id(self.snapshot), self.tree
+        if key not in self._namespace_images:
+            self._namespace_images[key] = self._capture_namespace_image(inherited=bool(self.published_sources))
+        image = (
+            self._capture_namespace_image(inherited=True)
+            if self.published_sources else self._namespace_images[key]
+        )
+        stamps = {}
+        for name, identity in image.directories.items():
+            self.budget.remaining()
+            descriptor = self._namespace_directory(name)
+            try:
+                info = os.fstat(descriptor)
+                if _namespace_identity(info) != identity:
+                    raise MakeProbeError("original namespace lookup identity changed")
+                stamp = _namespace_stamp(info)
+                self.budget.charge("cache", len(encoded((name, stamp))))
+                stamps[name] = stamp
+            finally:
+                os.close(descriptor)
+        request = target, makefile, tuple(assignments)
+        self.budget.charge("cache", len(encoded(request)))
+        capture = _NamespaceCapture(image, self._namespace_epoch, request, stamps, [])
+        self._namespace_pending[id(capture)] = capture, None
+        self._namespace_frames.append(capture)
+        return capture
+
+    def _namespace_mutation(self, action, name, identity=()):
+        if not self._namespace_frames:
+            return
+        if self.budget.failed or self.budget.closed:
+            for frame in self._namespace_frames:
+                frame.valid = False
+            return
+        self._namespace_mutation_serial += 1
+        record = self._namespace_mutation_serial, action, name, tuple(identity)
+        for frame in self._namespace_frames:
+            self.budget.charge("cache", len(encoded(record)))
+            frame.mutations.append(record)
+
+    def _end_namespace(self, capture):
+        if not self._namespace_frames or self._namespace_frames[-1] is not capture:
+            raise MakeProbeError("original namespace capture lifetime is inconsistent")
+        self._namespace_frames.pop()
+        capture.closed = True
+
+    @staticmethod
+    def _namespace_observation_context(observation):
+        domains = observation.semantics["domains"]
+        return encoded((
+            observation.target, observation.execution_digest, observation.semantic_digest,
+            observation.semantics["assignments"], domains.get("MAKEFILE_LIST"), domains.get("MAKE_RESTARTS"),
+            observation.semantics["published_sources"], observation.events,
+        ))
+
+    def _seal_namespace(self, capture, observation):
+        self.budget.remaining()
+        pending = self._namespace_pending.pop(id(capture), None)
+        if (
+            pending is None or pending[0] is not capture or pending[1] is not observation
+            or not capture.closed or not capture.native_complete or not capture.valid
+        ):
+            raise MakeProbeError("incomplete original namespace capture cannot issue authority")
+        capture = _SealedNamespace(
+            capture.image, capture.epoch, capture.request, MappingProxyType(capture.stamps), tuple(capture.mutations),
+        )
+        token = _OriginalNamespace()
+        key = id(observation)
+        context = self._namespace_observation_context(observation)
+        self.budget.charge("cache", len(context))
+
+        def expire(reference):
+            record = self._namespace_issued.get(key)
+            if record is not None and record[0] is reference:
+                self._namespace_tokens.pop(id(record[1]), None)
+                del self._namespace_issued[key]
+
+        reference = weakref.ref(observation, expire)
+        record = reference, token, capture, context
+        self._namespace_issued[key] = record
+        self._namespace_tokens[id(token)] = record
+
+    def _original_namespace(self, observation, *, target, makefile, assignments=()):
+        self.budget.remaining()
+        record = self._namespace_issued.get(id(observation))
+        if record is None or record[0]() is not observation:
+            raise MakeProbeError("original namespace requires an issued native observation")
+        capture = record[2]
+        if capture.request != (target, makefile, tuple(assignments)):
+            raise MakeProbeError("original namespace invocation/state mismatch")
+        self._require_namespace(record[1])
+        return record[1]
+
+    def _require_namespace(self, token):
+        self.budget.remaining()
+        if get_ident() != self.owner_thread or self.base is None or self.snapshot is None:
+            raise MakeProbeError("original namespace has no active owning session")
+        record = self._namespace_tokens.get(id(token))
+        if record is None or record[1] is not token or record[0]() is None:
+            raise MakeProbeError("original namespace token is forged or expired")
+        _, _, capture, context = record
+        if (
+            capture.epoch != self._namespace_epoch or capture.image.snapshot is not self.snapshot
+            or capture.image.tree != self.tree
+            or self._namespace_observation_context(record[0]()) != context
+        ):
+            raise MakeProbeError("original namespace view/lifetime/observation changed")
+        descriptor = self._namespace_directory(".")
+        try:
+            if _namespace_identity(os.fstat(descriptor)) != capture.image.directories["."]:
+                raise MakeProbeError("original namespace source-root mapping changed")
+        finally:
+            os.close(descriptor)
+        return capture
+
+    def _invariant_directory(self, capture, directory):
+        try:
+            return self._verify_invariant_directory(capture, directory)
+        except OSError as error:
+            raise _NamespaceUnavailable("original wildcard lookup is unavailable: " + directory) from error
+
+    def _verify_invariant_directory(self, capture, directory):
+        image = capture.image
+        for forbidden in image.forbidden:
+            if directory == forbidden or directory.startswith(forbidden + "/"):
+                raise _NamespaceUnavailable("original wildcard enters a nonregular namespace: " + directory)
+        ancestor = directory
+        while ancestor not in image.directories:
+            ancestor = PurePosixPath(ancestor).parent.as_posix()
+        for _, action, path, _ in capture.mutations:
+            if action == "retained":
+                continue
+            if (
+                ancestor == "." or path == ancestor or path.startswith(ancestor + "/")
+                or ancestor.startswith(path + "/")
+            ):
+                raise _NamespaceUnavailable("original wildcard namespace changed during invocation: " + directory)
+        for parent in PurePosixPath(ancestor).parents:
+            name = parent.as_posix()
+            if name not in image.directories:
+                raise _NamespaceUnavailable("original wildcard lookup ancestor is unadmitted")
+            descriptor = self._namespace_directory(name)
+            try:
+                if _namespace_identity(os.fstat(descriptor)) != image.directories[name]:
+                    raise _NamespaceUnavailable("original wildcard lookup ancestor changed: " + name)
+            finally:
+                os.close(descriptor)
+        descriptor = self._namespace_directory(ancestor)
+        try:
+            if _namespace_stamp(os.fstat(descriptor)) != capture.stamps[ancestor]:
+                raise _NamespaceUnavailable("original wildcard lookup identity changed: " + ancestor)
+            actual = []
+            with os.scandir(descriptor) as entries:
+                for entry in entries:
+                    self.budget.remaining()
+                    row = entry.name, _namespace_identity(entry.stat(follow_symlinks=False))
+                    self.budget.charge("cache", len(encoded(row)))
+                    actual.append(row)
+            if tuple(sorted(actual, key=lambda item: item[0].encode("utf-8"))) != image.members[ancestor]:
+                raise _NamespaceUnavailable("original wildcard directory membership changed: " + ancestor)
+            if _namespace_stamp(os.fstat(descriptor)) != capture.stamps[ancestor]:
+                raise _NamespaceUnavailable("original wildcard directory changed during lookup")
+        finally:
+            os.close(descriptor)
+        if ancestor != directory:
+            return ()
+        return image.members[directory]
+
+    def _original_wildcard(self, token, patterns):
+        capture = self._require_namespace(token)
+        if not isinstance(patterns, str) or any(character in patterns for character in "$\\?[]~\0"):
+            raise _NamespaceUnavailable("unsupported original wildcard pattern grammar")
+        result = []
+        for match in re.finditer(r"[^ \t\r\n\v\f]+", patterns):
+            self.budget.remaining()
+            pattern = match[0]
+            try:
+                relative_path(pattern)
+            except MakeProbeError as error:
+                raise _NamespaceUnavailable("unsupported original wildcard path spelling") from error
+            directory = PurePosixPath(pattern).parent.as_posix()
+            basename = PurePosixPath(pattern).name
+            if "*" in directory:
+                raise _NamespaceUnavailable("original wildcard requires a literal directory")
+            self.budget.charge("cache", len(encoded(pattern)))
+            names = self._invariant_directory(capture, directory)
+            for forbidden in capture.image.forbidden:
+                if PurePosixPath(forbidden).parent.as_posix() == directory and _star_name(
+                    basename.encode("utf-8"), PurePosixPath(forbidden).name.encode("utf-8"),
+                ):
+                    raise _NamespaceUnavailable("original wildcard matches an unadmitted object: " + forbidden)
+            for name, identity in names:
+                self.budget.remaining()
+                if not _star_name(basename.encode("utf-8"), name.encode("utf-8")):
+                    continue
+                if (
+                    any(character.isspace() or character in "$\\" for character in name)
+                    or not (stat.S_ISREG(identity[2]) or stat.S_ISDIR(identity[2]))
+                ):
+                    raise _NamespaceUnavailable("original wildcard match has unsupported spelling/type")
+                value = name if directory == "." else directory + "/" + name
+                self.budget.charge("cache", len(encoded(value)) + 1)
+                result.append(value)
+        return " ".join(result)
 
     def __enter__(self):
         if self.budget.session_started:
@@ -674,6 +1050,8 @@ class ProbeSession:
                     error = MakeProbeError("view contexts must exit in nesting order")
                     self.__exit__(type(error), error, None)
                     raise error
+                self._expire_namespaces()
+                self._namespace_images.pop((id(self.snapshot), self.tree), None)
                 self._views.pop()
                 (self.loader, self.snapshot, self.tree,
                  self.cache, self.mappings, self.native_tools) = previous
@@ -704,6 +1082,7 @@ class ProbeSession:
                 mask = signal.pthread_sigmask(signal.SIG_BLOCK, self.handlers)
                 try:
                     self._views.append(previous)
+                    self._expire_namespaces()
                     (self.loader, self.snapshot, self.tree,
                      self.cache, self.mappings, self.native_tools) = (
                         loader, snapshot, tree, cache, mappings, tools,
@@ -719,6 +1098,11 @@ class ProbeSession:
 
     def __exit__(self, kind, value, traceback):
         def clear_state():
+            self._expire_namespaces()
+            self._namespace_images.clear()
+            self._namespace_frames.clear()
+            self._namespace_pending.clear()
+            self._namespace_publications.clear()
             self.cache.clear()
             self.mappings.clear()
             self.native_tools.clear()
@@ -2092,6 +2476,7 @@ class ProbeSession:
         root = self.base / root_name
         control = self.base / f"control-{self.serial + 1}"
         receipts = {}
+        receipt_directories = {}
         command_results = {}
         generated_paths = self.generated_paths
         generated_directories = self.generated_directories
@@ -2102,16 +2487,28 @@ class ProbeSession:
         # authority. Do not copy the complete tree's unused reservation list.
         publication_allowed = commands is not None or bool(self.published_sources)
         commands = {} if commands is None else commands
+        namespace_capture = None if _original_inputs else self._begin_namespace(target, makefile, assignments)
 
         def cleanup_generated():
             if depth:
                 return
+
+            def remove_file(name):
+                self._namespace_mutation("removed", name)
+                (self.tree / name).unlink(missing_ok=True)
+
+            def remove_directory(name):
+                if (self.tree / name).exists():
+                    self._namespace_mutation("removed-directory", name)
+                    (self.tree / name).rmdir()
+
             finish_cleanup([
-                *(lambda name=name: (self.tree / name).unlink(missing_ok=True) for name in generated_paths),
-                *(lambda name=name: (self.tree / name).rmdir() if (self.tree / name).exists() else None
+                *(lambda name=name: remove_file(name) for name in generated_paths),
+                *(lambda name=name: remove_directory(name)
                   for name in sorted(generated_directories, key=lambda value: (-value.count("/"), value))),
                 generated_paths.clear, generated_directories.clear,
                 self.published_sources.clear, self.published_versions.clear,
+                self._namespace_publications.clear,
             ])
 
         def acknowledge(completed, confirmation):
@@ -2140,6 +2537,12 @@ class ProbeSession:
             ):
                 raise MakeProbeError("publication confirmation differs from its producer receipt")
             effective = []
+            for directory in receipt_directories[confirmed]:
+                descriptor = self._namespace_directory(directory)
+                try:
+                    self._namespace_mutation("created-directory", directory, _namespace_identity(os.fstat(descriptor)))
+                finally:
+                    os.close(descriptor)
             for item, outcome in zip(produced.generated, confirmation["outputs"]):
                 old = previous[item.path]
                 retained = policy == "if-content-changed" and old is not None and old[0].data == item.data
@@ -2153,12 +2556,14 @@ class ProbeSession:
                 ):
                     raise MakeProbeError("effective publication disagrees with its actual output contract")
                 self._verify_effective_output(item, outcome)
+                self._namespace_mutation(effect, item.path, outcome["identity"])
                 value = GeneratedFile(item.path, item.data, mode)
                 self.publication_serial += 1
                 version = producer, self.publication_serial, tuple(outcome["identity"])
                 self.budget.charge("cache", len(encoded([item.path, version])))
                 self.published_sources[item.path] = value
                 self.published_versions[item.path] = version
+                self._namespace_publications[item.path] = value, version
                 effective.append((item.path, f"{stat.S_IFREG | mode:06o}", outcome["sha256"]))
             semantic_record = dict(record)
             if effective:
@@ -2185,6 +2590,7 @@ class ProbeSession:
                 Command.__post_init__(registration)
                 outputs = self._output_paths(registration.outputs)
                 previous = {}
+                new_directories = set()
                 for name in outputs:
                     if any(name.startswith(other + "/") or other.startswith(name + "/") for other in generated_paths):
                         raise MakeProbeError("conflicting generated output namespaces")
@@ -2203,10 +2609,11 @@ class ProbeSession:
                             raise MakeProbeError("active publication identity changed before producer execution")
                         previous[name] = self.published_sources[name], publication_identity(before)
                     generated_paths.add(name)
-                    generated_directories.update(
+                    new_directories.update(
                         parent.as_posix() for parent in PurePosixPath(name).parents
                         if parent.as_posix() != "." and not (self.tree / parent).exists()
                     )
+                generated_directories.update(new_directories)
                 result = self.command(registration)
                 inputs = result.consumed
                 identity = {
@@ -2265,6 +2672,8 @@ class ProbeSession:
                 receipts[sequence - 1] = (
                     command, record, result, producer, registration.publication_policy, previous,
                 )
+                self.budget.charge("cache", len(encoded(sorted(new_directories))))
+                receipt_directories[sequence - 1] = tuple(sorted(new_directories))
                 reply = {
                     "slot": sequence - 1, "owner": producer, "outputs": list(outputs),
                     "stdout_sha256": record["output_sha256"],
@@ -2281,9 +2690,10 @@ class ProbeSession:
                 return reply
 
         with cleanup_scope([
-            cleanup_generated, receipts.clear,
+            cleanup_generated, receipts.clear, receipt_directories.clear,
             lambda: _remove_owned_tree(control), lambda: _remove_owned_tree(root),
             lambda: setattr(self, "make_depth", depth),
+            *( (lambda: self._end_namespace(namespace_capture),) if namespace_capture is not None else () ),
         ]):
             self.make_depth = depth + 1
             self._new_root(root_name, make=True)
@@ -2432,12 +2842,18 @@ class ProbeSession:
                     for item in self.runtime_inputs
                 ]
                 execution = hashlib.sha256(encoded([execution, runtime])).hexdigest()
-            return MakeObservation(
+            observation = MakeObservation(
                 target, semantics, execution, hashlib.sha256(semantic_bytes).hexdigest(),
                 completed.stdout, completed.stderr, tuple(events),
                 tuple(self.published_sources[path] for path in sorted(self.published_sources)),
                 tuple(file_open_attempts),
             )
+            if namespace_capture is not None:
+                namespace_capture.native_complete = True
+                self._namespace_pending[id(namespace_capture)] = namespace_capture, observation
+        if namespace_capture is not None:
+            self._seal_namespace(namespace_capture, observation)
+        return observation
 
     @terminal_failure
     def variants(self, target, states, **kwargs):

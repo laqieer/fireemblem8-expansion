@@ -3095,6 +3095,14 @@
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_namespace_capability_is_issued_typed_and_context_bound scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_namespace_rejects_unadmitted_types_and_changed_backing scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_namespace_publication_history_keeps_gnu_cache_counterexample scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_namespace_requires_private_completed_and_funded_capture scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_namespace_records_nested_inherited_and_restored_publications scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_namespace_failed_conflicting_publication_cannot_issue scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_namespace_rejects_caller_supplied_initial_publications scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_boolean_and_word_algebra_keeps_all_read_consumers_lazy scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_recursive_wildcards_capture_at_use_not_default_definition scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_lazy_read_constants_cannot_prune_other_scopes_or_earlier_reads scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_derived_scopes_keep_target_local_append_and_late_lookup -v",
+          "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_original_namespace_capabilities_expire_across_actual_immutable_views -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_native_ignore_error_policy_matches_actual_gnu_jobs scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_native_job_policy_requires_complete_pid_bound_receipts -v",
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },

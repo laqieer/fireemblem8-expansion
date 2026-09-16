@@ -19,6 +19,7 @@ from .authority import ENVIRONMENT, _event_command, encoded, relative_path
 from .budget import MakeProbeError, ProbeBudget
 from .graph_commands import MakeCommands
 from .graph_commands import _normalized_shell_commands
+from .make_probe import _NamespaceUnavailable
 
 
 IDENTIFIER = r"[A-Za-z_][A-Za-z0-9_]*"
@@ -92,6 +93,7 @@ class _AssignmentEffect(NamedTuple):
     applies: bool | None
     immediate: bool | None
     emitted: tuple = ()
+    read_value: str | None = None
 
 
 class MakeSourceUnit(NamedTuple):
@@ -176,6 +178,8 @@ class _MakeSourceMode:
     template_values: dict = field(default_factory=dict)
     template_mode: object = None
     original_target_value: object = None
+    original_wildcard: object = None
+    namespace_holds: set = field(default_factory=set)
 
     def __post_init__(self):
         self.definitions = {
@@ -486,7 +490,13 @@ class _MakeSourceMode:
         except RecursionError:
             return None
         if left is None or right is None or not left or not right:
-            return None
+            values = []
+            for operand, value in zip(operands, (left, right)):
+                exact = self.exact_initializer_value(operand) if value is None else None
+                values.append(frozenset((exact,)) if exact is not None else value)
+            left, right = values
+            if left is None or right is None or not left or not right:
+                return None
         # Source assignments cannot refresh invalidated engine/history facts.
         if self.reads & (SOURCE_HISTORY_CONTROLS | (INVOCATION_CONTROL_READS - self.control_reads)):
             return None
@@ -516,7 +526,7 @@ class _MakeSourceMode:
         if binding.flavor == "simple":
             return binding.value if binding.value is not None else self.exact_reference(name, active)
         if binding.flavor == "recursive" and binding.value is not None:
-            return self.template_argument(binding.value, (*active, name))
+            return self.exact_reference(name, active)
         return None
 
     def template_initializer(self, expression):
@@ -532,7 +542,7 @@ class _MakeSourceMode:
             if record is not None and record[0] == self.version:
                 return record[1]
         function = _make_function(expression)
-        if function is None or function[0] in {"notdir", "addprefix"}:
+        if function is None or function[0] in {"notdir", "addprefix", "filter-out", "findstring", "strip", "and"}:
             if function is None:
                 try:
                     literal = self.literal_text(expression)
@@ -547,6 +557,10 @@ class _MakeSourceMode:
         operation, arguments = function
         if operation not in {"patsubst", "wildcard"}:
             return None
+        if operation == "wildcard":
+            exact = self.exact_initializer_value(expression)
+            if exact is not None:
+                return "exact", exact
         try:
             values = tuple(self.template_argument(argument) for argument in arguments)
         except RecursionError:
@@ -579,9 +593,7 @@ class _MakeSourceMode:
         if literal is not None:
             return literal if "$" not in literal and "\0" not in literal else None
         if binding.flavor == "recursive" and binding.value is not None:
-            forwarded = NAME_PART.fullmatch(binding.value)
-            if forwarded:
-                return self.exact_reference(forwarded[1] or forwarded[2], (*active, name))
+            return self.exact_initializer_value(binding.value, active=(*active, name))
         record = self.template_values.get(name)
         if binding.flavor != "simple" or record is None or record[0] != self.version:
             return None
@@ -596,9 +608,9 @@ class _MakeSourceMode:
             return value if "$" not in value and "\0" not in value else None
         return None
 
-    def exact_initializer_value(self, expression):
+    def exact_initializer_value(self, expression, active=()):
         self.checkpoint()
-        if not self.original_namespace_valid:
+        if not self.original_namespace_valid or len(active) >= 512:
             return None
 
         def resolve(part, body):
@@ -606,7 +618,7 @@ class _MakeSourceMode:
             name = _make_reference_base(body)
             if re.fullmatch(IDENTIFIER, name):
                 if body == name:
-                    return self.exact_reference(name)
+                    return self.exact_reference(name, active)
                 suffix = body[len(name):]
                 if suffix.startswith(":") and suffix.count("=") == 1 and "$" not in suffix:
                     pattern, replacement = suffix[1:].split("=", 1)
@@ -614,7 +626,7 @@ class _MakeSourceMode:
                         pattern, replacement = "%" + pattern, "%" + replacement
                     if not _supported_patsubst(pattern, replacement):
                         return None
-                    words = self.exact_reference(name)
+                    words = self.exact_reference(name, active)
                     if words is None:
                         return None
                     return _join_make_text(
@@ -627,28 +639,61 @@ class _MakeSourceMode:
             if operation in {"origin", "flavor", "value"}:
                 value = self.literal_text(part)
                 return value if value is not None and "$" not in value and "\0" not in value else None
+            if operation == "and":
+                value = ""
+                for argument in arguments:
+                    value = self.exact_initializer_value(argument.strip(MAKE_SPACE), active=active)
+                    if value is None or not value:
+                        return value
+                return value
+            if operation == "wildcard" and len(arguments) == 1:
+                if self.original_wildcard is None:
+                    return None
+                patterns = self.exact_initializer_value(arguments[0], active=active)
+                if patterns is None:
+                    return None
+                try:
+                    return self.original_wildcard(patterns)
+                except _NamespaceUnavailable as error:
+                    if str(error) not in self.namespace_holds and self.budget is not None:
+                        self.budget.charge("cache", len(encoded(str(error))))
+                    self.namespace_holds.add(str(error))
+                    return None
             if operation == "patsubst":
                 fact = self.template_initializer(part)
                 if (fact is not None and fact[0] == "patsubst"
                         and all("$" not in value and "\0" not in value for value in fact[1])):
                     return _join_make_text(_original_patsubst_parts(fact[1], self.budget), self.budget)
                 return None
-            if (operation, len(arguments)) not in {("notdir", 1), ("addprefix", 2)}:
+            if (operation, len(arguments)) not in {
+                ("notdir", 1), ("addprefix", 2), ("filter-out", 2), ("findstring", 2), ("strip", 1),
+            }:
                 return None
-            values = [self.exact_initializer_value(argument) for argument in arguments]
+            values = [self.exact_initializer_value(argument, active=active) for argument in arguments]
             if any(value is None for value in values):
+                return None
+            if operation == "findstring":
+                return values[0] if values[0] in values[1] else ""
+            patterns = values[0].split() if operation == "filter-out" else ()
+            if any(not _supported_patsubst(pattern, "") for pattern in patterns):
                 return None
 
             def parts():
-                for index, match in enumerate(re.finditer(r"[^ \t\r\n\v\f]+", values[-1])):
+                first = True
+                for match in re.finditer(r"[^ \t\r\n\v\f]+", values[-1]):
                     self.checkpoint()
-                    if index:
+                    if operation == "filter-out" and any(_patsubst_word(pattern, match[0]) for pattern in patterns):
+                        continue
+                    if not first:
                         yield " "
+                    first = False
                     if operation == "addprefix":
                         yield values[0]
                         yield match[0]
-                    else:
+                    elif operation == "notdir":
                         yield match[0].rsplit("/", 1)[-1]
+                    else:
+                        yield match[0]
 
             return _join_make_text(parts(), self.budget)
 
@@ -736,6 +781,7 @@ class _MakeSourceMode:
                     return True
                 active.add(name)
                 pending.append((name, value, True))
+            value = _prune_and(value, self.exact_initializer_value, self.budget)
             for body in make_expressions(value):
                 operation = re.match(r"([^ \t\r\n\v\f]+)[ \t\r\n\v\f]+", body)
                 if operation and operation[1] not in MAKE_FUNCTIONS - {"call", "eval", "guile"}:
@@ -838,6 +884,7 @@ class _MakeSourceMode:
         version = self.version
         literal_choices = None
         template_value = None
+        read_value = None
         if scope is None and (
             operator in SIMPLE_ASSIGNMENT_OPERATORS or operator == "+=" and effect.immediate is True
         ):
@@ -847,11 +894,20 @@ class _MakeSourceMode:
                 literal_choices = None
             if operator in SIMPLE_ASSIGNMENT_OPERATORS and literal_choices is None:
                 template_value = self.template_initializer(value)
+            elif operator == "+=" and active is True and effect.applies is True:
+                before_exact = self.exact_reference(name)
+                rhs_exact = self.exact_initializer_value(value)
+                if before_exact is not None and rhs_exact is not None:
+                    appended = before_exact if not rhs_exact else _join_make_text(
+                        (before_exact, " " if before_exact else "", rhs_exact), self.budget,
+                    )
+                    template_value = "exact", appended
         # GNU expands simple/shell RHSs before write-precedence rejection.
         # Append expansion instead depends on the original binding's flavor.
         emitted = ()
         if effect.immediate is not False:
-            if scope is not None and references(value):
+            read_value = _prune_and(value, self.exact_initializer_value, self.budget)
+            if scope is not None and references(read_value):
                 self.uncertain("unproven target-specific RHS expansion context")
             emitted = self.evaluate(value, active=active)
         if emitted and definitions.get(name, ()) != previous:
@@ -911,10 +967,17 @@ class _MakeSourceMode:
                 if self.budget is not None:
                     self.budget.charge("cache", len(encoded((name, version, template_value))))
                 self.template_values[name] = version, template_value
-        return effect._replace(emitted=emitted)
+        return effect._replace(emitted=emitted, read_value=read_value)
 
     def assign_targets(self, assignment, *, override=False, active=True):
         target = assignment["target"].strip(MAKE_SPACE)
+        if "$" in target:
+            try:
+                target = self.literal_text(target)
+                if target is None:
+                    target = self.exact_target_text(assignment["target"].strip(MAKE_SPACE))
+            except RecursionError:
+                target = None
         if not target or any(character in target for character in "$%*?[]\\;|"):
             self.uncertain("unproven target-specific assignment context")
             return _AssignmentEffect(None, None)
@@ -1308,6 +1371,7 @@ def _source_units(
     sources, *, assignments=(), budget=None, target=None, original_input=None, namespace=None,
     read_order=None, remade=False, native_exports=(), literal_modules=(), template_mode=None,
     original_target_value=None,
+    original_wildcard=None,
 ):
     decoded = {}
     mode = _MakeSourceMode(
@@ -1318,6 +1382,7 @@ def _source_units(
         namespace=namespace,
         template_mode=template_mode,
         original_target_value=original_target_value,
+        original_wildcard=original_wildcard,
     )
     if target is not None:
         mode.bind_invocation(target)
@@ -1703,6 +1768,44 @@ def _template_wildcard_bound(pattern, namespace, budget=None):
     return "header-bound", (pattern,)
 
 
+def _prune_and(expression, resolve=None, budget=None):
+    """Reference-analysis form only; immutable source text is retained separately."""
+    spans = sorted(_make_expression_spans(expression), key=lambda item: (item[0], -item[1]))
+    result, previous = [], 0
+    changed = False
+    for start, stop, body in spans:
+        if start < previous:
+            continue
+        part = expression[start:stop]
+        function = _make_function(part)
+        replacement = part
+        if function is not None and function[0] == "and":
+            kept = []
+            known = True
+            for argument in function[1]:
+                argument = argument.strip(MAKE_SPACE)
+                kept.append(_prune_and(argument, resolve if known else None, budget))
+                value = (
+                    resolve(argument) if resolve is not None and known
+                    else argument if "$" not in argument else None
+                )
+                if value is None:
+                    known = False
+                if known and value == "":
+                    break
+            replacement = part[:2] + "and " + ",".join(kept) + part[-1]
+        elif function is not None and function[0] not in {"origin", "flavor", "value"}:
+            interior = _prune_and(body, None, budget)
+            replacement = part[:2] + interior + part[-1]
+        result.extend((expression[previous:start], replacement))
+        changed |= replacement != part
+        previous = stop
+    if not changed:
+        return expression
+    result.append(expression[previous:])
+    return _join_make_text(result, budget)
+
+
 def _join_make_text(parts, budget):
     result = []
     for part in parts:
@@ -1755,6 +1858,13 @@ def _supported_patsubst(pattern, replacement):
     )
 
 
+def _patsubst_word(pattern, word):
+    if "%" not in pattern:
+        return word == pattern
+    prefix, suffix = pattern.split("%")
+    return word.startswith(prefix) and word.endswith(suffix) and len(word) >= len(prefix) + len(suffix)
+
+
 def _original_patsubst_parts(arguments, budget):
     if budget is not None:
         budget.remaining()
@@ -1777,7 +1887,7 @@ def _original_patsubst_parts(arguments, budget):
             budget.remaining()
         word = match[0]
         prefix, suffix = pattern.split("%")
-        matched = word.startswith(prefix) and word.endswith(suffix) and len(word) >= len(prefix) + len(suffix)
+        matched = _patsubst_word(pattern, word)
         stem = word[len(prefix):len(word) - len(suffix) if suffix else len(word)]
         parts = (word,)
         if matched and "%" in replacement:
@@ -1869,9 +1979,7 @@ class _TemplateModeProof:
         if literal is not None:
             return literal
         if binding.flavor == "recursive" and binding.value is not None:
-            forwarded = NAME_PART.fullmatch(binding.value)
-            if forwarded:
-                return self.value(mode, forwarded[1] or forwarded[2], active=(*active, name))
+            return mode.exact_reference(name, active)
         record = mode.template_values.get(name)
         if binding.flavor != "simple" or record is None or record[0] != mode.version:
             return None
@@ -2009,12 +2117,16 @@ def _prepare_rule_templates(
     namespace.update(session.snapshot.gitlink_roots)
     session.budget.charge("cache", len(encoded(sorted(namespace))))
     template_mode = _TemplateModeProof(session, target, state, commands, observation, primary_source, observe_dispatch)
+    original_namespace = session._original_namespace(
+        observation, target=target, makefile=primary_source, assignments=state,
+    )
     units = _source_units(
         sources, assignments=state, budget=session.budget, target=target,
         original_input=original_input, namespace=frozenset(namespace),
         read_order=read_order, remade=remade, native_exports=native_exports, literal_modules=literal_modules,
         template_mode=template_mode,
         original_target_value=template_mode.text,
+        original_wildcard=lambda patterns: session._original_wildcard(original_namespace, patterns),
     )
     if literal_modules:
         units = units._replace(phase_tests=_literal_binding_phases(units, observation, session.budget))
@@ -2428,6 +2540,7 @@ def split_inline_recipe(line):
 
 
 def references(line):
+    line = _prune_and(line)
     names = {next(value for value in match.groups() if value is not None)
              for pattern in (REFERENCE, SCOPED) for match in pattern.finditer(line)}
     names.update(name for _, _, name in _literal_metadata(line))
@@ -2454,7 +2567,7 @@ def source_census(
 ):
     all_names, graph, recipe, introspection, defaults = set(), set(), set(), set(), set()
     dependencies = {}
-    definitions, expressions, graph_expressions = {}, {}, []
+    definitions, expressions, read_expressions, graph_expressions = {}, {}, {}, []
     eval_requests, deferred_evals, consumed_expressions = [], set(), []
     eval_raw_expressions = {}
     retained_declarations = set()
@@ -2498,16 +2611,20 @@ def source_census(
         prefix = " ".join(word for word in line[:definition.start(1)].split() if word != "define")
         retain_defaults(prefix + " " + line[definition.start(1):])
 
-    def retain_assignment(assignment, *, expanded_input=False, stores=True):
+    def retain_assignment(assignment, *, expanded_input=False, stores=True, effect=None):
         if expanded_input and not retain_once("assignment", assignment[0]):
             return
         name, value = assignment["name"], assignment["value"]
+        read_value = (
+            effect.read_value if effect is not None and effect.read_value is not None
+            else _prune_and(value, budget=budget)
+        )
         retain_defaults(assignment[0])
         if not stores:
             return
         dependencies.setdefault(name, set())
         if not expanded_input or "$" not in value:
-            dependencies[name].update(references(value))
+            dependencies[name].update(references(read_value))
         definitions.setdefault(name, []).append(
             value.lstrip(MAKE_SPACE)
             if assignment["operator"] in {"=", ":=", "::=", "?="} and not (expanded_input and "$" in value)
@@ -2515,6 +2632,7 @@ def source_census(
         )
         if not expanded_input or "$" not in value:
             expressions.setdefault(name, []).append(value)
+            read_expressions.setdefault(name, []).append(read_value)
 
     def retain_rhs(name, value, effect):
         if effect is None:
@@ -2523,6 +2641,7 @@ def source_census(
             raise MakeProbeError("unproven original Make append RHS timing")
         if effect.applies is False and effect.immediate is False:
             return
+        value = effect.read_value if effect.read_value is not None else _prune_and(value, budget=budget)
         immediate = effect.immediate is True
         eval_requests.append((None if immediate else name, value, effect.emitted))
         if immediate:
@@ -2556,6 +2675,7 @@ def source_census(
         extend_known(original_reads, unit.reads)
         all_names.update(unit.reads)
         statement, inline_recipe = (raw, "") if raw.startswith("\t") else split_inline_recipe(raw)
+        inline_recipe = _prune_and(inline_recipe, budget=budget)
         line = statement if raw.startswith("\t") else strip_comment(statement)
         if not raw.startswith("\t"):
             ambiguous_assignment |= bool(_unproven_assignment_destination(line))
@@ -2585,7 +2705,11 @@ def source_census(
             retain_rhs(defining, unit.body, unit.assignment)
             if unit.assignment.applies is False and unit.assignment.immediate is False:
                 continue
-            names = references(unit.body) | references(unit.body.replace("$$", "$"))
+            read_body = (
+                unit.assignment.read_value if unit.assignment.read_value is not None
+                else _prune_and(unit.body, budget=budget)
+            )
+            names = references(read_body) | references(read_body.replace("$$", "$"))
             all_names.update(names)
             if unit.assignment.applies is not False:
                 definitions.setdefault(defining, []).append(
@@ -2593,7 +2717,8 @@ def source_census(
                 )
                 dependencies.setdefault(defining, set()).update(names)
                 expressions.setdefault(defining, []).append(unit.body)
-            introspection.update(name for _, _, name in _literal_metadata(unit.body))
+                read_expressions.setdefault(defining, []).append(read_body)
+            introspection.update(name for _, _, name in _literal_metadata(read_body))
             continue
         assignment = None if raw.startswith("\t") else ASSIGNMENT.match(line)
         target_assignment = None if raw.startswith("\t") else TARGET_ASSIGNMENT.match(line)
@@ -2602,13 +2727,21 @@ def source_census(
             or unit.assignment is None
             or unit.assignment.applies is not False or unit.assignment.immediate is not False
         )
-        names = references(line) if relevant else set()
+        read_line = line
+        if assignment or target_assignment:
+            parsed = assignment or target_assignment
+            read_value = (
+                unit.assignment.read_value if unit.assignment is not None and unit.assignment.read_value is not None
+                else _prune_and(parsed["value"], budget=budget)
+            )
+            read_line = line[:parsed.start("value")] + read_value
+        names = references(read_line) if relevant else set()
         all_names.update(names)
         if relevant:
-            introspection.update(name for _, _, name in _literal_metadata(line))
+            introspection.update(name for _, _, name in _literal_metadata(read_line))
         if assignment:
             retain_rhs(assignment["name"], assignment["value"], unit.assignment)
-            retain_assignment(assignment, stores=unit.assignment.applies is not False)
+            retain_assignment(assignment, stores=unit.assignment.applies is not False, effect=unit.assignment)
             if relevant:
                 eval_raw_expressions.setdefault(assignment["value"], set()).add(assignment["value"].lstrip(MAKE_SPACE))
             if line.lstrip(MAKE_SPACE).startswith("export "):
@@ -2616,13 +2749,14 @@ def source_census(
                 consumed_expressions.append("$(" + assignment["name"] + ")")
         elif target_assignment:
             retain_rhs(target_assignment["name"], target_assignment["value"], unit.assignment)
-            retain_assignment(target_assignment, stores=unit.assignment.applies is not False)
+            retain_assignment(target_assignment, stores=unit.assignment.applies is not False, effect=unit.assignment)
             if relevant:
                 eval_raw_expressions.setdefault(target_assignment["value"], set()).add(target_assignment["value"].lstrip(MAKE_SPACE))
             graph.update(references(target_assignment["target"]))
             graph_expressions.append(target_assignment["target"])
             consumed_expressions.append(target_assignment["target"])
         elif raw.startswith("\t"):
+            line = _prune_and(line, budget=budget)
             consumed_expressions.append(line)
             eval_requests.append((None, line, ()))
             (graph if "$(eval" in line or "${eval" in line else recipe).update(names)
@@ -2630,6 +2764,7 @@ def source_census(
                 graph_expressions.append(line)
                 stage_sinks.append(line)
         else:
+            line = _prune_and(line, budget=budget)
             consumed_expressions.append(line)
             eval_requests.append((None, line, unit.emitted))
             graph.update(names)
@@ -2727,6 +2862,59 @@ def source_census(
     exports = set(reference_units.native_exports)
     extend_known(all_names, exports & SOURCE_HISTORY_CONTROLS)
     consumed, execution_roots, execution_dependencies = set(), set(), {}
+    constant_writes, unsafe_constants = {}, set()
+    unknown_writer = False
+    for position, (_, _, unit) in enumerate(ordered):
+        if unit.body is not None:
+            defined = DEFINE.match(strip_comment(unit.text))
+            if defined:
+                unsafe_constants.add(defined[1])
+        if unit.body is None and not unit.text.startswith("\t"):
+            line = strip_comment(unit.text)
+            unknown_writer |= bool(_unproven_assignment_destination(line))
+            undefined = re.fullmatch(r"\s*(?:override\s+)?undefine\s+(" + IDENTIFIER + r")\s*", line)
+            if undefined:
+                unsafe_constants.add(undefined[1])
+            assignment = ASSIGNMENT.fullmatch(line)
+            target_assignment = TARGET_ASSIGNMENT.fullmatch(line)
+            if target_assignment:
+                unsafe_constants.add(target_assignment["name"])
+            if assignment:
+                name = assignment["name"]
+                constant = (
+                    assignment["value"].lstrip(MAKE_SPACE)
+                    if position in known_positions and unit.active is True and unit.assignment is not None
+                    and unit.assignment.applies is True and assignment["operator"] in {"=", ":=", "::="}
+                    and "$" not in assignment["value"] else None
+                )
+                if budget is not None:
+                    budget.charge("cache", len(encoded((name, constant))))
+                constant_writes.setdefault(name, []).append(constant)
+        for body in make_expressions(unit.body if unit.body is not None else unit.text):
+            if body.startswith(("call ", "call\t", "guile ", "guile\t")):
+                unknown_writer = True
+            if body.startswith(("eval ", "eval\t")):
+                assignment = ASSIGNMENT.fullmatch(body[5:].lstrip(MAKE_SPACE))
+                if assignment is None:
+                    unknown_writer = True
+                else:
+                    unsafe_constants.add(assignment["name"])
+    read_constants = {} if unknown_writer else {
+        name: values[0] for name, values in constant_writes.items()
+        if name not in unsafe_constants and len(values) == 1 and values[0] is not None
+        and name not in PROTECTED_BINDINGS
+    }
+    def recipe_constant(expression):
+        return _resolve_make_text(
+            expression, lambda part, body: read_constants.get(body) if re.fullmatch(IDENTIFIER, body) else None,
+            budget,
+        )
+
+    # Only deferred bodies not read during parsing may borrow this whole-source
+    # immutable-literal context. Immediate reads retain their occurrence forms.
+    for name, values in read_expressions.items():
+        if name not in original_reads and name not in graph:
+            read_expressions[name] = [_prune_and(value, recipe_constant, budget) for value in values]
 
     def fact_count():
         maps = (definitions, expressions, dependencies, execution_dependencies)
@@ -2746,7 +2934,8 @@ def source_census(
             if retain_once("native-export-consumption", name):
                 consumed_expressions.append("$(" + name + ")")
         unresolved, unresolved_execution = set(), set()
-        for name, values in list(expressions.items()):
+        for name, originals in list(expressions.items()):
+            values = read_expressions.get(name, originals)
             executing = [_without_literal_metadata(value) for value in values]
             actual_dependencies = execution_dependencies.setdefault(name, set())
             extend_known(actual_dependencies, set().union(*(references(value) for value in executing)))
@@ -2834,6 +3023,8 @@ def source_census(
         "defined": set(dependencies),
         "dependencies": dependencies,
         "execution_dependencies": execution_dependencies,
+        "read_expressions": read_expressions,
+        "read_constants": read_constants,
         "definitions": definitions,
         "observed_values": observed_values,
         "unresolved": unresolved,
@@ -3183,7 +3374,17 @@ def _graph_definitions(session, target, state, commands, observation, usage, *, 
 
 def _recipe_domains(session, target, state, commands, observation, usage, observed_names, *, observe_dispatch=False):
     """Keep execution and literal metadata reads distinct in native pages."""
-    recipes = [entry["recipe"] for entry in observation.semantics["files"]]
+    def recipe_constant(expression):
+        return _resolve_make_text(
+            expression,
+            lambda part, body: usage["read_constants"].get(body) if re.fullmatch(IDENTIFIER, body) else None,
+            session.budget,
+        )
+
+    recipes = [
+        _prune_and(entry["recipe"], recipe_constant, session.budget)
+        for entry in observation.semantics["files"]
+    ]
     if any(computed_introspection(recipe) for recipe in recipes):
         raise MakeProbeError("computed Make introspection in a consumed recipe lacks a sealed literal selector")
     executing = [_without_literal_metadata(recipe) for recipe in recipes]
@@ -3205,7 +3406,8 @@ def _recipe_domains(session, target, state, commands, observation, usage, observ
         for name in context["environment"] if name in usage["defined"]
     }
     metadata_sources = recipes + [
-        expression for name in names | exports for expression in usage["source_expressions"].get(name, ())
+        expression for name in names | exports
+        for expression in usage["read_expressions"].get(name, usage["source_expressions"].get(name, ()))
     ]
     if any(computed_introspection(expression) for expression in metadata_sources):
         raise MakeProbeError("computed Make introspection in a consumed recipe lacks a sealed literal selector")

@@ -9,7 +9,7 @@ import shutil
 import unittest
 from unittest.mock import patch
 
-from scripts.validation_ownership import graph_probe, reporter
+from scripts.validation_ownership import graph_probe, make_probe, reporter
 from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, GitTreeEntries, GitTreeEntry, encoded
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.budget import Limits, MAX_PLANNED_STATE_BYTES
@@ -3869,10 +3869,16 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 checked.append((result, mode.template_values.get(name)))
             return result
 
-        with patch.object(_MakeSourceMode, "template_header_composition", return_value=None), \
-             patch.object(graph_probe._TemplateModeProof, "header_data", actual_header):
-            with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation"):
-                self.observe(**options)
+        with patch.object(_MakeSourceMode, "template_header_composition", return_value=None):
+            self.assertEqual(self.observe(**options)["all"], positive)
+        with patch.object(ProbeSession, "_original_wildcard", side_effect=make_probe._NamespaceUnavailable(
+            "independent exact namespace proof removed",
+        )):
+            self.assertEqual(self.observe(**options)["all"], positive)
+            with patch.object(_MakeSourceMode, "template_header_composition", return_value=None), \
+                 patch.object(graph_probe._TemplateModeProof, "header_data", actual_header):
+                with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation"):
+                    self.observe(**options)
         self.assertEqual(checked, [(False, None)])
         self.assertEqual(self.ordinary(target="measure"), ordinary)
         self.assertEqual(self.observe(**options)["all"], positive)
@@ -4247,13 +4253,14 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             mode.assign("CYCLE", "=", "$(CYCLE)")
             self.assertIsNone(mode.exact_initializer_value("$(notdir $(CYCLE))"))
             mode.assign("RECURSIVE", "=", "$(notdir first/alpha.c)")
-            self.assertIsNone(mode.exact_reference("RECURSIVE"))
+            self.assertNotIn("RECURSIVE", mode.template_values)
+            self.assertEqual(mode.exact_reference("RECURSIVE"), "alpha.c")
             mode.assign("CONDITIONAL", ":=", "$(notdir first/alpha.c)", active=None)
             mode.assign("DEFAULT", "?=", "$(notdir first/alpha.c)")
             mode.assign("SCOPED", ":=", "$(notdir first/alpha.c)", scope="all")
             self.assertFalse({"CONDITIONAL", "DEFAULT", "SCOPED"} & set(mode.template_values))
             mode.assign("OBJECTS", "+=", "extra.o")
-            self.assertNotIn("OBJECTS", mode.template_values)
+            self.assertEqual(mode.exact_reference("OBJECTS"), "out/alpha.o out/beta.o extra.o")
             for posix, namespace in ((None, True), (False, False)):
                 mode.posix, mode.original_namespace_valid = posix, namespace
                 with patch.object(mode, "original_target_value", side_effect=AssertionError("unproved target lookup")):
@@ -4441,28 +4448,30 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.assertIn("$(SFILES:.s=.o)", {value.strip() for value in usages[0]["source_expressions"]["ASM_OBJECTS"]})
 
     def test_original_exact_required_leaf_and_scope_gaps_remain_explicit_failures(self):
+        """Former refusals now require fixed and component-removal evidence."""
         make = (ROOT / "Makefile").read_text().splitlines()
         modern = (ROOT / "modern.mk").read_text().splitlines()
         actual = lambda lines, prefix: next(line for line in lines if line.startswith(prefix)) + "\n"
-        wildcard = (
-            actual(make, "ASM_S_FILES  :=")
-            + actual(make, "SFILES       :=")
-        )
-        findstring = (
-            actual(modern, "ifeq (,$(findstring src/msg_data.c,")
-            + actual(modern, "MODERN_ALL_C_SOURCES += src/msg_data.c") + "endif\n"
-        )
-        append = (
-            "MODERN_ALL_C_SOURCES := $(addprefix src/,$(NAMES))\n"
-            + actual(modern, "MODERN_ALL_C_SOURCES += $(MODERN_BGM_REGISTRY_C)")
-        )
+        def between(lines, first, last):
+            start = next(index for index, line in enumerate(lines) if line.startswith(first))
+            stop = next(index for index, line in enumerate(lines) if index > start and line.startswith(last))
+            return "\n".join(lines[start:stop]) + "\n"
+
+        hand_sources = actual((ROOT / "generated_data.mk").read_text().splitlines(),
+                              "GENERATED_DATA_LINKED_HAND_SOURCES :=")
+        c_sources = hand_sources + between(make, "CFILES_GENERATED :=", "ASM_S_FILES  :=")
+        all_sources = hand_sources + between(make, "CFILES_GENERATED :=", "SFILES_COMPILED :=")
+        modern_sources = hand_sources + between(modern, "MODERN_ALL_C_SOURCES ?=", "MODERN_ALL_DATA_C_SOURCES ?=")
+        bgm = between(modern, "MODERN_BGM_REGISTRY_JSON :=", "MODERN_ALL_C_OBJECTS :=")
+        findstring = modern_sources + bgm
         scoped = actual(modern, "$(MODERN_ALL_DATA_OBJECTS): MODERN_CFLAGS +=")
         cases = (
             ("filter-out", "Makefile", "LEGACY_C_OBJECTS",
-             {"C_OBJECTS": "src/alpha.o src/msg_data.o", "LEGACY_MSG_OBJECT": "src/msg_data.o", "DEPS_DIR": ".dep"}, "", ""),
+             {"C_SUBDIR": "src", "DEPS_DIR": ".dep"},
+             c_sources + actual(make, "C_OBJECTS    :=") + actual(make, "LEGACY_MSG_OBJECT :="), ""),
             ("wildcard-composed-leaf", "Makefile", "ASM_OBJECTS",
-             {"ASM_SUBDIR": "asm", "SRC_S_FILES": "", "DATA_S_FILES": "", "DATA_SRC_S_FILES": "",
-              "SOUND_S_FILES": "", "data_dep": "include/extra.h"}, wildcard, ""),
+             {"C_SUBDIR": "src", "ASM_SUBDIR": "asm", "DATA_SUBDIR": "data", "DATA_SRC_SUBDIR": "src/data",
+              "data_dep": "include/extra.h"}, all_sources, ""),
             ("multi-pattern-wildcard-leaf", "Makefile", "DATA_SRC_C_OBJECTS",
              {"DATA_SRC_SUBDIR": "src/data", "PREPROC": "tools/preproc/preproc", "data_dep": "include/extra.h"},
              actual(make, "DATA_SRC_C_FILES :="), ""),
@@ -4470,20 +4479,39 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
              {"MODERN_OUTPUT_DIR": "out", "MODERN_PREPROC": "tools/preproc/preproc"},
              actual(modern, "MODERN_ALL_DATA_C_SOURCES ?="), ""),
             ("unknown-findstring-conditional-append", "modern.mk", "MODERN_ALL_C_HEADER_DEPS",
-             {"MODERN_OUTPUT_DIR": "out", "MODERN_ALL_C_SOURCES": "src/alpha.c"}, findstring, ""),
+             {"MODERN_OUTPUT_DIR": "out"}, findstring, ""),
             ("append-to-exact-snapshot", "modern.mk", "MODERN_ALL_C_HEADER_DEPS",
-             {"MODERN_OUTPUT_DIR": "out", "NAMES": "alpha.c", "MODERN_BGM_REGISTRY_C": "src/expansion_bgm_data.c"},
-             append, ""),
+             {"MODERN_OUTPUT_DIR": "out"}, findstring, ""),
             ("derived-target-specific-context", "modern.mk", "MODERN_ALL_DATA_OBJECTS",
-             {"MODERN_OUTPUT_DIR": "out", "MODERN_ALL_DATA_C_SOURCES": "src/data/alpha.c src/data/beta.c",
-              "MODERN_CFLAGS": "", "MODERN_DATA_LAYOUT_FLAGS": "-fno-toplevel-reorder"}, "", scoped),
+             {"MODERN_OUTPUT_DIR": "out", "MODERN_CFLAGS": "-O2"},
+             actual(modern, "MODERN_ALL_DATA_C_SOURCES ?=") + actual(modern, "MODERN_DATA_LAYOUT_FLAGS :="), scoped),
         )
+        registry = json.loads((ROOT / ".github/validation-ownership-make-dynamics.json").read_text())
         self.last_related_target_cases = []
         for gap, path, name, inputs, prelude, target_assignment in cases:
             with self.subTest(gap=gap):
                 options = self.related_static_target_fixture(
                     path, name, inputs, prelude=prelude, scoped_assignment=target_assignment,
                 )
+                for dependency in ("src/rom_header.s", "src/crt0.s", "src/m4a_1.s", "src/libagbsyscall.s"):
+                    self.add(dependency, "/* actual named assembly input; fixture never assembles */\n")
+                self.add(".dep/src/expansion_bgm_data.d", "/* bounded depfile prerequisite */\n")
+                for dependency in ("src/data/bgm_registry.json", "scripts/modernize/bgm_registry.py"):
+                    self.add(dependency, (ROOT / dependency).read_text())
+                if gap in {"unknown-findstring-conditional-append", "append-to-exact-snapshot"}:
+                    for dependency in ("src/msg_data.c", "src/expansion_bgm_data.c"):
+                        (self.root / dependency).unlink()
+                        del self.entries[dependency]
+                    self.add("Makefile", (self.root / "Makefile").read_text()
+                             + "src/msg_data.c src/expansion_bgm_data.c: ; @true\n")
+                    options["ambient_undefined_names"] = {"MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT"}
+                defaults = {
+                    variable for variable in ("MODERN_ALL_C_SOURCES", "MODERN_ALL_DATA_C_SOURCES")
+                    if variable + " ?=" in prelude
+                }
+                self.assertTrue(defaults <= set(registry["ambient_inputs"]["allowed_names"]))
+                self.assertTrue(defaults <= set(registry["prerequisite_domains"]["tracked_fallback_names"]))
+                domains = {variable: {"kind": "tracked-fallback"} for variable in defaults}
                 ordinary = self.ordinary(target="measure").decode().splitlines()
                 with self.session() as session:
                     native = session.make("all", definitions=(name, "LATE"))
@@ -4491,13 +4519,392 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 self.assertEqual([records[key]["value"] for key in (name, "LATE")], ordinary)
                 self.assertTrue(ordinary[0])
                 self.assertEqual(ordinary[1], "alpha beta")
-                with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation") as rejected:
-                    self.observe(**options)
+                fixed = self.observe(domains, **options)["all"]
+                record = fixed["record"]["variants"][0]["record"]
+                projection = lambda data: [
+                    {key: item[key] for key in ("target", "recipe", "prerequisites")} for item in data["files"]
+                ]
+                self.assertEqual(projection(record), projection(native.semantics))
+                exact = _MakeSourceMode.exact_initializer_value
+                assign = _MakeSourceMode.assign
+                targets = _MakeSourceMode.assign_targets
+
+                def without_operator(mode, expression, *args, **kwargs):
+                    function = graph_probe._make_function(expression)
+                    operation = "filter-out" if gap == "filter-out" else "findstring"
+                    if function is not None and function[0] == operation:
+                        return None
+                    return exact(mode, expression, *args, **kwargs)
+
+                def without_append(mode, variable, operator, *args, **kwargs):
+                    effect = assign(mode, variable, operator, *args, **kwargs)
+                    if operator == "+=" and kwargs.get("scope") is None:
+                        mode.template_values.pop(variable, None)
+                    return effect
+
+                def without_scopes(mode, declaration, **kwargs):
+                    if "$" in declaration["target"]:
+                        mode.uncertain("removed exact derived scope resolution")
+                        return graph_probe._AssignmentEffect(None, None)
+                    return targets(mode, declaration, **kwargs)
+
+                if "wildcard" in gap:
+                    removal = patch.object(ProbeSession, "_original_wildcard", side_effect=make_probe._NamespaceUnavailable(
+                        "removed independent original wildcard authority",
+                    ))
+                elif gap == "append-to-exact-snapshot":
+                    removal = patch.object(_MakeSourceMode, "assign", without_append)
+                elif gap == "derived-target-specific-context":
+                    removal = patch.object(_MakeSourceMode, "assign_targets", without_scopes)
+                else:
+                    removal = patch.object(_MakeSourceMode, "exact_initializer_value", without_operator)
+                with removal:
+                    with self.assertRaises(MakeProbeError) as rejected:
+                        self.observe(domains, **options)
+                self.assertEqual(self.observe(domains, **options)["all"], fixed)
                 self.last_related_target_cases.append({
-                    **self.last_related_target_fixture, "status": "remaining original obligation",
+                    **self.last_related_target_fixture, "status": "original ancestors fixed; independent removal rejects",
                     "gap": gap, "native_target_value": ordinary[0], "native_metadata": records[name],
-                    "current_rejection": str(rejected.exception),
+                    "component_removal_rejection": str(rejected.exception),
                 })
+
+    def test_original_namespace_capability_is_issued_typed_and_context_bound(self):
+        self.add("src/a.c", "a\n")
+        self.add("src/b.c", "b\n")
+        self.add("src/.hidden.c", "hidden\n")
+        self.add("src/directory.c/member.txt", "directory member\n")
+        (self.root / "src/untracked.c").write_text("not an admitted input\n")
+        patterns = "src/b.c src/*.c src/a.c"
+        self.add("Makefile", "VALUE := $(wildcard " + patterns + ")\nall: ;\n")
+        with self.session() as session:
+            native = session.make("all", variables=("VALUE", "MAKEFILE_LIST", "MAKE_RESTARTS"))
+            token = session._original_namespace(native, target="all", makefile="Makefile")
+            self.assertEqual(session._original_wildcard(token, patterns), native.semantics["domains"]["VALUE"]["value"])
+            self.assertEqual(session._original_wildcard(token, patterns),
+                             "src/b.c src/a.c src/b.c src/directory.c src/a.c")
+            self.assertEqual(session._original_wildcard(token, "absent/*.c src/missing.c"), "")
+            self.assertEqual(session._original_wildcard(token, "src/.*.c"), "src/.hidden.c")
+            with self.assertRaisesRegex(MakeProbeError, "forged|expired"):
+                session._original_wildcard(make_probe._OriginalNamespace(), patterns)
+            with self.assertRaisesRegex(MakeProbeError, "issued native observation"):
+                session._original_namespace(replace(native), target="all", makefile="Makefile")
+            for target, makefile, assignments in (
+                ("other", "Makefile", ()), ("all", "other.mk", ()),
+                ("all", "Makefile", (("command-line", "VALUE", "forged"),)),
+            ):
+                with self.subTest(target=target, makefile=makefile, assignments=assignments):
+                    with self.assertRaisesRegex(MakeProbeError, "invocation/state"):
+                        session._original_namespace(native, target=target, makefile=makefile, assignments=assignments)
+            original = native.semantics["domains"]["MAKE_RESTARTS"]
+            native.semantics["domains"]["MAKE_RESTARTS"] = {"origin": "environment", "flavor": "recursive", "value": "1"}
+            with self.assertRaisesRegex(MakeProbeError, "observation changed"):
+                session._original_wildcard(token, patterns)
+            native.semantics["domains"]["MAKE_RESTARTS"] = original
+            for pattern in ("src/?.c", "src/[ab].c", "*/a.c", "~/a.c", "src/../a.c", "src\\a.c"):
+                with self.subTest(pattern=pattern):
+                    with self.assertRaises(make_probe._NamespaceUnavailable):
+                        session._original_wildcard(token, pattern)
+        self.assertIsNone(session.base)
+        self.assertFalse(session.budget.children)
+        self.assertFalse(session.budget.producer_waiters)
+        with self.assertRaisesRegex(MakeProbeError, "deadline|budget"):
+            session._original_wildcard(token, patterns)
+
+    def test_original_namespace_rejects_unadmitted_types_and_changed_backing(self):
+        self.add("src/a.c", "source\n")
+        link = "src/link.c"
+        (self.root / link).symlink_to("a.c")
+        self.entries[link] = GitTreeEntry(link, "120000", "blob", hashlib.sha1(b"a.c").hexdigest())
+        self.add("src/space name.c", "unsupported raw word spelling\n")
+        self.add("Makefile", "all: ;\n")
+        with self.session() as session:
+            native = session.make("all")
+            token = session._original_namespace(native, target="all", makefile="Makefile")
+            with self.assertRaisesRegex(make_probe._NamespaceUnavailable, "unadmitted object"):
+                session._original_wildcard(token, "src/link.c")
+            with self.assertRaisesRegex(make_probe._NamespaceUnavailable, "spelling/type"):
+                session._original_wildcard(token, "src/space*")
+            self.assertEqual(session._original_wildcard(token, "src/a.c"), "src/a.c")
+            changed = session.tree / "src/new.c"
+            changed.write_text("unreceipted private-tree mutation\n")
+            changed.unlink()
+            with self.assertRaisesRegex(make_probe._NamespaceUnavailable, "identity changed"):
+                session._original_wildcard(token, "src/a.c")
+
+    def test_original_namespace_publication_history_keeps_gnu_cache_counterexample(self):
+        self.last_namespace_cases = []
+        for location in ("build", "src"):
+            with self.subTest(location=location):
+                outputs = (location + "/new.c/child.txt", location + "/z.c")
+                self.add("src/a.c", "initial\n")
+                self.add("writer.py", (
+                    "from pathlib import Path\n"
+                    "base=Path('/work') if Path(__file__).resolve().parent==Path('/repo') else Path(__file__).resolve().parent\n"
+                    "for name in " + repr(outputs) + ":\n"
+                    " path=base/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text('generated\\n')\n"
+                ))
+                self.add("Makefile", (
+                    "EARLY := $(wildcard src/*.c)\nLAZY = $(wildcard src/*.c)\n"
+                    "TRIGGER := $(shell python3 writer.py)\nLATE := $(wildcard src/*.c)\n"
+                    "all:\n\t@printf '%s\\n' '$(EARLY)' '$(LATE)' '$(LAZY)'\n"
+                ))
+                with self.session() as session:
+                    native = session.make(
+                        "all", variables=("LAZY",), definitions=("EARLY", "LATE"),
+                        commands={"python3 writer.py": Command(
+                            ("/usr/bin/python3", "/repo/writer.py"), code=("writer.py",), outputs=outputs,
+                        )},
+                    )
+                    token = session._original_namespace(native, target="all", makefile="Makefile")
+                    self.assertEqual(native.semantics["definitions"]["global"]["EARLY"]["value"], "src/a.c")
+                    self.assertEqual(native.semantics["definitions"]["global"]["LATE"]["value"], "src/a.c")
+                    self.assertEqual(native.semantics["domains"]["LAZY"]["value"], "src/a.c")
+                    if location == "src":
+                        with self.assertRaisesRegex(make_probe._NamespaceUnavailable, "changed during invocation"):
+                            session._original_wildcard(token, "src/*.c")
+                    else:
+                        self.assertEqual(session._original_wildcard(token, "src/*.c"), "src/a.c")
+                    self.last_namespace_cases.append({
+                        "location": location, "generated": [item.path for item in native.generated],
+                        "early": native.semantics["definitions"]["global"]["EARLY"],
+                        "late": native.semantics["definitions"]["global"]["LATE"],
+                        "mutations": list(session._require_namespace(token).mutations),
+                    })
+                self.assertEqual(self.ordinary().decode().splitlines(), ["src/a.c"] * 3)
+                expected = "src/a.c src/new.c src/z.c" if location == "src" else "src/a.c"
+                self.assertEqual(self.ordinary().decode().splitlines(), [expected] * 3)
+
+    def test_original_namespace_requires_private_completed_and_funded_capture(self):
+        self.add("src/a.c", "source\n")
+        self.add("Makefile", "all: ;\n")
+        with self.session() as session:
+            native = session.make("all")
+            token = session._original_namespace(native, target="all", makefile="Makefile")
+            issued = session._require_namespace(token)
+            fake = make_probe._NamespaceCapture(
+                issued.image, issued.epoch, issued.request, dict(issued.stamps), [],
+                native_complete=True, closed=True,
+            )
+            with self.assertRaisesRegex(MakeProbeError, "incomplete original namespace"):
+                session._seal_namespace(fake, native)
+            with self.assertRaises(TypeError):
+                issued.stamps["src"] = ()
+            with self.assertRaises(TypeError):
+                issued.image.members["src"] = ()
+            incomplete = session._begin_namespace("all", "Makefile", ())
+            session._end_namespace(incomplete)
+            with self.assertRaisesRegex(MakeProbeError, "incomplete original namespace"):
+                session._seal_namespace(incomplete, native)
+            self.assertEqual(session._original_wildcard(token, "src/*.c"), "src/a.c")
+            session.budget.charge("cache", session.budget.limits.cache_bytes - session.budget.bytes["cache"] - 1)
+            with self.assertRaisesRegex(MakeProbeError, "aggregate cache byte budget"):
+                session._original_wildcard(token, "src/*.c")
+        self.assertFalse(session.budget.children)
+        self.assertFalse(session.budget.producer_waiters)
+
+    def test_original_namespace_records_nested_inherited_and_restored_publications(self):
+        self.add("src/a.c", "source\n")
+        self.add("writer.py", (
+            "from pathlib import Path\nimport sys\n"
+            "p=Path('/work/src/generated.c');p.parent.mkdir(parents=True,exist_ok=True);p.write_text(sys.argv[1])\n"
+        ))
+        self.add("child.mk", "AGAIN := $(shell python3 writer.py first)\npeek: ;\n")
+        self.add("Makefile", (
+            "FIRST := $(shell python3 writer.py first)\nNESTED := $(shell printf inspect)\n"
+            "SECOND := $(shell python3 writer.py first)\nRESTORED := $(shell python3 writer.py first)\nall: ;\n"
+        ))
+        registrations = {
+            "python3 writer.py " + value: Command(
+                ("/usr/bin/python3", "/repo/writer.py", value), code=("writer.py",),
+                outputs=("src/generated.c",), publication_policy="if-content-changed",
+            ) for value in ("first", "second")
+        }
+        registrations["printf inspect"] = Command(("/usr/bin/printf", "inspect"))
+        nested = []
+        with self.session() as session:
+            command = session.command
+
+            def enter_child(registration):
+                if registration.argv == ("/usr/bin/printf", "inspect"):
+                    child = session.make("peek", makefile="child.mk", commands=registrations)
+                    token = session._original_namespace(child, target="peek", makefile="child.mk")
+                    self.assertEqual(session._original_wildcard(token, "src/*.c"), "src/a.c src/generated.c")
+                    self.assertTrue(all(row[1] == "retained" for row in session._require_namespace(token).mutations))
+                    nested.append((child, token))
+                return command(registration)
+
+            with patch.object(session, "command", enter_child):
+                native = session.make("all", commands=registrations)
+            token = session._original_namespace(native, target="all", makefile="Makefile")
+            mutations = session._require_namespace(token).mutations
+            actions = [row[1] for row in mutations if row[2] == "src/generated.c"]
+            self.assertEqual(actions, ["created", "retained", "retained", "retained", "removed"])
+            self.assertEqual(native.generated[0].data, b"first")
+            self.assertEqual(len({row[0] for row in mutations}), len(mutations))
+            with self.assertRaisesRegex(make_probe._NamespaceUnavailable, "changed during invocation"):
+                session._original_wildcard(token, "src/*.c")
+            with self.assertRaises(make_probe._NamespaceUnavailable):
+                session._original_wildcard(nested[0][1], "src/*.c")
+        self.assertIsNone(session.base)
+        self.assertFalse(session.budget.children)
+        self.assertFalse(session.budget.producer_waiters)
+
+    def test_original_namespace_failed_conflicting_publication_cannot_issue(self):
+        self.add("src/a.c", "source\n")
+        self.add("writer.py", (
+            "from pathlib import Path\nimport sys\n"
+            "p=Path('/work/src/new.c');p.parent.mkdir(parents=True,exist_ok=True);p.write_text(sys.argv[1])\n"
+        ))
+        self.add("Makefile", "A := $(shell python3 writer.py first)\nB := $(shell python3 writer.py second)\nall: ;\n")
+        commands = {
+            "python3 writer.py " + value: Command(
+                ("/usr/bin/python3", "/repo/writer.py", value), code=("writer.py",), outputs=("src/new.c",),
+            ) for value in ("first", "second")
+        }
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "conflicting generated output producers"):
+                session.make("all", commands=commands)
+            self.assertFalse(session._namespace_issued)
+            self.assertFalse(session._namespace_tokens)
+        self.assertFalse(session.budget.children)
+        self.assertFalse(session.budget.producer_waiters)
+
+    def test_original_namespace_rejects_caller_supplied_initial_publications(self):
+        self.add("Makefile", "all: ;\n")
+        with self.session() as session:
+            path = session.tree / "forged.c"
+            path.write_text("unreceipted\n")
+            value = make_probe.GeneratedFile("forged.c", b"unreceipted\n", 0o644)
+            session.published_sources[value.path] = value
+            session.published_versions[value.path] = ("forged", 1, make_probe.publication_identity(path.stat()))
+            with self.assertRaisesRegex(MakeProbeError, "unreceipted inherited publications"):
+                session.make("all")
+            self.assertFalse(session._namespace_issued)
+        self.assertIsNone(session.base)
+
+    def test_original_boolean_and_word_algebra_keeps_all_read_consumers_lazy(self):
+        for assignment in (
+            "VALUE := $(and ,$(UNUSED))\n",
+            "VALUE = $(and ,$(UNUSED))\n",
+            "EMPTY :=\nVALUE := $(and $(EMPTY),$(UNUSED))\n",
+            "EMPTY :=\nVALUE = $(and $(EMPTY),$(UNUSED))\n",
+        ):
+            with self.subTest(assignment=assignment):
+                self.add("Makefile", (
+                    "UNUSED = $(eval HIDDEN ?= secret)$(error unused body)$(shell touch marker)\n"
+                    + assignment + "export VISIBLE = $(VALUE)\n"
+                    "all:\n\t@printf '%s\\n' '$(VALUE)' '$(and ,$(UNUSED))' \"$$VISIBLE\"\n"
+                ))
+                self.assertEqual(self.ordinary(), b"\n\n\n")
+                result = self.observe()["all"]
+                self.assertEqual(result["variable_census"]["defaults"], [])
+                record = result["record"]["variants"][0]["record"]
+                self.assertEqual(record["native_dispatches"][0]["environment"]["VISIBLE"], "")
+                self.assertNotIn("UNUSED", record["domains"])
+                self.assertFalse((self.root / "marker").exists())
+        self.add("Makefile", (
+            "WORDS := b.o a.c b.o a.c\nFILTER := $(filter-out %.o,$(WORDS))\n"
+            "EMPTY_FILTER := $(filter-out ,$(WORDS))\nSUBSTRING := $(findstring src/msg_data.c,src/msg_data.cpp)\n"
+            "SPACE := $(subst X, ,X)\n"
+            "all:\n\t@printf '%s\\n' '$(FILTER)' '$(EMPTY_FILTER)' '$(SUBSTRING)'\n"
+        ))
+        expected = ["a.c a.c", "b.o a.c b.o a.c", "src/msg_data.c"]
+        self.assertEqual(self.ordinary().decode().splitlines(), expected)
+        with self.session() as session:
+            native = session.make("all", definitions=("FILTER", "EMPTY_FILTER", "SUBSTRING"))
+        self.assertEqual([native.semantics["definitions"]["global"][name]["value"]
+                          for name in ("FILTER", "EMPTY_FILTER", "SUBSTRING")], expected)
+        self.observe()
+        self.add("Makefile", (
+            "EMPTY :=\nSPACE := $(EMPTY) $(EMPTY)\n"
+            "A := $(and $(SPACE),yes)\nB := $(and yes,$(SPACE))\nC := $(and yes,  final  )\n"
+            "all:\n\t@printf '%s\\n' '$(value A)' '$(value B)' '$(value C)'\n"
+        ))
+        self.assertEqual(self.ordinary(), b"yes\n \nfinal\n")
+        with self.session() as session:
+            native = session.make("all", definitions=("A", "B", "C"))
+        self.assertEqual([native.semantics["definitions"]["global"][name]["value"] for name in ("A", "B", "C")],
+                         ["yes", " ", "final"])
+        self.observe()
+
+    def test_original_recursive_wildcards_capture_at_use_not_default_definition(self):
+        self.original_input_witness()
+        self.add("first/a.c", "first\n")
+        self.add("second/b.c", "second\n")
+        source = (
+            "DIRECTORY := first\nFILES ?= $(wildcard $(DIRECTORY)/*.c)\n"
+            "FIRST := $(FILES)\nDIRECTORY := second\nSECOND := $(FILES)\n"
+            "all:\n\t@printf '%s\\n' '$(value FIRST)' '$(value SECOND)'\n"
+        )
+        self.add("Makefile", source)
+        usage, _, records = self.observed_source_census()
+        self.assertEqual(records["FIRST"]["value"], "first/a.c")
+        self.assertEqual(records["SECOND"]["value"], "second/b.c")
+        self.assertIn("FILES", usage["defaults"])
+        for origin, value in (("command-line", ""), ("environment", ""), ("command-line", "first/a.c")):
+            with self.subTest(origin=origin, value=value):
+                usage, _, records = self.observed_source_census(assignments=((origin, "FILES", value),))
+                self.assertEqual(records["FIRST"]["value"], value)
+                self.assertEqual(records["SECOND"]["value"], value)
+                self.assertIn("FILES", usage["defaults"])
+
+    def test_original_lazy_read_constants_cannot_prune_other_scopes_or_earlier_reads(self):
+        self.original_input_witness()
+        self.add("Makefile", (
+            "EMPTY :=\nVALUE = $(and $(EMPTY),$(UNUSED))\nUNUSED = visible\n"
+            "all: EMPTY = nonempty\nall:\n\t@printf '%s\\n' '$(VALUE)'\n"
+        ))
+        self.assertEqual(self.ordinary(), b"visible\n")
+        record = self.observe()["all"]["record"]["variants"][0]["record"]
+        self.assertEqual(record["files"][0]["variables"]["VALUE"]["value"], "visible")
+        self.add("Makefile", (
+            "EMPTY :=\nVALUE = $(and $(EMPTY),$(UNUSED))\nUNUSED = visible\n"
+            "all:\n\t$(eval EMPTY := nonempty)@printf '%s\\n' '$(VALUE)'\n"
+        ))
+        self.assertEqual(self.ordinary(), b"visible\n")
+        with self.assertRaises(MakeProbeError):
+            self.observe()
+        source = (
+            "VALUE = $(and $(EMPTY),$(UNUSED))\nUNUSED = present\n"
+            "all: $(VALUE)\nEMPTY :=\nall: ;\npresent: ;\n"
+        )
+        self.add("Makefile", source)
+        state = (("environment", "EMPTY", "nonempty"),)
+        self.ordinary(environment={"EMPTY": "nonempty"})
+        with self.session() as session:
+            native = session.make("all", assignments=state, variables=("MAKEFILE_LIST", "MAKE_RESTARTS"))
+            sources = graph_probe._loaded_sources(session, native, primary_source="Makefile")
+            units, inputs, scoped = graph_probe._prepare_rule_templates(
+                session, "all", state, None, native, sources, primary_source="Makefile",
+            )
+            usage = source_census(
+                sources, reference_units=units, source_assignments=state, source_target="all",
+                template_graph_inputs=inputs, template_scoped=scoped, budget=session.budget,
+            )
+        self.assertEqual(native.semantics["files"][0]["prerequisites"], [{"name": "present", "order_only": False}])
+        self.assertIn("UNUSED", usage["execution_dependencies"]["VALUE"])
+
+    def test_original_derived_scopes_keep_target_local_append_and_late_lookup(self):
+        for lhs in ("one two", "$(TARGETS)"):
+            self.add("Makefile", (
+                "TARGETS := $(addprefix ,one two)\nCFLAGS := global\nFLAGS := first\n"
+                + lhs + ": CFLAGS += $(FLAGS)\nFLAGS := later\n"
+                "all: one two\none two:\n"
+                "\t@printf '%s\\n' '$(CFLAGS)' '$(flavor CFLAGS)' '$(value CFLAGS)'\n"
+            ))
+            expected = ["global later", "recursive", "$(FLAGS)"] * 2
+            self.assertEqual(self.ordinary().decode().splitlines(), expected)
+            with self.session() as session:
+                native = session.make("all", variables=("CFLAGS",), definitions=("FLAGS",))
+                raw = session.make("all", definitions=("CFLAGS",))
+            files = {item["target"]: item for item in native.semantics["files"]}
+            for name in ("one", "two"):
+                self.assertEqual(files[name]["variables"]["CFLAGS"]["value"], "global later")
+                self.assertEqual(files[name]["variables"]["CFLAGS"]["flavor"], "recursive")
+                local = next(item for item in raw.semantics["definitions"]["files"] if item["target"] == name)
+                self.assertEqual(local["variables"]["CFLAGS"],
+                                 {"origin": "file", "flavor": "recursive", "value": "$(FLAGS)"})
+            self.observe()
 
 
 if __name__ == "__main__":
