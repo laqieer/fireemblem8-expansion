@@ -1915,6 +1915,10 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/producer_channel.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/private_install.py"
         }
       ],
       "exclude": [
@@ -1937,6 +1941,10 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_content_publication.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_private_install.py"
         }
       ]
     },
@@ -1963,6 +1971,10 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_content_publication.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_private_install.py"
         }
       ],
       "exclude": []

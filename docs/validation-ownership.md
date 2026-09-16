@@ -81,6 +81,38 @@ name does not grant permission to read its content. Registry and asset controls
 exercise both properties. Root enumeration admits gitlink namespaces only by
 capturing their actual recorded pins from the repository's common-Git module
 databases.
+
+Private regular-file installation is a separate default-deny capability.
+`ProbeSession._private_install_command` is a trusted-adapter seam: it issues
+permission to one exact command object, input identity set and active view.
+Neither a `Command` field nor `publication_policy` grants rename rights. Equal
+command copies, fabricated records, foreign/restored views and expired
+lifetimes do not inherit the issued identity. Each execution consumes a new
+workspace-bound launch object before the supervisor receives its configuration.
+
+The `private_install.py` protocol binds the launch scope and argv/code/source/
+environment digest to a complete pinned `/work` parent chain and exact
+destinations. The supervisor holds those parent descriptors from before
+candidate execution through teardown; an inode-number comparison alone would
+allow remove/recreate reuse. A granted command cannot create another actor.
+Only a closed single-link regular temporary may move to an absent, unused
+destination in the same private parent. Source/runtime paths, directory moves,
+existing destinations, aliases, active file descriptors, mappings and unknown
+rename flags remain denied. Relative cwd/dirfd lookups must match the actual
+kernel directory identity.
+
+Each actual kernel outcome has a scoped, sequenced `private-install:` record.
+The paired consumer checks exact fields, identity/type/link count, complete
+destination coverage and successful outcomes before accepting command output.
+Original private-output capture still rejects extra comparison files or missing
+declared results. The existing native process suite owns these controls; graph
+discovery excludes that module rather than importing another `TestCase` alias.
+
+This primitive does **not** close the live-message graph contract. The real
+text/header comparison and C-only publication adapter, five per-dispatch
+header-remake steps, and authenticated original-read-phase source census remain
+separate required integration work. No public header write, public move/removal,
+namespace-image authority or general shell/rename permission is added here.
 Registry declaration execution now has an explicit shared-session entry:
 `graph_registry.observe_declarations(loader, session)`. The selected loader
 must be the active public view and own the same budget. It invokes the real

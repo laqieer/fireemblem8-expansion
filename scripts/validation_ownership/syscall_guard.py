@@ -28,6 +28,7 @@ if __package__:
     from .authority import _event_command, _read_events, encoded, parse_json
     from .lifecycle import finish_cleanup
     from .metadata_transport import encode_metadata_transport
+    from . import private_install as install_protocol
     from .producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity,
@@ -36,6 +37,7 @@ else:
     from authority import _event_command, _read_events, encoded, parse_json
     from lifecycle import finish_cleanup
     from metadata_transport import encode_metadata_transport
+    import private_install as install_protocol
     from producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity,
@@ -239,15 +241,45 @@ class Process:
         )
 
     def close(self):
+        if self.pending is not None and self.pending[0] == "private-install":
+            self.pending[1].close()
+            self.pending = None
         if self.pidfd >= 0:
             os.close(self.pidfd)
             self.pidfd = -1
+
+
+@dataclass
+class _PendingInstall:
+    source: str
+    destination: str
+    source_identity: tuple
+    parent: str
+    parent_fd: int
+    source_fd: int
+    arguments: tuple
+    sequence: int
+
+    def close(self):
+        descriptors = self.source_fd, self.parent_fd
+        self.source_fd = self.parent_fd = -1
+        for descriptor in descriptors:
+            if descriptor >= 0:
+                os.close(descriptor)
 
 
 class Policy:
     def __init__(self, config):
         self.config = config
         self.mode = config["mode"]
+        try:
+            self.private_install = install_protocol.validate_config(config.get("private_install"), config)
+        except install_protocol.InstallError as error:
+            raise Violation(str(error)) from error
+        self.install_parents = dict(self.private_install.parents) if self.private_install else {}
+        self.install_parent_fds = {}
+        self.install_attempts = set()
+        self.install_completed = set()
         self.code = {"/repo/" + path for path in config["code"]}
         self.sources = {"/repo/" + path for path in config["sources"]}
         self.enumerations = {posixpath.normpath("/repo/" + path) for path in config["enumerations"]}
@@ -891,6 +923,186 @@ class Policy:
         if fd not in state.fds:
             raise Violation(f"unavailable inherited/unknown descriptor {fd}")
         return state.fds[fd]
+
+    def pin_private_install_parents(self):
+        for name, expected in self.install_parents.items():
+            actual = Path(self.config["root"]) / name.lstrip("/")
+            descriptor = os.open(actual, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            self.install_parent_fds[name] = descriptor
+            self.charge_metadata(len(name.encode("utf-8")) + 64)
+            if install_protocol.directory_identity(os.fstat(descriptor)) != expected:
+                raise Violation("private install initial parent identity changed")
+
+    def close_private_install_parents(self):
+        descriptors = tuple(self.install_parent_fds.values())
+        self.install_parent_fds.clear()
+        for descriptor in descriptors:
+            os.close(descriptor)
+
+    def _install_parent(self, parent):
+        for name, expected in self.install_parents.items():
+            if parent != name and not parent.startswith(name + "/"):
+                continue
+            if (
+                name not in self.install_parent_fds
+                or install_protocol.directory_identity(os.fstat(self.install_parent_fds[name])) != expected
+            ):
+                raise Violation("private install lacks its original pinned parent")
+            actual = Path(self.config["root"]) / name.lstrip("/")
+            descriptor = os.open(actual, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            try:
+                if install_protocol.directory_identity(os.fstat(descriptor)) != expected:
+                    raise Violation("private install parent identity changed")
+            finally:
+                os.close(descriptor)
+        return os.dup(self.install_parent_fds[parent])
+
+    def _install_path(self, pid, state, address, dirfd):
+        path = self.path(pid, state, address, dirfd, follow_final=False)
+        spelling, descriptor, base = state.path_context
+        literal = spelling if base is None else base.rstrip("/") + "/" + spelling
+        try:
+            install_protocol.private_path(path)
+        except install_protocol.InstallError as error:
+            raise Violation(str(error)) from error
+        if literal != path or posixpath.dirname(path) not in self.install_parents:
+            raise Violation("private install has an alias or unpinned parent")
+        if base is not None:
+            if base not in self.install_parents:
+                raise Violation("private install relative lookup has an unpinned base")
+            kernel = f"/proc/{pid}/cwd" if descriptor == -100 else f"/proc/{pid}/fd/{descriptor}"
+            if install_protocol.directory_identity(os.stat(kernel)) != self.install_parents[base]:
+                raise Violation("private install cwd/dirfd identity changed")
+        return path, (address, spelling)
+
+    def _install_aliases(self, pid, state, source, destination, identity):
+        directory = Path(f"/proc/{pid}/fd")
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                self.charge_metadata(len(entry.name) + 64)
+                if not entry.name.isdecimal():
+                    raise Violation("private install has an unknown descriptor")
+                descriptor = int(entry.name)
+                if descriptor not in state.fds:
+                    raise Violation("private install has an untracked descriptor")
+                info = os.stat(entry.path)
+                if (
+                    stat.S_ISREG(info.st_mode) and (info.st_dev, info.st_ino) == identity[:2]
+                    or state.fds[descriptor] in {source, destination}
+                ):
+                    raise Violation("private install source/destination has an active descriptor alias")
+        with open(f"/proc/{pid}/maps", "rb") as stream:
+            data = stream.read(SYSCALL_MEMORY_LIMIT + 1)
+        self.charge_metadata(len(data))
+        if len(data) > SYSCALL_MEMORY_LIMIT:
+            raise Violation("private install mapping inventory exceeds observation bound")
+        for row in data.splitlines():
+            fields = row.split(None, 5)
+            if len(fields) < 5:
+                raise Violation("private install mapping inventory is incomplete")
+            try:
+                device = tuple(int(part, 16) for part in fields[3].split(b":"))
+                inode = int(fields[4])
+            except ValueError as error:
+                raise Violation("private install mapping identity is invalid") from error
+            if (
+                b"w" in fields[1] and b"s" in fields[1]
+                or device == (os.major(identity[0]), os.minor(identity[0])) and inode == identity[1]
+            ):
+                raise Violation("private install has a shared or source-backed mapping")
+
+    def prepare_private_install(self, pid, state, registers):
+        if self.private_install is None:
+            raise Violation("candidate directory-entry relocation is forbidden")
+        if (
+            self.mode != "command" or state.role != "command" or state.bootstrap
+            or set(self.processes) != {pid} or self.newborn_stops
+        ):
+            raise Violation("private install requires its sole post-bootstrap command actor")
+        if registers.orig_rax == 82:
+            old_pointer, new_pointer = registers.rdi, registers.rsi
+            old_dir = new_dir = -100
+        else:
+            if registers.orig_rax == 316 and registers.r8:
+                raise Violation("private install does not admit rename flags")
+            old_dir, old_pointer = signed(registers.rdi), registers.rsi
+            new_dir, new_pointer = signed(registers.rdx), registers.r10
+        source, old_argument = self._install_path(pid, state, old_pointer, old_dir)
+        destination, new_argument = self._install_path(pid, state, new_pointer, new_dir)
+        parent = posixpath.dirname(source)
+        if (
+            posixpath.dirname(destination) != parent
+            or destination not in self.private_install.destinations or destination in self.install_attempts
+            or source == destination
+        ):
+            raise Violation("private install destination is unissued, repeated or cross-parent")
+        parent_fd = self._install_parent(parent)
+        source_fd = -1
+        try:
+            try:
+                os.stat(posixpath.basename(destination), dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise Violation("private install destination already exists")
+            source_fd = os.open(
+                posixpath.basename(source), os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent_fd,
+            )
+            info = os.fstat(source_fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_mode & 0o7000:
+                raise Violation("private install source is not a single-link regular file")
+            identity = publication_identity(info)
+            self._install_aliases(pid, state, source, destination, identity)
+            self.reserve_creation()
+            self.install_attempts.add(destination)
+            state.pending = ("private-install", _PendingInstall(
+                source, destination, identity, parent, parent_fd, source_fd,
+                (old_argument, new_argument), len(self.install_attempts),
+            ))
+        except BaseException:
+            if source_fd >= 0:
+                os.close(source_fd)
+            os.close(parent_fd)
+            raise
+
+    def finish_private_install(self, pid, pending, result):
+        try:
+            for address, spelling in pending.arguments:
+                if cstring(pid, address) != spelling:
+                    raise Violation("private install pathname changed across the kernel operation")
+            if install_protocol.directory_identity(os.fstat(pending.parent_fd)) != self.install_parents[pending.parent]:
+                raise Violation("private install pinned parent changed")
+            checked = self._install_parent(pending.parent)
+            os.close(checked)
+            identity = None
+            if result == 0:
+                try:
+                    os.stat(posixpath.basename(pending.source), dir_fd=pending.parent_fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise Violation("private install did not retire its source name")
+                installed = os.stat(
+                    posixpath.basename(pending.destination), dir_fd=pending.parent_fd, follow_symlinks=False,
+                )
+                identity = publication_identity(installed)
+                pinned = publication_identity(os.fstat(pending.source_fd))
+                before = pending.source_identity
+                if (
+                    identity != pinned or identity[:5] != before[:5] or identity[6] != 1
+                    or not stat.S_ISREG(identity[2])
+                ):
+                    raise Violation("private install changed the pinned regular-file contents or identity")
+                self.install_completed.add(pending.destination)
+            elif result > 0:
+                raise Violation("private install returned an invalid kernel status")
+            self.observe("accessed", install_protocol.PREFIX + encoded({
+                "version": 1, "scope": self.private_install.scope, "sequence": pending.sequence,
+                "source": pending.source, "destination": pending.destination,
+                "result": result, "identity": identity,
+            }).decode("ascii"))
+        finally:
+            pending.close()
 
     def source_mode(self, path):
         for forbidden in self.config["forbidden_paths"]:
@@ -1737,6 +1949,8 @@ class Policy:
             self.reserve_exec(pid, state)
             state.pending = ("exec", role)
         elif n in {56, 57, 58}:
+            if self.private_install is not None:
+                raise Violation("private install command cannot create another actor")
             if n == 56:
                 allowed = 0x100 | 0x4000 | 0x100000 | 0x200000 | 0x1000000 | 0xFF
                 if a & ~allowed or (a & 0xFF) != signal.SIGCHLD:
@@ -1747,6 +1961,8 @@ class Policy:
             self.reserve_process(state)
             self.reserve_memory(pid, state, 0, copies=1)
         elif n == 435:
+            if self.private_install is not None:
+                raise Violation("private install command cannot create another actor")
             if b < 64 or b > 88:
                 raise Violation("unknown clone3 structure")
             flags = int.from_bytes(memory(pid, a, 8), "little")
@@ -1814,9 +2030,7 @@ class Policy:
         elif n in {88, 266}:
             raise Violation("candidate symlink creation is forbidden")
         elif n in {82, 264, 316}:
-            # Moving a cwd/dirfd ancestor changes the kernel's '..' meaning
-            # without changing its recorded path. No supported tool needs it.
-            raise Violation("candidate directory-entry relocation is forbidden")
+            self.prepare_private_install(pid, state, r)
         elif n == 86:
             for pointer in (a, b):
                 self.check(state, self.path(pid, state, pointer, follow_final=False), "write")
@@ -1886,6 +2100,9 @@ class Policy:
         if r.orig_rax == 12 and result > 0:
             state.break_end = result
         operation, value = pending if pending is not None else (None, None)
+        if operation == "private-install":
+            self.finish_private_install(pid, value, result)
+            return
         if result < 0:
             if operation == "make-source-exec" and result == -errno.EACCES and self.source_execute_allowed(pid, *value):
                 raise Violation(f"Make source executable lookup denied by noexec view: {value[0]}")
@@ -2284,6 +2501,7 @@ def supervise(config, drop_privileges):
         waited, status = os.waitpid(pid, 0)
         if waited != pid or not os.WIFSTOPPED(status):
             raise Violation("sandbox child did not enter traced confinement")
+        policy.pin_private_install_parents()
         for mapping in Path(f"/proc/{pid}/maps").read_text().splitlines():
             if mapping.endswith("[heap]"):
                 processes[pid].break_end = int(mapping.split()[0].split("-")[1], 16)
@@ -2307,6 +2525,8 @@ def supervise(config, drop_privileges):
             handle_stop(stopped, status)
         if newborn_stops:
             raise Violation("unresolved descendant at completion")
+        if policy.private_install is not None and policy.install_completed != set(policy.private_install.destinations):
+            raise Violation("private install command omitted a declared installation")
     except BaseException as failure:
         primary = failure
         error = str(failure)
@@ -2376,7 +2596,7 @@ def supervise(config, drop_privileges):
                         error = str(failure)
                     raise
         finish_cleanup([
-            reap_owned, finish_channel, write_report,
+            reap_owned, policy.close_private_install_parents, finish_channel, write_report,
             *([] if channel is None else [channel.close]),
         ], primary=primary)
     return 0 if result["ok"] else 125

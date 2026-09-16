@@ -34,6 +34,7 @@ from .authority import (
 from .budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget, text
 from .lifecycle import cleanup_scope, finish_cleanup
 from . import metadata_transport
+from . import private_install as install_protocol
 from .producer_channel import (
     ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
     publication_identity, validate_publication_confirmation,
@@ -96,6 +97,21 @@ class Command:
             raise MakeProbeError("unsupported Command publication policy")
         if self.publication_policy != "replace" and not self.outputs:
             raise MakeProbeError("content-only publication requires declared outputs")
+
+
+class _PrivateInstallLaunch:
+    pass
+
+
+@dataclass(frozen=True, eq=False)
+class _PrivateInstallCommand:
+    command: object
+    binding: bytes
+    snapshot: object
+    tree: Path
+    epoch: int
+    inputs: tuple
+    destinations: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -671,6 +687,10 @@ class ProbeSession:
         self.pending_commands = 0
         self.pending_commands_peak = 0
         self.owner_thread = get_ident()
+        self._private_install_commands = {}
+        self._private_install_launches = {}
+        self._private_install_issued = weakref.WeakSet()
+        self._private_install_launch_issued = weakref.WeakSet()
         self._namespace_images = {}
         self._namespace_frames = []
         self._namespace_pending = {}
@@ -1120,6 +1140,10 @@ class ProbeSession:
             self.dependency_compiler = None
             self.dependency_runtime = None
             self.runtime_query_profiles.clear()
+            self._private_install_commands.clear()
+            self._private_install_launches.clear()
+            self._private_install_issued.clear()
+            self._private_install_launch_issued.clear()
             self.runtime_inputs = ()
             self.runtime_dispatch = ()
             self.runtime_root = None
@@ -1484,7 +1508,7 @@ class ProbeSession:
         self, root, *, mode, argv, environment, mounts, code=(), sources=(),
         directories=(), executables=None, mapping_entries=(), metadata_validation=False,
         producer_handler=None, publication_observer=None, publication_allowed=True,
-        dependency=None, observe_recipe_dispatch=False,
+        dependency=None, observe_recipe_dispatch=False, private_install=None,
     ):
         self.budget.remaining()
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
@@ -1552,6 +1576,42 @@ class ProbeSession:
                 self.budget.limits.control_bytes - self.budget.bytes.get("control", 0),
             ),
         }
+        install_spec = None
+        if private_install is not None:
+            record = self._private_install_launches.pop(id(private_install), None)
+            if (
+                type(private_install) is not _PrivateInstallLaunch
+                or record is None or record[0] is not private_install
+                or private_install not in self._private_install_launch_issued
+            ):
+                raise MakeProbeError("private install launch is forged, expired or already consumed")
+            self._private_install_launch_issued.discard(private_install)
+            _, command, expected_root, output, expected_argv, parents = record
+            permission = self._require_private_install(command)
+            if (
+                permission is None or root != expected_root or tuple(argv) != expected_argv
+                or mode != "command" or dependency is not None or metadata_validation
+                or producer_handler is not None or publication_observer is not None
+                or executables is not None
+                or tuple(code) != tuple(sorted(set(command.code)))
+                or tuple(sources) != self.sources(command.sources)
+                or tuple(directories) != self._directories(command.directories)
+                or environment != {**ENVIRONMENT, "SOURCE_DATE_EPOCH": "0", "TMPDIR": "/work"}
+                or [item for item in mounts if item["writable"]] != [
+                    self._mount(output, "/work", writable=True),
+                    self._mount(Path("/dev/null"), "/dev/null", writable=True),
+                ]
+            ):
+                raise MakeProbeError("private install launch differs from its issued command/workspace")
+            config["private_install"] = {
+                "version": 1, "scope": install_protocol.launch_scope(root),
+                "binding": install_protocol.launch_binding(config),
+                "parents": parents, "destinations": ["/work/" + name for name in permission.destinations],
+            }
+            try:
+                install_spec = install_protocol.validate_config(config["private_install"], config)
+            except install_protocol.InstallError as error:
+                raise MakeProbeError(str(error)) from error
         if observe_recipe_dispatch:
             if mode != "make":
                 raise MakeProbeError("native recipe dispatch requires Make confinement")
@@ -1826,6 +1886,12 @@ class ProbeSession:
                 raise MakeProbeError("invalid trusted metadata comparison status")
             if mode != "make" and not metadata_validation and result.returncode:
                 raise MakeProbeError(f"registered command failed: {result.returncode}")
+            try:
+                installed = install_protocol.validate_records(observed["accessed"], install_spec)
+            except install_protocol.InstallError as error:
+                raise MakeProbeError(str(error)) from error
+            if install_spec is not None:
+                observed["private_install_records"] = installed
             return result, observed
 
     @staticmethod
@@ -1838,6 +1904,96 @@ class ProbeSession:
     @terminal_failure
     def command(self, command: Command):
         return self._command(command)
+
+    @staticmethod
+    def _install_command_binding(command):
+        return encoded((
+            command.argv, command.code, command.sources, command.directories, command.outputs,
+            command.dependency_only, command.publication_policy, command.stdout_transform,
+        ))
+
+    @terminal_failure
+    def _private_install_command(self, command, destinations):
+        if (
+            type(command) is not Command or not command.argv or command.argv[0] != "/usr/bin/python3"
+            or command.native_tool is not None or command.runtime_tool is not None
+            or command.dependency_only is not False or command.stdout_transform is not None
+            or any(type(value) is not tuple or any(not isinstance(item, str) for item in value)
+                   for value in (command.argv, command.code, command.sources, command.directories, command.outputs))
+            or not isinstance(destinations, (tuple, list))
+            or not 1 <= len(destinations) <= self.budget.limits.created_files
+        ):
+            raise MakeProbeError("private install requires an exact supported command and destinations")
+        outputs = self._output_paths(command.outputs)
+        names = tuple(sorted(relative_path(name) for name in destinations))
+        parents = {str(PurePosixPath(name).parent) for name in outputs}
+        if (
+            not outputs or len(names) != len(set(names))
+            or any(str(PurePosixPath(name).parent) not in parents for name in names)
+            or id(command) in self._private_install_commands
+        ):
+            raise MakeProbeError("private install destinations are outside the command's output parents")
+        inputs = tuple(self.source_owners(set(command.code) | set(self.sources(command.sources))))
+        binding = self._install_command_binding(command)
+        self.budget.charge("cache", len(binding) + len(encoded((inputs, names))))
+        key = id(command)
+
+        def expired(reference):
+            record = self._private_install_commands.get(key)
+            if type(record) is _PrivateInstallCommand and record.command is reference:
+                del self._private_install_commands[key]
+
+        record = _PrivateInstallCommand(
+            weakref.ref(command, expired), binding, self.snapshot, self.tree,
+            self._namespace_epoch, inputs, names,
+        )
+        self._private_install_commands[key] = record
+        self._private_install_issued.add(record)
+        return command
+
+    def _require_private_install(self, command):
+        self.budget.remaining()
+        record = self._private_install_commands.get(id(command))
+        if record is None:
+            return None
+        if (
+            type(record) is not _PrivateInstallCommand or record not in self._private_install_issued
+            or record.command() is not command
+            or self.base is None or self.snapshot is not record.snapshot or self.tree != record.tree
+            or self._namespace_epoch != record.epoch or get_ident() != self.owner_thread
+            or self._install_command_binding(command) != record.binding
+            or command.native_tool is not None or command.runtime_tool is not None
+            or tuple(self.source_owners(set(command.code) | set(self.sources(command.sources)))) != record.inputs
+        ):
+            raise MakeProbeError("private install command changed or outlived its issued view")
+        return record
+
+    def _private_install_launch(self, command, output, root, argv):
+        permission = self._require_private_install(command)
+        if permission is None:
+            return None
+        directories = {
+            parent.as_posix() for name in permission.destinations
+            for parent in PurePosixPath(name).parents
+        }
+        records = []
+        for directory in sorted(directories, key=lambda name: (len(PurePosixPath(name).parts), name)):
+            path = output if directory == "." else output / directory
+            if directory != ".":
+                if self.files_created >= self.budget.limits.created_files:
+                    self.budget.reject("private install parent creation exceeds remaining capacity")
+                self.files_created += 1
+                path.mkdir()
+            identity = install_protocol.directory_identity(path.stat(follow_symlinks=False))
+            name = "/work" if directory == "." else "/work/" + directory
+            self.budget.charge("control", len(encoded((name, identity))))
+            records.append([name, *identity])
+        launch = _PrivateInstallLaunch()
+        self._private_install_launches[id(launch)] = (
+            launch, command, root, output, tuple(argv), sorted(records),
+        )
+        self._private_install_launch_issued.add(launch)
+        return launch
 
     def _metadata_matches(self, records):
         if not records:
@@ -2138,18 +2294,26 @@ class ProbeSession:
                     destination.symlink_to(target)
             if argv[0] == "/usr/bin/python3":
                 argv[1:1] = ["-I", "-S", "-B"]
-            completed, observed = self._sandbox_run(
-                root, mode="command" if compiler is None else "compile", argv=argv,
-                environment={**ENVIRONMENT, "SOURCE_DATE_EPOCH": "0", "TMPDIR": "/work"},
-                mounts=[
-                    self._mount(self.tree, "/repo"),
-                    self._mount(Path("/usr"), "/usr", executable=True),
-                    self._mount(output, "/work", writable=True),
-                    self._mount(Path("/dev/null"), "/dev/null", writable=True),
-                ],
-                code=code, sources=sources, directories=directories,
-                executables=compiler, dependency=dependency,
-            )
+            install_launch = self._private_install_launch(command, output, root, argv)
+            try:
+                completed, observed = self._sandbox_run(
+                    root, mode="command" if compiler is None else "compile", argv=argv,
+                    environment={**ENVIRONMENT, "SOURCE_DATE_EPOCH": "0", "TMPDIR": "/work"},
+                    mounts=[
+                        self._mount(self.tree, "/repo"),
+                        self._mount(Path("/usr"), "/usr", executable=True),
+                        self._mount(output, "/work", writable=True),
+                        self._mount(Path("/dev/null"), "/dev/null", writable=True),
+                    ],
+                    code=code, sources=sources, directories=directories,
+                    executables=compiler, dependency=dependency,
+                    **({"private_install": install_launch} if install_launch is not None else {}),
+                )
+            finally:
+                if install_launch is not None:
+                    self._private_install_launches.pop(id(install_launch), None)
+                    if type(install_launch) is _PrivateInstallLaunch:
+                        self._private_install_launch_issued.discard(install_launch)
             consumed = tuple(observed["consumed"])
             if consumed != sources:
                 raise MakeProbeError(f"declared/consumed source mismatch: declared={sources!r}, consumed={consumed!r}")

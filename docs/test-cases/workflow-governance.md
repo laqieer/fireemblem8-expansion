@@ -5462,6 +5462,49 @@ every path. These are complete bounded counterexamples, not evidence of a
 whole-report bypass or permission for message publication/rename/namespace
 changes; the separate real message-source hold and unallocated17 remain.
 
+For the private regular-install primitive, run:
+
+```sh
+python3 -m unittest scripts.validation_ownership.tests.test_private_install -v
+```
+
+Start with the existing native fixture, genuine empty snapshot witness and
+unchanged budgets. Supply the actual `textprocess.py` and `huffman.py`, two
+small messages and real control definitions. Give the unmodified producer two
+fresh private destinations beneath its declared output parent. Issue the exact
+command through the trusted adapter seam, then inspect generated C/header
+bytes and complete native install records: header then C, success status,
+single-link regular identities and exact destination coverage. Without the
+issuance step, the same real producer must still hit the original native
+directory-entry relocation denial. This is private-command evidence, not a
+successful public message/header pipeline.
+
+Repeat with absolute paths, relative cwd and a real directory descriptor.
+Reject an existing or unlisted destination, cross-parent/source-tree path,
+dot/parent spelling, directory or hardlinked source, symlink creation, open or
+duplicated source descriptor, mutable mapping, unsupported rename flags and
+another-actor creation. Remove and recreate an empty private parent before
+install: the held original directory descriptor must prevent inode-reuse
+confusion, not merely compare an old number after the fact. A destination
+cannot be installed twice even if it is unlinked between attempts.
+
+Try an equal/cloned command, copied permission record, changed command binding,
+foreign session, real immutable-view switch/restoration, expired session and
+replayed launch. None may inherit the grant. Observe that replay is rejected
+before another native run. Drop or duplicate an actual native outcome, change
+its scope/destination/identity or add fields; the paired parser must reject.
+A command that merely writes its result without performing its declared
+installation is not a positive. Keep all source/input, snapshot, actor,
+pathname and resource guards intact rather than weakening fixture assertions.
+
+Every success/failure path must close supervisor parent/source pins, session
+children, launch records and fixture directories. Native process-suite
+collection must include the new module exactly once; ordinary graph/workflow
+discovery must not import its `TestCase`. The existing case IDs, original
+selectors, nine jobs and34 commands remain unchanged. Public C-only
+verification, header-step publication/retirement and per-read-phase authority
+are still required before any complete live-message or full-report claim.
+
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while
 native per-file raw metadata remains `$(FLAGS)`. Do not eagerly copy the
