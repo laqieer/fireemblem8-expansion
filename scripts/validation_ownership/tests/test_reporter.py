@@ -44,13 +44,14 @@ class ArtifactLifecycleTests(unittest.TestCase):
     def timestamp(value):
         return value.isoformat().replace("+00:00", "Z")
 
-    def validate(self, graph):
+    def validate(self, graph, *, comparison_only=False):
         evidence = {node["id"]: node for node in graph["nodes"] if node["kind"] == "evidence"}
         with mock.patch.object(reporter, "datetime", create=True) as clock:
             clock.now.return_value = self.now
             reporter._validate_lifecycle(
                 graph["artifact"], graph["lifecycle_events"], evidence,
                 {edge["id"] for edge in graph["edges"]},
+                comparison_only=comparison_only,
             )
 
     def test_expiry_uses_validation_time_not_last_history(self):
@@ -99,6 +100,24 @@ class ArtifactLifecycleTests(unittest.TestCase):
         graph["artifact"]["expires_at"] = self.now.isoformat()
         with self.assertRaises(reporter.OwnershipError):
             self.validate(graph)
+
+    def test_historical_expiry_retains_original_lifecycle_consistency(self):
+        graph = copy.deepcopy(self.graph)
+        graph["artifact"]["expires_at"] = self.timestamp(self.now - timedelta(seconds=1))
+        self.validate(graph, comparison_only=True)
+        invalid = copy.deepcopy(graph)
+        invalid["artifact"]["expires_at"] = self.timestamp(self.now - timedelta(days=2))
+        with self.assertRaises(reporter.OwnershipError):
+            self.validate(invalid, comparison_only=True)
+        invalid = copy.deepcopy(graph)
+        next(event for event in invalid["lifecycle_events"]
+             if event["type"] == "deletion_proof")["semantic_result"] = "pass"
+        with self.assertRaises(reporter.OwnershipError):
+            self.validate(invalid, comparison_only=True)
+        invalid = copy.deepcopy(graph)
+        invalid["artifact"]["history"].append(copy.deepcopy(invalid["artifact"]["history"][-1]))
+        with self.assertRaises(reporter.OwnershipError):
+            self.validate(invalid, comparison_only=True)
 
 
 class AssetOwnershipTests(unittest.TestCase):

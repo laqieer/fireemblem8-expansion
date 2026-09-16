@@ -1,5 +1,5 @@
 import copy
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import json
 import shlex
@@ -307,6 +307,43 @@ class GraphReportTests(unittest.TestCase):
         result = self.run_report(base_revision=base, lifecycle=False)
         self.assertFalse(result["review_invalidation"]["invalidated"])
         self.assertEqual(result["review_invalidation"]["changed_edge_ids"], [])
+
+    def test_current_expiry_repair_can_compare_expired_historical_base(self):
+        path = self.fixture.root / reporter.GRAPH_PATH
+        graph = json.loads(path.read_text())
+        graph["artifact"]["expires_at"] = "2029-12-31T00:00:00Z"
+        path.write_text(json.dumps(graph))
+        base = self.fixture.commit("Record a previously valid expiring artifact")
+        now = datetime(2030, 1, 1, tzinfo=timezone.utc)
+        bind = graph_lifecycle.bind
+        for expiry in ("2031-01-01T00:00:00Z", None):
+            with self.subTest(current_expiry=expiry):
+                graph["artifact"]["expires_at"] = expiry
+                path.write_text(json.dumps(graph))
+                self.fixture.commit("Repair CURRENT artifact expiry")
+                bound = []
+
+                def observe_binding(current, **arguments):
+                    bound.append(current["artifact"]["expires_at"])
+                    return bind(current, **arguments)
+
+                with mock.patch.object(reporter, "datetime") as clock, \
+                     mock.patch.object(graph_lifecycle, "bind", side_effect=observe_binding):
+                    clock.now.return_value = now
+                    result = self.run_report(base_revision=base, lifecycle=False)
+                self.assertEqual(result["coverage"]["tracked_paths"], result["coverage"]["owned_paths"])
+                self.assertEqual(result["measurement"]["false_positive_selections"], 0)
+                self.assertEqual(result["measurement"]["false_negative_selections"], 0)
+                self.assertTrue(result["review_invalidation"]["invalidated"])
+                self.assertTrue(bound)
+                self.assertTrue(all(value == expiry for value in bound))
+        graph["artifact"]["expires_at"] = "2029-12-31T00:00:00Z"
+        path.write_text(json.dumps(graph))
+        expired = self.fixture.commit("Restore expired CURRENT as a rejection control")
+        with mock.patch.object(reporter, "datetime") as clock:
+            clock.now.return_value = now
+            with self.assertRaisesRegex(MakeProbeError, "expired artifact"):
+                self.run_report(base_revision=expired, lifecycle=False)
 
     def test_artifact_authority_change_requires_reviewed_verifier_mode(self):
         base = self.fixture.git("rev-parse", "HEAD").decode().strip()

@@ -1739,8 +1739,10 @@ def _validate_lifecycle(
     events: list[dict[str, Any]],
     evidence_nodes: dict[str, dict[str, Any]],
     edge_ids: set[str],
+    *,
+    comparison_only=False,
 ) -> None:
-    validation_time = datetime.now(timezone.utc)
+    validation_time = None if comparison_only else datetime.now(timezone.utc)
     if (
         artifact["estimated_maintenance_minutes"]
         > artifact["max_maintenance_minutes"]
@@ -1762,7 +1764,7 @@ def _validate_lifecycle(
         if previous is not None and recorded <= previous:
             raise OwnershipError("artifact history is not strictly chronological")
         previous = recorded
-    if previous is not None and previous > validation_time:
+    if validation_time is not None and previous is not None and previous > validation_time:
         raise OwnershipError("artifact history follows validation time")
     current = histories[-1]["disposition"]
     if artifact["expires_at"] is not None:
@@ -1772,7 +1774,8 @@ def _validate_lifecycle(
             )
         except pilot_reporter.PilotDataError as error:
             raise OwnershipError(str(error)) from error
-        if expiry <= validation_time and current != "Delete":
+        checked_at = previous if comparison_only else validation_time
+        if checked_at is not None and expiry <= checked_at and current != "Delete":
             raise OwnershipError("expired artifact is not deleted")
 
     by_id = {}
@@ -1961,7 +1964,7 @@ def _validate_semantics(
     loader: AuthorityLoader,
     entries: dict[str, GitTreeEntry],
     *,
-    session=None,
+    session=None, comparison_only=False,
 ) -> dict[str, Any]:
     if graph["schema_version"] != EXPECTED_SCHEMA_VERSION:
         raise OwnershipError(
@@ -2101,6 +2104,7 @@ def _validate_semantics(
         graph["lifecycle_events"],
         evidence_nodes,
         edge_ids,
+        comparison_only=comparison_only,
     )
     generated_records, generated_paths = _generated_registry_records(loader, session=session)
     admission_sources = _path_admission_sources(loader, generated_paths)
@@ -2261,7 +2265,9 @@ def validate_graph(
     validate_json_schema(graph, schema, schema, budget=loader.budget)
     if type(comparison_only) is not bool:
         raise OwnershipError("historical comparison selection must be boolean")
-    model = _ValidatedGraphModel(_validate_semantics(graph, loader, entries, session=session))
+    model = _ValidatedGraphModel(_validate_semantics(
+        graph, loader, entries, session=session, comparison_only=comparison_only,
+    ))
     if not comparison_only:
         from . import graph_lifecycle
         make_authorities, tester_cases = model["lifecycle_authorities"]

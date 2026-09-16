@@ -655,15 +655,20 @@ The graph remains report-only and does not reduce any broader validation.
 
 The graph uses issue #176's admission fields: one owner, executable consumer,
 unique decision, consistency check, bounded maintenance estimate, deletion
-criterion, expiry, and disposition history. Expiry validation uses the trusted
-host UTC instant captured for that metadata
-check, not a disposition timestamp or a candidate-supplied clock. Future
-disposition history is invalid. A non-deleted artifact whose expiry is at or
+criterion, expiry, and disposition history. CURRENT expiry validation uses
+the trusted host UTC instant captured for that metadata check, not a
+disposition timestamp or a candidate-supplied clock. Future CURRENT
+disposition history is invalid. A non-deleted CURRENT artifact whose expiry is at or
 before that instant rejects; null expiry remains valid. A past Delete still
 requires its existing deletion-proof semantics. This is an instant-specific
 validation, not a perpetual freshness lease. Checkpoint, dependency-change, and
 pre-graduation triggers each have one later proof bound to the artifact,
-dependency edge or decision authority. The public check uses its bounded
+dependency edge or decision authority. Historical BASE comparison retains its
+schema, chronology, expiry-versus-recorded-disposition and proof/authority
+checks without requiring it to remain fresh today. The existing comparison-only
+selection issues no CURRENT lifecycle binding. CURRENT is always checked first
+with current-time admission, so an expired BASE cannot prevent a valid renewal
+or excuse an expired CURRENT. The public check uses its bounded
 session under the isolated launcher. Before any proof is credited, the
 validated CURRENT model must contain issued **verified dispatch bindings** for
 both declared roles. For each trigger, their shared artifact checker runs

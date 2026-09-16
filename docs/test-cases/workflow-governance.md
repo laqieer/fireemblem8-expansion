@@ -3803,6 +3803,15 @@ expiry. A valid past Delete must still satisfy every proof and strict UTC
 timestamp rule. The old history-time comparison admits the expired controls;
 neither sleeping nor changing the machine clock is needed.
 
+Run `python3 -m unittest scripts.validation_ownership.tests.test_graph_report.GraphReportTests.test_current_expiry_repair_can_compare_expired_historical_base -v`
+for the bounded public comparison route. Keep an immutable, originally valid
+BASE deadline before the fixed validation instant, then renew CURRENT or remove
+its expiry. Require complete ownership/oracle results and review invalidation,
+with lifecycle bindings issued only for CURRENT. Expired CURRENT still rejects
+even when that revision is also supplied as BASE. Historical metadata still
+rejects expiry already invalid at its final recorded disposition, malformed
+proof semantics and nonchronological history; no candidate clock is accepted.
+
 ### Actions
 
 1. Run
