@@ -4399,6 +4399,10 @@
           "evidence": "scripts/validation_ownership/tests/test_content_publication.py"
         },
         {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_check_docs.TesterCaseRegistryTests.test_content_publication_suite_guard_ignores_order_but_rejects_omission -v",
+          "evidence": "scripts/docs_check_tests/test_check_docs.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_declared_output_results_are_retained_only_by_actual_owners scripts.validation_ownership.tests.test_producer.ProducerTests.test_generated_publication_creation_mapping_cache_and_write_charges_are_cumulative scripts.validation_ownership.tests.test_producer.ProducerTests.test_nested_scope_inherits_ownership_and_preserves_all_file_stat_fields scripts.validation_ownership.tests.test_producer.ProducerTests.test_invalid_request_rejects_before_any_producer_execution scripts.validation_ownership.tests.test_producer.ProducerTests.test_invalid_reply_never_retries_an_effectful_producer -v",
           "evidence": "scripts/validation_ownership/tests/test_producer.py"
         }
