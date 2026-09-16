@@ -235,6 +235,29 @@ existing 64 KiB frame bound, each retains the 1,024-entry bound, and strings
 retain the 4,096-byte bound. Native observations, JSON transport, retained
 semantics and graph caches spend their existing counters without refunds.
 
+The native record also reports `rebuilding_makefiles` from the trusted
+observer's real GNU state, separately from the overloaded required/live bit.
+Live producer requests carry the same bounded argv/cwd/environment context.
+The host verifies its exact schema and argv agreement with the authenticated
+interceptor frame before registration, then issues an in-process context
+bound to the active callback and view. An explicitly context-aware adapter may
+use it for its exact primary command; unrelated registration helpers do not
+inherit that environment. Caller records, stale contexts and malformed wire
+fields cannot replace it. This is dispatch authority only, not a read-pass
+identifier or an original-entry namespace/input certificate.
+
+Every dispatch also has a native `job` association: recipe target and actual
+command ordinal, or an explicitly target-less shell expansion. The observer
+samples GNU's real child list and shell-function PID before wait/waitpid and
+the read/fortified-read boundary. This occurs after first-job linkage, unlike
+the earlier spawn point. The supervisor binds it to the actual tracked
+process and dispatch sequence; a bare PID is never adopted by a later process.
+A live request waits for that real context without prematurely parking the
+native parent. Missing hooks at a blocked read/wait boundary fail closed.
+Forged sender IPs, untracked processes, conflicting contexts and malformed or
+mismatched sequences reject. Identical argv across different targets does not
+erase target identity. These job records are not Makefile read-pass receipts.
+
 The graph's lifecycle consumer may additionally select
 `ProbeSession.make(..., observe_recipe_dispatch=True)` for the validated
 `recipe_dispatches` projection. It retains each complete recipe context,

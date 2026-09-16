@@ -28,17 +28,19 @@ if __package__:
     from .authority import _event_command, _read_events, encoded, parse_json
     from .lifecycle import finish_cleanup
     from .metadata_transport import encode_metadata_transport
+    from . import private_install as install_protocol
     from .producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
-        publication_identity, validate_publication_identity,
+        publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
     )
 else:
     from authority import _event_command, _read_events, encoded, parse_json
     from lifecycle import finish_cleanup
     from metadata_transport import encode_metadata_transport
+    import private_install as install_protocol
     from producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
-        publication_identity, validate_publication_identity,
+        publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
     )
 
 
@@ -59,6 +61,7 @@ VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY = (
 )
 VO_RECIPE, VO_VALUE, VO_VALIDATE = 0x564F4D4B00000011, 0x564F4D4B00000012, 0x564F4D4B00000013
 VO_LIVE = 0x564F4D4B00000014
+VO_JOB_CONTEXT = 0x564F4D4B00000007
 STACK_LIMIT = 16 * 1024 * 1024
 SYSCALL_MEMORY_LIMIT = 65536
 
@@ -203,6 +206,8 @@ class Process:
     dispatch: tuple | None = None
     helper_kind: int = 0
     native_dispatch_sequence: int | None = None
+    native_dispatch_context: dict | None = None
+    native_job_context: dict | None = None
     namespace_pid: int | None = None
     observer_ready: bool = False
     memory_group: int = 0
@@ -239,15 +244,45 @@ class Process:
         )
 
     def close(self):
+        if self.pending is not None and self.pending[0] == "private-install":
+            self.pending[1].close()
+            self.pending = None
         if self.pidfd >= 0:
             os.close(self.pidfd)
             self.pidfd = -1
+
+
+@dataclass
+class _PendingInstall:
+    source: str
+    destination: str
+    source_identity: tuple
+    parent: str
+    parent_fd: int
+    source_fd: int
+    arguments: tuple
+    sequence: int
+
+    def close(self):
+        descriptors = self.source_fd, self.parent_fd
+        self.source_fd = self.parent_fd = -1
+        for descriptor in descriptors:
+            if descriptor >= 0:
+                os.close(descriptor)
 
 
 class Policy:
     def __init__(self, config):
         self.config = config
         self.mode = config["mode"]
+        try:
+            self.private_install = install_protocol.validate_config(config.get("private_install"), config)
+        except install_protocol.InstallError as error:
+            raise Violation(str(error)) from error
+        self.install_parents = dict(self.private_install.parents) if self.private_install else {}
+        self.install_parent_fds = {}
+        self.install_attempts = set()
+        self.install_completed = set()
         self.code = {"/repo/" + path for path in config["code"]}
         self.sources = {"/repo/" + path for path in config["sources"]}
         self.enumerations = {posixpath.normpath("/repo/" + path) for path in config["enumerations"]}
@@ -277,6 +312,7 @@ class Policy:
         self.total_processes = 0
         self.live_process_peak = 0
         self.make_pid = 0
+        self.closed_processes = set()
         self.make_restarts = 0
         self.dispatch_sequence = 0
         self.executable = set(config["executables"])
@@ -712,7 +748,7 @@ class Policy:
                         ):
                             raise Violation("published output identity or type changed")
                     retain = (
-                        policy == "if-content-changed" and current is not None
+                        policy != "replace" and current is not None
                         and current.st_size == size
                         and self._content_matches(source, directory, parts[-1], size, identity)
                     )
@@ -730,6 +766,8 @@ class Policy:
                         mode = stat.S_IMODE(current.st_mode)
                         effect = "retained"
                     else:
+                        if policy == "if-content-changed-preserve-mode" and current is not None:
+                            mode = stat.S_IMODE(current.st_mode)
                         self.written += size
                         if self.written > self.config["write_limit"]:
                             raise Violation("aggregate generated publication byte budget exhausted")
@@ -826,6 +864,47 @@ class Policy:
             start <= registers.rip < end for start, end in state.observer_ranges
         )
 
+    def observe_job_context(self, pid, state, pointer, size):
+        if state.role != "make" or pid != self.make_pid or not state.observer_ready or size != 24:
+            raise Violation("invalid native job-context sender or frame")
+        record = memory(pid, pointer, size)
+        self.charge_metadata(size)
+        child_pid, target_pointer, command_line = (
+            int.from_bytes(record[offset:offset + 8], "little") for offset in (0, 8, 16)
+        )
+        if not 0 < child_pid < 1 << 31 or command_line >= 1 << 32 or child_pid == self.make_pid:
+            raise Violation("invalid native job-context process/index")
+        child = self.processes.get(child_pid)
+        if child is None:
+            if child_pid in self.closed_processes:
+                return
+            raise Violation("native job context refers to an untracked process")
+        if child.role not in {"make", "helper"}:
+            raise Violation("native job context refers to a non-Make child")
+        if child.namespace_pid is not None and child.namespace_pid != child_pid:
+            raise Violation("native job context differs from the observed namespace PID")
+        target = cstring(pid, target_pointer) if target_pointer else None
+        if target_pointer and not target or not target_pointer and command_line:
+            raise Violation("native job context has an invalid target/index")
+        context = {
+            "kind": "recipe" if target is not None else "expansion",
+            "target": target, "command_line": command_line if target is not None else None,
+        }
+        if child.native_job_context is not None and child.native_job_context != context:
+            raise Violation("native job context changed for its actual process")
+        child.native_job_context = context
+        self.emit_job_context(child)
+
+    def emit_job_context(self, state):
+        if state.native_job_context is None or state.native_dispatch_sequence is None:
+            return
+        context = {"sequence": state.native_dispatch_sequence, **state.native_job_context}
+        try:
+            validate_job_context(context)
+        except ChannelError as error:
+            raise Violation(str(error)) from error
+        self.observe("accessed", "make-job-context:" + encoded(context).decode("ascii"))
+
     def resolve(self, name, *, follow_final=True):
         # Only trusted, immutable symlinks remain: candidate symlinks and
         # ancestor relocation are forbidden. Resolve in the guest root, not
@@ -891,6 +970,186 @@ class Policy:
         if fd not in state.fds:
             raise Violation(f"unavailable inherited/unknown descriptor {fd}")
         return state.fds[fd]
+
+    def pin_private_install_parents(self):
+        for name, expected in self.install_parents.items():
+            actual = Path(self.config["root"]) / name.lstrip("/")
+            descriptor = os.open(actual, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            self.install_parent_fds[name] = descriptor
+            self.charge_metadata(len(name.encode("utf-8")) + 64)
+            if install_protocol.directory_identity(os.fstat(descriptor)) != expected:
+                raise Violation("private install initial parent identity changed")
+
+    def close_private_install_parents(self):
+        descriptors = tuple(self.install_parent_fds.values())
+        self.install_parent_fds.clear()
+        for descriptor in descriptors:
+            os.close(descriptor)
+
+    def _install_parent(self, parent):
+        for name, expected in self.install_parents.items():
+            if parent != name and not parent.startswith(name + "/"):
+                continue
+            if (
+                name not in self.install_parent_fds
+                or install_protocol.directory_identity(os.fstat(self.install_parent_fds[name])) != expected
+            ):
+                raise Violation("private install lacks its original pinned parent")
+            actual = Path(self.config["root"]) / name.lstrip("/")
+            descriptor = os.open(actual, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            try:
+                if install_protocol.directory_identity(os.fstat(descriptor)) != expected:
+                    raise Violation("private install parent identity changed")
+            finally:
+                os.close(descriptor)
+        return os.dup(self.install_parent_fds[parent])
+
+    def _install_path(self, pid, state, address, dirfd):
+        path = self.path(pid, state, address, dirfd, follow_final=False)
+        spelling, descriptor, base = state.path_context
+        literal = spelling if base is None else base.rstrip("/") + "/" + spelling
+        try:
+            install_protocol.private_path(path)
+        except install_protocol.InstallError as error:
+            raise Violation(str(error)) from error
+        if literal != path or posixpath.dirname(path) not in self.install_parents:
+            raise Violation("private install has an alias or unpinned parent")
+        if base is not None:
+            if base not in self.install_parents:
+                raise Violation("private install relative lookup has an unpinned base")
+            kernel = f"/proc/{pid}/cwd" if descriptor == -100 else f"/proc/{pid}/fd/{descriptor}"
+            if install_protocol.directory_identity(os.stat(kernel)) != self.install_parents[base]:
+                raise Violation("private install cwd/dirfd identity changed")
+        return path, (address, spelling)
+
+    def _install_aliases(self, pid, state, source, destination, identity):
+        directory = Path(f"/proc/{pid}/fd")
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                self.charge_metadata(len(entry.name) + 64)
+                if not entry.name.isdecimal():
+                    raise Violation("private install has an unknown descriptor")
+                descriptor = int(entry.name)
+                if descriptor not in state.fds:
+                    raise Violation("private install has an untracked descriptor")
+                info = os.stat(entry.path)
+                if (
+                    stat.S_ISREG(info.st_mode) and (info.st_dev, info.st_ino) == identity[:2]
+                    or state.fds[descriptor] in {source, destination}
+                ):
+                    raise Violation("private install source/destination has an active descriptor alias")
+        with open(f"/proc/{pid}/maps", "rb") as stream:
+            data = stream.read(SYSCALL_MEMORY_LIMIT + 1)
+        self.charge_metadata(len(data))
+        if len(data) > SYSCALL_MEMORY_LIMIT:
+            raise Violation("private install mapping inventory exceeds observation bound")
+        for row in data.splitlines():
+            fields = row.split(None, 5)
+            if len(fields) < 5:
+                raise Violation("private install mapping inventory is incomplete")
+            try:
+                device = tuple(int(part, 16) for part in fields[3].split(b":"))
+                inode = int(fields[4])
+            except ValueError as error:
+                raise Violation("private install mapping identity is invalid") from error
+            if (
+                b"w" in fields[1] and b"s" in fields[1]
+                or device == (os.major(identity[0]), os.minor(identity[0])) and inode == identity[1]
+            ):
+                raise Violation("private install has a shared or source-backed mapping")
+
+    def prepare_private_install(self, pid, state, registers):
+        if self.private_install is None:
+            raise Violation("candidate directory-entry relocation is forbidden")
+        if (
+            self.mode != "command" or state.role != "command" or state.bootstrap
+            or set(self.processes) != {pid} or self.newborn_stops
+        ):
+            raise Violation("private install requires its sole post-bootstrap command actor")
+        if registers.orig_rax == 82:
+            old_pointer, new_pointer = registers.rdi, registers.rsi
+            old_dir = new_dir = -100
+        else:
+            if registers.orig_rax == 316 and registers.r8:
+                raise Violation("private install does not admit rename flags")
+            old_dir, old_pointer = signed(registers.rdi), registers.rsi
+            new_dir, new_pointer = signed(registers.rdx), registers.r10
+        source, old_argument = self._install_path(pid, state, old_pointer, old_dir)
+        destination, new_argument = self._install_path(pid, state, new_pointer, new_dir)
+        parent = posixpath.dirname(source)
+        if (
+            posixpath.dirname(destination) != parent
+            or destination not in self.private_install.destinations or destination in self.install_attempts
+            or source == destination
+        ):
+            raise Violation("private install destination is unissued, repeated or cross-parent")
+        parent_fd = self._install_parent(parent)
+        source_fd = -1
+        try:
+            try:
+                os.stat(posixpath.basename(destination), dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise Violation("private install destination already exists")
+            source_fd = os.open(
+                posixpath.basename(source), os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent_fd,
+            )
+            info = os.fstat(source_fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_mode & 0o7000:
+                raise Violation("private install source is not a single-link regular file")
+            identity = publication_identity(info)
+            self._install_aliases(pid, state, source, destination, identity)
+            self.reserve_creation()
+            self.install_attempts.add(destination)
+            state.pending = ("private-install", _PendingInstall(
+                source, destination, identity, parent, parent_fd, source_fd,
+                (old_argument, new_argument), len(self.install_attempts),
+            ))
+        except BaseException:
+            if source_fd >= 0:
+                os.close(source_fd)
+            os.close(parent_fd)
+            raise
+
+    def finish_private_install(self, pid, pending, result):
+        try:
+            for address, spelling in pending.arguments:
+                if cstring(pid, address) != spelling:
+                    raise Violation("private install pathname changed across the kernel operation")
+            if install_protocol.directory_identity(os.fstat(pending.parent_fd)) != self.install_parents[pending.parent]:
+                raise Violation("private install pinned parent changed")
+            checked = self._install_parent(pending.parent)
+            os.close(checked)
+            identity = None
+            if result == 0:
+                try:
+                    os.stat(posixpath.basename(pending.source), dir_fd=pending.parent_fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise Violation("private install did not retire its source name")
+                installed = os.stat(
+                    posixpath.basename(pending.destination), dir_fd=pending.parent_fd, follow_symlinks=False,
+                )
+                identity = publication_identity(installed)
+                pinned = publication_identity(os.fstat(pending.source_fd))
+                before = pending.source_identity
+                if (
+                    identity != pinned or identity[:5] != before[:5] or identity[6] != 1
+                    or not stat.S_ISREG(identity[2])
+                ):
+                    raise Violation("private install changed the pinned regular-file contents or identity")
+                self.install_completed.add(pending.destination)
+            elif result > 0:
+                raise Violation("private install returned an invalid kernel status")
+            self.observe("accessed", install_protocol.PREFIX + encoded({
+                "version": 1, "scope": self.private_install.scope, "sequence": pending.sequence,
+                "source": pending.source, "destination": pending.destination,
+                "result": result, "identity": identity,
+            }).decode("ascii"))
+        finally:
+            pending.close()
 
     def source_mode(self, path):
         for forbidden in self.config["forbidden_paths"]:
@@ -1491,7 +1750,7 @@ class Policy:
         state.observations.clear()
         state.observation_needs_bytes = False
         trusted = self.observer(state, r)
-        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY}:
+        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY, VO_JOB_CONTEXT}:
             if a == VO_QUERY_KIND:
                 if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE, VO_LIVE}:
                     raise Violation("unauthenticated interceptor kind query")
@@ -1528,7 +1787,9 @@ class Policy:
             else:
                 if not trusted:
                     raise Violation("unauthenticated Make dispatch notification")
-                if a == VO_READY:
+                if a == VO_JOB_CONTEXT:
+                    self.observe_job_context(pid, state, b, c)
+                elif a == VO_READY:
                     if b or c or state.observer_ready:
                         raise Violation("invalid observer bootstrap notification")
                     state.observer_ready = True
@@ -1541,7 +1802,7 @@ class Policy:
                     self.observe("accessed", "make-job-policy:" + encoded([b, c]).decode("ascii"))
                 elif b:
                     path = self.path(pid, state, b)
-                    if path not in self.executable or path == "/control/interceptor" or c not in {0, 1, 2, 3}:
+                    if path not in self.executable or path == "/control/interceptor" or not 0 <= c <= 7:
                         raise Violation(f"untrusted executable dispatch: {path}")
                     if self.runtime_metadata(path, parents=False):
                         self.check_optional_make_spelling(state, path, "execute")
@@ -1719,11 +1980,20 @@ class Policy:
                         environment[name] = content
                     self.dispatch_sequence += 1
                     state.native_dispatch_sequence = self.dispatch_sequence
-                    self.observe("accessed", "make-dispatch:" + encoded({
+                    context = {
                         "sequence": self.dispatch_sequence, "environment": environment,
-                        "kind": "recipe" if state.helper_kind == VO_RECIPE else "value",
                         "executable": source, "arguments": arguments,
-                        "cwd": state.cwd, "global_ignore_errors": bool(required & 2),
+                        "cwd": state.cwd, "rebuilding_makefiles": bool(required & 4),
+                    }
+                    try:
+                        validate_dispatch_context(context)
+                    except ChannelError as error:
+                        raise Violation(str(error)) from error
+                    state.native_dispatch_context = context
+                    self.emit_job_context(state)
+                    self.observe("accessed", "make-dispatch:" + encoded({
+                        **context, "kind": "recipe" if state.helper_kind == VO_RECIPE else "value",
+                        "global_ignore_errors": bool(required & 2),
                     }).decode("ascii"))
                     if state.helper_kind == VO_VALUE and self.config.get("producer_endpoint"):
                         state.helper_kind = VO_LIVE
@@ -1737,6 +2007,8 @@ class Policy:
             self.reserve_exec(pid, state)
             state.pending = ("exec", role)
         elif n in {56, 57, 58}:
+            if self.private_install is not None:
+                raise Violation("private install command cannot create another actor")
             if n == 56:
                 allowed = 0x100 | 0x4000 | 0x100000 | 0x200000 | 0x1000000 | 0xFF
                 if a & ~allowed or (a & 0xFF) != signal.SIGCHLD:
@@ -1747,6 +2019,8 @@ class Policy:
             self.reserve_process(state)
             self.reserve_memory(pid, state, 0, copies=1)
         elif n == 435:
+            if self.private_install is not None:
+                raise Violation("private install command cannot create another actor")
             if b < 64 or b > 88:
                 raise Violation("unknown clone3 structure")
             flags = int.from_bytes(memory(pid, a, 8), "little")
@@ -1814,9 +2088,7 @@ class Policy:
         elif n in {88, 266}:
             raise Violation("candidate symlink creation is forbidden")
         elif n in {82, 264, 316}:
-            # Moving a cwd/dirfd ancestor changes the kernel's '..' meaning
-            # without changing its recorded path. No supported tool needs it.
-            raise Violation("candidate directory-entry relocation is forbidden")
+            self.prepare_private_install(pid, state, r)
         elif n == 86:
             for pointer in (a, b):
                 self.check(state, self.path(pid, state, pointer, follow_final=False), "write")
@@ -1886,6 +2158,9 @@ class Policy:
         if r.orig_rax == 12 and result > 0:
             state.break_end = result
         operation, value = pending if pending is not None else (None, None)
+        if operation == "private-install":
+            self.finish_private_install(pid, value, result)
+            return
         if result < 0:
             if operation == "make-source-exec" and result == -errno.EACCES and self.source_execute_allowed(pid, *value):
                 raise Violation(f"Make source executable lookup denied by noexec view: {value[0]}")
@@ -1902,7 +2177,7 @@ class Policy:
             state.cwd = value
         elif operation == "helper_kind":
             if state.native_dispatch_sequence is not None and value == state.helper_kind:
-                if not 0 < result < 1 << 31 or state.namespace_pid not in {None, result}:
+                if not 0 < result < 1 << 31 or result != pid or state.namespace_pid not in {None, result}:
                     raise Violation("invalid native helper PID identity")
                 state.namespace_pid = result
                 self.observe("accessed", "make-helper:" + encoded([
@@ -2050,6 +2325,9 @@ def supervise(config, drop_privileges):
             )
             del processes[stopped]
             state.close()
+            if config["mode"] == "make":
+                policy.charge_metadata(16)
+                policy.closed_processes.add(stopped)
             vfork_waiters.pop(stopped, None)
             release_vfork(stopped)
             if stopped == pid:
@@ -2200,11 +2478,17 @@ def supervise(config, drop_privileges):
             raise Violation("producer context died before request notification")
         policy.producer_issued += 1
         sequence = policy.producer_issued
+        if state.native_dispatch_context is None:
+            raise Violation("live producer has no authenticated native dispatch context")
+        if state.native_job_context is None:
+            raise Violation("live producer has no actual native job/expansion context")
         request = {
             "kind": "request", "scope": config["producer_scope"], "sequence": sequence,
             "completed": policy.producer_completed, "frame": state.producer_frame.hex(),
             "counters": policy.counters(), "reserved": policy.reservations(),
             "publication": policy.publication_confirmation,
+            "dispatch": state.native_dispatch_context,
+            "job": {"sequence": state.native_dispatch_sequence, **state.native_job_context},
         }
         raw = channel.exchange(
             encoded(request),
@@ -2284,6 +2568,7 @@ def supervise(config, drop_privileges):
         waited, status = os.waitpid(pid, 0)
         if waited != pid or not os.WIFSTOPPED(status):
             raise Violation("sandbox child did not enter traced confinement")
+        policy.pin_private_install_parents()
         for mapping in Path(f"/proc/{pid}/maps").read_text().splitlines():
             if mapping.endswith("[heap]"):
                 processes[pid].break_end = int(mapping.split()[0].split("-")[1], 16)
@@ -2297,7 +2582,18 @@ def supervise(config, drop_privileges):
                 raise Violation("aggregate probe deadline exhausted in syscall supervisor")
             if channel is not None:
                 channel.ensure_idle()
-            if policy.producer_requests and processes[policy.producer_requests[0]].producer_ready:
+            if policy.producer_requests:
+                requested = processes[policy.producer_requests[0]]
+                parent = processes.get(policy.make_pid)
+                if (
+                    requested.producer_ready and requested.native_job_context is None and parent is not None
+                    and (parent.kernel_call == 61 or parent.kernel_call in {0, 17, 19} and parent.kernel_io == "<pipe>")
+                ):
+                    raise Violation("native read/wait boundary lacks the required job-context hook")
+            if (
+                policy.producer_requests and processes[policy.producer_requests[0]].producer_ready
+                and processes[policy.producer_requests[0]].native_job_context is not None
+            ):
                 fulfill_producer()
                 continue
             stopped, status = os.waitpid(-1, os.WNOHANG | WALL)
@@ -2307,6 +2603,8 @@ def supervise(config, drop_privileges):
             handle_stop(stopped, status)
         if newborn_stops:
             raise Violation("unresolved descendant at completion")
+        if policy.private_install is not None and policy.install_completed != set(policy.private_install.destinations):
+            raise Violation("private install command omitted a declared installation")
     except BaseException as failure:
         primary = failure
         error = str(failure)
@@ -2376,7 +2674,7 @@ def supervise(config, drop_privileges):
                         error = str(failure)
                     raise
         finish_cleanup([
-            reap_owned, finish_channel, write_report,
+            reap_owned, policy.close_private_install_parents, finish_channel, write_report,
             *([] if channel is None else [channel.close]),
         ], primary=primary)
     return 0 if result["ok"] else 125

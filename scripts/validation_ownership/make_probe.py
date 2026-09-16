@@ -34,9 +34,11 @@ from .authority import (
 from .budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget, text
 from .lifecycle import cleanup_scope, finish_cleanup
 from . import metadata_transport
+from . import private_install as install_protocol
 from .producer_channel import (
     ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
     publication_identity, validate_publication_confirmation,
+    validate_dispatch_context, validate_job_context,
 )
 
 
@@ -96,6 +98,44 @@ class Command:
             raise MakeProbeError("unsupported Command publication policy")
         if self.publication_policy != "replace" and not self.outputs:
             raise MakeProbeError("content-only publication requires declared outputs")
+
+
+class _PrivateInstallLaunch:
+    pass
+
+
+@dataclass(frozen=True, eq=False)
+class _PrivateInstallCommand:
+    command: object
+    binding: bytes
+    snapshot: object
+    tree: Path
+    epoch: int
+    inputs: tuple
+    destinations: tuple[str, ...]
+
+
+@dataclass(frozen=True, eq=False)
+class _LiveDispatch:
+    scope: str
+    sequence: int
+    arguments: tuple
+    cwd: str
+    environment: tuple
+    rebuilding: bool
+    job: tuple
+    snapshot: object
+    tree: Path
+    epoch: int
+
+
+@dataclass(frozen=True, eq=False)
+class _ContextCommand:
+    command: object
+    snapshot: object
+    tree: Path
+    epoch: int
+    binding: bytes
 
 
 @dataclass(frozen=True)
@@ -671,6 +711,15 @@ class ProbeSession:
         self.pending_commands = 0
         self.pending_commands_peak = 0
         self.owner_thread = get_ident()
+        self._private_install_commands = {}
+        self._private_install_launches = {}
+        self._private_install_issued = weakref.WeakSet()
+        self._private_install_launch_issued = weakref.WeakSet()
+        self._live_dispatches = []
+        self._issued_dispatches = weakref.WeakSet()
+        self._command_dispatches = []
+        self._native_context_commands = {}
+        self._issued_context_commands = weakref.WeakSet()
         self._namespace_images = {}
         self._namespace_frames = []
         self._namespace_pending = {}
@@ -1122,6 +1171,15 @@ class ProbeSession:
             self.dependency_compiler = None
             self.dependency_runtime = None
             self.runtime_query_profiles.clear()
+            self._private_install_commands.clear()
+            self._private_install_launches.clear()
+            self._private_install_issued.clear()
+            self._private_install_launch_issued.clear()
+            self._live_dispatches.clear()
+            self._issued_dispatches.clear()
+            self._command_dispatches.clear()
+            self._native_context_commands.clear()
+            self._issued_context_commands.clear()
             self.runtime_inputs = ()
             self.runtime_dispatch = ()
             self.runtime_root = None
@@ -1486,7 +1544,7 @@ class ProbeSession:
         self, root, *, mode, argv, environment, mounts, code=(), sources=(),
         directories=(), executables=None, mapping_entries=(), metadata_validation=False,
         producer_handler=None, publication_observer=None, publication_allowed=True,
-        dependency=None, observe_recipe_dispatch=False,
+        dependency=None, observe_recipe_dispatch=False, private_install=None,
     ):
         self.budget.remaining()
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
@@ -1554,6 +1612,42 @@ class ProbeSession:
                 self.budget.limits.control_bytes - self.budget.bytes.get("control", 0),
             ),
         }
+        install_spec = None
+        if private_install is not None:
+            record = self._private_install_launches.pop(id(private_install), None)
+            if (
+                type(private_install) is not _PrivateInstallLaunch
+                or record is None or record[0] is not private_install
+                or private_install not in self._private_install_launch_issued
+            ):
+                raise MakeProbeError("private install launch is forged, expired or already consumed")
+            self._private_install_launch_issued.discard(private_install)
+            _, command, expected_root, output, expected_argv, expected_environment, parents = record
+            permission = self._require_private_install(command)
+            if (
+                permission is None or root != expected_root or tuple(argv) != expected_argv
+                or mode != "command" or dependency is not None or metadata_validation
+                or producer_handler is not None or publication_observer is not None
+                or executables is not None
+                or tuple(code) != tuple(sorted(set(command.code)))
+                or tuple(sources) != self.sources(command.sources)
+                or tuple(directories) != self._directories(command.directories)
+                or tuple(sorted(environment.items())) != expected_environment
+                or [item for item in mounts if item["writable"]] != [
+                    self._mount(output, "/work", writable=True),
+                    self._mount(Path("/dev/null"), "/dev/null", writable=True),
+                ]
+            ):
+                raise MakeProbeError("private install launch differs from its issued command/workspace")
+            config["private_install"] = {
+                "version": 1, "scope": install_protocol.launch_scope(root),
+                "binding": install_protocol.launch_binding(config),
+                "parents": parents, "destinations": ["/work/" + name for name in permission.destinations],
+            }
+            try:
+                install_spec = install_protocol.validate_config(config["private_install"], config)
+            except install_protocol.InstallError as error:
+                raise MakeProbeError(str(error)) from error
         if observe_recipe_dispatch:
             if mode != "make":
                 raise MakeProbeError("native recipe dispatch requires Make confinement")
@@ -1664,6 +1758,7 @@ class ProbeSession:
             if (
                 set(request) != {
                     "kind", "scope", "sequence", "completed", "frame", "counters", "reserved", "publication",
+                    "dispatch", "job",
                 }
                 or request["kind"] != "request" or type(request["sequence"]) is not int
                 or request["sequence"] != sequence + 1 or type(request["completed"]) is not int
@@ -1675,6 +1770,11 @@ class ProbeSession:
             events = _read_events(bytes.fromhex(request["frame"]), expected_mapping_count=0)
             if len(events) != 1 or events[0]["match"] != -1:
                 raise MakeProbeError("invalid producer request event")
+            try:
+                context = validate_dispatch_context(request["dispatch"], events[0]["arguments"])
+                job = validate_job_context(request["job"], context["sequence"])
+            except ChannelError as error:
+                raise MakeProbeError(str(error)) from error
             reserved = request["reserved"]
             if (
                 not isinstance(reserved, dict) or set(reserved) != {"live", "processes", "memory", "pending"}
@@ -1697,10 +1797,21 @@ class ProbeSession:
             self.pending_commands_peak = max(
                 self.pending_commands_peak, reserved["pending"] + sum(item["pending"] for item in self.parked_capsules),
             )
+            self.budget.charge("cache", len(encoded((context, job))))
             self.parked_capsules.append(reserved)
+            live = _LiveDispatch(
+                config["producer_scope"], context["sequence"], tuple(context["arguments"]),
+                context["cwd"], tuple(sorted(context["environment"].items())),
+                context["rebuilding_makefiles"], (job["kind"], job["target"], job["command_line"]),
+                self.snapshot, self.tree, self._namespace_epoch,
+            )
+            self._issued_dispatches.add(live)
+            self._live_dispatches.append(live)
             try:
                 value = producer_handler(events[0], sequence)
             finally:
+                self._live_dispatches.pop()
+                self._issued_dispatches.discard(live)
                 self.parked_capsules.pop()
             reply = {
                 "kind": "result", "scope": config["producer_scope"], "sequence": sequence,
@@ -1828,6 +1939,12 @@ class ProbeSession:
                 raise MakeProbeError("invalid trusted metadata comparison status")
             if mode != "make" and not metadata_validation and result.returncode:
                 raise MakeProbeError(f"registered command failed: {result.returncode}")
+            try:
+                installed = install_protocol.validate_records(observed["accessed"], install_spec)
+            except install_protocol.InstallError as error:
+                raise MakeProbeError(str(error)) from error
+            if install_spec is not None:
+                observed["private_install_records"] = installed
             return result, observed
 
     @staticmethod
@@ -1840,6 +1957,142 @@ class ProbeSession:
     @terminal_failure
     def command(self, command: Command):
         return self._command(command)
+
+    @staticmethod
+    def _install_command_binding(command):
+        return encoded((
+            command.argv, command.code, command.sources, command.directories, command.outputs,
+            command.dependency_only, command.publication_policy, command.stdout_transform,
+        ))
+
+    @terminal_failure
+    def _private_install_command(self, command, destinations):
+        if (
+            type(command) is not Command or not command.argv or command.argv[0] != "/usr/bin/python3"
+            or command.native_tool is not None or command.runtime_tool is not None
+            or command.dependency_only is not False or command.stdout_transform is not None
+            or any(type(value) is not tuple or any(not isinstance(item, str) for item in value)
+                   for value in (command.argv, command.code, command.sources, command.directories, command.outputs))
+            or not isinstance(destinations, (tuple, list))
+            or not 1 <= len(destinations) <= self.budget.limits.created_files
+        ):
+            raise MakeProbeError("private install requires an exact supported command and destinations")
+        outputs = self._output_paths(command.outputs)
+        names = tuple(sorted(relative_path(name) for name in destinations))
+        parents = {str(PurePosixPath(name).parent) for name in outputs}
+        if (
+            not outputs or len(names) != len(set(names))
+            or any(str(PurePosixPath(name).parent) not in parents for name in names)
+            or id(command) in self._private_install_commands
+        ):
+            raise MakeProbeError("private install destinations are outside the command's output parents")
+        inputs = tuple(self.source_owners(set(command.code) | set(self.sources(command.sources))))
+        binding = self._install_command_binding(command)
+        self.budget.charge("cache", len(binding) + len(encoded((inputs, names))))
+        key = id(command)
+
+        def expired(reference):
+            record = self._private_install_commands.get(key)
+            if type(record) is _PrivateInstallCommand and record.command is reference:
+                del self._private_install_commands[key]
+
+        record = _PrivateInstallCommand(
+            weakref.ref(command, expired), binding, self.snapshot, self.tree,
+            self._namespace_epoch, inputs, names,
+        )
+        self._private_install_commands[key] = record
+        self._private_install_issued.add(record)
+        return command
+
+    def _require_private_install(self, command):
+        self.budget.remaining()
+        record = self._private_install_commands.get(id(command))
+        if record is None:
+            return None
+        if (
+            type(record) is not _PrivateInstallCommand or record not in self._private_install_issued
+            or record.command() is not command
+            or self.base is None or self.snapshot is not record.snapshot or self.tree != record.tree
+            or self._namespace_epoch != record.epoch or get_ident() != self.owner_thread
+            or self._install_command_binding(command) != record.binding
+            or command.native_tool is not None or command.runtime_tool is not None
+            or tuple(self.source_owners(set(command.code) | set(self.sources(command.sources)))) != record.inputs
+        ):
+            raise MakeProbeError("private install command changed or outlived its issued view")
+        return record
+
+    def _private_install_launch(self, command, output, root, argv, environment):
+        permission = self._require_private_install(command)
+        if permission is None:
+            return None
+        directories = {
+            parent.as_posix() for name in permission.destinations
+            for parent in PurePosixPath(name).parents
+        }
+        records = []
+        for directory in sorted(directories, key=lambda name: (len(PurePosixPath(name).parts), name)):
+            path = output if directory == "." else output / directory
+            if directory != ".":
+                if self.files_created >= self.budget.limits.created_files:
+                    self.budget.reject("private install parent creation exceeds remaining capacity")
+                self.files_created += 1
+                path.mkdir()
+            identity = install_protocol.directory_identity(path.stat(follow_symlinks=False))
+            name = "/work" if directory == "." else "/work/" + directory
+            self.budget.charge("control", len(encoded((name, identity))))
+            records.append([name, *identity])
+        launch = _PrivateInstallLaunch()
+        self._private_install_launches[id(launch)] = (
+            launch, command, root, output, tuple(argv), tuple(sorted(environment.items())), sorted(records),
+        )
+        self._private_install_launch_issued.add(launch)
+        return launch
+
+    def _require_live_dispatch(self, event=None):
+        if not self._live_dispatches:
+            raise MakeProbeError("command has no actual live dispatch context")
+        context = self._live_dispatches[-1]
+        if (
+            type(context) is not _LiveDispatch or context not in self._issued_dispatches
+            or context.snapshot is not self.snapshot or context.tree != self.tree
+            or context.epoch != self._namespace_epoch
+            or event is not None and context.arguments != tuple(event["arguments"])
+        ):
+            raise MakeProbeError("live dispatch context is forged, stale or belongs to another view")
+        return context
+
+    def _command_environment(self, command):
+        record = self._native_context_commands.get(id(command))
+        if record is None or not self._command_dispatches or self._command_dispatches[-1][0] is not command:
+            return {**ENVIRONMENT, "SOURCE_DATE_EPOCH": "0", "TMPDIR": "/work"}
+        if (
+            type(record) is not _ContextCommand or record not in self._issued_context_commands
+            or record.command() is not command or record.snapshot is not self.snapshot or record.tree != self.tree
+            or record.epoch != self._namespace_epoch or record.binding != self._install_command_binding(command)
+        ):
+            raise MakeProbeError("context-aware command belongs to another binding or view")
+        context = self._require_live_dispatch()
+        if context is not self._command_dispatches[-1][1] or context.cwd != "/repo":
+            raise MakeProbeError("registered command has an unsupported native cwd/context")
+        return dict(context.environment)
+
+    @terminal_failure
+    def _native_context_command(self, command):
+        if type(command) is not Command:
+            raise MakeProbeError("native context requires a typed command")
+        key = id(command)
+        def expired(reference):
+            record = self._native_context_commands.get(key)
+            if type(record) is _ContextCommand and record.command is reference:
+                del self._native_context_commands[key]
+        binding = self._install_command_binding(command)
+        self.budget.charge("cache", len(binding))
+        record = _ContextCommand(
+            weakref.ref(command, expired), self.snapshot, self.tree, self._namespace_epoch, binding,
+        )
+        self._native_context_commands[key] = record
+        self._issued_context_commands.add(record)
+        return command
 
     def _metadata_matches(self, records):
         if not records:
@@ -1995,6 +2248,7 @@ class ProbeSession:
         if not isinstance(command, Command):
             raise MakeProbeError("registered command requires a typed Command")
         Command.__post_init__(command)
+        environment = self._command_environment(command)
         if type(command.dependency_only) is not bool:
             raise MakeProbeError("dependency_only requires a boolean")
         if command.stdout_transform not in {None, "dirname"}:
@@ -2073,7 +2327,7 @@ class ProbeSession:
                 raise MakeProbeError("modern compiler runtime aliases changed after capture")
         key = (
             self.snapshot.digest, command, None if native is None else native.digest,
-            runtime_digest, code, sources, published_inputs,
+            runtime_digest, code, sources, published_inputs, tuple(sorted(environment.items())),
         )
         if key in self.cache and not outputs:
             for cached in self.cache[key]:
@@ -2140,18 +2394,26 @@ class ProbeSession:
                     destination.symlink_to(target)
             if argv[0] == "/usr/bin/python3":
                 argv[1:1] = ["-I", "-S", "-B"]
-            completed, observed = self._sandbox_run(
-                root, mode="command" if compiler is None else "compile", argv=argv,
-                environment={**ENVIRONMENT, "SOURCE_DATE_EPOCH": "0", "TMPDIR": "/work"},
-                mounts=[
-                    self._mount(self.tree, "/repo"),
-                    self._mount(Path("/usr"), "/usr", executable=True),
-                    self._mount(output, "/work", writable=True),
-                    self._mount(Path("/dev/null"), "/dev/null", writable=True),
-                ],
-                code=code, sources=sources, directories=directories,
-                executables=compiler, dependency=dependency,
-            )
+            install_launch = self._private_install_launch(command, output, root, argv, environment)
+            try:
+                completed, observed = self._sandbox_run(
+                    root, mode="command" if compiler is None else "compile", argv=argv,
+                    environment=environment,
+                    mounts=[
+                        self._mount(self.tree, "/repo"),
+                        self._mount(Path("/usr"), "/usr", executable=True),
+                        self._mount(output, "/work", writable=True),
+                        self._mount(Path("/dev/null"), "/dev/null", writable=True),
+                    ],
+                    code=code, sources=sources, directories=directories,
+                    executables=compiler, dependency=dependency,
+                    **({"private_install": install_launch} if install_launch is not None else {}),
+                )
+            finally:
+                if install_launch is not None:
+                    self._private_install_launches.pop(id(install_launch), None)
+                    if type(install_launch) is _PrivateInstallLaunch:
+                        self._private_install_launch_issued.discard(install_launch)
             consumed = tuple(observed["consumed"])
             if consumed != sources:
                 raise MakeProbeError(f"declared/consumed source mismatch: declared={sources!r}, consumed={consumed!r}")
@@ -2183,6 +2445,7 @@ class ProbeSession:
                 + len(encoded([
                     self.snapshot.digest, command.argv, code, sources, directories,
                     published_inputs, command.publication_policy, runtime_digest, command.stdout_transform,
+                    environment,
                 ]))
                 + (0 if result.artifact is None else len(result.artifact))
                 + sum(len(item.data) + len(os.fsencode(item.path)) + 64 for item in result.generated),
@@ -2551,9 +2814,11 @@ class ProbeSession:
                     os.close(descriptor)
             for item, outcome in zip(produced.generated, confirmation["outputs"]):
                 old = previous[item.path]
-                retained = policy == "if-content-changed" and old is not None and old[0].data == item.data
+                retained = policy != "replace" and old is not None and old[0].data == item.data
                 effect = "retained" if retained else "created" if old is None else "replaced"
-                mode = old[0].mode if retained else item.mode
+                mode = old[0].mode if old is not None and (
+                    retained or policy == "if-content-changed-preserve-mode"
+                ) else item.mode
                 if (
                     outcome["effect"] != effect or outcome["mode"] != mode
                     or outcome["size"] != len(item.data)
@@ -2581,6 +2846,7 @@ class ProbeSession:
         def produce(event, sequence):
             publication_start = self.publication_serial
             command = _event_command(event)
+            dispatch_context = self._require_live_dispatch(event)
             if sequence != len(receipts) + 1:
                 raise MakeProbeError("producer request slot is stale or duplicated")
             if command not in commands:
@@ -2620,13 +2886,20 @@ class ProbeSession:
                         if parent.as_posix() != "." and not (self.tree / parent).exists()
                     )
                 generated_directories.update(new_directories)
-                result = self.command(registration)
+                self._command_dispatches.append((registration, dispatch_context))
+                try:
+                    environment = self._command_environment(registration)
+                    result = self.command(registration)
+                finally:
+                    self._command_dispatches.pop()
                 inputs = result.consumed
                 identity = {
                     "argv": list(registration.argv), "directories": sorted(set(registration.directories)),
                     "inputs": list(result.input_identities),
                     "publication_policy": registration.publication_policy,
                 }
+                if id(registration) in self._native_context_commands:
+                    identity["environment"] = environment
                 if registration.dependency_only:
                     identity["dependency_only"] = True
                     identity["executed"] = list(result.executed)
@@ -2776,8 +3049,19 @@ class ProbeSession:
                     ],
                 }
             contexts = []
-            helpers, policies = {}, {}
+            helpers, policies, jobs = {}, {}, {}
             for value in observed["accessed"]:
+                if value.startswith("make-job-context:"):
+                    try:
+                        job = validate_job_context(parse_json(
+                            value[len("make-job-context:"):].encode("ascii"), "native job context",
+                        ))
+                    except ChannelError as error:
+                        raise MakeProbeError(str(error)) from error
+                    if job["sequence"] in jobs:
+                        raise MakeProbeError("duplicate native job-context sequence")
+                    jobs[job["sequence"]] = job
+                    continue
                 if value.startswith(("make-helper:", "make-job-policy:")):
                     kind, payload = value.split(":", 1)
                     record = parse_json(payload.encode("ascii"), "native Make job binding")
@@ -2801,10 +3085,12 @@ class ProbeSession:
                     not isinstance(dispatch, dict)
                     or set(dispatch) != {
                         "sequence", "kind", "environment", "executable", "arguments", "cwd", "global_ignore_errors",
+                        "rebuilding_makefiles",
                     }
                     or type(dispatch["sequence"]) is not int or dispatch["sequence"] < 1
                     or not isinstance(dispatch["kind"], str) or dispatch["kind"] not in {"recipe", "value"}
                     or type(dispatch["global_ignore_errors"]) is not bool
+                    or type(dispatch["rebuilding_makefiles"]) is not bool
                     or not isinstance(dispatch["executable"], str) or not isinstance(dispatch["cwd"], str)
                     or not isinstance(dispatch["arguments"], list) or not 1 <= len(dispatch["arguments"]) <= 1024
                     or any(not isinstance(argument, str) for argument in dispatch["arguments"])
@@ -2820,11 +3106,13 @@ class ProbeSession:
             if (
                 set(helpers) != {item["sequence"] for item in contexts}
                 or len(set(helpers.values())) != len(helpers) or set(helpers.values()) != set(policies)
+                or set(jobs) != {item["sequence"] for item in contexts}
             ):
                 raise MakeProbeError("native Make job policy evidence is incomplete")
             for item in contexts:
+                item["job"] = jobs[item["sequence"]]
                 policy = policies[helpers[item["sequence"]]]
-                if item["kind"] == "recipe" and not policy & 2:
+                if item["kind"] == "recipe" and (not policy & 2 or item["job"]["kind"] != "recipe"):
                     raise MakeProbeError("native recipe lacks its actual GNU Make job")
                 item.pop("global_ignore_errors")
                 item["ignore_errors"] = bool(policy & 1)

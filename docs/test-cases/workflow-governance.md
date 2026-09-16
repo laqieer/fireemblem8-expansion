@@ -5479,6 +5479,98 @@ every path. These are complete bounded counterexamples, not evidence of a
 whole-report bypass or permission for message publication/rename/namespace
 changes; the separate real message-source hold and unallocated17 remain.
 
+For the private regular-install primitive, run:
+
+```sh
+python3 -m unittest scripts.validation_ownership.tests.test_private_install -v
+```
+
+Start with the existing native fixture, genuine empty snapshot witness and
+unchanged budgets. Supply the actual `textprocess.py` and `huffman.py`, two
+small messages and real control definitions. Give the unmodified producer two
+fresh private destinations beneath its declared output parent. Issue the exact
+command through the trusted adapter seam, then inspect generated C/header
+bytes and complete native install records: header then C, success status,
+single-link regular identities and exact destination coverage. Without the
+issuance step, the same real producer must still hit the original native
+directory-entry relocation denial. This is private-command evidence, not a
+successful public message/header pipeline.
+
+Repeat with absolute paths, relative cwd and a real directory descriptor.
+Reject an existing or unlisted destination, cross-parent/source-tree path,
+dot/parent spelling, directory or hardlinked source, symlink creation, open or
+duplicated source descriptor, mutable mapping, unsupported rename flags and
+another-actor creation. Remove and recreate an empty private parent before
+install: the held original directory descriptor must prevent inode-reuse
+confusion, not merely compare an old number after the fact. A destination
+cannot be installed twice even if it is unlinked between attempts.
+
+Try an equal/cloned command, copied permission record, changed command binding,
+foreign session, real immutable-view switch/restoration, expired session and
+replayed launch. None may inherit the grant. Observe that replay is rejected
+before another native run. Drop or duplicate an actual native outcome, change
+its scope/destination/identity or add fields; the paired parser must reject.
+A command that merely writes its result without performing its declared
+installation is not a positive. Keep all source/input, snapshot, actor,
+pathname and resource guards intact rather than weakening fixture assertions.
+
+Every success/failure path must close supervisor parent/source pins, session
+children, launch records and fixture directories. Native process-suite
+collection must include the new module exactly once; ordinary graph/workflow
+discovery must not import its `TestCase`. The existing case IDs, original
+selectors, nine jobs and34 commands remain unchanged. The C-only integration
+is exercised below; header-step publication/retirement and per-read-phase
+authority remain required before any complete live-message or full-report claim.
+
+For the real text producer and its dispatch context, run:
+
+```sh
+python3 -m unittest scripts.validation_ownership.tests.test_text_producer -v
+```
+
+Use the unmodified text/huffman files, real default text and definitions, and a
+tracked comparison header produced by the ordinary relative-script invocation.
+Keep the Make-visible C absent before dispatch. Require ordinary/native C
+bytes to agree, both real private installs to complete, and only C to be a
+declared/public output. Repeat with real transitive include files. Cycles,
+missing/escaping/unsupported paths and underdeclared reads must reject.
+For an overdeclared control, use a genuinely unconsumed nested path: a root
+member actually seen by import-directory enumeration is not an unread control.
+
+Change one comparison-header byte and require failure before any C publication
+receipt. Keep the header immutable, preserve its exact generated script line,
+and clean every private comparison/temp file. Exercise a component-level real
+include-remake prerequisite so the actual recipe export and native rebuilding
+bit are observed. Its small readiness include is only a producer/context
+control, not the required real ARM/header pipeline acceptance scenario.
+
+Compare genuine first-create, changed-replace and unchanged-retain
+publications with an issued nondefault mode. The new mode-preserving policy
+must keep that mode for changed content; the old content-only policy must
+still adopt the newly produced mode. Check effective identities and all old
+policy/ownership refusals.
+
+Pass two genuine inherited environments through native Make. The exact
+context-aware primary command must see each value, while registration helpers
+and direct commands remain canonical and cannot reuse the other environment's
+cache result. Do not assume GNU 4.3 passes newly exported file variables into
+parse-time `shell`; use actual native envp or a real recipe control. Corrupt a
+live request's context/argv/rebuilding type and require rejection before
+producer registration. Preserve native error-policy, export and cache tests.
+All original numeric limits and case IDs remain unchanged; read-pass/source
+authority and the five-step header pipeline are not supplied by these tests.
+
+For native job identity, keep the first recipe command, later commands,
+parallel targets with identical argv, shell expansion and include-remake
+controls. Require actual target/ordinal associations even when argv cannot
+distinguish targets. Use a real Makefile parallel setting; the public
+assignment API's refusal of execution-authority MAKEFLAGS overrides remains
+unchanged. Corrupt a live job sequence or submit an authenticated-notification
+tag from an ordinary candidate command: both must reject. Wait/read hooks
+must include the real fortified read entry without bypassing its libc bounds.
+Missing context is a hold, never a guessed job or source epoch. Record
+stopped/incomplete exploratory hook runs and their cleanup honestly.
+
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while
 native per-file raw metadata remains `$(FLAGS)`. Do not eagerly copy the

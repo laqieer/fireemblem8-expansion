@@ -15,7 +15,7 @@ class ChannelError(RuntimeError):
     pass
 
 
-PUBLICATION_POLICIES = ("replace", "if-content-changed")
+PUBLICATION_POLICIES = ("replace", "if-content-changed", "if-content-changed-preserve-mode")
 PUBLICATION_MAGIC = b"VOGEN2\0\0"
 
 
@@ -64,6 +64,62 @@ def validate_publication_confirmation(value, *, count_limit, file_limit):
             raise ChannelError("invalid effective publication result")
         validate_publication_identity(output["identity"], output["mode"], output["size"])
         names.add(output["path"])
+    return value
+
+
+def validate_dispatch_context(value, arguments=None):
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"sequence", "executable", "arguments", "cwd", "environment", "rebuilding_makefiles"}
+        or type(value["sequence"]) is not int or value["sequence"] < 1
+        or not isinstance(value["executable"], str) or not isinstance(value["cwd"], str)
+        or not value["executable"].startswith("/") or not value["cwd"].startswith("/")
+        or os.path.normpath(value["executable"]) != value["executable"]
+        or os.path.normpath(value["cwd"]) != value["cwd"]
+        or not isinstance(value["arguments"], list) or not 1 <= len(value["arguments"]) <= 1024
+        or not isinstance(value["environment"], dict) or type(value["rebuilding_makefiles"]) is not bool
+        or any(not isinstance(item, str) or "\0" in item for item in value["arguments"])
+        or any(not isinstance(name, str) or not name or "=" in name or "\0" in name
+               or not isinstance(content, str) or "\0" in content
+               for name, content in value["environment"].items())
+        or "\0" in value["executable"] or "\0" in value["cwd"]
+        or arguments is not None and value["arguments"] != arguments
+    ):
+        raise ChannelError("malformed or mismatched native dispatch context")
+    try:
+        size = sum(len(item.encode("utf-8", "strict")) + 1 for item in value["arguments"])
+        size += sum(len((name + "=" + content).encode("utf-8", "strict")) + 1
+                    for name, content in value["environment"].items())
+        if size > 65536 or any(
+            not 0 < len(value[name].encode("utf-8", "strict")) <= 4096 for name in ("executable", "cwd")
+        ):
+            raise ChannelError("native dispatch context exceeds its existing frame bounds")
+    except UnicodeEncodeError as error:
+        raise ChannelError("native dispatch context is not strict UTF-8") from error
+    return value
+
+
+def validate_job_context(value, sequence=None):
+    if (
+        not isinstance(value, dict) or set(value) != {"sequence", "kind", "target", "command_line"}
+        or type(value["sequence"]) is not int or value["sequence"] < 1
+        or sequence is not None and value["sequence"] != sequence
+        or not isinstance(value["kind"], str) or value["kind"] not in {"recipe", "expansion"}
+    ):
+        raise ChannelError("malformed or unbound native job context")
+    if value["kind"] == "expansion":
+        if value["target"] is not None or value["command_line"] is not None:
+            raise ChannelError("expansion context claims a recipe target")
+    elif (
+        not isinstance(value["target"], str) or not value["target"] or "\0" in value["target"]
+        or type(value["command_line"]) is not int or not 0 <= value["command_line"] < 1 << 32
+    ):
+        raise ChannelError("native recipe context lacks its target/index")
+    try:
+        if value["target"] is not None and len(value["target"].encode("utf-8", "strict")) > 4096:
+            raise ChannelError("native recipe target exceeds its existing bound")
+    except UnicodeEncodeError as error:
+        raise ChannelError("native recipe target is not strict UTF-8") from error
     return value
 
 
