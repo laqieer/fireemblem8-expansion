@@ -75,7 +75,9 @@ patch publication remain unchanged.
    names. IPC barriers must force both into header and C buffered writes
    concurrently; do not rely on sleeps or a lucky scheduling loop. Require
    distinct same-directory staged names, successful producers, serial-reference
-   bytes and no remaining owned staging.
+   bytes and no remaining owned staging. Names are recorded at real staging
+   opens, not recovered from Linux procfs; the test runs with procfs lookup
+   unavailable.
 3. Check UTF-8/CP932 serial byte equivalence, unchanged regeneration,
    permissions/umask, output symlinks, spaces, and the actual standalone CLI
    from another directory. Compile the small generated C fixture to an object.
@@ -90,6 +92,8 @@ patch publication remain unchanged.
    failures. The C reader uses the public message/Huffman globals, rejecting
    a valid prefix that omits those definitions. Complete final files must
    then parse and match the serial bytes.
+   Compiler status, incomplete byte count and final restoration establish
+   the negative result; GCC-specific diagnostic wording is not required.
    This automates the old publication behavior without committing an old
    source snapshot or depending on the renderers' write-call grouping.
    The exact preimage producer may also be run in a disposable copy; its
