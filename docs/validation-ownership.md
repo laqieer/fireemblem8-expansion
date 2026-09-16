@@ -1223,7 +1223,7 @@ Make program or special parser target. Only that proof preserves the incoming
 known mode and namespace; an already unknown context is never reset.
 
 The proof normally uses current original literals. A simple initializer whose
-ordinary value remains unknown may retain one narrow template-only native-claim
+ordinary value remains unknown may retain one narrow original native-claim
 contract: literal/direct-reference arguments to a single `patsubst` are captured
 at the original assignment, and a later raw native value must match that exact
 bounded substitution relation, including GNU whitespace and empty matches.
@@ -1247,6 +1247,28 @@ by an asset-script wildcard) uses this generic composition, not a table,
 macro or filename exemption. Recursive compositions and appends do not gain
 new snapshot semantics. Bounds cannot supply exact template parameters,
 targets, comparison operands, recipe values or native-value claims.
+
+The separate exact initializer path supports bounded original `notdir`,
+`addprefix` and substitution-reference chains, including nested literal and
+reference operands. It snapshots the actual simple-assignment inputs and
+retains an exact result without querying native values to construct it.
+Existing captured `patsubst` relations share their text semantics with that
+path; a native value remains only a claim checked against original operands.
+GNU word/empty-component behavior is preserved: `notdir` is textual, not host
+path normalization, and prefixes and output spacing are not trimmed.
+Unsupported escaping, extra percent operators, unknown/effectful/staged leaves
+and recursive function bodies still decline. Ordinary literal and condition
+evaluation does not gain a general function interpreter.
+
+An original target-only fallback can consume these exact snapshots and
+existing verified `patsubst` claims when the incoming mode, namespace and
+binding context remain proved. Header bounds cannot enter that path. Target
+words still use the existing parser and delayed `.POSIX` recording: GNU
+collapses the first following non-recipe line before recording the preceding
+rule. A static target pattern is not a filter; an unmatched `.POSIX` target
+warns but still activates POSIX. No final harmless rewrite, early recording
+or reset to GNU mode supplies authority. Parsed fragments and constructed
+text are charged before retained assembly through the existing shared budget.
 
 Original versions, precedence and unknown/provisional alternatives invalidate
 or withhold those facts. Header inputs cannot contain syntax/staged dollars;
@@ -1286,6 +1308,32 @@ declarations, the mixed characters inputs and the later meaningful units
 continuation. Short and renamed controls, composition-only removal, original
 snapshot/type boundaries and finite default/export/read-closure checks keep
 that evidence distinct from any unrecorded full-run target or planner state.
+
+The derived-target fixture additionally retains the actual generated-C/object
+initializers and static legacy recipe before the late continuation. Separate
+constructor and target-consumer removals recover their original failures.
+Related source support is intentionally narrower than whole-program closure:
+
+| Original target list | Bounded constructor/header support | Remaining original obligation |
+| --- | --- | --- |
+| `generated_data.mk`: `GENERATED_DATA_LINKED_OBJECTS` | Actual four-table `notdir`/`addprefix`/suffix chain and small planner | Full repository source/resource acceptance is separate |
+| `Makefile`: `LEGACY_C_OBJECTS` | Ordinary native value observed; exact proof still declines | `filter-out`, even with literal operands |
+| `Makefile`: `ASM_OBJECTS` | Suffix chain with declared literal `SFILES` and retained secondary prerequisite | Original wildcard/composed `SFILES` is not exact |
+| `Makefile`: `DATA_SRC_C_OBJECTS` | Suffix chain with declared literal source list and retained secondary/preproc prerequisites | Original multi-wildcard source leaf is not exact |
+| `modern.mk`: `MODERN_ALL_DATA_PRE` | `addprefix` plus `.pre.c` suffix | Recursive wildcard default source list |
+| `modern.mk`: `MODERN_ALL_DATA_OBJECTS` | `addprefix` plus `.o` suffix | Same default plus original derived target-specific flags assignment |
+| `modern.mk`: `MODERN_ALL_DATA_ASSET_DEPS` | `addprefix` plus `.assets.d` suffix | Recursive wildcard default and separate producer/include obligations |
+| `modern.mk`: `MODERN_ALL_C_HEADER_DEPS` | `addprefix` plus `.headers.d` suffix | Wildcard/filter inputs, unknown `findstring` condition/append alternatives, append to an exact snapshot |
+
+The remaining wildcard/default/filter/append/conditional and target-specific
+cases have bounded native-success/source-proof-refusal controls; they are not
+silently repaired from final values. A new full measurement must not be used
+to rediscover these known prerequisites. Secondary fixtures retain the real
+consumer order: the linker dependency is read before `.SECONDEXPANSION`.
+Moving a derived-list consumer after that directive deliberately reaches the
+unchanged staged-reference guard; exact target-mode proof does not waive
+secondary value provenance. These distinctions do not assert that all eight
+complete original contexts are closed.
 
 Recipe observation preserves read kind through ordinary references, aliases
 and captured exports. Literal `origin`, `flavor` and `value` operands use

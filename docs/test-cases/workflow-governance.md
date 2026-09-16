@@ -5239,6 +5239,60 @@ cleaned on positive, negative and removal paths. These checks neither rerun a
 full graph/report nor increase a budget; all baselines1-15 remain closed and
 no baseline16, provider or H1 allocation follows from this case.
 
+For original exact derived targets, run the ten `test_original_exact_*`
+methods. Retain the actual four-table declarations, characters header bound,
+`GENERATED_DATA_LINKED_C` addprefix/notdir initializer, object suffix
+initializer, static header/legacy recipe/UNAME conditional, following
+statement and late units continuation. Use the existing tiny generator,
+genuine witness and explicitly declared fixture parent tool values; do not
+run the archival compile recipe or substitute a final native object list for
+original evidence. Require ordinary/native raw values, complete small-planner
+target/recipe/prerequisite projections and the fixture generated C to agree.
+Keep literal, original-derived, renamed, short and equivalent `patsubst`
+controls. Disable only exact construction and then only target consumption:
+both must recover the late refusal, with the fact absent only in the first
+removal. Restoring each path must reproduce the original positive.
+
+Compare actual GNU and native metadata for nested operands, parenthesized and
+braced references, suffix changes, empty stems/lists/components, prefix
+whitespace and repeated/trailing slashes. For example, `notdir` of
+`a/ b/ file c/` is exactly `  file `, not a normalized path list. Unsupported
+extra percent operators must remain unproved rather than silently losing a
+literal percent. Keep an original snapshot through aliases, then rewrite its
+referents; its old exact value must remain, while new unknown/effectful,
+staged, cyclic, conditional/default/target-specific or namespace-invalid
+inputs acquire no exact fact. Header-only wildcards stay nonexact.
+
+Put literal and derived `.POSIX` in a static target list that does not match
+the target pattern. GNU's warning is not rejection. Assert the first following
+non-recipe continuation uses the old GNU folding and the next uses POSIX
+folding. A later safe target rewrite, including one hidden behind the
+mode-sensitive comparison, cannot hide the original mode or HIDDEN default.
+An unmatched old native claim must reject. Retain the existing target-mode,
+source/primary, staged-reference, metadata-laziness and payload/empty-pattern
+guards. Reject a byte-limited join before exhausting its input generator;
+removing only that funding must expose the oversized result.
+
+Use a finite `STEMS ?= first.c` source-to-object chain with exported snapshot
+aliases. Compare every default/command-line/environment state's ordinary
+output, native object value, export membership/value and prerequisites.
+Unsealed or recipe-only-symbolic STEMS must reject; unused metadata-only
+error/shell bodies must not execute. Keep the existing 512-name/context,
+deadline, native-frame and child/waiter cleanup boundaries.
+
+Maintain the eight-header support/remaining-obligation table in
+`docs/validation-ownership.md`. Exercise actual related suffix/addprefix
+declarations with `.pre.c`, `.assets.d` and `.headers.d`, explicit bounded
+literal leaves, and actual secondary/preproc prerequisite syntax. Keep the
+aggregate consumer before `.SECONDEXPANSION`, matching the real linker rule;
+the intentionally late-consumer variant must still hit the staged-reference
+guard despite native graph equality. Record ordinary/native success and
+source refusal for actual required wildcard/default/filter/conditional/append
+and derived target-specific contexts. Do not call those complete original
+contexts supported, weaken their guards or allocate a full run to rediscover
+them. These focused checks leave all baselines1-16 closed and allocate no17,
+provider, H1 or full graph/report work.
+
 For the real framework template contract, copy the complete current
 `GENERATED_DATA_LINK_TABLE_RULES` and
 `GENERATED_DATA_MODERN_OVERRIDE_RULES` definitions and their actual

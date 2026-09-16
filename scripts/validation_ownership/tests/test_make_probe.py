@@ -4029,6 +4029,476 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             self.observe(external={"PREFIX"}, symbolic_recipe_names={"PREFIX"}, **options)
         self.assertFalse((self.root / "marker").exists())
 
+    def production_static_target_fixture(self, *, late=True, renamed=False, initializer=None):
+        config, tail, _ = self.production_header_template_fixture()
+        source_name = "GENERATED_DATA_LINKED_C"
+        objects = "GENERATED_DATA_LINKED_OBJECTS"
+        parts = list(graph_probe._make_logical_chunks((ROOT / "generated_data.mk").read_text()))
+        target = next(part for part in parts if part.text.startswith("$(" + objects + "):"))
+        following = next(part for part in parts if part.start > target.start
+                         and part.text == ".PHONY: generated-data-link-check")
+        lines = (self.root / "generated_data.mk").read_text().splitlines(keepends=True)
+        for part in parts:
+            assignment = graph_probe.ASSIGNMENT.fullmatch(graph_probe._collapse_make_continuations(part.text))
+            if (assignment and assignment["name"] in {source_name, objects}
+                    or target.start <= part.start <= following.end):
+                value = part.text
+                if assignment and assignment["name"] == objects and initializer is not None:
+                    value = objects + " := " + initializer
+                lines[part.start - 1:part.end] = (value + "\n").splitlines(keepends=True)
+        source = "".join(lines if late else lines[:following.end])
+        if renamed:
+            for old, new in (
+                (objects, "PROJECT_OBJECTS"), (source_name, "PROJECT_SOURCES"),
+                ("GENERATED_DATA_LINKED_HAND_SOURCES", "PROJECT_INPUTS"),
+                ("GENERATED_DATA_LINK_TABLE_RULES", "PROJECT_RULES"),
+            ):
+                source = source.replace(old, new)
+            source_name, objects = "PROJECT_SOURCES", "PROJECT_OBJECTS"
+        self.add("generated_data.mk", source)
+        self.add("Makefile", (
+            "PYTHON := /usr/bin/python3\nUNAME := Linux\n"
+            "CPP := cpp\nCPPFLAGS := -Iinclude\nCC1 := tools/agbcc/bin/agbcc\nCC1FLAGS := -O2\n"
+            "AS := arm-none-eabi-as\nASFLAGS := -mcpu=arm7tdmi\nSED := sed\n"
+            "include generated_data.mk\nall: $(GENERATED_DATA_OUT_DIR)/data_characters.c\n"
+            "measure:\n\t@printf '%s\\n' '$(value " + config + ")' '"
+            + ("$(value " + tail + ")" if late else "") + "' '$(value " + source_name
+            + ")' '$(value " + objects + ")'\n"
+        ))
+        return (config, tail, source_name, objects), {
+            "scoped_variable_names": {"1", "t", "@", "@D", "<"},
+            "symbolic_recipe_names": {"GENERATED_DATA_PY", "CPP", "CPPFLAGS", "CC1", "CC1FLAGS",
+                                     "AS", "ASFLAGS", "SED"},
+        }
+
+    def test_original_exact_targets_accept_actual_static_rule_and_equivalent_facts(self):
+        literal = " ".join("build/generated/data/data_" + table + ".o"
+                           for table in ("classes", "items", "supports", "characters"))
+        patsubst = "$(patsubst src/%.c,build/generated/data/%.o,$(GENERATED_DATA_LINKED_HAND_SOURCES))"
+        for initializer, late, renamed in ((literal, True, False), (None, False, False),
+                                           (None, True, False), (None, True, True),
+                                           (patsubst, True, False)):
+            with self.subTest(initializer=initializer, late=late, renamed=renamed):
+                names, options = self.production_static_target_fixture(
+                    initializer=initializer, late=late, renamed=renamed,
+                )
+                ordinary = self.ordinary(target="measure").decode().splitlines()
+                with self.session() as session:
+                    native = session.make("all", definitions=names, variables=("GENERATED_DATA_LINKED_TABLES",))
+                self.assertEqual([native.semantics["definitions"]["global"][name]["value"] for name in names],
+                                 ordinary)
+                self.assertEqual(ordinary[-1], literal)
+                self.assertEqual(native.semantics["domains"]["GENERATED_DATA_LINKED_TABLES"]["value"],
+                                 "classes items supports characters")
+                actual = self.observe(**options)["all"]["record"]["variants"][0]["record"]
+                projection = lambda record: [
+                    {key: item[key] for key in ("target", "recipe", "prerequisites")} for item in record["files"]
+                ]
+                self.assertEqual(projection(actual), projection(native.semantics))
+                if initializer is None and late and not renamed:
+                    self.ordinary()
+                    self.assertEqual((self.root / "build/generated/data/data_characters.c").read_text(),
+                                     "const int data_characters=1;\n")
+
+    def test_original_exact_targets_require_constructor_and_consumer_independently(self):
+        names, options = self.production_static_target_fixture()
+        positive = self.observe(**options)["all"]
+        ordinary = self.ordinary(target="measure")
+        captured = []
+        target = _MakeSourceMode.target_posix
+
+        def record_target(mode, header):
+            result = target(mode, header)
+            if header.startswith("$(" + names[-1] + "):"):
+                captured.append((result, mode.template_values.get(names[-1])))
+            return result
+
+        for method, expected_kind in (("exact_initializer_value", None), ("exact_target_text", "exact")):
+            with self.subTest(removal=method):
+                captured.clear()
+                with patch.object(_MakeSourceMode, method, return_value=None), \
+                     patch.object(_MakeSourceMode, "target_posix", record_target):
+                    with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation"):
+                        self.observe(**options)
+                self.assertEqual(len(captured), 1)
+                self.assertIsNone(captured[0][0])
+                self.assertEqual(None if captured[0][1] is None else captured[0][1][1][0], expected_kind)
+                self.assertEqual(self.ordinary(target="measure"), ordinary)
+                self.assertEqual(self.observe(**options)["all"], positive)
+        _, options = self.production_static_target_fixture(initializer=(
+            "$(patsubst src/%.c,build/generated/data/%.o,$(GENERATED_DATA_LINKED_HAND_SOURCES))"
+        ))
+        with patch.object(_MakeSourceMode, "exact_target_text", return_value=None):
+            with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation"):
+                self.observe(**options)
+        self.observe(**options)
+
+    def test_original_exact_word_operations_match_gnu_text_and_native_metadata(self):
+        cases = (
+            ("first/x.c second/y.c", "$(notdir $(WORDS))", "x.c y.c"),
+            ("a/ b/ file c/", "$(notdir $(WORDS))", "  file "),
+            ("a//b/../c.c ./ . ../ / plain", "$(notdir $(WORDS))", "c.c  .   plain"),
+            ("  first/x.c\tsecond/y.c  ", "$(notdir $(WORDS))", "x.c y.c"),
+            ("dir\\name.c a\\ b.c dir/file.c", "$(notdir $(WORDS))", "dir\\name.c a\\ b.c file.c"),
+            ("  first\tsecond  ", "$(addprefix out/,$(WORDS))", "out/first out/second"),
+            (" \t ", "$(addprefix out/,$(WORDS))", ""),
+            ("first second", "$(addprefix a  b/,$(WORDS))", "a  b/first a  b/second"),
+            ("a/ b/ file c/", "$(addprefix out/,$(notdir $(WORDS)))", "out/file"),
+            ("first second", "$(addprefix $(EMPTY) lead ,$(WORDS))", " lead first  lead second"),
+            ("  first.c\tother.s second.c  ", "$(WORDS:.c=.o)", "first.o other.s second.o"),
+            (".c first.c .c", "$(WORDS:.c=)", " first "),
+            ("  first\tsecond  ", "$(WORDS:=.o)", "first.o second.o"),
+            ("  first.c\tother.s second.c  ", "${WORDS:%.c=pre_%.o}", "pre_first.o other.s pre_second.o"),
+            ("first.c second.c", "head $(addprefix out/,$(WORDS)) tail", "head out/first.c out/second.c tail"),
+        )
+        source = "EMPTY :=\n"
+        for index, (words, expression, _) in enumerate(cases):
+            source += "define WORDS_" + str(index) + "\n" + words + "\nendef\n"
+            source += "VALUE_" + str(index) + " := " + expression.replace("WORDS", "WORDS_" + str(index)) + "\n"
+        names = tuple("VALUE_" + str(index) for index in range(len(cases)))
+        source += "all:\n\t@printf '%s\\n' " + " ".join("'$(value " + name + ")'" for name in names) + "\n"
+        self.add("Makefile", source)
+        self.assertEqual(self.ordinary().decode().splitlines(), [case[2] for case in cases])
+        with self.session() as session:
+            native = session.make("all", definitions=names)
+            mode = _MakeSourceMode(budget=session.budget, template_mode=lambda *args: False)
+            proof = graph_probe._TemplateModeProof(session, "all", (), None, native, "Makefile", False)
+            mode.assign("EMPTY", ":=", "")
+            for name, (words, expression, expected) in zip(names, cases):
+                with self.subTest(expression=expression, words=words):
+                    mode.assign("WORDS", "=", words, literal_body=True)
+                    mode.assign(name, ":=", expression)
+                    self.assertEqual(mode.template_values[name][1], ("exact", expected))
+                    self.assertIsNone(mode.literal_values("$(" + name + ")"))
+                    with patch.object(proof, "native_value", side_effect=AssertionError("original data used a native seed")):
+                        self.assertEqual(proof.value(mode, name), expected)
+                    self.assertEqual(native.semantics["definitions"]["global"][name],
+                                     {"origin": "file", "flavor": "simple", "value": expected})
+            mode.assign("WORDS", "=", "first.c other.s")
+            self.assertIsNone(mode.exact_initializer_value("$(WORDS:.c=%.o)"))
+
+    def test_original_exact_targets_keep_delayed_posix_and_later_source_obligations(self):
+        for initializer in (".POSIX", "$(notdir directory/.POSIX)", "$(addprefix .,POSIX)",
+                            "$(patsubst X,.POSIX,X)"):
+            with self.subTest(initializer=initializer):
+                source = "TARGETS := " + initializer + "\n$(TARGETS): %.o: %.c\n"
+                self.assertEqual(self.target_mode_fixture(source), ["alpha beta", "alpha   beta"])
+        for initializer, concealed in (("$(notdir directory/.POSIX)", False),
+                                       ("$(notdir directory/.POSIX)", True),
+                                       ("$(patsubst X,.POSIX,X)", True)):
+            with self.subTest(initializer=initializer, concealed=concealed):
+                source = (
+                    "TARGETS := " + initializer + "\n$(TARGETS): %.o: %.c\n"
+                    "FIRST = alpha  \\\n beta\nSECOND = alpha  \\\n beta\n"
+                )
+                source += (
+                    "ifeq ($(SECOND),alpha   beta)\nTARGETS := ordinary\nHIDDEN ?= secret\nendif\n"
+                    if concealed else "TARGETS := ordinary\nHIDDEN ?= secret\n"
+                )
+                self.add("Makefile", source + "all:\n\t@printf '%s\\n' '$(value FIRST)' '$(value SECOND)'\n")
+                self.original_input_witness()
+                with self.session() as session:
+                    native = session.make("all", definitions=("TARGETS", "FIRST", "SECOND", "HIDDEN"))
+                records = native.semantics["definitions"]["global"]
+                self.assertEqual(records["TARGETS"]["value"], "ordinary")
+                self.assertEqual(records["HIDDEN"]["value"], "secret")
+                self.assertEqual([records[name]["value"] for name in ("FIRST", "SECOND")],
+                                 ["alpha beta", "alpha   beta"])
+                if initializer.startswith("$(patsubst"):
+                    with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation"):
+                        self.observe()
+                else:
+                    usage, values, _ = self.observed_source_census()
+                    self.assertIn("HIDDEN", usage["defaults"])
+                    self.assertEqual(values["SECOND"], {"alpha   beta"})
+                    with self.assertRaisesRegex(MakeProbeError, "unsealed external defaults.*HIDDEN"):
+                        self.observe()
+
+    def test_original_exact_snapshots_and_unknown_contexts_never_borrow_final_values(self):
+        self.add("Makefile", "all: ;\n")
+        budget = ProbeBudget()
+        try:
+            mode = _MakeSourceMode(budget=budget, template_mode=lambda *args: False,
+                                   namespace=frozenset(("include/a.h",)))
+            mode.assign("INPUTS", "=", "first/alpha.c second/beta.c")
+            mode.assign("FILES", ":=", "$(notdir $(INPUTS))")
+            mode.assign("ALIAS", "=", "${FILES}")
+            mode.assign("OBJECTS", ":=", "$(addprefix out/,${ALIAS:.c=.o})")
+            self.assertTrue({"INPUTS", "FILES", "ALIAS"} <= mode.reads)
+            mode.assign("INPUTS", "=", "changed/late.c")
+            mode.assign("FILES", ":=", "late.c")
+            self.assertEqual(mode.template_values["OBJECTS"][1], ("exact", "out/alpha.o out/beta.o"))
+            self.assertEqual(mode.exact_reference("OBJECTS"), "out/alpha.o out/beta.o")
+            mode.assign("UNREAD", "=", "$(error unused)$(shell touch marker)")
+            mode.assign("META", ":=", "$(origin UNREAD)")
+            mode.assign("META_PATH", ":=", "$(addprefix $(META)/,safe)")
+            self.assertEqual(mode.exact_reference("META_PATH"), "file/safe")
+            self.assertIn("UNREAD", mode.reads)
+            mode.assign("BOUND", ":=", "$(wildcard include/*.h)")
+            for expression in (
+                "$(addprefix out/,$(BOUND))", "$(notdir $(MISSING))",
+                "$(addprefix out/,$(UNREAD))", "$(notdir $$(eval .POSIX:))",
+                "$(call .VARIABLES)", "$(notdir $(.VARIABLES:%=%))",
+                "$(filter %.c,alpha.c)", "$(subst X,alpha,X)", "$(shell echo alpha.c)",
+                "$(addprefix out/,$(notdir incomplete)", "$(FILES:.c=one=two)",
+            ):
+                with self.subTest(expression=expression):
+                    self.assertIsNone(mode.exact_initializer_value(expression))
+            mode.assign("CYCLE", "=", "$(CYCLE)")
+            self.assertIsNone(mode.exact_initializer_value("$(notdir $(CYCLE))"))
+            mode.assign("RECURSIVE", "=", "$(notdir first/alpha.c)")
+            self.assertIsNone(mode.exact_reference("RECURSIVE"))
+            mode.assign("CONDITIONAL", ":=", "$(notdir first/alpha.c)", active=None)
+            mode.assign("DEFAULT", "?=", "$(notdir first/alpha.c)")
+            mode.assign("SCOPED", ":=", "$(notdir first/alpha.c)", scope="all")
+            self.assertFalse({"CONDITIONAL", "DEFAULT", "SCOPED"} & set(mode.template_values))
+            mode.assign("OBJECTS", "+=", "extra.o")
+            self.assertNotIn("OBJECTS", mode.template_values)
+            for posix, namespace in ((None, True), (False, False)):
+                mode.posix, mode.original_namespace_valid = posix, namespace
+                with patch.object(mode, "original_target_value", side_effect=AssertionError("unproved target lookup")):
+                    self.assertIsNone(mode.exact_target_text("$(META_PATH)"))
+            mode.uncertain()
+            self.assertIsNone(mode.exact_reference("META_PATH"))
+            self.assertFalse((self.root / "marker").exists())
+            forced = _MakeSourceMode(definitions={"VALUE": "command"}, forced=frozenset(("VALUE",)),
+                                     budget=budget, template_mode=lambda *args: False)
+            forced.assign("VALUE", ":=", "$(notdir file/ignored)")
+            self.assertNotIn("VALUE", forced.template_values)
+            self.assertEqual(forced.literal_text("$(VALUE)"), "command")
+        finally:
+            budget.close()
+        with self.assertRaisesRegex(MakeProbeError, "aggregate probe deadline"):
+            mode.exact_initializer_value("$(notdir value)")
+        with self.assertRaisesRegex(MakeProbeError, "aggregate probe deadline"):
+            mode.exact_target_text("$(META_PATH)")
+
+    def test_original_exact_text_retention_is_funded_before_join(self):
+        budget = ProbeBudget(Limits(cache_bytes=1000))
+        produced = []
+
+        def parts():
+            for index in range(8):
+                produced.append(index)
+                yield "x" * 512
+
+        try:
+            with self.assertRaisesRegex(MakeProbeError, "aggregate cache byte budget"):
+                graph_probe._join_make_text(parts(), budget)
+            self.assertTrue(budget.failed)
+            self.assertLess(len(produced), 8)
+        finally:
+            budget.close()
+        budget = ProbeBudget(Limits(cache_bytes=1000))
+        produced.clear()
+        try:
+            with patch.object(budget, "charge"):
+                self.assertEqual(len(graph_probe._join_make_text(parts(), budget)), 4096)
+            self.assertEqual(len(produced), 8)
+        finally:
+            budget.close()
+
+    def test_original_exact_targets_keep_finite_defaults_exports_and_read_closure(self):
+        self.original_input_witness()
+        for name in ("first", "second"):
+            self.add("src/" + name + ".c", "/* bounded source input */\n")
+        self.add("Makefile", (
+            "STEMS ?= first.c\nROOT := out\nSOURCES := $(addprefix src/,$(STEMS))\n"
+            "FILES := $(notdir $(SOURCES))\nOBJECTS := $(addprefix $(ROOT)/,$(FILES:.c=.o))\n"
+            "ALIAS = $(OBJECTS)\nexport SNAPSHOT := $(ALIAS)\n"
+            "UNREAD = $(error unused)$(shell touch marker)\nMETA := $(origin UNREAD)\n"
+            "$(OBJECTS): $(ROOT)/%.o: src/%.c\n"
+            "\t@printf '%s\\n' \"$$SNAPSHOT\" '$(META)'\n"
+            "LATE = alpha  \\\n beta\nall: $(OBJECTS)\n"
+        ))
+        options = {"scoped_variable_names": set(), "environment_names": {"STEMS"}}
+        domains = {"STEMS": {"kind": "explicit", "values": ["first.c", "second.c"]}}
+        result = self.observe(domains, **options)["all"]
+        self.assertIn("STEMS", result["variable_census"]["defaults"])
+        self.assertIn("STEMS", result["prerequisite_domain_census"]["enumerated"])
+        with self.session() as session:
+            for variant in result["record"]["variants"]:
+                state = variant["state"]
+                ordinary = self.ordinary(
+                    *(name + "=" + value for origin, name, value in state if origin == "command-line"),
+                    environment={name: value for origin, name, value in state if origin == "environment"},
+                ).decode().splitlines()
+                native = session.make("all", assignments=state, definitions=("SNAPSHOT", "OBJECTS"))
+                value = native.semantics["definitions"]["global"]["OBJECTS"]["value"]
+                self.assertEqual(ordinary, [value, "file"])
+                record = variant["record"]
+                self.assertEqual(record["native_dispatches"][0]["environment"]["SNAPSHOT"], value)
+                self.assertEqual(record["native_dispatches"], native.semantics["native_dispatches"])
+                files = {item["target"]: item for item in record["files"]}
+                self.assertEqual(files["all"]["prerequisites"], [{"name": value, "order_only": False}])
+                self.assertEqual(files[value]["prerequisites"],
+                                 [{"name": "src/" + Path(value).stem + ".c", "order_only": False}])
+        self.assertFalse((self.root / "marker").exists())
+        with self.assertRaisesRegex(MakeProbeError, "unsealed external defaults.*STEMS"):
+            self.observe(**options)
+        with self.assertRaisesRegex(MakeProbeError, "symbolic inputs influence the Make graph.*STEMS"):
+            self.observe(external={"STEMS"}, symbolic_recipe_names={"STEMS"}, **options)
+
+    def related_static_target_fixture(self, path, name, inputs, *, prelude="", scoped_assignment="",
+                                      late_consumer=False):
+        self.original_input_witness()
+        parts = list(graph_probe._make_logical_chunks((ROOT / path).read_text()))
+        constructor = next(part.text for part in parts
+                           if (match := graph_probe.ASSIGNMENT.fullmatch(
+                               graph_probe._collapse_make_continuations(part.text)))
+                           and match["name"] == name)
+        header = next(part.text for part in parts if part.text.startswith("$(" + name + "):")
+                      and len(graph_probe._rule_separators(part.text)) == 2)
+        for dependency in (
+            "src/alpha.c", "src/beta.c", "src/msg_data.c", "src/expansion_bgm_data.c",
+            "src/data/alpha.c", "src/data/beta.c", "asm/alpha.s", "asm/beta.s",
+            ".dep/src/alpha.d", ".dep/src/beta.d", ".dep/src/msg_data.d",
+            "out/src/data/alpha.pre.c", "out/src/data/beta.pre.c",
+            "tools/preproc/preproc", "tools/scaninc/scaninc", "include/extra.h",
+        ):
+            self.add(dependency, "/* bounded prerequisite fixture */\n")
+        source = "".join(key + " := " + value + "\n" for key, value in inputs.items())
+        source += prelude + constructor + "\n" + scoped_assignment
+        if not late_consumer:
+            source += "all: $(" + name + ")\n"
+        if "$$(" in header:
+            source += ".SECONDEXPANSION:\n"
+        source += header + "\n\t@printf '%s\\n' '$@' '$^'\n"
+        source += "NEXT := recorded\nLATE = alpha  \\\n beta\n"
+        if late_consumer:
+            source += "all: $(" + name + ")\n"
+        source += "measure:\n\t@printf '%s\\n' '$(value " + name + ")' '$(value LATE)'\n"
+        self.add("Makefile", source)
+        self.last_related_target_fixture = {
+            "path": path, "name": name, "constructor": constructor, "header": header,
+            "literal_fixture_inputs": inputs, "original_or_fixture_prelude": prelude,
+            "original_scoped_assignment": scoped_assignment,
+            "late_aggregate_consumer": late_consumer,
+            "recipe_boundary": "Benign fixture print recipe; original static header and secondary prerequisites retained.",
+        }
+        return {"scoped_variable_names": {"@", "^"}}
+
+    def test_original_exact_related_static_headers_keep_native_secondary_dependencies(self):
+        shared = {"MODERN_OUTPUT_DIR": "out", "MODERN_PREPROC": "tools/preproc/preproc",
+                  "MODERN_SCANINC": "tools/scaninc/scaninc"}
+        cases = (
+            ("Makefile", "ASM_OBJECTS", {"SFILES": "asm/alpha.s asm/beta.s", "data_dep": "include/extra.h"}),
+            ("Makefile", "DATA_SRC_C_OBJECTS", {"DATA_SRC_C_FILES": "src/data/alpha.c src/data/beta.c",
+                                               "PREPROC": "tools/preproc/preproc", "data_dep": "include/extra.h"}),
+            *(("modern.mk", name, {**shared, "MODERN_ALL_DATA_C_SOURCES": "src/data/alpha.c src/data/beta.c"})
+              for name in ("MODERN_ALL_DATA_PRE", "MODERN_ALL_DATA_OBJECTS", "MODERN_ALL_DATA_ASSET_DEPS")),
+            ("modern.mk", "MODERN_ALL_C_HEADER_DEPS", {**shared, "MODERN_ALL_C_SOURCES": "src/alpha.c src/beta.c"}),
+        )
+        self.last_related_target_cases = []
+        for path, name, inputs in cases:
+            with self.subTest(path=path, name=name):
+                options = self.related_static_target_fixture(path, name, inputs)
+                ordinary = self.ordinary(target="measure").decode().splitlines()
+                with self.session() as session:
+                    native = session.make("all", definitions=(name, "LATE"))
+                self.assertEqual([native.semantics["definitions"]["global"][key]["value"] for key in (name, "LATE")],
+                                 ordinary)
+                self.assertEqual(ordinary[1], "alpha beta")
+                result = self.observe(**options)["all"]
+                record = result["record"]["variants"][0]["record"]
+                projection = lambda data: [
+                    {key: item[key] for key in ("target", "recipe", "prerequisites")} for item in data["files"]
+                ]
+                self.assertEqual(projection(record), projection(native.semantics))
+                files = {item["target"]: item for item in record["files"]}
+                self.assertEqual([item["name"] for item in files["all"]["prerequisites"]], ordinary[0].split())
+                if "data_dep" in inputs:
+                    for target in ordinary[0].split():
+                        self.assertIn({"name": "include/extra.h", "order_only": False}, files[target]["prerequisites"])
+                self.last_related_target_cases.append({
+                    **self.last_related_target_fixture, "status": "bounded literal leaves supported",
+                    "native_target_value": ordinary[0], "runs_states": self.last_accounting,
+                })
+
+    def test_original_exact_target_proof_does_not_waive_secondary_value_guards(self):
+        inputs = {"SFILES": "asm/alpha.s asm/beta.s", "data_dep": "include/extra.h"}
+        options = self.related_static_target_fixture("Makefile", "ASM_OBJECTS", inputs)
+        positive = self.observe(**options)["all"]["record"]["variants"][0]["record"]
+        options = self.related_static_target_fixture("Makefile", "ASM_OBJECTS", inputs, late_consumer=True)
+        with self.session() as session:
+            native = session.make("all", definitions=("ASM_OBJECTS",))
+        projection = lambda data: [
+            {key: item[key] for key in ("target", "recipe", "prerequisites")} for item in data["files"]
+        ]
+        self.assertEqual(projection(positive), projection(native.semantics))
+        usages = []
+        graph_definitions = graph_probe._graph_definitions
+
+        def record_usage(session, target, state, commands, observation, usage, **kwargs):
+            usages.append(usage)
+            return graph_definitions(session, target, state, commands, observation, usage, **kwargs)
+
+        with patch.object(graph_probe, "_graph_definitions", record_usage):
+            with self.assertRaisesRegex(MakeProbeError, "unproven emitted-reference substitution"):
+                self.observe(**options)
+        self.assertIn("ASM_OBJECTS", usages[0]["stage_graph"])
+        self.assertTrue(any("$(ASM_OBJECTS)" in expression for expression in usages[0]["stage_sinks"]))
+        self.assertIn("$(SFILES:.s=.o)", {value.strip() for value in usages[0]["source_expressions"]["ASM_OBJECTS"]})
+
+    def test_original_exact_required_leaf_and_scope_gaps_remain_explicit_failures(self):
+        make = (ROOT / "Makefile").read_text().splitlines()
+        modern = (ROOT / "modern.mk").read_text().splitlines()
+        actual = lambda lines, prefix: next(line for line in lines if line.startswith(prefix)) + "\n"
+        wildcard = (
+            actual(make, "ASM_S_FILES  :=")
+            + actual(make, "SFILES       :=")
+        )
+        findstring = (
+            actual(modern, "ifeq (,$(findstring src/msg_data.c,")
+            + actual(modern, "MODERN_ALL_C_SOURCES += src/msg_data.c") + "endif\n"
+        )
+        append = (
+            "MODERN_ALL_C_SOURCES := $(addprefix src/,$(NAMES))\n"
+            + actual(modern, "MODERN_ALL_C_SOURCES += $(MODERN_BGM_REGISTRY_C)")
+        )
+        scoped = actual(modern, "$(MODERN_ALL_DATA_OBJECTS): MODERN_CFLAGS +=")
+        cases = (
+            ("filter-out", "Makefile", "LEGACY_C_OBJECTS",
+             {"C_OBJECTS": "src/alpha.o src/msg_data.o", "LEGACY_MSG_OBJECT": "src/msg_data.o", "DEPS_DIR": ".dep"}, "", ""),
+            ("wildcard-composed-leaf", "Makefile", "ASM_OBJECTS",
+             {"ASM_SUBDIR": "asm", "SRC_S_FILES": "", "DATA_S_FILES": "", "DATA_SRC_S_FILES": "",
+              "SOUND_S_FILES": "", "data_dep": "include/extra.h"}, wildcard, ""),
+            ("multi-pattern-wildcard-leaf", "Makefile", "DATA_SRC_C_OBJECTS",
+             {"DATA_SRC_SUBDIR": "src/data", "PREPROC": "tools/preproc/preproc", "data_dep": "include/extra.h"},
+             actual(make, "DATA_SRC_C_FILES :="), ""),
+            ("recursive-wildcard-default", "modern.mk", "MODERN_ALL_DATA_PRE",
+             {"MODERN_OUTPUT_DIR": "out", "MODERN_PREPROC": "tools/preproc/preproc"},
+             actual(modern, "MODERN_ALL_DATA_C_SOURCES ?="), ""),
+            ("unknown-findstring-conditional-append", "modern.mk", "MODERN_ALL_C_HEADER_DEPS",
+             {"MODERN_OUTPUT_DIR": "out", "MODERN_ALL_C_SOURCES": "src/alpha.c"}, findstring, ""),
+            ("append-to-exact-snapshot", "modern.mk", "MODERN_ALL_C_HEADER_DEPS",
+             {"MODERN_OUTPUT_DIR": "out", "NAMES": "alpha.c", "MODERN_BGM_REGISTRY_C": "src/expansion_bgm_data.c"},
+             append, ""),
+            ("derived-target-specific-context", "modern.mk", "MODERN_ALL_DATA_OBJECTS",
+             {"MODERN_OUTPUT_DIR": "out", "MODERN_ALL_DATA_C_SOURCES": "src/data/alpha.c src/data/beta.c",
+              "MODERN_CFLAGS": "", "MODERN_DATA_LAYOUT_FLAGS": "-fno-toplevel-reorder"}, "", scoped),
+        )
+        self.last_related_target_cases = []
+        for gap, path, name, inputs, prelude, target_assignment in cases:
+            with self.subTest(gap=gap):
+                options = self.related_static_target_fixture(
+                    path, name, inputs, prelude=prelude, scoped_assignment=target_assignment,
+                )
+                ordinary = self.ordinary(target="measure").decode().splitlines()
+                with self.session() as session:
+                    native = session.make("all", definitions=(name, "LATE"))
+                records = native.semantics["definitions"]["global"]
+                self.assertEqual([records[key]["value"] for key in (name, "LATE")], ordinary)
+                self.assertTrue(ordinary[0])
+                self.assertEqual(ordinary[1], "alpha beta")
+                with self.assertRaisesRegex(MakeProbeError, "unproven.*continuation") as rejected:
+                    self.observe(**options)
+                self.last_related_target_cases.append({
+                    **self.last_related_target_fixture, "status": "remaining original obligation",
+                    "gap": gap, "native_target_value": ordinary[0], "native_metadata": records[name],
+                    "current_rejection": str(rejected.exception),
+                })
+
 
 if __name__ == "__main__":
     unittest.main()

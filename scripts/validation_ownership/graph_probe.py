@@ -175,6 +175,7 @@ class _MakeSourceMode:
     reads: set = field(default_factory=set)
     template_values: dict = field(default_factory=dict)
     template_mode: object = None
+    original_target_value: object = None
 
     def __post_init__(self):
         self.definitions = {
@@ -336,7 +337,10 @@ class _MakeSourceMode:
             except RecursionError:
                 return None
             if values is None:
-                return None
+                value = self.exact_target_text(left)
+                if value is None:
+                    return None
+                values = (value,)
         if not separators:
             if "$" not in header and not any(character in header for character in "*?[%\\"):
                 return False
@@ -349,6 +353,12 @@ class _MakeSourceMode:
                 return None
             outcomes.add(".POSIX" in names)
         return next(iter(outcomes)) if len(outcomes) == 1 else None
+
+    def exact_target_text(self, expression):
+        self.checkpoint()
+        if self.posix is None or not self.original_namespace_valid or self.original_target_value is None:
+            return None
+        return self.original_target_value(self, expression)
 
     def checkpoint(self):
         if self.budget is not None:
@@ -504,7 +514,7 @@ class _MakeSourceMode:
         if binding.flavor == "undefined":
             return ""
         if binding.flavor == "simple":
-            return binding.value
+            return binding.value if binding.value is not None else self.exact_reference(name, active)
         if binding.flavor == "recursive" and binding.value is not None:
             return self.template_argument(binding.value, (*active, name))
         return None
@@ -522,8 +532,18 @@ class _MakeSourceMode:
             if record is not None and record[0] == self.version:
                 return record[1]
         function = _make_function(expression)
-        if function is None:
-            return self.template_header_composition(expression)
+        if function is None or function[0] in {"notdir", "addprefix"}:
+            if function is None:
+                try:
+                    literal = self.literal_text(expression)
+                except RecursionError:
+                    return None
+                if literal is not None:
+                    return self.template_header_composition(expression)
+            value = self.exact_initializer_value(expression)
+            if value is not None:
+                return "exact", value
+            return self.template_header_composition(expression) if function is None else None
         operation, arguments = function
         if operation not in {"patsubst", "wildcard"}:
             return None
@@ -535,10 +555,7 @@ class _MakeSourceMode:
             return None
         if operation == "patsubst" and len(values) == 3:
             pattern, replacement, words = values
-            if (
-                not pattern or pattern.count("%") > 1 or replacement.count("%") > 1
-                or not all(re.fullmatch(r"[A-Za-z0-9_./%+-]*", value) for value in values[:2])
-            ):
+            if not _supported_patsubst(pattern, replacement):
                 return None
             for index, _ in enumerate(re.finditer(r"[^ \t\r\n\v\f]+", words)):
                 self.checkpoint()
@@ -548,6 +565,98 @@ class _MakeSourceMode:
         if operation == "wildcard" and len(values) == 1 and self.namespace is not None:
             return _template_wildcard_bound(values[0], self.namespace, self.budget)
         return None
+
+    def exact_reference(self, name, active=()):
+        self.checkpoint()
+        if not self.original_namespace_valid or name in active or len(active) >= 512:
+            return None
+        self.retain_reads((name,))
+        bindings = self.binding(name)
+        if len(bindings) != 1:
+            return None
+        binding = next(iter(bindings))
+        literal = self.literal_text("$(" + name + ")", active)
+        if literal is not None:
+            return literal if "$" not in literal and "\0" not in literal else None
+        if binding.flavor == "recursive" and binding.value is not None:
+            forwarded = NAME_PART.fullmatch(binding.value)
+            if forwarded:
+                return self.exact_reference(forwarded[1] or forwarded[2], (*active, name))
+        record = self.template_values.get(name)
+        if binding.flavor != "simple" or record is None or record[0] != self.version:
+            return None
+        kind, value = record[1]
+        if kind == "exact":
+            return value
+        if kind == "patsubst":
+            # Evaluate the captured original relation, never a native claim.
+            if any("$" in argument or "\0" in argument for argument in value):
+                return None
+            value = _join_make_text(_original_patsubst_parts(value, self.budget), self.budget)
+            return value if "$" not in value and "\0" not in value else None
+        return None
+
+    def exact_initializer_value(self, expression):
+        self.checkpoint()
+        if not self.original_namespace_valid:
+            return None
+
+        def resolve(part, body):
+            self.checkpoint()
+            name = _make_reference_base(body)
+            if re.fullmatch(IDENTIFIER, name):
+                if body == name:
+                    return self.exact_reference(name)
+                suffix = body[len(name):]
+                if suffix.startswith(":") and suffix.count("=") == 1 and "$" not in suffix:
+                    pattern, replacement = suffix[1:].split("=", 1)
+                    if "%" not in pattern:
+                        pattern, replacement = "%" + pattern, "%" + replacement
+                    if not _supported_patsubst(pattern, replacement):
+                        return None
+                    words = self.exact_reference(name)
+                    if words is None:
+                        return None
+                    return _join_make_text(
+                        _original_patsubst_parts((pattern, replacement, words), self.budget), self.budget,
+                    )
+            function = _make_function(part)
+            if function is None:
+                return None
+            operation, arguments = function
+            if operation in {"origin", "flavor", "value"}:
+                value = self.literal_text(part)
+                return value if value is not None and "$" not in value and "\0" not in value else None
+            if operation == "patsubst":
+                fact = self.template_initializer(part)
+                if (fact is not None and fact[0] == "patsubst"
+                        and all("$" not in value and "\0" not in value for value in fact[1])):
+                    return _join_make_text(_original_patsubst_parts(fact[1], self.budget), self.budget)
+                return None
+            if (operation, len(arguments)) not in {("notdir", 1), ("addprefix", 2)}:
+                return None
+            values = [self.exact_initializer_value(argument) for argument in arguments]
+            if any(value is None for value in values):
+                return None
+
+            def parts():
+                for index, match in enumerate(re.finditer(r"[^ \t\r\n\v\f]+", values[-1])):
+                    self.checkpoint()
+                    if index:
+                        yield " "
+                    if operation == "addprefix":
+                        yield values[0]
+                        yield match[0]
+                    else:
+                        yield match[0].rsplit("/", 1)[-1]
+
+            return _join_make_text(parts(), self.budget)
+
+        try:
+            value = _resolve_make_text(expression, resolve, self.budget)
+            return value if value is not None and "$" not in value and "\0" not in value else None
+        except RecursionError:
+            return None
 
     def template_header_reference(self, name, active=()):
         self.checkpoint()
@@ -569,6 +678,8 @@ class _MakeSourceMode:
             if forwarded:
                 return self.template_header_reference(forwarded[1] or forwarded[2], (*active, name))
         record = self.template_values.get(name)
+        if binding.flavor == "simple" and record is not None and record[0] == self.version and record[1][0] == "exact":
+            return _template_header_data(record[1][1])
         return bool(
             binding.flavor == "simple" and record is not None and record[0] == self.version
             and record[1][0] == "header-bound"
@@ -1196,6 +1307,7 @@ def make_source_units(
 def _source_units(
     sources, *, assignments=(), budget=None, target=None, original_input=None, namespace=None,
     read_order=None, remade=False, native_exports=(), literal_modules=(), template_mode=None,
+    original_target_value=None,
 ):
     decoded = {}
     mode = _MakeSourceMode(
@@ -1205,6 +1317,7 @@ def _source_units(
         original_input=original_input,
         namespace=namespace,
         template_mode=template_mode,
+        original_target_value=original_target_value,
     )
     if target is not None:
         mode.bind_invocation(target)
@@ -1590,26 +1703,78 @@ def _template_wildcard_bound(pattern, namespace, budget=None):
     return "header-bound", (pattern,)
 
 
-def _matches_original_patsubst(arguments, candidate, budget):
-    """Check a native claim against already-bound literal initializer arguments."""
-    budget.remaining()
+def _join_make_text(parts, budget):
+    result = []
+    for part in parts:
+        if part is None:
+            return None
+        if budget is not None:
+            budget.charge("cache", len(encoded(part)) + 1)
+        result.append(part)
+    return "".join(result)
+
+
+def _resolve_make_text(expression, resolve, budget):
+    try:
+        spans = []
+        for span in _make_expression_spans(expression, require_complete=True):
+            if budget is not None:
+                budget.charge("cache", len(encoded(span)))
+            spans.append(span)
+        for match in REFERENCE.finditer(expression):
+            if match["short"] is not None:
+                span = match.start(), match.end(), match["short"]
+                if budget is not None:
+                    budget.charge("cache", len(encoded(span)))
+                spans.append(span)
+    except _UnresolvedName:
+        return None
+
+    def parts():
+        previous = 0
+        for start, stop, body in sorted(spans, key=lambda item: (item[0], -item[1])):
+            if start < previous:
+                continue
+            literal = expression[previous:start]
+            if "$" in literal or "\0" in literal:
+                yield None
+                return
+            yield literal
+            yield resolve(expression[start:stop], body)
+            previous = stop
+        suffix = expression[previous:]
+        yield None if "$" in suffix or "\0" in suffix else suffix
+
+    return _join_make_text(parts(), budget)
+
+
+def _supported_patsubst(pattern, replacement):
+    return bool(
+        pattern and pattern.count("%") <= 1 and replacement.count("%") <= 1
+        and all(re.fullmatch(r"[A-Za-z0-9_./%+-]*", value) for value in (pattern, replacement))
+    )
+
+
+def _original_patsubst_parts(arguments, budget):
+    if budget is not None:
+        budget.remaining()
     pattern, replacement, words = arguments
     if not pattern:
-        return False
+        raise MakeProbeError("empty pattern lacks an original substitution proof")
     if "%" not in pattern:
-        offset, previous = 0, 0
+        previous = 0
         for match in re.finditer(r"[^ \t\r\n\v\f]+", words):
-            budget.remaining()
-            parts = words[previous:match.start()], replacement if match[0] == pattern else match[0]
-            for part in parts:
-                if not candidate.startswith(part, offset):
-                    return False
-                offset += len(part)
+            if budget is not None:
+                budget.remaining()
+            yield words[previous:match.start()]
+            yield replacement if match[0] == pattern else match[0]
             previous = match.end()
-        return candidate[offset:] == words[previous:]
-    offset, first = 0, True
+        yield words[previous:]
+        return
+    first = True
     for match in re.finditer(r"[^ \t\r\n\v\f]+", words):
-        budget.remaining()
+        if budget is not None:
+            budget.remaining()
         word = match[0]
         prefix, suffix = pattern.split("%")
         matched = word.startswith(prefix) and word.endswith(suffix) and len(word) >= len(prefix) + len(suffix)
@@ -1623,14 +1788,21 @@ def _matches_original_patsubst(arguments, candidate, budget):
         if matched and not replacement:
             continue
         if not first:
-            if not candidate.startswith(" ", offset):
-                return False
-            offset += 1
+            yield " "
         first = False
-        for part in parts:
-            if not candidate.startswith(part, offset):
-                return False
-            offset += len(part)
+        yield from parts
+
+
+def _matches_original_patsubst(arguments, candidate, budget):
+    """Check a native claim against already-bound literal initializer arguments."""
+    budget.remaining()
+    if not arguments[0]:
+        return False
+    offset = 0
+    for part in _original_patsubst_parts(arguments, budget):
+        if not candidate.startswith(part, offset):
+            return False
+        offset += len(part)
     return offset == len(candidate)
 
 
@@ -1683,7 +1855,7 @@ class _TemplateModeProof:
 
     def value(self, mode, name, *, active=()):
         mode.checkpoint()
-        if name in active or len(active) >= 512:
+        if not mode.original_namespace_valid or name in active or len(active) >= 512:
             return None
         mode.retain_reads((name,))
         bindings = mode.binding(name)
@@ -1704,6 +1876,8 @@ class _TemplateModeProof:
         if binding.flavor != "simple" or record is None or record[0] != mode.version:
             return None
         kind, arguments = record[1]
+        if kind == "exact":
+            return arguments
         if kind != "patsubst":
             return None
         native = self.native_value(name)
@@ -1740,7 +1914,7 @@ class _TemplateModeProof:
             value = self.value(mode, match[1] or match[2])
             if value is None:
                 return None
-            result = result[:match.start()] + value + result[match.end():]
+            result = _join_make_text((result[:match.start()], value, result[match.end():]), self.session.budget)
         return None if "$" in result else result
 
     def __call__(self, mode, expression):
@@ -1840,6 +2014,7 @@ def _prepare_rule_templates(
         original_input=original_input, namespace=frozenset(namespace),
         read_order=read_order, remade=remade, native_exports=native_exports, literal_modules=literal_modules,
         template_mode=template_mode,
+        original_target_value=template_mode.text,
     )
     if literal_modules:
         units = units._replace(phase_tests=_literal_binding_phases(units, observation, session.budget))
