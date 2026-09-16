@@ -1931,6 +1931,14 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/header_runtime.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/read_epochs.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/read_trace.py"
         }
       ],
       "exclude": [
@@ -1969,6 +1977,10 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_header_pipeline.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_read_epochs.py"
         }
       ]
     },
@@ -2011,6 +2023,10 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_header_pipeline.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_read_epochs.py"
         }
       ],
       "exclude": []

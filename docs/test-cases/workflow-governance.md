@@ -5672,6 +5672,48 @@ initial direct-runtime-alias fixture mistake, incomplete runtime profiles and
 read-only diagnostic results honestly. No full graph/report, local quota
 increase, H1 or allocation17 is supplied by these tests.
 
+For the opt-in native original-read observation, run:
+
+```sh
+python3 -m unittest scripts.validation_ownership.tests.test_read_epochs -v
+```
+
+Use the unchanged native limits and GNU4.3 x86-64 runtime. Supply a real
+command-line FLAG, environment input and a raw lazy error body which source
+explicitly leaves unexported. Let source override FLAG and introduce file,
+eval and included-only variables. Require each actual read-pass entry to
+capture its own original raw values/origins before source evaluation, without
+executing the lazy body or borrowing final definitions. Final FLAG must show
+the source override while the original entries retain the real CLI input.
+
+Use an included file which is initially absent and genuinely remade by the
+existing producer route. Require real failed then successful status, both
+actual exec/pass entries, ordered source visits and exact original file
+bytes. File builtins reading the same file must be separate ordinary I/O,
+not extra source visits; recipe-time file reads must have no original-pass
+claim. Exercise a parse-time producer while a source frame is active and
+confirm its descendants do not inherit the parent's observation authority.
+Enable the same observation on the genuine default text/ARM/sed component.
+Require both original read passes and the failed-then-successful generated
+header visit. The greater-than3MB generated C is compiler data, not a Make
+source visit; tracing must not relabel every input file as a source.
+
+Try an ordinary command's forged source notification. Compile the controlled
+observer variants which self-signal SIGTRAP or report a different caller
+frame, keeping the actual native process and all guards. Both must reject,
+not become source entries. Alter captured ABI anchors/call sites and remove
+or corrupt actual trace scope, exec/input/status/source bytes/goal/completion
+records. Require refusal and full child, descriptor, breakpoint and scratch
+cleanup. Keep the unmodified default-off case and existing observer, input,
+recipe, private-install and header-pipeline behavior.
+
+The trace is not the completed source-phase certificate. Do not turn its
+data into a changed-namespace grant, infer success from a nonnull goaldep,
+or replace original per-pass state with MAKE_RESTARTS, MAKEFILE_LIST or final
+definitions. Independent mutation capture, original entry namespace use
+contexts and every pass's read/default/export/effect/obligation union remain
+the precise separate hold. No full graph/report or allocation17 is exercised.
+
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while
 native per-file raw metadata remains `$(FLAGS)`. Do not eagerly copy the

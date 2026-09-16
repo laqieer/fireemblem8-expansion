@@ -188,6 +188,32 @@ replace the original root's raw source wildcard, independently reconstruct
 earlier Make read passes or prove a full bounded planner admission. Those
 authenticated original-read-phase criteria remain held. No namespace-image
 authority or general shell/rename permission is supplied by this component.
+
+The optional `ProbeSession.make(..., observe_read_epochs=True)` observation
+now closes the native entry/stream/status boundary, not that remaining phase
+authority. It reads original variable sets at the actual `read_all_makefiles`
+entry through the verified GNU4.3 x86-64 ABI without expanding their values.
+Readonly Make instructions and real hardware-breakpoint stops identify
+source-reader entry/return; the transparent observer fopen bridge ties each
+source stream to its actual call site, native frame and kernel descriptor.
+File builtins and eval are not source visits merely because they read the
+same name. Failed includes retain their real errno and ordered search attempts;
+successful files retain their pinned original bytes and object identity.
+
+`MakeObservation.read_trace` contains ordered successful-exec/read-pass/source
+events, independent original input sets and deduplicated source bytes. It is
+default-off and has no namespace-invariance permission. Original inputs may
+differ from final definitions, and a returned goaldep pointer is not success:
+its actual status and stream must agree. Missing/forged/replayed fields,
+unknown ABI/code/stack, self-signaled traps, incomplete streams/passes and
+changed source objects reject. Existing bounds and the existing native owner
+apply; no source hash ledger or new workflow is introduced.
+
+Complete mutation journaling, original entry namespace images/use context and
+the source walk/obligation union for every pass are still required before a
+changed raw-source namespace can be certified. This trace alone must not prune
+first-pass HIDDEN/default/export obligations or authorize a full-root planner
+result from final values.
 Registry declaration execution now has an explicit shared-session entry:
 `graph_registry.observe_declarations(loader, session)`. The selected loader
 must be the active public view and own the same budget. It invokes the real

@@ -177,6 +177,23 @@ the native configuration is serialized. A caller-created dictionary cannot
 grant the SDK or kernel-input profile. Full original source-read-phase
 authority remains separate and unimplemented.
 
+An opt-in original read trace uses the actual GNU4.3 entry/return ABI and four
+x86-64 hardware execution-breakpoint slots. The runtime ELF, decoded control
+flow, globals, real source fopen call sites and stopped process/frame are
+validated; no source line offset or mutable Make variable chooses an entry.
+The existing observer forwards fopen unchanged, preserves errno and restores
+the observation selection across real self-exec. Parent breakpoints are
+cleared from descendants. A self-generated SIGTRAP or ordinary source
+notification cannot impersonate this boundary.
+
+The optional `read_trace` result records original raw variable sets, exact
+source snapshots and ordered successful/failed visits across actual execs.
+It is observation data, not a phase grant. Default-off observations retain
+their old shape. The existing native suite owns `test_read_epochs`, and its
+positive/default/corruption/lifetime controls do not run again in graph
+discovery. No original namespace exception or full-report claim follows
+until the independent mutation and every-pass source contracts also close.
+
 Output directories must remain removable by the original runner. Pathname
 `chmod`/`fchmodat` may retain owner read/write/search permissions, but may not
 remove any of them, even when the path currently denotes a regular file: a

@@ -203,6 +203,7 @@ class AssetOwnershipTests(unittest.TestCase):
                 "test_text_producer",
                 "test_header_effects",
                 "test_header_pipeline",
+                "test_read_epochs",
             )
         }
         self.assertTrue(native.isdisjoint(collected))

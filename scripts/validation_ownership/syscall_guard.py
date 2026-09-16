@@ -32,6 +32,8 @@ if __package__:
     from . import header_effects
     from . import arm_headers
     from . import header_runtime as header_protocol
+    from .read_trace import NativeReadTrace
+    from .read_epochs import ReadEpochError
     from .producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
@@ -44,6 +46,8 @@ else:
     import header_effects
     import arm_headers
     import header_runtime as header_protocol
+    from read_trace import NativeReadTrace
+    from read_epochs import ReadEpochError
     from producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
@@ -68,6 +72,7 @@ VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY = (
 VO_RECIPE, VO_VALUE, VO_VALIDATE = 0x564F4D4B00000011, 0x564F4D4B00000012, 0x564F4D4B00000013
 VO_LIVE = 0x564F4D4B00000014
 VO_JOB_CONTEXT = 0x564F4D4B00000007
+VO_SOURCE_IO = 0x564F4D4B00000008
 STACK_LIMIT = 16 * 1024 * 1024
 SYSCALL_MEMORY_LIMIT = 65536
 
@@ -281,6 +286,7 @@ class Policy:
     def __init__(self, config):
         self.config = config
         self.mode = config["mode"]
+        self.read_trace = None
         try:
             header_protocol.validate_launch(config)
         except ChannelError as error:
@@ -410,6 +416,16 @@ class Policy:
             "/repo/libgcc_s.so.1", "/repo/libgcc.a", "/repo/libc.so.6",
             "/repo/libc_nonshared.a", "/repo/ld-linux-x86-64.so.2",
         })
+        if "read_epochs" in config:
+            request = config["read_epochs"]
+            if (
+                self.mode != "make" or not isinstance(request, dict)
+                or set(request) != {"version", "scope", "abi"}
+                or type(request["version"]) is not int or request["version"] != 1
+                or request["scope"] != config.get("producer_scope")
+            ):
+                raise Violation("original-read observation lacks its exact Make scope")
+            self.read_trace = NativeReadTrace(self, request)
         self.code_dirs = {"/repo"}
         self.source_dirs = set()
         for paths, directories in ((self.code, self.code_dirs), (self.sources, self.source_dirs)):
@@ -2024,7 +2040,7 @@ class Policy:
         state.observations.clear()
         state.observation_needs_bytes = False
         trusted = self.observer(state, r)
-        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY, VO_JOB_CONTEXT}:
+        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY, VO_JOB_CONTEXT, VO_SOURCE_IO}:
             if a == VO_QUERY_KIND:
                 if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE, VO_LIVE}:
                     raise Violation("unauthenticated interceptor kind query")
@@ -2067,6 +2083,12 @@ class Policy:
                     if b or c or state.observer_ready:
                         raise Violation("invalid observer bootstrap notification")
                     state.observer_ready = True
+                    if self.read_trace is not None:
+                        self.read_trace.ready(pid)
+                elif a == VO_SOURCE_IO:
+                    if self.read_trace is None or state.role != "make" or not state.observer_ready:
+                        raise Violation("unissued original-source stream notification")
+                    self.read_trace.source_io(pid, state, b, c)
                 elif a == VO_JOB_POLICY:
                     if (
                         state.role != "make" or pid != self.make_pid or not state.observer_ready
@@ -2516,6 +2538,8 @@ class Policy:
                 }
         elif operation == "close":
             state.fds.pop(value, None)
+            if self.read_trace is not None:
+                self.read_trace.fd_closed(pid, value)
             stream = self.kernel_streams.pop((pid, value), None)
             if stream is not None:
                 self.kernel_record(
@@ -2665,6 +2689,8 @@ def supervise(config, drop_privileges):
         state = processes.get(stopped)
         if state is None:
             if os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGSTOP:
+                if policy.read_trace is not None:
+                    policy.read_trace.clear(stopped)
                 if stopped not in newborn_stops:
                     policy.total_processes += 1
                     newborn_stops[stopped] = os.pidfd_open(stopped)
@@ -2696,6 +2722,8 @@ def supervise(config, drop_privileges):
         state.parked = True
         sig = os.WSTOPSIG(status)
         event = status >> 16
+        if sig == signal.SIGSTOP and policy.read_trace is not None and stopped != policy.read_trace.pid:
+            policy.read_trace.clear(stopped)
         if sig == signal.SIGTRAP and event in {1, 2, 3}:
             child = ctypes.c_ulong()
             ptrace(0x4201, stopped, 0, ctypes.byref(child))
@@ -2736,6 +2764,8 @@ def supervise(config, drop_privileges):
                 if descriptors != {"0", "1", "2"}:
                     raise Violation("initial guest exec inherited a nonstandard descriptor")
             state.role = state.pending[1]
+            if policy.read_trace is not None:
+                policy.read_trace.actual_exec(stopped, state.role == "make")
             state.bootstrap = False
             state.fds = {0: "<stdin>", 1: "<stdout>", 2: "<stderr>"}
             state.observer_ranges = ()
@@ -2775,6 +2805,8 @@ def supervise(config, drop_privileges):
                 state.kernel_call = None
             else:
                 raise Violation("kernel did not identify syscall entry/exit")
+        elif sig == signal.SIGTRAP and event == 0 and policy.read_trace is not None:
+            policy.read_trace.trap(stopped, state)
         elif sig not in {signal.SIGSTOP, signal.SIGCHLD, signal.SIGTRAP}:
             raise Violation(f"sandbox signal {sig}")
         resume(stopped)
@@ -3033,6 +3065,8 @@ def supervise(config, drop_privileges):
             }
             if config.get("dependency"):
                 result["executed"] = policy.executed
+            if error is None and main_status == 0 and policy.read_trace is not None:
+                result["read_trace"] = policy.read_trace.finish()
             if channel is not None:
                 result["rendezvous"] = {
                     "issued": policy.producer_issued, "completed": policy.producer_completed,
@@ -3057,6 +3091,7 @@ def supervise(config, drop_privileges):
                     raise
         finish_cleanup([
             reap_owned, policy.close_private_install_parents, finish_channel, write_report,
+            *([] if policy.read_trace is None else [policy.read_trace.close]),
             *([] if channel is None else [channel.close]),
         ], primary=primary)
     return 0 if result["ok"] else 125

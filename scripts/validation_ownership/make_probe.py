@@ -38,6 +38,7 @@ from . import private_install as install_protocol
 from . import header_effects
 from . import arm_headers
 from . import header_runtime as header_protocol
+from . import read_epochs
 from .producer_channel import (
     ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
     publication_identity, validate_publication_confirmation,
@@ -247,6 +248,7 @@ class MakeObservation:
     events: tuple[dict, ...]
     generated: tuple[GeneratedFile, ...] = ()
     file_open_attempts: tuple[tuple[str, str], ...] = ()
+    read_trace: dict | None = None
 
 
 class _NamespaceUnavailable(MakeProbeError):
@@ -771,6 +773,7 @@ class ProbeSession:
         self._header_profiles = {}
         self._header_launches = {}
         self._issued_header_launches = weakref.WeakSet()
+        self._read_epoch_abi = None
         self._namespace_images = {}
         self._namespace_frames = []
         self._namespace_pending = {}
@@ -1237,6 +1240,7 @@ class ProbeSession:
             self._header_profiles.clear()
             self._header_launches.clear()
             self._issued_header_launches.clear()
+            self._read_epoch_abi = None
             self.runtime_inputs = ()
             self.runtime_dispatch = ()
             self.runtime_root = None
@@ -1475,6 +1479,35 @@ class ProbeSession:
                 raise MakeProbeError(f"trusted native authority compilation failed: {completed.stderr!r}")
             self.budget.read_bytes(destination, "control")
 
+    def _original_read_abi(self):
+        if self._read_epoch_abi is not None:
+            return self._read_epoch_abi
+        data = dict(self.make_runtime)["/usr/bin/make"]
+        if self.budget.read_bytes(_trusted_runtime_path("/usr/bin/make"), "control") != data:
+            raise MakeProbeError("Make read-ABI image differs from its captured runtime")
+        image = read_epochs.Elf(data)
+        first = self.budget.run(
+            ["/usr/bin/objdump", "-d", "-w", "--disassemble=read_all_makefiles", "/usr/bin/make"],
+            env=ENVIRONMENT,
+        )
+        if first.returncode:
+            raise MakeProbeError("cannot decode actual Make read entry")
+        target = read_epochs.source_target(image, read_epochs.instructions(first.stdout, image))
+        end = min(
+            start + size for start, extent, offset, size, flags in image.loads
+            if start <= target < start + size and flags & 1
+        )
+        second = self.budget.run(
+            ["/usr/bin/objdump", "-d", "-w", "--start-address=" + hex(target),
+             "--stop-address=" + hex(min(target + 65536, end)), "/usr/bin/make"],
+            env=ENVIRONMENT,
+        )
+        if second.returncode or self.budget.read_bytes(_trusted_runtime_path("/usr/bin/make"), "control") != data:
+            raise MakeProbeError("actual Make source-reader decoding failed or changed")
+        self._read_epoch_abi = read_epochs.make_abi(data, first.stdout, second.stdout)
+        self.budget.charge("cache", len(encoded(self._read_epoch_abi)))
+        return self._read_epoch_abi
+
     def sources(self, patterns: tuple[str, ...]):
         result = set()
         for index, pattern in enumerate(patterns):
@@ -1603,8 +1636,13 @@ class ProbeSession:
         producer_handler=None, publication_observer=None, publication_allowed=True,
         dependency=None, observe_recipe_dispatch=False, private_install=None,
         header_runtime=None,
+        observe_read_epochs=False,
     ):
         self.budget.remaining()
+        if type(observe_read_epochs) is not bool or observe_read_epochs and mode != "make":
+            raise MakeProbeError("original read observation requires an exact Make selection")
+        if observe_read_epochs:
+            environment = {**environment, "VO_OBSERVE_READS": "1"}
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
             raise MakeProbeError("incomplete/non-readonly source backing is not admitted")
         if self.runtime_root is not None and (mode == "make" or metadata_validation):
@@ -1751,6 +1789,10 @@ class ProbeSession:
             if mode != "make":
                 raise MakeProbeError("live producer requests require native Make")
             config["producer_scope"] = self.base.name + "/" + root.name
+            if observe_read_epochs:
+                config["read_epochs"] = {
+                    "version": 1, "scope": config["producer_scope"], "abi": self._original_read_abi(),
+                }
             config["reserved_paths"] = list(self.loader.entries) if publication_allowed else None
             config["publication_limit"] = self.budget.limits.created_files
             if self.published_sources:
@@ -1967,6 +2009,9 @@ class ProbeSession:
                 "metadata", "events",
             } | ({"rendezvous"} if channel is not None else set()) | (
                 {"executed"} if dependency is not None else set()
+            ) | (
+                {"read_trace"} if observe_read_epochs and observed.get("ok") is True
+                and observed.get("returncode") == 0 else set()
             ):
                 raise MakeProbeError("malformed supervisor result")
             observations = observed["observations"]
@@ -2006,6 +2051,14 @@ class ProbeSession:
                 raise MakeProbeError(f"confined {mode} probe rejected: {observed['error']}; {result.stderr!r}")
             if dependency is not None and observed["executed"] != dependency["executables"]:
                 raise MakeProbeError("dependency result lacks its actual driver/cc1 execution")
+            if observe_read_epochs and observed["returncode"] == 0:
+                read_epochs.validate_trace(
+                    observed.get("read_trace"), config["producer_scope"],
+                    count_limit=config["observation_count"], file_limit=config["file_limit"],
+                    reserve=lambda size: self.budget.charge("control", size),
+                )
+            elif "read_trace" in observed:
+                raise MakeProbeError("unrequested or failed Make supplied an original read trace")
             if channel is not None:
                 final = observed["rendezvous"]
                 if (
@@ -3219,12 +3272,13 @@ class ProbeSession:
     @terminal_failure
     def make(
         self, target: str, *, makefile="Makefile", variables=(), assignments=(),
-        owner_inputs=(), commands=None, observe_recipe_dispatch=False, definitions=(),
+        owner_inputs=(), commands=None, observe_recipe_dispatch=False, definitions=(), observe_read_epochs=False,
     ) -> MakeObservation:
         return self._make(
             target, makefile=makefile, variables=variables, assignments=assignments,
             owner_inputs=owner_inputs, commands=commands,
             observe_recipe_dispatch=observe_recipe_dispatch, definitions=definitions,
+            observe_read_epochs=observe_read_epochs,
         )
 
     @terminal_failure
@@ -3269,12 +3323,15 @@ class ProbeSession:
         self, target: str, *, makefile="Makefile", variables=(), assignments=(),
         owner_inputs=(), commands=None, observe_recipe_dispatch=False, definitions=(),
         _original_inputs=False,
+        observe_read_epochs=False,
     ) -> MakeObservation:
         self.budget.remaining()
         if type(_original_inputs) is not bool:
             raise MakeProbeError("invalid original input observation selection")
         if type(observe_recipe_dispatch) is not bool:
             raise MakeProbeError("native recipe observation requires a boolean selection")
+        if type(observe_read_epochs) is not bool or _original_inputs and observe_read_epochs:
+            raise MakeProbeError("original read epochs require a normal Make invocation")
         if not TARGET.fullmatch(target) or target.startswith(("-", "/")) or ".." in target.split("/"):
             raise MakeProbeError("invalid requested Make target")
         if _original_inputs:
@@ -3639,6 +3696,7 @@ class ProbeSession:
                 producer_handler=produce, publication_observer=acknowledge,
                 publication_allowed=publication_allowed,
                 observe_recipe_dispatch=observe_recipe_dispatch,
+                observe_read_epochs=observe_read_epochs,
             )
             raw_events = self.budget.read_bytes(events_path, "event")
             native_events = Counter(bytes.fromhex(item) for item in observed["events"])
@@ -3786,6 +3844,7 @@ class ProbeSession:
                 completed.stdout, completed.stderr, tuple(events),
                 tuple(self.published_sources[path] for path in sorted(self.published_sources)),
                 tuple(file_open_attempts),
+                observed.get("read_trace"),
             )
             if namespace_capture is not None:
                 namespace_capture.native_complete = True
