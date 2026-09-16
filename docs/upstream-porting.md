@@ -181,18 +181,18 @@ python3 -m scripts.upstream_port verify --dry-run   # list the gate commands wit
 
 **⚠️ This builds and checks the CURRENT TRUSTED WORKTREE (your repo, after
 you manually applied whatever you accepted) — it never builds, checks out,
-or executes the upstream ref/tree.** It orchestrates all 33 current-master
+or executes the upstream ref/tree.** It orchestrates all 34 combined-candidate
 mirrored verifier gates in fail-fast order. `.github/workflows/build.yml`
-carries the same 33 commands with argv/order preserved across its combined
+carries the same 34 commands with argv/order preserved across its combined
 host, ownership, modern, extended-host, and archival jobs, plus the deliberately
 standalone issues #7/#17 documentation-governance workflow gate described
 below. A no-checkout event identity validator, event router, and mode-specific
 classifier check precede the five combined workers in CI; the five combined
 workers run in parallel after that decision, and `summary` is their
 fail-closed join. Metadata-only PR edits do not invoke local `verify` or those
-workers. Local `verify` runs the same 33 gates in its
+workers. Local `verify` runs the same 34 gates in its
 documented order and therefore does not reproduce CI wall-clock parallelism.
-Every mirrored command uses repository-relative argv, so all 33 subprocesses
+Every mirrored command uses repository-relative argv, so all 34 subprocesses
 run at one resolved target repository root. Launch the source-tree module from
 this source repository root. Implicit selection targets that source checkout;
 `--repo <target-root>` may select another checkout while the module still
@@ -210,7 +210,7 @@ the exact same complete ordered step sequences as the source: step count,
 unique required names, setup-versus-gate role, action and immutable SHA, run
 argv, `env`/`with` mappings, direct fields, and no working-directory override.
 The complete job-name order must also match, so extra jobs fail. All three
-setup jobs are parsed and never become an additional local gate. The 33 gate
+setup jobs are parsed and never become an additional local gate. The 34 gate
 commands are then checked against source `gates()`. An unnamed non-checkout
 step, duplicate setup/name, complex key form, or older, newer, missing, added,
 removed, reordered, or changed target step fails closed instead of running
@@ -222,7 +222,7 @@ environment, metadata-only/nonempty conditions, and reviewed command sequences.
 The producer's missing-base and failure branches leave no proof; the verifier
 does not replace those holds with a local invocation or fabricated fingerprint.
 Missing, duplicate, relinked, or unreviewed producer/marker steps fail before
-gate execution. The local gate count and argv remain exactly 33.
+gate execution. The local gate count and argv remain exactly 34.
 The same structure closes execution context before step comparison:
 workflow-level keys are exactly reviewed `name`, triggers, read-only
 permissions, and jobs, with workflow `env`, `defaults`, and `concurrency`
@@ -275,7 +275,7 @@ or reordered keys fail before dry-run.
 The complete nine-job structure retains all five validation workers,
 identity/router/classifier and summary. The normal `build` job additionally
 contains two authenticated master-push-only packaging/upload steps, not new
-local gates: the mirror still executes exactly 33 gates. Their conditions,
+local gates: the mirror still executes exactly 34 gates. Their conditions,
 secret scope, existing-output packaging invocation and pinned patch-only
 upload remain parsed contracts.
 
@@ -283,7 +283,7 @@ The dedicated `ownership-tests` worker has its own exact-head checkout,
 revision comparison, Git-authority hydration and native/ARM query dependencies.
 It owns the exact-PR-base verifier, isolated ownership regression suite and
 public graph check together, with an initial 60-minute bound. The two launcher
-commands follow all retained `host-tests` gates in the local 33-gate order;
+commands follow all retained `host-tests` gates in the local 34-gate order;
 base staging and dependency setup remain CI-only setup, not new local gates.
 Metadata-only/review-first events skip this worker. Every full/fallback
 summary predicate includes its result; missing, skipped, failed, cancelled or
@@ -295,8 +295,13 @@ concurrent enabled/disabled `expansion-modern-all` regression once in `build`,
 after native/ARM dependency and repository-tool setup. Its required entry
 rejects missing compilers, host-only skips and zero selected tests. This builds
 complete relocatable-object cohorts in separate roots, not ROMs or final ELFs,
-and leaves canonical publisher output untouched. All previous 32 gates remain;
+and leaves canonical publisher output untouched. All previous gates remain;
 the nine-job topology, metadata exclusions and timeout bounds are unchanged.
+
+The independently merged text-publication suite adds one explicit
+`extended-host-tests` command after the existing codec gate. The combined
+candidate therefore keeps all prior 33 commands and all master commands as a
+34-command inventory; neither suite is renamed, broadened or executed twice.
 
 Dry-run validates that workflow wiring and describes the gates; it does not
 execute or certify the behavior of invoked helpers. Its results have
@@ -337,7 +342,7 @@ env, metadata-skip and full-run validation, and missing/stale identity
 failure, plus its single fail-closed command. Runner, condition, needs,
 permission, env, step, command, action, container/default, or unknown-field
 drift in these jobs or packaging steps fails before local dry-run even though neither job becomes
-one of the 33 locally executed gates.
+one of the 34 locally executed gates.
 Candidate-evidence normalization independently requires one canonical
 successful `event-identity` job context in both full and metadata runs;
 missing, failed, skipped, renamed, duplicate, or unknown setup contexts reject
@@ -355,7 +360,7 @@ those blob object IDs are fetched without the commit-level blob filter; other
 blobs remain omitted. The helper rechecks exact `EXPECTED_BUILD_SHA`, the
 complete ref set, and FETCH_HEAD after both phases. This covers force-pushed
 candidates that an all-head fetch cannot recover. It is CI setup, not one of
-the 33 local gates; normal local clones are never hydrated by `verify`, which
+the 34 local gates; normal local clones are never hydrated by `verify`, which
 remains deliberately network-independent and fails if authority is incomplete.
 The read-only `isolated_launcher.py anchor-refs` command documented in
 [`workflow-pilot.md`](workflow-pilot.md) prints the mappings for the owner
@@ -367,7 +372,7 @@ archival setup is intentionally opt-in (`./scripts/quickstart.sh --legacy`
 or the equivalent instructions in
 [`docs/archival-decomp.md`](archival-decomp.md)); `verify` has no safe
 subset switch and fails closed if the legacy toolchain is absent. Use
-`verify --dry-run` to inspect the complete 33-gate sequence without those
+`verify --dry-run` to inspect the complete 34-gate sequence without those
 local prerequisites.
 
 Also create the [locked host Python environment](workflow-pilot.md#isolated-host-python-dependencies)
@@ -418,10 +423,13 @@ substitute. Setup is not another gate and `verify` remains network-independent.
     host worker rather than duplicated in serial workflow discovery)
 28. `make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test`
 29. `python3 -m unittest discover -s scripts/texttools/tests -p 'test_multilang_codec*.py' -v`
-30. `python3 -m unittest discover -s scripts/modernize/tests -p 'test_expansion_config.py' -v`
-31. `python3 -m unittest discover -s scripts/linker_report/tests -p 'test_*.py' -v`
-32. `make legacy -j2`
-33. `make -C mgfembp compare`
+30. `python3 -m unittest scripts.texttools.tests.test_textprocess_publication -v`
+    (atomic shared text publication with real buffered producers, complete-file
+    compiler readers, forced same-input overlap and failure cleanup)
+31. `python3 -m unittest discover -s scripts/modernize/tests -p 'test_expansion_config.py' -v`
+32. `python3 -m unittest discover -s scripts/linker_report/tests -p 'test_*.py' -v`
+33. `make legacy -j2`
+34. `make -C mgfembp compare`
 
 Gates 22-23 aggregate the complete modern debug/release ROM, linker, budget,
 shift, save, starter-feature, and localization runtime matrices through

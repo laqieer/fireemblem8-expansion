@@ -20,7 +20,7 @@ UPSTREAM_PORTING_PATH = os.path.join(REPO_ROOT, "docs", "upstream-porting.md")
 # Issues #7/#17 remediation: the documentation step is a genuine required
 # workflow gate, but it is the sole correctness step deliberately excluded
 # from verify.gates(). Its exact commands and position are asserted separately
-# below; localization remains part of the current 33-gate candidate mirror.
+# below; localization remains part of the current 34-gate candidate mirror.
 _DOCS_GOVERNANCE_STEP_NAME = "Check documentation (issues #7/#17)"
 _CODEQL_ALERTS_STEP_NAME = "Run CodeQL alert regression suite (issue #84)"
 _LOCALIZATION_HOST_STEP_NAME = "Run localization host test suite (issue #18)"
@@ -175,7 +175,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 ("gate", _VALIDATION_OWNERSHIP_CHECK_STEP_NAME),
             ],
         )
-        self.assertEqual(len(verify_mod.gates()), 33)
+        self.assertEqual(len(verify_mod.gates()), 34)
         job = topology_tests._job_blocks(original)["ownership-tests"]
         artifact_root = Path(REPO_ROOT) / "build/test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
@@ -205,7 +205,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                         verify_mod._require_target_gate_equivalence(str(target))
 
     def test_issue_7_17_docs_governance_is_a_standalone_workflow_step_not_a_verify_gate(self):
-        """Docs governance stays outside the current 33-gate candidate mirror
+        """Docs governance stays outside the current 34-gate candidate mirror
         while remaining required, argv-identical, and immediately after the
         artifact guard in build.yml."""
         names = [g.name for g in verify_mod.gates()]
@@ -522,7 +522,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_gate_list_full_ordered_names(self):
-        # All 33 current candidate Build gates remain; docs governance is
+        # All 34 current candidate Build gates remain; docs governance is
         # deliberately absent and asserted as a standalone workflow step.
         names = [g.name for g in verify_mod.gates()]
         self.assertEqual(
@@ -557,6 +557,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "ownership-probe-process-suite",
                 "cjk-font-gates",
                 "multilang-codec-gates",
+                "textprocess-publication-tests",
                 "expansion-config-gates",
                 "linker-budget-gates",
                 "legacy-build",
@@ -1189,7 +1190,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "summary",
             ),
         )
-        self.assertEqual(len(verify_mod.gates()), 33)
+        self.assertEqual(len(verify_mod.gates()), 34)
         gate_jobs = {
             job_name
             for job_name, _, _ in verify_mod._workflow_gate_contract(

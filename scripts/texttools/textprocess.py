@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
 import os, re, sys, struct
+import secrets
+import stat
+from contextlib import contextmanager
 import huffman
 
 RE_MSGIDX = re.compile(r"^#([0-9a-fA-Fx]+)")
@@ -246,6 +249,63 @@ def write_huffman_table(huffman_table, data_file):
     data_file.write("\n};\n\n")
     data_file.write(f"const u32 * const gMsgHuffmanTableRoot = gMsgHuffmanTable + 0x{(len(huffman_table) - 1):04X};\n")
 
+def write_data(messages, code_table, huffman_table, data_file):
+    data_file.write('#include "global.h"\n\n')
+    write_all_compressed_data(messages, code_table, data_file)
+    data_file.write("\n")
+    write_huffman_table(huffman_table, data_file)
+    data_file.write("\n")
+    write_text_table(messages, data_file)
+
+@contextmanager
+def _staged_output(path, writer, *arguments):
+    destination = os.path.realpath(path)
+    directory = os.path.dirname(destination)
+    temporary = os.path.join(directory, f".textprocess-{secrets.token_hex(16)}.tmp")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+    stream = None
+    try:
+        try:
+            mode = stat.S_IMODE(os.stat(destination).st_mode)
+        except FileNotFoundError:
+            mode = None
+        if mode is not None:
+            os.fchmod(descriptor, mode)
+        stream = os.fdopen(descriptor, "w", encoding="utf-8")
+        descriptor = None
+        with stream:
+            writer(*arguments, stream)
+        yield temporary, destination
+    finally:
+        try:
+            if stream is not None and not stream.closed:
+                stream.close()
+            elif descriptor is not None:
+                os.close(descriptor)
+        finally:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+
+def _same_output(first, second):
+    try:
+        previous = open(second, "rb")
+    except FileNotFoundError:
+        return False
+    with previous, open(first, "rb") as staged:
+        while True:
+            chunk = staged.read(65536)
+            if chunk != previous.read(65536):
+                return False
+            if not chunk:
+                return True
+
+def _publish_output(staged):
+    temporary, destination = staged
+    if not _same_output(temporary, destination):
+        os.replace(temporary, destination)
+
 def dump_msg(messages):
     for msg in messages:
         print(f"MSG_{msg.idx:04X}: ", end="")
@@ -275,17 +335,11 @@ def main(args):
     huffman_table = huffman.BuildHuffmanTable()
     code_table = huffman.build_code_table(huff_tree)
 
-    # output
-    with open(output_header, 'w', encoding='utf-8') as header_file:
-        write_header(messages, header_file)
-
-    with open(output_data, 'w', encoding='utf-8') as data_file:
-        data_file.write('#include "global.h"\n\n')
-        write_all_compressed_data(messages, code_table, data_file)
-        data_file.write("\n")
-        write_huffman_table(huffman_table, data_file)
-        data_file.write("\n")
-        write_text_table(messages, data_file)
+    # Neither public path changes until both renderers and their closes succeed.
+    with _staged_output(output_header, write_header, messages) as header, \
+         _staged_output(output_data, write_data, messages, code_table, huffman_table) as data:
+        _publish_output(header)
+        _publish_output(data)
 
 if __name__ == '__main__':
 	main(sys.argv[1:])

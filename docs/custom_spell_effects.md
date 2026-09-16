@@ -423,9 +423,10 @@ remain active. Parsed CI controls require exactly one full/fallback execution
 owner in `build` after dependencies and build tools; metadata-only/review-first
 events do not execute it. Removing/duplicating/disabling the command, moving it
 to `host-tests`, selecting host-only mode or omitting prerequisites rejects.
-Equivalent command quoting/continuation remains valid. This brings the mirrored
-inventory to 33 gates, retaining every earlier gate without an extra job or timeout increase.
-The compile test is ordinal 21 in that inventory, not ordinal 33.
+Equivalent command quoting/continuation remains valid. The integrated mirrored
+inventory has 34 gates, retaining every earlier gate and the independent
+text-publication regression without an extra job or timeout increase.
+The compile test is ordinal 21 in that inventory, not ordinal 34.
 
 ### Profile output and process-lifecycle controls
 
@@ -523,7 +524,7 @@ in its context, so diagnostic loss is not claimed.
 
 The private cleanup claim is not a new sandbox or general lifecycle service.
 The shared raw-diff primitives and their resource bounds are unchanged.
-Nine jobs, all 33 gates, the single 600-second work deadline and shared
+Nine jobs, all 34 gates, the single 600-second work deadline and shared
 five-second failure teardown remain. Baselines 1-14 stay closed; baseline 15
 is unallocated pending independent corrected-source review.
 
