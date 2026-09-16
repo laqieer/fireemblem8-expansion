@@ -153,12 +153,41 @@ file identities. The host independently checks those outcomes before updating
 publication ownership, the namespace mutation journal and cleanup state.
 No successful effect is inferred merely from an empty stdout slot.
 
-This is still **not** complete live-message graph support. The genuine ARM
-scan/sed command adapters and authenticated original-read-phase source census
-remain required integration work. The focused filesystem fixture's two regular
-data writers prove intermediate visibility, not ARM or filter semantics. No
-tracked header write, namespace-image authority or general shell/rename
-permission is supplied by this component.
+The original five header recipe bodies now have per-dispatch adapters. The
+real selected ARM driver and cc1 execute `-MM -MG` with ordered modern flags,
+macros and repository include paths; host cc/`-undef` is not a substitute.
+The separate `arm_headers.py` profile captures the installed C SDK namespace
+and `.h` bytes, including the actual include/alternatives alias. Unknown SDK
+entries and C++ subtrees are refusals, never guessed absent files. SDK missing
+lookups retain verified frontend instruction provenance; driver-only metadata
+for tool/search candidates does not grant plugin contents or execution.
+
+The real sed invocation consumes the issued scan temporary and produces its
+actual redirected stream. Only the original literal basename substitution and
+failure branch are supported. Shell expansion, extra expressions, in-place or
+execution flags, mismatched operands and compiler search/output environment
+overrides reject. Neither command text nor `Command.runtime_tool` supplies
+permission: an identity-issued, single-use launch binds the actual header job,
+view, workspace, complete argv/input/mount profile and environment.
+
+The measured sed/libselinux runtime additionally needs two exact statfs paths
+and two readonly proc input files. `header_runtime.py` closes that profile;
+the capsule never receives a whole `/sys` or `/proc` mount or arbitrary
+filesystem-query permission. Actual syscall results and kernel-delivered
+stream bytes are recorded, with honest EOF status and complete sequence
+accounting. Readonly-bind flags and private-namespace kernel inputs remain
+actual runtime facts, not host/source namespace invariance claims. An ordinary
+command, forged launch, escaped path, stream alias or unclosed input rejects.
+The existing native worker installs the ARM compiler and C SDK headers for
+these controls without adding a job or owned command.
+
+This is still **not** complete live-message graph support. The genuine default
+text/SDK/sed component comparison keeps C initially absent, preserves the
+tracked header and uses the original header rule/include guard. It does not
+replace the original root's raw source wildcard, independently reconstruct
+earlier Make read passes or prove a full bounded planner admission. Those
+authenticated original-read-phase criteria remain held. No namespace-image
+authority or general shell/rename permission is supplied by this component.
 Registry declaration execution now has an explicit shared-session entry:
 `graph_registry.observe_declarations(loader, session)`. The selected loader
 must be the active public view and own the same budget. It invokes the real

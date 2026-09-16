@@ -5614,8 +5614,51 @@ Removing the test's exact declaration must recover semantic-admission refusal;
 a neighboring unregistered module must still reject. Discovery must collect
 each native case only in its existing process suite without `TestCase` aliases.
 No budget, CI job/command count, case ID, source-phase permission or allocation17
-changes. Actual ARM/sed and complete per-pass source authority remain separate
-required integration criteria, not inferred from this component's success.
+changes. Actual ARM/sed is exercised by the following separate controls;
+complete per-pass source authority is not inferred from component success.
+
+For the actual ARM/SDK/sed header pipeline, run:
+
+```sh
+python3 -m unittest scripts.validation_ownership.tests.test_header_pipeline -v
+```
+
+Use Linux x86-64, GNU Make4.3, the installed ARM GCC/C SDK and real GNU sed.
+Copy the current original five-step header rule and its include guard, retain
+the exact sealed failure branches, and start with the dependency output absent.
+Compare ordinary Make with the native route. A C header selected by `__arm__`
+must appear while the host-only header does not; a separate real host-cc
+control must choose the opposite header. Inspect both executed ARM images,
+the actual SDK input records, raw `.tmp`, real sed output and final owned
+transfer. Repeat ordered `-D`/`-U` and include search choices, and the supported
+binutils/ABI profile. Unknown flags, sysroots, plugin/response/forced inputs,
+shell expansion, extra sed actions or changed failure operands must reject.
+
+Corrupt captured SDK bytes and attempt an ungranted data file or compiler
+plugin read. Check the closed SDK root, entry, alias and input schemas; a known
+ungranted member must never be relabeled absent. Remove/copy/replay the actual
+opaque runtime launch and require refusal before another payload launch.
+An ordinary Python syscall137 attempt still rejects without the header grant.
+Drop or forge real kernel observations/completion, and require refusal.
+Kernel stream receipts distinguish an actual parsed prefix from observed EOF;
+never replace the real sed or disable its library constructor to avoid a call.
+
+Compose the unmodified text/huffman producer with the original header steps
+using genuine default text and definitions. Keep the C absent before native
+dispatch. Require the same greater-than3MB C and final dependency bytes as
+ordinary execution, six actual remake dispatches (text, then ordinals1--5),
+and unchanged tracked header bytes/metadata. This is a real component
+composition, not the full original-root census: do not replace the original
+raw source wildcard, prune first-pass obligations from final values, or claim
+an authenticated original read epoch from this result.
+
+The existing native owner additionally installs `gcc-arm-none-eabi` and
+`libnewlib-dev`; the same job and command collect the new module exactly once.
+Keep all prior cases and selectors, namespace/metadata/cache boundaries,
+default-deny host compiler/runtime modes and complete cleanup. Record the
+initial direct-runtime-alias fixture mistake, incomplete runtime profiles and
+read-only diagnostic results honestly. No full graph/report, local quota
+increase, H1 or allocation17 is supplied by these tests.
 
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while

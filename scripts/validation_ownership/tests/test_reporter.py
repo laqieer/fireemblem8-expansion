@@ -124,6 +124,7 @@ class AssetOwnershipTests(unittest.TestCase):
                 "test_private_install",
                 "test_text_producer",
                 "test_header_effects",
+                "test_header_pipeline",
             )
         }
         self.assertTrue(native.isdisjoint(collected))

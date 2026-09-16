@@ -11,6 +11,7 @@ def load_tests(loader, standard_tests, pattern):
         "test_private_install",
         "test_text_producer",
         "test_header_effects",
+        "test_header_pipeline",
     }
     suite = unittest.TestSuite()
     for path in sorted(Path(__file__).parent.glob(pattern or "test_*.py")):

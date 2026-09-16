@@ -70,9 +70,10 @@ Missing lifecycle primitives reject before a payload runs; there is no
 numeric-PID generation-check or unconfined fallback.
 Native C++ tool consumers additionally need the existing host C++ compiler.
 The producer suite's real graphics/linker controls also use libpng,
-pkg-config and ARM binutils; its extended Build owner installs those existing
-consumer prerequisites. They are not requirements of the standalone registry
-command above.
+pkg-config and ARM binutils. The actual header pipeline additionally uses the
+ARM GCC driver, C SDK headers and GNU sed; the same extended Build owner
+installs those consumer prerequisites. They are not requirements of the
+standalone registry command above.
 The existing required `extended-host-tests` Build worker runs this complete
 process suite through `ownership-probe-test` in full Build mode, in parallel
 with the host localization work. Lightweight `tests/workflows` checks verify
@@ -98,8 +99,12 @@ vectors without modifying global site directories.
 Each capsule has a private mount, network and PID namespace, a read-only chroot,
 no capabilities, `no_new_privs`, and no inherited descriptor beyond standard
 input/output/error. Candidate source mounts preserve observable Git executable
-bits but are **noexec**. No proc filesystem, device-FD aliases, host home,
+bits but are **noexec**. No whole proc filesystem, device-FD aliases, host home,
 credentials, or service sockets are mounted inside the candidate root.
+Only the identity-issued header filter receives the two exact readonly kernel
+input files required by its real sed/libselinux constructor. Their namespace,
+actual read extents and EOF status are recorded; they are not generic proc
+access or Make source-read authority.
 
 Recursive bind mounts receive their restrictions through `mount_setattr` with
 `AT_RECURSIVE`, using an `O_PATH`-pinned mount root. Read-only, noexec, nosuid and
@@ -164,9 +169,13 @@ tagged confirmations carry actual created-directory identities and regular
 file before/after versions, which the host rechecks before publishing effects
 or advancing the five-step pipeline. Partial pipelines reject; cleanup removes
 only their owned files/directories and preserves existing parents and inputs.
-`test_header_effects` belongs to the existing process-suite owner, not ordinary
-graph discovery. Its data-writer primitive fixture does not close the separate
-real ARM/filter integration or original source-read-phase authority.
+`test_header_effects` and `test_header_pipeline` belong to the existing process
+suite, not ordinary graph discovery. The former isolates filesystem effects;
+the latter executes actual ARM/SDK/sed code and a genuine default message
+composition. Runtime launches are identity-issued and consumed once before
+the native configuration is serialized. A caller-created dictionary cannot
+grant the SDK or kernel-input profile. Full original source-read-phase
+authority remains separate and unimplemented.
 
 Output directories must remain removable by the original runner. Pathname
 `chmod`/`fchmodat` may retain owner read/write/search permissions, but may not

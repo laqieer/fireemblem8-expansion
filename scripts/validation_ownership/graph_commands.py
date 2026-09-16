@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -11,6 +12,7 @@ import shutil
 from scripts.bash_parser import normalize_bash_script_commands, tokenize_bash_command
 
 from . import python_commands as shared_python_commands
+from . import arm_headers, header_effects
 from .authority import ENVIRONMENT, encoded, parse_json, relative_path
 from .budget import MakeProbeError, text
 from .make_probe import Command, ProbeSession
@@ -32,7 +34,15 @@ CODE_PREFIXES = (
 ROOT_RUNTIME_FILES = (
     "/usr/include/newlib/stdlib.h", "/usr/include/build", "/usr/include/.dep",
     "/bin/mkdir", "/bin/env", "/usr/bin/env", "/bin/arm-none-eabi-gcc",
+    "/bin/sed",
 )
+HEADER_STEPS = {
+    "modern-output-dry-run-directory": 1,
+    "modern-header-scan-dry-run-recipes": 2,
+    "modern-header-filter-dry-run-recipes": 3,
+    "modern-header-clean-dry-run-recipes": 4,
+    "modern-header-move-dry-run-recipes": 5,
+}
 MODERN_ARCH_QUERY_FLAGS = ("-mcpu=arm7tdmi", "-mthumb", "-mthumb-interwork")
 MODERN_COMPILER_NAMES = frozenset(("arm-none-eabi-gcc", "arm-none-eabi-gcc.exe"))
 MODERN_DIRECTORY_CONTRACTS = {
@@ -182,6 +192,30 @@ def _simple_words(tokens, label):
     if any(token.operator or token.io_number for token in tokens):
         raise MakeProbeError(f"{label} has unconsumed active shell syntax")
     return [token.value for token in tokens]
+
+
+def _literal_header_words(tokens):
+    values = _simple_words(tokens, "literal header producer")
+    for token in tokens:
+        quote, index = None, 0
+        while index < len(token.raw):
+            character = token.raw[index]
+            if quote == "'":
+                if character == "'":
+                    quote = None
+            elif character == "\\":
+                if quote == '"' and token.raw[index + 1:index + 2] in {"$", "`"}:
+                    raise MakeProbeError("header producer has an unsupported quoted shell escape")
+                if quote != '"' or token.raw[index + 1:index + 2] in {"$", "`", '"', "\\"}:
+                    index += 1
+            elif character == quote:
+                quote = None
+            elif character in "'\"" and quote is None:
+                quote = character
+            elif character in "$`" or quote is None and character in "*?[]{}~":
+                raise MakeProbeError("header producer contains active shell expansion")
+            index += 1
+    return values
 
 
 def _stderr_redirections(tokens):
@@ -345,7 +379,9 @@ class MakeCommands:
         if len(matches) != 1:
             raise MakeProbeError(f"command lacks exactly one sealed domain: {command!r}")
         contract = matches[0]
-        if command in self.registrations and contract["id"] != "legacy-text-dry-run-recipe":
+        if command in self.registrations and contract["id"] not in {
+            "legacy-text-dry-run-recipe", *HEADER_STEPS,
+        }:
             return self.registrations[command]
         self.session.budget.charge("cache", len(encoded([contract["id"], command])))
         self.requests.append({"id": contract["id"], "command": command})
@@ -475,7 +511,80 @@ class MakeCommands:
             outputs=(output,), dependency_only=True,
         )
 
+    def header_step(self, command, step):
+        context = self.session._require_live_dispatch()
+        target = header_effects.header_target(context.job[1])
+        tokens = _shell_tokens(command, "header pipeline")
+        if step in {1, 4, 5}:
+            return self.session._header_step_command(
+                Command(tuple(_literal_header_words(tokens))), step,
+            )
+        divisions = [index for index, token in enumerate(tokens) if _operator(token, "||")]
+        if len(divisions) != 1:
+            raise MakeProbeError("header producer lost its exact failure branch")
+        main, failure = tokens[:divisions[0]], tokens[divisions[0] + 1:]
+        output = target + (".tmp" if step == 2 else ".tmp2")
+        if len(main) < 4 or not _operator(main[-2], ">") or _literal_header_words(main[-1:]) != [output]:
+            raise MakeProbeError("header producer redirected a different output")
+        arguments = _literal_header_words(main[:-2])
+        _literal_header_words([token for token in failure if not token.operator][1:-1])
+        if step == 2:
+            source = relative_path(arguments[-1])
+            if (
+                not source.endswith(".c") or len(arguments) < 7
+                or arguments[-5:-1] != ["-MM", "-MG", "-MT", target[:-len(".headers.d")] + ".o"]
+            ):
+                raise MakeProbeError("header scan differs from its actual target/source grammar")
+            tool = _resolve_modern_compiler(self.session, arguments[0])
+            registration = Command(
+                (tool.path, *arguments[1:]), sources=(source,), outputs=(output,),
+                dependency_only=True, runtime_tool=tool,
+            )
+            includes, _, _ = arm_headers.options(registration, registration.sources, registration.outputs)
+            roots = {"include", "src", str(PurePosixPath(source).parent), *(path for path in includes if path != ".")}
+            headers = tuple(sorted(
+                path for path in set(self.session.snapshot.files) | set(self.session.published_sources)
+                if path.endswith((".h", ".inc")) and any(path.startswith(root + "/") for root in roots)
+            ))
+            registration = replace(registration, code=headers)
+            removed = [output]
+            message = "error: failed to pre-scan " + source + " for generated header dependencies"
+        else:
+            if arguments[:2] != ["sed", "-E"] or len(arguments) != 4 or arguments[3] != target + ".tmp":
+                raise MakeProbeError("header filter differs from its actual input grammar")
+            arm_headers.filter_expression(arguments[2])
+            removed = [target + ".tmp", output]
+            message_tokens = [token.value for token in failure]
+            if len(message_tokens) < 10 or not message_tokens[8].startswith(
+                "error: failed to filter generated header dependencies for "
+            ):
+                raise MakeProbeError("header filter lost its original failure diagnostic")
+            source = relative_path(message_tokens[8].removeprefix(
+                "error: failed to filter generated header dependencies for ",
+            ))
+            pipeline = self.session._header_pipelines.get((context.scope, target))
+            if not source.endswith(".c") or pipeline is None or source != pipeline.source:
+                raise MakeProbeError("header filter failure branch has an invalid original source")
+            message = "error: failed to filter generated header dependencies for " + source
+            tool = self.session.runtime_tool("/usr/bin/sed")
+            registration = Command(
+                (tool.path, "-E", arguments[2], "/repo/" + target + ".tmp"),
+                sources=(target + ".tmp",), outputs=(output,), runtime_tool=tool,
+            )
+        expected = [
+            ("{", False), ("rm", False), ("-f", False),
+            *((path, False) for path in removed), (";", True),
+            ("printf", False), ("%s\\n", False), (message, False),
+            (">&", True), ("2", False), (";", True),
+            ("exit", False), ("1", False), (";", True), ("}", False),
+        ]
+        if [(token.value, token.operator) for token in failure] != expected or any(token.io_number for token in failure):
+            raise MakeProbeError("header producer has an unsupported failure action or operand")
+        return self.session._header_step_command(self.session._native_context_command(registration), step)
+
     def _register(self, command, contract):
+        if contract["id"] in HEADER_STEPS:
+            return self.header_step(command, HEADER_STEPS[contract["id"]])
         if contract["id"] == "legacy-text-dry-run-recipe":
             arguments = _simple_words(_shell_tokens(command, "text producer"), "text producer")
             if (

@@ -36,6 +36,8 @@ from .lifecycle import cleanup_scope, finish_cleanup
 from . import metadata_transport
 from . import private_install as install_protocol
 from . import header_effects
+from . import arm_headers
+from . import header_runtime as header_protocol
 from .producer_channel import (
     ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
     publication_identity, validate_publication_confirmation,
@@ -105,6 +107,10 @@ class _PrivateInstallLaunch:
     pass
 
 
+class _HeaderRuntimeLaunch:
+    pass
+
+
 @dataclass(frozen=True, eq=False)
 class _PrivateInstallCommand:
     command: object
@@ -151,6 +157,7 @@ class _HeaderPipeline:
     owner: str
     stage: int
     versions: dict[str, tuple]
+    source: str | None = None
 
 
 @dataclass(frozen=True, eq=False)
@@ -216,6 +223,8 @@ class ProcessOutput:
     input_identities: tuple[tuple[str, str, str], ...] = ()
     executed: tuple[str, ...] = ()
     runtime_receipt: tuple[tuple[str, str, str], ...] = ()
+    runtime_sources: tuple[tuple[str, int, int, str], ...] = ()
+    runtime_probes: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -759,6 +768,9 @@ class ProbeSession:
         self._header_pipelines = {}
         self._header_commands = {}
         self._issued_header_steps = weakref.WeakSet()
+        self._header_profiles = {}
+        self._header_launches = {}
+        self._issued_header_launches = weakref.WeakSet()
         self._namespace_images = {}
         self._namespace_frames = []
         self._namespace_pending = {}
@@ -1222,6 +1234,9 @@ class ProbeSession:
             self._header_pipelines.clear()
             self._header_commands.clear()
             self._issued_header_steps.clear()
+            self._header_profiles.clear()
+            self._header_launches.clear()
+            self._issued_header_launches.clear()
             self.runtime_inputs = ()
             self.runtime_dispatch = ()
             self.runtime_root = None
@@ -1587,6 +1602,7 @@ class ProbeSession:
         directories=(), executables=None, mapping_entries=(), metadata_validation=False,
         producer_handler=None, publication_observer=None, publication_allowed=True,
         dependency=None, observe_recipe_dispatch=False, private_install=None,
+        header_runtime=None,
     ):
         self.budget.remaining()
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
@@ -1654,6 +1670,34 @@ class ProbeSession:
                 self.budget.limits.control_bytes - self.budget.bytes.get("control", 0),
             ),
         }
+        if dependency is not None:
+            if mode != "compile":
+                raise MakeProbeError("dependency profile requires compiler confinement")
+            config["dependency"] = dependency
+        needs_header = dependency is not None and bool({"header_search", "filter_kernel"} & set(dependency))
+        if needs_header or header_runtime is not None:
+            record = self._header_launches.pop(id(header_runtime), None)
+            if (
+                not needs_header or type(header_runtime) is not _HeaderRuntimeLaunch
+                or header_runtime not in self._issued_header_launches
+                or record is None or record[0] is not header_runtime
+            ):
+                raise MakeProbeError("header runtime launch is unissued, forged or already consumed")
+            self._issued_header_launches.discard(header_runtime)
+            _, command, step, binding = record
+            if (
+                self._require_header_step(command, self._require_live_dispatch()) is not step
+                or self._header_runtime_kind(command) is None
+                or binding != header_protocol.launch_binding(config)
+            ):
+                raise MakeProbeError("header runtime launch differs from its issued job/view/workspace")
+            config["header_runtime"] = {
+                "version": 1, "scope": install_protocol.launch_scope(root), "binding": binding,
+            }
+            try:
+                header_protocol.validate_launch(config)
+            except ChannelError as error:
+                raise MakeProbeError(str(error)) from error
         install_spec = None
         if private_install is not None:
             record = self._private_install_launches.pop(id(private_install), None)
@@ -1694,10 +1738,6 @@ class ProbeSession:
             if mode != "make":
                 raise MakeProbeError("native recipe dispatch requires Make confinement")
             config["observe_recipe_dispatch"] = True
-        if dependency is not None:
-            if mode != "compile":
-                raise MakeProbeError("dependency profile requires compiler confinement")
-            config["dependency"] = dependency
         counter_names = {
             "processes", "syscalls", "written_bytes", "created_files", "observation_bytes",
             "observations", "live_process_peak", "memory_peak",
@@ -2192,6 +2232,10 @@ class ProbeSession:
             output = target + (".tmp" if step == 2 else ".tmp2")
             if command.outputs != (output,):
                 raise MakeProbeError("header step output differs from its actual target")
+            if step == 2 and command.dependency_only and command.runtime_tool is not None:
+                if not command.argv or command.argv[-1] not in command.sources:
+                    raise MakeProbeError("header scan source differs from its declared inputs")
+                pipeline.source = command.argv[-1]
             if step == 3:
                 source = target + ".tmp"
                 if pipeline.versions.get(source) != self._published_record(source) or source not in command.sources:
@@ -2239,6 +2283,240 @@ class ProbeSession:
         for path in paths:
             record.pipeline.versions[path] = self._published_record(path)
         record.pipeline.stage = record.step
+
+    def _header_runtime_kind(self, command):
+        if command.runtime_tool is None or id(command) not in self._header_commands:
+            return None
+        context = self._require_live_dispatch()
+        record = self._require_header_step(command, context)
+        if (
+            record is None or record.step not in {2, 3}
+            or id(command) not in self._native_context_commands
+            or not self._command_dispatches or self._command_dispatches[-1][0] is not command
+            or self._command_dispatches[-1][1] is not context
+            or command.stdout_transform is not None
+        ):
+            raise MakeProbeError("header runtime execution lacks its exact primary dispatch")
+        arm_headers.environment(self._command_environment(command))
+        if record.step == 2:
+            if not command.dependency_only:
+                raise MakeProbeError("ARM header execution lacks its dependency-only profile")
+            return "arm"
+        source = record.pipeline.target + ".tmp"
+        if (
+            command.dependency_only or command.runtime_tool.path != "/usr/bin/sed"
+            or len(command.argv) != 4 or command.argv[:2] != ("/usr/bin/sed", "-E")
+            or command.argv[3] != "/repo/" + source or command.sources != (source,)
+        ):
+            raise MakeProbeError("header filter escaped its exact sed/input profile")
+        arm_headers.filter_expression(command.argv[2])
+        return "filter"
+
+    @staticmethod
+    def _compiler_include_aliases():
+        first = Path(arm_headers.TARGET_INCLUDE)
+        try:
+            info = first.lstat()
+        except FileNotFoundError:
+            return ()
+        if not stat.S_ISLNK(info.st_mode):
+            return ()
+        literal = os.readlink(first)
+        paths = [first]
+        records = [[str(first), literal, str(first.resolve(strict=True))]]
+        if literal == arm_headers.INCLUDE_ALTERNATIVE:
+            second = Path(literal)
+            if not second.is_symlink():
+                raise MakeProbeError("ARM SDK alternatives entry is not its actual symlink")
+            paths.append(second)
+            records.append([str(second), os.readlink(second), str(second.resolve(strict=True))])
+        try:
+            result = arm_headers.validate_aliases(records)
+        except ChannelError as error:
+            raise MakeProbeError(str(error)) from error
+        paths.append(Path(arm_headers.NEWLIB))
+        for path in {path for item in paths for path in (item, *item.parents)}:
+            info = path.lstat()
+            if info.st_uid != 0 or not stat.S_ISLNK(info.st_mode) and info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+                raise MakeProbeError("ARM SDK include alias has a mutable ancestor")
+        for path, target, canonical in result:
+            if os.readlink(path) != target or str(Path(path).resolve(strict=True)) != canonical:
+                raise MakeProbeError("ARM SDK include alias changed during capture")
+        return result
+
+    def _capture_header_sdk(self, executables, system):
+        aliases = self._compiler_include_aliases()
+        roots = arm_headers.sdk_roots(executables[1], bool(system), aliases)
+        backing = self.base / ("header-sdk-" + str(len(self._header_profiles)))
+        backing.mkdir()
+        profile = {
+            "version": 1, "roots": [], "entries": [], "excluded": [], "files": [],
+            "aliases": [list(row) for row in aliases],
+        }
+
+        def creation():
+            self.budget.remaining()
+            if self.files_created >= self.budget.limits.created_files:
+                self.budget.reject("ARM SDK capture exceeds the existing creation bound")
+            self.files_created += 1
+
+        for index, root in enumerate(roots):
+            _trusted_runtime_path(root, optional=True)
+            try:
+                info = Path(root).lstat()
+            except FileNotFoundError:
+                profile["roots"].append([root, False])
+                continue
+            if not stat.S_ISDIR(info.st_mode):
+                raise MakeProbeError("ARM SDK root is not an ordinary directory")
+            profile["roots"].append([root, True])
+            pending = [(Path(root), backing / str(index))]
+            while pending:
+                source, destination = pending.pop()
+                if (
+                    not stat.S_ISDIR(source.lstat().st_mode)
+                    or _trusted_runtime_path(str(source), optional=True) != source
+                ):
+                    raise MakeProbeError("ARM SDK directory changed or acquired an alias")
+                creation()
+                destination.mkdir()
+                profile["entries"].append([str(source), "directory"])
+                if str(source) == arm_headers.NEWLIB + "/c++":
+                    profile["excluded"].append(str(source))
+                    continue
+                with os.scandir(source) as entries:
+                    for entry in entries:
+                        self.budget.remaining()
+                        self.budget.charge("control", len(os.fsencode(entry.path)) + 64)
+                        if len(profile["entries"]) + len(pending) >= self.budget.limits.entries:
+                            self.budget.reject("ARM SDK namespace exceeds the source-entry bound")
+                        path = Path(entry.path)
+                        mode = entry.stat(follow_symlinks=False).st_mode
+                        if stat.S_ISDIR(mode):
+                            pending.append((path, destination / entry.name))
+                            continue
+                        if not stat.S_ISREG(mode):
+                            raise MakeProbeError("ARM SDK has a symlink or special entry")
+                        profile["entries"].append([str(path), "file"])
+                        creation()
+                        target = destination / entry.name
+                        if entry.name.endswith(".h"):
+                            captured = _capture_runtime_input(str(path), self.budget)
+                            if captured.data is None:
+                                raise MakeProbeError("ARM SDK header disappeared during capture")
+                            if any(
+                                item.canonical == str(path) and (item.data, item.mode) != (captured.data, captured.mode)
+                                for item in self.runtime_inputs
+                            ):
+                                raise MakeProbeError("ARM SDK differs from the original captured runtime input")
+                            self.budget.charge("control", len(captured.data))
+                            target.write_bytes(captured.data)
+                            target.chmod(captured.mode)
+                            profile["files"].append([
+                                str(path), captured.mode, len(captured.data),
+                                hashlib.sha256(captured.data).hexdigest(),
+                            ])
+                        else:
+                            target.touch(mode=0)
+        profile["entries"].sort()
+        profile["files"].sort()
+        arm_headers.validate_search(
+            profile, executables, count_limit=self.budget.limits.entries,
+            file_limit=self.budget.limits.file_bytes,
+        )
+        self.budget.charge("control", len(encoded(profile)))
+        return backing, profile
+
+    def _header_runtime_profile(self, command, system=(), binutils=()):
+        tool = command.runtime_tool
+        architecture = tuple(argument for argument in command.argv[1:] if argument.startswith("-m"))
+        key = tool.path, tool.canonical, tool.mode, tool.digest, tuple(system), tuple(binutils), architecture
+        if key in self._header_profiles:
+            return self._header_profiles[key]
+        if command.runtime_tool.path == "/usr/bin/sed":
+            compiler = (command.runtime_tool.path,)
+            profile = self._compiler_runtime_profile(compiler, search=False)
+            result = compiler, profile, None, None
+        else:
+            driver, programs = self._compiler_tools(
+                False, ("cc1",), compiler=command.runtime_tool.path, search_arguments=binutils,
+            )
+            frontends = {str(_trusted_runtime_path(path, compiler=True)) for path in programs} - {driver}
+            if len(frontends) != 1:
+                raise MakeProbeError("ARM header profile requires exactly one real C frontend")
+            compiler = (driver, frontends.pop())
+            for query, wanted in (
+                ("-print-file-name=include", str(Path(compiler[1]).parent / "include")),
+                ("-print-file-name=include-fixed", str(Path(compiler[1]).parent / "include-fixed")),
+                ("-print-sysroot", ""),
+            ):
+                probe = self.budget.run([driver, *binutils, query], env=ENVIRONMENT, cwd=Path("/"))
+                if probe.returncode or text(probe.stdout, "ARM SDK query", "utf-8").strip() != wanted:
+                    raise MakeProbeError("ARM SDK query differs from the closed frontend/sysroot profile")
+            profile = self._compiler_runtime_profile(compiler, (*binutils, *architecture))
+            profile["runtime_stat_probes"] = sorted({
+                *profile["runtime_stat_probes"],
+                *(str(Path(compiler[1]).parent / name) for name in ("collect2", "liblto_plugin.so")),
+            })
+            if binutils:
+                prefix = Path(binutils[0][2:]).resolve(strict=True)
+                candidates = (prefix, prefix / "arm-none-eabi" / Path(compiler[1]).parent.name)
+                for directory in candidates:
+                    if any((directory / name).exists() or (directory / name).is_symlink()
+                           for name in ("include", "include-fixed")):
+                        raise MakeProbeError("binutils prefix introduces an unclosed additional ARM SDK")
+                profile["runtime_stat_probes"] = sorted({
+                    *profile["runtime_stat_probes"],
+                    *(str(directory / name) for directory in candidates
+                      for name in ("include", "include-fixed", "cc1", "collect2", "liblto_plugin.so")),
+                })
+            backing, sdk = self._capture_header_sdk(compiler, system)
+            profile["runtime_aliases"] += sdk["aliases"]
+            result = compiler, profile, backing, sdk
+        self._header_profiles[key] = result
+        return result
+
+    def _filter_kernel_inputs(self, root):
+        profile = {
+            "version": 1, "statfs": [], "reads": list(header_protocol.READ_PATHS),
+            "absent": list(header_protocol.ABSENT_PATHS),
+        }
+        mounts = []
+        for path in header_protocol.STATFS_PATHS:
+            try:
+                info = Path(path).lstat()
+            except FileNotFoundError:
+                profile["statfs"].append([path, False])
+            else:
+                if not stat.S_ISDIR(info.st_mode):
+                    raise MakeProbeError("sed statfs input is not an ordinary directory")
+                profile["statfs"].append([path, True])
+                _mkdir_target(root, path, directory=True)
+                mounts.append(self._mount(Path(path), path))
+        for path in header_protocol.READ_PATHS:
+            _mkdir_target(root, path)
+            mounts.append(self._mount(Path(path), path))
+        for path in header_protocol.ABSENT_PATHS:
+            if Path(path).exists() or Path(path).is_symlink():
+                raise MakeProbeError("present SELinux configuration is outside the closed header filter profile")
+        header_protocol.validate_filter(profile, ("/usr/bin/sed",))
+        self.budget.charge("control", len(encoded(profile)))
+        return profile, mounts
+
+    def _header_runtime_launch(self, command, root, *, mode, argv, environment, mounts, code, sources,
+                               directories, executables, dependency):
+        step = self._require_header_step(command, self._require_live_dispatch())
+        if step is None or self._header_runtime_kind(command) is None:
+            raise MakeProbeError("header launch lacks its issued primary command")
+        token = _HeaderRuntimeLaunch()
+        binding = header_protocol.launch_binding({
+            "root": str(root), "mode": mode, "argv": argv, "environment": environment, "mounts": mounts,
+            "code": code, "sources": sources, "enumerations": directories, "executables": executables,
+            "dependency": dependency,
+        })
+        self._header_launches[id(token)] = token, command, step, binding
+        self._issued_header_launches.add(token)
+        return token
 
     def _confirm_header_effect(self, pending, outcome, generated_paths, generated_directories):
         effect = pending.effect
@@ -2457,6 +2735,7 @@ class ProbeSession:
             raise MakeProbeError("registered command requires a typed Command")
         Command.__post_init__(command)
         environment = self._command_environment(command)
+        header_kind = self._header_runtime_kind(command)
         if type(command.dependency_only) is not bool:
             raise MakeProbeError("dependency_only requires a boolean")
         if command.stdout_transform not in {None, "dirname"}:
@@ -2465,13 +2744,15 @@ class ProbeSession:
             raise MakeProbeError("stdout transform requires an issued runtime tool query")
         if command.dependency_only and (
             compiler is not None or native is not None or command.native_tool is not None
-            or command.runtime_tool is not None or command.stdout_transform is not None
+            or command.runtime_tool is not None and header_kind != "arm"
+            or command.stdout_transform is not None
         ):
             raise MakeProbeError("dependency profile cannot combine native or other compiler authority")
         if command.runtime_tool is not None:
             if compiler is not None or native is not None or command.native_tool is not None:
                 raise MakeProbeError("runtime tool cannot combine other execution authority")
-            self._runtime_tool_query(command)
+            if header_kind is None:
+                self._runtime_tool_query(command)
             self._verify_runtime_tool(command.runtime_tool)
             if not command.argv or command.argv[0] != command.runtime_tool.path:
                 raise MakeProbeError("runtime tool execution requires its exact captured pathname")
@@ -2513,7 +2794,11 @@ class ProbeSession:
         sources = self.sources(command.sources) if command.sources else ()
         directories = self._directories(command.directories)
         outputs = self._output_paths(command.outputs)
-        include_dirs = self._dependency_options(command, sources, outputs) if command.dependency_only else ()
+        system = binutils = ()
+        if header_kind == "arm":
+            include_dirs, system, binutils = arm_headers.options(command, sources, outputs)
+        else:
+            include_dirs = self._dependency_options(command, sources, outputs) if command.dependency_only else ()
         for path in code:
             relative_path(path)
             if path not in self.snapshot.files and path not in self.published_sources:
@@ -2523,7 +2808,10 @@ class ProbeSession:
             self.budget.charge("control", len(encoded(published_inputs)))
         runtime_digest = None if command.runtime_tool is None else command.runtime_tool.digest
         runtime_profile_key = runtime_profile = None
-        if command.runtime_tool is not None:
+        header_compiler = sdk_backing = sdk = None
+        if header_kind is not None:
+            header_compiler, runtime_profile, sdk_backing, sdk = self._header_runtime_profile(command, system, binutils)
+        elif command.runtime_tool is not None:
             binutils = tuple(argument for argument in command.argv[1:] if argument.startswith("-B"))
             runtime_profile_key = command.runtime_tool.digest, binutils
             if runtime_profile_key not in self.runtime_query_profiles:
@@ -2559,8 +2847,12 @@ class ProbeSession:
                 (root / "native/tool").chmod(0o555)
             argv = list(command.argv)
             dependency = None
+            runtime_mounts = []
             if command.dependency_only:
-                if self.dependency_compiler is None:
+                if header_kind == "arm":
+                    compiler = header_compiler
+                    dependency_runtime = runtime_profile
+                elif self.dependency_compiler is None:
                     driver, programs = self._compiler_tools(False, ("cc1",))
                     programs = tuple(sorted({str(_trusted_runtime_path(path, compiler=True)) for path in programs}))
                     frontends = tuple(path for path in programs if path != driver)
@@ -2569,14 +2861,21 @@ class ProbeSession:
                     self.dependency_compiler = driver, frontends[0]
                     self.budget.charge("control", len(encoded(self.dependency_compiler)))
                     self.dependency_runtime = self._dependency_runtime()
-                argv[0] = self.dependency_compiler[0]
-                compiler = self.dependency_compiler
+                if header_kind != "arm":
+                    compiler, dependency_runtime = self.dependency_compiler, self.dependency_runtime
+                argv[0] = compiler[0]
                 dependency = {
-                    **self.dependency_runtime,
+                    **dependency_runtime,
                     "executables": list(compiler),
                     "include_dirs": ["/repo" if path == "." else "/repo/" + path for path in include_dirs],
                     "metadata_descendants": [],
                 }
+                if sdk is not None:
+                    dependency["header_search"] = sdk
+                    for index, (path, present) in enumerate(sdk["roots"]):
+                        if present:
+                            _mkdir_target(root, path, directory=True)
+                            runtime_mounts.append(self._mount(sdk_backing / str(index), path))
                 parent = output
                 for part in PurePosixPath(outputs[0]).parts[:-1]:
                     self.budget.remaining()
@@ -2591,8 +2890,27 @@ class ProbeSession:
                     **runtime_profile,
                     "executables": [command.runtime_tool.path],
                     "include_dirs": [],
-                    "metadata_descendants": runtime_profile["compiler_search_directories"],
+                    "metadata_descendants": (
+                        [] if header_kind else runtime_profile["compiler_search_directories"]
+                    ),
                 }
+                if header_kind == "filter":
+                    dependency["filter_kernel"], kernel_mounts = self._filter_kernel_inputs(root)
+                    runtime_mounts.extend(kernel_mounts)
+                    parent = output
+                    for part in PurePosixPath(outputs[0]).parts[:-1]:
+                        self.budget.remaining()
+                        if self.files_created >= self.budget.limits.created_files:
+                            self.budget.reject("header filter output creation exceeds remaining capacity")
+                        self.files_created += 1
+                        parent /= part
+                        parent.mkdir()
+                    if self.files_created >= self.budget.limits.created_files:
+                        self.budget.reject("header filter output creation exceeds remaining capacity")
+                    self.files_created += 1
+                    descriptor = os.open(output / outputs[0], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+                    os.close(descriptor)
+            if command.runtime_tool is not None:
                 aliases = runtime_profile["runtime_aliases"]
                 for path, target, _ in aliases:
                     if path.startswith("/usr/"):
@@ -2603,21 +2921,31 @@ class ProbeSession:
             if argv[0] == "/usr/bin/python3":
                 argv[1:1] = ["-I", "-S", "-B"]
             install_launch = self._private_install_launch(command, output, root, argv, environment)
+            command_mounts = [
+                self._mount(self.tree, "/repo"), self._mount(Path("/usr"), "/usr", executable=True),
+                *runtime_mounts, self._mount(output, "/work", writable=True),
+                self._mount(Path("/dev/null"), "/dev/null", writable=True),
+            ]
+            header_launch = None
+            if header_kind is not None:
+                header_launch = self._header_runtime_launch(
+                    command, root, mode="compile", argv=argv, environment=environment, mounts=command_mounts,
+                    code=code, sources=sources, directories=directories, executables=compiler, dependency=dependency,
+                )
             try:
                 completed, observed = self._sandbox_run(
                     root, mode="command" if compiler is None else "compile", argv=argv,
                     environment=environment,
-                    mounts=[
-                        self._mount(self.tree, "/repo"),
-                        self._mount(Path("/usr"), "/usr", executable=True),
-                        self._mount(output, "/work", writable=True),
-                        self._mount(Path("/dev/null"), "/dev/null", writable=True),
-                    ],
+                    mounts=command_mounts,
                     code=code, sources=sources, directories=directories,
                     executables=compiler, dependency=dependency,
                     **({"private_install": install_launch} if install_launch is not None else {}),
+                    **({"header_runtime": header_launch} if header_launch is not None else {}),
                 )
             finally:
+                if header_launch is not None:
+                    self._header_launches.pop(id(header_launch), None)
+                    self._issued_header_launches.discard(header_launch)
                 if install_launch is not None:
                     self._private_install_launches.pop(id(install_launch), None)
                     if type(install_launch) is _PrivateInstallLaunch:
@@ -2631,12 +2959,35 @@ class ProbeSession:
                     raise MakeProbeError("dependency result names undeclared header code")
                 input_identities = tuple(item for item in input_identities if item[0] in used)
             stdout, stderr = completed.stdout, completed.stderr
+            runtime_sources = ()
+            try:
+                runtime_probes = header_protocol.records(
+                    observed["accessed"], None if header_kind != "filter" else dependency["filter_kernel"],
+                    count_limit=self.budget.limits.entries, file_limit=self.budget.limits.file_bytes,
+                )
+            except ChannelError as error:
+                raise MakeProbeError(str(error)) from error
+            if sdk is not None:
+                try:
+                    runtime_sources = arm_headers.records(
+                        observed["accessed"], sdk, compiler,
+                        count_limit=self.budget.limits.entries, file_limit=self.budget.limits.file_bytes,
+                    )
+                except ChannelError as error:
+                    raise MakeProbeError(str(error)) from error
+            if header_kind == "filter":
+                self.budget.charge("sandbox", len(stdout))
+                (output / outputs[0]).write_bytes(stdout)
+                stdout = b""
             if command.stdout_transform == "dirname":
                 reported = text(stdout, "modern toolchain query output", "utf-8").rstrip("\n")
                 stdout, stderr = ((os.path.dirname(reported) or ".") + "\n").encode(), b""
             if command.runtime_tool is not None:
                 self._verify_runtime_tool(command.runtime_tool)
-                if tuple(self._compiler_runtime_aliases()) != tuple(runtime_profile["runtime_aliases"]):
+                aliases = self._compiler_runtime_aliases() if header_kind != "filter" else ()
+                if header_kind == "arm":
+                    aliases += self._compiler_include_aliases()
+                if tuple(aliases) != tuple(tuple(row) for row in runtime_profile["runtime_aliases"]):
                     raise MakeProbeError("modern compiler runtime aliases changed during query")
             result = ProcessOutput(
                 stdout, stderr, consumed, tuple(observed["code_consumed"]),
@@ -2647,6 +2998,8 @@ class ProbeSession:
                 input_identities,
                 tuple(observed.get("executed", ())),
                 () if command.runtime_tool is None else tuple(runtime_profile["runtime_aliases"]),
+                runtime_sources,
+                runtime_probes,
             )
             self.budget.charge(
                 "cache", len(completed.stdout) + len(completed.stderr)
@@ -2664,11 +3017,15 @@ class ProbeSession:
                 self.budget.charge("cache", len(encoded(result.executed)))
             if result.runtime_receipt:
                 self.budget.charge("cache", len(encoded(result.runtime_receipt)))
+            if result.runtime_sources:
+                self.budget.charge("cache", len(encoded(result.runtime_sources)))
+            if result.runtime_probes:
+                self.budget.charge("cache", len(encoded(result.runtime_probes)))
             if not outputs:
                 self.cache.setdefault(key, []).append(result)
             return result
 
-    def _compiler_runtime_profile(self, compiler, search_arguments=()):
+    def _compiler_runtime_profile(self, compiler, search_arguments=(), *, search=True):
         interpreter = _make_interpreter(dict(self.make_runtime)["/usr/bin/make"])
         runtime = {interpreter, *compiler}
         for program in compiler:
@@ -2683,6 +3040,21 @@ class ProbeSession:
         )
         if len(runtime) > 64:
             raise MakeProbeError("dependency runtime closure exceeds the existing path bound")
+        if not search:
+            libc = {
+                str(_trusted_runtime_path(path, compiler=True))
+                for path in runtime if Path(path).name == "libc.so.6"
+            }
+            if len(libc) != 1:
+                raise MakeProbeError("header runtime requires one resolved libc image")
+            profile = {
+                "runtime_files": sorted(runtime), "runtime_directories": [],
+                "compiler_search_directories": [], "runtime_stat_probes": [],
+                "runtime_interpreter": str(_trusted_runtime_path(interpreter, compiler=True)),
+                "runtime_libc": libc.pop(), "runtime_aliases": [],
+            }
+            self.budget.charge("control", len(encoded(profile)))
+            return profile
         result = self.budget.run(
             [compiler[0], *search_arguments, "-print-search-dirs"],
             env=ENVIRONMENT, cwd=Path("/"),
@@ -2743,12 +3115,12 @@ class ProbeSession:
     def _dependency_runtime(self):
         return self._compiler_runtime_profile(self.dependency_compiler)
 
-    def _compiler_tools(self, cxx, names):
-        compiler = str(Path("/usr/bin/g++" if cxx else "/usr/bin/cc").resolve(strict=True))
+    def _compiler_tools(self, cxx, names, *, compiler=None, search_arguments=()):
+        compiler = str(Path(compiler or ("/usr/bin/g++" if cxx else "/usr/bin/cc")).resolve(strict=True))
         executables = [compiler]
         for name in names:
             result = self.budget.run(
-                [compiler, "-print-prog-name=" + name],
+                [compiler, *search_arguments, "-print-prog-name=" + name],
                 env={**ENVIRONMENT, "TMPDIR": str(self.base)},
             )
             path = text(result.stdout, "trusted compiler program", "utf-8").strip()
@@ -3176,6 +3548,10 @@ class ProbeSession:
                         "mode": tool.mode, "sha256": tool.digest,
                         "aliases": [list(item) for item in result.runtime_receipt],
                     }
+                if result.runtime_sources:
+                    identity["runtime_inputs"] = [list(item) for item in result.runtime_sources]
+                if result.runtime_probes:
+                    identity["runtime_probes"] = list(result.runtime_probes)
                 if registration.stdout_transform is not None:
                     identity["stdout_transform"] = registration.stdout_transform
                 record = {

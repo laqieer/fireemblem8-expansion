@@ -1923,6 +1923,14 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/header_effects.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/arm_headers.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/header_runtime.py"
         }
       ],
       "exclude": [
@@ -1957,6 +1965,10 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_header_effects.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_header_pipeline.py"
         }
       ]
     },
@@ -1995,6 +2007,10 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_header_effects.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_header_pipeline.py"
         }
       ],
       "exclude": []

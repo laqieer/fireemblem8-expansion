@@ -30,6 +30,8 @@ if __package__:
     from .metadata_transport import encode_metadata_transport
     from . import private_install as install_protocol
     from . import header_effects
+    from . import arm_headers
+    from . import header_runtime as header_protocol
     from .producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
@@ -40,6 +42,8 @@ else:
     from metadata_transport import encode_metadata_transport
     import private_install as install_protocol
     import header_effects
+    import arm_headers
+    import header_runtime as header_protocol
     from producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
@@ -278,6 +282,10 @@ class Policy:
         self.config = config
         self.mode = config["mode"]
         try:
+            header_protocol.validate_launch(config)
+        except ChannelError as error:
+            raise Violation(str(error)) from error
+        try:
             self.private_install = install_protocol.validate_config(config.get("private_install"), config)
         except install_protocol.InstallError as error:
             raise Violation(str(error)) from error
@@ -321,10 +329,22 @@ class Policy:
         self.executable.update(self.resolve(path) for path in config["executables"])
         self.runtime_closure = set(config.get("runtime_closure", ()))
         dependency = config.get("dependency")
+        self.filter_kernel = None if dependency is None else dependency.get("filter_kernel")
+        self.kernel_streams = {}
+        self.kernel_sequence = 0
+        self.header_roots, self.header_entries, self.header_files, self.header_verified = {}, {}, {}, {}
+        if dependency and "header_search" in dependency:
+            try:
+                self.header_roots, self.header_entries, self.header_files = arm_headers.validate_search(
+                    dependency["header_search"], dependency["executables"],
+                    count_limit=config["observation_count"], file_limit=config["file_limit"],
+                )
+            except ChannelError as error:
+                raise Violation(str(error)) from error
         if dependency:
             self.runtime_closure.update(dependency["runtime_files"])
         self.runtime_directories = set()
-        for name in self.runtime_closure | self.executable | {"/lib/vo-observer.so"}:
+        for name in self.runtime_closure | self.executable | set(self.header_roots) | {"/lib/vo-observer.so"}:
             parent = posixpath.dirname(name)
             while parent:
                 self.runtime_directories.add(parent)
@@ -1658,14 +1678,99 @@ class Policy:
                 self.dependency_image_ids[self.dependency_libc],
             }
         )
+        frontend = (
+            self.header_roots and operation in {"read", "metadata"}
+            and state.dependency_image == self.config["dependency"]["executables"][1]
+            and any(path == root or path.startswith(root + "/") for root in self.header_roots)
+            and origin in {
+                self.dependency_image_ids[state.dependency_image],
+                self.dependency_image_ids[self.dependency_libc],
+            }
+        )
+        filter_input = (
+            self.filter_kernel is not None and operation in {"read", "metadata"}
+            and path in {*header_protocol.STATFS_PATHS, *header_protocol.READ_PATHS, *header_protocol.ABSENT_PATHS}
+            and state.dependency_image == "/usr/bin/sed"
+            and origin in {
+                self.dependency_image_ids[state.dependency_image],
+                self.dependency_image_ids[self.dependency_libc],
+            }
+        )
         if loader:
             image = self.dependency_interpreter
         elif driver:
+            image = state.dependency_image if origin == self.dependency_image_ids[state.dependency_image] else self.dependency_libc
+        elif frontend:
+            image = state.dependency_image if origin == self.dependency_image_ids[state.dependency_image] else self.dependency_libc
+        elif filter_input:
             image = state.dependency_image if origin == self.dependency_image_ids[state.dependency_image] else self.dependency_libc
         else:
             return False
         self.verify_dependency_mapping_span(image, *mapping, ip, instruction)
         return True
+
+    def kernel_record(self, operation, path, result, *, data=None, count=None, digest=None, eof=None):
+        self.kernel_sequence += 1
+        row = {
+            "sequence": self.kernel_sequence, "operation": operation, "path": path,
+            "result": result, "data": data, "bytes": count, "sha256": digest, "eof": eof,
+        }
+        self.observe("accessed", header_protocol.KERNEL_PREFIX + encoded(row).decode("ascii"))
+
+    def header_runtime_access(self, state, path, operation, mode):
+        if any(
+            path == excluded or path.startswith(excluded + "/")
+            for excluded in self.config["dependency"]["header_search"]["excluded"]
+        ):
+            raise Violation("unsupported C++ SDK namespace is not an absent C header")
+        expected = self.header_files.get(path)
+        if expected is not None:
+            if (
+                operation not in {"read", "metadata"}
+                or state.dependency_image != self.config["dependency"]["executables"][1]
+            ):
+                raise Violation("ARM SDK input lacks its actual C frontend")
+            descriptor = os.open(
+                Path(self.config["root"]) / path.lstrip("/"),
+                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+            )
+            with os.fdopen(descriptor, "rb") as stream:
+                before = publication_identity(os.fstat(stream.fileno()))
+                if before[2:4] != (stat.S_IFREG | expected[1], expected[2]) or before[6] != 1:
+                    raise Violation("captured ARM SDK input changed type, mode or extent")
+                if path in self.header_verified:
+                    if self.header_verified[path] != before:
+                        raise Violation("captured ARM SDK input changed during execution")
+                else:
+                    self.charge_metadata(expected[2])
+                    digest, remaining = hashlib.sha256(), expected[2]
+                    while remaining:
+                        if time.monotonic() >= self.config["deadline"]:
+                            raise Violation("ARM SDK read exhausted the existing deadline")
+                        data = stream.read(min(remaining, SYSCALL_MEMORY_LIMIT))
+                        if not data:
+                            raise Violation("captured ARM SDK input was truncated")
+                        digest.update(data)
+                        remaining -= len(data)
+                    if stream.read(1) or digest.hexdigest() != expected[3]:
+                        raise Violation("captured ARM SDK input differs from its exact bytes")
+                    if publication_identity(os.fstat(stream.fileno())) != before:
+                        raise Violation("captured ARM SDK input changed during its actual read")
+                    self.header_verified[path] = before
+            self.defer_observation(state, "accessed", arm_headers.PREFIX + encoded(expected).decode("ascii"))
+            return
+        if self.header_entries.get(path) == "directory" and operation == "metadata":
+            if mode is None or not stat.S_ISDIR(mode):
+                raise Violation("captured ARM SDK directory changed")
+            self.defer_observation(state, "accessed", path)
+            return
+        if (
+            path not in self.header_entries and mode is None and operation in {"read", "metadata"}
+            and self.dependency_negative_purpose(state, path, operation)
+        ):
+            self.defer_observation(state, "accessed", path)
+            return
+        raise Violation("ungranted or changed ARM SDK entry is not a missing header")
 
     def dependency_runtime_access(self, state, path, operation):
         full = Path(self.config["root"]) / path.lstrip("/")
@@ -1675,6 +1780,22 @@ class Policy:
             mode = None
         except OSError as error:
             raise Violation(f"dependency runtime path has an unsupported type: {path}") from error
+        if self.filter_kernel is not None and path in header_protocol.READ_PATHS:
+            if (
+                operation not in {"read", "metadata"} or mode is None or not stat.S_ISREG(mode)
+                or not self.dependency_negative_purpose(state, path, operation)
+            ):
+                raise Violation("sed kernel input escaped its actual readonly runtime purpose")
+            self.defer_observation(state, "accessed", path)
+            return
+        if self.filter_kernel is not None and path in header_protocol.ABSENT_PATHS:
+            if operation != "metadata" or mode is not None or not self.dependency_negative_purpose(state, path, operation):
+                raise Violation("sed negative configuration input changed or escaped its runtime purpose")
+            state.pending = ("kernel-absent", path)
+            return
+        if any(path == root or path.startswith(root + "/") for root in self.header_roots):
+            self.header_runtime_access(state, path, operation, mode)
+            return
         allowed = (
             operation in {"read", "metadata"} and path in self.dependency_files
             and mode is not None and stat.S_ISREG(mode)
@@ -2006,7 +2127,29 @@ class Policy:
                 if mode is not None and stat.S_ISREG(mode):
                     state.pending = ("make-source-exec", (path, n == 439 and bool(d & 0x200)))
             self.begin_metadata(pid, state, r, path)
+        elif n == 137:
+            if self.filter_kernel is None:
+                raise Violation("unadmitted syscall 137")
+            raw = cstring(pid, a)
+            path = self.path(pid, state, a)
+            if (
+                path != raw or path not in header_protocol.STATFS_PATHS
+                or not self.dependency_negative_purpose(state, path, "metadata")
+            ):
+                raise Violation("sed statfs escaped its exact verified runtime input")
+            present = dict(self.filter_kernel["statfs"])[path]
+            try:
+                info = (Path(self.config["root"]) / path.lstrip("/")).lstat()
+            except FileNotFoundError:
+                if present:
+                    raise Violation("sed statfs lost its actual directory binding")
+            else:
+                if not present or not stat.S_ISDIR(info.st_mode):
+                    raise Violation("sed statfs binding differs from its declared presence")
+            state.pending = ("kernel-statfs", (path, b, present))
         elif n in {5, 138}:  # fstat, fstatfs
+            if n == 138 and (pid, a) in self.kernel_streams:
+                raise Violation("sed kernel stream filesystem queries are unsupported")
             path = self.check_fd(state, a, "metadata", r)
             self.begin_metadata(pid, state, r, path)
         elif n in {0, 17, 19}:  # read/pread/readv
@@ -2015,6 +2158,10 @@ class Policy:
             state.observation_needs_bytes = True
             if state.role == "helper" and path.startswith("/control/map/") and path.endswith(".meta"):
                 state.pending = ("metadata-input", None)
+            if self.filter_kernel is not None and path in header_protocol.READ_PATHS:
+                if n != 0 or (pid, a) not in self.kernel_streams or c > SYSCALL_MEMORY_LIMIT:
+                    raise Violation("sed kernel stream escaped its sequential bounded read")
+                state.pending = ("kernel-read", (a, b, c))
         elif n in {1, 18, 20}:  # write/pwrite/writev
             path = self.check_fd(state, a, "write", r)
             state.kernel_io = path
@@ -2043,6 +2190,8 @@ class Policy:
         elif n == 3:
             state.pending = ("close", a)
         elif n in {8, 74, 75, 73}:
+            if (pid, a) in self.kernel_streams:
+                raise Violation("sed kernel stream seek/descriptor mutation is unsupported")
             self.check_fd(state, a, "read", r)
         elif n in {78, 217}:
             path = self.check_fd(state, a, "directory", r)
@@ -2064,6 +2213,8 @@ class Policy:
                     raise Violation("shared writable mappings/argument races are forbidden")
             if not d & MAP_ANONYMOUS:
                 path = self.check_fd(state, descriptor, "read", r)
+                if self.filter_kernel is not None and path in header_protocol.READ_PATHS:
+                    raise Violation("sed kernel stream mappings are unsupported")
                 # Even MAP_PRIVATE + O_RDONLY can observe another process's
                 # writes to the backing inode until COW. Closing/duplicating/
                 # hardlinking the FD does not make /work immutable.
@@ -2160,7 +2311,7 @@ class Policy:
             self.reserve_exec(pid, state)
             state.pending = ("exec", role)
         elif n in {56, 57, 58}:
-            if self.private_install is not None:
+            if self.private_install is not None or self.filter_kernel is not None:
                 raise Violation("private install command cannot create another actor")
             if n == 56:
                 allowed = 0x100 | 0x4000 | 0x100000 | 0x200000 | 0x1000000 | 0xFF
@@ -2172,7 +2323,7 @@ class Policy:
             self.reserve_process(state)
             self.reserve_memory(pid, state, 0, copies=1)
         elif n == 435:
-            if self.private_install is not None:
+            if self.private_install is not None or self.filter_kernel is not None:
                 raise Violation("private install command cannot create another actor")
             if b < 64 or b > 88:
                 raise Violation("unknown clone3 structure")
@@ -2191,16 +2342,22 @@ class Policy:
             state.pending = ("pipe", a)
         elif n in {32, 33, 292}:
             path = self.fd(state, a)
+            if (pid, a) in self.kernel_streams or (pid, b) in self.kernel_streams:
+                raise Violation("sed kernel stream descriptor aliases are unsupported")
             self.check(state, path, "read", observer=trusted)
             state.pending = ("dup", path)
         elif n == 72:
             path = self.fd(state, a)
+            if (pid, a) in self.kernel_streams and b not in {1, 2, 3}:
+                raise Violation("sed kernel stream fcntl mutation is unsupported")
             if b in {0, 1030}:
                 self.check(state, path, "read", observer=trusted)
                 state.pending = ("dup", path)
             elif b not in {1, 2, 3, 4, 5, 6, 7, 1031, 1032}:
                 raise Violation("unknown fcntl operation")
         elif n == 16:
+            if (pid, a) in self.kernel_streams:
+                raise Violation("sed kernel stream ioctl queries are unsupported")
             self.fd(state, a)
             if b not in {0x5401, 0x5413, 0x541B, 0x5450, 0x5451}:
                 raise Violation(f"unknown ioctl operation {b:#x}")
@@ -2288,6 +2445,9 @@ class Policy:
         elif n == 158:
             if a not in {0x1001, 0x1002, 0x1003, 0x1004}:
                 raise Violation("unknown arch_prctl")
+        elif n in {60, 231}:
+            if any(owner == pid for owner, _ in self.kernel_streams):
+                raise Violation("sed runtime exited with an unclosed kernel input")
         elif n not in {
             7, 11, 13, 14, 15, 23, 24, 26, 27, 28, 35, 36, 37, 38,
             39, 60, 61, 63, 79, 96, 97, 98, 99, 100, 102, 104, 107, 108,
@@ -2314,14 +2474,54 @@ class Policy:
         if operation == "private-install":
             self.finish_private_install(pid, value, result)
             return
+        if operation == "kernel-statfs":
+            path, address, present = value
+            if result != (0 if present else -errno.ENOENT):
+                raise Violation("sed statfs returned an unexpected actual result")
+            data = None
+            if present:
+                self.charge_metadata(120)
+                data = memory(pid, address, 120).hex()
+            self.kernel_record("statfs", path, result, data=data)
+            return
+        if operation == "kernel-absent":
+            if result != -errno.ENOENT:
+                raise Violation("sed negative configuration observation changed")
+            self.kernel_record("absent", value, result)
+            return
+        if operation == "kernel-read":
+            descriptor, address, requested = value
+            stream = self.kernel_streams.get((pid, descriptor))
+            if stream is None or result < 0 or result > requested:
+                raise Violation("sed kernel read failed or lost its actual descriptor")
+            if result:
+                if stream["bytes"] + result > self.config["file_limit"]:
+                    raise Violation("sed kernel input exceeds its existing byte bound")
+                self.charge_metadata(result)
+                stream["digest"].update(memory(pid, address, result))
+                stream["bytes"] += result
+            else:
+                stream["eof"] = True
         if result < 0:
             if operation == "make-source-exec" and result == -errno.EACCES and self.source_execute_allowed(pid, *value):
                 raise Violation(f"Make source executable lookup denied by noexec view: {value[0]}")
             return
         if operation in {"open", "dup"}:
             state.fds[result] = value
+            if operation == "open" and self.filter_kernel is not None and value in header_protocol.READ_PATHS:
+                if (pid, result) in self.kernel_streams:
+                    raise Violation("sed kernel descriptor was reused before actual close")
+                self.kernel_streams[pid, result] = {
+                    "path": value, "bytes": 0, "digest": hashlib.sha256(), "eof": False,
+                }
         elif operation == "close":
             state.fds.pop(value, None)
+            stream = self.kernel_streams.pop((pid, value), None)
+            if stream is not None:
+                self.kernel_record(
+                    "stream", stream["path"], 0, count=stream["bytes"],
+                    digest=stream["digest"].hexdigest(), eof=stream["eof"],
+                )
         elif operation == "pipe":
             data = memory(pid, value, 8)
             for offset in (0, 4):
@@ -2809,6 +3009,10 @@ def supervise(config, drop_privileges):
                     processes.clear()
         def write_report():
             nonlocal result
+            if error is None and policy.filter_kernel is not None:
+                if policy.kernel_streams:
+                    raise Violation("successful sed runtime retained unclosed kernel inputs")
+                policy.observe("accessed", header_protocol.KERNEL_END + str(policy.kernel_sequence))
             result = {
                 "ok": error is None,
                 "returncode": main_status,
