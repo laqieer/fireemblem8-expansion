@@ -5564,6 +5564,48 @@ must include the real fortified read entry without bypassing its libc bounds.
 Missing context is a hold, never a guessed job or source epoch. Record
 stopped/incomplete exploratory hook runs and their cleanup honestly.
 
+For the per-dispatch owned header filesystem primitive, run:
+
+```sh
+python3 -m unittest scripts.validation_ownership.tests.test_header_effects -v
+```
+
+Start with the included `build/one.headers.d` absent and the real five native
+recipe dispatches. The two regular data writers in this fixture deliberately
+isolate filesystem authority; they are not ARM/sed or full-message acceptance.
+Require actual directory creation, mode0600 scan temporary visibility to the
+second writer, mode0640 filtered temporary, exact first-temporary removal and
+atomic transfer of the second temporary. Inspect the real before/after
+identities: inode, mode, bytes, size, mtime and single link must survive
+transfer. Record the actual native target and ordinals1 through5, and require
+only the final dependency file in generated output.
+
+Repeat with a renamed nested output and an existing immutable parent witness.
+Remove each required step, alter directory/source/destination operands, add an
+extra removal operand or leave a partial pipeline: required execution must
+fail, not return a synthetic success. Ordinary nonremake recipe observation
+is a separate positive: it observes five commands with no rebuilding bit,
+issues no effect and publishes nothing. Do not incorrectly require that
+observation-only mode execute or reject these recipes.
+
+Try equal/copied/mutated commands, copied issued records, repeated invocation
+and foreign-session reuse. Corrupt actual native request operands, owner,
+source identity/content hash, scalar/container types or fields. Omit/change
+actual confirmations and created-parent identities. Every changed authority
+must reject. A tracked final file or either temporary must stay byte- and
+metadata-unchanged; existing parent directories remain after generated cleanup.
+Keep native children, pending effects, public ownership and fixture cleanup
+complete on failures as well as success.
+
+The parsed graph must assign the new runtime exact ownership and the new test
+module to the existing native owner, with complete trusted runtime staging.
+Removing the test's exact declaration must recover semantic-admission refusal;
+a neighboring unregistered module must still reject. Discovery must collect
+each native case only in its existing process suite without `TestCase` aliases.
+No budget, CI job/command count, case ID, source-phase permission or allocation17
+changes. Actual ARM/sed and complete per-pass source authority remain separate
+required integration criteria, not inferred from this component's success.
+
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while
 native per-file raw metadata remains `$(FLAGS)`. Do not eagerly copy the

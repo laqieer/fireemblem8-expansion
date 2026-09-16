@@ -137,8 +137,12 @@ ending at an unmapped page does not require reading the next page. Strict
 UTF-8 and the 4,096-byte pathname bound still apply. Ptrace errors identify
 their request rather than collapsing distinct failures into bare `EIO`.
 
-Candidate `symlink`/`symlinkat` and the entire `rename`/`renameat`/`renameat2`
-family reject before execution. A symlink target is relative to its containing
+Candidate `symlink`/`symlinkat` and ungranted `rename`/`renameat`/`renameat2`
+calls reject before execution. The graph's identity-issued private regular
+installation is the sole candidate rename exception; its parent pins,
+single-link source, absent same-parent destination and sole-actor checks
+are described in [ownership validation](validation-ownership.md).
+A symlink target is relative to its containing
 directory, not the creating process's cwd; a moved cwd/dirfd ancestor also
 changes kernel `..` resolution without changing the recorded path. Neither
 alias is needed by the supported consumers. Denying them keeps candidate
@@ -150,6 +154,19 @@ the guest root, before `..` and with each syscall's final-component follow
 semantics. Absolute links never resolve against the supervisor's host root.
 Open, cwd and directory-FD records retain that authorized destination, so a
 runtime alias cannot disguise an undeclared `/repo` access as a library read.
+
+The header pipeline's public directory, retirement and ownership-transfer
+operations are different: the supervisor executes these pending typed effects
+while candidate processes are parked. They confer no candidate syscall
+permission. The actual native remake job/ordinal, target-derived operands,
+identity-issued command and currently owned temporary must agree. Closed
+tagged confirmations carry actual created-directory identities and regular
+file before/after versions, which the host rechecks before publishing effects
+or advancing the five-step pipeline. Partial pipelines reject; cleanup removes
+only their owned files/directories and preserves existing parents and inputs.
+`test_header_effects` belongs to the existing process-suite owner, not ordinary
+graph discovery. Its data-writer primitive fixture does not close the separate
+real ARM/filter integration or original source-read-phase authority.
 
 Output directories must remain removable by the original runner. Pathname
 `chmod`/`fchmodat` may retain owner read/write/search permissions, but may not

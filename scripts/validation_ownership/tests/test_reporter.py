@@ -123,6 +123,7 @@ class AssetOwnershipTests(unittest.TestCase):
                 "test_metadata_transport", "test_content_publication",
                 "test_private_install",
                 "test_text_producer",
+                "test_header_effects",
             )
         }
         self.assertTrue(native.isdisjoint(collected))

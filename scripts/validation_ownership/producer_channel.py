@@ -39,6 +39,12 @@ def validate_publication_identity(value, mode, size):
 
 
 def validate_publication_confirmation(value, *, count_limit, file_limit):
+    if isinstance(value, dict) and value.get("kind") == "filesystem":
+        if __package__:
+            from .header_effects import validate_confirmation
+        else:
+            from header_effects import validate_confirmation
+        return validate_confirmation(value, count_limit=count_limit, file_limit=file_limit)
     if (
         not isinstance(value, dict) or set(value) != {"slot", "owner", "policy", "outputs"}
         or type(value["slot"]) is not int or value["slot"] < 0

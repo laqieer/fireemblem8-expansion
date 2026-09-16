@@ -35,6 +35,7 @@ from .budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget, tex
 from .lifecycle import cleanup_scope, finish_cleanup
 from . import metadata_transport
 from . import private_install as install_protocol
+from . import header_effects
 from .producer_channel import (
     ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
     publication_identity, validate_publication_confirmation,
@@ -136,6 +137,41 @@ class _ContextCommand:
     tree: Path
     epoch: int
     binding: bytes
+
+
+@dataclass(frozen=True)
+class _FilesystemCommand(Command):
+    effect: header_effects.Effect | None = None
+
+
+@dataclass(eq=False)
+class _HeaderPipeline:
+    scope: str
+    target: str
+    owner: str
+    stage: int
+    versions: dict[str, tuple]
+
+
+@dataclass(frozen=True, eq=False)
+class _HeaderStep:
+    command: weakref.ReferenceType
+    binding: bytes
+    pipeline: _HeaderPipeline
+    step: int
+    snapshot: object
+    tree: Path
+    epoch: int
+
+
+@dataclass
+class _PendingHeaderEffect:
+    command: str
+    record: dict
+    step: _HeaderStep
+    effect: header_effects.Effect
+    directories: tuple[str, ...]
+    previous: tuple | None
 
 
 @dataclass(frozen=True)
@@ -720,6 +756,9 @@ class ProbeSession:
         self._command_dispatches = []
         self._native_context_commands = {}
         self._issued_context_commands = weakref.WeakSet()
+        self._header_pipelines = {}
+        self._header_commands = {}
+        self._issued_header_steps = weakref.WeakSet()
         self._namespace_images = {}
         self._namespace_frames = []
         self._namespace_pending = {}
@@ -1180,6 +1219,9 @@ class ProbeSession:
             self._command_dispatches.clear()
             self._native_context_commands.clear()
             self._issued_context_commands.clear()
+            self._header_pipelines.clear()
+            self._header_commands.clear()
+            self._issued_header_steps.clear()
             self.runtime_inputs = ()
             self.runtime_dispatch = ()
             self.runtime_root = None
@@ -2094,6 +2136,172 @@ class ProbeSession:
         self._issued_context_commands.add(record)
         return command
 
+    def _published_record(self, path):
+        if path not in self.published_sources or path not in self.published_versions:
+            raise MakeProbeError("header temporary has no issued publication")
+        item = self.published_sources[path]
+        owner, _, identity = self.published_versions[path]
+        self._verify_effective_output(item, {"identity": identity})
+        return (path, owner, item.mode, len(item.data), hashlib.sha256(item.data).hexdigest(), identity)
+
+    def _header_command_binding(self, command, step, target):
+        effect = command.effect if isinstance(command, _FilesystemCommand) else None
+        return encoded((
+            self._install_command_binding(command).decode("ascii"), step, target,
+            None if command.native_tool is None else command.native_tool.digest,
+            None if command.runtime_tool is None else command.runtime_tool.digest,
+            None if effect is None else (effect.operation, effect.path, effect.source, effect.expected, effect.owner),
+        ))
+
+    @terminal_failure
+    def _header_step_command(self, command, step):
+        if not isinstance(command, Command) or type(step) is not int or step not in range(1, 6):
+            raise MakeProbeError("header pipeline requires a typed command and exact step")
+        context = self._require_live_dispatch()
+        if context.job[0] != "recipe" or context.job[2] != step or not context.rebuilding:
+            raise MakeProbeError("header step lacks its actual ordered remake job")
+        target = header_effects.header_target(context.job[1])
+        key = context.scope, target
+        pipeline = self._header_pipelines.get(key)
+        if step == 1 and (pipeline is None or pipeline.stage == 5):
+            owner = hashlib.sha256(encoded(("header-dependency-v1", target))).hexdigest()
+            pipeline = _HeaderPipeline(context.scope, target, owner, 0, {})
+            self._header_pipelines[key] = pipeline
+        if pipeline is None or pipeline.stage != step - 1:
+            raise MakeProbeError("header pipeline step is missing, repeated or out of order")
+        if step in {1, 4, 5}:
+            path = str(PurePosixPath(target).parent) if step == 1 else target + ".tmp" if step == 4 else target
+            source = target + ".tmp2" if step == 5 else None
+            expected_argv = {
+                1: ("mkdir", "-p", path),
+                4: ("rm", "-f", path),
+                5: ("mv", "-f", source, path),
+            }[step]
+            if command != Command(expected_argv):
+                raise MakeProbeError("header filesystem command differs from its exact target operands")
+            expected = None if step == 1 else self._published_record(path if step == 4 else source)
+            if expected is not None and pipeline.versions.get(expected[0]) != expected:
+                raise MakeProbeError("header effect refers to a foreign or stale pipeline temporary")
+            effect = header_effects.Effect(
+                {1: "directory", 4: "retire", 5: "transfer"}[step], path, source, expected, pipeline.owner,
+            )
+            header_effects.validate_effect(effect, target)
+            self._output_paths((target, target + ".tmp", target + ".tmp2"))
+            command = _FilesystemCommand(command.argv, effect=effect)
+        elif step in {2, 3}:
+            output = target + (".tmp" if step == 2 else ".tmp2")
+            if command.outputs != (output,):
+                raise MakeProbeError("header step output differs from its actual target")
+            if step == 3:
+                source = target + ".tmp"
+                if pipeline.versions.get(source) != self._published_record(source) or source not in command.sources:
+                    raise MakeProbeError("header filter does not consume its exact issued scan")
+        else:
+            raise MakeProbeError("unknown header pipeline step")
+        binding = self._header_command_binding(command, step, target)
+        self.budget.charge("cache", len(binding))
+        identity = id(command)
+        def expired(reference):
+            record = self._header_commands.get(identity)
+            if type(record) is _HeaderStep and record.command is reference:
+                del self._header_commands[identity]
+        record = _HeaderStep(
+            weakref.ref(command, expired), binding, pipeline, step,
+            self.snapshot, self.tree, self._namespace_epoch,
+        )
+        self._header_commands[identity] = record
+        self._issued_header_steps.add(record)
+        return command
+
+    def _require_header_step(self, command, context):
+        record = self._header_commands.get(id(command))
+        if record is None:
+            if isinstance(command, _FilesystemCommand):
+                raise MakeProbeError("filesystem command has no issued header authority")
+            return None
+        if (
+            type(record) is not _HeaderStep or record not in self._issued_header_steps
+            or record.command() is not command or record.snapshot is not self.snapshot
+            or record.tree != self.tree or record.epoch != self._namespace_epoch
+            or (record.pipeline.scope, record.pipeline.target) != (context.scope, context.job[1])
+            or self._header_pipelines.get((context.scope, context.job[1])) is not record.pipeline
+            or record.step != context.job[2] or record.pipeline.stage != record.step - 1
+            or self._header_command_binding(command, record.step, record.pipeline.target) != record.binding
+        ):
+            raise MakeProbeError("header step authority is stale, forged or belongs to another job")
+        return record
+
+    def _finish_header_step(self, record, paths=()):
+        if record is None:
+            return
+        if record not in self._issued_header_steps or record.pipeline.stage != record.step - 1:
+            raise MakeProbeError("header completion is repeated or out of order")
+        for path in paths:
+            record.pipeline.versions[path] = self._published_record(path)
+        record.pipeline.stage = record.step
+
+    def _confirm_header_effect(self, pending, outcome, generated_paths, generated_directories):
+        effect = pending.effect
+        if (
+            outcome.get("kind") != "filesystem" or outcome["owner"] != effect.owner
+            or outcome["operation"] != effect.operation or outcome["path"] != effect.path
+            or outcome["source"] != effect.source
+            or tuple(item[0] for item in outcome["directories"]) != pending.directories
+        ):
+            raise MakeProbeError("filesystem confirmation differs from its issued header request")
+        for row in outcome["directories"]:
+            descriptor = self._namespace_directory(row[0])
+            try:
+                if tuple(row[1:]) != install_protocol.directory_identity(os.fstat(descriptor)):
+                    raise MakeProbeError("created header directory identity differs from its receipt")
+                self._namespace_mutation("created-directory", row[0], tuple(row[1:]))
+            finally:
+                os.close(descriptor)
+            generated_directories.add(row[0])
+        if effect.operation != "directory":
+            source = effect.path if effect.operation == "retire" else effect.source
+            if source not in self.published_sources or source not in self.published_versions:
+                raise MakeProbeError("header effect lost its issued input version")
+            old = self.published_sources[source]
+            owner, _, identity = self.published_versions[source]
+            stored = (source, owner, old.mode, len(old.data), hashlib.sha256(old.data).hexdigest(), identity)
+            before = header_effects.validate_record(outcome["before"])
+            if before != effect.expected or stored != before:
+                raise MakeProbeError("header effect confirmation has a foreign or stale source")
+            try:
+                (self.tree / source).lstat()
+            except FileNotFoundError:
+                pass
+            else:
+                raise MakeProbeError("header effect did not remove its original source entry")
+            self._namespace_mutation("removed", source, identity)
+            del self.published_sources[source]
+            del self.published_versions[source]
+            self._namespace_publications.pop(source, None)
+            generated_paths.discard(source)
+            if effect.operation == "transfer":
+                after = header_effects.validate_record(outcome["after"])
+                value = GeneratedFile(effect.path, old.data, old.mode)
+                self._verify_effective_output(value, {"identity": after[5]})
+                self.publication_serial += 1
+                version = effect.owner, self.publication_serial, after[5]
+                self.published_sources[effect.path] = value
+                self.published_versions[effect.path] = version
+                self._namespace_publications[effect.path] = value, version
+                generated_paths.add(effect.path)
+                self._namespace_mutation(
+                    "created" if pending.previous is None else "replaced", effect.path, after[5],
+                )
+        self._finish_header_step(pending.step)
+        semantic = dict(pending.record)
+        semantic["filesystem"] = {
+            "operation": effect.operation, "path": effect.path, "source": effect.source,
+            "before": None if outcome["before"] is None else list(outcome["before"][:5]),
+            "after": None if outcome["after"] is None else list(outcome["after"][:5]),
+            "directories": list(pending.directories),
+        }
+        return semantic
+
     def _metadata_matches(self, records):
         if not records:
             return True
@@ -2745,6 +2953,7 @@ class ProbeSession:
         root = self.base / root_name
         control = self.base / f"control-{self.serial + 1}"
         receipts = {}
+        header_steps = {}
         receipt_directories = {}
         command_results = {}
         generated_paths = self.generated_paths
@@ -2797,9 +3006,21 @@ class ProbeSession:
                 )
             except (ChannelError, UnicodeError) as error:
                 raise MakeProbeError(f"invalid publication confirmation: {error}") from error
-            _, record, produced, producer, policy, previous = receipts[confirmed]
+            pending = receipts[confirmed]
+            if isinstance(pending, _PendingHeaderEffect):
+                if confirmation["slot"] != confirmed:
+                    raise MakeProbeError("header effect confirmation has the wrong slot")
+                semantic = self._confirm_header_effect(
+                    pending, confirmation, generated_paths, generated_directories,
+                )
+                command_results.setdefault(hashlib.sha256(encoded(semantic)).hexdigest(), semantic)
+                confirmed += 1
+                last_confirmation = confirmation
+                return
+            _, record, produced, producer, policy, previous = pending
             if (
-                confirmation["slot"] != confirmed or confirmation["owner"] != producer
+                "kind" in confirmation
+                or confirmation["slot"] != confirmed or confirmation["owner"] != producer
                 or confirmation["policy"] != policy
                 or [item["path"] for item in confirmation["outputs"]]
                 != [item.path for item in produced.generated]
@@ -2836,6 +3057,7 @@ class ProbeSession:
                 self.published_versions[item.path] = version
                 self._namespace_publications[item.path] = value, version
                 effective.append((item.path, f"{stat.S_IFREG | mode:06o}", outcome["sha256"]))
+            self._finish_header_step(header_steps.get(confirmed), (item.path for item in produced.generated))
             semantic_record = dict(record)
             if effective:
                 semantic_record["generated_outputs"] = effective
@@ -2860,6 +3082,47 @@ class ProbeSession:
                 if not isinstance(registration, Command):
                     raise MakeProbeError("producer registration requires a typed Command")
                 Command.__post_init__(registration)
+                header_step = self._require_header_step(registration, dispatch_context)
+                if header_step is not None:
+                    header_steps[sequence - 1] = header_step
+                if isinstance(registration, _FilesystemCommand):
+                    effect = registration.effect
+                    directory_names = ()
+                    old = None
+                    if effect.operation == "directory":
+                        candidates = [
+                            parent.as_posix() for parent in reversed(PurePosixPath(effect.path).parents)
+                            if parent.as_posix() != "."
+                        ] + [effect.path]
+                        directory_names = tuple(name for name in candidates if not (self.tree / name).exists())
+                        generated_directories.update(directory_names)
+                    elif effect.operation == "transfer":
+                        if effect.path in self.published_sources:
+                            old = self._published_record(effect.path)
+                            if old[1] != effect.owner:
+                                raise MakeProbeError("header transfer would replace a foreign pipeline output")
+                        elif (self.tree / effect.path).exists() or (self.tree / effect.path).is_symlink():
+                            raise MakeProbeError("header transfer would replace an unowned source")
+                        generated_paths.add(effect.path)
+                    record = {
+                        "command": {
+                            "argv": list(registration.argv), "environment": dict(dispatch_context.environment),
+                            "header_target": header_step.pipeline.target, "header_step": header_step.step,
+                        },
+                    }
+                    key = f"{sequence - 1:016x}"
+                    self.budget.charge("mapping", len(command.encode("utf-8")) + len(encoded(record)))
+                    (mapping_path / (key + ".cmd")).write_bytes(command.encode("utf-8"))
+                    (mapping_path / (key + ".out")).write_bytes(b"")
+                    receipts[sequence - 1] = _PendingHeaderEffect(
+                        command, record, header_step, effect, directory_names, old,
+                    )
+                    receipt_directories[sequence - 1] = ()
+                    return {
+                        "kind": "effect-request", "slot": sequence - 1, "owner": effect.owner,
+                        "operation": effect.operation, "path": effect.path, "source": effect.source,
+                        "expected": effect.expected,
+                    }
                 outputs = self._output_paths(registration.outputs)
                 previous = {}
                 new_directories = set()
@@ -3015,7 +3278,11 @@ class ProbeSession:
                 if len(data) < 20:
                     raise MakeProbeError("truncated live producer completion")
                 slot = int.from_bytes(data[:4], "little", signed=True)
-                if slot not in receipts or slot in seen or _event_command(event) != receipts[slot][0]:
+                receipt_command = (
+                    receipts[slot].command if slot in receipts and isinstance(receipts[slot], _PendingHeaderEffect)
+                    else receipts[slot][0] if slot in receipts else None
+                )
+                if slot not in receipts or slot in seen or _event_command(event) != receipt_command:
                     raise MakeProbeError("unknown or repeated live producer completion")
                 seen.add(slot)
                 events.append(event)
@@ -3023,6 +3290,8 @@ class ProbeSession:
                 raise MakeProbeError("trusted interceptor frame differs from its native write")
             if seen != set(receipts) or confirmed != len(receipts):
                 raise MakeProbeError("incomplete live producer transcript")
+            if any(step.pipeline.stage != 5 for step in header_steps.values()):
+                raise MakeProbeError("incomplete native header pipeline")
             if completed.returncode:
                 raise MakeProbeError(f"GNU Make failed after live producers: {completed.returncode}; {completed.stderr!r}")
             file_open_attempts = []

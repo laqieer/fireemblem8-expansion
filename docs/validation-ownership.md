@@ -134,11 +134,31 @@ it after GNU has linked the job; it is not reconstructed from argv, directory
 spelling or a source line number. The host associates records by exact
 dispatch sequence rather than the order of metadata strings.
 
-This is still **not** complete live-message graph support. The five real
-per-dispatch header-remake steps and authenticated original-read-phase source
-census remain required integration work. No public header write, public
-move/removal, namespace-image authority or general shell/rename permission is
-provided by the text adapter.
+Header filesystem effects now use separate pending typed requests, not
+successful `ProcessOutput` stand-ins. An identity-issued pipeline binds one
+canonical `build/...headers.d` family to the actual native remake target and
+ordinals: directory creation, scan publication, filter publication, temporary
+retirement and final temporary transfer. Exact mkdir/rm/mv operands, command
+identity, scope, active view, lifetime and issued intermediate versions must
+agree. Ordinary nonremake recipe observation remains observation-only and does
+not issue these effects.
+
+The parked supervisor performs real no-follow parent creation, exact owned
+single-link regular-file retirement and same-parent atomic transfer. A transfer
+preserves the actual source inode, bytes, mode and mtime; only its ctime may
+change. Existing immutable/foreign destinations, stale versions, missing
+steps, copied commands and malformed/replayed packets reject. The tagged
+`header_effects.py` confirmation reports actual directories and before/after
+file identities. The host independently checks those outcomes before updating
+publication ownership, the namespace mutation journal and cleanup state.
+No successful effect is inferred merely from an empty stdout slot.
+
+This is still **not** complete live-message graph support. The genuine ARM
+scan/sed command adapters and authenticated original-read-phase source census
+remain required integration work. The focused filesystem fixture's two regular
+data writers prove intermediate visibility, not ARM or filter semantics. No
+tracked header write, namespace-image authority or general shell/rename
+permission is supplied by this component.
 Registry declaration execution now has an explicit shared-session entry:
 `graph_registry.observe_declarations(loader, session)`. The selected loader
 must be the active public view and own the same budget. It invokes the real

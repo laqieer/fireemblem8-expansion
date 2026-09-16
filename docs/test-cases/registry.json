@@ -3182,6 +3182,10 @@
           "evidence": "scripts/validation_ownership/tests/test_text_producer.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_header_effects -v",
+          "evidence": "scripts/validation_ownership/tests/test_header_effects.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_computed_graph_positions_close_real_selected_domains scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_computed_include_and_unresolved_name_contracts_are_native scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_opaque_computed_selector_requires_its_declared_native_fallback scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_computed_include_proofs_have_independent_restoration_controls scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_computed_references_keep_unknown_and_metadata_boundaries scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_original_computed_reference_context_and_deadline_bounds_are_unchanged scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_computed_conditional_names_cannot_be_symbolic_recipe_inputs scripts.validation_ownership.tests.test_make_probe.AuthoritativeMakeProbeTests.test_computed_selector_values_include_actual_target_local_context -v",
           "evidence": "scripts/validation_ownership/tests/test_make_probe.py"
         },

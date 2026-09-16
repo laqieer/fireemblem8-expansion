@@ -29,6 +29,7 @@ if __package__:
     from .lifecycle import finish_cleanup
     from .metadata_transport import encode_metadata_transport
     from . import private_install as install_protocol
+    from . import header_effects
     from .producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
@@ -38,6 +39,7 @@ else:
     from lifecycle import finish_cleanup
     from metadata_transport import encode_metadata_transport
     import private_install as install_protocol
+    import header_effects
     from producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
@@ -824,6 +826,157 @@ class Policy:
             if publication_identity(os.fstat(source.fileno())) != publication_identity(status):
                 raise Violation("generated mapping changed during publication")
         return effective
+
+    def _effect_parent(self, path, *, create=False):
+        view = next(item["source"] for item in self.config["mounts"] if item["target"] == "/repo")
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME
+        descriptor = os.open(view, flags)
+        created, parts = [], []
+        try:
+            for part in path.split("/") if path else ():
+                if time.monotonic() >= self.config["deadline"]:
+                    raise Violation("aggregate deadline exhausted during header directory creation")
+                parts.append(part)
+                try:
+                    following = os.open(part, flags, dir_fd=descriptor)
+                except FileNotFoundError:
+                    if not create:
+                        raise Violation("header effect parent is absent")
+                    self.reserve_creation()
+                    os.mkdir(part, 0o755, dir_fd=descriptor)
+                    following = os.open(part, flags, dir_fd=descriptor)
+                    if self.config["sudo_drop"]:
+                        os.fchown(following, self.config["runner_uid"], self.config["runner_gid"])
+                    info = os.fstat(following)
+                    created.append(["/".join(parts), info.st_dev, info.st_ino, info.st_mode])
+                os.close(descriptor)
+                descriptor = following
+            return descriptor, created
+        except BaseException:
+            os.close(descriptor)
+            raise
+
+    def _effect_source(self, expected, parent):
+        expected = header_effects.validate_record(expected)
+        path, owner, mode, size, digest, identity = expected
+        if size > self.config["file_limit"] or self.published.get(path) != (bytes.fromhex(owner), identity):
+            raise Violation("header effect source is foreign or stale")
+        descriptor = os.open(
+            posixpath.basename(path),
+            os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOATIME | os.O_CLOEXEC,
+            dir_fd=parent,
+        )
+        try:
+            if publication_identity(os.fstat(descriptor)) != identity:
+                raise Violation("header effect source identity changed")
+            self.charge_metadata(size)
+            actual = hashlib.sha256()
+            remaining = size
+            while remaining:
+                if time.monotonic() >= self.config["deadline"]:
+                    raise Violation("aggregate deadline exhausted during header source verification")
+                data = os.read(descriptor, min(remaining, SYSCALL_MEMORY_LIMIT))
+                if not data:
+                    raise Violation("header effect source was truncated")
+                actual.update(data)
+                remaining -= len(data)
+            if os.read(descriptor, 1) or actual.hexdigest() != digest:
+                raise Violation("header effect source contents changed")
+            if publication_identity(os.fstat(descriptor)) != identity:
+                raise Violation("header effect source changed during verification")
+            return descriptor, expected
+        except BaseException:
+            os.close(descriptor)
+            raise
+
+    def apply_header_effect(self, request, state, slot):
+        if (
+            state.native_job_context is None or state.native_job_context["kind"] != "recipe"
+            or state.native_dispatch_context is None
+            or not state.native_dispatch_context["rebuilding_makefiles"]
+        ):
+            raise Violation("header effect lacks its actual remake job")
+        target = state.native_job_context["target"]
+        effect = header_effects.Effect(
+            request["operation"], request["path"], request["source"],
+            request["expected"], request["owner"],
+        )
+        try:
+            header_effects.validate_effect(effect, target)
+        except (ChannelError, ValueError) as error:
+            raise Violation(str(error)) from error
+        required_line = {"directory": 1, "retire": 4, "transfer": 5}[effect.operation]
+        if state.native_job_context["command_line"] != required_line:
+            raise Violation("header effect has the wrong actual recipe ordinal")
+        self.publication_name(target)
+        result = {
+            "kind": "filesystem", "slot": slot, "owner": effect.owner,
+            "operation": effect.operation, "path": effect.path, "source": effect.source,
+            "before": None, "after": None, "directories": [],
+        }
+        if effect.operation == "directory":
+            directory, created = self._effect_parent(effect.path, create=True)
+            os.close(directory)
+            result["directories"] = created
+        else:
+            source = effect.path if effect.operation == "retire" else effect.source
+            self.publication_name(source)
+            directory, _ = self._effect_parent(posixpath.dirname(source))
+            pinned = -1
+            try:
+                pinned, before = self._effect_source(effect.expected, directory)
+                if publication_identity(os.stat(
+                    posixpath.basename(source), dir_fd=directory, follow_symlinks=False,
+                )) != before[5]:
+                    raise Violation("header effect source name changed")
+                result["before"] = list(before)
+                if effect.operation == "retire":
+                    os.unlink(posixpath.basename(source), dir_fd=directory)
+                    retired = publication_identity(os.fstat(pinned))
+                    if retired[:5] != before[5][:5] or retired[6] != 0:
+                        raise Violation("header retirement did not unlink its actual source object")
+                    del self.published[source]
+                else:
+                    try:
+                        previous = os.stat(
+                            posixpath.basename(effect.path), dir_fd=directory, follow_symlinks=False,
+                        )
+                    except FileNotFoundError:
+                        previous = None
+                    if previous is not None and (
+                        not stat.S_ISREG(previous.st_mode)
+                        or self.published.get(effect.path) != (bytes.fromhex(effect.owner), publication_identity(previous))
+                    ):
+                        raise Violation("header transfer would replace a foreign or changed output")
+                    os.rename(
+                        posixpath.basename(source), posixpath.basename(effect.path),
+                        src_dir_fd=directory, dst_dir_fd=directory,
+                    )
+                    info = os.stat(posixpath.basename(effect.path), dir_fd=directory, follow_symlinks=False)
+                    identity = publication_identity(info)
+                    if identity != publication_identity(os.fstat(pinned)) or identity[:5] != before[5][:5] or identity[6] != before[5][6]:
+                        raise Violation("header transfer did not preserve the actual source object")
+                    del self.published[source]
+                    self.published[effect.path] = (bytes.fromhex(effect.owner), identity)
+                    result["after"] = [effect.path, effect.owner, *before[2:5], list(identity)]
+                try:
+                    os.stat(posixpath.basename(source), dir_fd=directory, follow_symlinks=False)
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise Violation("header filesystem effect retained its original source entry")
+            finally:
+                if pinned >= 0:
+                    os.close(pinned)
+                os.close(directory)
+        try:
+            header_effects.validate_confirmation(
+                result, count_limit=self.config["creation_limit"], file_limit=self.config["file_limit"],
+            )
+        except (ChannelError, ValueError) as error:
+            raise Violation(str(error)) from error
+        self.charge_metadata(len(encoded(result)))
+        return result
 
     def counters(self):
         return {
@@ -2495,6 +2648,22 @@ def supervise(config, drop_privileges):
             watch=[record.pidfd for record in processes.values()] + list(newborn_stops.values()),
         )
         reply = parse_json(raw, "producer reply")
+        effect_request = None
+        if isinstance(reply, dict) and reply.get("kind") == "effect-request":
+            if (
+                set(reply) != {"kind", "scope", "sequence", "slot", "owner", "operation", "path", "source", "expected", "limits"}
+                or reply["scope"] != config["producer_scope"]
+                or type(reply["sequence"]) is not int or reply["sequence"] != sequence
+                or type(reply["slot"]) is not int or reply["slot"] != sequence - 1
+                or not isinstance(reply["owner"], str) or not re.fullmatch("[0-9a-f]{64}", reply["owner"])
+            ):
+                raise Violation("malformed or foreign header effect request")
+            effect_request = reply
+            reply = {
+                "kind": "result", "scope": reply["scope"], "sequence": sequence, "slot": sequence - 1,
+                "owner": reply["owner"], "outputs": [], "stdout_sha256": hashlib.sha256(b"").hexdigest(),
+                "limits": reply["limits"], "publication_policy": "replace",
+            }
         required = {
             "kind", "scope", "sequence", "slot", "owner", "outputs", "stdout_sha256", "limits",
             "publication_policy",
@@ -2543,14 +2712,23 @@ def supervise(config, drop_privileges):
             policy.adopt_published(records)
         channel.require_live([record.pidfd for record in processes.values()] + list(newborn_stops.values()))
         channel.ensure_idle()
-        effective = policy.publish(
-            sequence - 1, owner=reply["owner"], outputs=reply["outputs"],
-            policy=reply["publication_policy"],
-        )
-        policy.publication_confirmation = {
-            "slot": sequence - 1, "owner": reply["owner"],
-            "policy": reply["publication_policy"], "outputs": effective,
-        }
+        if effect_request is not None:
+            try:
+                read_slot(key + ".files", config["file_limit"])
+            except FileNotFoundError:
+                pass
+            else:
+                raise Violation("filesystem effect contains an unrelated file publication")
+            policy.publication_confirmation = policy.apply_header_effect(effect_request, state, sequence - 1)
+        else:
+            effective = policy.publish(
+                sequence - 1, owner=reply["owner"], outputs=reply["outputs"],
+                policy=reply["publication_policy"],
+            )
+            policy.publication_confirmation = {
+                "slot": sequence - 1, "owner": reply["owner"],
+                "policy": reply["publication_policy"], "outputs": effective,
+            }
         policy.producer_completed = sequence
         state.producer_slot = sequence - 1
         state.producer_ready = False

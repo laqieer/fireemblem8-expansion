@@ -81,6 +81,7 @@ TRUSTED_RUNTIME_PATHS = frozenset(
         f"{TRUSTED_PREFIX}make_probe.py",
         f"{TRUSTED_PREFIX}metadata_transport.py",
         f"{TRUSTED_PREFIX}private_install.py",
+        f"{TRUSTED_PREFIX}header_effects.py",
         *TRUSTED_SHARED_RUNTIME_PATHS,
         f"{TRUSTED_PREFIX}python_commands.py",
         f"{TRUSTED_PREFIX}reporter.py",
