@@ -5399,12 +5399,16 @@ mask the failure:
    Called bodies already had an unknown-writer boundary and are preservation
    controls, not newly claimed pre-fix admissions.
 3. Put U+00A0 between `a` and `b` in the first operand of
-   `$(filter-out ...,a b)`, assign the result to MATCH, and use the same
-   nonempty condition and MATCH-only recipe as the first case. Under
-   `LC_ALL=C`, ordinary/native MATCH must be `a b`, not empty, and native
-   HIDDEN must be file/recursive/secret. The unchanged unsupported pattern
+   `$(filter-out ...,a b)`, assign the result to VALUE, condition
+   `HIDDEN ?= secret` on nonempty VALUE, and use `all: ;` with no recipe read.
+   Ordinary GNU succeeds with an empty recipe; its status message is not
+   recipe output. Native VALUE must be `a b`, not empty, and native HIDDEN
+   must be file/recursive/secret. The unchanged unsupported pattern
    must decline, retain the HIDDEN obligation and reject the small plan.
-   Repeat through a braced pattern reference, a renamed result and U+2003.
+   Also retain the MATCH-only recipe control, a braced pattern reference, a
+   renamed result and U+2003. In the same no-recipe shape, replace U+00A0 with
+   an ASCII space: VALUE is empty, HIDDEN is undefined and the small plan
+   legitimately accepts empty defaults.
    ASCII space/tab patterns, supported non-ASCII text operands, `strip`,
    substring `findstring` and `and` must retain GNU byte and empty semantics.
    A literal or referenced U+00A0 first operand is nonempty and cannot prune

@@ -5133,22 +5133,29 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         def unicode_split_preimage(value, budget):
             return parser(" ".join(value.split()), budget)
 
-        for label, separator, name, referenced in (
-            ("nbsp", chr(0xA0), "MATCH", False),
-            ("renamed-reference", chr(0xA0), "SELECTED", True),
-            ("em-space", chr(0x2003), "MATCH", False),
+        for label, separator, name, referenced, recipe_read in (
+            ("no-recipe-primary", chr(0xA0), "VALUE", False, False),
+            ("nbsp", chr(0xA0), "MATCH", False, True),
+            ("renamed-reference", chr(0xA0), "SELECTED", True, True),
+            ("em-space", chr(0x2003), "MATCH", False, True),
         ):
             with self.subTest(label=label):
                 pattern = "a" + separator + "b"
                 prelude = "PATTERN := " + pattern + "\n" if referenced else ""
                 expression = "${filter-out ${PATTERN},a b}" if referenced else "$(filter-out " + pattern + ",a b)"
-                self.add("Makefile", (
+                source = (
                     prelude + name + " := " + expression + "\n"
                     "ifneq ($(" + name + "),)\nHIDDEN ?= secret\nendif\n"
-                    "all:\n\t@printf '%s\\n' '$(" + name + ")'\n"
-                ))
-                self.assertEqual(self.ordinary(), b"a b\n")
+                    + ("all:\n\t@printf '%s\\n' '$(" + name + ")'\n" if recipe_read else "all: ;\n")
+                )
+                self.add("Makefile", source)
+                ordinary = self.ordinary()
+                if recipe_read:
+                    self.assertEqual(ordinary, b"a b\n")
                 usage, native = self.read_closure_census(("HIDDEN", name))
+                if not recipe_read:
+                    target, = [item for item in native.semantics["files"] if item["target"] == "all"]
+                    self.assertEqual(target["recipe"].strip(graph_probe.MAKE_SPACE), "")
                 records = native.semantics["definitions"]["global"]
                 self.assertEqual(records[name], {"origin": "file", "flavor": "simple", "value": "a b"})
                 self.assertEqual(records["HIDDEN"], {"origin": "file", "flavor": "recursive", "value": "secret"})
@@ -5161,9 +5168,28 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                     removed_accounting = self.last_accounting
                 self.reject_unsealed_read_default()
                 self.last_soundness_cases.append({
-                    "case": label, "native": records, "fixed": fixed,
+                    "case": label, "source": source, "ordinary_stdout": ordinary.decode(),
+                    "native": records, "fixed": fixed,
                     "removal_defaults": [], "removal_runs_states": removed_accounting,
                 })
+        self.add("Makefile", (
+            "VALUE := $(filter-out a b,a b)\n"
+            "ifneq ($(VALUE),)\nHIDDEN ?= secret\nendif\nall: ;\n"
+        ))
+        ordinary = self.ordinary()
+        usage, native = self.read_closure_census(("HIDDEN", "VALUE"))
+        target, = [item for item in native.semantics["files"] if item["target"] == "all"]
+        self.assertEqual(target["recipe"].strip(graph_probe.MAKE_SPACE), "")
+        records = native.semantics["definitions"]["global"]
+        self.assertEqual(records["VALUE"], {"origin": "file", "flavor": "simple", "value": ""})
+        self.assertEqual(records["HIDDEN"], {"origin": "undefined", "flavor": "undefined", "value": ""})
+        self.assertEqual(usage["defaults"], set())
+        positive = self.observe()["all"]
+        self.assertEqual(positive["variable_census"]["defaults"], [])
+        self.last_soundness_cases.append({
+            "case": "no-recipe-ascii-control", "ordinary_stdout": ordinary.decode(), "native": records,
+            "plan_defaults": [], "runs_states": self.last_accounting,
+        })
 
     def test_original_c_word_boundaries_keep_exact_values_and_lazy_reads(self):
         self.original_input_witness()
