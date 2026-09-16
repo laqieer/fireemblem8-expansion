@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import shlex
 import stat
@@ -298,6 +299,37 @@ class HeaderEffectTests(unittest.TestCase):
                     with self.assertRaises(MakeProbeError):
                         session.make("all", commands=self.commands(session))
                 self.assertEqual(changed, [defect])
+            self.assert_clean(session)
+
+    def test_native_transfer_rechecks_actual_source_object_after_request_preparation(self):
+        for defect in ("mode", "contents", "replacement", "symlink", "fifo", "missing"):
+            with self.subTest(defect=defect), self.fixture.session() as session:
+                send, changed = ProducerChannel.send, []
+                def corrupt(channel, payload):
+                    value = json.loads(payload)
+                    if value.get("kind") == "effect-request" and value["operation"] == "transfer":
+                        source = session.tree / value["source"]
+                        changed.append(defect)
+                        if defect == "mode":
+                            source.chmod(0o444)
+                        elif defect == "contents":
+                            source.write_bytes(b"changed after request preparation\n")
+                        elif defect == "replacement":
+                            replacement = source.with_name("replacement")
+                            replacement.write_bytes(self.data)
+                            replacement.replace(source)
+                        else:
+                            source.unlink()
+                            if defect == "symlink":
+                                source.symlink_to("missing")
+                            elif defect == "fifo":
+                                os.mkfifo(source)
+                    return send(channel, payload)
+                with patch.object(ProducerChannel, "send", corrupt):
+                    with self.assertRaises(MakeProbeError):
+                        session.make("all", commands=self.commands(session))
+                self.assertEqual(changed, [defect])
+                self.assertFalse(session.published_sources)
             self.assert_clean(session)
 
     def test_tracked_target_and_temporary_are_never_owned_by_pipeline(self):

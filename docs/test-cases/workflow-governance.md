@@ -5592,8 +5592,12 @@ Try equal/copied/mutated commands, copied issued records, repeated invocation
 and foreign-session reuse. Corrupt actual native request operands, owner,
 source identity/content hash, scalar/container types or fields. Omit/change
 actual confirmations and created-parent identities. Every changed authority
-must reject. A tracked final file or either temporary must stay byte- and
-metadata-unchanged; existing parent directories remain after generated cleanup.
+must reject. After a transfer request is prepared, change the actual source
+mode/content, replace its inode, remove it, or substitute a symlink/FIFO.
+The native executor must recheck the real object and refuse every mutation
+without publishing the final target. A tracked final file or either temporary
+must stay byte- and metadata-unchanged; existing parent directories remain after
+generated cleanup.
 Keep native children, pending effects, public ownership and fixture cleanup
 complete on failures as well as success.
 
