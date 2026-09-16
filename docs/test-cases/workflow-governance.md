@@ -4772,6 +4772,12 @@ exports, inactive export branches and CLI/environment precedence stay valid.
 An exported body that emits a default participates in consumption even when
 its definition is retained by eval; the unexported body remains unused.
 
+The indexed export-accounting control must join the actual native dispatch
+and job-context frames by their sequence, retaining the observed recipe target
+and command ordinal in full semantic equality. Both serialized native frames
+and the complete retained semantics must spend the original observation/control
+budgets. Do not drop job data or derive the expectation from the final result.
+
 Restore each old root independently in an isolated mutation: list-derived
 primary/source recovery, first-colon neutrality, and omitted native export
 consumption must recover their corresponding false admissions with real
