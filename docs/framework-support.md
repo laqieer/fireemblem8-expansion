@@ -108,8 +108,10 @@ No custom UID, namespace, cgroup, supervisor, broker or capability platform is
 part of this contract. The retired isolation proposals are superseded, not
 claimed to have passed their tests.
 
-The modern `build` job, including master-only packaging, retains its
-90-minute ceiling. Host, extended-host and archival jobs retain 60 minutes;
+The modern `build` job, including master-only packaging, and the ownership
+worker have 90-minute CI envelopes. The ownership envelope follows its
+measured timeout and does not change probe limits or establish full-graph
+resource sizing. Host, extended-host and archival jobs retain 60 minutes;
 identity/router/classifier and summary retain 5 minutes.
 The same validation jobs run on candidates and master; only packaging/upload
 steps are master-only.
