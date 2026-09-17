@@ -2288,7 +2288,8 @@ setup-only jobs, never additional local gates. The two ownership checks remain
 part of the `ownership-tests` gate set. The dedicated worker has its own
 exact-head checkout, revision comparison, Git hydration and native/ARM setup;
 its three coupled actions run once without changing the native extended-host
-owner. The initial ownership and retained host budgets are both 60 minutes.
+owner. Ownership has a bounded 90-minute CI envelope after its measured
+60-minute timeout; the retained host budget remains 60 minutes.
 Replay full PR/master/manual and exact-fallback routes, then replace the
 ownership result with failure, cancellation, timeout, unexpected skip or
 missing evidence. Every full admission must fail, including continuity with
@@ -3741,7 +3742,8 @@ five minutes, its outputs/environment, and three setup steps; the
 mode-classifier is a separate five-minute one-step check. The comprehensive
 `build` job has exact identity/classifier edges, Ubuntu, 90 minutes, its
 allowlisted env, and steps, including master-only packaging; host,
-extended-host and legacy remain 60 minutes, while identity/router/classifier and summary remain 5;
+extended-host and legacy remain 60 minutes; ownership has a bounded 90-minute
+CI envelope, while identity/router/classifier and summary remain 5;
 self-hosted/container/service/strategy/default shell or any other execution
 field fails before dry-run.
 Patch packaging and summary remain parsed structures: successful authenticated
@@ -3979,7 +3981,8 @@ proof semantics and nonchronological history; no candidate clock is accepted.
     exact-PR-base verifier, isolated suite and public graph check must each
     have exactly one scheduled owner, `ownership-tests`, after that job's own
     exact-head checkout, revision comparison, Git hydration and native/ARM
-    dependency setup. Both host and ownership timeouts must remain 60 minutes.
+    dependency setup. Host remains 60 minutes; ownership uses its bounded
+    90-minute CI envelope. Probe and native fixture limits remain unchanged.
     Replay full PR, master push and manual routes and validated exact-head
     fallbacks; metadata-only/review-first must skip the new worker, while
     classifier/base identity failures still fail summary even if workers pass.
@@ -4076,9 +4079,15 @@ mode and symlink mutations before scanner-session entry. The representative
 document-serialization report remains semantically unchanged.
 
 The ownership workload no longer consumes the near-limit host job's serial
-budget. This is an initial nine-job, separate-60-minute routing contract, not
-proof of a completed hosted duration. A new 60-minute timeout remains a
-failure requiring measured follow-up. Moving candidate YAML does not satisfy
+budget. Its initial 60-minute envelope timed out on the unchanged test order:
+371 matching methods had completed before cancellation, with a distributed
+220-second increase over the same earlier prefix. The next incomplete case
+passed independently in 128.539 seconds. The 90-minute ownership envelope is
+bounded operational headroom, not a complete-workload sizing result or an
+increase to probe limits. Require exact parsed timeout/negative controls:
+restoring 60 for ownership or changing any other worker's budget must reject.
+The full combined workload still needs complete measurement before closure.
+Moving candidate YAML does not satisfy
 the separate independent coordinator-owned verifier capture (H1), nor relax
 any source/base/result binding, public graph or full-domain acceptance.
 

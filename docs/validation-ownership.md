@@ -22,12 +22,15 @@ full-run evidence. All nine Build jobs remain present, with the existing
 and trusted prior-run evidence require ownership success in that same exact
 run; missing, skipped, failed, cancelled or timed-out ownership rejects.
 
-The initial ownership budget is 60 minutes, separate from the unchanged
-60-minute host budget. The split addresses the measured serial host overload
-without dropping tests, moving the native probe owner or raising a timeout.
-Only complete same-revision hosted runs can establish its eventual timing;
-another timeout remains a failure. This job is ordinary CI invocation evidence,
-not the independent coordinator-owned verifier capture (H1).
+The ownership CI envelope is 90 minutes, separate from the unchanged
+60-minute host budget. Its initial 60-minute envelope was exhausted while the
+same regression sequence was still progressing; the next incomplete case
+also completed independently. The bounded increase provides shared-runner
+headroom without dropping tests, moving the native probe owner or changing
+any individual probe/fixture limit. It is not full-graph resource calibration:
+the complete combined ownership workload must still be assessed before
+completion. A timeout remains a failure. This job is ordinary CI invocation
+evidence, not the independent coordinator-owned verifier capture (H1).
 
 Graph test discovery uses unittest's package `load_tests` protocol to exclude
 the foundation, producer, dependency and metadata codec modules. They run once in
