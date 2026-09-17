@@ -228,6 +228,7 @@ class AssetOwnershipTests(unittest.TestCase):
                 "test_source_effects",
                 "test_source_journal",
                 "test_source_directories",
+                "test_phase_census",
                 "test_file_ownership",
             )
         }
