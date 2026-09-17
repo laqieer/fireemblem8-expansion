@@ -3808,6 +3808,374 @@ class ProducerTests(unittest.TestCase):
             self.assertEqual(processes + parked["processes"], foundation.Limits().processes)
             self.assertEqual(memory + parked["memory"], foundation.Limits().address_space_bytes)
 
+    def retired_job_control(self, *, order="late", defect=None, report_defect=None):
+        source = "all:\n\t@printf '%s\\n' 'header\\\n\t first '\n"
+        if defect in {"sequence-collision", "reused-pid"} or report_defect == "shared-helper-pid":
+            source += "\t@printf second\n"
+        self.fixture.add("Makefile", source)
+        proxy = self.fixture.directory / "retired-job-supervisor.py"
+        evidence = self.fixture.directory / "retired-job-evidence.json"
+        proxy.write_text(
+            f"RUNTIME={str(TRUSTED_ROOT)!r}\nOUTPUT={str(evidence)!r}\n"
+            f"ORDER={order!r}\nDEFECT={defect!r}\n" + r'''
+import ctypes,dataclasses,errno,inspect,json,os,signal,sys
+from pathlib import Path
+sys.path.insert(0,RUNTIME)
+import syscall_guard as guard,sandbox_exec
+wait=os.waitpid
+held=None
+target=None
+injected=False
+altered=False
+exited={}
+events=[]
+def emit(event,**values):
+    events.append({"event":event,**values})
+    Path(OUTPUT).write_text(json.dumps(events))
+def record(job):
+    return None if job is None else dataclasses.asdict(job)
+close=guard.Process.close
+def closed(self):
+    descriptor=self.pidfd
+    close(self)
+    if descriptor>=0:
+        released=False
+        try:
+            os.fstat(descriptor)
+        except OSError as error:
+            if error.errno!=errno.EBADF:
+                raise
+            released=True
+        emit("closed-process",sequence=self.native_dispatch_sequence,
+             pidfd=self.pidfd,original_pidfd_closed=released)
+guard.Process.close=closed
+retire=guard.Policy.retire_job
+def retiring(self,pid,state):
+    global altered
+    if state.native_dispatch_sequence is not None:
+        exited[pid]=(state,state.pidfd)
+        before=len(self.retired_jobs)
+        spent=self.observation_bytes
+        if not altered:
+            if DEFECT=="missing-helper":
+                state.namespace_pid=None
+                altered=True
+            elif DEFECT=="namespace-pid":
+                state.namespace_pid=pid+1
+                altered=True
+            elif DEFECT=="non-job-role":
+                state.role="command"
+                altered=True
+            elif DEFECT=="retire-count":
+                self.config["descendant_limit"]=len(self.retired_jobs)
+                altered=True
+            elif DEFECT=="retire-bytes":
+                self.config["observation_limit"]=self.observation_bytes
+                altered=True
+            elif DEFECT=="sequence-collision" and self.retired_jobs:
+                state.native_dispatch_sequence=next(iter(self.retired_jobs.values())).native_dispatch_sequence
+                state.native_dispatch_context["sequence"]=state.native_dispatch_sequence
+                altered=True
+        try:
+            value=retire(self,pid,state)
+            if DEFECT=="duplicate-retirement" and not altered:
+                altered=True
+                retire(self,pid,state)
+            return value
+        finally:
+            emit("retire",pid=pid,sequence=state.native_dispatch_sequence,before_count=before,
+                 after_count=len(self.retired_jobs),before_bytes=spent,after_bytes=self.observation_bytes,
+                 limit=self.config["observation_limit"],job=record(self.retired_jobs.get(pid)))
+    return retire(self,pid,state)
+guard.Policy.retire_job=retiring
+fresh=guard.Policy.require_fresh_process
+def new_process(self,pid):
+    global altered
+    if DEFECT=="reused-pid" and self.retired_jobs and not altered:
+        altered=True
+        previous=next(iter(self.retired_jobs))
+        emit("reuse-at-registration",actual_new_pid=pid,retired_pid=previous,
+             new_actor_owned=pid in self.processes or pid in self.newborn_stops)
+        return fresh(self,previous)
+    return fresh(self,pid)
+guard.Policy.require_fresh_process=new_process
+observer=guard.Policy.observer
+def trusted(self,state,registers):
+    if DEFECT=="wrong-observer" and registers.orig_rax==39 and registers.rdi==guard.VO_JOB_CONTEXT:
+        emit("reject-observer-ip")
+        return False
+    return observer(self,state,registers)
+guard.Policy.observer=trusted
+context=guard.Policy.observe_job_context
+def observed_context(self,pid,state,pointer,size):
+    global altered
+    child=int.from_bytes(guard.memory(pid,pointer,8),"little") if size==24 else -1
+    job=self.retired_jobs.get(child)
+    if child not in self.closed_processes:
+        return context(self,pid,state,pointer,size)
+    old_state,descriptor=exited[child]
+    closed=False
+    try:
+        os.fstat(descriptor)
+    except OSError as error:
+        if error.errno!=errno.EBADF:
+            raise
+        closed=True
+    emit("late-context",pid=child,active=child in self.processes,
+         process_pidfd=old_state.pidfd,original_pidfd_closed=closed,job=record(job))
+    if DEFECT=="old-closed-drop":
+        emit("restored-old-drop")
+        return
+    if DEFECT=="wrong-parent":
+        return context(self,pid+1,state,pointer,size)
+    if DEFECT=="wrong-frame-size":
+        return context(self,pid,state,pointer,size-1)
+    if DEFECT=="unknown-pid":
+        memory=guard.memory
+        def unknown(actor,address,count):
+            data=memory(actor,address,count)
+            if actor==pid and address==pointer and count==24:
+                return (999999).to_bytes(8,"little")+data[8:]
+            return data
+        guard.memory=unknown
+        try:
+            return context(self,pid,state,pointer,size)
+        finally:
+            guard.memory=memory
+    if DEFECT=="unknown-closed":
+        self.retired_jobs.pop(child)
+        return context(self,pid,state,pointer,size)
+    if DEFECT=="context-bytes":
+        self.config["observation_limit"]=self.observation_bytes+size
+        before=record(job)
+        try:
+            return context(self,pid,state,pointer,size)
+        finally:
+            emit("context-budget",before=before,after=record(self.retired_jobs.get(child)),
+                 spent=self.observation_bytes,limit=self.config["observation_limit"])
+    value=context(self,pid,state,pointer,size)
+    if DEFECT in {"repeat","changed-target","changed-ordinal"} and not altered:
+        altered=True
+        original_memory,original_string=guard.memory,guard.cstring
+        first=record(self.retired_jobs[child])
+        def changed_memory(actor,address,count):
+            data=original_memory(actor,address,count)
+            if DEFECT=="changed-ordinal" and actor==pid and address==pointer and count==24:
+                data=data[:16]+(int.from_bytes(data[16:24],"little")+1).to_bytes(8,"little")
+            return data
+        def changed_string(actor,address,*args,**kwargs):
+            text=original_string(actor,address,*args,**kwargs)
+            return text+"-different" if DEFECT=="changed-target" else text
+        guard.memory,guard.cstring=changed_memory,changed_string
+        try:
+            context(self,pid,state,pointer,size)
+        finally:
+            guard.memory,guard.cstring=original_memory,original_string
+            emit("reobserved",before=first,after=record(self.retired_jobs[child]))
+    emit("late-bound",job=record(self.retired_jobs[child]))
+    return value
+guard.Policy.observe_job_context=observed_context
+def ordered_wait(selected,options):
+    global held,target,injected
+    frame=inspect.currentframe().f_back
+    values=frame.f_locals
+    if frame.f_globals is not vars(guard) or not options&os.WNOHANG or not {"policy","processes"}<=values.keys():
+        return wait(selected,options)
+    policy,processes=values["policy"],values["processes"]
+    if held is not None:
+        child=processes.get(target)
+        ready=(target in policy.closed_processes if ORDER=="late"
+               else child is not None and child.native_job_context is not None)
+        if ready:
+            value=held
+            held=None
+            emit("release-real-stop",target=target,closed=target in policy.closed_processes)
+            return value
+    stopped,status=wait(selected,options)
+    if stopped and (os.WIFEXITED(status) or os.WIFSIGNALED(status)):
+        state=processes.get(stopped)
+        emit("real-exit",pid=stopped,sequence=None if state is None else state.native_dispatch_sequence)
+    if injected or not stopped or not os.WIFSTOPPED(status) or os.WSTOPSIG(status)!=(signal.SIGTRAP|0x80):
+        return stopped,status
+    registers=guard.Registers()
+    guard.ptrace(guard.GETREGS,stopped,0,ctypes.byref(registers))
+    info=(ctypes.c_ubyte*128)()
+    guard.ptrace(0x420E,stopped,len(info),ctypes.byref(info))
+    state=processes.get(stopped)
+    if info[0]!=1 or registers.orig_rax!=39 or state is None:
+        return stopped,status
+    selected_target=None
+    if ORDER=="late" and stopped==policy.make_pid and registers.rdi==guard.VO_JOB_CONTEXT:
+        selected_target=int.from_bytes(guard.memory(stopped,registers.rsi,8),"little")
+        actor=processes.get(selected_target) or policy.retired_jobs.get(selected_target)
+        if actor is None or actor.native_job_context is not None:
+            selected_target=None
+    elif ORDER=="early" and state.role=="helper" and registers.rdi==guard.VO_QUERY_KIND:
+        if state.native_job_context is None:
+            selected_target=stopped
+    if selected_target is not None:
+        target=selected_target
+        held=(stopped,status)
+        injected=True
+        emit("hold-real-stop",target=target,order=ORDER)
+        return 0,0
+    return stopped,status
+guard.os.waitpid=ordered_wait
+raise SystemExit(sandbox_exec.main())
+''')
+        summaries = []
+        with self.fixture.session() as session:
+            run, execute = session.budget.run, session._sandbox_run
+            def supervised(argv, **kwargs):
+                if len(argv) >= 2 and argv[-2] == str(TRUSTED_ROOT / "sandbox_exec.py"):
+                    config = json.loads(Path(argv[-1]).read_bytes())
+                    if config["mode"] == "make":
+                        argv = [*argv[:-2], str(proxy), argv[-1]]
+                return run(argv, **kwargs)
+            def capture(*args, **kwargs):
+                completed, observed = execute(*args, **kwargs)
+                selected = {key: [] for key in ("make-helper", "make-job-policy", "make-job-context", "make-dispatch")}
+                for item in observed["accessed"]:
+                    prefix, separator, payload = item.partition(":")
+                    if separator and prefix in selected:
+                        selected[prefix].append(json.loads(payload))
+                summaries.append(selected)
+                if report_defect is not None:
+                    observed = {**observed, "accessed": list(observed["accessed"])}
+                    prefix = {
+                        "missing-job": "make-job-context:", "missing-helper": "make-helper:",
+                        "missing-policy": "make-job-policy:", "duplicate-job": "make-job-context:",
+                        "duplicate-dispatch": "make-dispatch:", "wrong-pid": "make-helper:",
+                        "invalid-policy": "make-job-policy:", "shared-helper-pid": "make-helper:",
+                    }[report_defect]
+                    row = next(item for item in observed["accessed"] if item.startswith(prefix))
+                    value = json.loads(row.removeprefix(prefix))
+                    if report_defect.startswith("missing"):
+                        observed["accessed"].remove(row)
+                    elif report_defect.startswith("duplicate"):
+                        observed["accessed"].append(row)
+                    elif report_defect == "shared-helper-pid":
+                        helpers = sorted(selected["make-helper"])
+                        other = next(item for item in observed["accessed"] if item.startswith(prefix)
+                                     and json.loads(item.removeprefix(prefix))[0] == helpers[1][0])
+                        observed["accessed"].remove(other)
+                        observed["accessed"].append(prefix + json.dumps([helpers[1][0], helpers[0][1]]))
+                        observed["accessed"] = [
+                            item for item in observed["accessed"] if not item.startswith("make-job-policy:")
+                            or json.loads(item.removeprefix("make-job-policy:"))[0] != helpers[1][1]
+                        ]
+                    else:
+                        observed["accessed"].remove(row)
+                        value[1] = 999999 if report_defect == "wrong-pid" else 4
+                        observed["accessed"].append(prefix + json.dumps(value))
+                return completed, observed
+            with patch.object(session.budget, "run", supervised), patch.object(session, "_sandbox_run", capture):
+                if defect not in {None, "repeat"} or report_defect is not None:
+                    with self.assertRaises(MakeProbeError) as failure:
+                        session.make("all")
+                    outcome = str(failure.exception)
+                else:
+                    result = session.make("all")
+                    outcome = result.semantics["native_dispatches"]
+            self.assertFalse(session.budget.children)
+            self.assertFalse(session.parked_capsules)
+            self.assertFalse(session.budget.producer_waiters)
+            self.assertEqual(session.pending_commands, 0)
+        self.fixture.assert_clean(session)
+        self.assertTrue(evidence.is_file())
+        events = json.loads(evidence.read_text())
+        closed = [item for item in events if item["event"] == "closed-process"]
+        self.assertTrue(closed)
+        self.assertTrue(all(item["pidfd"] == -1 and item["original_pidfd_closed"] for item in closed))
+        return outcome, events, summaries
+
+    def test_retired_job_context_survives_actual_helper_exit(self):
+        results = []
+        for order in ("early", "late"):
+            outcome, events, summaries = self.retired_job_control(order=order)
+            record = summaries[-1]
+            helpers, policies = dict(record["make-helper"]), dict(record["make-job-policy"])
+            sequences = {item["sequence"] for item in record["make-dispatch"]}
+            self.assertEqual(set(helpers), sequences)
+            self.assertEqual(len(set(helpers.values())), len(helpers))
+            self.assertEqual(set(helpers.values()), set(policies))
+            self.assertEqual({item["sequence"] for item in record["make-job-context"]}, sequences)
+            self.assertEqual(record["make-job-context"],
+                             [{"sequence": 1, "kind": "recipe", "target": "all", "command_line": 1}])
+            results.append([(item["sequence"], item["job"], item["ignore_errors"], item["arguments"]) for item in outcome])
+            if order == "late":
+                held = next(item for item in events if item["event"] == "hold-real-stop")
+                closed = next(item for item in events if item["event"] == "late-context")
+                self.assertEqual(held["target"], helpers[1])
+                self.assertFalse(closed["active"])
+                self.assertEqual(closed["process_pidfd"], -1)
+                self.assertTrue(closed["original_pidfd_closed"])
+                self.assertEqual(closed["job"]["namespace_pid"], helpers[1])
+                self.assertEqual(closed["job"]["native_dispatch_sequence"], 1)
+                self.assertIsNone(closed["job"]["context"])
+                self.assertEqual(set(closed["job"]),
+                                 {"namespace_pid", "native_dispatch_sequence", "role", "helper_kind", "context"})
+        self.assertEqual(*results)
+
+    def test_retired_job_context_old_drop_restores_missing_job(self):
+        outcome, events, summaries = self.retired_job_control(defect="old-closed-drop")
+        self.assertEqual(outcome, "native Make job policy evidence is incomplete")
+        self.assertTrue(any(item["event"] == "restored-old-drop" for item in events))
+        record = summaries[-1]
+        self.assertTrue(record["make-helper"] and record["make-job-policy"] and record["make-dispatch"])
+        self.assertEqual(record["make-job-context"], [])
+
+    def test_retired_job_context_reobservations_preserve_identity(self):
+        _, events, _ = self.retired_job_control(defect="repeat")
+        repeated = next(item for item in events if item["event"] == "reobserved")
+        self.assertEqual(repeated["before"], repeated["after"])
+        self.assertEqual(repeated["after"]["context"], ["recipe", "all", 1])
+
+    def test_retired_job_context_rejects_authority_and_identity_changes(self):
+        for defect in (
+            "wrong-observer", "wrong-parent", "wrong-frame-size", "unknown-pid", "unknown-closed", "missing-helper",
+            "namespace-pid", "non-job-role", "duplicate-retirement",
+            "sequence-collision", "reused-pid", "changed-target", "changed-ordinal",
+        ):
+            with self.subTest(defect=defect):
+                outcome, events, _ = self.retired_job_control(defect=defect)
+                self.assertIn("confined make probe rejected:", outcome)
+                if defect == "reused-pid":
+                    reused = next(item for item in events if item["event"] == "reuse-at-registration")
+                    self.assertTrue(reused["new_actor_owned"])
+                    self.assertNotEqual(reused["actual_new_pid"], reused["retired_pid"])
+                if defect in {"changed-target", "changed-ordinal"}:
+                    repeated = next(item for item in events if item["event"] == "reobserved")
+                    self.assertEqual(repeated["before"], repeated["after"])
+
+    def test_retired_job_context_spends_existing_metadata_and_count_bounds(self):
+        for defect in ("retire-count", "retire-bytes", "context-bytes"):
+            with self.subTest(defect=defect):
+                outcome, events, _ = self.retired_job_control(defect=defect)
+                if defect == "context-bytes":
+                    captured = next(item for item in events if item["event"] == "context-budget")
+                    self.assertEqual(captured["before"], captured["after"])
+                    self.assertIsNone(captured["after"]["context"])
+                    self.assertGreater(captured["spent"], captured["limit"])
+                else:
+                    captured = next(item for item in events if item["event"] == "retire")
+                    self.assertEqual(captured["before_count"], captured["after_count"])
+                    self.assertIsNone(captured["job"])
+                    if defect == "retire-bytes":
+                        self.assertGreater(captured["after_bytes"], captured["limit"])
+                    else:
+                        self.assertIn("retired job count exceeds", outcome)
+
+    def test_retired_job_reports_require_complete_unique_native_bindings(self):
+        for defect in (
+            "missing-job", "missing-helper", "missing-policy", "duplicate-job",
+            "duplicate-dispatch", "wrong-pid", "invalid-policy", "shared-helper-pid",
+        ):
+            with self.subTest(defect=defect):
+                outcome, _, summaries = self.retired_job_control(report_defect=defect)
+                self.assertTrue(summaries[-1]["make-job-context"])
+                self.assertTrue(any(word in outcome for word in ("native", "Make job binding")))
+
     def test_generated_source_replacement_invalidates_a_reader_without_stat_calls(self):
         self.fixture.add("state/current", "original")
         self.fixture.add("writer.py", (
