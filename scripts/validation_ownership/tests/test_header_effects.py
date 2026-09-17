@@ -1,4 +1,5 @@
 import copy
+from contextlib import nullcontext
 import hashlib
 import json
 import os
@@ -59,6 +60,9 @@ class HeaderEffectTests(unittest.TestCase):
 
     def assert_clean(self, session):
         self.fixture.assert_clean(session)
+        self.assert_header_state_closed(session)
+
+    def assert_header_state_closed(self, session):
         self.assertFalse(session._header_pipelines)
         self.assertFalse(session._header_commands)
         self.assertFalse(session._issued_header_steps)
@@ -303,34 +307,117 @@ class HeaderEffectTests(unittest.TestCase):
 
     def test_native_transfer_rechecks_actual_source_object_after_request_preparation(self):
         for defect in ("mode", "contents", "replacement", "symlink", "fifo", "missing"):
-            with self.subTest(defect=defect), self.fixture.session() as session:
-                send, changed = ProducerChannel.send, []
-                def corrupt(channel, payload):
-                    value = json.loads(payload)
-                    if value.get("kind") == "effect-request" and value["operation"] == "transfer":
-                        source = session.tree / value["source"]
-                        changed.append(defect)
-                        if defect == "mode":
-                            source.chmod(0o444)
-                        elif defect == "contents":
-                            source.write_bytes(b"changed after request preparation\n")
-                        elif defect == "replacement":
-                            replacement = source.with_name("replacement")
-                            replacement.write_bytes(self.data)
-                            replacement.replace(source)
-                        else:
-                            source.unlink()
-                            if defect == "symlink":
-                                source.symlink_to("missing")
-                            elif defect == "fifo":
-                                os.mkfifo(source)
-                    return send(channel, payload)
-                with patch.object(ProducerChannel, "send", corrupt):
-                    with self.assertRaises(MakeProbeError):
-                        session.make("all", commands=self.commands(session))
-                self.assertEqual(changed, [defect])
-                self.assertFalse(session.published_sources)
-            self.assert_clean(session)
+            with self.subTest(defect=defect):
+                self.transfer_recheck_control(defect)
+
+    def transfer_recheck_control(self, defect):
+        case = type(self)()
+        case.setUp()
+        session, descriptors, witnesses = None, [], []
+        retained = defect in {"replacement", "symlink", "fifo"}
+        expected = self.assertRaisesRegex(MakeProbeError, "report tree retained") if retained else nullcontext()
+        try:
+            with expected as outer:
+                with case.fixture.session() as session:
+                    send, changed = ProducerChannel.send, []
+                    def corrupt(channel, payload):
+                        value = json.loads(payload)
+                        if value.get("kind") == "effect-request" and value["operation"] == "transfer":
+                            source = session.tree / value["source"]
+                            changed.append(defect)
+                            owned = os.open(source, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC)
+                            descriptors.append(owned)
+                            original = os.fstat(owned)
+                            if defect == "mode":
+                                source.chmod(0o444)
+                            elif defect == "contents":
+                                source.write_bytes(b"changed after request preparation\n")
+                            elif defect == "replacement":
+                                replacement = source.with_name("replacement")
+                                replacement.write_bytes(case.data)
+                                replacement.replace(source)
+                            else:
+                                source.unlink()
+                                if defect == "symlink":
+                                    source.symlink_to("missing")
+                                elif defect == "fifo":
+                                    os.mkfifo(source)
+                            foreign = None
+                            if retained:
+                                foreign = os.open(source, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC)
+                                descriptors.append(foreign)
+                            witnesses.append((source, original, owned, foreign))
+                        return send(channel, payload)
+                    with patch.object(ProducerChannel, "send", corrupt):
+                        with self.assertRaises(MakeProbeError) as inner:
+                            session.make("all", commands=case.commands(session))
+                    self.assertEqual(changed, [defect])
+                    self.assertFalse(session.published_sources)
+            source, original, owned, foreign = witnesses[0]
+            self.assertEqual(os.fstat(owned).st_nlink, 0)
+            if not retained:
+                case.assert_clean(session)
+                self.assertFalse(os.path.lexists(source))
+                return
+
+            case.fixture.assert_execution_closed(session)
+            case.assert_header_state_closed(session)
+            self.assertTrue(session.budget.failed)
+            self.assertTrue(session.budget.closed)
+            self.assertFalse(session.parked_capsules)
+            self.assertFalse(session.budget.producer_waiters)
+            self.assertIsNot(inner.exception, outer.exception)
+            owners = tuple(session._file_owners.values())
+            self.assertTrue(owners)
+            self.assertCountEqual(outer.exception.retained_file_ownership, owners)
+            self.assertTrue(all(owner.retained and not owner.closed for owner in owners))
+            for owner in owners:
+                self.assertTrue(owner.reasons)
+                self.assertGreaterEqual(owner.root_fd, 0)
+                claim, claim_path = os.fstat(owner.root_fd), owner.root.stat()
+                self.assertEqual((claim.st_dev, claim.st_ino), (claim_path.st_dev, claim_path.st_ino))
+                for parent in owner.parents.values():
+                    self.assertGreaterEqual(parent["fd"], 0)
+                    actual = os.fstat(parent["fd"])
+                    self.assertEqual((actual.st_dev, actual.st_ino), parent["identity"][:2])
+
+            def assert_foreign_preserved():
+                self.assertTrue(os.path.lexists(source))
+                actual, pinned = source.lstat(), os.fstat(foreign)
+                self.assertEqual((actual.st_dev, actual.st_ino), (pinned.st_dev, pinned.st_ino))
+                self.assertNotEqual((original.st_dev, original.st_ino), (pinned.st_dev, pinned.st_ino))
+                self.assertEqual(pinned.st_nlink, 1)
+                if defect == "replacement":
+                    self.assertTrue(stat.S_ISREG(actual.st_mode))
+                    self.assertEqual(source.read_bytes(), case.data)
+                elif defect == "symlink":
+                    self.assertTrue(stat.S_ISLNK(actual.st_mode))
+                    self.assertEqual(os.readlink(source), "missing")
+                else:
+                    self.assertTrue(stat.S_ISFIFO(actual.st_mode))
+
+            base = session.base
+            self.assertIsNotNone(base)
+            self.assertTrue(base.is_dir())
+            assert_foreign_preserved()
+            session.release_retained_file_handles()
+            self.assertEqual(session.base, base)
+            self.assertTrue(base.is_dir())
+            self.assertCountEqual(session._file_owners.values(), owners)
+            self.assertTrue(all(owner.retained and owner.closed for owner in owners))
+            for owner in owners:
+                self.assertEqual(owner.root_fd, -1)
+                self.assertTrue(all(parent["fd"] == -1 for parent in owner.parents.values()))
+                self.assertTrue(all(pin.handle.closed for pin in owner.pins))
+            assert_foreign_preserved()
+        finally:
+            try:
+                if session is not None:
+                    session.release_retained_file_handles()
+                for descriptor in descriptors:
+                    os.close(descriptor)
+            finally:
+                case.tearDown()
 
     def test_tracked_target_and_temporary_are_never_owned_by_pipeline(self):
         for suffix in ("", ".tmp", ".tmp2"):

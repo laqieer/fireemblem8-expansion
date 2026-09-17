@@ -1,6 +1,7 @@
 """Prewatched new parents; never general directory relocation or phase authority."""
 
 import json
+import os
 from dataclasses import replace
 from pathlib import Path
 import shlex
@@ -146,47 +147,111 @@ class SourceDirectoryTests(unittest.TestCase):
             self.fixture.assert_clean(session)
 
     def test_missing_child_watch_evidence_and_remapped_public_parent_reject(self):
+        self.missing_child_watch_control()
+        self.remapped_public_parent_control()
+
+    def missing_child_watch_control(self):
+        case = phases.SourcePhaseTests()
+        case.setUp()
+        session = None
         original = source_directories.PrewatchedDirectoryJournal._read_events
-        with self.case.session() as session:
-            removed = []
-            def without_move(journal):
-                rows = original(journal)
-                changed = [row for row in rows if row["mask"] == 0x800]
-                if changed:
-                    removed.extend(changed)
-                    return [row for row in rows if row["mask"] != 0x800]
-                return rows
-            with patch.object(source_directories.PrewatchedDirectoryJournal, "_read_events", without_move):
-                with self.assertRaisesRegex(MakeProbeError, "exact kernel move"):
-                    session.make(
-                        "all", commands=self.case.commands(session),
-                        observe_source_journal=True, source_journal_mode=source_directories.MODE,
-                    )
-            self.assertTrue(removed)
-        self.fixture.assert_clean(session)
-        with self.case.session() as session:
-            send, moved = ProducerChannel.send, []
-            def remap(channel, data):
-                value = json.loads(data)
-                if value.get("kind") == "directory-ready" and value["phase"] == "watch" and not moved:
-                    old = session.tree
-                    saved = old.with_name("saved-original-source")
-                    old.rename(saved)
-                    old.mkdir()
-                    moved.append((old, saved))
-                return send(channel, data)
+        try:
+            with case.session() as session:
+                removed = []
+                def without_move(journal):
+                    rows = original(journal)
+                    changed = [row for row in rows if row["mask"] == 0x800]
+                    if changed:
+                        removed.extend(changed)
+                        return [row for row in rows if row["mask"] != 0x800]
+                    return rows
+                with patch.object(source_directories.PrewatchedDirectoryJournal, "_read_events", without_move):
+                    with self.assertRaisesRegex(MakeProbeError, "exact kernel move"):
+                        session.make(
+                            "all", commands=case.commands(session),
+                            observe_source_journal=True, source_journal_mode=source_directories.MODE,
+                        )
+                self.assertTrue(removed)
+            case.fixture.assert_clean(session)
+        finally:
             try:
-                with patch.object(ProducerChannel, "send", remap), self.assertRaises(MakeProbeError):
-                    session.make(
-                        "all", commands=self.case.commands(session),
-                        observe_source_journal=True, source_journal_mode=source_directories.MODE,
-                    )
-                self.assertEqual(len(moved), 1)
+                if session is not None:
+                    session.release_retained_file_handles()
             finally:
-                for old, saved in moved:
-                    old.rmdir()
-                    saved.rename(old)
-        self.fixture.assert_clean(session)
+                case.tearDown()
+
+    def remapped_public_parent_control(self):
+        case = phases.SourcePhaseTests()
+        case.setUp()
+        session = None
+        try:
+            with self.assertRaisesRegex(MakeProbeError, "report tree retained") as outer:
+                with case.session() as session:
+                    send, moved = ProducerChannel.send, []
+                    def remap(channel, data):
+                        value = json.loads(data)
+                        if value.get("kind") == "directory-ready" and value["phase"] == "watch" and not moved:
+                            old = session.tree
+                            saved = old.with_name("saved-original-source")
+                            original = old.stat()
+                            old.rename(saved)
+                            old.mkdir()
+                            moved.append((old, saved, original, old.stat()))
+                        return send(channel, data)
+                    try:
+                        with patch.object(ProducerChannel, "send", remap), self.assertRaises(MakeProbeError) as inner:
+                            session.make(
+                                "all", commands=case.commands(session),
+                                observe_source_journal=True, source_journal_mode=source_directories.MODE,
+                            )
+                        self.assertEqual(len(moved), 1)
+                    finally:
+                        for old, saved, original, replacement in moved:
+                            old.rmdir()
+                            saved.rename(old)
+                    old, _, original, replacement = moved[0]
+                    original_identity = (original.st_dev, original.st_ino)
+                    self.assertNotEqual(original_identity, (replacement.st_dev, replacement.st_ino))
+                    self.assertEqual((old.stat().st_dev, old.stat().st_ino), original_identity)
+
+            case.fixture.assert_execution_closed(session)
+            self.assertTrue(session.budget.failed)
+            self.assertTrue(session.budget.closed)
+            self.assertFalse(session.parked_capsules)
+            self.assertFalse(session.budget.producer_waiters)
+            self.assertIsNot(inner.exception, outer.exception)
+            owners = tuple(session._file_owners.values())
+            self.assertTrue(owners)
+            self.assertCountEqual(outer.exception.retained_file_ownership, owners)
+            for owner in owners:
+                self.assertTrue(owner.retained)
+                self.assertFalse(owner.closed)
+                self.assertTrue(owner.reasons)
+                self.assertFalse(owner.pins)
+                root = os.fstat(owner.parents["."]["fd"])
+                self.assertEqual((root.st_dev, root.st_ino), original_identity)
+                claim, claim_path = os.fstat(owner.root_fd), owner.root.stat()
+                self.assertEqual((claim.st_dev, claim.st_ino), (claim_path.st_dev, claim_path.st_ino))
+
+            base = session.base
+            self.assertIsNotNone(base)
+            self.assertTrue(base.is_dir())
+            session.release_retained_file_handles()
+            self.assertEqual(session.base, base)
+            self.assertTrue(base.is_dir())
+            self.assertEqual((old.stat().st_dev, old.stat().st_ino), original_identity)
+            self.assertCountEqual(session._file_owners.values(), owners)
+            for owner in owners:
+                self.assertTrue(owner.retained)
+                self.assertTrue(owner.closed)
+                self.assertEqual(owner.root_fd, -1)
+                self.assertTrue(all(parent["fd"] == -1 for parent in owner.parents.values()))
+        finally:
+            try:
+                if session is not None:
+                    session.release_retained_file_handles()
+            finally:
+                case.tearDown()
 
     def test_profile_selection_copy_expiry_and_ungranted_directory_rename_stay_closed(self):
         for mode in (None, True, "unknown"):

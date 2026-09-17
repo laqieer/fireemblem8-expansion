@@ -82,7 +82,7 @@ class FoundationTests(unittest.TestCase):
             runtime_files=runtime_files,
         )
 
-    def assert_clean(self, session):
+    def assert_execution_closed(self, session):
         self.assertFalse(session.cache)
         self.assertFalse(session.mappings)
         self.assertFalse(session.native_tools)
@@ -95,8 +95,11 @@ class FoundationTests(unittest.TestCase):
         self.assertIsNone(session.runtime_root)
         self.assertFalse(session.budget.children)
         self.assertIsNone(session.snapshot)
-        self.assertIsNone(session.base)
         self.assertEqual(session.pending_commands, 0)
+
+    def assert_clean(self, session):
+        self.assert_execution_closed(session)
+        self.assertIsNone(session.base)
         self.assertFalse(self.scratch.exists())
 
     def capture_supervisor_report(self, session, operation):

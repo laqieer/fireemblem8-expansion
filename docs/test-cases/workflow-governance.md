@@ -5977,6 +5977,63 @@ default source permissions, native test owner and all prior automation.
 No new case ID, runtime platform, permission, workflow job, full-root
 certificate or measurement allocation is introduced.
 
+#### Native reply and retained-object fixture compatibility
+
+The [5713730754 follow-through](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5713730754)
+preserves this case's native assertions across actual-file registration.
+The four unchanged methods reproduced seven failures/two errors in 47.885s
+at `c99b2af68f83d0cfa8dfc0d8dc5bbfbc9eb94742`. The 7.961s ACK-latch and
+14.687s retention runs were read-only diagnostic experiments, not a committed
+fix or complete graph/H1 evidence. Keep their provenance distinct.
+
+Use fresh, independently owned Linux/native fixtures for each fault, with the
+existing Python, native tools and limits. Do not inject into live project
+outputs. Run these existing selectors together:
+
+```sh
+python3 -m unittest \
+  scripts.validation_ownership.tests.test_producer.ProducerTests.test_late_reply_family_rejects_partial_stale_foreign_and_unknown_messages \
+  scripts.validation_ownership.tests.test_producer.ProducerTests.test_separately_sent_final_reply_is_rejected_while_make_continues \
+  scripts.validation_ownership.tests.test_header_effects.HeaderEffectTests.test_native_transfer_rechecks_actual_source_object_after_request_preparation \
+  scripts.validation_ownership.tests.test_source_directories.SourceDirectoryTests.test_missing_child_watch_evidence_and_remapped_public_parent_reject -v
+```
+
+1. Let the real driver send the original producer result and return to its
+   receive loop. Require the actual-file descriptor exchange and its uniquely
+   bound `file-pinned` acknowledgement before the fixture waits for the native
+   Make-continuation marker. Match scope, producer/sequence, owner and the
+   original one-output path. Keep the original five/30-second bounds.
+2. Require positive `VALUE=observed`, one actual producer and settled native
+   receipts. After real continuation, send each original partial, stale,
+   foreign, unknown or duplicate late reply. Each must still reject natively.
+   Restoring the old synchronous result-send latch must recover the native
+   stall; changing an ACK association must not forge continuation credit.
+3. Preserve transfer fault order: mode, contents, replacement, symlink, FIFO,
+   missing. Every original native rejection, changed-list, publication and
+   header-registry assertion remains required. Mode/contents/missing clean
+   fully. Replacement/symlink/FIFO retain the actual foreign object with its
+   bytes or target, type, matching descriptor/path identity and `nlink=1`;
+   the old owned inode has `nlink=0`. A fresh fixture for each fault prevents
+   retained scratch from contaminating the later missing-file control.
+4. Drop the original child-watch move evidence and require its native rejection
+   plus strict cleanup. Separately remap the public root at the original watch
+   boundary, preserve the native rejection and restore the original inode in
+   the original `finally` step. The report must remain explicitly retained
+   despite that restoration; no lifetime uncertainty is reset.
+5. Keep the original inner native error distinct from the expected outer
+   retained-report error. Require zero execution resources, registered live
+   retained handles and surviving objects before release. Explicit release
+   closes handles but leaves the report and paths present and retained.
+   Only the independent fixture's later teardown removes its own arena; this
+   is not successful production cleanup. A retained-object deletion or silent
+   retention-removal mutation must fail these actual-state assertions.
+
+`assert_clean` still requires both execution closure and absent report/scratch.
+The narrower test-only execution-closed helper does not mark retained state
+clean and never releases or deletes anything. All existing case IDs, native
+owners and automation remain; production protocol, permissions, limits and
+the independent full-report control-byte boundary are unchanged.
+
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while
 native per-file raw metadata remains `$(FLAGS)`. Do not eagerly copy the

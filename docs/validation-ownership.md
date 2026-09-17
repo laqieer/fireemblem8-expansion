@@ -329,6 +329,14 @@ resources spend existing admission/byte bounds; no guest descriptor or
 filesystem permission is added. The independent open-file description does
 not delay the writer's real `CLOSE_WRITE` event.
 
+Delivering a producer `result` is not a Make-resumption signal: the native
+publisher may still need the driver to receive `file-opened` and send the
+bound `file-pinned` acknowledgement. A late-reply fixture must return to that
+real driver before waiting for native continuation. The single-output control
+binds the acknowledgement to the original result's scope, producer/sequence,
+owner and exact output path, then retains its real Make marker and late-message
+rejections; it does not forward descriptors or synthesize a marker.
+
 Cleanup requires owned native quiescence and the actual live file/parent pins.
 It atomically claims the public entry into a private report-owned slot using
 `RENAME_NOREPLACE`, checks the claimed object against the file pin, then removes
@@ -346,6 +354,12 @@ those retained objects, an outer owner may call
 `session.release_retained_file_handles()` to close the handles; this does not
 delete retained paths or reactivate automatic removal. The claim namespace is
 trusted private coordinator storage, not a new same-UID filesystem sandbox.
+If a caller catches the original native failure inside the session, outer
+context exit can still raise a distinct retained-report error. Restoring a
+pathname or its original inode does not erase already recorded lifetime
+uncertainty. Tests require execution closure separately from strict full
+cleanup, inspect retained objects first, and use independent fixture teardown
+only after explicit handle release.
 The [existing tester case](test-cases/workflow-governance.md#terminal-generated-file-cleanup-ownership)
 contains the real native preimages, race/mutation controls and explicit outer
 fixture cleanup. Injected terminal failure is not quota calibration, H1 or

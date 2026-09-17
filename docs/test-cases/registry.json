@@ -3248,6 +3248,10 @@
         {
           "command": "/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py check --repository-root .",
           "evidence": "scripts/validation_ownership/reporter.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_late_reply_family_rejects_partial_stale_foreign_and_unknown_messages scripts.validation_ownership.tests.test_producer.ProducerTests.test_separately_sent_final_reply_is_rejected_while_make_continues scripts.validation_ownership.tests.test_header_effects.HeaderEffectTests.test_native_transfer_rechecks_actual_source_object_after_request_preparation scripts.validation_ownership.tests.test_source_directories.SourceDirectoryTests.test_missing_child_watch_evidence_and_remapped_public_parent_reject -v",
+          "evidence": "scripts/validation_ownership/tests/test_producer.py"
         }
       ]
     },
