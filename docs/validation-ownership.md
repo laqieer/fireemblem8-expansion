@@ -361,6 +361,12 @@ dry-run recipe projection's environment. Deferred recipes are checked
 separately, with existing automatic-variable spellings treated as local
 context rather than global original bindings; unknown automatic values never
 seed pruning.
+Literal `filter` operands and an unchanged proven invocation value are now
+exact original facts, not unknown contexts. Their positive evidence compares
+actual native values and both first/next-line POSIX folds. An unproved pattern
+input remains unknown even when the native run happens to see it undefined;
+reassigned, emitted, computed or undefined control facts still cannot be
+refreshed from final values.
 
 Invocation-derived facts account for both complete definitions and authentic
 forced/supplied input names before they are seeded, without confusing

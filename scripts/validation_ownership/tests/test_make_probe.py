@@ -2133,6 +2133,11 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         with self.assertRaisesRegex(MakeProbeError, "unproven.*POSIX"):
             source_census(sources, source_target="all")
         source = "ifeq ($(filter %, $(MAKECMDGOALS)),all)\n.POSIX:\nendif\n" + continued
+        source += continued.replace("FIRST", "SECOND")
+        sources, native = self.mode_values(source, expected=["alpha beta", "alpha    beta"])
+        usage = source_census(sources, source_target="all")
+        self.assertEqual([usage["definitions"][name][0] for name in ("FIRST", "SECOND")], native)
+        source = "ifeq ($(filter $(UNPROVEN_PATTERN),$(MAKECMDGOALS)),)\n.POSIX:\nendif\n" + continued
         sources, native, _ = self.mode_first(source)
         self.assertEqual(native, "alpha beta")
         with self.assertRaisesRegex(MakeProbeError, "unproven.*POSIX"):
@@ -4251,11 +4256,19 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             self.assertEqual(mode.exact_reference("META_PATH"), "file/safe")
             self.assertIn("UNREAD", mode.reads)
             mode.assign("BOUND", ":=", "$(wildcard include/*.h)")
+            literal_filter = "$(filter %.c,alpha.c)"
+            self.add("Makefile", "FILTERED := " + literal_filter + "\nall: ;\n")
+            with self.session() as session:
+                observed = session.make("all", variables=("FILTERED",))
+            self.assertEqual(observed.semantics["domains"]["FILTERED"],
+                             {"origin": "file", "flavor": "simple", "value": "alpha.c"})
+            self.assertEqual(mode.exact_initializer_value(literal_filter),
+                             observed.semantics["domains"]["FILTERED"]["value"])
             for expression in (
                 "$(addprefix out/,$(BOUND))", "$(notdir $(MISSING))",
                 "$(addprefix out/,$(UNREAD))", "$(notdir $$(eval .POSIX:))",
                 "$(call .VARIABLES)", "$(notdir $(.VARIABLES:%=%))",
-                "$(filter %.c,alpha.c)", "$(subst X,alpha,X)", "$(shell echo alpha.c)",
+                "$(filter $(UNPROVEN_PATTERN),alpha.c)", "$(subst X,alpha,X)", "$(shell echo alpha.c)",
                 "$(addprefix out/,$(notdir incomplete)", "$(FILES:.c=one=two)",
             ):
                 with self.subTest(expression=expression):

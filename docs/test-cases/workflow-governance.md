@@ -6016,6 +6016,15 @@ Repeat the original control observation with an environment assignment:
 GNU still reports `MAKECMDGOALS=other` and exports `HIDDEN=secret`. Its supplied
 presence must withhold the same synthesized facts without giving environment
 variables command-line precedence over later source assignments.
+For the original control/filter guards, compare a literal `filter` result and
+a filter of the unchanged original invocation goal with real GNU observations.
+Require both continued FIRST/SECOND values, including the delayed POSIX change,
+to match the source census. Known original operands are positive evidence;
+do not keep an obsolete unsupported-`filter` assertion as the negative.
+Use a genuinely unproved original pattern for the unknown-input negative and
+retain the reassignment/eval/computed/undefine refusals, invalidated snapshots
+and all other malformed/effectful cases. Removing exact filter must break the
+positive; replacing missing proof with empty data must break the negative.
 
 Restore the original raw C-source wildcard/default/append and derived header
 constructor to the genuine text/ARM/sed component. Retain its real goal/include
