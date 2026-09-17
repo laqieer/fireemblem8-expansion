@@ -13,6 +13,7 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
+from scripts.bash_parser import normalize_bash_script_commands, tokenize_bash_command
 from scripts.validation_ownership import toolchain_runtime
 from scripts.validation_ownership.authority import ENVIRONMENT
 from scripts.validation_ownership.budget import MakeProbeError
@@ -759,6 +760,233 @@ position += len(_shell_tokens(fragment, "toolchain grammar"))
             self.assertEqual((result.stdout, result.stderr, result.returncode),
                              (expected.stdout, expected.stderr, expected.returncode))
         self.assert_clean(session)
+
+    def expanded_recipe(self):
+        result = subprocess.run(
+            ["/usr/bin/make", "-rR", "--no-print-directory", "-n", toolchain_runtime.TARGET],
+            cwd=self.fixture.root, env=ENVIRONMENT, capture_output=True, text=True, timeout=10, check=True,
+        )
+        command, = normalize_bash_script_commands(result.stdout, "original fixture recipe")
+        return command
+
+    def shell_role(self, script, *arguments):
+        return subprocess.run(
+            ["/bin/sh", "-c", script, "lexical-role", *arguments], cwd=self.fixture.root,
+            env=ENVIRONMENT, capture_output=True, timeout=5,
+        )
+
+    @staticmethod
+    def token_variant(command, token, value):
+        return command[:token.start] + value + command[token.end:]
+
+    def test_shell_keywords_grouping_and_pipeline_roles_require_real_recognition(self):
+        original = self.expanded_recipe()
+        tokens = tokenize_bash_command(original)
+        probes = {
+            "if": ("if true; then printf yes; fi", "if"),
+            "then": ("if true; then printf yes; fi", "then"),
+            "fi": ("if true; then printf yes; fi", "fi"),
+            "case": ("case as in *) printf yes;; esac", "case"),
+            "in": ("case as in *) printf yes;; esac", "in"),
+            "esac": ("case as in *) printf yes;; esac", "esac"),
+            "{": ("{ printf yes; }", "{"),
+            "}": ("{ printf yes; }", "}"),
+            "!": ("if ! false; then printf yes; else printf no; fi", "!"),
+        }
+        for word, (script, needle) in probes.items():
+            expected = self.shell_role(script)
+            self.assertEqual((expected.returncode, expected.stdout), (0, b"yes"))
+            for spelling in dict.fromkeys((
+                "'" + word + "'", '"' + word + '"', "\\" + word, word + "''",
+                word[:1] + "''" + word[1:],
+            )):
+                actual = self.shell_role(script.replace(needle, spelling, 1))
+                self.assertNotEqual((actual.returncode, actual.stdout), (expected.returncode, expected.stdout))
+                for index, token in enumerate(tokens):
+                    if token.value != word or word == "!" and tokens[index - 1].value != "if":
+                        continue
+                    with self.subTest(role=word, spelling=spelling, occurrence=index), self.assertRaises(MakeProbeError):
+                        toolchain_runtime.parse_recipe(self.token_variant(original, token, spelling))
+        for token in tokens:
+            if token.operator or token.io_number:
+                with self.subTest(operator=token.value, position=token.start), self.assertRaises(MakeProbeError):
+                    toolchain_runtime.parse_recipe(self.token_variant(original, token, "'" + token.value + "'"))
+
+    def test_assignment_roles_preserve_unquoted_name_equals_and_quoted_values(self):
+        original = self.expanded_recipe()
+        token, = [item for item in tokenize_bash_command(original) if item.value == "cc=arm-none-eabi-gcc"]
+        expected = toolchain_runtime.parse_recipe(original)
+        valid = (
+            "cc=arm-none-eabi-gcc", "cc='arm-none-eabi-gcc'", 'cc="arm-none-eabi-gcc"',
+            "cc=''arm-none-eabi-gcc", "cc=arm-none-'eabi-gcc'", r"cc=arm-none-eabi-gc\c",
+        )
+        invalid = (
+            "c''c=arm-none-eabi-gcc", "'cc'=arm-none-eabi-gcc", r"cc\=arm-none-eabi-gcc",
+            "'cc=arm-none-eabi-gcc'", r"c\c=arm-none-eabi-gcc", "cc''=arm-none-eabi-gcc",
+            "cc'='arm-none-eabi-gcc",
+        )
+        for spelling in (*valid, *invalid):
+            with self.subTest(assignment=spelling):
+                actual = self.shell_role("set -eu; " + spelling + "; printf '%s\\n' \"$cc\"")
+                command = self.token_variant(original, token, spelling)
+                if spelling in valid:
+                    self.assertEqual((actual.returncode, actual.stdout), (0, b"arm-none-eabi-gcc\n"))
+                    self.assertEqual(toolchain_runtime.parse_recipe(command), expected)
+                else:
+                    self.assertNotEqual(actual.returncode, 0)
+                    with self.assertRaises(MakeProbeError):
+                        toolchain_runtime.parse_recipe(command)
+
+    def test_case_pattern_roles_preserve_active_wildcards_not_literal_quote_spelling(self):
+        original = self.expanded_recipe()
+        expected = toolchain_runtime.parse_recipe(original)
+        tokens = tokenize_bash_command(original)
+        values = ("/bin/as", "as", "/*", "*", "", "/x*")
+        cases = (
+            ("/*", ("/*", "'/'*", '"/"*', r"\/*", "/''*"), ("'/*'", '"/*"', r"/\*", "/'*'")),
+            ("*", ("*", "''*", '""*'), ("'*'", '"*"', r"\*")),
+        )
+        for word, valid, invalid in cases:
+            token, = [item for item in tokens if item.value == word]
+            def shell(pattern):
+                absolute, fallback = (pattern, "*") if word == "/*" else ("/*", pattern)
+                return self.shell_role(
+                    'for value do case "$value" in ' + absolute
+                    + ') printf "absolute\\n";; ' + fallback + ') printf "other\\n";; esac; done',
+                    *values,
+                )
+            baseline = shell(word)
+            self.assertEqual(baseline.returncode, 0)
+            for spelling in (*valid, *invalid):
+                with self.subTest(pattern=word, spelling=spelling):
+                    actual = shell(spelling)
+                    self.assertEqual(actual.returncode, 0)
+                    command = self.token_variant(original, token, spelling)
+                    if spelling in valid:
+                        self.assertEqual(actual.stdout, baseline.stdout)
+                        self.assertEqual(toolchain_runtime.parse_recipe(command), expected)
+                    else:
+                        self.assertNotEqual(actual.stdout, baseline.stdout)
+                        with self.assertRaises(MakeProbeError):
+                            toolchain_runtime.parse_recipe(command)
+
+    def test_test_command_argument_negation_is_not_pipeline_negation(self):
+        original = self.expanded_recipe()
+        expected = toolchain_runtime.parse_recipe(original)
+        tokens = tokenize_bash_command(original)
+        for spelling in ("'!'", r"\!", "''!", '"!"'):
+            actual = self.shell_role("[ " + spelling + " -x /nonexistent ] && printf yes")
+            self.assertEqual((actual.returncode, actual.stdout), (0, b"yes"))
+            for index, token in enumerate(tokens):
+                if token.value == "!" and tokens[index - 1].value == "[":
+                    self.assertEqual(
+                        toolchain_runtime.parse_recipe(self.token_variant(original, token, spelling)), expected,
+                    )
+
+    def assert_native_lexical_rejection(self, old, new):
+        self.lexical_admission_witness = None
+        source = self.source()
+        self.assertIn(old, source)
+        self.fixture.add("Makefile", source.replace(old, new, 1))
+        try:
+            with self.session() as session:
+                run, execute, stages, outcomes = session._sandbox_run, session._toolchain.execute, [], []
+                def record(root, **options):
+                    if "toolchain_launch" in options:
+                        stages.append(options["dependency"]["toolchain_probe"]["stage"])
+                    return run(root, **options)
+                def outcome(command):
+                    result = execute(command)
+                    outcomes.append(result.returncode)
+                    return result
+                with patch.object(session, "_sandbox_run", record), patch.object(session._toolchain, "execute", outcome):
+                    with self.assertRaises(MakeProbeError):
+                        observed = self.make(session)
+                        self.lexical_admission_witness = {
+                            "stages": stages, "outcomes": outcomes,
+                            "generated": [item.path for item in observed.generated],
+                            "stdout": observed.stdout.decode("utf-8"),
+                            "stderr": observed.stderr.decode("utf-8"),
+                        }
+                self.assertEqual(stages, [])
+                self.assertEqual(outcomes, [])
+                self.assertFalse(session.published_sources)
+            self.assert_clean(session)
+        finally:
+            self.fixture.add("Makefile", source)
+
+    def test_native_malformed_lexical_roles_reject_before_any_compiler_substep(self):
+        original = self.source()
+        self.fixture.add("Makefile", original.replace('if [ -z "$$cc_path" ]', '\'if\' [ -z "$$cc_path" ]', 1))
+        ordinary = self.ordinary()
+        self.assertEqual(ordinary.returncode, 2)
+        self.fixture.add("Makefile", original)
+        for old, new in (
+            ('if [ -z "$$cc_path" ]', '\'if\' [ -z "$$cc_path" ]'),
+            ("; then \\", "; th'en' \\"),
+            ("if ! printf", "if '!' printf"),
+            ("cc='$(MODERN_CC)'", "'cc'='$(MODERN_CC)'"),
+            ("|| { \\", "|| '{' \\"),
+            ("/*) resolved_as=", "'/*') resolved_as="),
+            ("\n\t\t*) resolved_as=", "\n\t\t'*') resolved_as="),
+        ):
+            with self.subTest(old=old, new=new):
+                self.assert_native_lexical_rejection(old, new)
+
+    def test_native_equivalent_argv_assignment_and_pattern_quoting_preserve_actual_results(self):
+        expected = self.ordinary()
+        self.assertEqual(expected.returncode, 0, expected.stderr)
+        source = self.source().replace("cc='$(MODERN_CC)'", 'cc="$(MODERN_CC)"', 1)
+        source = source.replace("[ ! -x", "[ '!' -x").replace("exit 1;", "'exit' '1';")
+        source = source.replace("/*) resolved_as=", "'/'*) resolved_as=", 1)
+        source = source.replace("\n\t\t*) resolved_as=", "\n\t\t''*) resolved_as=", 1)
+        self.fixture.add("Makefile", source)
+        ordinary = self.ordinary()
+        self.assertEqual((ordinary.returncode, ordinary.stdout, ordinary.stderr),
+                         (expected.returncode, expected.stdout, expected.stderr))
+        with self.session() as session:
+            before = {
+                name: ((session.tree / name).read_bytes(), (session.tree / name).stat())
+                for name in session.snapshot.files
+            }
+            observed, result = self.capture(session)
+            self.assertEqual((result.returncode, result.stdout, result.stderr),
+                             (ordinary.returncode, ordinary.stdout, ordinary.stderr))
+            self.assertEqual(result.executed[-1], "/usr/lib/arm-none-eabi/bin/as")
+            self.assertEqual(
+                [row["stdin"] for row in result.runtime_probes if "stdin" in row],
+                [toolchain_runtime.SYNTAX_INPUT, toolchain_runtime.COMPILE_INPUT],
+            )
+            self.assertEqual(result.input_identities, tuple(session.snapshot.owners(result.code_consumed)))
+            self.assertTrue(result.runtime_sources)
+            self.assertEqual(observed.generated[0].path, "build/native/src/query.headers.d")
+            for name, (data, info) in before.items():
+                self.assertEqual((session.tree / name).stat(), info, name)
+                self.assertEqual((session.tree / name).read_bytes(), data, name)
+        self.assert_clean(session)
+
+    def test_restoring_only_old_role_erasure_recovers_native_false_admissions(self):
+        def erase(tree):
+            self.replace_function(tree, "signature", """
+active = token.raw if "$" in token.raw or "`" in token.raw else None
+return token.value, token.operator, token.io_number, active
+""")
+        mutant = self.function_mutant(toolchain_runtime.parse_recipe, erase)
+        self.lexical_mutation_witnesses = []
+        for old, new in (
+            ('if [ -z "$$cc_path" ]', '\'if\' [ -z "$$cc_path" ]'),
+            ("cc='$(MODERN_CC)'", "'cc'='$(MODERN_CC)'"),
+            ("/*) resolved_as=", "'/*') resolved_as="),
+        ):
+            with self.subTest(old=old), patch.object(toolchain_runtime, "parse_recipe", mutant):
+                with self.assertRaises(AssertionError):
+                    self.assert_native_lexical_rejection(old, new)
+            self.assertIsNotNone(self.lexical_admission_witness)
+            self.assertEqual(self.lexical_admission_witness["stages"], list(range(5)) * 2)
+            self.assertEqual(self.lexical_admission_witness["outcomes"], [0, 0])
+            self.assertEqual(self.lexical_admission_witness["generated"], ["build/native/src/query.headers.d"])
+            self.lexical_mutation_witnesses.append({"old": old, "new": new, **self.lexical_admission_witness})
+            self.assertFalse(self.fixture.scratch.exists())
 
     def test_captured_driver_changes_and_actual_target_result_adversary_never_succeed(self):
         with self.session() as session:
