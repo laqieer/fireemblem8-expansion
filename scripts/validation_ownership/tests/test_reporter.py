@@ -204,6 +204,7 @@ class AssetOwnershipTests(unittest.TestCase):
                 "test_header_effects",
                 "test_header_pipeline",
                 "test_read_epochs",
+                "test_source_phases",
             )
         }
         self.assertTrue(native.isdisjoint(collected))

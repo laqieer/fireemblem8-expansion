@@ -308,7 +308,7 @@ def original_inputs(memory, pointer, deleted, *, count_limit, string):
 def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size: None):
     if (
         not isinstance(value, dict) or set(value) != {"version", "scope", "events", "sources", "complete"}
-        or type(value["version"]) is not int or value["version"] != 1 or value["scope"] != scope
+        or type(value["version"]) is not int or value["version"] not in {1, 2} or value["scope"] != scope
         or value["complete"] is not True or not isinstance(value["events"], list)
         or not 1 <= len(value["events"]) <= count_limit or not isinstance(value["sources"], list)
         or len(value["sources"]) > count_limit
@@ -340,6 +340,8 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
     pass_visits = set()
     in_pass = False
     terminal = False
+    barriers = 0
+    pending_image = None
     keys = {
         "exec": {"exec"}, "pass-entry": {"exec", "pass", "inputs"},
         "source-entry": {"exec", "pass", "visit", "parent", "name", "flags"},
@@ -347,6 +349,7 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
         "other-open": {"exec", "pass", "visit", "name", "mode", "result"},
         "source-exit": {"exec", "pass", "visit", "resolved", "flags", "error", "source"},
         "pass-exit": {"exec", "pass", "goals"}, "complete": {"execs", "passes", "visits"},
+        "entry-image": {"exec", "pass", "barrier", "input_sha256", "image_sha256"},
     }
     for sequence, event in enumerate(value["events"], 1):
         if (
@@ -356,13 +359,15 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
         ):
             raise ReadEpochError("malformed or out-of-order original read event")
         kind = event["kind"]
+        if pending_image is not None and kind != "entry-image":
+            raise ReadEpochError("original read began before its namespace entry image")
         if kind == "exec":
             if in_pass or active or type(event["exec"]) is not int or event["exec"] != execs + 1:
                 raise ReadEpochError("original read exec lifetime is incomplete")
             execs += 1
             continue
         if kind == "complete":
-            if in_pass or active or not passes or any(
+            if in_pass or active or not passes or value["version"] == 2 and barriers != passes or any(
                 type(event[name]) is not int or event[name] != expected
                 for name, expected in (("execs", execs), ("passes", passes), ("visits", visits))
             ):
@@ -408,10 +413,22 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
             passes += 1
             in_pass = True
             pass_visits = set()
+            if value["version"] == 2:
+                pending_image = hashlib.sha256(encoded(inputs)).hexdigest()
             continue
         if not in_pass or event["pass"] != passes:
             raise ReadEpochError("source event has no active original pass")
-        if kind == "source-entry":
+        if kind == "entry-image":
+            if (
+                value["version"] != 2 or pending_image is None
+                or type(event["barrier"]) is not int or event["barrier"] != barriers + 1
+                or event["input_sha256"] != pending_image
+                or not isinstance(event["image_sha256"], str) or not re.fullmatch("[0-9a-f]{64}", event["image_sha256"])
+            ):
+                raise ReadEpochError("original entry image differs from its actual read inputs")
+            barriers += 1
+            pending_image = None
+        elif kind == "source-entry":
             if (
                 type(event["visit"]) is not int or event["visit"] != visits + 1
                 or event["parent"] is not None and type(event["parent"]) is not int

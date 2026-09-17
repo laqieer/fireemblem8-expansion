@@ -194,6 +194,16 @@ positive/default/corruption/lifetime controls do not run again in graph
 discovery. No original namespace exception or full-report claim follows
 until the independent mutation and every-pass source contracts also close.
 
+The separate opt-in source-phase capture adds original entry namespace images
+through the same private channel, at actual stopped read-entry barriers.
+It does not synthesize a producer result: producer counts, native dispatch/job
+shape and remaining resource grants stay intact. Completed publications are
+acknowledged before the host captures the complete namespace, and the native
+trace binds that exact image to the original input event. The session retains
+image identities privately; a serialized image or digest alone grants nothing.
+This remains an observation component, not a mutation-journal completeness
+claim or a source-walk namespace exception.
+
 Output directories must remain removable by the original runner. Pathname
 `chmod`/`fchmodat` may retain owner read/write/search permissions, but may not
 remove any of them, even when the path currently denotes a regular file: a

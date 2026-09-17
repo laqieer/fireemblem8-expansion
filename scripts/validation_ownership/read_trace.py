@@ -15,9 +15,11 @@ import time
 if __package__:
     from .authority import encoded
     from . import read_epochs
+    from . import source_phases
 else:
     from authority import encoded
     import read_epochs
+    import source_phases
 
 
 DEBUG_REGISTER_OFFSET = 848
@@ -30,6 +32,9 @@ class NativeReadTrace:
         self.policy, self.config = policy, policy.config
         self.native = sys.modules[type(policy).__module__]
         self.scope = config["scope"]
+        self.version = config["version"]
+        self.pending_barrier = None
+        self.barriers = 0
         path = Path(self.config["root"]) / "usr/bin/make"
         with path.open("rb") as stream:
             before = os.fstat(stream.fileno())
@@ -61,6 +66,7 @@ class NativeReadTrace:
         row = {"seq": len(self.events) + 1, "kind": kind, **fields}
         self.policy.charge_metadata(len(encoded(row)))
         self.events.append(row)
+        return row
 
     def context(self):
         return {"exec": self.execs, "pass": self.passes}
@@ -105,7 +111,7 @@ class NativeReadTrace:
         self.clear(pid)
         if not make:
             return
-        if self.active or self.pass_frame is not None or self.io is not None or self.execs != self.passes:
+        if self.active or self.pass_frame is not None or self.io is not None or self.pending_barrier is not None or self.execs != self.passes:
             raise read_epochs.ReadEpochError("Make exec crossed an incomplete original read pass")
         self.pid = pid
         self.bias = None
@@ -204,7 +210,12 @@ class NativeReadTrace:
                 self.number(self.bias + globals_["hash_deleted_item"]),
                 count_limit=self.config["observation_count"], string=self.string,
             )
-            self.event("pass-entry", **self.context(), inputs=inputs)
+            entry = self.event("pass-entry", **self.context(), inputs=inputs)
+            if self.version == 2:
+                self.pending_barrier = {
+                    "barrier": self.barriers + 1, "exec": self.execs, "pass": self.passes,
+                    "trace_seq": entry["seq"], "input_sha256": source_phases.digest(inputs),
+                }
         elif index == 1:
             if self.pass_frame is None or self.io is not None:
                 raise read_epochs.ReadEpochError("source entry has no original pass")
@@ -237,6 +248,18 @@ class NativeReadTrace:
         registers.eflags |= 1 << 16
         self.native.ptrace(self.native.SETREGS, pid, 0, ctypes.byref(registers))
         self.arm()
+
+    def confirm_barrier(self, request, image_sha256):
+        if self.pending_barrier != {
+            key: request[key] for key in ("barrier", "exec", "pass", "trace_seq", "input_sha256")
+        } or not self.pass_frame or self.active:
+            raise read_epochs.ReadEpochError("original entry barrier lost its actual stopped read context")
+        self.event(
+            "entry-image", **self.context(), barrier=request["barrier"],
+            input_sha256=request["input_sha256"], image_sha256=image_sha256,
+        )
+        self.barriers += 1
+        self.pending_barrier = None
 
     def source_io(self, pid, state, address, size):
         if pid != self.pid or size != 48:
@@ -354,10 +377,13 @@ class NativeReadTrace:
         self.active.pop()
 
     def finish(self):
-        if self.active or self.pass_frame is not None or self.io is not None or not self.passes or self.passes != self.execs:
+        if (
+            self.active or self.pass_frame is not None or self.io is not None or self.pending_barrier is not None
+            or not self.passes or self.passes != self.execs or self.version == 2 and self.barriers != self.passes
+        ):
             raise read_epochs.ReadEpochError("original read trace ended with incomplete native state")
         self.event("complete", execs=self.execs, passes=self.passes, visits=self.visits)
-        result = {"version": 1, "scope": self.scope, "events": self.events, "sources": self.sources, "complete": True}
+        result = {"version": self.version, "scope": self.scope, "events": self.events, "sources": self.sources, "complete": True}
         read_epochs.validate_trace(result, self.scope, count_limit=self.config["observation_count"],
                                    file_limit=self.config["file_limit"], reserve=self.policy.charge_metadata)
         return result

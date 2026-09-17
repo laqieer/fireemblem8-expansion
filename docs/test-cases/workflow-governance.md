@@ -5714,6 +5714,38 @@ definitions. Independent mutation capture, original entry namespace use
 contexts and every pass's read/default/export/effect/obligation union remain
 the precise separate hold. No full graph/report or allocation17 is exercised.
 
+For the original entry-image barrier, run:
+
+```sh
+python3 -m unittest scripts.validation_ownership.tests.test_source_phases -v
+```
+
+Start with a real `src` directory containing only a non-C witness. Let the
+original source wildcard be empty, set/export HIDDEN, then genuinely create
+source C and an included file before successful Make self-exec. Use the
+existing context-aware producer seam: an ordinary canonical-environment
+Command is not a valid producer-environment counterexample. Require actual
+producer HIDDEN=secret, final HIDDEN undefined and final source membership
+including the new C. The existing invocation-wide wildcard guard must still
+reject rather than using final values to erase the first pass.
+
+Enable source-phase observation. Require the native entry-image event directly
+after each actual pass-entry, with exact scope/input/event/image bindings.
+Inspect complete first and second source-directory membership: no new C at the
+first entry and real C present after acknowledged publication and reexec.
+Repeat with the genuine default text/ARM/sed component, leaving C initially
+absent and the tracked header immutable. Do not call these images a completed
+source-phase certificate.
+
+Corrupt request or acknowledgement scope/pass/input/image/sequence fields,
+and require refusal without another successful source entry. Copy or mutate
+the observation, reuse it in another session or after lifetime expiry, and
+require the private image accessor to reject. Preserve the default read trace,
+ordinary producer/publication accounting and complete child/scratch cleanup.
+The native owner collects the exact new module once; no job, owned command,
+numeric bound, Main accounting assertion or allocation17 changes. Independent
+mutation/dispatch association and every-pass obligation union remain required.
+
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while
 native per-file raw metadata remains `$(FLAGS)`. Do not eagerly copy the

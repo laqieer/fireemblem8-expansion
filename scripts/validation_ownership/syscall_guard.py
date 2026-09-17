@@ -34,6 +34,7 @@ if __package__:
     from . import header_runtime as header_protocol
     from .read_trace import NativeReadTrace
     from .read_epochs import ReadEpochError
+    from . import source_phases
     from .producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
@@ -48,6 +49,7 @@ else:
     import header_runtime as header_protocol
     from read_trace import NativeReadTrace
     from read_epochs import ReadEpochError
+    import source_phases
     from producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
@@ -421,7 +423,7 @@ class Policy:
             if (
                 self.mode != "make" or not isinstance(request, dict)
                 or set(request) != {"version", "scope", "abi"}
-                or type(request["version"]) is not int or request["version"] != 1
+                or type(request["version"]) is not int or request["version"] not in {1, 2}
                 or request["scope"] != config.get("producer_scope")
             ):
                 raise Violation("original-read observation lacks its exact Make scope")
@@ -2667,7 +2669,10 @@ def supervise(config, drop_privileges):
         state = processes.get(child)
         if state is None:
             return
-        if parking or state.producer_ready:
+        if parking or state.producer_ready or (
+            policy.read_trace is not None and child == policy.read_trace.pid
+            and policy.read_trace.pending_barrier is not None
+        ):
             state.parked = True
             return
         if state.deferred_entry is not None:
@@ -2842,12 +2847,8 @@ def supervise(config, drop_privileges):
                 raise Violation("producer result slot changed during read")
             return data
 
-    def fulfill_producer():
+    def park_invocation():
         nonlocal parking
-        requester = policy.producer_requests[0]
-        state = processes.get(requester)
-        if state is None or not state.producer_ready or channel is None:
-            raise Violation("missing parked producer request")
         parking = True
         while True:
             if time.monotonic() >= config["deadline"]:
@@ -2859,6 +2860,48 @@ def supervise(config, drop_privileges):
             if not any(unsettled(record) for record in processes.values()):
                 break
             time.sleep(0.0001)
+
+    def release_invocation():
+        nonlocal parking
+        parking = False
+        for child, record in tuple(processes.items()):
+            if record.parked:
+                resume(child)
+
+    def fulfill_read_barrier():
+        trace = policy.read_trace
+        if trace is None or trace.pending_barrier is None or channel is None:
+            raise Violation("missing actual source-entry barrier")
+        park_invocation()
+        if pid not in processes or trace.pid != pid:
+            raise Violation("source-entry process died before its barrier")
+        request = {
+            "kind": "read-barrier", "scope": config["producer_scope"], **trace.pending_barrier,
+            "issued": policy.producer_issued, "completed": policy.producer_completed,
+            "publication": policy.publication_confirmation,
+            "counters": policy.counters(), "reserved": policy.reservations(),
+        }
+        raw = channel.exchange(
+            encoded(request),
+            watch=[record.pidfd for record in processes.values()] + list(newborn_stops.values()),
+        )
+        reply = parse_json(raw, "source-entry acknowledgement")
+        try:
+            source_phases.validate_resume(reply, request)
+        except ChannelError as error:
+            raise Violation(str(error)) from error
+        policy.apply_producer_limits(reply["limits"], ceilings)
+        channel.require_live([record.pidfd for record in processes.values()] + list(newborn_stops.values()))
+        channel.ensure_idle()
+        trace.confirm_barrier(request, reply["image_sha256"])
+        release_invocation()
+
+    def fulfill_producer():
+        requester = policy.producer_requests[0]
+        state = processes.get(requester)
+        if state is None or not state.producer_ready or channel is None:
+            raise Violation("missing parked producer request")
+        park_invocation()
         if requester not in processes or pid not in processes:
             raise Violation("producer context died before request notification")
         policy.producer_issued += 1
@@ -2969,10 +3012,7 @@ def supervise(config, drop_privileges):
         registers.rax = sequence - 1
         ptrace(SETREGS, requester, 0, ctypes.byref(registers))
         policy.producer_requests.popleft()
-        parking = False
-        for child, record in tuple(processes.items()):
-            if record.parked:
-                resume(child)
+        release_invocation()
 
     try:
         waited, status = os.waitpid(pid, 0)
@@ -2992,6 +3032,9 @@ def supervise(config, drop_privileges):
                 raise Violation("aggregate probe deadline exhausted in syscall supervisor")
             if channel is not None:
                 channel.ensure_idle()
+            if policy.read_trace is not None and policy.read_trace.pending_barrier is not None:
+                fulfill_read_barrier()
+                continue
             if policy.producer_requests:
                 requested = processes[policy.producer_requests[0]]
                 parent = processes.get(policy.make_pid)

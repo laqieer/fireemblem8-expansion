@@ -1939,6 +1939,10 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/read_trace.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/source_phases.py"
         }
       ],
       "exclude": [
@@ -1981,6 +1985,10 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_read_epochs.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_source_phases.py"
         }
       ]
     },
@@ -2027,6 +2035,10 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_read_epochs.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_source_phases.py"
         }
       ],
       "exclude": []

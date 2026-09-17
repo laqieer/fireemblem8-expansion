@@ -86,6 +86,7 @@ TRUSTED_RUNTIME_PATHS = frozenset(
         f"{TRUSTED_PREFIX}header_runtime.py",
         f"{TRUSTED_PREFIX}read_epochs.py",
         f"{TRUSTED_PREFIX}read_trace.py",
+        f"{TRUSTED_PREFIX}source_phases.py",
         *TRUSTED_SHARED_RUNTIME_PATHS,
         f"{TRUSTED_PREFIX}python_commands.py",
         f"{TRUSTED_PREFIX}reporter.py",

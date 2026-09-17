@@ -39,6 +39,7 @@ from . import header_effects
 from . import arm_headers
 from . import header_runtime as header_protocol
 from . import read_epochs
+from . import source_phases
 from .producer_channel import (
     ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
     publication_identity, validate_publication_confirmation,
@@ -249,6 +250,7 @@ class MakeObservation:
     generated: tuple[GeneratedFile, ...] = ()
     file_open_attempts: tuple[tuple[str, str], ...] = ()
     read_trace: dict | None = None
+    source_phases: dict | None = None
 
 
 class _NamespaceUnavailable(MakeProbeError):
@@ -774,6 +776,7 @@ class ProbeSession:
         self._header_launches = {}
         self._issued_header_launches = weakref.WeakSet()
         self._read_epoch_abi = None
+        self._source_phase_records = {}
         self._namespace_images = {}
         self._namespace_frames = []
         self._namespace_pending = {}
@@ -995,6 +998,36 @@ class ProbeSession:
         finally:
             os.close(descriptor)
         return capture
+
+    def _retain_source_phases(self, observation, images, capture):
+        if not capture.closed or not capture.valid or not capture.native_complete:
+            raise MakeProbeError("original entry images lack a completed native lifetime")
+        context = encoded((observation.read_trace, observation.source_phases))
+        self.budget.charge("cache", len(context))
+        key = id(observation)
+        def expired(reference):
+            record = self._source_phase_records.get(key)
+            if record is not None and record[0] is reference:
+                del self._source_phase_records[key]
+        self._source_phase_records[key] = (
+            weakref.ref(observation, expired), tuple(images), self.snapshot, self.tree,
+            self._namespace_epoch, context,
+        )
+
+    def _source_phase_images(self, observation):
+        self.budget.remaining()
+        record = self._source_phase_records.get(id(observation))
+        if (
+            record is None or record[0]() is not observation
+            or record[2] is not self.snapshot or record[3] != self.tree or record[4] != self._namespace_epoch
+            or record[5] != encoded((observation.read_trace, observation.source_phases))
+        ):
+            raise MakeProbeError("original entry-image observation is forged, changed or outlived its view")
+        namespace = self._namespace_issued.get(id(observation))
+        if namespace is None or namespace[0]() is not observation:
+            raise MakeProbeError("original entry images lost their namespace lifetime")
+        self._require_namespace(namespace[1])
+        return record[1]
 
     def _invariant_directory(self, capture, directory):
         try:
@@ -1241,6 +1274,7 @@ class ProbeSession:
             self._header_launches.clear()
             self._issued_header_launches.clear()
             self._read_epoch_abi = None
+            self._source_phase_records.clear()
             self.runtime_inputs = ()
             self.runtime_dispatch = ()
             self.runtime_root = None
@@ -1637,8 +1671,18 @@ class ProbeSession:
         dependency=None, observe_recipe_dispatch=False, private_install=None,
         header_runtime=None,
         observe_read_epochs=False,
+        observe_source_phases=False, source_phase_observer=None,
     ):
         self.budget.remaining()
+        if (
+            type(observe_source_phases) is not bool
+            or observe_source_phases and (mode != "make" or producer_handler is None or source_phase_observer is None)
+            or not observe_source_phases and source_phase_observer is not None
+        ):
+            raise MakeProbeError("original entry images require their exact Make observer")
+        if type(observe_read_epochs) is not bool:
+            raise MakeProbeError("original read observation requires an exact Make selection")
+        observe_read_epochs = observe_read_epochs or observe_source_phases
         if type(observe_read_epochs) is not bool or observe_read_epochs and mode != "make":
             raise MakeProbeError("original read observation requires an exact Make selection")
         if observe_read_epochs:
@@ -1782,6 +1826,7 @@ class ProbeSession:
         }
         settled = dict.fromkeys(counter_names, 0)
         sequence = 0
+        barrier = 0
         completion = None
         channel = None
         channel_directory = self.base / f"producer-{self.serial}"
@@ -1791,7 +1836,8 @@ class ProbeSession:
             config["producer_scope"] = self.base.name + "/" + root.name
             if observe_read_epochs:
                 config["read_epochs"] = {
-                    "version": 1, "scope": config["producer_scope"], "abi": self._original_read_abi(),
+                    "version": 2 if observe_source_phases else 1,
+                    "scope": config["producer_scope"], "abi": self._original_read_abi(),
                 }
             config["reserved_paths"] = list(self.loader.entries) if publication_allowed else None
             config["publication_limit"] = self.budget.limits.created_files
@@ -1863,10 +1909,55 @@ class ProbeSession:
             }
 
         def dispatch(packet):
-            nonlocal sequence, completion
+            nonlocal sequence, completion, barrier
             request = parse_json(packet, "producer request")
             if not isinstance(request, dict) or request.get("scope") != config["producer_scope"]:
                 raise MakeProbeError("foreign producer request scope")
+            if request.get("kind") == "read-barrier":
+                if not observe_source_phases:
+                    raise MakeProbeError("unrequested original entry-image barrier")
+                try:
+                    source_phases.validate_barrier(
+                        request, scope=config["producer_scope"], barrier=barrier + 1, sequence=sequence,
+                    )
+                except ChannelError as error:
+                    raise MakeProbeError(str(error)) from error
+                validate_confirmation(request["completed"], request["publication"])
+                reserved = request["reserved"]
+                if (
+                    not isinstance(reserved, dict) or set(reserved) != {"live", "processes", "memory", "pending"}
+                    or any(type(value) is not int for value in reserved.values())
+                    or not 1 <= reserved["live"] <= reserved["processes"] <= config["process_limit"]
+                    or not 1 <= reserved["memory"] <= config["memory_limit"] or reserved["pending"] != 0
+                ):
+                    raise MakeProbeError("original entry barrier has unsettled or invalid reservations")
+                settle(request["counters"])
+                if (
+                    reserved["live"] > request["counters"]["live_process_peak"]
+                    or reserved["live"] > request["counters"]["processes"]
+                    or reserved["memory"] > request["counters"]["memory_peak"]
+                ):
+                    raise MakeProbeError("original entry reservations contradict measured native state")
+                if publication_observer is not None:
+                    publication_observer(sequence, request["publication"])
+                self.parked_capsules.append(reserved)
+                try:
+                    image_sha256 = source_phase_observer(request)
+                finally:
+                    self.parked_capsules.pop()
+                reply = {
+                    "kind": "read-resume",
+                    **{name: request[name] for name in ("scope", "barrier", "exec", "pass", "trace_seq", "input_sha256")},
+                    "image_sha256": image_sha256, "limits": grants(),
+                }
+                bound = len(encoded(reply)) + 4
+                reply["limits"] = grants(bound)
+                source_phases.validate_resume(reply, request)
+                data = encoded(reply)
+                if len(data) + 4 > bound:
+                    raise MakeProbeError("original read grant encoding exceeded its reservation")
+                barrier += 1
+                return data
             if request.get("kind") == "finished":
                 if (
                     set(request) != {"kind", "scope", "issued", "completed", "publication"}
@@ -2057,6 +2148,10 @@ class ProbeSession:
                     count_limit=config["observation_count"], file_limit=config["file_limit"],
                     reserve=lambda size: self.budget.charge("control", size),
                 )
+                if observe_source_phases and barrier != len([
+                    event for event in observed["read_trace"]["events"] if event["kind"] == "entry-image"
+                ]):
+                    raise MakeProbeError("original entry barrier transcript is incomplete")
             elif "read_trace" in observed:
                 raise MakeProbeError("unrequested or failed Make supplied an original read trace")
             if channel is not None:
@@ -3273,12 +3368,14 @@ class ProbeSession:
     def make(
         self, target: str, *, makefile="Makefile", variables=(), assignments=(),
         owner_inputs=(), commands=None, observe_recipe_dispatch=False, definitions=(), observe_read_epochs=False,
+        observe_source_phases=False,
     ) -> MakeObservation:
         return self._make(
             target, makefile=makefile, variables=variables, assignments=assignments,
             owner_inputs=owner_inputs, commands=commands,
             observe_recipe_dispatch=observe_recipe_dispatch, definitions=definitions,
             observe_read_epochs=observe_read_epochs,
+            observe_source_phases=observe_source_phases,
         )
 
     @terminal_failure
@@ -3324,6 +3421,7 @@ class ProbeSession:
         owner_inputs=(), commands=None, observe_recipe_dispatch=False, definitions=(),
         _original_inputs=False,
         observe_read_epochs=False,
+        observe_source_phases=False,
     ) -> MakeObservation:
         self.budget.remaining()
         if type(_original_inputs) is not bool:
@@ -3332,6 +3430,9 @@ class ProbeSession:
             raise MakeProbeError("native recipe observation requires a boolean selection")
         if type(observe_read_epochs) is not bool or _original_inputs and observe_read_epochs:
             raise MakeProbeError("original read epochs require a normal Make invocation")
+        if type(observe_source_phases) is not bool or _original_inputs and observe_source_phases:
+            raise MakeProbeError("original source phases require a normal Make invocation")
+        observe_read_epochs = observe_read_epochs or observe_source_phases
         if not TARGET.fullmatch(target) or target.startswith(("-", "/")) or ".." in target.split("/"):
             raise MakeProbeError("invalid requested Make target")
         if _original_inputs:
@@ -3395,6 +3496,42 @@ class ProbeSession:
         publication_allowed = commands is not None or bool(self.published_sources)
         commands = {} if commands is None else commands
         namespace_capture = None if _original_inputs else self._begin_namespace(target, makefile, assignments)
+        phase_entries = []
+        phase_images = []
+
+        def capture_source_entry(request):
+            self.budget.remaining()
+            if (
+                self.snapshot is not namespace_capture.image.snapshot or self.tree != namespace_capture.image.tree
+                or self._namespace_epoch != namespace_capture.epoch or namespace_capture.closed
+            ):
+                raise MakeProbeError("original entry capture crossed its namespace view/lifetime")
+            for path, item in self.published_sources.items():
+                self._verify_effective_output(item, {"identity": self.published_versions[path][2]})
+            image = self._capture_namespace_image(inherited=bool(self.published_sources))
+            stamps = {}
+            for path, identity in image.directories.items():
+                descriptor = self._namespace_directory(path)
+                try:
+                    actual = os.fstat(descriptor)
+                    if _namespace_identity(actual) != identity:
+                        raise MakeProbeError("original entry namespace changed during its barrier")
+                    stamps[path] = _namespace_stamp(actual)
+                finally:
+                    os.close(descriptor)
+            payload = {
+                "directories": dict(image.directories), "members": dict(image.members),
+                "forbidden": sorted(image.forbidden), "stamps": stamps,
+            }
+            image_sha256 = source_phases.digest(payload)
+            entry = {
+                **{name: request[name] for name in ("barrier", "exec", "pass", "trace_seq", "input_sha256")},
+                "image_sha256": image_sha256, "image": payload,
+            }
+            self.budget.charge("cache", len(encoded(entry)))
+            phase_entries.append(entry)
+            phase_images.append(image)
+            return image_sha256
 
         def cleanup_generated():
             if depth:
@@ -3697,6 +3834,8 @@ class ProbeSession:
                 publication_allowed=publication_allowed,
                 observe_recipe_dispatch=observe_recipe_dispatch,
                 observe_read_epochs=observe_read_epochs,
+                observe_source_phases=observe_source_phases,
+                source_phase_observer=capture_source_entry if observe_source_phases else None,
             )
             raw_events = self.budget.read_bytes(events_path, "event")
             native_events = Counter(bytes.fromhex(item) for item in observed["events"])
@@ -3839,18 +3978,30 @@ class ProbeSession:
                     for item in self.runtime_inputs
                 ]
                 execution = hashlib.sha256(encoded([execution, runtime])).hexdigest()
+            phases = None
+            if observe_source_phases:
+                phases = {
+                    "version": 1, "scope": observed["read_trace"]["scope"], "entries": phase_entries, "closed": True,
+                }
+                try:
+                    source_phases.validate_capture(phases, observed["read_trace"])
+                except ChannelError as error:
+                    raise MakeProbeError(str(error)) from error
             observation = MakeObservation(
                 target, semantics, execution, hashlib.sha256(semantic_bytes).hexdigest(),
                 completed.stdout, completed.stderr, tuple(events),
                 tuple(self.published_sources[path] for path in sorted(self.published_sources)),
                 tuple(file_open_attempts),
                 observed.get("read_trace"),
+                phases,
             )
             if namespace_capture is not None:
                 namespace_capture.native_complete = True
                 self._namespace_pending[id(namespace_capture)] = namespace_capture, observation
         if namespace_capture is not None:
             self._seal_namespace(namespace_capture, observation)
+            if observe_source_phases:
+                self._retain_source_phases(observation, phase_images, namespace_capture)
         return observation
 
     @terminal_failure

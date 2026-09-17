@@ -214,6 +214,25 @@ the source walk/obligation union for every pass are still required before a
 changed raw-source namespace can be certified. This trace alone must not prune
 first-pass HIDDEN/default/export obligations or authorize a full-root planner
 result from final values.
+
+`observe_source_phases=True` additionally captures complete original namespace
+entry images at those actual native read barriers. It implies read tracing
+but does not alter the original read-only/default-off APIs. The supervisor
+parks the invocation before source evaluation; the host acknowledges completed
+real publications and captures the pinned namespace through the existing
+metadata-neutral helpers. A separate closed barrier/acknowledgement binds
+scope, exec, pass, original-input event and image digest without consuming a
+producer slot or changing the native dispatch/job dictionaries.
+
+Version2 read traces require each `entry-image` immediately after its actual
+`pass-entry`. `MakeObservation.source_phases` describes those images, while
+the owning session retains their real image objects and view/lifetime binding.
+Copies, mutations, foreign scopes or expired views do not acquire that binding.
+The initial source directory can therefore be recorded without generated C
+and the post-reexec entry with it, without substituting the final namespace.
+The existing invocation-wide wildcard refusal remains in place: entry images
+alone do not complete the independent mutation journal or per-pass source
+census and grant no changed-namespace exception.
 Registry declaration execution now has an explicit shared-session entry:
 `graph_registry.observe_declarations(loader, session)`. The selected loader
 must be the active public view and own the same budget. It invokes the real
