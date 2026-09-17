@@ -8937,3 +8937,129 @@ the production file/process/query adapters themselves run in the tests.
 Opaque runtime handles cannot certify exit/RSS; a missing real observation
 remains an explicit hold, never an authenticated label or invented backend.
 Revert the dedicated #178 change on regression.
+
+## TC-WORKFLOW-OWNERSHIP-MODERN-TOOLCHAIN-001: Execute the original modern toolchain prerequisite
+
+**Issue:** [#180](https://github.com/laqieer/fireemblem8-expansion/issues/180),
+[frozen adapter contract](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5712094798).
+This is a confirmed missing ownership-probe execution profile, not a defect
+in the modern build recipe. The preserved bounded original-root preimage
+reaches the actual order-only toolchain prerequisite after text production,
+then refuses `registered command has unconsumed active shell syntax`.
+The earlier five-step header-only fixture omitted that separate prerequisite.
+Neither fixture is a complete repository graph or resource certificate.
+
+### Supported profile and clean starting state
+
+Use the existing Linux x86-64 Foundation/native ownership environment:
+GNU Make 4.3, Python 3, namespace/watchdog support, the installed trusted
+`arm-none-eabi-gcc`, its actual `cc1` and ARM assembler, and newlib C headers.
+No ROM, emulator, archival compiler, additional test framework or remote
+workflow is needed. Install nothing unless an actual dependency is missing.
+
+The fixture creates its own ignored `build/test-artifacts` projection. It
+extracts the complete original toolchain recipe, header order-only
+prerequisite and five-step header/include rule directly from `modern.mk`,
+and copies genuine repository headers. Generated header-output parents
+start absent; it does not precreate message C or replace the original check
+with a benign command. Default release/AAPCS and focused debug/APCS-GNU
+inputs are supported.
+
+### Procedure and observable acceptance
+
+1. From the source root, run:
+
+   ```bash
+   python3 -m unittest scripts.validation_ownership.tests.test_toolchain_runtime -v
+   ```
+
+2. Compare ordinary execution of the original
+   `expansion-modern-toolchain-check` recipe with **each** original native
+   prerequisite invocation, including the real Make restart. Require equal
+   stdout, stderr and successful status, not a successful empty mapping.
+   The native results must identify the real driver queries (`--version`,
+   `-dumpmachine`, `-print-prog-name=as`), the actual `arm-none-eabi` target
+   and executable ARM assembler, and these exact compiler inputs:
+
+   ```c
+   #include "global.h"
+   ```
+
+   ```c
+   void modern_arm7tdmi_thumb_probe(void) {}
+   ```
+
+   Each input includes its original final newline. Require actual GCC/cc1
+   syntax-only execution with the original ordered architecture, language,
+   macro, include and driver arguments; then actual GCC/cc1/as execution of
+   the original freestanding Thumb/interwork compile to `/dev/null`.
+   Inspect authenticated executable identities, consumed repository/SDK
+   identities and actual stdin observations. Source contents and complete
+   file stat results must remain unchanged.
+   Repeat in a genuine immutable selected view: reused repository headers may
+   be hardlinked to the prior immutable snapshot, but retain exact captured
+   bytes and view-bound authority. Captured SDK copies remain singly owned.
+
+3. Exercise debug/ABI settings and ordered define/undefine/include controls.
+   A conditional header must select the first actual include directory;
+   reversing the macro's final value or selecting the other header must not
+   be mistaken for the same behavior. Compiler warnings must reach the real
+   Make stderr relay. A genuine controlled syntax error must preserve the
+   original error text, exit the recipe unsuccessfully, and fail native Make.
+   An explicit Make ignore-error rule may retain Make's own zero exit, but
+   must never turn that failed required check into an ownership certificate.
+
+4. Exercise `-B/usr/bin/` and `-B/bin/` using their real resolution results.
+   These flags do **not** imply that the selected assembler is ARM. On
+   systems where they select the host `as`, ordinary compilation fails and
+   the confined adapter must explicitly refuse that actual assembler before
+   executing it. Do not replace it with a working ARM assembler, substitute
+   host C, expand executable search roots, or report that case as a positive.
+
+5. Remove only the adapter route and require the original native
+   unconsumed-shell-syntax refusal; restore it and require genuine success.
+   Change the driver, target test, recipe/failure branch, flags, stdin,
+   repository/SDK input, include search, exported environment, executable
+   list or owned launch namespace. Each rejects before an unauthorized
+   effect, or preserves a genuine compiler failure. Missing, copied, forged,
+   replayed, cross-session and expired capabilities must exercise actual
+   launch denial, not merely compare object fields.
+
+6. Independently disable meaningful enforcement boundaries and run their
+   corresponding adversarial regressions. Those regressions must fail;
+   restore the boundary and require them to pass. Equivalent literal quoting,
+   whitespace and parsed-record ordering changes must remain green.
+   Failed fixture drafts are diagnostic development records, not preserved
+   production-defect evidence or successful validation.
+
+### Authority, cleanup and limitations
+
+The existing `MakeCommands` selection is followed by an issued original-job,
+session, snapshot, tree and namespace-epoch binding. Each internal compiler
+step and one-shot launch also binds its original arguments, environment,
+stdin and lifetime. A public `Command` has no arbitrary stdin permission.
+The original command's driver identity is verified before and after the
+complete recipe; every internal execution verifies its actual image.
+There is no general shell, compiler, plugin/specs, prefix-search or source-write
+grant, and the existing query/header-only profiles keep their separate
+authority.
+
+Only an absent original `TMPDIR` is mapped to the issued private `/work`
+(the already exact `/work` spelling is also accepted). Other temporary or
+compiler-search environments refuse. The selected syntax/compile launch may
+use only the real bound null device and its owned assembly temporary; other
+devices remain denied. The existing budgets charge all work, and original
+private roots, children, waiters and capability registries are cleaned on
+both success and failure.
+
+The runtime file belongs to the existing trusted verifier inventory and
+ownership rule; this regression belongs to the single existing native suite,
+not duplicated graph discovery. The case uses the existing tester registry.
+Dependencies are the delivered native dispatch/runtime-tool/C-SDK foundation;
+full-root per-pass interpretation and terminal file-ownership integration
+remain separately owned requirements. Selected journal profiles still reject
+nested Make. No gameplay, ROM/RAM, save, localization, generated-content
+format, archival or modern build behavior changes. No full graph resource,
+provider/H1, managed-admission or remote-completion claim follows from this
+component. Reverting the coherent adapter restores explicit refusal without
+changing `modern.mk`.

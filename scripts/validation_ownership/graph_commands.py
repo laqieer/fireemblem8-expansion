@@ -12,7 +12,7 @@ import shutil
 from scripts.bash_parser import normalize_bash_script_commands, tokenize_bash_command
 
 from . import python_commands as shared_python_commands
-from . import arm_headers, header_effects
+from . import arm_headers, header_effects, toolchain_runtime
 from .authority import ENVIRONMENT, encoded, parse_json, relative_path
 from .budget import MakeProbeError, text
 from .make_probe import Command, ProbeSession
@@ -380,7 +380,7 @@ class MakeCommands:
             raise MakeProbeError(f"command lacks exactly one sealed domain: {command!r}")
         contract = matches[0]
         if command in self.registrations and contract["id"] not in {
-            "legacy-text-dry-run-recipe", *HEADER_STEPS,
+            "legacy-text-dry-run-recipe", toolchain_runtime.CONTRACT, *HEADER_STEPS,
         }:
             return self.registrations[command]
         self.session.budget.charge("cache", len(encoded([contract["id"], command])))
@@ -583,6 +583,10 @@ class MakeCommands:
         return self.session._header_step_command(self.session._native_context_command(registration), step)
 
     def _register(self, command, contract):
+        if contract["id"] == toolchain_runtime.CONTRACT:
+            recipe = toolchain_runtime.parse_recipe(command)
+            compiler = _resolve_modern_compiler(self.session, recipe.compiler)
+            return self.session._toolchain.register(command, compiler)
         if contract["id"] in HEADER_STEPS:
             return self.header_step(command, HEADER_STEPS[contract["id"]])
         if contract["id"] == "legacy-text-dry-run-recipe":

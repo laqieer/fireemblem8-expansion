@@ -38,6 +38,7 @@ from . import private_install as install_protocol
 from . import header_effects
 from . import arm_headers
 from . import header_runtime as header_protocol
+from . import toolchain_runtime
 from . import read_epochs
 from . import source_phases
 from . import source_effects
@@ -234,6 +235,7 @@ class ProcessOutput:
     runtime_receipt: tuple[tuple[str, str, str], ...] = ()
     runtime_sources: tuple[tuple[str, int, int, str], ...] = ()
     runtime_probes: tuple[dict, ...] = ()
+    returncode: int = 0
 
 
 @dataclass(frozen=True)
@@ -785,6 +787,7 @@ class ProbeSession:
         self._header_profiles = {}
         self._header_launches = {}
         self._issued_header_launches = weakref.WeakSet()
+        self._toolchain = toolchain_runtime.Controller(self)
         self._read_epoch_abi = None
         self._source_phase_records = {}
         self._source_pass_archives = {}
@@ -1305,6 +1308,7 @@ class ProbeSession:
             self._header_profiles.clear()
             self._header_launches.clear()
             self._issued_header_launches.clear()
+            self._toolchain.close()
             self._read_epoch_abi = None
             finish_cleanup([journal.close for journal in tuple(self._source_journal_instances)])
             self._source_journal_instances.clear()
@@ -1727,7 +1731,7 @@ class ProbeSession:
         directories=(), executables=None, mapping_entries=(), metadata_validation=False,
         producer_handler=None, publication_observer=None, publication_allowed=True,
         dependency=None, observe_recipe_dispatch=False, private_install=None,
-        header_runtime=None,
+        header_runtime=None, toolchain_launch=None,
         observe_read_epochs=False,
         observe_source_phases=False, source_phase_observer=None,
         observe_source_journal=False, source_journal_observer=None,
@@ -1844,7 +1848,19 @@ class ProbeSession:
             if mode != "compile":
                 raise MakeProbeError("dependency profile requires compiler confinement")
             config["dependency"] = dependency
-        needs_header = dependency is not None and bool({"header_search", "filter_kernel"} & set(dependency))
+        needs_toolchain = dependency is not None and "toolchain_probe" in dependency
+        if needs_toolchain or toolchain_launch is not None:
+            if not needs_toolchain:
+                raise MakeProbeError("unrelated command requested a toolchain launch")
+            config["toolchain_runtime"] = self._toolchain.consume_launch(toolchain_launch, config)
+            try:
+                toolchain_runtime.validate_launch(config)
+            except ChannelError as error:
+                raise MakeProbeError(str(error)) from error
+        needs_header = (
+            not needs_toolchain and dependency is not None
+            and bool({"header_search", "filter_kernel"} & set(dependency))
+        )
         if needs_header or header_runtime is not None:
             record = self._header_launches.pop(id(header_runtime), None)
             if (
@@ -2357,8 +2373,13 @@ class ProbeSession:
             settle({name: observed[name] for name in counter_names}, failed=observed["ok"] is not True)
             if result.returncode or observed["ok"] is not True:
                 raise MakeProbeError(f"confined {mode} probe rejected: {observed['error']}; {result.stderr!r}")
-            if dependency is not None and observed["executed"] != dependency["executables"]:
+            if dependency is not None and observed["executed"] != (
+                dependency["executables"][:len(observed["executed"])]
+                if needs_toolchain and observed["returncode"] else dependency["executables"]
+            ):
                 raise MakeProbeError("dependency result lacks its actual driver/cc1 execution")
+            if needs_toolchain and not observed["executed"]:
+                raise MakeProbeError("toolchain result omitted its actual driver")
             if observe_read_epochs and observed["returncode"] == 0:
                 read_epochs.validate_trace(
                     observed.get("read_trace"), config["producer_scope"],
@@ -2397,7 +2418,7 @@ class ProbeSession:
             result.returncode = observed["returncode"]
             if metadata_validation and result.returncode not in {0, 1, 2}:
                 raise MakeProbeError("invalid trusted metadata comparison status")
-            if mode != "make" and not metadata_validation and result.returncode:
+            if mode != "make" and not metadata_validation and not needs_toolchain and result.returncode:
                 raise MakeProbeError(f"registered command failed: {result.returncode}")
             try:
                 installed = install_protocol.validate_records(observed["accessed"], install_spec)
@@ -2896,6 +2917,55 @@ class ProbeSession:
         self._issued_header_launches.add(token)
         return token
 
+    def _toolchain_runtime_profile(self, command, step):
+        recipe = step.parent.recipe
+        if step.stage == 3:
+            result = self._header_runtime_profile(command, recipe.system, recipe.binutils)
+            step.parent.sdk = result[2:]
+            return result
+        compiler = (command.runtime_tool.path,)
+        if step.stage == 4:
+            driver, tools = self._compiler_tools(
+                False, ("cc1", "as"), compiler=compiler[0], search_arguments=recipe.binutils,
+            )
+            programs = {
+                str(_trusted_runtime_path(str(Path(path).resolve(strict=True)), compiler=True)) for path in tools
+            }
+            frontend = {path for path in programs if PurePosixPath(path).name == "cc1"}
+            if len(frontend) != 1 or programs != {driver, *frontend, step.parent.assembler}:
+                raise MakeProbeError("toolchain compile differs from its actual resolved frontend/assembler")
+            compiler = (driver, frontend.pop(), step.parent.assembler)
+        key = ("toolchain", compiler, recipe.binutils, step.stage == 4)
+        if key not in self.runtime_query_profiles:
+            search = (*recipe.binutils, *(
+                tuple(argument for argument in command.argv[1:] if argument.startswith("-m"))
+                if step.stage == 4 else ()
+            ))
+            profile = self._compiler_runtime_profile(compiler, search)
+            if step.stage == 4:
+                profile["runtime_stat_probes"] = sorted({
+                    *profile["runtime_stat_probes"],
+                    *(str(Path(compiler[1]).parent / name) for name in ("collect2", "liblto_plugin.so")),
+                })
+            self.runtime_query_profiles[key] = profile
+        profile = self.runtime_query_profiles[key]
+        if step.stage in {2, 4}:
+            profile = {
+                **profile, "runtime_stat_probes": sorted({
+                    *profile["runtime_stat_probes"],
+                    *(str(Path(directory) / name)
+                      for directory in profile["compiler_search_directories"]
+                      for name in ("as", "arm-none-eabi-as")),
+                }),
+            }
+        if step.stage == 4:
+            if step.parent.sdk is None:
+                raise MakeProbeError("toolchain compile lacks its already captured C SDK namespace")
+            backing, sdk = step.parent.sdk
+            profile = {**profile, "runtime_aliases": [*profile["runtime_aliases"], *sdk["aliases"]]}
+            return compiler, profile, backing, sdk
+        return compiler, profile, None, None
+
     def _confirm_header_effect(self, pending, outcome, generated_paths, generated_directories):
         effect = pending.effect
         if (
@@ -3113,7 +3183,17 @@ class ProbeSession:
         if not isinstance(command, Command):
             raise MakeProbeError("registered command requires a typed Command")
         Command.__post_init__(command)
-        environment = self._command_environment(command)
+        if id(command) in self._toolchain.commands:
+            if compiler is not None or native is not None:
+                raise MakeProbeError("toolchain recipe cannot combine native authority")
+            return self._toolchain.execute(command)
+        toolchain_step = self._toolchain.require_step(command)
+        environment = self._command_environment(
+            command if toolchain_step is None else toolchain_step.parent.command(),
+        )
+        if toolchain_step is not None:
+            toolchain_runtime.environment(environment)
+            environment = {**environment, "TMPDIR": "/work"}
         header_kind = self._header_runtime_kind(command)
         if type(command.dependency_only) is not bool:
             raise MakeProbeError("dependency_only requires a boolean")
@@ -3130,9 +3210,10 @@ class ProbeSession:
         if command.runtime_tool is not None:
             if compiler is not None or native is not None or command.native_tool is not None:
                 raise MakeProbeError("runtime tool cannot combine other execution authority")
-            if header_kind is None:
+            if header_kind is None and toolchain_step is None:
                 self._runtime_tool_query(command)
-            self._verify_runtime_tool(command.runtime_tool)
+            if toolchain_step is None:
+                self._verify_runtime_tool(command.runtime_tool)
             if not command.argv or command.argv[0] != command.runtime_tool.path:
                 raise MakeProbeError("runtime tool execution requires its exact captured pathname")
             compiler = (command.runtime_tool.path,)
@@ -3188,7 +3269,11 @@ class ProbeSession:
         runtime_digest = None if command.runtime_tool is None else command.runtime_tool.digest
         runtime_profile_key = runtime_profile = None
         header_compiler = sdk_backing = sdk = None
-        if header_kind is not None:
+        if toolchain_step is not None:
+            header_compiler, runtime_profile, sdk_backing, sdk = self._toolchain_runtime_profile(command, toolchain_step)
+            if toolchain_step.stage == 3:
+                include_dirs = toolchain_step.parent.recipe.includes
+        elif header_kind is not None:
             header_compiler, runtime_profile, sdk_backing, sdk = self._header_runtime_profile(command, system, binutils)
         elif command.runtime_tool is not None:
             binutils = tuple(argument for argument in command.argv[1:] if argument.startswith("-B"))
@@ -3204,7 +3289,7 @@ class ProbeSession:
             self.snapshot.digest, command, None if native is None else native.digest,
             runtime_digest, code, sources, published_inputs, tuple(sorted(environment.items())),
         )
-        if key in self.cache and not outputs:
+        if toolchain_step is None and key in self.cache and not outputs:
             for cached in self.cache[key]:
                 if self._metadata_matches(cached.metadata):
                     return cached
@@ -3227,7 +3312,33 @@ class ProbeSession:
             argv = list(command.argv)
             dependency = None
             runtime_mounts = []
-            if command.dependency_only:
+            if toolchain_step is not None:
+                compiler = header_compiler
+                dependency = {
+                    **runtime_profile, "executables": list(compiler),
+                    "include_dirs": ["/repo" if path == "." else "/repo/" + path for path in include_dirs],
+                    "metadata_descendants": [],
+                    "toolchain_probe": {
+                        "version": 1, "stage": toolchain_step.stage,
+                        "stdin": toolchain_runtime.INPUTS[toolchain_step.stage],
+                        "driver_identity": list(toolchain_step.parent.driver_identity),
+                        "images": [[path, *self._toolchain.image_identity(path)] for path in compiler],
+                        "workspace": list(install_protocol.directory_identity(output.stat(follow_symlinks=False))),
+                        "inputs": [
+                            [path, int(mode, 8) & 0o777,
+                             len(self.published_sources[path].data if path in self.published_sources else self.snapshot.files[path]),
+                             digest] for path, mode, digest in input_identities
+                        ],
+                    },
+                }
+                if sdk is not None:
+                    dependency["header_search"] = sdk
+                    for index, (path, present) in enumerate(sdk["roots"]):
+                        if present:
+                            _mkdir_target(root, path, directory=True)
+                            runtime_mounts.append(self._mount(sdk_backing / str(index), path))
+                toolchain_step.dependency = encoded(dependency)
+            elif command.dependency_only:
                 if header_kind == "arm":
                     compiler = header_compiler
                     dependency_runtime = runtime_profile
@@ -3306,6 +3417,13 @@ class ProbeSession:
                 self._mount(Path("/dev/null"), "/dev/null", writable=True),
             ]
             header_launch = None
+            toolchain_launch = None
+            if toolchain_step is not None:
+                toolchain_launch = self._toolchain.launch(command, {
+                    "root": str(root), "mode": "compile", "argv": argv, "environment": environment,
+                    "mounts": command_mounts, "code": list(code), "sources": list(sources),
+                    "enumerations": list(directories), "executables": list(compiler), "dependency": dependency,
+                })
             if header_kind is not None:
                 header_launch = self._header_runtime_launch(
                     command, root, mode="compile", argv=argv, environment=environment, mounts=command_mounts,
@@ -3320,8 +3438,12 @@ class ProbeSession:
                     executables=compiler, dependency=dependency,
                     **({"private_install": install_launch} if install_launch is not None else {}),
                     **({"header_runtime": header_launch} if header_launch is not None else {}),
+                    **({"toolchain_launch": toolchain_launch} if toolchain_launch is not None else {}),
                 )
             finally:
+                if toolchain_launch is not None:
+                    self._toolchain.launches.pop(id(toolchain_launch), None)
+                    self._toolchain.issued.discard(toolchain_launch)
                 if header_launch is not None:
                     self._header_launches.pop(id(header_launch), None)
                     self._issued_header_launches.discard(header_launch)
@@ -3332,7 +3454,7 @@ class ProbeSession:
             consumed = tuple(observed["consumed"])
             if consumed != sources:
                 raise MakeProbeError(f"declared/consumed source mismatch: declared={sources!r}, consumed={consumed!r}")
-            if command.dependency_only:
+            if command.dependency_only or toolchain_step is not None:
                 used = set(consumed) | set(observed["code_consumed"])
                 if not set(observed["code_consumed"]) <= set(code):
                     raise MakeProbeError("dependency result names undeclared header code")
@@ -3349,11 +3471,22 @@ class ProbeSession:
             if sdk is not None:
                 try:
                     runtime_sources = arm_headers.records(
-                        observed["accessed"], sdk, compiler,
+                        observed["accessed"], sdk, compiler[:2] if toolchain_step is not None else compiler,
                         count_limit=self.budget.limits.entries, file_limit=self.budget.limits.file_bytes,
                     )
                 except ChannelError as error:
                     raise MakeProbeError(str(error)) from error
+            if toolchain_step is not None:
+                runtime_probes += toolchain_runtime.records(
+                    observed["accessed"], dependency["toolchain_probe"], compiler,
+                    returncode=completed.returncode, argv=argv, environment=environment,
+                )
+                if toolchain_step.stage == 3 and not completed.returncode and "include/global.h" not in observed["code_consumed"]:
+                    raise MakeProbeError("toolchain syntax result omitted actual global.h consumption")
+                if toolchain_step.stage == 3 and not completed.returncode and not runtime_sources:
+                    raise MakeProbeError("toolchain syntax result omitted actual C SDK consumption")
+                if toolchain_step.stage == 4 and any(output.iterdir()):
+                    raise MakeProbeError("toolchain compiler left a private temporary behind")
             if header_kind == "filter":
                 self.budget.charge("sandbox", len(stdout))
                 (output / outputs[0]).write_bytes(stdout)
@@ -3362,9 +3495,10 @@ class ProbeSession:
                 reported = text(stdout, "modern toolchain query output", "utf-8").rstrip("\n")
                 stdout, stderr = ((os.path.dirname(reported) or ".") + "\n").encode(), b""
             if command.runtime_tool is not None:
-                self._verify_runtime_tool(command.runtime_tool)
+                if toolchain_step is None:
+                    self._verify_runtime_tool(command.runtime_tool)
                 aliases = self._compiler_runtime_aliases() if header_kind != "filter" else ()
-                if header_kind == "arm":
+                if header_kind == "arm" or toolchain_step is not None and toolchain_step.stage >= 3:
                     aliases += self._compiler_include_aliases()
                 if tuple(aliases) != tuple(tuple(row) for row in runtime_profile["runtime_aliases"]):
                     raise MakeProbeError("modern compiler runtime aliases changed during query")
@@ -3379,6 +3513,7 @@ class ProbeSession:
                 () if command.runtime_tool is None else tuple(runtime_profile["runtime_aliases"]),
                 runtime_sources,
                 runtime_probes,
+                completed.returncode,
             )
             self.budget.charge(
                 "cache", len(completed.stdout) + len(completed.stderr)
@@ -3400,7 +3535,7 @@ class ProbeSession:
                 self.budget.charge("cache", len(encoded(result.runtime_sources)))
             if result.runtime_probes:
                 self.budget.charge("cache", len(encoded(result.runtime_probes)))
-            if not outputs:
+            if not outputs and toolchain_step is None:
                 self.cache.setdefault(key, []).append(result)
             return result
 
@@ -3451,6 +3586,11 @@ class ProbeSession:
                 raise MakeProbeError("dependency compiler search count exceeds bound")
             normalized = set()
             for path in paths:
+                if (
+                    "-B/bin/" in search_arguments and path.startswith("/bin/")
+                    and _trusted_runtime_path("/bin/arm-none-eabi-gcc", optional=True).parent == Path("/usr/bin")
+                ):
+                    path = "/usr/bin/" + path[len("/bin/"):]
                 if not path.startswith(("/usr/", "/lib/", "/lib64/")):
                     raise MakeProbeError("dependency compiler search escapes system roots")
                 canonical = os.path.normpath(path)
@@ -3932,6 +4072,7 @@ class ProbeSession:
                 if not isinstance(registration, Command):
                     raise MakeProbeError("producer registration requires a typed Command")
                 Command.__post_init__(registration)
+                toolchain_recipe = id(registration) in self._toolchain.commands
                 header_step = self._require_header_step(registration, dispatch_context)
                 if header_step is not None:
                     header_steps[sequence - 1] = header_step
@@ -4017,9 +4158,14 @@ class ProbeSession:
                 }
                 if id(registration) in self._native_context_commands:
                     identity["environment"] = environment
-                if registration.dependency_only:
+                if registration.dependency_only or toolchain_recipe:
                     identity["dependency_only"] = True
                     identity["executed"] = list(result.executed)
+                if toolchain_recipe:
+                    identity.pop("dependency_only", None)
+                    identity["toolchain_check"] = True
+                    identity["returncode"] = result.returncode
+                    identity["stderr_sha256"] = hashlib.sha256(result.stderr).hexdigest()
                 if registration.native_tool is not None:
                     tool = registration.native_tool
                     identity["native_tool"] = {"sha256": tool.digest, "inputs": list(tool.inputs)}
@@ -4056,6 +4202,9 @@ class ProbeSession:
                 self.budget.charge("mapping", len(command.encode("utf-8")) + len(result.stdout) + len(encoded(record)))
                 (mapping_path / (key + ".cmd")).write_bytes(command.encode("utf-8"))
                 (mapping_path / (key + ".out")).write_bytes(result.stdout)
+                if toolchain_recipe:
+                    self.budget.charge("mapping", len(result.stderr))
+                    (mapping_path / (key + ".err")).write_bytes(result.stderr)
                 if result.generated:
                     frame = bytearray(PUBLICATION_MAGIC + bytes.fromhex(producer))
                     frame.extend(struct.pack("<I", PUBLICATION_POLICIES.index(registration.publication_policy)))
@@ -4079,6 +4228,11 @@ class ProbeSession:
                     "stdout_sha256": record["output_sha256"],
                     "publication_policy": registration.publication_policy,
                 }
+                if toolchain_recipe:
+                    reply["toolchain_result"] = {
+                        "returncode": result.returncode,
+                        "stderr_sha256": hashlib.sha256(result.stderr).hexdigest(),
+                    }
                 adopted = self._publication_records(publication_start)
                 if adopted:
                     data = encoded(adopted)
@@ -4165,6 +4319,14 @@ class ProbeSession:
                 raise MakeProbeError("incomplete native header pipeline")
             if completed.returncode:
                 raise MakeProbeError(f"GNU Make failed after live producers: {completed.returncode}; {completed.stderr!r}")
+            if any(
+                not isinstance(item, _PendingHeaderEffect)
+                and item[1]["command"].get("toolchain_check") and item[2].returncode
+                for item in receipts.values()
+            ):
+                raise MakeProbeError(
+                    f"required modern toolchain check failed despite Make ignoring its status; {completed.stderr!r}"
+                )
             file_open_attempts = []
             for entry in observed["accessed"]:
                 if not entry.startswith("make-open:"):

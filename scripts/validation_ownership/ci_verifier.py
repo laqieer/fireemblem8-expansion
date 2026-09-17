@@ -84,6 +84,7 @@ TRUSTED_RUNTIME_PATHS = frozenset(
         f"{TRUSTED_PREFIX}header_effects.py",
         f"{TRUSTED_PREFIX}arm_headers.py",
         f"{TRUSTED_PREFIX}header_runtime.py",
+        f"{TRUSTED_PREFIX}toolchain_runtime.py",
         f"{TRUSTED_PREFIX}read_epochs.py",
         f"{TRUSTED_PREFIX}read_trace.py",
         f"{TRUSTED_PREFIX}source_phases.py",

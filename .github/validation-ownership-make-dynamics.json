@@ -967,7 +967,9 @@
       "input_variables": [
         "MAKEFLAGS",
         "MODERN_ABI",
+        "MODERN_ABI_FLAGS",
         "MODERN_ARCH_FLAGS",
+        "MODERN_BINUTILS_FLAG",
         "MODERN_CC",
         "MODERN_CONFIG",
         "MODERN_DEFINE_FLAGS",

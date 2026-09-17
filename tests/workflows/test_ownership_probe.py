@@ -24,6 +24,7 @@ PROBE_TEST_MODULES = (
     "scripts.validation_ownership.tests.test_text_producer",
     "scripts.validation_ownership.tests.test_header_effects",
     "scripts.validation_ownership.tests.test_header_pipeline",
+    "scripts.validation_ownership.tests.test_toolchain_runtime",
     "scripts.validation_ownership.tests.test_read_epochs",
     "scripts.validation_ownership.tests.test_source_phases",
     "scripts.validation_ownership.tests.test_source_effects",
