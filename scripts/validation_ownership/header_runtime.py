@@ -38,6 +38,10 @@ def validate_launch(config):
     dependency = config.get("dependency") or {}
     kinds = {"header_search", "filter_kernel"} & set(dependency)
     value = config.get("header_runtime")
+    if "toolchain_probe" in dependency:
+        if value is not None:
+            raise ChannelError("toolchain launch cannot borrow a header runtime grant")
+        return
     if not kinds:
         if value is not None:
             raise ChannelError("unrelated command carries a header runtime grant")

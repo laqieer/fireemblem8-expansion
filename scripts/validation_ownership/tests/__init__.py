@@ -12,6 +12,7 @@ def load_tests(loader, standard_tests, pattern):
         "test_text_producer",
         "test_header_effects",
         "test_header_pipeline",
+        "test_toolchain_runtime",
         "test_read_epochs",
         "test_source_phases",
         "test_source_effects",

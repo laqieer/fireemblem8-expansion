@@ -32,6 +32,7 @@ if __package__:
     from . import header_effects
     from . import arm_headers
     from . import header_runtime as header_protocol
+    from . import toolchain_runtime
     from .read_trace import NativeReadTrace
     from .read_epochs import ReadEpochError
     from . import source_phases
@@ -50,6 +51,7 @@ else:
     import header_effects
     import arm_headers
     import header_runtime as header_protocol
+    import toolchain_runtime
     from read_trace import NativeReadTrace
     from read_epochs import ReadEpochError
     import source_phases
@@ -81,6 +83,7 @@ VO_RECIPE, VO_VALUE, VO_VALIDATE = 0x564F4D4B00000011, 0x564F4D4B00000012, 0x564
 VO_LIVE = 0x564F4D4B00000014
 VO_JOB_CONTEXT = 0x564F4D4B00000007
 VO_SOURCE_IO = 0x564F4D4B00000008
+VO_TOOLCHAIN_STATUS = 0x564F4D4B00000009
 STACK_LIMIT = 16 * 1024 * 1024
 SYSCALL_MEMORY_LIMIT = 65536
 
@@ -253,6 +256,9 @@ class Process:
     dependency_image: str | None = None
     dependency_stop: tuple[int, int, int] | None = None
     path_context: tuple[str, int, str | None] | None = None
+    toolchain_exec: tuple | None = None
+    toolchain_status: int | None = None
+    toolchain_status_queried: bool = False
 
     def clone(self):
         return Process(
@@ -301,6 +307,9 @@ class Policy:
         self.journal_receipts = None
         self.directory_installs = None
         try:
+            self.toolchain = toolchain_runtime.validate_launch(config)
+            if self.toolchain is not None:
+                toolchain_runtime.verify_workspace(Path(config["root"]) / "work", self.toolchain["workspace"])
             header_protocol.validate_launch(config)
         except ChannelError as error:
             raise Violation(str(error)) from error
@@ -352,10 +361,16 @@ class Policy:
         self.kernel_streams = {}
         self.kernel_sequence = 0
         self.header_roots, self.header_entries, self.header_files, self.header_verified = {}, {}, {}, {}
+        self.toolchain_inputs = {} if self.toolchain is None else {
+            "/repo/" + row[0]: row for row in self.toolchain["inputs"]
+        }
+        self.toolchain_stdin = bytearray()
+        self.toolchain_eof = False
+        self.toolchain_temporaries = {}
         if dependency and "header_search" in dependency:
             try:
                 self.header_roots, self.header_entries, self.header_files = arm_headers.validate_search(
-                    dependency["header_search"], dependency["executables"],
+                    dependency["header_search"], dependency["executables"][:2] if self.toolchain is not None else dependency["executables"],
                     count_limit=config["observation_count"], file_limit=config["file_limit"],
                 )
             except ChannelError as error:
@@ -1623,6 +1638,12 @@ class Policy:
             or self.dependency_image_identity(f"/proc/{pid}/exe") != expected
         ):
             raise Violation("dependency executable differs from its verified image")
+        if self.toolchain is not None:
+            info = os.stat(f"/proc/{pid}/exe")
+            if [
+                info.st_dev, info.st_ino, info.st_mode, info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+            ] != dict((row[0], row[1:]) for row in self.toolchain["images"])[path]:
+                raise Violation("toolchain executable changed its original command identity")
 
     def verify_dependency_mapping_span(self, image, start, end, raw_offset, ip, instruction):
         if not re.fullmatch(rb"[0-9a-fA-F]{1,16}", raw_offset):
@@ -1766,13 +1787,15 @@ class Policy:
         }
         self.observe("accessed", header_protocol.KERNEL_PREFIX + encoded(row).decode("ascii"))
 
-    def header_runtime_access(self, state, path, operation, mode):
-        if any(
+    def header_runtime_access(self, state, path, operation, mode, *, source=False):
+        if not source and any(
             path == excluded or path.startswith(excluded + "/")
             for excluded in self.config["dependency"]["header_search"]["excluded"]
         ):
             raise Violation("unsupported C++ SDK namespace is not an absent C header")
-        expected = self.header_files.get(path)
+        expected = (self.toolchain_inputs if source else self.header_files).get(path)
+        if self.toolchain is not None and self.toolchain["stage"] == 4 and operation == "read":
+            raise Violation("the tiny toolchain compile cannot consume a source/SDK header")
         if expected is not None:
             if (
                 operation not in {"read", "metadata"}
@@ -1785,7 +1808,9 @@ class Policy:
             )
             with os.fdopen(descriptor, "rb") as stream:
                 before = publication_identity(os.fstat(stream.fileno()))
-                if before[2:4] != (stat.S_IFREG | expected[1], expected[2]) or before[6] != 1:
+                if before[2:4] != (stat.S_IFREG | expected[1], expected[2]) or (
+                    before[6] < 1 if source else before[6] != 1
+                ):
                     raise Violation("captured ARM SDK input changed type, mode or extent")
                 if path in self.header_verified:
                     if self.header_verified[path] != before:
@@ -1806,7 +1831,8 @@ class Policy:
                     if publication_identity(os.fstat(stream.fileno())) != before:
                         raise Violation("captured ARM SDK input changed during its actual read")
                     self.header_verified[path] = before
-            self.defer_observation(state, "accessed", arm_headers.PREFIX + encoded(expected).decode("ascii"))
+            if not source:
+                self.defer_observation(state, "accessed", arm_headers.PREFIX + encoded(expected).decode("ascii"))
             return
         if self.header_entries.get(path) == "directory" and operation == "metadata":
             if mode is None or not stat.S_ISDIR(mode):
@@ -1820,6 +1846,41 @@ class Policy:
             self.defer_observation(state, "accessed", path)
             return
         raise Violation("ungranted or changed ARM SDK entry is not a missing header")
+
+    def toolchain_private_access(self, state, path, operation):
+        stage = self.toolchain["stage"]
+        executables = self.config["executables"]
+        if path == "/work" and operation == "metadata":
+            return
+        if path == "/dev" and stage >= 3 and operation == "metadata":
+            return
+        if path == "/dev/null":
+            if stage < 3 or operation not in {"read", "write", "metadata"} or (
+                operation == "write" and state.dependency_image != executables[-1]
+            ):
+                raise Violation("toolchain probe escaped its exact null output")
+            return
+        if stage != 4 or not re.fullmatch(r"/work/cc[A-Za-z0-9]{6}\.s", path) or operation not in {"read", "write", "metadata"}:
+            raise Violation("toolchain probe escaped its one private assembly temporary")
+        info = None
+        try:
+            info = (Path(self.config["root"]) / path.lstrip("/")).lstat()
+        except FileNotFoundError:
+            pass
+        if path not in self.toolchain_temporaries:
+            if self.toolchain_temporaries or info is not None or state.dependency_image != executables[0]:
+                raise Violation("toolchain temporary is preexisting, repeated or foreign")
+            self.toolchain_temporaries[path] = None
+        if info is not None:
+            identity = info.st_dev, info.st_ino, info.st_mode, info.st_nlink
+            if (
+                not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_mode & 0o777 != 0o600
+                or self.toolchain_temporaries[path] not in {None, identity}
+            ):
+                raise Violation("toolchain temporary changed its actual owned object")
+            self.toolchain_temporaries[path] = identity
+        elif self.toolchain_temporaries[path] is not None and operation != "metadata":
+            raise Violation("toolchain temporary disappeared before its actual compiler operation")
 
     def dependency_runtime_access(self, state, path, operation):
         full = Path(self.config["root"]) / path.lstrip("/")
@@ -1868,6 +1929,12 @@ class Policy:
     def check(self, state, path, operation, *, observer=False):
         if path.startswith("<"):
             return
+        if self.toolchain is not None:
+            if path in {"/work", "/dev", "/dev/null"} or path.startswith("/work/"):
+                self.toolchain_private_access(state, path, operation)
+                return
+            if path in self.toolchain_inputs:
+                self.header_runtime_access(state, path, operation, self.source_mode(path), source=True)
         if state.role == "make" and state.observer_ready:
             if path == "/lib/vo-observer.so" and not observer:
                 raise Violation("supervisor observer image access denied")
@@ -2073,11 +2140,20 @@ class Policy:
         state.observations.clear()
         state.observation_needs_bytes = False
         trusted = self.observer(state, r)
-        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY, VO_JOB_CONTEXT, VO_SOURCE_IO}:
+        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY, VO_JOB_CONTEXT, VO_SOURCE_IO, VO_TOOLCHAIN_STATUS}:
             if a == VO_QUERY_KIND:
                 if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE, VO_LIVE}:
                     raise Violation("unauthenticated interceptor kind query")
                 state.pending = ("helper_kind", state.helper_kind)
+            elif a == VO_TOOLCHAIN_STATUS:
+                if (
+                    state.role != "helper" or state.helper_kind != VO_LIVE
+                    or state.producer_slot is None or not state.producer_event_written
+                    or state.toolchain_status_queried or b or c
+                ):
+                    raise Violation("unissued or repeated toolchain outcome query")
+                state.toolchain_status_queried = True
+                state.pending = ("toolchain-status", 2 if state.toolchain_status is None else state.toolchain_status)
             elif a == VO_METADATA:
                 entries = self.config.get("mapping_entries", ())
                 if (
@@ -2220,6 +2296,13 @@ class Policy:
                 if n != 0 or (pid, a) not in self.kernel_streams or c > SYSCALL_MEMORY_LIMIT:
                     raise Violation("sed kernel stream escaped its sequential bounded read")
                 state.pending = ("kernel-read", (a, b, c))
+            if self.toolchain is not None and path == "<stdin>":
+                if (
+                    n != 0 or self.toolchain["stage"] < 3 or c > SYSCALL_MEMORY_LIMIT
+                    or state.dependency_image != self.config["executables"][1]
+                ):
+                    raise Violation("toolchain stdin lacks its exact actual frontend")
+                state.pending = ("toolchain-stdin", (b, c))
         elif n in {1, 18, 20}:  # write/pwrite/writev
             path = self.check_fd(state, a, "write", r)
             state.kernel_io = path
@@ -2312,6 +2395,22 @@ class Policy:
                 if len(self.executed) >= len(expected) or path != expected[len(self.executed)]:
                     raise Violation("dependency execution escaped the driver/cc1 profile")
                 state.exec_path = path
+                if self.toolchain is not None:
+                    arguments = recipe_arguments(pid, b)
+                    remaining = SYSCALL_MEMORY_LIMIT - sum(len(value.encode("utf-8")) + 1 for value in arguments)
+                    environment = {}
+                    for value in recipe_arguments(pid, c, label="environment", byte_limit=remaining, allow_empty=True):
+                        name, separator, content = value.partition("=")
+                        if not separator or not name or name in environment:
+                            raise Violation("toolchain exec has a malformed environment")
+                        environment[name] = content
+                    if (
+                        not arguments or self.resolve(arguments[0]) != path
+                        or state.bootstrap and (arguments != self.config["argv"] or environment != self.config["environment"])
+                        or not state.bootstrap and state.dependency_image != expected[0]
+                    ):
+                        raise Violation("toolchain exec escaped its issued driver/parent arguments")
+                    state.toolchain_exec = arguments, environment
             if self.mode == "make":
                 if state.bootstrap and path == "/usr/bin/make":
                     role = "make"
@@ -2560,6 +2659,17 @@ class Policy:
                 stream["bytes"] += result
             else:
                 stream["eof"] = True
+        if operation == "toolchain-stdin":
+            address, requested = value
+            expected = self.toolchain["stdin"].encode("utf-8")
+            if result < 0 or result > requested or len(self.toolchain_stdin) + result > len(expected):
+                raise Violation("toolchain stdin exceeded its exact issued extent")
+            self.charge_metadata(result)
+            actual = memory(pid, address, result) if result else b""
+            if actual != expected[len(self.toolchain_stdin):len(self.toolchain_stdin) + result]:
+                raise Violation("toolchain stdin differs from its actual issued bytes")
+            self.toolchain_stdin.extend(actual)
+            self.toolchain_eof |= result == 0
         if result < 0:
             if operation == "make-source-exec" and result == -errno.EACCES and self.source_execute_allowed(pid, *value):
                 raise Violation(f"Make source executable lookup denied by noexec view: {value[0]}")
@@ -2596,6 +2706,9 @@ class Policy:
                 self.observe("accessed", "make-helper:" + encoded([
                     state.native_dispatch_sequence, result,
                 ]).decode("ascii"))
+            r.rax = value
+            ptrace(SETREGS, pid, 0, ctypes.byref(r))
+        elif operation == "toolchain-status":
             r.rax = value
             ptrace(SETREGS, pid, 0, ctypes.byref(r))
         elif operation == "directory":
@@ -2676,6 +2789,17 @@ def supervise(config, drop_privileges):
             os.chdir("/repo")
             os.umask(0o022)
             os.closerange(3, 65536)
+            if policy.toolchain is not None:
+                if policy.toolchain["stdin"]:
+                    reader, writer = os.pipe()
+                    data = toolchain_runtime.input_bytes(policy.toolchain)
+                    if os.write(writer, data) != len(data):
+                        raise Violation("incomplete selected toolchain stdin")
+                    os.close(writer)
+                    os.dup2(reader, 0)
+                    os.close(reader)
+                if policy.toolchain["stage"] < 3:
+                    os.dup2(1, 2)
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
             resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))
             resource.setrlimit(resource.RLIMIT_FSIZE, (config["file_limit"], config["file_limit"]))
@@ -2755,6 +2879,9 @@ def supervise(config, drop_privileges):
             if code != 0 and not (
                 stopped == pid and (config["mode"] == "make"
                 or config.get("metadata_validation") and code in {1, 2})
+                or policy.toolchain is not None
+                or state.role == "helper" and state.toolchain_status == code == 1
+                and state.toolchain_status_queried and state.producer_event_written
             ):
                 raise Violation(f"sandbox process exited unsuccessfully: {code}")
             return
@@ -2796,6 +2923,18 @@ def supervise(config, drop_privileges):
                 state.dependency_stop = None
                 policy.reserve_observation("accessed", "dependency-exec:" + str(len(policy.executed)) + state.exec_path)
                 policy.executed.append(state.exec_path)
+                if policy.toolchain is not None:
+                    if state.toolchain_exec is None:
+                        raise Violation("toolchain execution lost its actual argument observation")
+                    info = os.stat(f"/proc/{stopped}/exe")
+                    arguments, environment = state.toolchain_exec
+                    policy.observe("accessed", toolchain_runtime.EXEC_PREFIX + encoded({
+                        "stage": toolchain_runtime.STAGES[policy.toolchain["stage"]],
+                        "sequence": len(policy.executed), "path": state.exec_path,
+                        "identity": [info.st_dev, info.st_ino, info.st_mode, info.st_size, info.st_mtime_ns, info.st_ctime_ns],
+                        "argv": arguments, "environment": environment,
+                    }).decode("ascii"))
+                    state.toolchain_exec = None
                 state.exec_path = None
             if state.bootstrap:
                 descriptors = {entry.name for entry in Path(f"/proc/{stopped}/fd").iterdir()}
@@ -3032,7 +3171,7 @@ def supervise(config, drop_privileges):
         }
         if (
             not isinstance(reply, dict)
-            or set(reply) not in (required, required | {"adopt_sha256"})
+            or set(reply) not in (required, required | {"adopt_sha256"}, required | {"toolchain_result"})
             or reply["kind"] != "result" or reply["scope"] != config["producer_scope"]
             or type(reply["sequence"]) is not int or reply["sequence"] != sequence
             or type(reply["slot"]) is not int or reply["slot"] != sequence - 1
@@ -3060,6 +3199,22 @@ def supervise(config, drop_privileges):
         stdout = read_slot(key + ".out", 1024*1024)
         if hashlib.sha256(stdout).hexdigest() != reply["stdout_sha256"]:
             raise Violation("producer stdout differs from its validated result")
+        if "toolchain_result" in reply:
+            outcome = reply["toolchain_result"]
+            if (
+                not isinstance(outcome, dict) or set(outcome) != {"returncode", "stderr_sha256"}
+                or type(outcome["returncode"]) is not int or outcome["returncode"] not in {0, 1}
+                or not isinstance(outcome["stderr_sha256"], str)
+                or not re.fullmatch("[0-9a-f]{64}", outcome["stderr_sha256"])
+                or reply["outputs"] or state.native_job_context.get("kind") != "recipe"
+                or state.native_job_context.get("target") != toolchain_runtime.TARGET
+                or state.native_job_context.get("command_line") != 1
+            ):
+                raise Violation("unbound original toolchain outcome")
+            stderr = read_slot(key + ".err", 1024*1024)
+            if hashlib.sha256(stderr).hexdigest() != outcome["stderr_sha256"]:
+                raise Violation("toolchain stderr differs from its authenticated result")
+            state.toolchain_status = outcome["returncode"]
         try:
             data = read_slot(key + ".adopt", config["file_limit"])
         except FileNotFoundError as failure:
@@ -3187,6 +3342,11 @@ def supervise(config, drop_privileges):
                     processes.clear()
         def write_report():
             nonlocal result
+            if error is None and policy.toolchain is not None and policy.toolchain["stdin"]:
+                policy.observe("accessed", toolchain_runtime.INPUT_PREFIX + encoded({
+                    "stage": toolchain_runtime.STAGES[policy.toolchain["stage"]],
+                    "stdin": bytes(policy.toolchain_stdin).decode("utf-8", "strict"), "eof": policy.toolchain_eof,
+                }).decode("ascii"))
             if error is None and policy.filter_kernel is not None:
                 if policy.kernel_streams:
                     raise Violation("successful sed runtime retained unclosed kernel inputs")
