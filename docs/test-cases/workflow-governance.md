@@ -6163,6 +6163,67 @@ clean and never releases or deletes anything. All existing case IDs, native
 owners and automation remain; production protocol, permissions, limits and
 the independent full-report control-byte boundary are unchanged.
 
+#### Native job correlation after helper exit
+
+The [5721273772 correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5721273772)
+keeps authenticated job identity separate from a live helper's lifetime.
+At `3c3d79484ec55e66f6ab3fa922b6832249ec2f42`, exactly three bounded direct
+Make diagnostics preserved a real ordering defect: delaying one actual parent
+job-context stop until its helper exited left dispatch/helper/policy records
+complete but the job-context map empty. The original CI log did not record
+those sets or stop order, so its precise historical missing set is not claimed.
+The separate unchanged-method 12.093s pass does not clear this race. The third
+diagnostic's inverse hold did not activate and is not credited as exercised.
+
+Use the existing Linux/native prerequisites and independently owned fixtures,
+not live project outputs. Run:
+
+```sh
+python3 -m unittest \
+  scripts.validation_ownership.tests.test_producer.ProducerTests.test_retired_job_context_survives_actual_helper_exit \
+  scripts.validation_ownership.tests.test_producer.ProducerTests.test_retired_job_context_old_drop_restores_missing_job \
+  scripts.validation_ownership.tests.test_producer.ProducerTests.test_retired_job_context_reobservations_preserve_identity \
+  scripts.validation_ownership.tests.test_producer.ProducerTests.test_retired_job_context_rejects_authority_and_identity_changes \
+  scripts.validation_ownership.tests.test_producer.ProducerTests.test_retired_job_context_spends_existing_metadata_and_count_bounds \
+  scripts.validation_ownership.tests.test_producer.ProducerTests.test_retired_job_reports_require_complete_unique_native_bindings -v
+```
+
+1. Use the original multiline literal-space recipe. Hold one **real** parent
+   `VO_JOB_CONTEXT` stop until the actual helper has exited, then deliver that
+   unchanged stop. Require the same dispatch sequence, recipe target/ordinal,
+   observed helper PID and its native policy as the before-exit order.
+   All four final set relations and helper-PID uniqueness remain mandatory.
+2. Observe that the original live `Process` is removed and its actual pidfd
+   is closed before the late context is handled. Only immutable plain
+   correlation metadata remains: PID, sequence, role/helper kind and an
+   optional validated context. No FD map, memory reservation, live actor or
+   executable authority may be retained as a tombstone.
+3. Repeat the actual context and require the same binding. A changed target
+   or command ordinal, wrong parent/observer, unknown closed process, missing
+   helper identity, duplicate PID/sequence or reused retired identity rejects.
+   New-child failures must still own the actor for complete cleanup.
+4. Remove only the old closed-PID early-return fix. The real late context must
+   again be dropped and the unchanged driver must reject missing job evidence.
+   Independently remove/corrupt job/helper/policy records or uniqueness: no
+   malformed report may become a successful observation.
+5. Exhaust the existing admitted descendant/dispatch count or remaining
+   observation bytes before insertion/update. No unfunded retired record or
+   context is stored, and spent bytes are not refunded. Count capacity uses
+   admitted cumulative extent, not a larger new ceiling or live-process
+   retention.
+6. Run the unchanged multiline, PID-policy, parallel-job and actual
+   target/ordinal controls. Require closed pidfds/children, zero pending/
+   parked/waiter state and complete fixture cleanup after positives and
+   negatives. Never synthesize a context from argv, source text, exit status
+   or a default policy, or serialize all helper execution as a workaround.
+
+The native C observer, interceptor and 24-byte context wire format remain
+unchanged. The receiver emits through the existing validated path; the final
+driver completeness checks are not weakened. This invocation-scoped metadata
+is not a persistent ledger, source/export fix, permission/profile change,
+resource calibration, full-root certificate or H1/17 allocation. The existing
+case and sole native test owner remain; all prior automation is preserved.
+
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while
 native per-file raw metadata remains `$(FLAGS)`. Do not eagerly copy the

@@ -214,6 +214,22 @@ def execute_mode_allows(info, uid, gids):
     return bool(info.st_mode & stat.S_IXOTH)
 
 
+@dataclass(frozen=True, slots=True)
+class _RetiredJob:
+    namespace_pid: int
+    native_dispatch_sequence: int
+    role: str
+    helper_kind: int
+    context: tuple[str, str | None, int | None] | None
+
+    @property
+    def native_job_context(self):
+        if self.context is None:
+            return None
+        kind, target, command_line = self.context
+        return {"kind": kind, "target": target, "command_line": command_line}
+
+
 @dataclass
 class Process:
     role: str
@@ -357,6 +373,7 @@ class Policy:
         self.live_process_peak = 0
         self.make_pid = 0
         self.closed_processes = set()
+        self.retired_jobs = {}
         self.make_restarts = 0
         self.dispatch_sequence = 0
         self.executable = set(config["executables"])
@@ -1111,6 +1128,50 @@ class Policy:
             start <= registers.rip < end for start, end in state.observer_ranges
         )
 
+    def require_fresh_process(self, pid):
+        if pid in self.closed_processes or pid in self.retired_jobs:
+            raise Violation("native process reused a retired identity")
+
+    def retire_job(self, pid, state):
+        if self.processes.get(pid) is not state:
+            raise Violation("retired job is not its actual tracked process")
+        sequence = state.native_dispatch_sequence
+        if sequence is None:
+            if state.native_dispatch_context is not None or state.namespace_pid is not None:
+                raise Violation("retired helper has incomplete dispatch identity")
+            return
+        if (
+            self.mode != "make" or type(pid) is not int or not 0 < pid < 1 << 31
+            or pid == self.make_pid or state.role not in {"make", "helper"}
+            or type(sequence) is not int or not 0 < sequence <= self.dispatch_sequence
+            or type(state.namespace_pid) is not int or state.namespace_pid != pid
+            or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE, VO_LIVE}
+            or state.pidfd < 0 or pid in self.retired_jobs or pid in self.closed_processes
+            or any(job.native_dispatch_sequence == sequence for job in self.retired_jobs.values())
+            or any(other is not state and other.native_dispatch_sequence == sequence
+                   for other in self.processes.values())
+        ):
+            raise Violation("retired job lacks a unique authenticated helper identity")
+        try:
+            dispatch = validate_dispatch_context(state.native_dispatch_context)
+            if dispatch["sequence"] != sequence:
+                raise ChannelError("retired job dispatch sequence changed")
+            context = state.native_job_context
+            if context is not None:
+                if not isinstance(context, dict):
+                    raise ChannelError("retired job context is not a native record")
+                validate_job_context({"sequence": sequence, **context}, sequence)
+                context = (context["kind"], context["target"], context["command_line"])
+        except ChannelError as error:
+            raise Violation(str(error)) from error
+        if len(self.retired_jobs) >= min(
+            self.config["descendant_limit"], self.total_processes, self.dispatch_sequence,
+        ):
+            raise Violation("retired job count exceeds its admitted process/dispatch extent")
+        record = (pid, sequence, state.role, state.helper_kind, context)
+        self.charge_metadata(len(encoded(record)))
+        self.retired_jobs[pid] = _RetiredJob(*record)
+
     def observe_job_context(self, pid, state, pointer, size):
         if state.role != "make" or pid != self.make_pid or not state.observer_ready or size != 24:
             raise Violation("invalid native job-context sender or frame")
@@ -1123,9 +1184,13 @@ class Policy:
             raise Violation("invalid native job-context process/index")
         child = self.processes.get(child_pid)
         if child is None:
-            if child_pid in self.closed_processes:
-                return
-            raise Violation("native job context refers to an untracked process")
+            child = self.retired_jobs.get(child_pid)
+            if child is None:
+                raise Violation("native job context refers to an untracked or non-job process")
+            if type(child) is not _RetiredJob or child.namespace_pid != child_pid:
+                raise Violation("retired job context lost its authenticated helper identity")
+        elif child_pid in self.closed_processes or child_pid in self.retired_jobs:
+            raise Violation("native job context collides with a retired process")
         if child.role not in {"make", "helper"}:
             raise Violation("native job context refers to a non-Make child")
         if child.namespace_pid is not None and child.namespace_pid != child_pid:
@@ -1139,7 +1204,21 @@ class Policy:
         }
         if child.native_job_context is not None and child.native_job_context != context:
             raise Violation("native job context changed for its actual process")
-        child.native_job_context = context
+        if isinstance(child, _RetiredJob):
+            if child.native_job_context is None:
+                try:
+                    validate_job_context({"sequence": child.native_dispatch_sequence, **context})
+                except ChannelError as error:
+                    raise Violation(str(error)) from error
+                record = (
+                    child.namespace_pid, child.native_dispatch_sequence, child.role, child.helper_kind,
+                    (context["kind"], context["target"], context["command_line"]),
+                )
+                self.charge_metadata(len(encoded(record)))
+                child = _RetiredJob(*record)
+                self.retired_jobs[child_pid] = child
+        else:
+            child.native_job_context = context
         self.emit_job_context(child)
 
     def emit_job_context(self, state):
@@ -2867,6 +2946,7 @@ def supervise(config, drop_privileges):
                 if stopped not in newborn_stops:
                     policy.total_processes += 1
                     newborn_stops[stopped] = os.pidfd_open(stopped)
+                policy.require_fresh_process(stopped)
                 policy.account_processes()
                 return
             raise Violation("unrecorded sandbox descendant")
@@ -2875,8 +2955,12 @@ def supervise(config, drop_privileges):
             unfulfilled = state.producer_requested and (
                 state.producer_slot is None or not state.producer_event_written
             )
-            del processes[stopped]
-            state.close()
+            try:
+                if config["mode"] == "make":
+                    policy.retire_job(stopped, state)
+            finally:
+                del processes[stopped]
+                state.close()
             if config["mode"] == "make":
                 policy.charge_metadata(16)
                 policy.closed_processes.add(stopped)
@@ -2903,6 +2987,8 @@ def supervise(config, drop_privileges):
         if sig == signal.SIGTRAP and event in {1, 2, 3}:
             child = ctypes.c_ulong()
             ptrace(0x4201, stopped, 0, ctypes.byref(child))
+            if child.value in processes:
+                raise Violation("native fork reused an active process identity")
             if child.value not in newborn_stops:
                 policy.total_processes += 1
             record = state.clone()
@@ -2913,6 +2999,7 @@ def supervise(config, drop_privileges):
             if not already_stopped:
                 record.pidfd = os.pidfd_open(child.value)
             processes[child.value] = record
+            policy.require_fresh_process(child.value)
             if not state.process_reservation:
                 raise Violation("unreserved process creation")
             state.process_reservation = False
