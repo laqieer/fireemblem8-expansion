@@ -29,6 +29,24 @@ def _has_namespace(expression):
     )
 
 
+def _recipe_export_context(origin, event):
+    return origin["stage"] == "after-read" and event["job"]["kind"] == "recipe"
+
+
+def _export_expands(binding):
+    if binding.flavor not in {"simple", "recursive"} or binding.origin not in ORIGINS.values():
+        raise MakeProbeError("export lacks its effective original binding")
+    # GNU preserves imported environment bytes even for recursive variables.
+    return binding.flavor == "recursive" and binding.origin != "environment"
+
+
+def _fixed_environment_binding(name, binding):
+    return (
+        binding.origin in {"default", "environment"} and name in graph.ENVIRONMENT
+        and binding.value == graph.ENVIRONMENT[name] and "$" not in binding.value
+    )
+
+
 class SourceTemplates(graph._TemplateModeProof):
     def value(self, mode, name, *, active=()):
         return mode.exact_reference(name, active)
@@ -60,6 +78,8 @@ class SourcePass:
                 self.sources[_path(visit.resolved)] = visit.source.data
         self.patterns = []
         self.executions = {}
+        self.expanding_exports = set()
+        self.data_exports = set()
         self.deferred_execution = False
         self.unproven_scoped_names = set()
 
@@ -90,10 +110,7 @@ class SourcePass:
             return
         if binding.flavor not in {"simple", "recursive"} or value is None:
             raise MakeProbeError("original execution lacks its effective binding: " + name)
-        if (
-            binding.origin in {"default", "environment"} and name in graph.ENVIRONMENT
-            and binding.value == graph.ENVIRONMENT[name] and "$" not in binding.value
-        ):
+        if _fixed_environment_binding(name, binding):
             return
         if binding.flavor == "recursive":
             if graph.references(value) & local:
@@ -123,18 +140,37 @@ class SourcePass:
                 recipes.append(unit.text[1:])
             else:
                 header, inline = graph.split_inline_recipe(unit.text)
+                if graph.CONDITIONAL_NAME.match(header):
+                    self.check_reads((header,), (), {})
                 assignment = graph.ASSIGNMENT.fullmatch(graph.strip_comment(header))
                 if assignment is not None and "private" in header[:assignment.start("name")].split():
                     self.unproven_scoped_names.add(assignment["name"])
                 if inline:
                     recipes.append(inline)
         controls = graph.INVOCATION_CONTROL_READS | graph.SOURCE_HISTORY_CONTROLS | {"MAKELEVEL"}
-        roots = chain(recipes, ("$(" + name + ")" for name in self.exports if name not in controls))
         self.deferred_execution = True
         try:
-            for expression in roots:
+            for expression in recipes:
                 if mode.effectful(expression, automatic=True):
                     raise MakeProbeError("original deferred execution has an unproven effect or binding")
+            for name in self.exports:
+                if name in controls:
+                    continue
+                if name in self.unproven_scoped_names:
+                    raise MakeProbeError("export has an unproven target/private binding: " + name)
+                bindings = mode.binding(name)
+                if len(bindings) != 1:
+                    raise MakeProbeError("export has an ambiguous original binding: " + name)
+                binding = next(iter(bindings))
+                if _export_expands(binding):
+                    self.expanding_exports.add(name)
+                    if mode.effectful("$(" + name + ")", automatic=True):
+                        raise MakeProbeError("original exported execution has an unproven effect or binding")
+                elif not _fixed_environment_binding(name, binding):
+                    self.session.budget.charge("cache", len(encoded((
+                        "export-data", name, binding.origin, binding.flavor, binding.value,
+                    ))))
+                    self.data_exports.add(name)
         finally:
             self.deferred_execution = False
 
@@ -250,7 +286,7 @@ class OriginalSourceProof:
         self.exports = {}
         for event in observation.semantics["native_dispatches"]:
             origin = dispatches[event["sequence"]]
-            if origin["stage"] == "after-read" and event["job"]["kind"] == "recipe" and event["kind"] == "value":
+            if _recipe_export_context(origin, event):
                 self.exports.setdefault(origin["pass"], set()).update(event["environment"])
 
     def _published_visit(self, visit, minimum=0):
@@ -334,7 +370,7 @@ def _deferred_namespace_check(phase, stream, usage):
         )
         if unresolved or _has_namespace(value) or reaches(names):
             raise MakeProbeError("deferred namespace use lacks an original parse-time snapshot")
-    if reaches(phase.exports):
+    if reaches(phase.expanding_exports):
         raise MakeProbeError("exported namespace body crosses an unproven mutation interval")
 
 
@@ -386,6 +422,7 @@ def analyze(session, observation, target, state, commands, *, primary_source="Ma
             primary_source=primary_source, external_names=external_names, phase=phase,
         )
         phase.prepare_deferred_reads(stream)
+        stream = stream._replace(native_exports=tuple(sorted(phase.expanding_exports)))
         usage = graph.source_census(
             phase.sources, reference_units=stream, template_graph_inputs=inputs, template_scoped=scoped,
             source_assignments=state, budget=session.budget, source_target=target,
@@ -394,7 +431,8 @@ def analyze(session, observation, target, state, commands, *, primary_source="Ma
         )
         original_names = {name for name, _, _, _ in phase.executions}
         exported = graph.closure(
-            set(phase.exports) & (usage["defined"] | original_names), usage["dependencies"],
+            (phase.expanding_exports & (usage["defined"] | original_names)) | phase.data_exports,
+            usage["dependencies"],
         )
         added = exported - usage["recipe"]
         if added:

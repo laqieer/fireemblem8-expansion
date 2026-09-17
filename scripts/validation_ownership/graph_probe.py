@@ -109,6 +109,7 @@ class MakeSourceUnit(NamedTuple):
     phase_target: str | None = None
     phase_command: str | None = None
     reads: tuple = ()
+    created_bindings: tuple = ()
 
 
 class _SourceUnitStream(NamedTuple):
@@ -947,6 +948,39 @@ class _MakeSourceMode:
             self.uncertain()
         return ()
 
+    def export_declarations(self, statement, active):
+        directive = MAKE_DIRECTIVE.match(statement)
+        if directive is None or directive[1] not in {"export", "unexport"}:
+            return ()
+        operand = statement[directive.end():].strip(MAKE_SPACE)
+        if not operand:
+            return ()
+        names = self.literal_text(operand)
+        if names is None:
+            self.uncertain("unproven export declaration names")
+            return ()
+        created = []
+        for name in re.findall(r"[^ \t\r\n\v\f]+", names):
+            self.checkpoint()
+            if name == ".VARIABLES":
+                raise MakeProbeError("original source has an unsupported variable-universe read")
+            if not re.fullmatch(IDENTIFIER, name):
+                raise MakeProbeError("unproven export declaration name")
+            previous = self.binding(name)
+            if any(value.flavor == "unknown" for value in previous):
+                self.uncertain("unproven original export declaration binding")
+                return ()
+            if not any(value.flavor == "undefined" for value in previous):
+                continue
+            # Named export/unexport creates this binding in GNU Make.
+            values = {value for value in previous if value.flavor != "undefined"}
+            values.add(_ModeBinding("file", "simple", ""))
+            if active is None:
+                values.update(previous)
+            self.retain_binding(name, values)
+            created.append(name)
+        return tuple(created)
+
     def assign(self, name, operator, value, *, override=False, active=True, scope=None, literal_body=False):
         if active is False:
             return _AssignmentEffect(False, False)
@@ -1301,7 +1335,7 @@ def make_source_units(
             if active is True:
                 pending_posix = False
 
-    def contextual_unit(line, body=None, assignment=None, emitted=()):
+    def contextual_unit(line, body=None, assignment=None, emitted=(), created_bindings=()):
         nonlocal phase_target
         statement = strip_comment(line).strip(MAKE_SPACE)
         kind = (
@@ -1326,6 +1360,7 @@ def make_source_units(
         return MakeSourceUnit(
             line, body, conditional_depth=len(conditions), active=active, assignment=assignment, emitted=emitted, kind=kind,
             phase=phase, phase_target=target, phase_command=command, reads=tuple(sorted(mode.reads)),
+            created_bindings=created_bindings,
         )
 
     for chunk in chunks:
@@ -1422,6 +1457,7 @@ def make_source_units(
         else:
             effect = None
             emitted = ()
+            created_bindings = ()
             if not raw.startswith("\t") and active is not False:
                 if assignment:
                     effect = mode.assign(
@@ -1453,6 +1489,8 @@ def make_source_units(
                     )
                     source_header = split_inline_recipe(header)[0] if mode.original_execution is not None else header
                     emitted = () if neutral_template else mode.evaluate(source_header, active=active)
+                    if mode.original_execution is not None:
+                        created_bindings = mode.export_declarations(source_header, active)
                     included = _include_names(header, mode)
                     if included is not False:
                         if include is None:
@@ -1466,7 +1504,7 @@ def make_source_units(
                             if mode.posix is not True and (active is None or not known_context):
                                 raise MakeProbeError("unproven conditional/include .POSIX activation")
                             pending_posix = True
-            yield contextual_unit(line, assignment=effect, emitted=emitted)
+            yield contextual_unit(line, assignment=effect, emitted=emitted, created_bindings=created_bindings)
             if include_request is not None:
                 include(*include_request)
     if conditions:
@@ -2546,6 +2584,7 @@ def _prepare_rule_templates(
         for replacement in replacement_units:
             replacement = replacement._replace(
                 conditional_depth=unit.conditional_depth, active=unit.active, reads=unit.reads,
+                created_bindings=unit.created_bindings,
             )
             session.budget.charge("cache", len(encoded((path, len(prepared), replacement))))
             if position in known_positions:
@@ -2894,6 +2933,12 @@ def source_census(
     )
     for path, _, unit in ordered:
         raw = unit.text
+        for name in unit.created_bindings:
+            source_defined.add(name)
+            dependencies.setdefault(name, set())
+            definitions.setdefault(name, []).append("")
+            expressions.setdefault(name, []).append("")
+            read_expressions.setdefault(name, []).append("")
         phase_condition = re.fullmatch(r"[ \t]*(ifeq)[ \t]+(.*)", strip_comment(raw))
         if (
             unit.phase in reference_units.phase_tests and phase_condition

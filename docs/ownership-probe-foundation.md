@@ -381,12 +381,20 @@ Original input bodies enter that closure only when the existing source-mode
 walk or an authenticated Make recipe export actually requires their effective
 binding. Their raw values remain distinct from pruned read forms, and they do
 not become synthetic source declarations. Metadata/unexport/override and
-known lazy-operand controls retain their behavior. Requested invocation goals
+known lazy-operand controls retain their behavior. Recipe suppression is
+separate from export expansion: source/command-line recursive values may
+already be expanded in a projected recipe, while GNU4.3 preserves recursive
+environment-origin values as raw export data even in an executed recipe.
+Effective origin/flavor and actual export membership determine the read;
+explicit Make references are still normal expansion. Named export/unexport
+also creates an empty file-origin simple binding when the variable was
+undefined, as confirmed by the native metadata controls.
+Requested invocation goals
 cannot replace authentic forced control values; the normal unforced facts and
 the existing unsupported supplied-control boundary remain separate.
-The default invariant planner remains unchanged. Missing required live
-toolchain-check execution still blocks the original full-root planner; no
-phase result authorizes a shell/profile or quota workaround.
+The default invariant planner remains unchanged. Full original-root acceptance
+and resource measurement remain separate from source correctness; no phase
+result authorizes a shell/profile, bound split or quota workaround.
 
 The graph's lifecycle consumer may additionally select
 `ProbeSession.make(..., observe_recipe_dispatch=True)` for the validated

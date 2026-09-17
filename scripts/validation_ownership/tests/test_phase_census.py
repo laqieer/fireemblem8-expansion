@@ -3,6 +3,7 @@
 import copy
 from dataclasses import replace
 import shlex
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -108,6 +109,218 @@ class PhaseCensusTests(unittest.TestCase):
                 session.loader, {"all"}, domains, {}, session=session, source_phases=True,
                 declared_external_names=set(domains),
             )["all"]
+
+    def effective_export_source(self, declarations, *, required=False):
+        self.fixture.add("Makefile", (
+            ".DEFAULT_GOAL := all\n" + declarations
+            + "all:\n\t" + ("+@" if required else "@") + "python3 capture.py\n"
+        ))
+        self.fixture.add("capture.py", "import os\nprint(os.environ['UNIVERSE'])\n")
+
+    def effective_export_commands(self, session):
+        return {"python3 capture.py": session._native_context_command(make_probe.Command(
+            ("/usr/bin/python3", "/repo/capture.py"), code=("capture.py",),
+        ))}
+
+    def observe_effective_export(self, session, state=()):
+        commands = self.effective_export_commands(session)
+        results = []
+        execute = session.command
+        def capture(command):
+            result = execute(command)
+            results.append(result)
+            return result
+        with patch.object(session, "command", capture):
+            observed = session.make(
+                "all", definitions=("UNIVERSE",), assignments=state, commands=commands,
+                observe_source_journal=True, source_journal_mode=source_directories.MODE,
+            )
+        return observed, commands, results
+
+    def ordinary_effective_export(self, state=()):
+        result = subprocess.run(
+            ["/usr/bin/make", "--no-print-directory", *(name + "=" + value for origin, name, value in state
+                                                        if origin == "command-line"), "all"],
+            cwd=self.fixture.root,
+            env={**graph_probe.ENVIRONMENT, **{name: value for origin, name, value in state if origin == "environment"}},
+            capture_output=True, timeout=20,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, b"")
+        return result.stdout
+
+    def effective_export_plan(self, session, domains):
+        with patch.object(graph_probe, "MakeCommands", lambda owner, contracts: self.effective_export_commands(owner)):
+            return graph_probe.run_probe(
+                session.loader, {"all"}, domains, {}, session=session, source_phases=True,
+            )["all"]
+
+    def test_projected_recipe_exports_execute_source_and_command_bodies_before_suppression(self):
+        body = "$(filter UNIVERSE,$(.VARIABLES:%=%))"
+        for origin in ("file", "command-line"):
+            declarations = "UNIVERSE = " + body + "\n" if origin == "file" else "KIND := $(origin UNIVERSE)\n"
+            self.effective_export_source(declarations + "export UNIVERSE\n")
+            state = () if origin == "file" else (("command-line", "UNIVERSE", body),)
+            domains = {} if origin == "file" else {"UNIVERSE": {"kind": "explicit", "values": [body]}}
+            self.assertEqual(self.ordinary_effective_export(state), b"UNIVERSE\n")
+            with self.subTest(origin=origin), self.case.session() as session:
+                observed, commands, executed = self.observe_effective_export(session, state)
+                self.assertEqual(executed, [])
+                dispatch, = observed.semantics["native_dispatches"]
+                self.assertEqual(dispatch["kind"], "recipe")
+                self.assertEqual(dispatch["job"], {"sequence": 1, "kind": "recipe", "target": "all", "command_line": 1})
+                self.assertEqual(dispatch["environment"]["UNIVERSE"], "UNIVERSE")
+                self.assertEqual(observed.semantics["definitions"]["global"]["UNIVERSE"]["value"], body)
+                with self.assertRaisesRegex(MakeProbeError, "variable-universe"):
+                    phase_census.analyze(session, observed, "all", state, commands)
+            self.fixture.assert_clean(session)
+            with self.case.session() as session:
+                with self.assertRaisesRegex(MakeProbeError, "variable-universe"):
+                    self.effective_export_plan(session, domains)
+            self.fixture.assert_clean(session)
+
+    def test_original_environment_exports_are_raw_but_explicit_make_reads_still_execute(self):
+        body = "$(filter UNIVERSE,$(.VARIABLES:%=%))"
+        for explicit in (False, True):
+            declarations = "KIND := $(origin UNIVERSE)\n" + ("export UNIVERSE\n" if explicit else "")
+            self.effective_export_source(declarations, required=True)
+            state = (("environment", "UNIVERSE", body),)
+            self.assertEqual(self.ordinary_effective_export(state), (body + "\n").encode())
+            with self.subTest(explicit=explicit), self.case.session() as session:
+                observed, commands, executed = self.observe_effective_export(session, state)
+                command, = executed
+                self.assertEqual((command.returncode, command.stdout, command.stderr), (0, (body + "\n").encode(), b""))
+                dispatch, = observed.semantics["native_dispatches"]
+                self.assertEqual((dispatch["kind"], dispatch["job"]["kind"]), ("value", "recipe"))
+                self.assertEqual(dispatch["environment"]["UNIVERSE"], body)
+                self.assertEqual(observed.semantics["definitions"]["global"]["UNIVERSE"], {
+                    "origin": "environment", "flavor": "recursive", "value": body,
+                })
+                usage, _, _, _ = phase_census.analyze(session, observed, "all", state, commands)
+                self.assertIn("UNIVERSE", usage["recipe"])
+                self.assertNotIn("UNIVERSE", usage["source_expressions"])
+                self.assertNotIn("UNIVERSE", usage["execution_dependencies"])
+            self.fixture.assert_clean(session)
+            for input_origin, extra in (("command-line", ""), ("environment", "ACTUAL_READ := $(UNIVERSE)\n")):
+                self.effective_export_source(extra + declarations, required=True)
+                state = ((input_origin, "UNIVERSE", body),)
+                expected = b"UNIVERSE\n" if input_origin == "command-line" else (body + "\n").encode()
+                self.assertEqual(self.ordinary_effective_export(state), expected)
+                with self.subTest(explicit=explicit, input_origin=input_origin), self.case.session() as session:
+                    observed, commands, executed = self.observe_effective_export(session, state)
+                    self.assertEqual(executed[0].stdout, expected)
+                    with self.assertRaisesRegex(MakeProbeError, "variable-universe"):
+                        phase_census.analyze(session, observed, "all", state, commands)
+                self.fixture.assert_clean(session)
+
+    def test_effective_export_origin_tracks_conditional_append_override_and_simple_data(self):
+        body = "$(filter UNIVERSE,$(.VARIABLES:%=%))"
+        cases = (
+            ("UNIVERSE ?= fallback\n", "environment", "recursive", body, True),
+            ("UNIVERSE +=\n", "environment", "recursive", body, True),
+            ("override UNIVERSE +=\n", "environment", "recursive", body, True),
+            ("UNIVERSE += tail\n", "file", "recursive", "UNIVERSE tail", False),
+            ("export UNIVERSE += tail\n", "file", "recursive", "UNIVERSE tail", False),
+            ("UNIVERSE = " + body + "\n", "file", "recursive", "UNIVERSE", False),
+            ("override UNIVERSE = " + body + "\n", "override", "recursive", "UNIVERSE", False),
+            ("UNIVERSE := $(value UNIVERSE)\n", "file", "simple", body, True),
+            ("UNIVERSE = literal\n", "file", "recursive", "literal", True),
+            ("ifeq (yes,no)\nUNIVERSE = literal\nendif\n", "environment", "recursive", body, True),
+            ("ifeq (yes,yes)\nUNIVERSE = literal\nendif\n", "file", "recursive", "literal", True),
+            ("override UNIVERSE := literal\n", "override", "simple", "literal", True),
+        )
+        state = (("environment", "UNIVERSE", body),)
+        for declarations, origin, flavor, value, accepted in cases:
+            self.effective_export_source(declarations, required=True)
+            self.assertEqual(self.ordinary_effective_export(state), (value + "\n").encode())
+            with self.subTest(declarations=declarations), self.case.session() as session:
+                observed, commands, executed = self.observe_effective_export(session, state)
+                self.assertEqual(executed[0].stdout, (value + "\n").encode())
+                metadata = observed.semantics["definitions"]["global"]["UNIVERSE"]
+                self.assertEqual((metadata["origin"], metadata["flavor"]), (origin, flavor))
+                if accepted:
+                    phase_census.analyze(session, observed, "all", state, commands)
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "variable-universe"):
+                        phase_census.analyze(session, observed, "all", state, commands)
+            self.fixture.assert_clean(session)
+
+    def test_raw_environment_code_bytes_remain_data_with_an_independent_namespace_snapshot(self):
+        body = "$(wildcard src/*.c)$(error raw export must not execute)"
+        self.effective_export_source("SNAPSHOT := $(wildcard src/*.c)\nKIND := $(origin UNIVERSE)\n",
+                                     required=True)
+        state = (("environment", "UNIVERSE", body),)
+        self.assertEqual(self.ordinary_effective_export(state), (body + "\n").encode())
+        with self.case.session() as session:
+            observed, commands, executed = self.observe_effective_export(session, state)
+            self.assertEqual(executed[0].stdout, (body + "\n").encode())
+            usage, _, _, _ = phase_census.analyze(session, observed, "all", state, commands)
+            self.assertIn("UNIVERSE", usage["recipe"])
+            self.assertNotIn("UNIVERSE", usage["execution_dependencies"])
+        self.fixture.assert_clean(session)
+
+    def test_export_declarations_create_only_native_proven_empty_simple_bindings(self):
+        for directive in ("export UNSET", "unexport UNSET", "export UNSET UNSET", "export ${NAME}"):
+            self.fixture.add("Makefile", (
+                ".DEFAULT_GOAL := all\nNAME := UNSET\n" + directive + "\n"
+                "ifneq ($(origin UNSET),file)\nHIDDEN ?= incorrect\nendif\nall: ;\n"
+            ))
+            with self.subTest(directive=directive), self.case.session() as session:
+                observed = session.make(
+                    "all", definitions=("UNSET", "HIDDEN"), observe_source_journal=True,
+                    source_journal_mode=source_directories.MODE,
+                )
+                self.assertEqual(observed.semantics["definitions"]["global"]["UNSET"],
+                                 {"origin": "file", "flavor": "simple", "value": ""})
+                self.assertEqual(observed.semantics["definitions"]["global"]["HIDDEN"]["origin"], "undefined")
+                usage, _, streams, _ = phase_census.analyze(session, observed, "all", (), {})
+                self.assertEqual(usage["defaults"], set())
+                self.assertIn("UNSET", usage["defined"])
+                self.assertEqual(streams[0].mode_state.literal_text("$(origin UNSET)"), "file")
+                self.assertEqual(streams[0].mode_state.literal_text("$(flavor UNSET)"), "simple")
+            self.fixture.assert_clean(session)
+
+    def test_literal_projected_exports_are_data_and_keep_complete_small_planner_positive(self):
+        for value in ("literal", "$$(filter UNIVERSE,$$(.VARIABLES:%=%))"):
+            self.effective_export_source("UNIVERSE := " + value + "\nexport UNIVERSE\n")
+            expected = value.replace("$$", "$")
+            self.assertEqual(self.ordinary_effective_export(), (expected + "\n").encode())
+            with self.subTest(value=value), self.case.session() as session:
+                result = self.effective_export_plan(session, {})
+                self.assertEqual(result["variable_census"]["defaults"], [])
+                dispatch, = result["record"]["variants"][0]["record"]["native_dispatches"]
+                self.assertEqual(dispatch["environment"]["UNIVERSE"], expected)
+            self.fixture.assert_clean(session)
+
+    def test_export_projection_and_raw_origin_removals_recover_the_actual_regressions(self):
+        body = "$(filter UNIVERSE,$(.VARIABLES:%=%))"
+        context = phase_census._recipe_export_context
+        for origin in ("file", "command-line"):
+            prefix = "UNIVERSE = " + body + "\n" if origin == "file" else "KIND := $(origin UNIVERSE)\n"
+            self.effective_export_source(prefix + "export UNIVERSE\n")
+            domains = {} if origin == "file" else {"UNIVERSE": {"kind": "explicit", "values": [body]}}
+            with self.subTest(origin=origin), self.case.session() as session:
+                with patch.object(phase_census, "_recipe_export_context",
+                                  side_effect=lambda actual, event: context(actual, event) and event["kind"] == "value"):
+                    result = self.effective_export_plan(session, domains)
+                self.assertEqual(result["variable_census"]["defaults"], [])
+                supplied = [row for row in result["record"]["variants"] if row["state"]]
+                variant = supplied[0] if supplied else result["record"]["variants"][0]
+                dispatch, = variant["record"]["native_dispatches"]
+                self.assertEqual((dispatch["kind"], dispatch["environment"]["UNIVERSE"]), ("recipe", "UNIVERSE"))
+            self.fixture.assert_clean(session)
+        for explicit in (False, True):
+            self.effective_export_source("KIND := $(origin UNIVERSE)\n" + ("export UNIVERSE\n" if explicit else ""),
+                                         required=True)
+            state = (("environment", "UNIVERSE", body),)
+            with self.subTest(explicit=explicit), self.case.session() as session:
+                observed, commands, executed = self.observe_effective_export(session, state)
+                self.assertEqual(executed[0].stdout, (body + "\n").encode())
+                with patch.object(phase_census, "_export_expands", side_effect=lambda binding: binding.flavor == "recursive"):
+                    with self.assertRaisesRegex(MakeProbeError, "variable-universe"):
+                        phase_census.analyze(session, observed, "all", state, commands)
+                phase_census.analyze(session, observed, "all", state, commands)
+            self.fixture.assert_clean(session)
 
     def test_original_recursive_execution_and_initial_only_exports_close_before_admission(self):
         body = "$(.VARIABLES:%=%)"
@@ -277,11 +490,27 @@ class PhaseCensusTests(unittest.TestCase):
                 mode.forced = forced
                 mode.invocation_inputs = supplied
         with self.case.session() as session:
+            observed = self.original_input_observation(session, state)
+            proof = phase_census.OriginalSourceProof(session, observed)
+            part = proof.archive.passes[0]
+            phase = phase_census.SourcePass(
+                proof, part, proof.images[0], proof.exports.get(part.number, ()),
+                "all", state, self.case.commands(session), "Makefile",
+            )
             with patch.object(graph_probe._MakeSourceMode, "bind_invocation", omit_forced):
-                result = self.original_input_plan(session, domains)
-            self.assertEqual(result["variable_census"]["defaults"], [])
-            supplied, = [row for row in result["record"]["variants"] if row["state"]]
-            self.assertEqual(supplied["record"]["native_dispatches"][0]["environment"]["HIDDEN"], "secret")
+                stream, inputs, scoped = graph_probe._prepare_rule_templates(
+                    session, "all", state, self.case.commands(session), observed, phase.sources,
+                    primary_source="Makefile", phase=phase,
+                )
+                usage = graph_probe.source_census(
+                    phase.sources, reference_units=stream, template_graph_inputs=inputs, template_scoped=scoped,
+                    source_assignments=state, budget=session.budget, source_target="all",
+                )
+                self.assertEqual(stream.mode_state.control_values["MAKECMDGOALS"], "all")
+                self.assertEqual(usage["defaults"], set())
+                self.assertEqual(observed.semantics["native_dispatches"][0]["environment"]["HIDDEN"], "secret")
+                with self.assertRaisesRegex(MakeProbeError, "effective original binding"):
+                    self.original_input_plan(session, domains)
         self.fixture.assert_clean(session)
 
     def test_all_forced_invocation_facts_withhold_the_same_unproven_context(self):

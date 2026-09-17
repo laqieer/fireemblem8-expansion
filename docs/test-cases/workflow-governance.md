@@ -5985,10 +5985,10 @@ earlier read. Initial-only literal exports remain valid and are recorded as
 reads, not source definitions. Proven unexecuted `and`/`or`/`if` operands stay
 lazy. Distinguish actual Make recipe export expansion from the GNU4.3
 shell-function environment passing raw input text, both during and after
-source reading. Separate real value dispatches with recipe jobs from suppressed
-recipe projections; the latter's environment does not prove Make expanded an
-original body. Check all actual expansion contexts rather than assuming one
-helper invocation. Unexported variables actually used by a recipe still require
+source reading. Command suppression is not the export-expansion rule: inspect
+the effective GNU origin/flavor and actual export selection for both value
+dispatches and recipe projections. Check all actual expansion contexts rather
+than assuming one helper invocation. Unexported variables actually used by a recipe still require
 their body closure; unproven target/private/local contexts remain held.
 Check both inline and block `+` recipes that read an original input after a
 later effective override. Both actual commands must receive the replacement
@@ -6007,8 +6007,13 @@ conditional `HIDDEN ?= secret` and export under that actual variable value.
 Require the producer's real `HIDDEN=secret` and command-line goal metadata.
 The source walk must retain the possible default instead of seeding `all`,
 and the complete small planner must refuse the unsupported forced context.
-Remove only forced-name participation in invocation-fact seeding: both states
-again admit empty default censuses. Restore the check. Apply the same rule to
+The earlier single-seam removal admitted both states with empty default
+censuses; keep that historical evidence. Now remove only forced/supplied-name
+participation in invocation-fact seeding: the source walk must again expose
+the wrong goal fact and lost default, but the independent effective-export
+binding check must still reject the complete planner's actual HIDDEN mismatch.
+Do not weaken that newer guard to demand another unsafe admission.
+Restore the check. Apply the same rule to
 every invocation-control fact, and retain the normal unforced goal, origin,
 flavor and control-read facts. These are explicit small-planner corrections,
 not historical-default, full-root, resource or H1 admission claims.
@@ -6026,6 +6031,40 @@ retain the reassignment/eval/computed/undefine refusals, invalidated snapshots
 and all other malformed/effectful cases. Removing exact filter must break the
 positive; replacing missing proof with empty data must break the negative.
 
+For effective GNU export semantics, use a capture program that prints
+`os.environ["UNIVERSE"]`. Define a recursive source value
+`$(filter UNIVERSE,$(.VARIABLES:%=%))`, export it, and use an ordinary
+`@python3 capture.py` recipe. Ordinary Make and the authenticated projected
+recipe environment must both contain `UNIVERSE`, despite interceptor
+suppression. The analyzer and complete small planner must reject this
+unsupported executed universe read. Repeat through a command-line domain,
+without adding a default or another guard that would mask the original
+admission.
+
+Next supply that expression through the original environment and use a
+required `+@python3 capture.py` recipe with only an origin read in source.
+Ordinary and actual confined execution must print the unchanged expression
+and succeed, with implicit and explicit export. The effective binding remains
+environment/recursive: export transports data rather than executing the body.
+Its command-line counterpart and an explicit Make-language variable read
+must actually expand and refuse. Raw equality is evidence to compare, not the
+criterion used by the checker.
+
+Exercise skipped `?=`, empty/nonempty append, override, active/inactive
+conditional writes, source redefinition and simple `value` snapshots.
+Require native origin/flavor/output agreement. Empty append preserves the
+environment origin; nonempty append changes it to source origin and causes
+recursive export expansion. Simple dollar-bearing values stay data. A named
+export or unexport of an undefined name must create the actual empty
+file-origin simple binding before subsequent metadata reads.
+
+Restore only the old projection-kind exclusion and recover the source and
+command-line small-planner admissions. Independently restore the
+environment-body-as-executed rule: the actual raw-transport positive must
+again be rejected. Restore both fixes. Keep the original input, control,
+filter, namespace, lifetime, unexport/lazy and private/scoped holds intact.
+All of these controls remain in the same indexed phase module and case.
+
 Restore the original raw C-source wildcard/default/append and derived header
 constructor to the genuine text/ARM/sed component. Retain its real goal/include
 guard, initially absent C/parents, actual outputs and unchanged tracked header.
@@ -6035,9 +6074,10 @@ bounded grammar and GNU whitespace; non-ASCII pattern normalization is not a
 proof. Keep old constructor/POSIX/metadata/default/export and numeric controls.
 
 The separate full-root attempt also keeps the original header order-only
-toolchain check. Its missing live adapter is an explicit hold, not permission
-to remove that prerequisite, broaden shell/compiler authority or claim a
-completed original-root report. The source-phase option is explicit and the
+toolchain check and genuine recipe. Source correctness closes before Main's
+separately frozen contained resource scope; the old cap is not a prerequisite
+to sizing itself. No prerequisite removal, shell/compiler broadening or
+completed original-root report follows from this case. The source-phase option is explicit and the
 ordinary invariant planner remains unchanged. Preserve the existing native
 owner, case IDs, all automation and limits; no allocation17/H1 follows.
 

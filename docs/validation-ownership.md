@@ -355,9 +355,19 @@ need a source-file declaration and are not reclassified as source definitions.
 An earlier effective override replaces the body; a later override cannot erase
 an earlier read. Literal metadata, explicitly unexported inputs and proven
 unexecuted `and`/`or`/`if` operands remain lazy. Native Make recipe exports
-include initial-only names; a GNU4.3 shell-function environment containing raw
-input text is not proof that Make expanded that text. Neither is a suppressed
-dry-run recipe projection's environment. Deferred recipes are checked
+include initial-only names, independently of whether the interceptor later
+executes or suppresses the command. GNU can already have expanded a source
+or command-line body before a recipe projection is suppressed.
+Export expansion follows the effective original binding: simple values are
+data, and GNU4.3 transports recursive environment-origin values raw, including
+explicit export without redefinition. Recursive source/command-line/override
+bindings expand. A nonempty append or source redefinition can change the
+origin; an empty append or skipped conditional default does not. Explicit
+Make reads of an environment-origin body still expand it normally. Raw output
+equality and command kind are never proxies for these binding semantics.
+The source walk also models the native-proven empty file-origin simple
+binding created by a named export/unexport of an undefined variable.
+Deferred recipes are checked
 separately, with existing automatic-variable spellings treated as local
 context rather than global original bindings; unknown automatic values never
 seed pruning.
@@ -377,12 +387,12 @@ Required unknown target/private/local execution contexts still refuse instead
 of borrowing a global input value.
 
 The ordinary invariant/default planner path remains available. This opt-in
-source path does not itself supply missing live command adapters. The bounded
-original-root attempt retaining the actual header order-only toolchain check
-still refuses `modern-toolchain-dry-run-recipe`; it is not bypassed by dropping
-the prerequisite or substituting a no-op. Successful small source-phase
-controls and genuine raw-source/header component interpretation are not a
-claim of full original-root or whole-report completion.
+source path does not relax any live command or resource boundary. The genuine
+original root retains its header order-only toolchain check, original recipe
+and absence conditions. Source correctness precedes the separately frozen
+contained resource scope; success under the known insufficient old cap is not
+a prerequisite to its own sizing. Successful small source-phase controls and
+component interpretation are not full original-root or whole-report evidence.
 
 The [5710465329 terminal-file correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5710465329)
 separates planned output reservations from cleanup ownership. The native
