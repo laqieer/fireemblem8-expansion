@@ -9035,13 +9035,9 @@ start absent; it does not precreate message C or replace the original check
 with a benign command. Default release/AAPCS and focused debug/APCS-GNU
 inputs are supported.
 
-### Procedure and observable acceptance
+### Actions
 
-1. From the source root, run:
-
-   ```bash
-   python3 -m unittest scripts.validation_ownership.tests.test_toolchain_runtime -v
-   ```
+1. From the source root, run the command under **Automation** below.
 
 2. Compare ordinary execution of the original
    `expansion-modern-toolchain-check` recipe with **each** original native
@@ -9102,7 +9098,39 @@ inputs are supported.
    Failed fixture drafts are diagnostic development records, not preserved
    production-defect evidence or successful validation.
 
-### Authority, cleanup and limitations
+### Expected result
+
+Each supported ordinary and confined invocation agrees on stdout, stderr and
+status while preserving the original source bytes and file metadata. Actual
+compiler, input and SDK observations support the result; a failed required
+check cannot become an ownership certificate even when Make ignores its exit.
+
+### Negative control
+
+Removing the adapter restores the original refusal. The invalid inputs and
+capabilities in steps 4-6 must reject or retain the genuine compiler failure;
+removing an enforcement boundary must make its adversarial regression fail.
+Equivalent literal quoting, whitespace and record ordering remain supported.
+
+### Interactions and save compatibility
+
+Dependencies are the delivered native dispatch/runtime-tool/C-SDK foundation;
+full-root per-pass interpretation and terminal file-ownership integration
+remain separately owned requirements. Selected journal profiles still reject
+nested Make. No gameplay, ROM/RAM, save, localization, generated-content
+format, archival or modern build behavior changes.
+
+### Automation
+
+```bash
+python3 -m unittest scripts.validation_ownership.tests.test_toolchain_runtime -v
+```
+
+The runtime file belongs to the existing trusted verifier inventory and
+ownership rule; this regression belongs to the single existing native suite,
+not duplicated graph discovery. The case uses the existing tester registry.
+
+### Cleanup and limitations
 
 The existing `MakeCommands` selection is followed by an issued original-job,
 session, snapshot, tree and namespace-epoch binding. Each internal compiler
@@ -9122,14 +9150,7 @@ devices remain denied. The existing budgets charge all work, and original
 private roots, children, waiters and capability registries are cleaned on
 both success and failure.
 
-The runtime file belongs to the existing trusted verifier inventory and
-ownership rule; this regression belongs to the single existing native suite,
-not duplicated graph discovery. The case uses the existing tester registry.
-Dependencies are the delivered native dispatch/runtime-tool/C-SDK foundation;
-full-root per-pass interpretation and terminal file-ownership integration
-remain separately owned requirements. Selected journal profiles still reject
-nested Make. No gameplay, ROM/RAM, save, localization, generated-content
-format, archival or modern build behavior changes. No full graph resource,
+No full graph resource,
 provider/H1, managed-admission or remote-completion claim follows from this
 component. Reverting the coherent adapter restores explicit refusal without
 changing `modern.mk`.

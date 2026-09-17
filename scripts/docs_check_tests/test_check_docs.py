@@ -1280,6 +1280,13 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_graph_regex.GraphRegexTests -v",
                         },
                     },
+                    "TC-WORKFLOW-OWNERSHIP-MODERN-TOOLCHAIN-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.validation_ownership.tests.test_toolchain_runtime -v",
+                        },
+                    },
                     "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
