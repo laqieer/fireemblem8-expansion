@@ -6447,18 +6447,45 @@ print(json.dumps({"submount_levels":3,"source_flags_unchanged":True,
         config = self.directory / "mount-config.json"
         config.write_text(json.dumps({"root": str(self.root), "mounts": []}))
         supervise = Mock(return_value=0)
-        flags = Mock(wraps=sys.flags, isolated=True, no_site=True)
-        with patch.object(sys, "path", list(sys.path)), patch.object(
-            sys, "argv", ["sandbox_exec.py", str(config)],
-        ), patch.object(
-            sys, "flags", flags,
-        ), patch.object(sandbox_exec, "mount"), patch.object(
+        original_flags, original_argv, original_path = sys.flags, sys.argv, sys.path
+        had_toolchain = "toolchain_runtime" in sys.modules
+        original_toolchain = sys.modules.get("toolchain_runtime")
+        search = list(sys.path)
+        launcher_sys = SimpleNamespace(
+            flags=SimpleNamespace(isolated=True, no_site=True),
+            argv=["sandbox_exec.py", str(config)], path=search,
+        )
+        descriptors = set(os.listdir("/proc/self/fd"))
+        with patch.object(sys, "path", search), patch.object(
+            sandbox_exec, "sys", launcher_sys,
+        ), patch.object(sandbox_exec, "mount") as mount, patch.object(
             sandbox_exec, "recursive_attributes", side_effect=OSError(errno.ENOSYS, "unsupported"),
-        ), patch.dict(sys.modules, {"syscall_guard": SimpleNamespace(supervise=supervise)}):
+        ) as attributes, patch.dict(sys.modules, {"syscall_guard": SimpleNamespace(supervise=supervise)}):
+            sys.modules.pop("toolchain_runtime", None)
+            self.assertNotIn("toolchain_runtime", sys.modules)
+            self.assertIs(sys.flags, original_flags)
+            self.assertIs(sandbox_exec.sys.path, sys.path)
             with self.assertRaises(OSError) as caught:
                 sandbox_exec.main()
+            self.assertEqual(
+                Path(sys.modules["toolchain_runtime"].__file__).resolve(),
+                TRUSTED_ROOT / "toolchain_runtime.py",
+            )
+            self.assertIs(sys.flags, original_flags)
         self.assertEqual(caught.exception.errno, errno.ENOSYS)
+        mount.assert_called_once_with(self.root, self.root, sandbox_exec.MS_BIND | sandbox_exec.MS_REC)
+        attributes.assert_called_once_with(
+            self.root, sandbox_exec.MS_RDONLY | sandbox_exec.MS_NOSUID | sandbox_exec.MS_NODEV,
+        )
         supervise.assert_not_called()
+        self.assertIs(sandbox_exec.sys, sys)
+        self.assertIs(sys.flags, original_flags)
+        self.assertIs(sys.argv, original_argv)
+        self.assertIs(sys.path, original_path)
+        self.assertEqual("toolchain_runtime" in sys.modules, had_toolchain)
+        if had_toolchain:
+            self.assertIs(sys.modules["toolchain_runtime"], original_toolchain)
+        self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
 
     @contextmanager
     def owned_process(self, argv):
