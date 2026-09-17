@@ -1691,7 +1691,7 @@ class VerifyCliCwdTests(unittest.TestCase):
             )
 
             for job_name in verify_mod._COMBINED_JOBS:
-                timeout = "90" if job_name == "build" else "60"
+                timeout = "90" if job_name in {"build", "ownership-tests"} else "60"
                 job_mutations = {
                     "self-hosted": self.replace_in_job(
                         original,
