@@ -5912,6 +5912,76 @@ fixed-profile new-parent refusal, native-suite owner, exact module admission,
 BASE-renewal and CPP scopes are unchanged. Directory coverage does not waive
 every-pass source semantics/obligation union, full-root admission or allocation17.
 
+For every-pass source interpretation and obligation union, run:
+
+```sh
+python3 -m unittest scripts.validation_ownership.tests.test_phase_census -v
+```
+
+Use the real missing-source/include-remake fixture with the prewatched
+journal. Interpret both original passes. Require first-pass HIDDEN=secret
+in the actual producer environment and final HIDDEN undefined, while the
+union still contains its first-pass default. The complete small phase planner
+must reject that unsealed default. A no-default positive must complete, and
+constants differing between passes must be absent from the shared pruning set.
+Remove only the every-pass union in the paired control: the complete small
+planner again admits an empty default census despite that same actual first
+producer environment. Restore the union and require refusal. This is a
+small-planner counterexample, not a whole-report admission claim. First-pass
+graph, recipe and exported-variable dependencies must also survive the union.
+
+Compare recursive wildcard aliases, simple source-time snapshots, target/local
+overrides and literal metadata reads. Snapshots and body-lazy metadata controls
+remain valid; deferred recursive/opaque namespace use, parse-time/non-remake
+or unclosed mutations and unsupported initial flags/scopes reject. Copied,
+changed, foreign or expired observation data cannot supply the original images.
+Require actual failed-then-successful include visits and publication versions,
+not final MAKEFILE_LIST or attempted-open membership.
+Repeated includes remain distinct visits, while same-file and Make-looking
+data reads through `file` do not become additional source evaluations. A real
+within-pass replacement retains both observed source versions but cannot
+authorize source-time namespace evaluation. An actual original command-line
+input must govern its earlier snapshot despite a later source override;
+unused effectful bodies and literal metadata reads stay lazy.
+
+Use an actual native writer that creates an included `GENERATED_BINDING`
+assignment, and export a phase label filtered from `.VARIABLES`. Keep the
+fixture free of conditional defaults. The first producer environment must
+contain an empty label, while final raw metadata contains `GENERATED_BINDING`.
+The per-pass checker and complete small planner must refuse the unsupported
+universe read. Repeat with direct/braced references, identity and computed
+substitutions, transitive/computed aliases, a conditional and an actual
+universe export. The closure check must run even without a wildcard read.
+
+Remove only the per-pass executed-read check: the primary and computed-alias
+small planners again admit an empty default census despite that same actual
+first producer environment. Restore the check and require refusal. This is
+an explicit small phase-planner counterexample, not a historical invariant
+planner or whole-report claim. Literal labels, unused recursive bodies,
+metadata-only exports and a proven unexecuted `and` operand must still pass;
+raw metadata must retain its dollars without executing the unused body.
+For the GNU4.3 source-read shell path, distinguish an unpassed Make export
+from an explicitly expanded command argument. The argument must reflect its
+original input even if a later literal assignment empties the final value;
+the executed universe read still refuses, while the unexecuted body stays lazy.
+The existing native-module automation above covers these controls without
+adding another owner or catalog record.
+
+Restore the original raw C-source wildcard/default/append and derived header
+constructor to the genuine text/ARM/sed component. Retain its real goal/include
+guard, initially absent C/parents, actual outputs and unchanged tracked header.
+Both source passes must interpret from their own images, including the first
+failed dependency include. Exact source-time include/filter relations use the
+bounded grammar and GNU whitespace; non-ASCII pattern normalization is not a
+proof. Keep old constructor/POSIX/metadata/default/export and numeric controls.
+
+The separate full-root attempt also keeps the original header order-only
+toolchain check. Its missing live adapter is an explicit hold, not permission
+to remove that prerequisite, broaden shell/compiler authority or claim a
+completed original-root report. The source-phase option is explicit and the
+ordinary invariant planner remains unchanged. Preserve the existing native
+owner, case IDs, all automation and limits; no allocation17/H1 follows.
+
 ### Terminal generated-file cleanup ownership
 
 The [5710465329 correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5710465329)
