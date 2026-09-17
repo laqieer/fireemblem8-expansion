@@ -7,6 +7,7 @@ import ctypes
 import errno
 import json
 import os
+import stat
 import sys
 from pathlib import Path
 
@@ -98,6 +99,9 @@ def main():
     if not sys.flags.isolated or not sys.flags.no_site or len(sys.argv) != 2:
         raise SystemExit("sandbox launcher requires Python -I -S and trusted config")
     config = json.loads(Path(sys.argv[1]).read_bytes())
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from toolchain_runtime import validate_launch
+    toolchain = validate_launch(config)
     root = Path(config["root"])
     # Seal inherited submounts before installing deliberate child exceptions.
     bind(root, root, executable=True)
@@ -106,7 +110,18 @@ def main():
     for item in config["mounts"]:
         bind(item["source"], root / item["target"].lstrip("/"),
              writable=item["writable"], executable=item["executable"])
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    if toolchain is not None and toolchain["stage"] >= 3:
+        expected = {"source": "/dev/null", "target": "/dev/null", "writable": True, "executable": False}
+        if [item for item in config["mounts"] if item["target"] == "/dev/null"] != [expected]:
+            raise RuntimeError("toolchain null output lost its exact device mount")
+        source = os.stat("/dev/null")
+        target = (root / "dev/null").stat()
+        if (
+            not stat.S_ISCHR(target.st_mode) or target.st_rdev != os.makedev(1, 3)
+            or (source.st_dev, source.st_ino) != (target.st_dev, target.st_ino)
+        ):
+            raise RuntimeError("toolchain null output differs from the actual system device")
+        mount(None, root / "dev/null", MS_REMOUNT | MS_BIND | MS_NOSUID | MS_NOEXEC)
     from syscall_guard import supervise
     return supervise(config, lambda: drop_privileges(config))
 

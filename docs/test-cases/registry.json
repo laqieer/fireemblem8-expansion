@@ -536,6 +536,7 @@
         "TC-WORKFLOW-METADATA-EDIT-RACE-001",
         "TC-WORKFLOW-PILOT-BASELINE-001",
         "TC-WORKFLOW-GATE-OWNERSHIP-001",
+        "TC-WORKFLOW-OWNERSHIP-MODERN-TOOLCHAIN-001",
         "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
         "TC-WORKFLOW-PROBE-PRODUCER-001",
         "TC-PROBE-NATIVE-EVENT-ORDER-001",
@@ -3252,6 +3253,35 @@
         {
           "command": "/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py check --repository-root .",
           "evidence": "scripts/validation_ownership/reporter.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-OWNERSHIP-MODERN-TOOLCHAIN-001",
+      "title": "Execute the original modern toolchain prerequisite through issued native authority",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/180"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-ownership-modern-toolchain-001-execute-the-original-modern-toolchain-prerequisite",
+      "profiles": [
+        "Linux x86-64 native Foundation fixture, GNU Make 4.3, trusted installed ARM GCC/binutils/newlib; default release/AAPCS and focused debug/APCS-GNU",
+        "Exact /bin and /usr/bin -B variants: actual ARM assembler selection succeeds; an actual host assembler selection explicitly refuses"
+      ],
+      "purpose": "Close only the actual modern-toolchain-dry-run-recipe during original Make remake dispatch, including its complete shell control flow, failure diagnostics, ordered effective flags and immutable stdin. Selection by command regex alone is not execution authority.",
+      "prerequisites": "Clean source checkout and the existing native ownership suite dependencies. Use fresh owned build/test-artifacts Foundation projections containing the unmodified modern.mk recipe, original header order-only prerequisite and genuine repository C headers. No ROM, new framework, remote workflow, dependency installation or resource-limit change is required.",
+      "actions": "Run the indexed focused unittest module. Compare ordinary original toolchain-check output/status with every original confined prerequisite invocation. Observe real --version, -dumpmachine, assembler resolution, GCC/cc1 global.h syntax and GCC/cc1/as tiny Thumb compilation; verify actual source/SDK consumption, executable identities and stdin bytes. Exercise debug/ABI variants, actual -B selection, ordered macro/include inputs and compiler warnings/failure. Apply the original missing-adapter control, authority/launch/input/recipe/environment adversaries and independent enforcement mutations, then restore and require equivalent literal-quote/whitespace refactors to remain green.",
+      "expected_result": "Original successful stdout, stderr and status agree with ordinary execution; real driver, frontend and assembler identities plus consumed repository/C SDK identities appear in authenticated native results. The original recipe and prerequisite remain present, source bytes/stat are unchanged and compiler temporaries are private, bounded, owned and removed. Genuine syntax failure preserves the original diagnostic and fails native Make. No child, waiter, issued capability or owned fixture root remains on positive or negative exits.",
+      "negative_control": "Removing only the selected adapter restores the original native unconsumed-active-shell-syntax refusal. Wrong driver/target/assembler, altered control or failure branches, flags, stdin, source/SDK bytes or aliases, search/export/loader environment, arbitrary executables and modified launch namespaces fail closed. Missing, copied, forged, replayed, cross-session and expired command/substep/launch authority cannot launch a compiler. Native observation omission or forgery cannot fabricate execution, input consumption or success.",
+      "interactions": "Depends on the delivered shared native dispatch/runtime-tool/header SDK foundation and remains part of #180/#186. Reuses the existing runtime inventory, ownership graph, native suite and tester registry. Original-root per-pass interpretation and terminal cleanup are independently owned integration dependencies; this focused component does not certify them. No conflicts with gameplay or project feature flags; unsupported host/compiler/search profiles explicitly refuse rather than borrowing another profile.",
+      "save_compatibility": "Source-only validation infrastructure. No ROM/RAM, gameplay, save/config identity, localization, generated-content format or archival compiler behavior changes.",
+      "cleanup": "The existing Foundation fixture owns and removes its unique build/test-artifacts root. Each native command owns its private /work assembly temporary and exact null output mount; terminal paths close children, waiters and capability registries. Never remove or reset another worktree or fixture.",
+      "limitations": "Only the selected original recipe is supported, not a general shell or compiler service. A missing original TMPDIR is mapped only to the issued private /work; foreign temporary/search environments reject. On installations where -B/bin/ or -B/usr/bin/ resolves the host assembler, ordinary ARM compilation fails and the confined profile explicitly rejects that assembler before executing it. No full original-root, full graph resource-fit, provider/H1, managed-admission, remote CI or delivery certificate follows from this case.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_toolchain_runtime -v",
+          "evidence": "scripts/validation_ownership/tests/test_toolchain_runtime.py"
         }
       ]
     },
