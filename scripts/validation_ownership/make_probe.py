@@ -40,6 +40,7 @@ from . import arm_headers
 from . import header_runtime as header_protocol
 from . import read_epochs
 from . import source_phases
+from . import source_effects
 from .producer_channel import (
     ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
     publication_identity, validate_publication_confirmation,
@@ -251,6 +252,7 @@ class MakeObservation:
     file_open_attempts: tuple[tuple[str, str], ...] = ()
     read_trace: dict | None = None
     source_phases: dict | None = None
+    source_effects: dict | None = None
 
 
 class _NamespaceUnavailable(MakeProbeError):
@@ -1002,7 +1004,7 @@ class ProbeSession:
     def _retain_source_phases(self, observation, images, capture):
         if not capture.closed or not capture.valid or not capture.native_complete:
             raise MakeProbeError("original entry images lack a completed native lifetime")
-        context = encoded((observation.read_trace, observation.source_phases))
+        context = encoded((observation.read_trace, observation.source_phases, observation.source_effects))
         self.budget.charge("cache", len(context))
         key = id(observation)
         def expired(reference):
@@ -1020,7 +1022,7 @@ class ProbeSession:
         if (
             record is None or record[0]() is not observation
             or record[2] is not self.snapshot or record[3] != self.tree or record[4] != self._namespace_epoch
-            or record[5] != encoded((observation.read_trace, observation.source_phases))
+            or record[5] != encoded((observation.read_trace, observation.source_phases, observation.source_effects))
         ):
             raise MakeProbeError("original entry-image observation is forged, changed or outlived its view")
         namespace = self._namespace_issued.get(id(observation))
@@ -1827,6 +1829,8 @@ class ProbeSession:
         settled = dict.fromkeys(counter_names, 0)
         sequence = 0
         barrier = 0
+        source_requests = []
+        source_publications = []
         completion = None
         channel = None
         channel_directory = self.base / f"producer-{self.serial}"
@@ -1839,6 +1843,8 @@ class ProbeSession:
                     "version": 2 if observe_source_phases else 1,
                     "scope": config["producer_scope"], "abi": self._original_read_abi(),
                 }
+            if observe_source_phases:
+                config["source_effects"] = {"version": 1, "scope": config["producer_scope"]}
             config["reserved_paths"] = list(self.loader.entries) if publication_allowed else None
             config["publication_limit"] = self.budget.limits.created_files
             if self.published_sources:
@@ -1974,7 +1980,7 @@ class ProbeSession:
                 set(request) != {
                     "kind", "scope", "sequence", "completed", "frame", "counters", "reserved", "publication",
                     "dispatch", "job",
-                }
+                } | ({"source_origin"} if observe_source_phases else set())
                 or request["kind"] != "request" or type(request["sequence"]) is not int
                 or request["sequence"] != sequence + 1 or type(request["completed"]) is not int
                 or request["completed"] != sequence or not isinstance(request["frame"], str)
@@ -1988,6 +1994,11 @@ class ProbeSession:
             try:
                 context = validate_dispatch_context(request["dispatch"], events[0]["arguments"])
                 job = validate_job_context(request["job"], context["sequence"])
+                if observe_source_phases:
+                    source_effects.validate_origin(
+                        request["source_origin"], scope=config["producer_scope"],
+                        dispatch=context, producer=request["sequence"],
+                    )
             except ChannelError as error:
                 raise MakeProbeError(str(error)) from error
             reserved = request["reserved"]
@@ -2013,6 +2024,13 @@ class ProbeSession:
                 self.pending_commands_peak, reserved["pending"] + sum(item["pending"] for item in self.parked_capsules),
             )
             self.budget.charge("cache", len(encoded((context, job))))
+            source_request = None
+            if observe_source_phases:
+                source_request = source_effects.request_record(
+                    request["source_origin"], context, job, bytes.fromhex(request["frame"]),
+                )
+                self.budget.charge("cache", len(encoded(source_request)))
+                source_requests.append(source_request)
             self.parked_capsules.append(reserved)
             live = _LiveDispatch(
                 config["producer_scope"], context["sequence"], tuple(context["arguments"]),
@@ -2028,6 +2046,8 @@ class ProbeSession:
                 self._live_dispatches.pop()
                 self._issued_dispatches.discard(live)
                 self.parked_capsules.pop()
+            if source_request is not None:
+                source_request["adopt_sha256"] = value.get("adopt_sha256")
             reply = {
                 "kind": "result", "scope": config["producer_scope"], "sequence": sequence,
                 **value, "limits": grants(),
@@ -2053,6 +2073,12 @@ class ProbeSession:
                 raise MakeProbeError(f"invalid effective publication confirmation: {error}") from error
             if confirmation["slot"] != completed - 1:
                 raise MakeProbeError("publication confirmation has the wrong completed slot")
+            if observe_source_phases:
+                if completed == len(source_publications) + 1:
+                    self.budget.charge("cache", len(encoded(confirmation)))
+                    source_publications.append(confirmation)
+                elif not 1 <= completed <= len(source_publications) or source_publications[completed - 1] != confirmation:
+                    raise MakeProbeError("source-effect publication transcript is incomplete or changed")
         if (
             config["process_limit"] < 1 or config["descendant_limit"] < 1
             or config["syscall_limit"] < 1 or config["write_limit"] < 1 or config["memory_limit"] < 1
@@ -2103,6 +2129,9 @@ class ProbeSession:
             ) | (
                 {"read_trace"} if observe_read_epochs and observed.get("ok") is True
                 and observed.get("returncode") == 0 else set()
+            ) | (
+                {"source_effects"} if observe_source_phases and observed.get("ok") is True
+                and observed.get("returncode") == 0 else set()
             ):
                 raise MakeProbeError("malformed supervisor result")
             observations = observed["observations"]
@@ -2152,6 +2181,8 @@ class ProbeSession:
                     event for event in observed["read_trace"]["events"] if event["kind"] == "entry-image"
                 ]):
                     raise MakeProbeError("original entry barrier transcript is incomplete")
+                if observe_source_phases:
+                    observed["_source_effect_inputs"] = source_requests, source_publications
             elif "read_trace" in observed:
                 raise MakeProbeError("unrequested or failed Make supplied an original read trace")
             if channel is not None:
@@ -3959,6 +3990,15 @@ class ProbeSession:
                 item.pop("global_ignore_errors")
                 item["ignore_errors"] = bool(policy & 1)
             semantics["native_dispatches"] = contexts
+            if observe_source_phases:
+                try:
+                    source_effects.validate_journal(
+                        observed["source_effects"], observed["read_trace"], dispatches=contexts,
+                        requests=observed["_source_effect_inputs"][0], publications=observed["_source_effect_inputs"][1],
+                        count_limit=self.budget.limits.observation_count, file_limit=self.budget.limits.file_bytes,
+                    )
+                except (ChannelError, read_epochs.ReadEpochError) as error:
+                    raise MakeProbeError(str(error)) from error
             if observe_recipe_dispatch:
                 semantics["recipe_dispatches"] = [
                     item for item in contexts if item["kind"] == "recipe"
@@ -3994,6 +4034,7 @@ class ProbeSession:
                 tuple(file_open_attempts),
                 observed.get("read_trace"),
                 phases,
+                observed.get("source_effects"),
             )
             if namespace_capture is not None:
                 namespace_capture.native_complete = True

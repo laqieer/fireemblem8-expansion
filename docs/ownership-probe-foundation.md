@@ -311,6 +311,19 @@ Forged sender IPs, untracked processes, conflicting contexts and malformed or
 mismatched sequences reject. Identical argv across different targets does not
 erase target identity. These job records are not Makefile read-pass receipts.
 
+Source-phase observation adds a distinct native source-effect sidecar, not
+fields to those dispatch/job records. At the actual authenticated dispatch
+entry, the supervisor records the hardware-derived before/source/after-read
+context. Only the real successful child exec can bind that origin to an
+existing dispatch, and every live request and actual publication must retain
+that binding. A later publication acknowledgement does not refresh its origin.
+The host joins the closed sidecar to the original read trace, all native
+dispatches, accepted requests and independently checked physical outcomes.
+Nested adoption remains explicit rather than borrowing a child's read epoch.
+This observes originating contexts and completed publications; it does not yet
+close intermediate/host/cleanup mutation coverage or grant a namespace
+exception. Default and read-trace-only calls retain their previous behavior.
+
 The graph's lifecycle consumer may additionally select
 `ProbeSession.make(..., observe_recipe_dispatch=True)` for the validated
 `recipe_dispatches` projection. It retains each complete recipe context,

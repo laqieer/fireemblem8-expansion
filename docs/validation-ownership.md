@@ -233,6 +233,26 @@ and the post-reexec entry with it, without substituting the final namespace.
 The existing invocation-wide wildcard refusal remains in place: entry images
 alone do not complete the independent mutation journal or per-pass source
 census and grant no changed-namespace exception.
+
+That option also records `MakeObservation.source_effects`, a separate native
+origin/dispatch/producer/publication sidecar. The actual authenticated Make
+dispatch stop records its current hardware-derived original read interval
+before spawning. Its supervisor-owned identity follows the real child and is
+bound only at successful helper exec; actual producer requests, native job and
+frame bindings, and independently checked publication confirmations must agree.
+Acknowledgement at a later read barrier cannot move a first-pass effect into
+that later pass. The existing native dispatch/job dictionaries are unchanged.
+
+The sidecar preserves parse-time include/file-builtin/eval contexts, deferred
+post-read uses, suppressed recipes without invented publications, all genuine
+message/ARM/sed/header effects and distinct nested adoption. Missing, reordered,
+forged or changed origin/request/publication data rejects. Its `closed` flag
+closes only this native observation, not the independent filesystem journal:
+intermediate namespace writes, unobserved host mutations and terminal cleanup
+still need complete coverage before any source-phase certificate is issued.
+Every-pass source reconstruction and first-pass obligation union remain held.
+Default and read-trace-only observations do not select this sidecar.
+
 Registry declaration execution now has an explicit shared-session entry:
 `graph_registry.observe_declarations(loader, session)`. The selected loader
 must be the active public view and own the same budget. It invokes the real

@@ -5752,6 +5752,46 @@ The native owner collects the exact new module once; no job, owned command,
 numeric bound, Main accounting assertion or allocation17 changes. Independent
 mutation/dispatch association and every-pass obligation union remain required.
 
+For native originating-read/publication binding, run:
+
+```sh
+python3 -m unittest scripts.validation_ownership.tests.test_source_effects -v
+```
+
+Use the same genuinely missing-C/include-remake fixture. Confirm native
+producer HIDDEN=secret, final HIDDEN undefined, and two original entries.
+Inspect the new source-effect sidecar: the remake originates after the first
+read pass and publishes before actual self-exec, even though its host
+acknowledgement arrives at the second entry barrier. The old invocation-wide
+wildcard refusal must still hold. The pre-component negative has no origin
+sidecar; it is not evidence of a whole-report admission.
+
+Repeat with literal and computed renamed includes, a same-file `file` read,
+`eval` and a called shell producer. Require the actual current source-reader
+visit, not an extra visit invented for a file builtin or eval. Deferred shell
+use and identical recipes for distinct targets must retain separate post-read
+origins; suppressed recipes must not acquire invented producers or outputs.
+Run the unmodified genuine default message/ARM/sed composition with C initially
+absent. Require all six real publications, including each directory/scan/
+filter/retirement/transfer step, actual native ordinals and immutable tracked
+header bytes/metadata.
+
+Run the existing real nested-publication composition with both traces enabled.
+Require separate child/parent scopes, actual child self-exec and explicit
+parent adoption; the child's fresh pass must not refresh the parent's source
+origin. Corrupt source-origin scope/pass/sequence/membership on the real
+channel, or remove/reorder/change origin and publication records in the
+actual native report. Require refusal, preserving all physical fixture
+cleanup. Changed or expired retained sidecars cannot reuse entry images.
+
+Keep default and read-trace-only behavior, exact native-suite ownership and
+the Main full native job/accounting regression unchanged. Removing the exact
+new module admission or using its unregistered neighbor must reject. These
+records close originating native dispatch/publication observation only;
+independent intermediate/host/nested/parent/cleanup mutation coverage and
+every-pass source-use/obligation union still block phase certification. No
+full graph, quota change, broad suite or allocation17 is required here.
+
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while
 native per-file raw metadata remains `$(FLAGS)`. Do not eagerly copy the

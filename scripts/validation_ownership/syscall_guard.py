@@ -35,6 +35,7 @@ if __package__:
     from .read_trace import NativeReadTrace
     from .read_epochs import ReadEpochError
     from . import source_phases
+    from .source_effects import NativeSourceEffects
     from .producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
@@ -50,6 +51,7 @@ else:
     from read_trace import NativeReadTrace
     from read_epochs import ReadEpochError
     import source_phases
+    from source_effects import NativeSourceEffects
     from producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
@@ -217,6 +219,7 @@ class Process:
     memory_reservation: int = 0
     break_end: int = 0
     dispatch: tuple | None = None
+    dispatch_origin: int | None = None
     helper_kind: int = 0
     native_dispatch_sequence: int | None = None
     native_dispatch_context: dict | None = None
@@ -252,6 +255,7 @@ class Process:
             role=self.role, cwd=self.cwd, fds=dict(self.fds), entering=False,
             observer_ranges=self.observer_ranges, bootstrap=self.bootstrap,
             break_end=self.break_end, dispatch=self.dispatch, observer_ready=self.observer_ready,
+            dispatch_origin=self.dispatch_origin,
             memory_group=self.memory_group, memory_limit=self.memory_limit,
             dependency_image=self.dependency_image,
         )
@@ -289,6 +293,7 @@ class Policy:
         self.config = config
         self.mode = config["mode"]
         self.read_trace = None
+        self.source_effects = None
         try:
             header_protocol.validate_launch(config)
         except ChannelError as error:
@@ -428,6 +433,8 @@ class Policy:
             ):
                 raise Violation("original-read observation lacks its exact Make scope")
             self.read_trace = NativeReadTrace(self, request)
+        if "source_effects" in config:
+            self.source_effects = NativeSourceEffects(self, config["source_effects"])
         self.code_dirs = {"/repo"}
         self.source_dirs = set()
         for paths, directories in ((self.code, self.code_dirs), (self.sources, self.source_dirs)):
@@ -2104,11 +2111,14 @@ class Policy:
                         raise Violation(f"untrusted executable dispatch: {path}")
                     if self.runtime_metadata(path, parents=False):
                         self.check_optional_make_spelling(state, path, "execute")
+                    if self.source_effects is not None:
+                        state.dispatch_origin = self.source_effects.originate(pid, state, path, bool(c & 4))
                     state.dispatch = (path, c)
                 else:
                     if c:
                         raise Violation("invalid Make dispatch completion")
                     state.dispatch = None
+                    state.dispatch_origin = None
         elif n in {2, 85, 257}:  # open, creat, openat
             flags = c if n == 257 else b
             follow = n == 85 or not (
@@ -2771,6 +2781,8 @@ def supervise(config, drop_privileges):
             state.role = state.pending[1]
             if policy.read_trace is not None:
                 policy.read_trace.actual_exec(stopped, state.role == "make")
+            if policy.source_effects is not None and state.role == "helper":
+                policy.source_effects.helper_exec(stopped, state)
             state.bootstrap = False
             state.fds = {0: "<stdin>", 1: "<stdout>", 2: "<stderr>"}
             state.observer_ranges = ()
@@ -2918,6 +2930,8 @@ def supervise(config, drop_privileges):
             "dispatch": state.native_dispatch_context,
             "job": {"sequence": state.native_dispatch_sequence, **state.native_job_context},
         }
+        if policy.source_effects is not None:
+            request["source_origin"] = policy.source_effects.producer(requester, state, sequence)
         raw = channel.exchange(
             encoded(request),
             watch=[record.pidfd for record in processes.values()] + list(newborn_stops.values()),
@@ -2985,6 +2999,8 @@ def supervise(config, drop_privileges):
             if records == []:
                 raise Violation("empty nested publication transfer")
             policy.adopt_published(records)
+            if policy.source_effects is not None:
+                policy.source_effects.adoption(sequence, records)
         channel.require_live([record.pidfd for record in processes.values()] + list(newborn_stops.values()))
         channel.ensure_idle()
         if effect_request is not None:
@@ -3004,6 +3020,8 @@ def supervise(config, drop_privileges):
                 "slot": sequence - 1, "owner": reply["owner"],
                 "policy": reply["publication_policy"], "outputs": effective,
             }
+        if policy.source_effects is not None:
+            policy.source_effects.publication(sequence, policy.publication_confirmation)
         policy.producer_completed = sequence
         state.producer_slot = sequence - 1
         state.producer_ready = False
@@ -3110,6 +3128,8 @@ def supervise(config, drop_privileges):
                 result["executed"] = policy.executed
             if error is None and main_status == 0 and policy.read_trace is not None:
                 result["read_trace"] = policy.read_trace.finish()
+                if policy.source_effects is not None:
+                    result["source_effects"] = policy.source_effects.finish(result["read_trace"])
             if channel is not None:
                 result["rendezvous"] = {
                     "issued": policy.producer_issued, "completed": policy.producer_completed,
