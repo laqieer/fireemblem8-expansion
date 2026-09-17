@@ -1114,6 +1114,11 @@ class ProbeSession:
 
     def _original_wildcard(self, token, patterns):
         capture = self._require_namespace(token)
+        return self._wildcard_image(
+            capture.image, patterns, lambda directory: self._invariant_directory(capture, directory),
+        )
+
+    def _wildcard_image(self, image, patterns, directory_lookup):
         if not isinstance(patterns, str) or any(character in patterns for character in "$\\?[]~\0"):
             raise _NamespaceUnavailable("unsupported original wildcard pattern grammar")
         result = []
@@ -1133,8 +1138,8 @@ class ProbeSession:
             basename = PurePosixPath(pattern).name
             if "*" in directory:
                 raise _NamespaceUnavailable("original wildcard requires a literal directory")
-            names = self._invariant_directory(capture, directory)
-            for forbidden in capture.image.forbidden:
+            names = directory_lookup(directory)
+            for forbidden in image.forbidden:
                 if PurePosixPath(forbidden).parent.as_posix() == directory and _star_name(
                     basename.encode("utf-8"), PurePosixPath(forbidden).name.encode("utf-8"),
                 ):

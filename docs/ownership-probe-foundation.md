@@ -363,6 +363,24 @@ without launching another native query. This data representation does not
 interpret special-variable semantics, authorize missing includes or close
 the pending every-pass census and namespace proof.
 
+The optional source-phase census now consumes those issued records through
+separate original source walks. It checks actual mutation/reexec closure,
+failed/successful source versions and original inputs before using the
+corresponding entry image, then unions reads/defaults/dependencies/effects.
+Constants are intersected across passes; final definitions cannot erase
+first-pass HIDDEN. Plain global input flags/origins are interpreted from the
+validated GNU ABI, while unsupported special/private/dynamic behavior holds.
+Deferred namespace-bearing aliases, target/local overrides and unknown effect
+timing do not borrow a source-time snapshot; metadata-only reads stay lazy.
+The original executed-read closure is checked on every pass, independently
+of wildcard use. Unsupported variable-universe references and their computed
+or transitive aliases cannot disappear from the census merely because the
+native source/input/image history is complete. The check shares the existing
+substitution-reference base parser and leaves unexecuted metadata bodies lazy.
+The default invariant planner remains unchanged. Missing required live
+toolchain-check execution still blocks the original full-root planner; no
+phase result authorizes a shell/profile or quota workaround.
+
 The graph's lifecycle consumer may additionally select
 `ProbeSession.make(..., observe_recipe_dispatch=True)` for the validated
 `recipe_dispatches` projection. It retains each complete recipe context,

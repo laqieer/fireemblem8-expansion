@@ -318,6 +318,46 @@ directory relocation, guest permission or quota is added. Nested/general
 source-use interpretation and complete every-pass obligation union still
 precede any changed-namespace certificate or original-root planner claim.
 
+The explicit `run_probe(..., source_phases=True)` path interprets each
+authenticated read pass independently and unions its source obligations.
+It requires the completed issued archive, entry images and mutation journal;
+every source mutation must belong to a real after-read/remake interval that
+closes before the next successful exec. Unknown, parse-time, non-remake,
+nested and unclosed final-pass mutation histories refuse. Successful source
+versions must match immutable input or prior actual publication identity and
+bytes. A failed include may be omitted only with actual original ENOENT,
+entry-image absence, an intervening publication and a successful next-pass
+visit.
+
+Supported initial bindings come from a complete plain global native scope,
+not final definitions or an empty-program guess. Special/private/per-target/
+expanding input behavior and unsupported scope/origin forms hold. Original
+source-time exact include and `filter` relations reuse the bounded parser,
+explicit GNU whitespace and pattern grammar. Recursive namespace aliases in
+deferred recipes/exports hold unless they terminate in a proven simple source
+snapshot; literal metadata reads remain body-lazy. Each pass has fresh source
+state, and only constants valid and equal in every pass survive the union.
+First-pass defaults remain obligations even when absent from final metadata.
+The union also retains first-pass graph, recipe, export and dependency reads.
+Repeated source visits retain their order and bytes; same-file or Make-looking
+`file` data reads do not supply source evaluations. Within-pass replacement
+remains unsupported even when both versions were successfully captured.
+An issued entry image does not implement variable-universe semantics.
+Every pass checks the original executed expression/body closure, including
+computed aliases, before admission. Direct, braced, substitution and invoked
+`.VARIABLES` reads, universe conditionals and actual universe exports remain
+unsupported even when no wildcard was evaluated. Unexecuted bodies and
+literal `origin`/`flavor`/`value` reads stay body-lazy; no final definitions
+seed this check.
+
+The ordinary invariant/default planner path remains available. This opt-in
+source path does not itself supply missing live command adapters. The bounded
+original-root attempt retaining the actual header order-only toolchain check
+still refuses `modern-toolchain-dry-run-recipe`; it is not bypassed by dropping
+the prerequisite or substituting a no-op. Successful small source-phase
+controls and genuine raw-source/header component interpretation are not a
+claim of full original-root or whole-report completion.
+
 The [5710465329 terminal-file correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5710465329)
 separates planned output reservations from cleanup ownership. The native
 publisher hands the parent a real, independently opened read-only descriptor
