@@ -16,6 +16,7 @@ def load_tests(loader, standard_tests, pattern):
         "test_source_phases",
         "test_source_effects",
         "test_source_journal",
+        "test_source_directories",
     }
     suite = unittest.TestSuite()
     for path in sorted(Path(__file__).parent.glob(pattern or "test_*.py")):

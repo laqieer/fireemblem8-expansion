@@ -226,6 +226,7 @@ class AssetOwnershipTests(unittest.TestCase):
                 "test_source_phases",
                 "test_source_effects",
                 "test_source_journal",
+                "test_source_directories",
             )
         }
         self.assertTrue(native.isdisjoint(collected))

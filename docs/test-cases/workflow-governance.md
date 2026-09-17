@@ -5866,6 +5866,43 @@ permission, C ABI, CPP adapter, extra job, full graph/report or allocation17
 changes. Closing general new-directory coverage and every original source
 pass's obligations remains a prerequisite for full phase certification.
 
+For the prewatched-directory profile, run:
+
+```sh
+python3 -m unittest scripts.validation_ownership.tests.test_source_directories -v
+```
+
+Start with the original source fixture and no `build` parent. Select the
+prewatched journal mode explicitly. Require native private-directory creation,
+an original FD/watch before public visibility, matching real rename-cookie
+and self-move events, same-inode installation and later file-then-directory
+cleanup. The first entry must omit the new parent and the post-reexec entry
+must contain it. Keep first-pass HIDDEN and the existing wildcard refusal.
+
+Run the unchanged genuine default message/header case with C initially absent
+and no extra parent witness. Require real text, ARM/cc1/sed and all six original
+publication dispatches, all three parent handoffs and deepest-first directory
+cleanup, ordinary/native output equality and immutable tracked header bytes/
+stat fields. This is actual required component execution, not a benign
+pre-scan or complete original-root planner/census admission.
+
+Create/delete a child in the watched private stage before movement and in the
+public directory before host pathname rebinding. Both must refuse; the old
+late-watch blind interval is not accepted. Nonempty/replaced/chmod stages,
+changed source/public-parent bindings, forged request/acknowledgement/terminal
+records and missing child-watch movement evidence must likewise fail.
+Race an existing destination against atomic installation and require its
+inode to survive. Repeat with a terminal report failure before acknowledgement:
+cleanup must not delete a directory which no installed handoff owned. The
+pre-fix terminal control demonstrates the old predicted-cleanup failure.
+
+Require copied/expired observations and invalid profile selections to reject,
+and keep ungranted ordinary directory rename forbidden. Preserve the original
+fixed-profile new-parent refusal, native-suite owner, exact module admission,
+98 case IDs, all prior automation and old resource limits. Main's historical
+BASE-renewal and CPP scopes are unchanged. Directory coverage does not waive
+every-pass source semantics/obligation union, full-root admission or allocation17.
+
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while
 native per-file raw metadata remains `$(FLAGS)`. Do not eagerly copy the

@@ -42,6 +42,7 @@ from . import read_epochs
 from . import source_phases
 from . import source_effects
 from . import source_journal
+from . import source_directories
 from .producer_channel import (
     ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
     publication_identity, validate_publication_confirmation,
@@ -1698,6 +1699,7 @@ class ProbeSession:
         observe_read_epochs=False,
         observe_source_phases=False, source_phase_observer=None,
         observe_source_journal=False, source_journal_observer=None,
+        source_journal_mode=source_journal.MODE, source_directory_controller=None,
     ):
         self.budget.remaining()
         if (
@@ -1706,6 +1708,18 @@ class ProbeSession:
             or not observe_source_journal and source_journal_observer is not None
         ):
             raise MakeProbeError("source journal requires its exact original-entry Make observer")
+        if (
+            not isinstance(source_journal_mode, str)
+            or source_journal_mode not in {source_journal.MODE, source_directories.MODE}
+            or not observe_source_journal and source_journal_mode != source_journal.MODE
+            or source_journal_mode == source_directories.MODE and (
+                type(source_directory_controller) is not source_directories.PrewatchedDirectoryJournal
+                or source_directory_controller not in self._source_journal_active
+                or source_directory_controller.session is not self
+            )
+            or source_journal_mode == source_journal.MODE and source_directory_controller is not None
+        ):
+            raise MakeProbeError("unissued source-directory journal profile/controller")
         if (
             type(observe_source_phases) is not bool
             or observe_source_phases and (mode != "make" or producer_handler is None or source_phase_observer is None)
@@ -1877,7 +1891,10 @@ class ProbeSession:
             if observe_source_phases:
                 config["source_effects"] = {"version": 1, "scope": config["producer_scope"]}
             if observe_source_journal:
-                config["source_journal"] = {"version": 1, "scope": config["producer_scope"], "mode": source_journal.MODE}
+                config["source_journal"] = (
+                    {"version": 1, "scope": config["producer_scope"], "mode": source_journal.MODE}
+                    if source_directory_controller is None else source_directory_controller.config(config["producer_scope"])
+                )
             config["reserved_paths"] = list(self.loader.entries) if publication_allowed else None
             config["publication_limit"] = self.budget.limits.created_files
             if self.published_sources:
@@ -1952,14 +1969,22 @@ class ProbeSession:
             request = parse_json(packet, "producer request")
             if not isinstance(request, dict) or request.get("scope") != config["producer_scope"]:
                 raise MakeProbeError("foreign producer request scope")
-            if request.get("kind") == "journal-barrier":
+            if request.get("kind") in {"journal-barrier", "directory-handoff"}:
                 if not observe_source_journal or not source_requests:
                     raise MakeProbeError("unrequested or unissued source-journal window")
                 try:
-                    source_journal.validate_barrier(
-                        request, scope=config["producer_scope"], producer=sequence,
-                        barrier=len(journal_receipts) + 1, origin=source_requests[sequence - 1]["source_origin"],
-                    )
+                    if request["kind"] == "directory-handoff":
+                        if source_directory_controller is None:
+                            raise ChannelError("unissued prewatched directory handoff")
+                        source_directories.validate_request(
+                            request, scope=config["producer_scope"], producer=sequence,
+                            origin=source_requests[sequence - 1]["source_origin"],
+                        )
+                    else:
+                        source_journal.validate_barrier(
+                            request, scope=config["producer_scope"], producer=sequence,
+                            barrier=len(journal_receipts) + 1, origin=source_requests[sequence - 1]["source_origin"],
+                        )
                 except ChannelError as error:
                     raise MakeProbeError(str(error)) from error
                 reserved = request["reserved"]
@@ -1978,26 +2003,33 @@ class ProbeSession:
                     or reserved["memory"] > request["counters"]["memory_peak"]
                 ):
                     raise MakeProbeError("source-journal reservations contradict native state")
-                if request["stage"] == "end":
+                if request["kind"] == "journal-barrier" and request["stage"] == "end":
                     validate_confirmation(sequence, request["publication"])
                 self.parked_capsules.append(reserved)
                 try:
                     journal_sha256 = source_journal_observer(request)
                 finally:
                     self.parked_capsules.pop()
+                directory = request["kind"] == "directory-handoff"
                 reply = {
-                    "kind": "journal-resume",
-                    **{name: request[name] for name in ("scope", "barrier", "stage", "producer")},
+                    "kind": "directory-ready" if directory else "journal-resume",
+                    **{name: request[name] for name in (
+                        source_directories.IDENTITY_KEYS if directory else ("scope", "barrier", "stage", "producer")
+                    )},
                     "origin_sha256": source_phases.digest(request["origin"]),
                     "journal_sha256": journal_sha256, "limits": grants(),
                 }
                 bound = len(encoded(reply)) + 4
                 reply["limits"] = grants(bound)
-                source_journal.validate_resume(reply, request)
+                if directory:
+                    source_directories.validate_reply(reply, request)
+                else:
+                    source_journal.validate_resume(reply, request)
                 data = encoded(reply)
                 if len(data) + 4 > bound:
                     raise MakeProbeError("source-journal grant encoding exceeded its reservation")
-                journal_receipts.append(source_journal.receipt(reply))
+                if not directory:
+                    journal_receipts.append(source_journal.receipt(reply))
                 return data
             if request.get("kind") == "read-barrier":
                 if not observe_source_phases:
@@ -2268,7 +2300,13 @@ class ProbeSession:
                     observed["_source_effect_inputs"] = source_requests, source_publications
                 if observe_source_journal:
                     try:
-                        source_journal.validate_native(observed["source_journal"], config["producer_scope"], journal_receipts)
+                        if source_directory_controller is None:
+                            source_journal.validate_native(observed["source_journal"], config["producer_scope"], journal_receipts)
+                        else:
+                            source_directories.validate_native(
+                                observed["source_journal"], config["producer_scope"], journal_receipts,
+                                source_directory_controller.directory_receipts(),
+                            )
                     except ChannelError as error:
                         raise MakeProbeError(str(error)) from error
             elif "read_trace" in observed:
@@ -3489,6 +3527,7 @@ class ProbeSession:
         owner_inputs=(), commands=None, observe_recipe_dispatch=False, definitions=(), observe_read_epochs=False,
         observe_source_phases=False,
         observe_source_journal=False,
+        source_journal_mode=source_journal.MODE,
     ) -> MakeObservation:
         return self._make(
             target, makefile=makefile, variables=variables, assignments=assignments,
@@ -3497,6 +3536,7 @@ class ProbeSession:
             observe_read_epochs=observe_read_epochs,
             observe_source_phases=observe_source_phases,
             observe_source_journal=observe_source_journal,
+            source_journal_mode=source_journal_mode,
         )
 
     @terminal_failure
@@ -3544,6 +3584,7 @@ class ProbeSession:
         observe_read_epochs=False,
         observe_source_phases=False,
         observe_source_journal=False,
+        source_journal_mode=source_journal.MODE,
     ) -> MakeObservation:
         self.budget.remaining()
         if (
@@ -3552,6 +3593,12 @@ class ProbeSession:
             or self._source_journal_active
         ):
             raise MakeProbeError("source journal requires a top-level, non-nested Make lifetime")
+        if (
+            not isinstance(source_journal_mode, str)
+            or source_journal_mode not in {source_journal.MODE, source_directories.MODE}
+            or not observe_source_journal and source_journal_mode != source_journal.MODE
+        ):
+            raise MakeProbeError("source journal has an invalid or unselected directory profile")
         if type(_original_inputs) is not bool:
             raise MakeProbeError("invalid original input observation selection")
         if type(observe_recipe_dispatch) is not bool:
@@ -3629,11 +3676,20 @@ class ProbeSession:
         phase_images = []
         journal = None
         if observe_source_journal:
-            journal = source_journal.FixedDirectoryJournal(self, namespace_capture.image)
+            journal = (
+                source_journal.FixedDirectoryJournal(self, namespace_capture.image)
+                if source_journal_mode == source_journal.MODE
+                else source_directories.PrewatchedDirectoryJournal(self, namespace_capture.image, root)
+            )
             self._source_journal_instances.add(journal)
             self._source_journal_active.append(journal)
 
         def journal_window(request):
+            if request["kind"] == "directory-handoff":
+                result = journal.directory_handoff(request)
+                if request["phase"] == "installed":
+                    generated_directories.add(request["path"])
+                return result
             pending = receipts[request["producer"] - 1]
             if request["stage"] == "begin":
                 if isinstance(pending, _PendingHeaderEffect):
@@ -3698,8 +3754,13 @@ class ProbeSession:
 
             def remove_directory(name):
                 if (self.tree / name).exists():
-                    self._namespace_mutation("removed-directory", name)
-                    (self.tree / name).rmdir()
+                    def remove():
+                        self._namespace_mutation("removed-directory", name)
+                        (self.tree / name).rmdir()
+                    if source_journal_mode == source_directories.MODE:
+                        journal.cleanup_directory(name, remove)
+                    else:
+                        remove()
 
             finish_cleanup([
                 *(lambda name=name: remove_file(name) for name in generated_paths),
@@ -3816,7 +3877,8 @@ class ProbeSession:
                             if parent.as_posix() != "."
                         ] + [effect.path]
                         directory_names = tuple(name for name in candidates if not (self.tree / name).exists())
-                        generated_directories.update(directory_names)
+                        if source_journal_mode != source_directories.MODE:
+                            generated_directories.update(directory_names)
                     elif effect.operation == "transfer":
                         if effect.path in self.published_sources:
                             old = self._published_record(effect.path)
@@ -3869,7 +3931,8 @@ class ProbeSession:
                         parent.as_posix() for parent in PurePosixPath(name).parents
                         if parent.as_posix() != "." and not (self.tree / parent).exists()
                     )
-                generated_directories.update(new_directories)
+                if source_journal_mode != source_directories.MODE:
+                    generated_directories.update(new_directories)
                 self._command_dispatches.append((registration, dispatch_context))
                 try:
                     environment = self._command_environment(registration)
@@ -3994,9 +4057,12 @@ class ProbeSession:
                 source_phase_observer=capture_source_entry if observe_source_phases else None,
                 observe_source_journal=observe_source_journal,
                 source_journal_observer=journal_window if journal is not None else None,
+                source_journal_mode=source_journal_mode,
+                source_directory_controller=journal if source_journal_mode == source_directories.MODE else None,
             )
             if journal is not None:
-                journal.complete_native(observed["source_journal"]["scope"], observed["source_journal"]["receipts"])
+                extra = (observed["source_journal"]["directories"],) if source_journal_mode == source_directories.MODE else ()
+                journal.complete_native(observed["source_journal"]["scope"], observed["source_journal"]["receipts"], *extra)
             raw_events = self.budget.read_bytes(events_path, "event")
             native_events = Counter(bytes.fromhex(item) for item in observed["events"])
             self.budget.charge(

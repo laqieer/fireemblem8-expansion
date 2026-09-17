@@ -339,6 +339,19 @@ controls do not stand in for the unchanged missing-parent required root.
 General mutation coverage and every-pass source authority remain unimplemented;
 ordinary and source-phase-only behavior is unchanged.
 
+The separately selected `prewatched-directories` journal profile closes new
+parent visibility without a late-watch guess. A fresh private empty directory
+is watched through its original FD before native atomic no-replace installation
+into the authorized source parent. Matching kernel move/cookie/self-move
+records and both peers' inode/path/lease checks close the handoff before child
+operations resume. SGID/default-ACL inheritance, existing destinations,
+nonempty/foreign/replayed stages and unknown activity reject. This is not the
+regular private-install capability and does not grant directory moves to
+ordinary commands. Actual installed receipts, not predicted paths, own later
+directory cleanup. The unchanged required message/header component needs no
+preexisting-parent witness in this profile. Whole source-phase interpretation
+and obligation-union authority remain separate.
+
 Authenticated source-phase observations also support a cached immutable
 per-pass archive. It preserves original raw input scopes, entry/return status
 and flags, every repeated source visit/version and the native goal order,

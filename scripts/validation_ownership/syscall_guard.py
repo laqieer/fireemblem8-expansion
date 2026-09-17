@@ -37,6 +37,7 @@ if __package__:
     from . import source_phases
     from .source_effects import NativeSourceEffects
     from . import source_journal
+    from . import source_directories
     from .producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
@@ -54,6 +55,7 @@ else:
     import source_phases
     from source_effects import NativeSourceEffects
     import source_journal
+    import source_directories
     from producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
@@ -297,6 +299,7 @@ class Policy:
         self.read_trace = None
         self.source_effects = None
         self.journal_receipts = None
+        self.directory_installs = None
         try:
             header_protocol.validate_launch(config)
         except ChannelError as error:
@@ -439,9 +442,14 @@ class Policy:
         if "source_effects" in config:
             self.source_effects = NativeSourceEffects(self, config["source_effects"])
         if "source_journal" in config:
-            source_journal.validate_config(config["source_journal"], config.get("producer_scope"))
+            if not isinstance(config["source_journal"], dict):
+                raise Violation("source journal configuration is not a typed object")
             if self.source_effects is None:
                 raise Violation("source journal requires actual originating-read observation")
+            if config["source_journal"].get("mode") == source_directories.MODE:
+                self.directory_installs = source_directories.NativeDirectoryInstalls(self, config["source_journal"])
+            else:
+                source_journal.validate_config(config["source_journal"], config.get("producer_scope"))
             self.journal_receipts = []
         self.code_dirs = {"/repo"}
         self.source_dirs = set()
@@ -768,22 +776,27 @@ class Policy:
                 directory = os.open(view, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
                 try:
                     parts = name.split("/")
+                    parents = []
                     for part in parts[:-1]:
+                        parents.append(part)
                         created = False
                         try:
                             following = os.open(
                                 part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory,
                             )
                         except FileNotFoundError:
-                            self.reserve_creation()
-                            os.mkdir(part, 0o755, dir_fd=directory)
-                            following = os.open(
-                                part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory,
-                            )
+                            if self.directory_installs is not None:
+                                following = self.directory_installs.create("/".join(parents), directory)
+                            else:
+                                self.reserve_creation()
+                                os.mkdir(part, 0o755, dir_fd=directory)
+                                following = os.open(
+                                    part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory,
+                                )
                             created = True
                         os.close(directory)
                         directory = following
-                        if created and self.config["sudo_drop"]:
+                        if created and self.config["sudo_drop"] and self.directory_installs is None:
                             # Transfer before adding children, so even failed publication
                             # remains removable by the unprivileged report owner.
                             os.fchown(directory, self.config["runner_uid"], self.config["runner_gid"])
@@ -895,11 +908,14 @@ class Policy:
                 except FileNotFoundError:
                     if not create:
                         raise Violation("header effect parent is absent")
-                    self.reserve_creation()
-                    os.mkdir(part, 0o755, dir_fd=descriptor)
-                    following = os.open(part, flags, dir_fd=descriptor)
-                    if self.config["sudo_drop"]:
-                        os.fchown(following, self.config["runner_uid"], self.config["runner_gid"])
+                    if self.directory_installs is not None:
+                        following = self.directory_installs.create("/".join(parts), descriptor)
+                    else:
+                        self.reserve_creation()
+                        os.mkdir(part, 0o755, dir_fd=descriptor)
+                        following = os.open(part, flags, dir_fd=descriptor)
+                        if self.config["sudo_drop"]:
+                            os.fchown(following, self.config["runner_uid"], self.config["runner_gid"])
                     info = os.fstat(following)
                     created.append(["/".join(parts), info.st_dev, info.st_ino, info.st_mode])
                 os.close(descriptor)
@@ -2940,6 +2956,31 @@ def supervise(config, drop_privileges):
         policy.charge_metadata(len(encoded(value)))
         policy.journal_receipts.append(value)
 
+    def directory_handoff(phase, fields):
+        if not parking or channel is None or pid not in processes or policy.directory_installs is None:
+            raise Violation("directory handoff has no actually parked native producer")
+        request = {
+            "kind": "directory-handoff", **fields, "phase": phase,
+            "counters": policy.counters(), "reserved": policy.reservations(),
+        }
+        source_directories.validate_request(
+            request, scope=config["producer_scope"], producer=policy.producer_issued,
+            origin=policy.directory_installs.origin,
+        )
+        raw = channel.exchange(
+            encoded(request),
+            watch=[record.pidfd for record in processes.values()] + list(newborn_stops.values()),
+        )
+        reply = parse_json(raw, "prewatched directory acknowledgement")
+        source_directories.validate_reply(reply, request)
+        policy.apply_producer_limits(reply["limits"], ceilings)
+        channel.require_live([record.pidfd for record in processes.values()] + list(newborn_stops.values()))
+        channel.ensure_idle()
+        return reply["journal_sha256"]
+
+    if policy.directory_installs is not None:
+        policy.directory_installs.exchange = directory_handoff
+
     def fulfill_producer():
         requester = policy.producer_requests[0]
         state = processes.get(requester)
@@ -3037,6 +3078,12 @@ def supervise(config, drop_privileges):
                 policy.source_effects.adoption(sequence, records)
         channel.require_live([record.pidfd for record in processes.values()] + list(newborn_stops.values()))
         channel.ensure_idle()
+        if policy.directory_installs is not None:
+            directory = effect_request is not None and effect_request["operation"] == "directory"
+            policy.directory_installs.begin(
+                sequence, request["source_origin"],
+                (effect_request["path"],) if directory else reply["outputs"], directory=directory,
+            )
         journal_barrier("begin", sequence, request.get("source_origin"))
         if effect_request is not None:
             try:
@@ -3058,6 +3105,8 @@ def supervise(config, drop_privileges):
         if policy.source_effects is not None:
             policy.source_effects.publication(sequence, policy.publication_confirmation)
         journal_barrier("end", sequence, request.get("source_origin"), policy.publication_confirmation)
+        if policy.directory_installs is not None:
+            policy.directory_installs.end()
         policy.producer_completed = sequence
         state.producer_slot = sequence - 1
         state.producer_ready = False
@@ -3170,9 +3219,13 @@ def supervise(config, drop_privileges):
                     if len(policy.journal_receipts) != 2 * policy.producer_completed:
                         raise Violation("native source-journal publication transcript is incomplete")
                     result["source_journal"] = {
-                        "version": 1, "scope": config["producer_scope"], "mode": source_journal.MODE,
+                        "version": 1 if policy.directory_installs is None else 2,
+                        "scope": config["producer_scope"],
+                        "mode": source_journal.MODE if policy.directory_installs is None else source_directories.MODE,
                         "receipts": policy.journal_receipts, "closed": True,
                     }
+                    if policy.directory_installs is not None:
+                        result["source_journal"]["directories"] = policy.directory_installs.receipts
             if channel is not None:
                 result["rendezvous"] = {
                     "issued": policy.producer_issued, "completed": policy.producer_completed,
@@ -3197,6 +3250,7 @@ def supervise(config, drop_privileges):
                     raise
         finish_cleanup([
             reap_owned, policy.close_private_install_parents, finish_channel, write_report,
+            *([] if policy.directory_installs is None else [policy.directory_installs.close]),
             *([] if policy.read_trace is None else [policy.read_trace.close]),
             *([] if channel is None else [channel.close]),
         ], primary=primary)

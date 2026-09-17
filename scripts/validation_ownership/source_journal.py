@@ -93,6 +93,7 @@ class FixedDirectoryJournal:
     def __init__(self, session, image):
         self.session, self.image, self.epoch = session, image, session._namespace_epoch
         self.pins, self.watches = {}, {}
+        self.identities = dict(image.directories)
         self.fd = -1
         self.pending = None
         self.native_finished = False
@@ -144,7 +145,7 @@ class FixedDirectoryJournal:
         ):
             raise MakeProbeError("source journal lost its original owning view/lifetime")
         for name, descriptor in self.pins.items():
-            identity = self.image.directories[name]
+            identity = self.identities[name]
             if directory_identity(os.fstat(descriptor)) != identity:
                 raise MakeProbeError("source-journal original directory pin changed")
             actual = session._namespace_directory(name)
@@ -154,8 +155,7 @@ class FixedDirectoryJournal:
             finally:
                 os.close(actual)
 
-    def _read_events(self):
-        rows = []
+    def _kernel_records(self):
         while True:
             self.session.budget.remaining()
             try:
@@ -175,26 +175,35 @@ class FixedDirectoryJournal:
                     raise MakeProbeError("source-journal kernel event has a foreign watch or truncated name")
                 name = data[offset:offset + size]
                 offset += size
-                if (
-                    mask & (ISDIR | DELETE_SELF | MOVE_SELF | UNMOUNT | OVERFLOW | IGNORED)
-                    or mask not in {MODIFY, ATTRIB, CLOSE_WRITE, MOVED_FROM, MOVED_TO, CREATE, DELETE}
-                    or not name or b"\0" not in name or any(name[name.index(0):])
-                ):
-                    raise MakeProbeError("source journal lost fixed-directory coverage or its kernel event shape")
+                if name and (b"\0" not in name or any(name[name.index(0):])):
+                    raise MakeProbeError("source-journal kernel name padding is malformed")
                 try:
                     name = name.split(b"\0", 1)[0].decode("utf-8", "strict")
                 except UnicodeDecodeError as error:
                     raise MakeProbeError("source-journal event name is not UTF-8") from error
-                if "/" in name or relative_path(name) != name:
+                if name and ("/" in name or relative_path(name) != name):
                     raise MakeProbeError("source-journal event escaped its watched parent")
-                row = {
-                    "seq": len(self.payload["events"]) + len(rows) + 1,
-                    "directory": self.watches[watch], "name": name, "mask": mask, "cookie": cookie,
-                }
-                if row["seq"] > self.session.budget.limits.observation_count:
-                    self.session.budget.reject("source-journal event count exceeds the existing observation bound")
-                self.session.budget.charge("cache", len(encoded(row)))
-                rows.append(row)
+                yield watch, mask, cookie, name
+
+    def _append_event(self, rows, value):
+        row = {"seq": len(self.payload["events"]) + len(rows) + 1, **value}
+        if row["seq"] > self.session.budget.limits.observation_count:
+            self.session.budget.reject("source-journal event count exceeds the existing observation bound")
+        self.session.budget.charge("cache", len(encoded(row)))
+        rows.append(row)
+
+    def _read_events(self):
+        rows = []
+        for watch, mask, cookie, name in self._kernel_records():
+            if (
+                mask & (ISDIR | DELETE_SELF | MOVE_SELF | UNMOUNT | OVERFLOW | IGNORED)
+                or mask not in {MODIFY, ATTRIB, CLOSE_WRITE, MOVED_FROM, MOVED_TO, CREATE, DELETE}
+                or not name
+            ):
+                raise MakeProbeError("source journal lost fixed-directory coverage or its kernel event shape")
+            self._append_event(rows, {
+                "directory": self.watches[watch], "name": name, "mask": mask, "cookie": cookie,
+            })
         self.payload["events"].extend(rows)
         return rows
 
@@ -245,6 +254,10 @@ class FixedDirectoryJournal:
             raise MakeProbeError("source-journal completion lacks its actual publication window")
         self.validate_view()
         rows = self._read_events()
+        self._validate_window(rows, confirmation)
+        self._finish_window()
+
+    def _validate_window(self, rows, confirmation):
         pending = self.pending
         grouped = {path: [] for path in pending["paths"]}
         for row in rows:
@@ -277,7 +290,9 @@ class FixedDirectoryJournal:
                 raise MakeProbeError("source transfer lacks its actual paired same-parent kernel move")
         elif operation != "directory" or rows or confirmation["directories"]:
             raise MakeProbeError("source journal cannot accept directory mutation")
+    def _finish_window(self):
         self.validate_view()
+        pending = self.pending
         pending["event_end"] = len(self.payload["events"])
         self.payload["transactions"].append(pending)
         self.pending = None

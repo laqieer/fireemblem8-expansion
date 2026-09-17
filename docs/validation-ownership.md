@@ -292,6 +292,29 @@ fixed-directory observation, not general journal coverage or a source-phase
 certificate. New-directory coverage, every-pass reconstruction/obligation
 union and complete original-root small-plan acceptance remain outstanding.
 
+For actual new parents, select
+`observe_source_journal=True, source_journal_mode="prewatched-directories"`.
+The native publisher creates a fresh empty directory in an unexposed private
+staging parent. The host pins and watches that inode before it becomes public;
+the native supervisor then installs the same inode with atomic
+`RENAME_NOREPLACE`. The host requires matching staging/public move events and
+the child's `MOVE_SELF` before relabeling the watch or allowing descendants.
+Transients before movement and before pathname rebinding remain observable.
+No existing destination or existing/nonempty/foreign directory can be adopted,
+and original/public parent mappings and every lease are revalidated.
+
+This closes the measured late-watch gap for the already-authorized parent
+creation path. The unchanged missing-parent default message/header fixture
+runs without an added parent witness, using real ARM/cc1/sed and all original
+dispatches. Directory cleanup ownership begins only at a confirmed installed
+handoff, not at a predicted future parent, including terminal-failure paths.
+Created directories retain their original pins after observed removal.
+The old fixed profile still refuses new parents; private regular-file
+installation and the host-only CPP adapter remain unchanged. No general
+directory relocation, guest permission or quota is added. Nested/general
+source-use interpretation and complete every-pass obligation union still
+precede any changed-namespace certificate or original-root planner claim.
+
 Registry declaration execution now has an explicit shared-session entry:
 `graph_registry.observe_declarations(loader, session)`. The selected loader
 must be the active public view and own the same budget. It invokes the real
