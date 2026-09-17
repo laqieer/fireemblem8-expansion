@@ -318,6 +318,39 @@ directory relocation, guest permission or quota is added. Nested/general
 source-use interpretation and complete every-pass obligation union still
 precede any changed-namespace certificate or original-root planner claim.
 
+The [5710465329 terminal-file correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5710465329)
+separates planned output reservations from cleanup ownership. The native
+publisher hands the parent a real, independently opened read-only descriptor
+after exclusive file creation and before writing/final acknowledgement.
+The existing authenticated private channel carries exactly one `SCM_RIGHTS`
+descriptor with its scope, producer, path, owner and actual identities.
+The receiver owns that pin before byte accounting can fail. Pins and claim
+resources spend existing admission/byte bounds; no guest descriptor or
+filesystem permission is added. The independent open-file description does
+not delay the writer's real `CLOSE_WRITE` event.
+
+Cleanup requires owned native quiescence and the actual live file/parent pins.
+It atomically claims the public entry into a private report-owned slot using
+`RENAME_NOREPLACE`, checks the claimed object against the file pin, then removes
+only that object. A changed entry is restored without overwrite, or retained
+in the recorded claim location if another public occupant prevents restoration.
+The healthy journal records the real namespace move and pinned removal, not
+a fabricated `DELETE`. A failed or incomplete journal supplies no phase
+authority but does not prevent safe cleanup of genuinely owned files.
+Retirement, transfer, nested scopes and selected views preserve that ownership.
+
+Foreign, displaced, unacknowledged or otherwise uncertain objects are not
+deleted by a later blanket report/view cleanup. The error and session retain
+the ownership state, source view and live pins. After inspecting or handling
+those retained objects, an outer owner may call
+`session.release_retained_file_handles()` to close the handles; this does not
+delete retained paths or reactivate automatic removal. The claim namespace is
+trusted private coordinator storage, not a new same-UID filesystem sandbox.
+The [existing tester case](test-cases/workflow-governance.md#terminal-generated-file-cleanup-ownership)
+contains the real native preimages, race/mutation controls and explicit outer
+fixture cleanup. Injected terminal failure is not quota calibration, H1 or
+source-phase acceptance.
+
 Registry declaration execution now has an explicit shared-session entry:
 `graph_registry.observe_declarations(loader, session)`. The selected loader
 must be the active public view and own the same budget. It invokes the real

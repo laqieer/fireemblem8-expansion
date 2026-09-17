@@ -15,12 +15,14 @@ if __package__:
     from .lifecycle import finish_cleanup
     from .producer_channel import ChannelError
     from .source_phases import digest
+    from .file_ownership import FileOwnership
 else:
     from authority import encoded, relative_path
     from budget import MakeProbeError
     from lifecycle import finish_cleanup
     from producer_channel import ChannelError
     from source_phases import digest
+    from file_ownership import FileOwnership
 
 
 MODE = "fixed-directories"
@@ -277,7 +279,17 @@ class FixedDirectoryJournal:
                 )
                 if not valid or any(row["cookie"] for row in records):
                     raise MakeProbeError("source publication has missing, extra or incompatible kernel mutations")
-        elif operation in {"retire", "cleanup"}:
+        elif operation == "cleanup":
+            if (
+                len(rows) != 1 or rows[0]["mask"] != MOVED_FROM or not rows[0]["cookie"]
+                or not isinstance(confirmation, tuple) or len(confirmation) != 2
+            ):
+                raise MakeProbeError("source cleanup lacks its atomic owned-file claim")
+            owner, pin = confirmation
+            if type(owner) is not FileOwnership or owner.session is not self.session or owner.tree != self.image.tree:
+                raise MakeProbeError("source cleanup borrowed another file owner")
+            owner.validate_removed(pending["paths"][0], pin)
+        elif operation == "retire":
             if len(rows) != 1 or rows[0]["mask"] != DELETE or rows[0]["cookie"]:
                 raise MakeProbeError("source retirement/cleanup lacks its exact kernel deletion")
         elif operation == "transfer":
@@ -323,19 +335,22 @@ class FixedDirectoryJournal:
         if end != len(self.payload["events"]):
             raise MakeProbeError("source journal omitted observed mutations from its completed windows")
 
-    def cleanup(self, path, action):
-        if self.session.budget.failed or self.session.budget.closed:
+    def cleanup(self, path, owner, pin):
+        if type(owner) is not FileOwnership or owner.session is not self.session or owner.tree != self.image.tree:
+            raise MakeProbeError("source cleanup has no matching owned file lifetime")
+        if self.session.budget.failed or self.session.budget.closed or self.invalid or not self.native_finished:
             self.invalid = True
-            return action()
+            owner.remove(path, pin)
+            owner.validate_removed(path, pin)
+            return
         self.idle()
-        if not self.native_finished:
-            raise MakeProbeError("source cleanup preceded native completion")
         self._begin(None, None, "cleanup", (path,))
-        action()
-        self.end(None)
+        owner.remove(path, pin)
+        owner.validate_removed(path, pin)
+        self.end((owner, pin))
 
     def finish(self):
-        if self.session.budget.failed or self.session.budget.closed:
+        if self.session.budget.failed or self.session.budget.closed or self.invalid:
             self.invalid = True
             self.close()
             return

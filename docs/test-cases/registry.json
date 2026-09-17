@@ -3215,6 +3215,10 @@
           "evidence": "scripts/validation_ownership/tests/test_source_journal.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_file_ownership -v",
+          "evidence": "scripts/validation_ownership/tests/test_file_ownership.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_source_directories -v",
           "evidence": "scripts/validation_ownership/tests/test_source_directories.py"
         },
