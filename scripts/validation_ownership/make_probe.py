@@ -42,6 +42,7 @@ from . import read_epochs
 from . import source_phases
 from . import source_effects
 from . import source_journal
+from . import file_ownership
 from . import source_directories
 from .producer_channel import (
     ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
@@ -81,6 +82,9 @@ def terminal_failure(method):
             return method(self, *args, **kwargs)
         except BaseException as error:
             self.budget.failed = True
+            retained = tuple(owner for owner in self._file_owners.values() if owner.retained)
+            if retained:
+                error.retained_file_ownership = retained
             finish_cleanup([self.budget.close], primary=error)
             raise
     return guarded
@@ -734,6 +738,7 @@ class ProbeSession:
         self.published_versions = {}
         self.publication_serial = 0
         self.generated_paths = set()
+        self._file_owners = {}
         self.generated_directories = set()
         self.parked_capsules = []
         self.memory_peak = 0
@@ -1226,7 +1231,7 @@ class ProbeSession:
             root = self.base / f"view-{self.serial}"
             tree = root / "tree"
             with cleanup_scope([
-                cache.clear, mappings.clear, tools.clear, lambda: _remove_owned_tree(root), restore,
+                cache.clear, mappings.clear, tools.clear, lambda: self._remove_file_sensitive_tree(root), restore,
             ]):
                 root.mkdir()
                 tree.mkdir()
@@ -1261,6 +1266,11 @@ class ProbeSession:
             raise
 
     def __exit__(self, kind, value, traceback):
+        def settle_file_owners():
+            finish_cleanup([
+                owner.cleanup for owner in self._file_owners.values()
+                if not owner.closed and not owner.retained
+            ])
         def clear_state():
             self._expire_namespaces()
             self._namespace_images.clear()
@@ -1314,9 +1324,10 @@ class ProbeSession:
             if self._views:
                 self.loader = self._views[0][0]
             self._views.clear()
+            self._file_owners = {path: owner for path, owner in self._file_owners.items() if owner.retained}
         def remove_base():
             if self.base is not None:
-                _remove_owned_tree(self.base)
+                self._remove_file_sensitive_tree(self.base)
                 self.base = None
         def remove_parent(path):
             try:
@@ -1329,13 +1340,34 @@ class ProbeSession:
                 self.created.clear()
         try:
             finish_cleanup([
-                self.budget.close, clear_state, remove_base,
+                self.budget.close, settle_file_owners, clear_state, remove_base,
                 *(lambda path=path: remove_parent(path) for path in reversed(self.created)),
                 release_parents,
             ], primary=value, handlers=self.handlers)
         except BaseException:
             self.budget.failed = True
             raise
+
+    def _file_owner(self):
+        owner = self._file_owners.get(self.tree)
+        if owner is None:
+            owner = file_ownership.FileOwnership(self)
+            self._file_owners[self.tree] = owner
+        if owner.closed or owner.retained or owner.snapshot is not self.snapshot:
+            raise MakeProbeError("source view has retained or closed file cleanup ownership")
+        return owner
+
+    def _remove_file_sensitive_tree(self, path):
+        retained = [owner for owner in self._file_owners.values() if owner.retained]
+        if retained:
+            failure = MakeProbeError("report tree retained for uncertain generated-file ownership: " + str(self.base))
+            failure.retained_file_ownership = tuple(retained)
+            raise failure
+        _remove_owned_tree(path)
+
+    def release_retained_file_handles(self):
+        """An outer owner may close retained pins without deleting retained objects."""
+        finish_cleanup([owner.release_handles for owner in self._file_owners.values() if owner.retained])
 
     def _tools(self):
         for path in ("/usr/bin/make", "/usr/bin/unshare", "/usr/bin/python3", "/usr/bin/cc"):
@@ -1700,6 +1732,7 @@ class ProbeSession:
         observe_source_phases=False, source_phase_observer=None,
         observe_source_journal=False, source_journal_observer=None,
         source_journal_mode=source_journal.MODE, source_directory_controller=None,
+        file_cleanup_owner=None,
     ):
         self.budget.remaining()
         if (
@@ -1798,6 +1831,15 @@ class ProbeSession:
                 self.budget.limits.control_bytes - self.budget.bytes.get("control", 0),
             ),
         }
+        if file_cleanup_owner is not None and (
+            type(file_cleanup_owner) is not file_ownership.FileOwnership
+            or file_cleanup_owner.session is not self or file_cleanup_owner.tree != self.tree
+            or file_cleanup_owner.snapshot is not self.snapshot
+            or self._file_owners.get(self.tree) is not file_cleanup_owner
+            or file_cleanup_owner.closed or file_cleanup_owner.retained
+            or mode != "make" or producer_handler is None or not publication_allowed
+        ):
+            raise MakeProbeError("unissued file cleanup receiver")
         if dependency is not None:
             if mode != "compile":
                 raise MakeProbeError("dependency profile requires compiler confinement")
@@ -1969,11 +2011,18 @@ class ProbeSession:
             request = parse_json(packet, "producer request")
             if not isinstance(request, dict) or request.get("scope") != config["producer_scope"]:
                 raise MakeProbeError("foreign producer request scope")
-            if request.get("kind") in {"journal-barrier", "directory-handoff"}:
-                if not observe_source_journal or not source_requests:
+            if file_receiver is not None and file_receiver.pending is not None and request.get("kind") != "file-opened":
+                raise MakeProbeError("publication descriptor arrived on another protocol operation")
+            if request.get("kind") in {"journal-barrier", "directory-handoff", "file-opened"}:
+                file_pin = request["kind"] == "file-opened"
+                if not file_pin and (not observe_source_journal or not source_requests):
                     raise MakeProbeError("unrequested or unissued source-journal window")
                 try:
-                    if request["kind"] == "directory-handoff":
+                    if file_pin:
+                        if file_receiver is None:
+                            raise ChannelError("unrequested actual-file registration")
+                        file_ownership.validate_request(request, config["producer_scope"], sequence)
+                    elif request["kind"] == "directory-handoff":
                         if source_directory_controller is None:
                             raise ChannelError("unissued prewatched directory handoff")
                         source_directories.validate_request(
@@ -2007,9 +2056,26 @@ class ProbeSession:
                     validate_confirmation(sequence, request["publication"])
                 self.parked_capsules.append(reserved)
                 try:
-                    journal_sha256 = source_journal_observer(request)
+                    if file_pin:
+                        pin = file_receiver.bind(request)
+                    else:
+                        journal_sha256 = source_journal_observer(request)
                 finally:
                     self.parked_capsules.pop()
+                if file_pin:
+                    reply = {
+                        "kind": "file-pinned",
+                        **{name: request[name] for name in file_ownership.BINDING_KEYS},
+                        "limits": grants(),
+                    }
+                    bound = len(encoded(reply)) + 4
+                    reply["limits"] = grants(bound)
+                    file_ownership.validate_reply(reply, request)
+                    data = encoded(reply)
+                    if len(data) + 4 > bound:
+                        raise MakeProbeError("file ownership grant exceeded its encoding reservation")
+                    pin.approved = True
+                    return data
                 directory = request["kind"] == "directory-handoff"
                 reply = {
                     "kind": "directory-ready" if directory else "journal-resume",
@@ -2160,6 +2226,8 @@ class ProbeSession:
                 self.parked_capsules.pop()
             if source_request is not None:
                 source_request["adopt_sha256"] = value.get("adopt_sha256")
+            if file_cleanup_owner is not None and value.get("outputs"):
+                file_cleanup_owner.authorize(config["producer_scope"], sequence, value["owner"], value["outputs"])
             reply = {
                 "kind": "result", "scope": config["producer_scope"], "sequence": sequence,
                 **value, "limits": grants(),
@@ -2201,6 +2269,10 @@ class ProbeSession:
         def close_channel():
             if channel is not None:
                 channel.close()
+        file_receiver = None
+        if file_cleanup_owner is not None:
+            file_receiver = file_ownership.FileReceiver(file_cleanup_owner, config["producer_scope"])
+            config["file_cleanup"] = {"version": 1, "scope": config["producer_scope"]}
         with cleanup_scope([
             lambda: report.unlink(missing_ok=True), lambda: config_path.unlink(missing_ok=True),
             close_channel, lambda: _remove_owned_tree(channel_directory),
@@ -2212,6 +2284,7 @@ class ProbeSession:
                     channel = ProducerChannel.listen(
                         channel_directory, deadline=self.budget.deadline, limit=file_remaining,
                         charge=lambda size: self.budget.charge("control", size),
+                        descriptor_receiver=None if file_receiver is None else file_receiver.receive,
                     )
                     config["producer_endpoint"] = channel.endpoint
                 finally:
@@ -2862,6 +2935,7 @@ class ProbeSession:
             del self.published_versions[source]
             self._namespace_publications.pop(source, None)
             generated_paths.discard(source)
+            self._file_owner().retire(source, effect.path if effect.operation == "transfer" else None)
             if effect.operation == "transfer":
                 after = header_effects.validate_record(outcome["after"])
                 value = GeneratedFile(effect.path, old.data, old.mode)
@@ -3663,6 +3737,7 @@ class ProbeSession:
         receipt_directories = {}
         command_results = {}
         generated_paths = self.generated_paths
+        file_owner = self._file_owner()
         generated_directories = self.generated_directories
         confirmed = 0
         last_confirmation = None
@@ -3743,15 +3818,6 @@ class ProbeSession:
             if depth:
                 return
 
-            def remove_file(name):
-                def remove():
-                    self._namespace_mutation("removed", name)
-                    (self.tree / name).unlink(missing_ok=True)
-                if journal is None:
-                    remove()
-                else:
-                    journal.cleanup(name, remove)
-
             def remove_directory(name):
                 if (self.tree / name).exists():
                     def remove():
@@ -3763,13 +3829,14 @@ class ProbeSession:
                         remove()
 
             finish_cleanup([
-                *(lambda name=name: remove_file(name) for name in generated_paths),
+                lambda: file_owner.cleanup(journal),
                 *(lambda name=name: remove_directory(name)
                   for name in sorted(generated_directories, key=lambda value: (-value.count("/"), value))),
                 generated_paths.clear, generated_directories.clear,
                 self.published_sources.clear, self.published_versions.clear,
                 self._namespace_publications.clear,
             ])
+            self._file_owners.pop(self.tree, None)
 
         def acknowledge(completed, confirmation):
             nonlocal confirmed, last_confirmation
@@ -3830,6 +3897,7 @@ class ProbeSession:
                 ):
                     raise MakeProbeError("effective publication disagrees with its actual output contract")
                 self._verify_effective_output(item, outcome)
+                file_owner.acknowledge(dispatch_scope, completed, item.path, outcome)
                 self._namespace_mutation(effect, item.path, outcome["identity"])
                 value = GeneratedFile(item.path, item.data, mode)
                 self.publication_serial += 1
@@ -3887,6 +3955,7 @@ class ProbeSession:
                         elif (self.tree / effect.path).exists() or (self.tree / effect.path).is_symlink():
                             raise MakeProbeError("header transfer would replace an unowned source")
                         generated_paths.add(effect.path)
+                        file_owner.prepare_transfer(effect.source, effect.path)
                     record = {
                         "command": {
                             "argv": list(registration.argv), "environment": dict(dispatch_context.environment),
@@ -3927,6 +3996,7 @@ class ProbeSession:
                             raise MakeProbeError("active publication identity changed before producer execution")
                         previous[name] = self.published_sources[name], publication_identity(before)
                     generated_paths.add(name)
+                    file_owner.reserve(name)
                     new_directories.update(
                         parent.as_posix() for parent in PurePosixPath(name).parents
                         if parent.as_posix() != "." and not (self.tree / parent).exists()
@@ -4021,13 +4091,14 @@ class ProbeSession:
 
         with cleanup_scope([
             cleanup_generated, receipts.clear, receipt_directories.clear,
-            lambda: _remove_owned_tree(control), lambda: _remove_owned_tree(root),
+            lambda: self._remove_file_sensitive_tree(control), lambda: self._remove_file_sensitive_tree(root),
             lambda: setattr(self, "make_depth", depth),
             *( (lambda: self._end_namespace(namespace_capture),) if namespace_capture is not None else () ),
             *( (journal.finish, self._source_journal_active.pop) if journal is not None else () ),
         ]):
             self.make_depth = depth + 1
             self._new_root(root_name, make=True)
+            dispatch_scope = install_protocol.launch_scope(root)
             control.mkdir(mode=0o700)
             mapping_path = control / "map"
             mapping_path.mkdir()
@@ -4059,6 +4130,7 @@ class ProbeSession:
                 source_journal_observer=journal_window if journal is not None else None,
                 source_journal_mode=source_journal_mode,
                 source_directory_controller=journal if source_journal_mode == source_directories.MODE else None,
+                file_cleanup_owner=file_owner if publication_allowed else None,
             )
             if journal is not None:
                 extra = (observed["source_journal"]["directories"],) if source_journal_mode == source_directories.MODE else ()

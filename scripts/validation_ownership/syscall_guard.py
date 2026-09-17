@@ -38,6 +38,7 @@ if __package__:
     from .source_effects import NativeSourceEffects
     from . import source_journal
     from . import source_directories
+    from . import file_ownership
     from .producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
@@ -56,6 +57,7 @@ else:
     from source_effects import NativeSourceEffects
     import source_journal
     import source_directories
+    import file_ownership
     from producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
@@ -300,6 +302,10 @@ class Policy:
         self.source_effects = None
         self.journal_receipts = None
         self.directory_installs = None
+        self.file_opened = None
+        self.file_cleanup_enabled = "file_cleanup" in config
+        if self.file_cleanup_enabled:
+            file_ownership.validate_config(config["file_cleanup"], config)
         try:
             header_protocol.validate_launch(config)
         except ChannelError as error:
@@ -856,6 +862,10 @@ class Policy:
                         with os.fdopen(output, "wb", buffering=0) as destination:
                             if self.config["sudo_drop"]:
                                 os.fchown(destination.fileno(), self.config["runner_uid"], self.config["runner_gid"])
+                            if self.file_cleanup_enabled:
+                                if self.file_opened is None:
+                                    raise Violation("actual publication has no file ownership receiver")
+                                self.file_opened(name, destination.fileno(), owner, directory)
                             left = size
                             while left:
                                 data = take(min(left, SYSCALL_MEMORY_LIMIT))
@@ -2980,6 +2990,38 @@ def supervise(config, drop_privileges):
 
     if policy.directory_installs is not None:
         policy.directory_installs.exchange = directory_handoff
+
+    def opened_file(path, descriptor, owner, parent):
+        if not parking or channel is None or pid not in processes:
+            raise Violation("file ownership registration has no parked native publisher")
+        request = {
+            "kind": "file-opened", "scope": config["producer_scope"],
+            "producer": policy.producer_issued, "owner": owner, "path": path,
+            "identity": list(publication_identity(os.fstat(descriptor))),
+            "parent": list(file_ownership.directory_identity(os.fstat(parent))[:3]),
+            "counters": policy.counters(), "reserved": policy.reservations(),
+        }
+        file_ownership.validate_request(request, config["producer_scope"], policy.producer_issued)
+        pin = os.open(
+            f"/proc/self/fd/{descriptor}", os.O_RDONLY | os.O_CLOEXEC | os.O_NOATIME,
+        )
+        try:
+            raw = channel.exchange_descriptor(
+                encoded(request), pin,
+                watch=[record.pidfd for record in processes.values()] + list(newborn_stops.values()),
+            )
+        finally:
+            os.close(pin)
+        reply = parse_json(raw, "actual-file ownership acknowledgement")
+        file_ownership.validate_reply(reply, request)
+        policy.apply_producer_limits(reply["limits"], ceilings)
+        if publication_identity(os.fstat(descriptor)) != tuple(request["identity"]):
+            raise Violation("opened publication changed before ownership acknowledgement")
+        channel.require_live([record.pidfd for record in processes.values()] + list(newborn_stops.values()))
+        channel.ensure_idle()
+
+    if policy.file_cleanup_enabled:
+        policy.file_opened = opened_file
 
     def fulfill_producer():
         requester = policy.producer_requests[0]

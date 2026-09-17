@@ -5837,7 +5837,7 @@ Start with admitted witnesses in the source and output-parent directories,
 but no generated C or include. Enable `observe_source_journal`. Require actual
 kernel create/write/close events, native begin/end acknowledgements, first-pass
 producer HIDDEN=secret despite final HIDDEN undefined, and separate terminal
-file-deletion events covering all ranges without gaps. The original wildcard
+file-removal events covering all ranges without gaps. The original wildcard
 guard must still refuse the touched source namespace.
 
 Create/delete an unregistered host file before and during a native window;
@@ -5902,6 +5902,71 @@ fixed-profile new-parent refusal, native-suite owner, exact module admission,
 98 case IDs, all prior automation and old resource limits. Main's historical
 BASE-renewal and CPP scopes are unchanged. Directory coverage does not waive
 every-pass source semantics/obligation union, full-root admission or allocation17.
+
+### Terminal generated-file cleanup ownership
+
+The [5710465329 correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5710465329)
+addresses terminal cleanup deleting foreign files at names that were only
+planned, or deleting replacements after the actual output was displaced before
+acknowledgement. Both original native reports failed; they were not successful
+quota or source-phase/H1 bypasses. Preserve those preimages separately from
+the following corrected results.
+
+Use the existing Linux/native-probe prerequisites and an owned source fixture
+with the original `src` and `build` parent witnesses. Do not inject faults into
+live project outputs. Run:
+
+```sh
+python3 -m unittest scripts.validation_ownership.tests.test_file_ownership -v
+```
+
+1. Let the actual producer reach its planned-output/pre-publication boundary.
+   Place a foreign file at the reserved name and inject terminal failure.
+   Its bytes, inode and namespace link must survive in ordinary, fixed-journal
+   and prewatched-directory modes. A reservation alone must not authorize
+   targeted or blanket cleanup.
+2. Let native publication install the real output, then displace it and create
+   a foreign same-path replacement before the final acknowledgement. Require
+   both objects to survive, with the original inode still held by its actual
+   descriptor. Repeat before descriptor acknowledgement and at the first byte
+   charge after descriptor receipt; uncertain handles must remain registered.
+3. Replace the public entry exactly between the preliminary check and atomic
+   removal claim. The replacement must not be deleted. Block restoration with
+   another public occupant; neither that occupant nor the privately retained
+   claim may be overwritten. Move a pinned parent during the claim and require
+   restoration into the original parent, not deletion through the new mapping.
+4. Unlink an owned output while its pin is live, then create a foreign file.
+   The old inode cannot be reused while pinned. A forged numeric identity
+   cannot replace the real descriptor; no foreign cleanup follows.
+5. Keep healthy cleanup and known-owned failed-report cleanup functional.
+   A lost reply after actual pin approval still removes the known-owned
+   partial output. Corrupted file scope/owner/path/identity/parent records
+   reject without inventing cleanup authority.
+6. Exercise lost retirement/transfer acknowledgements with the existing real
+   header primitives. Keep the same pinned object across its possible names.
+   Exercise a selected BASE view, restore CURRENT, and exit the outer session:
+   retained foreign/displaced objects must not be erased by either cleanup.
+7. Restore the old reservation-only deletion condition and recover the actual
+   pre-publication foreign deletion. Independently restore stat-then-unlink
+   removal and recover deletion at the real removal race. Do not weaken the
+   corrected object/FD assertions or pin an arbitrary helper-call count.
+
+The native publisher's cleanup registration is a closed private descriptor
+handoff, not final publication or phase evidence. Final content/mode/source
+acknowledgements still validate normally. Public cleanup uses an atomic
+no-overwrite claim and the actual pinned inode; the independent healthy
+journal records that move and verifies final unlink state. Failed/incomplete
+journals remain invalid while known-owned, quiescent cleanup proceeds.
+
+On uncertainty, the original failure and cleanup diagnostics remain visible.
+The report/view and ownership handles stay retained. Inspect their actual
+objects before explicitly releasing retained handles; handle release alone
+never deletes a retained path. Tests perform independent outer cleanup only
+after checking the retained bytes, identities, descriptors and zero children/
+waiters. Retain the existing directory actual-install rule, numeric limits,
+default source permissions, native test owner and all prior automation.
+No new case ID, runtime platform, permission, workflow job, full-root
+certificate or measurement allocation is introduced.
 
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while

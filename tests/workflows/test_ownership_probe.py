@@ -29,6 +29,7 @@ PROBE_TEST_MODULES = (
     "scripts.validation_ownership.tests.test_source_effects",
     "scripts.validation_ownership.tests.test_source_journal",
     "scripts.validation_ownership.tests.test_source_directories",
+    "scripts.validation_ownership.tests.test_file_ownership",
 )
 NATIVE_PACKAGES = frozenset({
     "build-essential", "binutils-arm-none-eabi", "libpng-dev", "pkg-config", "python3-venv",

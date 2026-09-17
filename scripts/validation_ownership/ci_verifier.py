@@ -90,6 +90,7 @@ TRUSTED_RUNTIME_PATHS = frozenset(
         f"{TRUSTED_PREFIX}source_effects.py",
         f"{TRUSTED_PREFIX}source_journal.py",
         f"{TRUSTED_PREFIX}source_directories.py",
+        f"{TRUSTED_PREFIX}file_ownership.py",
         *TRUSTED_SHARED_RUNTIME_PATHS,
         f"{TRUSTED_PREFIX}python_commands.py",
         f"{TRUSTED_PREFIX}reporter.py",
