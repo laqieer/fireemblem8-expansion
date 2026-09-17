@@ -8975,6 +8975,43 @@ inputs are supported.
    Failed fixture drafts are diagnostic development records, not preserved
    production-defect evidence or successful validation.
 
+### Shell lexical-role regression
+
+The [lexical-role correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5714258206)
+retains this case and its existing full-module automation. In the owned
+`ModernToolchainTests` fixture only, change the first `if [ -z "$$cc_path" ]`
+to `'if' [ -z "$$cc_path" ]`. Ordinary Make must report the real shell syntax
+failure. The confined probe must reject **before any toolchain substep**,
+not run the compiler against a different interpretation. The preserved
+pre-fix native comparison incorrectly succeeded, executed stages 0-4 twice
+and generated the header dependency. The owner's persistent reproduction is
+distinct from C's original inline review executions.
+
+Exercise quoted, partially quoted and escaped structural words at every
+required `if`/`then`/`fi`, `case`/`in`/`esac`, grouping and pipeline-negation
+position. Check real operator and redirection-descriptor roles too.
+Quoted `'!'` remains valid inside `[ '!' -x ... ]`, where it is an argument;
+`if '!' ...` is not pipeline negation. Actual shell execution, not just
+`sh -n`, must distinguish these behaviors.
+
+Require an unquoted compiler assignment name and equals sign. For example,
+`cc="arm-none-eabi-gcc"` and `cc=''arm-none-eabi-gcc` remain valid, while
+`'cc'=arm-none-eabi-gcc`, `c''c=arm-none-eabi-gcc` and
+`cc\=arm-none-eabi-gcc` are not assignment words. Case patterns retain active
+wildcards: `'/'*` and `/''*` are equivalent to `/*`, but `'/*'` and `/\*`
+match a literal asterisk. Likewise `''*` preserves the fallback wildcard;
+`'*'` does not. Test absolute, relative and literal-asterisk inputs so a
+working default assembler path cannot hide a changed branch.
+
+The valid-quoting native control combines quoted assignment values,
+`'exit' '1'`, test-argument negation and equivalent case-pattern quoting.
+It must preserve ordinary stdout/stderr/status, actual GCC/cc1/as execution,
+stdin, repository/SDK identities, unchanged source bytes/stat and cleanup.
+Restoring only the old role-erasing signature must recover false native
+admission for the keyword, assignment and pattern controls. Existing
+whitespace and parser-local refactors remain green; no blanket quote ban,
+general shell evaluator, source identity gate or new execution grant is added.
+
 ### Authority, cleanup and limitations
 
 The existing `MakeCommands` selection is followed by an issued original-job,
