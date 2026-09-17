@@ -117,39 +117,74 @@ def parse_recipe(command):
     tokens = _shell_tokens(command, "original toolchain recipe")
     position = 0
 
-    def signature(token):
-        # Quoted expansions are not interchangeable with identically spelled
-        # literals. Ordinary literal quote/whitespace changes are immaterial.
-        active = token.raw if "$" in token.raw or "`" in token.raw else None
-        return token.value, token.operator, token.io_number, active
+    def pattern_operators(token):
+        quote, index, operators = None, 0, []
+        while index < len(token.raw):
+            character = token.raw[index]
+            if character == "\\" and quote != "'" and (
+                quote is None or token.raw[index + 1:index + 2] in {'$', '`', '"', "\\"}
+            ):
+                index += 2
+                continue
+            if character == quote:
+                quote = None
+            elif quote is None and character in "'\"":
+                quote = character
+            elif quote is None and character in "*?[]":
+                operators.append(character)
+            index += 1
+        return tuple(operators)
 
-    def expect(fragment):
+    def signature(token, role="word"):
+        # Only the declared grammar position gives a word a syntactic role.
+        # For example, test-command argv may quote !; pipeline negation may not.
+        active = token.raw if "$" in token.raw or "`" in token.raw else None
+        lexical = (
+            token.raw if role == "syntax" else token.assignment if role == "assignment"
+            else pattern_operators(token) if role == "pattern" else None
+        )
+        return token.value, token.operator, token.io_number, active, lexical
+
+    def expect(fragment, *, syntax=(), patterns=(), assignments=()):
         nonlocal position
         expected = _shell_tokens(fragment, "toolchain grammar")
         actual = tokens[position:position + len(expected)]
-        if [signature(item) for item in actual] != [signature(item) for item in expected]:
+        if len(actual) != len(expected):
             raise MakeProbeError("toolchain recipe differs from its complete original control flow")
+        for item, wanted in zip(actual, expected):
+            role = (
+                "syntax" if wanted.value in syntax else "pattern" if wanted.value in patterns
+                else "assignment" if wanted.value.partition("=")[0] in assignments else "word"
+            )
+            if signature(item, role) != signature(wanted, role):
+                raise MakeProbeError("toolchain recipe differs from its complete original control flow")
         position += len(expected)
 
-    def literals():
+    def literals(*, assignment=False):
         nonlocal position
         start = position
         while position < len(tokens) and not tokens[position].operator and not tokens[position].io_number:
             position += 1
-        return tuple(_literal_header_words(tokens[start:position]))
+        selected = tokens[start:position]
+        if assignment and (
+            len(selected) != 1
+            or signature(selected[0], "assignment") != signature(selected[0]._replace(assignment=True), "assignment")
+        ):
+            raise MakeProbeError("toolchain recipe requires an unquoted assignment name and equals")
+        return tuple(_literal_header_words(selected))
 
     def errors(messages, *, group=False):
         for message in messages:
             expect("printf '%s\\n' " + repr(message) + " >&2;")
-        expect("exit 1; " + ("};" if group else "fi;"))
+        expect("exit 1; " + ("};" if group else "fi;"), syntax=("}", "fi"))
 
     expect("set -eu;")
-    assignment = literals()
+    assignment = literals(assignment=True)
     if len(assignment) != 1 or not assignment[0].startswith("cc=") or not assignment[0][3:]:
         raise MakeProbeError("toolchain recipe lost its literal compiler assignment")
     compiler = assignment[0][3:]
-    expect('; cc_path=$(command -v "$cc" 2>/dev/null || true);')
-    expect('if [ -z "$cc_path" ] || [ ! -x "$cc_path" ]; then')
+    expect('; cc_path=$(command -v "$cc" 2>/dev/null || true);', assignments=("cc_path",))
+    expect('if [ -z "$cc_path" ] || [ ! -x "$cc_path" ]; then', syntax=("if", "then"))
     expect('printf \'%s\\n\' "error: modern compiler not found: $cc" >&2;')
     errors(("Install gcc-arm-none-eabi or set MODERN_TOOLCHAIN_ROOT/MODERN_CC.",))
     query_flags = []
@@ -158,31 +193,33 @@ def parse_recipe(command):
         ("target", QUERIES[1], 'printf \'%s\\n\' "error: could not query modern compiler target: $cc" >&2;'),
         ("assembler", QUERIES[2], "printf '%s\\n' 'error: could not resolve the assembler used by modern GCC' >&2;"),
     ):
-        expect(variable + '=$("$cc"')
+        expect(variable + '=$("$cc"', assignments=(variable,))
         arguments = literals()
         if not arguments or arguments[-1] != query:
             raise MakeProbeError("toolchain recipe changed its real compiler query")
         query_flags.append(arguments[:-1])
-        expect("2>&1) || {")
+        expect("2>&1) || {", syntax=("{",))
         expect(failure)
-        expect("exit 1; };")
+        expect("exit 1; };", syntax=("}",))
         if variable == "version":
             expect("""printf 'Modern compiler: %s\\n' "$(printf '%s\\n' "$version" | sed -n '1p')";""")
         elif variable == "target":
-            expect('if [ "$target" != arm-none-eabi ]; then')
+            expect('if [ "$target" != arm-none-eabi ]; then', syntax=("if", "then"))
             expect("""printf "error: modern compiler targets '%s'; expected 'arm-none-eabi'\\n" "$target" >&2;""")
-            expect('exit 1; fi; printf \'Modern target: %s\\n\' "$target";')
-    expect('case "$assembler" in /*) resolved_as="$assembler" ;;')
-    expect('*) resolved_as=$(command -v "$assembler" 2>/dev/null || true) ;; esac;')
-    expect('if [ -z "$resolved_as" ] || [ ! -x "$resolved_as" ]; then')
+            expect('exit 1; fi; printf \'Modern target: %s\\n\' "$target";', syntax=("fi",))
+    expect('case "$assembler" in /*) resolved_as="$assembler" ;;',
+           syntax=("case", "in"), patterns=("/*",), assignments=("resolved_as",))
+    expect('*) resolved_as=$(command -v "$assembler" 2>/dev/null || true) ;; esac;',
+           syntax=("esac",), patterns=("*",), assignments=("resolved_as",))
+    expect('if [ -z "$resolved_as" ] || [ ! -x "$resolved_as" ]; then', syntax=("if", "then"))
     expect("""printf "error: modern GCC resolved assembler '%s', but it is not executable\\n" "$assembler" >&2;""")
     errors(("Install binutils-arm-none-eabi or set MODERN_BINUTILS_DIR.",))
     expect('printf \'Modern assembler: %s\\n\' "$resolved_as";')
     probes = []
     for stdin, failure in ((SYNTAX_INPUT, SYNTAX_FAILURE), (COMPILE_INPUT, COMPILE_FAILURE)):
-        expect("if ! printf '%s\\n' " + repr(stdin.rstrip("\n")) + ' | "$cc"')
+        expect("if ! printf '%s\\n' " + repr(stdin.rstrip("\n")) + ' | "$cc"', syntax=("if", "!"))
         probes.append(literals())
-        expect("; then")
+        expect("; then", syntax=("then",))
         errors(tuple(failure.rstrip("\n").split("\n")))
     expect("printf 'Modern flags: ARM7TDMI Thumb/interwork; config=%s; ABI=%s\\n'")
     selected = literals()
