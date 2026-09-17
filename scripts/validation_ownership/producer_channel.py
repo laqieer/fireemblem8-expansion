@@ -10,6 +10,11 @@ import struct
 import time
 import re
 
+if __package__:
+    from .lifecycle import finish_cleanup
+else:
+    from lifecycle import finish_cleanup
+
 
 class ChannelError(RuntimeError):
     pass
@@ -130,12 +135,13 @@ def validate_job_context(value, sequence=None):
 
 
 class ProducerChannel:
-    def __init__(self, connection, *, deadline, limit, charge=None):
+    def __init__(self, connection, *, deadline, limit, charge=None, descriptor_receiver=None):
         self.connection = connection
         self.connection.setblocking(False)
         self.deadline = deadline
         self.limit = limit
         self.charge = charge
+        self.descriptor_receiver = descriptor_receiver
         self.buffer = bytearray()
         self.expected = None
         self.closed = False
@@ -286,17 +292,38 @@ class ProducerChannel:
         raise ChannelError("unsolicited or duplicate producer message outside an exchange")
 
     def receive(self):
+        result = []
+        finish_cleanup([lambda: result.append(self._receive())])
+        return result[0]
+
+    def _receive(self):
         self.remaining()
         try:
-            data = self.connection.recv(65536)
+            data, ancillary, flags, _ = self.connection.recvmsg(
+                65536, socket.CMSG_SPACE(struct.calcsize("i")), socket.MSG_CMSG_CLOEXEC,
+            )
         except BlockingIOError:
             return None
         except ConnectionError as error:
             raise ChannelError(f"producer rendezvous receive failed: {error}") from error
+        descriptors = []
+        malformed = bool(flags & socket.MSG_CTRUNC)
+        for level, kind, value in ancillary:
+            if level != socket.SOL_SOCKET or kind != socket.SCM_RIGHTS or len(value) % struct.calcsize("i"):
+                malformed = True
+                continue
+            descriptors.extend(struct.unpack(f"{len(value) // struct.calcsize('i')}i", value))
+        if malformed or descriptors and (len(descriptors) != 1 or self.descriptor_receiver is None):
+            for descriptor in descriptors:
+                os.close(descriptor)
+            raise ChannelError("unrequested or malformed producer descriptor handoff")
+        if descriptors:
+            # The receiver owns the actual fd before any byte charge can fail.
+            self.descriptor_receiver(descriptors[0])
         if not data:
             raise ChannelError("producer rendezvous EOF")
         if self.charge is not None:
-            self.charge(len(data))
+            self.charge(len(data) + len(descriptors) * struct.calcsize("i"))
         self.buffer.extend(data)
         if self.expected is None and len(self.buffer) >= 4:
             self.expected = struct.unpack_from("<I", self.buffer)[0]
@@ -312,13 +339,22 @@ class ProducerChannel:
         return result
 
     def send(self, data):
+        return self._send(data)
+
+    def send_descriptor(self, data, descriptor):
+        if type(descriptor) is not int or descriptor < 0:
+            raise ChannelError("invalid producer descriptor")
+        os.fstat(descriptor)
+        return self._send(data, descriptor)
+
+    def _send(self, data, descriptor=None):
         self.remaining()
         if self.write_closed or self.listening:
             raise ChannelError("producer channel has no writable reply phase")
         if not isinstance(data, bytes) or not 1 <= len(data) <= self.limit:
             raise ChannelError("invalid producer reply byte bound")
         if self.charge is not None:
-            self.charge(len(data) + 4)
+            self.charge(len(data) + 4 + (struct.calcsize("i") if descriptor is not None else 0))
         frame = memoryview(struct.pack("<I", len(data)) + data)
         offset = 0
         with selectors.DefaultSelector() as selector:
@@ -327,7 +363,13 @@ class ProducerChannel:
                 if not selector.select(min(self.remaining(), 0.05)):
                     continue
                 try:
-                    written = self.connection.send(frame[offset:offset + 65536])
+                    if descriptor is not None and offset == 0:
+                        written = self.connection.sendmsg(
+                            [frame[:65536]],
+                            [(socket.SOL_SOCKET, socket.SCM_RIGHTS, struct.pack("i", descriptor))],
+                        )
+                    else:
+                        written = self.connection.send(frame[offset:offset + 65536])
                 except BlockingIOError:
                     continue
                 except ConnectionError as error:
@@ -337,8 +379,17 @@ class ProducerChannel:
                 offset += written
 
     def exchange(self, data, *, watch=()):
+        return self._exchange(data, watch=watch)
+
+    def exchange_descriptor(self, data, descriptor, *, watch=()):
+        return self._exchange(data, descriptor=descriptor, watch=watch)
+
+    def _exchange(self, data, *, descriptor=None, watch=()):
         self.ensure_idle()
-        self.send(data)
+        if descriptor is None:
+            self.send(data)
+        else:
+            self.send_descriptor(data, descriptor)
         with selectors.DefaultSelector() as selector:
             selector.register(self.connection, selectors.EVENT_READ, "reply")
             for descriptor in watch:

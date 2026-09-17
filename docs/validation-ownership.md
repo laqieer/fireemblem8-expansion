@@ -22,12 +22,15 @@ full-run evidence. All nine Build jobs remain present, with the existing
 and trusted prior-run evidence require ownership success in that same exact
 run; missing, skipped, failed, cancelled or timed-out ownership rejects.
 
-The initial ownership budget is 60 minutes, separate from the unchanged
-60-minute host budget. The split addresses the measured serial host overload
-without dropping tests, moving the native probe owner or raising a timeout.
-Only complete same-revision hosted runs can establish its eventual timing;
-another timeout remains a failure. This job is ordinary CI invocation evidence,
-not the independent coordinator-owned verifier capture (H1).
+The ownership CI envelope is 90 minutes, separate from the unchanged
+60-minute host budget. Its initial 60-minute envelope was exhausted while the
+same regression sequence was still progressing; the next incomplete case
+also completed independently. The bounded increase provides shared-runner
+headroom without dropping tests, moving the native probe owner or changing
+any individual probe/fixture limit. It is not full-graph resource calibration:
+the complete combined ownership workload must still be assessed before
+completion. A timeout remains a failure. This job is ordinary CI invocation
+evidence, not the independent coordinator-owned verifier capture (H1).
 
 Graph test discovery uses unittest's package `load_tests` protocol to exclude
 the foundation, producer, dependency and metadata codec modules. They run once in
@@ -347,6 +350,39 @@ still refuses `modern-toolchain-dry-run-recipe`; it is not bypassed by dropping
 the prerequisite or substituting a no-op. Successful small source-phase
 controls and genuine raw-source/header component interpretation are not a
 claim of full original-root or whole-report completion.
+
+The [5710465329 terminal-file correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5710465329)
+separates planned output reservations from cleanup ownership. The native
+publisher hands the parent a real, independently opened read-only descriptor
+after exclusive file creation and before writing/final acknowledgement.
+The existing authenticated private channel carries exactly one `SCM_RIGHTS`
+descriptor with its scope, producer, path, owner and actual identities.
+The receiver owns that pin before byte accounting can fail. Pins and claim
+resources spend existing admission/byte bounds; no guest descriptor or
+filesystem permission is added. The independent open-file description does
+not delay the writer's real `CLOSE_WRITE` event.
+
+Cleanup requires owned native quiescence and the actual live file/parent pins.
+It atomically claims the public entry into a private report-owned slot using
+`RENAME_NOREPLACE`, checks the claimed object against the file pin, then removes
+only that object. A changed entry is restored without overwrite, or retained
+in the recorded claim location if another public occupant prevents restoration.
+The healthy journal records the real namespace move and pinned removal, not
+a fabricated `DELETE`. A failed or incomplete journal supplies no phase
+authority but does not prevent safe cleanup of genuinely owned files.
+Retirement, transfer, nested scopes and selected views preserve that ownership.
+
+Foreign, displaced, unacknowledged or otherwise uncertain objects are not
+deleted by a later blanket report/view cleanup. The error and session retain
+the ownership state, source view and live pins. After inspecting or handling
+those retained objects, an outer owner may call
+`session.release_retained_file_handles()` to close the handles; this does not
+delete retained paths or reactivate automatic removal. The claim namespace is
+trusted private coordinator storage, not a new same-UID filesystem sandbox.
+The [existing tester case](test-cases/workflow-governance.md#terminal-generated-file-cleanup-ownership)
+contains the real native preimages, race/mutation controls and explicit outer
+fixture cleanup. Injected terminal failure is not quota calibration, H1 or
+source-phase acceptance.
 
 Registry declaration execution now has an explicit shared-session entry:
 `graph_registry.observe_declarations(loader, session)`. The selected loader

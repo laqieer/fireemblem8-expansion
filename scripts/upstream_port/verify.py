@@ -1619,7 +1619,7 @@ def _parse_job_context(job_name, body):
                 if job_name
                 in {"event-identity", "event-router", "event-classifier", "summary"}
                 else "90"
-                if job_name == "build"
+                if job_name in {"build", "ownership-tests"}
                 else "60"
             )
             if value != expected or nested:

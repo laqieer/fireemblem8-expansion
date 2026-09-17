@@ -2288,7 +2288,8 @@ setup-only jobs, never additional local gates. The two ownership checks remain
 part of the `ownership-tests` gate set. The dedicated worker has its own
 exact-head checkout, revision comparison, Git hydration and native/ARM setup;
 its three coupled actions run once without changing the native extended-host
-owner. The initial ownership and retained host budgets are both 60 minutes.
+owner. Ownership has a bounded 90-minute CI envelope after its measured
+60-minute timeout; the retained host budget remains 60 minutes.
 Replay full PR/master/manual and exact-fallback routes, then replace the
 ownership result with failure, cancellation, timeout, unexpected skip or
 missing evidence. Every full admission must fail, including continuity with
@@ -3741,7 +3742,8 @@ five minutes, its outputs/environment, and three setup steps; the
 mode-classifier is a separate five-minute one-step check. The comprehensive
 `build` job has exact identity/classifier edges, Ubuntu, 90 minutes, its
 allowlisted env, and steps, including master-only packaging; host,
-extended-host and legacy remain 60 minutes, while identity/router/classifier and summary remain 5;
+extended-host and legacy remain 60 minutes; ownership has a bounded 90-minute
+CI envelope, while identity/router/classifier and summary remain 5;
 self-hosted/container/service/strategy/default shell or any other execution
 field fails before dry-run.
 Patch packaging and summary remain parsed structures: successful authenticated
@@ -3979,7 +3981,8 @@ proof semantics and nonchronological history; no candidate clock is accepted.
     exact-PR-base verifier, isolated suite and public graph check must each
     have exactly one scheduled owner, `ownership-tests`, after that job's own
     exact-head checkout, revision comparison, Git hydration and native/ARM
-    dependency setup. Both host and ownership timeouts must remain 60 minutes.
+    dependency setup. Host remains 60 minutes; ownership uses its bounded
+    90-minute CI envelope. Probe and native fixture limits remain unchanged.
     Replay full PR, master push and manual routes and validated exact-head
     fallbacks; metadata-only/review-first must skip the new worker, while
     classifier/base identity failures still fail summary even if workers pass.
@@ -4076,9 +4079,15 @@ mode and symlink mutations before scanner-session entry. The representative
 document-serialization report remains semantically unchanged.
 
 The ownership workload no longer consumes the near-limit host job's serial
-budget. This is an initial nine-job, separate-60-minute routing contract, not
-proof of a completed hosted duration. A new 60-minute timeout remains a
-failure requiring measured follow-up. Moving candidate YAML does not satisfy
+budget. Its initial 60-minute envelope timed out on the unchanged test order:
+371 matching methods had completed before cancellation, with a distributed
+220-second increase over the same earlier prefix. The next incomplete case
+passed independently in 128.539 seconds. The 90-minute ownership envelope is
+bounded operational headroom, not a complete-workload sizing result or an
+increase to probe limits. Require exact parsed timeout/negative controls:
+restoring 60 for ownership or changing any other worker's budget must reject.
+The full combined workload still needs complete measurement before closure.
+Moving candidate YAML does not satisfy
 the separate independent coordinator-owned verifier capture (H1), nor relax
 any source/base/result binding, public graph or full-domain acceptance.
 
@@ -5837,7 +5846,7 @@ Start with admitted witnesses in the source and output-parent directories,
 but no generated C or include. Enable `observe_source_journal`. Require actual
 kernel create/write/close events, native begin/end acknowledgements, first-pass
 producer HIDDEN=secret despite final HIDDEN undefined, and separate terminal
-file-deletion events covering all ranges without gaps. The original wildcard
+file-removal events covering all ranges without gaps. The original wildcard
 guard must still refuse the touched source namespace.
 
 Create/delete an unregistered host file before and during a native window;
@@ -5949,6 +5958,71 @@ to remove that prerequisite, broaden shell/compiler authority or claim a
 completed original-root report. The source-phase option is explicit and the
 ordinary invariant planner remains unchanged. Preserve the existing native
 owner, case IDs, all automation and limits; no allocation17/H1 follows.
+
+### Terminal generated-file cleanup ownership
+
+The [5710465329 correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5710465329)
+addresses terminal cleanup deleting foreign files at names that were only
+planned, or deleting replacements after the actual output was displaced before
+acknowledgement. Both original native reports failed; they were not successful
+quota or source-phase/H1 bypasses. Preserve those preimages separately from
+the following corrected results.
+
+Use the existing Linux/native-probe prerequisites and an owned source fixture
+with the original `src` and `build` parent witnesses. Do not inject faults into
+live project outputs. Run:
+
+```sh
+python3 -m unittest scripts.validation_ownership.tests.test_file_ownership -v
+```
+
+1. Let the actual producer reach its planned-output/pre-publication boundary.
+   Place a foreign file at the reserved name and inject terminal failure.
+   Its bytes, inode and namespace link must survive in ordinary, fixed-journal
+   and prewatched-directory modes. A reservation alone must not authorize
+   targeted or blanket cleanup.
+2. Let native publication install the real output, then displace it and create
+   a foreign same-path replacement before the final acknowledgement. Require
+   both objects to survive, with the original inode still held by its actual
+   descriptor. Repeat before descriptor acknowledgement and at the first byte
+   charge after descriptor receipt; uncertain handles must remain registered.
+3. Replace the public entry exactly between the preliminary check and atomic
+   removal claim. The replacement must not be deleted. Block restoration with
+   another public occupant; neither that occupant nor the privately retained
+   claim may be overwritten. Move a pinned parent during the claim and require
+   restoration into the original parent, not deletion through the new mapping.
+4. Unlink an owned output while its pin is live, then create a foreign file.
+   The old inode cannot be reused while pinned. A forged numeric identity
+   cannot replace the real descriptor; no foreign cleanup follows.
+5. Keep healthy cleanup and known-owned failed-report cleanup functional.
+   A lost reply after actual pin approval still removes the known-owned
+   partial output. Corrupted file scope/owner/path/identity/parent records
+   reject without inventing cleanup authority.
+6. Exercise lost retirement/transfer acknowledgements with the existing real
+   header primitives. Keep the same pinned object across its possible names.
+   Exercise a selected BASE view, restore CURRENT, and exit the outer session:
+   retained foreign/displaced objects must not be erased by either cleanup.
+7. Restore the old reservation-only deletion condition and recover the actual
+   pre-publication foreign deletion. Independently restore stat-then-unlink
+   removal and recover deletion at the real removal race. Do not weaken the
+   corrected object/FD assertions or pin an arbitrary helper-call count.
+
+The native publisher's cleanup registration is a closed private descriptor
+handoff, not final publication or phase evidence. Final content/mode/source
+acknowledgements still validate normally. Public cleanup uses an atomic
+no-overwrite claim and the actual pinned inode; the independent healthy
+journal records that move and verifies final unlink state. Failed/incomplete
+journals remain invalid while known-owned, quiescent cleanup proceeds.
+
+On uncertainty, the original failure and cleanup diagnostics remain visible.
+The report/view and ownership handles stay retained. Inspect their actual
+objects before explicitly releasing retained handles; handle release alone
+never deletes a retained path. Tests perform independent outer cleanup only
+after checking the retained bytes, identities, descriptors and zero children/
+waiters. Retain the existing directory actual-install rule, numeric limits,
+default source permissions, native test owner and all prior automation.
+No new case ID, runtime platform, permission, workflow job, full-root
+certificate or measurement allocation is introduced.
 
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while
@@ -7363,6 +7437,11 @@ See [live producers](../ownership-probe-producers.md).
     waiting in clone/clone3 while its child is stopped before exec. Both
     requests must complete under the unchanged deadline, with all three
     parked processes and their funded VM still reserved.
+    The fixture must release its withheld exec stop after delivering the
+    ordered producer-ready event at the next native supervisor poll, not by
+    an immediate helper-name match. Removing only the native vfork unsettled
+    exemption must still deadlock after that stop is delivered; retain full
+    owned cleanup and do not increase the fixture deadline.
 13. Keep the dispatch boundary explicit. A missing direct native executable
     must fail before consulting registrations; do not add a placeholder or
     writable/executable source mount to make it appear present. Run the real

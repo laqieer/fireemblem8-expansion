@@ -121,9 +121,10 @@ fail-closed `summary`. Master additionally packages the already-built release RO
 master-only steps of `build`. Artifact, documentation, generated-data, localization, crosswalk,
 raw-closure, and modern debug/release runtime evidence run only in their
 existing Build owners; no duplicate Matrix path exists. Input-free candidate
-dispatch uses the same full graph. Ownership begins with its own 60-minute
-budget, while the host budget stays 60 minutes; combined timing requires
-complete same-revision hosted measurements, not a sum of older runs.
+dispatch uses the same full graph. Ownership uses a bounded 90-minute CI
+envelope after its measured 60-minute timeout, while the host budget stays
+60 minutes and probe/fixture limits are unchanged. Complete combined timing
+still requires same-revision hosted measurements, not a sum of older runs.
 Repository branch protection or rulesets should require this workflow's
 canonical `host-tests`, `build`, and `summary` contexts, while leaving
 independent security/review contexts unchanged. Metadata-only PR edits keep
