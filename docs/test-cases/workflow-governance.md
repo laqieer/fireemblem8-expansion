@@ -7325,6 +7325,11 @@ See [live producers](../ownership-probe-producers.md).
     waiting in clone/clone3 while its child is stopped before exec. Both
     requests must complete under the unchanged deadline, with all three
     parked processes and their funded VM still reserved.
+    The fixture must release its withheld exec stop after delivering the
+    ordered producer-ready event at the next native supervisor poll, not by
+    an immediate helper-name match. Removing only the native vfork unsettled
+    exemption must still deadlock after that stop is delivered; retain full
+    owned cleanup and do not increase the fixture deadline.
 13. Keep the dispatch boundary explicit. A missing direct native executable
     must fail before consulting registrations; do not add a placeholder or
     writable/executable source mount to make it appear present. Run the real
