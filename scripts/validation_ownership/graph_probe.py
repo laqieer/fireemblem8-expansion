@@ -2732,7 +2732,7 @@ def closure(names, dependencies):
 
 def source_census(
     sources, *, observed_values=None, reference_units=None, template_graph_inputs=(), template_scoped=(),
-    source_assignments=(), budget=None, source_target=None,
+    source_assignments=(), budget=None, source_target=None, original_read_check=None,
 ):
     all_names, graph, recipe, introspection, defaults = set(), set(), set(), set(), set()
     dependencies = {}
@@ -3195,6 +3195,8 @@ def source_census(
             definitions, observed_values, defaults, exports, ambiguous_assignment, budget,
             read_names=read_names,
         )
+    if original_read_check is not None:
+        original_read_check(consumed_expressions, consumed, read_expressions)
     return {
         "all": closure(all_names | graph | recipe, dependencies),
         "graph": expanded_graph,
@@ -3223,6 +3225,15 @@ def source_census(
     }
 
 
+def _reads_variable_universe(expression):
+    for body in make_expressions(expression):
+        function = re.match(r"([^ \t\r\n\v\f]+)[ \t\r\n\v\f]+", body)
+        call = function is not None and function[1] == "call"
+        if _make_reference_base(body[function.end():] if call else body, call=call) == ".VARIABLES":
+            return True
+    return False
+
+
 def _certify_literal_bindings(
     modules, roots, consumed, expressions, definitions, observed_values, defaults, exports,
     ambiguous_assignment, budget, *, read_names,
@@ -3241,13 +3252,11 @@ def _certify_literal_bindings(
         if budget is not None:
             budget.remaining()
         names.update(references(expression))
+        if _reads_variable_universe(expression):
+            raise MakeProbeError("literal binding module has an opaque program/data/universe consumer")
         for body in make_expressions(expression):
             function = re.match(r"([^ \t\r\n\v\f]+)[ \t\r\n\v\f]+", body)
-            call = function is not None and function[1] == "call"
-            if (
-                _make_reference_base(body[function.end():] if call else body, call=call) == ".VARIABLES"
-                or function and function[1] in {"file", "wildcard", "realpath", "eval", "guile"}
-            ):
+            if function and function[1] in {"file", "wildcard", "realpath", "eval", "guile"}:
                 raise MakeProbeError("literal binding module has an opaque program/data/universe consumer")
         try:
             names.update(selected_names((expression,), definitions, observed_values))

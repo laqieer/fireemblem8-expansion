@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from itertools import chain
 from pathlib import PurePosixPath
 from .authority import encoded, relative_path
 from .budget import MakeProbeError
@@ -78,6 +79,20 @@ class SourcePass:
             self.session, self.target, self.state, self.commands, self.proof.observation,
             self.primary_source, False,
         )
+
+    def check_reads(self, roots, consumed, expressions):
+        if ".VARIABLES" in self.exports:
+            raise MakeProbeError("original source has an unsupported variable-universe read")
+        readers = chain(roots, (value for name in consumed for value in expressions.get(name, ())))
+        for expression in readers:
+            self.session.budget.remaining()
+            value = graph._without_literal_metadata(expression)
+            conditional = graph.CONDITIONAL_NAME.match(value)
+            if (
+                graph._reads_variable_universe(value)
+                or conditional and conditional[1].strip(graph.MAKE_SPACE) == ".VARIABLES"
+            ):
+                raise MakeProbeError("original source has an unsupported variable-universe read")
 
     def wildcard(self, patterns):
         self.proof.require_live()
@@ -314,6 +329,7 @@ def analyze(session, observation, target, state, commands, *, primary_source="Ma
         usage = graph.source_census(
             phase.sources, reference_units=stream, template_graph_inputs=inputs, template_scoped=scoped,
             source_assignments=state, budget=session.budget, source_target=target,
+            original_read_check=phase.check_reads,
         )
         exported = graph.closure(set(phase.exports) & usage["defined"], usage["dependencies"])
         added = exported - usage["recipe"]

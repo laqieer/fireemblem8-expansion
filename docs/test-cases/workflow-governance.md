@@ -5944,6 +5944,29 @@ authorize source-time namespace evaluation. An actual original command-line
 input must govern its earlier snapshot despite a later source override;
 unused effectful bodies and literal metadata reads stay lazy.
 
+Use an actual native writer that creates an included `GENERATED_BINDING`
+assignment, and export a phase label filtered from `.VARIABLES`. Keep the
+fixture free of conditional defaults. The first producer environment must
+contain an empty label, while final raw metadata contains `GENERATED_BINDING`.
+The per-pass checker and complete small planner must refuse the unsupported
+universe read. Repeat with direct/braced references, identity and computed
+substitutions, transitive/computed aliases, a conditional and an actual
+universe export. The closure check must run even without a wildcard read.
+
+Remove only the per-pass executed-read check: the primary and computed-alias
+small planners again admit an empty default census despite that same actual
+first producer environment. Restore the check and require refusal. This is
+an explicit small phase-planner counterexample, not a historical invariant
+planner or whole-report claim. Literal labels, unused recursive bodies,
+metadata-only exports and a proven unexecuted `and` operand must still pass;
+raw metadata must retain its dollars without executing the unused body.
+For the GNU4.3 source-read shell path, distinguish an unpassed Make export
+from an explicitly expanded command argument. The argument must reflect its
+original input even if a later literal assignment empties the final value;
+the executed universe read still refuses, while the unexecuted body stays lazy.
+The existing native-module automation above covers these controls without
+adding another owner or catalog record.
+
 Restore the original raw C-source wildcard/default/append and derived header
 constructor to the genuine text/ARM/sed component. Retain its real goal/include
 guard, initially absent C/parents, actual outputs and unchanged tracked header.

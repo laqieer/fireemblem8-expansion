@@ -74,6 +74,155 @@ class PhaseCensusTests(unittest.TestCase):
             + extra + recipe
         ))
 
+    def universe_source(self, consumer):
+        self.fixture.add("Makefile", (
+            ".DEFAULT_GOAL := all\ninclude build/remade.mk\n" + consumer
+            + "build/remade.mk:\n\tpython3 writer.py\nall: ;\n"
+        ))
+        self.fixture.add("writer.py", (
+            "import os\nfrom pathlib import Path\n"
+            "source=Path('/work/src/new.c');source.parent.mkdir(parents=True,exist_ok=True)\n"
+            "source.write_text('/* actual native source output */\\n')\n"
+            "include=Path('/work/build/remade.mk');include.parent.mkdir(parents=True,exist_ok=True)\n"
+            "include.write_text('GENERATED_BINDING := inventory\\n')\n"
+            "print(os.environ.get('PHASE_LABEL','<undefined>'))\n"
+        ))
+
+    def universe_native(self, session):
+        return session.make(
+            "all", variables=("GENERATED_BINDING",), definitions=("PHASE_LABEL",),
+            commands=self.case.commands(session), observe_source_journal=True,
+            source_journal_mode=source_directories.MODE,
+        )
+
+    def test_executed_universe_reference_families_refuse_on_actual_original_passes(self):
+        for declarations, expression in (
+            ("", "$(.VARIABLES)"),
+            ("", "${.VARIABLES}"),
+            ("", "$(.VARIABLES:%=%)"),
+            ("", "${.VARIABLES:%=%}"),
+            ("PATTERN := %\nREPLACEMENT := %\n", "${.VARIABLES:$(PATTERN)=${REPLACEMENT}}"),
+            ("UNIVERSE = $(.VARIABLES:%=%)\nALIAS = ${UNIVERSE}\nSELECTOR = ALIAS\n", "$($(SELECTOR))"),
+            ("SELECTOR := .VARIABLES\n", "${${SELECTOR}:%=%}"),
+            ("", "$(call .VARIABLES)"),
+        ):
+            self.universe_source(
+                declarations + "PHASE_LABEL := $(filter GENERATED_BINDING," + expression + ")\nexport PHASE_LABEL\n",
+            )
+            with self.subTest(expression=expression), self.case.session() as session:
+                observed = self.universe_native(session)
+                self.assertEqual(observed.semantics["native_dispatches"][0]["environment"]["PHASE_LABEL"], "")
+                self.assertTrue(observed.semantics["native_dispatches"][0]["rebuilding_makefiles"])
+                self.assertEqual(observed.semantics["definitions"]["global"]["PHASE_LABEL"], {
+                    "origin": "file", "flavor": "simple", "value": "GENERATED_BINDING",
+                })
+                with self.assertRaises(MakeProbeError):
+                    phase_census.analyze(session, observed, "all", (), self.case.commands(session))
+            self.fixture.assert_clean(session)
+
+    def test_universe_conditional_and_export_membership_are_original_reads(self):
+        for kind, consumer in (
+            ("conditional", "ifdef .VARIABLES\nPHASE_LABEL := set\nelse\nPHASE_LABEL := unset\nendif\nexport PHASE_LABEL\n"),
+            ("export", "PHASE_LABEL := stable\nexport .VARIABLES PHASE_LABEL\n"),
+        ):
+            self.universe_source(consumer)
+            with self.subTest(kind=kind), self.case.session() as session:
+                observed = self.universe_native(session)
+                first = observed.semantics["native_dispatches"][0]
+                self.assertTrue(first["rebuilding_makefiles"])
+                self.assertIn("PHASE_LABEL", first["environment"])
+                if kind == "export":
+                    self.assertIn(".VARIABLES", first["environment"])
+                    self.assertNotIn("GENERATED_BINDING", first["environment"][".VARIABLES"].split())
+                with self.assertRaisesRegex(MakeProbeError, "variable-universe"):
+                    phase_census.analyze(session, observed, "all", (), self.case.commands(session))
+            self.fixture.assert_clean(session)
+
+    def test_unused_universe_bodies_and_literal_metadata_remain_lazy_in_small_planner(self):
+        body = "$(.VARIABLES:%=%)$(error unused body expanded)"
+        for consumer, expected, metadata in (
+            ("PHASE_LABEL := stable\nexport PHASE_LABEL\n", "stable", False),
+            ("UNUSED = " + body + "\nKIND := $(origin UNUSED)\nFLAVOR := ${flavor UNUSED}\n"
+             "RAW := $(value UNUSED)\nPHASE_LABEL := stable\nexport KIND FLAVOR RAW PHASE_LABEL\n", "stable", True),
+            ("EMPTY :=\nUNUSED = " + body + "\n"
+             "PHASE_LABEL := $(and $(EMPTY),$(UNUSED))\nexport PHASE_LABEL\n", "", False),
+        ):
+            self.universe_source(consumer)
+            with self.subTest(consumer=consumer), self.case.session() as session:
+                with patch.object(graph_probe, "MakeCommands", lambda owner, contracts: self.case.commands(owner)):
+                    result = graph_probe.run_probe(
+                        session.loader, {"all"}, {}, {}, session=session, source_phases=True,
+                    )["all"]
+                self.assertEqual(result["variable_census"]["defaults"], [])
+                first = result["record"]["variants"][0]["record"]["native_dispatches"][0]
+                self.assertEqual(first["environment"]["PHASE_LABEL"], expected)
+                if metadata:
+                    self.assertEqual(first["environment"]["KIND"], "file")
+                    self.assertEqual(first["environment"]["FLAVOR"], "recursive")
+                    self.assertEqual(first["environment"]["RAW"], body)
+            self.fixture.assert_clean(session)
+
+    def test_full_small_universe_admission_returns_only_when_read_check_is_removed(self):
+        for declarations, expression in (
+            ("", "$(.VARIABLES:%=%)"),
+            ("UNIVERSE = $(.VARIABLES:%=%)\nALIAS = ${UNIVERSE}\nSELECTOR = ALIAS\n", "$($(SELECTOR))"),
+        ):
+            self.universe_source(
+                declarations + "PHASE_LABEL := $(filter GENERATED_BINDING," + expression + ")\nexport PHASE_LABEL\n",
+            )
+            for removed in (False, True):
+                with self.subTest(expression=expression, removed=removed), self.case.session() as session:
+                    with patch.object(graph_probe, "MakeCommands", lambda owner, contracts: self.case.commands(owner)):
+                        if not removed:
+                            with self.assertRaisesRegex(MakeProbeError, "variable-universe"):
+                                graph_probe.run_probe(
+                                    session.loader, {"all"}, {}, {}, session=session, source_phases=True,
+                                )
+                        else:
+                            with patch.object(phase_census.SourcePass, "check_reads", return_value=None):
+                                result = graph_probe.run_probe(
+                                    session.loader, {"all"}, {}, {}, session=session, source_phases=True,
+                                )["all"]
+                            self.assertEqual(result["variable_census"]["defaults"], [])
+                            first = result["record"]["variants"][0]["record"]["native_dispatches"][0]
+                            self.assertEqual(first["environment"]["PHASE_LABEL"], "")
+                            self.assertTrue(first["rebuilding_makefiles"])
+                self.fixture.assert_clean(session)
+
+    def test_original_read_occurrence_not_a_later_literal_controls_universe_execution(self):
+        state = (("environment", "GUARD", "enabled"),)
+        for executes in (False, True):
+            operand = " $(findstring GUARD,$(LABEL))" if executes else ""
+            self.fixture.add("Makefile", (
+                ".DEFAULT_GOAL := all\nUNIVERSE = $(.VARIABLES:%=%)\n"
+                "LABEL = $(and $(GUARD),$(UNIVERSE))\nexport LABEL\n"
+                "TRIGGER := $(shell python3 capture.py" + operand + ")\nGUARD :=\nall: ;\n"
+            ))
+            self.fixture.add("capture.py", "import sys\nprint(sys.argv[1:])\n")
+            arguments = ("GUARD",) if executes else ()
+            with self.subTest(executes=executes), self.case.session() as session:
+                commands = {"python3 capture.py" + (" GUARD" if executes else ""):
+                            session._native_context_command(make_probe.Command(
+                                ("/usr/bin/python3", "/repo/capture.py", *arguments), code=("capture.py",),
+                            ))}
+                observed = session.make(
+                    "all", variables=("LABEL",), assignments=state, commands=commands,
+                    observe_source_journal=True, source_journal_mode=source_directories.MODE,
+                )
+                first = observed.semantics["native_dispatches"][0]
+                self.assertNotIn("LABEL", first["environment"])
+                self.assertEqual(first["environment"]["GUARD"], "enabled")
+                self.assertEqual(first["arguments"], ["python3", "capture.py", *arguments])
+                self.assertEqual(observed.semantics["domains"]["LABEL"]["value"], "")
+                origins = [event for event in observed.source_effects["events"] if event["kind"] == "origin"]
+                self.assertEqual([event["stage"] for event in origins], ["source-read"])
+                if executes:
+                    with self.assertRaisesRegex(MakeProbeError, "variable-universe"):
+                        phase_census.analyze(session, observed, "all", state, commands)
+                else:
+                    phase_census.analyze(session, observed, "all", state, commands)
+            self.fixture.assert_clean(session)
+
     def test_complete_small_phase_planner_accepts_closed_source_and_intersects_constants(self):
         self.positive_source()
         with self.case.session() as session:

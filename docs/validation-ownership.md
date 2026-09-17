@@ -342,6 +342,13 @@ The union also retains first-pass graph, recipe, export and dependency reads.
 Repeated source visits retain their order and bytes; same-file or Make-looking
 `file` data reads do not supply source evaluations. Within-pass replacement
 remains unsupported even when both versions were successfully captured.
+An issued entry image does not implement variable-universe semantics.
+Every pass checks the original executed expression/body closure, including
+computed aliases, before admission. Direct, braced, substitution and invoked
+`.VARIABLES` reads, universe conditionals and actual universe exports remain
+unsupported even when no wildcard was evaluated. Unexecuted bodies and
+literal `origin`/`flavor`/`value` reads stay body-lazy; no final definitions
+seed this check.
 
 The ordinary invariant/default planner path remains available. This opt-in
 source path does not itself supply missing live command adapters. The bounded
