@@ -2742,6 +2742,7 @@ class ProducerTests(unittest.TestCase):
             "syscall_guard.Policy.entry=observe\nraise SystemExit(sandbox_exec.main())\n",
         )
         sent, executed, reports = ProducerChannel.send, [], []
+        accepted_results = []
         with self.fixture.session(seconds=30) as session:
             run, execute = session.budget.run, session.command
             def supervised(argv, **kwargs):
@@ -2755,25 +2756,41 @@ class ProducerTests(unittest.TestCase):
                 return execute(value)
             def duplicate(channel, payload):
                 sent(channel, payload)
-                record = json.loads(payload)
-                if channel.charge is not None and record.get("kind") == "result":
-                    deadline = time.monotonic() + 5
-                    while not marker.exists():
-                        if time.monotonic() >= deadline:
-                            raise AssertionError("real Make did not continue after its accepted reply")
-                        time.sleep(0.001)
-                    if defect == "partial":
-                        channel.charge(1)
-                        self.assertEqual(channel.connection.send(b"\x08"), 1)
-                    elif defect != "positive":
-                        if defect == "stale":
-                            record["sequence"] = 0
-                        elif defect == "foreign":
-                            record["scope"] += "-foreign"
-                        elif defect == "unknown":
-                            record["kind"] = "unknown"
-                        sent(channel, json.dumps(record).encode())
-                    release.write_text("owned control released")
+                if channel.charge is None:
+                    return
+                acknowledgement = json.loads(payload)
+                if acknowledgement.get("kind") == "result":
+                    self.assertFalse(accepted_results)
+                    self.assertEqual(acknowledgement["outputs"], list(command.outputs))
+                    self.assertEqual(len(acknowledgement["outputs"]), 1)
+                    accepted_results.append(payload)
+                    # Let the real driver finish pre-write file registration.
+                    return
+                if acknowledgement.get("kind") != "file-pinned":
+                    return
+                self.assertEqual(len(accepted_results), 1)
+                record = json.loads(accepted_results[0])
+                self.assertEqual(acknowledgement["scope"], record["scope"])
+                self.assertEqual(acknowledgement["producer"], record["sequence"])
+                self.assertEqual(acknowledgement["owner"], record["owner"])
+                self.assertEqual(record["outputs"], [acknowledgement["path"]])
+                deadline = time.monotonic() + 5
+                while not marker.exists():
+                    if time.monotonic() >= deadline:
+                        raise AssertionError("real Make did not continue after its accepted reply")
+                    time.sleep(0.001)
+                if defect == "partial":
+                    channel.charge(1)
+                    self.assertEqual(channel.connection.send(b"\x08"), 1)
+                elif defect != "positive":
+                    if defect == "stale":
+                        record["sequence"] = 0
+                    elif defect == "foreign":
+                        record["scope"] += "-foreign"
+                    elif defect == "unknown":
+                        record["kind"] = "unknown"
+                    sent(channel, json.dumps(record).encode())
+                release.write_text("owned control released")
             with patch.object(session.budget, "run", supervised), patch.object(
                 session, "command", producer,
             ), patch.object(ProducerChannel, "send", duplicate), self.capture_reports(session, reports):

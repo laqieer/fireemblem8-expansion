@@ -6097,6 +6097,63 @@ default source permissions, native test owner and all prior automation.
 No new case ID, runtime platform, permission, workflow job, full-root
 certificate or measurement allocation is introduced.
 
+#### Native reply and retained-object fixture compatibility
+
+The [5713730754 follow-through](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5713730754)
+preserves this case's native assertions across actual-file registration.
+The four unchanged methods reproduced seven failures/two errors in 47.885s
+at `c99b2af68f83d0cfa8dfc0d8dc5bbfbc9eb94742`. The 7.961s ACK-latch and
+14.687s retention runs were read-only diagnostic experiments, not a committed
+fix or complete graph/H1 evidence. Keep their provenance distinct.
+
+Use fresh, independently owned Linux/native fixtures for each fault, with the
+existing Python, native tools and limits. Do not inject into live project
+outputs. Run these existing selectors together:
+
+```sh
+python3 -m unittest \
+  scripts.validation_ownership.tests.test_producer.ProducerTests.test_late_reply_family_rejects_partial_stale_foreign_and_unknown_messages \
+  scripts.validation_ownership.tests.test_producer.ProducerTests.test_separately_sent_final_reply_is_rejected_while_make_continues \
+  scripts.validation_ownership.tests.test_header_effects.HeaderEffectTests.test_native_transfer_rechecks_actual_source_object_after_request_preparation \
+  scripts.validation_ownership.tests.test_source_directories.SourceDirectoryTests.test_missing_child_watch_evidence_and_remapped_public_parent_reject -v
+```
+
+1. Let the real driver send the original producer result and return to its
+   receive loop. Require the actual-file descriptor exchange and its uniquely
+   bound `file-pinned` acknowledgement before the fixture waits for the native
+   Make-continuation marker. Match scope, producer/sequence, owner and the
+   original one-output path. Keep the original five/30-second bounds.
+2. Require positive `VALUE=observed`, one actual producer and settled native
+   receipts. After real continuation, send each original partial, stale,
+   foreign, unknown or duplicate late reply. Each must still reject natively.
+   Restoring the old synchronous result-send latch must recover the native
+   stall; changing an ACK association must not forge continuation credit.
+3. Preserve transfer fault order: mode, contents, replacement, symlink, FIFO,
+   missing. Every original native rejection, changed-list, publication and
+   header-registry assertion remains required. Mode/contents/missing clean
+   fully. Replacement/symlink/FIFO retain the actual foreign object with its
+   bytes or target, type, matching descriptor/path identity and `nlink=1`;
+   the old owned inode has `nlink=0`. A fresh fixture for each fault prevents
+   retained scratch from contaminating the later missing-file control.
+4. Drop the original child-watch move evidence and require its native rejection
+   plus strict cleanup. Separately remap the public root at the original watch
+   boundary, preserve the native rejection and restore the original inode in
+   the original `finally` step. The report must remain explicitly retained
+   despite that restoration; no lifetime uncertainty is reset.
+5. Keep the original inner native error distinct from the expected outer
+   retained-report error. Require zero execution resources, registered live
+   retained handles and surviving objects before release. Explicit release
+   closes handles but leaves the report and paths present and retained.
+   Only the independent fixture's later teardown removes its own arena; this
+   is not successful production cleanup. A retained-object deletion or silent
+   retention-removal mutation must fail these actual-state assertions.
+
+`assert_clean` still requires both execution closure and absent report/scratch.
+The narrower test-only execution-closed helper does not mark retained state
+clean and never releases or deletes anything. All existing case IDs, native
+owners and automation remain; production protocol, permissions, limits and
+the independent full-report control-byte boundary are unchanged.
+
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while
 native per-file raw metadata remains `$(FLAGS)`. Do not eagerly copy the
@@ -9104,6 +9161,43 @@ Removing the adapter restores the original refusal. The invalid inputs and
 capabilities in steps 4-6 must reject or retain the genuine compiler failure;
 removing an enforcement boundary must make its adversarial regression fail.
 Equivalent literal quoting, whitespace and record ordering remain supported.
+
+#### Shell lexical-role regression
+
+The [lexical-role correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5714258206)
+retains this case and its existing full-module automation. In the owned
+`ModernToolchainTests` fixture only, change the first `if [ -z "$$cc_path" ]`
+to `'if' [ -z "$$cc_path" ]`. Ordinary Make must report the real shell syntax
+failure. The confined probe must reject **before any toolchain substep**,
+not run the compiler against a different interpretation. The preserved
+pre-fix native comparison incorrectly succeeded, executed stages 0-4 twice
+and generated the header dependency. The owner's persistent reproduction is
+distinct from C's original inline review executions.
+
+Exercise quoted, partially quoted and escaped structural words at every
+required `if`/`then`/`fi`, `case`/`in`/`esac`, grouping and pipeline-negation
+position. Check real operator and redirection-descriptor roles too.
+Quoted `'!'` remains valid inside `[ '!' -x ... ]`, where it is an argument;
+`if '!' ...` is not pipeline negation. Actual shell execution, not just
+`sh -n`, must distinguish these behaviors.
+
+Require an unquoted compiler assignment name and equals sign. For example,
+`cc="arm-none-eabi-gcc"` and `cc=''arm-none-eabi-gcc` remain valid, while
+`'cc'=arm-none-eabi-gcc`, `c''c=arm-none-eabi-gcc` and
+`cc\=arm-none-eabi-gcc` are not assignment words. Case patterns retain active
+wildcards: `'/'*` and `/''*` are equivalent to `/*`, but `'/*'` and `/\*`
+match a literal asterisk. Likewise `''*` preserves the fallback wildcard;
+`'*'` does not. Test absolute, relative and literal-asterisk inputs so a
+working default assembler path cannot hide a changed branch.
+
+The valid-quoting native control combines quoted assignment values,
+`'exit' '1'`, test-argument negation and equivalent case-pattern quoting.
+It must preserve ordinary stdout/stderr/status, actual GCC/cc1/as execution,
+stdin, repository/SDK identities, unchanged source bytes/stat and cleanup.
+Restoring only the old role-erasing signature must recover false native
+admission for the keyword, assignment and pattern controls. Existing
+whitespace and parser-local refactors remain green; no blanket quote ban,
+general shell evaluator, source identity gate or new execution grant is added.
 
 ### Interactions and save compatibility
 
