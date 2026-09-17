@@ -377,6 +377,13 @@ of wildcard use. Unsupported variable-universe references and their computed
 or transitive aliases cannot disappear from the census merely because the
 native source/input/image history is complete. The check shares the existing
 substitution-reference base parser and leaves unexecuted metadata bodies lazy.
+Original input bodies enter that closure only when the existing source-mode
+walk or an authenticated Make recipe export actually requires their effective
+binding. Their raw values remain distinct from pruned read forms, and they do
+not become synthetic source declarations. Metadata/unexport/override and
+known lazy-operand controls retain their behavior. Requested invocation goals
+cannot replace authentic forced control values; the normal unforced facts and
+the existing unsupported supplied-control boundary remain separate.
 The default invariant planner remains unchanged. Missing required live
 toolchain-check execution still blocks the original full-root planner; no
 phase result authorizes a shell/profile or quota workaround.

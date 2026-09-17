@@ -5967,6 +5967,56 @@ the executed universe read still refuses, while the unexecuted body stays lazy.
 The existing native-module automation above covers these controls without
 adding another owner or catalog record.
 
+For original input execution and forced-control precedence, keep the same
+real generated-include fixture and whole-module command above. Supply a
+command-line `UNIVERSE` domain containing `$(.VARIABLES:%=%)`, read its origin,
+then filter it into an exported phase label. Require the authentic initial
+recursive binding, first producer label empty, and final label containing
+`GENERATED_BINDING`. The complete small planner must refuse. Also require
+refusal when only the original command-line variable is implicitly exported,
+without a source-file definition or explicit body read. Do not add a default
+that would mask either missing body closure.
+
+Compare literal inputs, source-defined bodies, direct/transitive/computed
+references, command-line versus environment precedence, early and late
+overrides, explicit unexport and `value` metadata. Early effective overrides
+must not execute an unused original body; later overrides must not erase an
+earlier read. Initial-only literal exports remain valid and are recorded as
+reads, not source definitions. Proven unexecuted `and`/`or`/`if` operands stay
+lazy. Distinguish actual Make recipe export expansion from the GNU4.3
+shell-function environment passing raw input text, both during and after
+source reading. Separate real value dispatches with recipe jobs from suppressed
+recipe projections; the latter's environment does not prove Make expanded an
+original body. Check all actual expansion contexts rather than assuming one
+helper invocation. Unexported variables actually used by a recipe still require
+their body closure; unproven target/private/local contexts remain held.
+Check both inline and block `+` recipes that read an original input after a
+later effective override. Both actual commands must receive the replacement
+literal; the source walk must not expand the stored inline recipe early.
+The genuine header component must also keep automatic `@D` and related
+spellings in their deferred local context, not read an unproven global input
+or invent an automatic value for pruning.
+
+Independently remove only the original execution callback. The two intact
+small-planner negatives must again admit empty default censuses with the
+same actual producer inputs; restore it and require refusal. The independent
+source-defined universe guard must remain intact.
+
+Supply command-line `MAKECMDGOALS=other` while requesting goal `all`, with a
+conditional `HIDDEN ?= secret` and export under that actual variable value.
+Require the producer's real `HIDDEN=secret` and command-line goal metadata.
+The source walk must retain the possible default instead of seeding `all`,
+and the complete small planner must refuse the unsupported forced context.
+Remove only forced-name participation in invocation-fact seeding: both states
+again admit empty default censuses. Restore the check. Apply the same rule to
+every invocation-control fact, and retain the normal unforced goal, origin,
+flavor and control-read facts. These are explicit small-planner corrections,
+not historical-default, full-root, resource or H1 admission claims.
+Repeat the original control observation with an environment assignment:
+GNU still reports `MAKECMDGOALS=other` and exports `HIDDEN=secret`. Its supplied
+presence must withhold the same synthesized facts without giving environment
+variables command-line precedence over later source assignments.
+
 Restore the original raw C-source wildcard/default/append and derived header
 constructor to the genuine text/ARM/sed component. Retain its real goal/include
 guard, initially absent C/parents, actual outputs and unchanged tracked header.

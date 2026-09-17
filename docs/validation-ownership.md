@@ -349,6 +349,26 @@ computed aliases, before admission. Direct, braced, substitution and invoked
 unsupported even when no wildcard was evaluated. Unexecuted bodies and
 literal `origin`/`flavor`/`value` reads stay body-lazy; no final definitions
 seed this check.
+Actually executed original command-line/environment bodies also contribute
+their effective, source-context read forms and dependency edges. They do not
+need a source-file declaration and are not reclassified as source definitions.
+An earlier effective override replaces the body; a later override cannot erase
+an earlier read. Literal metadata, explicitly unexported inputs and proven
+unexecuted `and`/`or`/`if` operands remain lazy. Native Make recipe exports
+include initial-only names; a GNU4.3 shell-function environment containing raw
+input text is not proof that Make expanded that text. Neither is a suppressed
+dry-run recipe projection's environment. Deferred recipes are checked
+separately, with existing automatic-variable spellings treated as local
+context rather than global original bindings; unknown automatic values never
+seed pruning.
+
+Invocation-derived facts account for both complete definitions and authentic
+forced/supplied input names before they are seeded, without confusing
+environment presence with command-line write precedence. A requested goal is
+not evidence for a forced `MAKECMDGOALS` value. The existing supplied-control hold applies to all
+such invocation facts, while ordinary unforced facts remain available.
+Required unknown target/private/local execution contexts still refuse instead
+of borrowing a global input value.
 
 The ordinary invariant/default planner path remains available. This opt-in
 source path does not itself supply missing live command adapters. The bounded

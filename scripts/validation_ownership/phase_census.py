@@ -59,6 +59,9 @@ class SourcePass:
             if visit.source is not None:
                 self.sources[_path(visit.resolved)] = visit.source.data
         self.patterns = []
+        self.executions = {}
+        self.deferred_execution = False
+        self.unproven_scoped_names = set()
 
     def input(self, name):
         self.read_inputs.add(name)
@@ -79,6 +82,61 @@ class SourcePass:
             self.session, self.target, self.state, self.commands, self.proof.observation,
             self.primary_source, False,
         )
+
+    def record_execution(self, mode, name, binding, value, local):
+        if self.deferred_execution and name in self.unproven_scoped_names:
+            raise MakeProbeError("original execution has an unproven target/private binding: " + name)
+        if name not in self.inputs or binding.flavor == "undefined":
+            return
+        if binding.flavor not in {"simple", "recursive"} or value is None:
+            raise MakeProbeError("original execution lacks its effective binding: " + name)
+        if (
+            binding.origin in {"default", "environment"} and name in graph.ENVIRONMENT
+            and binding.value == graph.ENVIRONMENT[name] and "$" not in binding.value
+        ):
+            return
+        if binding.flavor == "recursive":
+            if graph.references(value) & local:
+                raise MakeProbeError("original input execution has an unproven local binding: " + name)
+            executing = graph._without_literal_metadata(value)
+            if graph._reads_variable_universe(executing):
+                raise MakeProbeError("original source has an unsupported variable-universe read")
+            if self.deferred_execution and _has_namespace(executing):
+                raise MakeProbeError("deferred original namespace use lacks a source-time snapshot")
+        key = name, binding.flavor, binding.value, value
+        if key not in self.executions:
+            self.session.budget.charge("cache", len(encoded(key)))
+            self.executions[key] = None
+
+    def prepare_deferred_reads(self, stream):
+        mode = stream.mode_state
+        if not mode.original_namespace_valid:
+            raise MakeProbeError("original source has an unproven execution context")
+        self.unproven_scoped_names = set().union(
+            *(values.keys() for values in mode.target_definitions.values())
+        ) if mode.target_definitions else set()
+        recipes = []
+        for _, _, unit in stream.ordered:
+            if unit.active is False:
+                continue
+            if unit.text.startswith("\t"):
+                recipes.append(unit.text[1:])
+            else:
+                header, inline = graph.split_inline_recipe(unit.text)
+                assignment = graph.ASSIGNMENT.fullmatch(graph.strip_comment(header))
+                if assignment is not None and "private" in header[:assignment.start("name")].split():
+                    self.unproven_scoped_names.add(assignment["name"])
+                if inline:
+                    recipes.append(inline)
+        controls = graph.INVOCATION_CONTROL_READS | graph.SOURCE_HISTORY_CONTROLS | {"MAKELEVEL"}
+        roots = chain(recipes, ("$(" + name + ")" for name in self.exports if name not in controls))
+        self.deferred_execution = True
+        try:
+            for expression in roots:
+                if mode.effectful(expression, automatic=True):
+                    raise MakeProbeError("original deferred execution has an unproven effect or binding")
+        finally:
+            self.deferred_execution = False
 
     def check_reads(self, roots, consumed, expressions):
         if ".VARIABLES" in self.exports:
@@ -187,12 +245,13 @@ class OriginalSourceProof:
                     raise MakeProbeError("source phase has an unreceipted original source version")
             self.missing[part.number] = frozenset(missing)
         origins = {event["origin"]: event for event in observation.source_effects["events"] if event["kind"] == "origin"}
-        dispatches = {event["dispatch"]: origins[event["origin"]]["pass"]
+        dispatches = {event["dispatch"]: origins[event["origin"]]
                       for event in observation.source_effects["events"] if event["kind"] == "dispatch"}
         self.exports = {}
         for event in observation.semantics["native_dispatches"]:
-            number = dispatches[event["sequence"]]
-            self.exports.setdefault(number, set()).update(event["environment"])
+            origin = dispatches[event["sequence"]]
+            if origin["stage"] == "after-read" and event["job"]["kind"] == "recipe" and event["kind"] == "value":
+                self.exports.setdefault(origin["pass"], set()).update(event["environment"])
 
     def _published_visit(self, visit, minimum=0):
         if visit.source is None:
@@ -326,12 +385,17 @@ def analyze(session, observation, target, state, commands, *, primary_source="Ma
             session, target, state, commands, observation, phase.sources,
             primary_source=primary_source, external_names=external_names, phase=phase,
         )
+        phase.prepare_deferred_reads(stream)
         usage = graph.source_census(
             phase.sources, reference_units=stream, template_graph_inputs=inputs, template_scoped=scoped,
             source_assignments=state, budget=session.budget, source_target=target,
             original_read_check=phase.check_reads,
+            execution_bindings=tuple(phase.executions),
         )
-        exported = graph.closure(set(phase.exports) & usage["defined"], usage["dependencies"])
+        original_names = {name for name, _, _, _ in phase.executions}
+        exported = graph.closure(
+            set(phase.exports) & (usage["defined"] | original_names), usage["dependencies"],
+        )
         added = exported - usage["recipe"]
         if added:
             session.budget.charge("cache", len(encoded(sorted(added))))

@@ -182,6 +182,8 @@ class _MakeSourceMode:
     original_target_value: object = None
     original_wildcard: object = None
     original_include_value: object = None
+    original_execution: object = None
+    invocation_inputs: frozenset = frozenset()
     namespace_holds: set = field(default_factory=set)
 
     def __post_init__(self):
@@ -388,7 +390,7 @@ class _MakeSourceMode:
         relative_path(target)
         if any(character in target for character in MAKE_SPACE + "$"):
             raise MakeProbeError("Make mode context requires one literal invocation goal")
-        supplied = set(self.definitions)
+        supplied = set(self.definitions) | self.forced | self.invocation_inputs
         if supplied & INVOCATION_CONTROL_READS:
             self.uncertain()
             return
@@ -786,12 +788,18 @@ class _MakeSourceMode:
                             pending.append(binding.value)
         return self.exact_initializer_value(expression)
 
-    def effectful(self, expression):
+    def effectful(self, expression, *, automatic=False):
         self.last_effect_input = None
-        pending, active, complete = [(None, expression, False, frozenset())], set(), set()
+        pending, active, complete = [(None, expression, False, frozenset(), None)], set(), set()
         while pending:
             self.checkpoint()
-            name, value, finished, local = pending.pop()
+            name, value, finished, local, binding = pending.pop()
+            if automatic and not finished:
+                scoped = frozenset(next(item for item in match.groups() if item is not None)
+                                   for match in SCOPED.finditer(value))
+                if scoped - local and self.budget is not None:
+                    self.budget.charge("cache", len(encoded(sorted(scoped - local))))
+                local |= scoped
             identity = name, local
             if finished:
                 active.remove(identity)
@@ -804,10 +812,13 @@ class _MakeSourceMode:
                     self.last_effect_input = name
                     return True
                 active.add(identity)
-                pending.append((name, value, True, local))
+                pending.append((name, value, True, local, binding))
             value = _prune_and(
                 value, lambda argument: self.effect_initializer_value(argument, local), self.budget,
+                lazy=self.original_execution is not None,
             )
+            if name is not None and self.original_execution is not None:
+                self.original_execution(self, name, binding, value, local)
             pieces, previous, covered = [], 0, 0
             for start, stop, _ in sorted(_make_expression_spans(value), key=lambda item: (item[0], -item[1])):
                 if start < covered:
@@ -820,7 +831,30 @@ class _MakeSourceMode:
                 if operation not in MAKE_FUNCTIONS - {"call", "eval", "guile"}:
                     self.last_effect_input = name or operation
                     return True
-                if operation == "foreach":
+                if self.original_execution is not None and operation in {"and", "or", "if"}:
+                    chosen = []
+                    if operation == "if":
+                        if len(arguments) not in {2, 3}:
+                            self.last_effect_input = "conditional-execution"
+                            return True
+                        condition = self.effect_initializer_value(arguments[0].strip(MAKE_SPACE), local)
+                        if condition is None:
+                            self.last_effect_input = "conditional-execution"
+                            return True
+                        chosen = [arguments[0], arguments[1] if condition else arguments[2] if len(arguments) == 3 else ""]
+                    else:
+                        for index, argument in enumerate(arguments):
+                            chosen.append(argument)
+                            if index + 1 == len(arguments):
+                                break
+                            condition = self.effect_initializer_value(argument.strip(MAKE_SPACE), local)
+                            if condition is None:
+                                self.last_effect_input = "conditional-execution"
+                                return True
+                            if (operation == "and" and not condition) or (operation == "or" and condition):
+                                break
+                    pending.extend((None, argument, False, local, None) for argument in chosen)
+                elif operation == "foreach":
                     if len(arguments) != 3:
                         self.last_effect_input = "foreach-scope"
                         return True
@@ -835,15 +869,15 @@ class _MakeSourceMode:
                         scoped = local | {binder}
                         if self.budget is not None:
                             self.budget.charge("cache", len(encoded(sorted(scoped))))
-                        pending.append((None, arguments[2], False, scoped))
-                    pending.extend((None, argument, False, local) for argument in arguments[:2])
+                        pending.append((None, arguments[2], False, scoped, None))
+                    pending.extend((None, argument, False, local, None) for argument in arguments[:2])
                 elif operation in {"origin", "flavor", "value"}:
                     self.retain_reads(metadata for _, _, metadata in _literal_metadata(value[start:stop])
                                       if metadata not in local)
                     if not tuple(_literal_metadata(value[start:stop])):
-                        pending.extend((None, argument, False, local) for argument in arguments)
+                        pending.extend((None, argument, False, local, None) for argument in arguments)
                 else:
-                    pending.extend((None, argument, False, local) for argument in arguments)
+                    pending.extend((None, argument, False, local, None) for argument in arguments)
                 pieces.append(value[previous:start])
                 previous = stop
             if pieces:
@@ -874,7 +908,9 @@ class _MakeSourceMode:
                         self.last_effect_input = dependency
                         return True
                     if binding.flavor == "recursive":
-                        pending.append((dependency, binding.value, False, local))
+                        pending.append((dependency, binding.value, False, local, binding))
+                    elif self.original_execution is not None:
+                        self.original_execution(self, dependency, binding, binding.value, local)
         return False
 
     def evaluate(self, expression, *, active=True):
@@ -1415,7 +1451,8 @@ def make_source_units(
                     target_posix = (
                         mode.target_posix(header) if not empty_result and not MAKE_DIRECTIVE.match(header) else False
                     )
-                    emitted = () if neutral_template else mode.evaluate(header, active=active)
+                    source_header = split_inline_recipe(header)[0] if mode.original_execution is not None else header
+                    emitted = () if neutral_template else mode.evaluate(source_header, active=active)
                     included = _include_names(header, mode)
                     if included is not False:
                         if include is None:
@@ -1443,7 +1480,7 @@ def _source_units(
     original_target_value=None,
     original_wildcard=None,
     native_pass=None, admitted_missing=frozenset(), original_forced=(),
-    original_include_value=None,
+    original_include_value=None, original_execution=None, original_invocation_inputs=(),
 ):
     decoded = {}
     mode = _MakeSourceMode(
@@ -1456,6 +1493,8 @@ def _source_units(
         original_target_value=original_target_value,
         original_wildcard=original_wildcard,
         original_include_value=original_include_value,
+        original_execution=original_execution,
+        invocation_inputs=frozenset(original_invocation_inputs),
     )
     if target is not None:
         mode.bind_invocation(target)
@@ -1904,7 +1943,7 @@ def _foreach_read_bindings(expression, budget=None):
     return names
 
 
-def _prune_and(expression, resolve=None, budget=None):
+def _prune_and(expression, resolve=None, budget=None, *, lazy=False):
     """Reference-analysis form only; immutable source text is retained separately."""
     spans = sorted(_make_expression_spans(expression), key=lambda item: (item[0], -item[1]))
     result, previous = [], 0
@@ -1915,23 +1954,38 @@ def _prune_and(expression, resolve=None, budget=None):
         part = expression[start:stop]
         function = _make_function(part)
         replacement = part
-        if function is not None and function[0] == "and":
+        if function is not None and function[0] in ({"and", "or"} if lazy else {"and"}):
             kept = []
             known = True
             for argument in function[1]:
                 argument = argument.strip(MAKE_SPACE)
-                kept.append(_prune_and(argument, resolve if known else None, budget))
+                kept.append(_prune_and(argument, resolve if known else None, budget, lazy=lazy))
                 value = (
                     resolve(argument) if resolve is not None and known
                     else argument if "$" not in argument else None
                 )
                 if value is None:
                     known = False
-                if known and value == "":
+                if known and ((function[0] == "and" and value == "") or (function[0] == "or" and value != "")):
                     break
-            replacement = part[:2] + "and " + ",".join(kept) + part[-1]
+            replacement = part[:2] + function[0] + " " + ",".join(kept) + part[-1]
+        elif lazy and function is not None and function[0] == "if" and len(function[1]) in {2, 3}:
+            arguments = function[1]
+            condition = arguments[0].strip(MAKE_SPACE)
+            value = resolve(condition) if resolve is not None else condition if "$" not in condition else None
+            if value is not None:
+                kept = [_prune_and(condition, resolve, budget, lazy=True), "", ""]
+                selected = 1 if value else 2
+                if selected < len(arguments):
+                    kept[selected] = _prune_and(arguments[selected], resolve, budget, lazy=True)
+                replacement = part[:2] + "if " + ",".join(kept) + part[-1]
         elif function is not None and function[0] not in {"origin", "flavor", "value"}:
-            interior = _prune_and(body, None, budget)
+            if lazy and function[0] not in {"foreach", "call", "eval", "guile"}:
+                interior = function[0] + " " + ",".join(
+                    _prune_and(argument, resolve, budget, lazy=True) for argument in function[1]
+                )
+            else:
+                interior = _prune_and(body, None, budget, lazy=lazy)
             replacement = part[:2] + interior + part[-1]
         result.extend((expression[previous:start], replacement))
         changed |= replacement != part
@@ -2295,6 +2349,8 @@ def _prepare_rule_templates(
         admitted_missing=frozenset() if phase is None else phase.missing,
         original_forced=() if phase is None else phase.forced,
         original_include_value=None if phase is None else template_mode.text,
+        original_execution=None if phase is None else phase.record_execution,
+        original_invocation_inputs=() if phase is None else tuple(name for _, name, _ in phase.state),
     )
     if literal_modules:
         units = units._replace(phase_tests=_literal_binding_phases(units, observation, session.budget))
@@ -2733,6 +2789,7 @@ def closure(names, dependencies):
 def source_census(
     sources, *, observed_values=None, reference_units=None, template_graph_inputs=(), template_scoped=(),
     source_assignments=(), budget=None, source_target=None, original_read_check=None,
+    execution_bindings=(),
 ):
     all_names, graph, recipe, introspection, defaults = set(), set(), set(), set(), set()
     dependencies = {}
@@ -2744,6 +2801,7 @@ def source_census(
     observed_values = {} if observed_values is None else observed_values
     stage_sinks, stage_roots = [], set()
     original_reads = set()
+    source_defined = set()
     graph.update(template_graph_inputs)
     all_names.update(template_graph_inputs)
     all_names.update(template_scoped)
@@ -2791,6 +2849,7 @@ def source_census(
         retain_defaults(assignment[0])
         if not stores:
             return
+        source_defined.add(name)
         dependencies.setdefault(name, set())
         if not expanded_input or "$" not in value:
             dependencies[name].update(references(read_value))
@@ -2881,6 +2940,7 @@ def source_census(
             names = references(read_body) | references(read_body.replace("$$", "$"))
             all_names.update(names)
             if unit.assignment.applies is not False:
+                source_defined.add(defining)
                 definitions.setdefault(defining, []).append(
                     unit.body if operator in {"", "=", ":=", "::=", "?="} else None
                 )
@@ -2956,6 +3016,28 @@ def source_census(
         if not raw.startswith("\t"):
             retain_defaults(line)
 
+    if execution_bindings:
+        observed_values = {name: set(values) for name, values in observed_values.items()}
+    for name, flavor, raw_value, value in execution_bindings:
+        extend_known(all_names, {name})
+        extend_known(original_reads, {name})
+        dependencies.setdefault(name, set())
+        if flavor == "simple":
+            observed_values.setdefault(name, set()).add(raw_value)
+            definitions.setdefault(name, []).append(raw_value if "$" not in raw_value else None)
+            continue
+        if flavor != "recursive":
+            raise MakeProbeError("original execution has an unsupported binding flavor")
+        dependencies[name].update(references(value))
+        definitions.setdefault(name, []).append(raw_value)
+        expressions.setdefault(name, []).append(raw_value)
+        read_expressions.setdefault(name, []).append(value)
+        consumed_expressions.append(value)
+        eval_requests.append((None, value, ()))
+        extend_known(all_names, references(value))
+        if "$" not in value:
+            observed_values.setdefault(name, set()).add(value)
+
     def retain_eval_history(body, active=()):
         if budget is not None:
             budget.remaining()
@@ -2995,6 +3077,7 @@ def source_census(
                 if line[definition.end():].strip(MAKE_SPACE) == "+=" and "$$" in unit.body:
                     raise MakeProbeError("unproven emitted Make append RHS timing")
                 if retain_once("define", (line, unit.body)):
+                    source_defined.add(definition[1])
                     retain_define_default(line, definition)
                     definitions.setdefault(definition[1], []).append(unit.body if "$" not in unit.body else None)
                     dependencies.setdefault(definition[1], set()).update(references(unit.body))
@@ -3204,7 +3287,7 @@ def source_census(
         "recipe_only": expanded_recipe - expanded_graph,
         "introspection": closure(introspection, dependencies),
         "defaults": defaults,
-        "defined": set(dependencies),
+        "defined": source_defined,
         "dependencies": dependencies,
         "execution_dependencies": execution_dependencies,
         "read_expressions": read_expressions,

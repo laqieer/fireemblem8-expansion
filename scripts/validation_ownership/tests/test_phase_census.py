@@ -95,6 +95,304 @@ class PhaseCensusTests(unittest.TestCase):
             source_journal_mode=source_directories.MODE,
         )
 
+    def original_input_observation(self, session, state):
+        return session.make(
+            "all", variables=("PHASE_LABEL", "HIDDEN", "MAKECMDGOALS"), assignments=state,
+            commands=self.case.commands(session), observe_source_journal=True,
+            source_journal_mode=source_directories.MODE,
+        )
+
+    def original_input_plan(self, session, domains):
+        with patch.object(graph_probe, "MakeCommands", lambda owner, contracts: self.case.commands(owner)):
+            return graph_probe.run_probe(
+                session.loader, {"all"}, domains, {}, session=session, source_phases=True,
+                declared_external_names=set(domains),
+            )["all"]
+
+    def test_original_recursive_execution_and_initial_only_exports_close_before_admission(self):
+        body = "$(.VARIABLES:%=%)"
+        domains = {"UNIVERSE": {"kind": "explicit", "values": [body]}}
+        for executed in (True, False):
+            consumer = "KIND := $(origin UNIVERSE)\n"
+            consumer += ("PHASE_LABEL := $(filter GENERATED_BINDING,$(UNIVERSE))\n"
+                         if executed else "PHASE_LABEL := stable\n")
+            self.universe_source(consumer + "export PHASE_LABEL\n")
+            state = (("command-line", "UNIVERSE", body),)
+            with self.subTest(executed=executed), self.case.session() as session:
+                observed = self.original_input_observation(session, state)
+                original = {row.name: row for row in session._original_source_archive(observed).passes[0].inputs[0].variables}
+                self.assertEqual(original["UNIVERSE"].value, body)
+                self.assertTrue(original["UNIVERSE"].flags & 1)
+                self.assertEqual((original["UNIVERSE"].flags >> 26) & 7, 4)
+                first = observed.semantics["native_dispatches"][0]
+                self.assertEqual(first["job"]["kind"], "recipe")
+                self.assertNotIn("GENERATED_BINDING", first["environment"]["UNIVERSE"].split())
+                self.assertIn(".VARIABLES", first["environment"]["UNIVERSE"].split())
+                self.assertEqual(first["environment"]["PHASE_LABEL"], "" if executed else "stable")
+                self.assertEqual(observed.semantics["domains"]["PHASE_LABEL"]["value"],
+                                 "GENERATED_BINDING" if executed else "stable")
+                with self.assertRaisesRegex(MakeProbeError, "variable-universe"):
+                    phase_census.analyze(session, observed, "all", state, self.case.commands(session))
+            self.fixture.assert_clean(session)
+            with self.case.session() as session:
+                with self.assertRaisesRegex(MakeProbeError, "variable-universe"):
+                    self.original_input_plan(session, domains)
+            self.fixture.assert_clean(session)
+            with self.case.session() as session:
+                with patch.object(phase_census.SourcePass, "record_execution", return_value=None):
+                    result = self.original_input_plan(session, domains)
+                self.assertEqual(result["variable_census"]["defaults"], [])
+                supplied, = [row for row in result["record"]["variants"] if row["state"]]
+                first = supplied["record"]["native_dispatches"][0]
+                self.assertEqual(first["environment"]["PHASE_LABEL"], "" if executed else "stable")
+                self.assertIn(".VARIABLES", first["environment"]["UNIVERSE"].split())
+            self.fixture.assert_clean(session)
+        self.universe_source(
+            "UNIVERSE = " + body + "\nPHASE_LABEL := $(filter GENERATED_BINDING,$(UNIVERSE))\nexport PHASE_LABEL\n",
+        )
+        with self.case.session() as session:
+            with patch.object(phase_census.SourcePass, "record_execution", return_value=None):
+                with self.assertRaisesRegex(MakeProbeError, "variable-universe"):
+                    self.original_input_plan(session, {})
+        self.fixture.assert_clean(session)
+
+    def test_original_input_precedence_metadata_and_unexport_use_effective_bindings(self):
+        body = "$(.VARIABLES:%=%)"
+        read = "PHASE_LABEL := $(filter GENERATED_BINDING,$(UNIVERSE))\n"
+        cases = (
+            ("override UNIVERSE := literal\n" + read, True, "", ""),
+            (read + "override UNIVERSE := literal\n", False, "", "GENERATED_BINDING"),
+            ("PHASE_LABEL := $(value UNIVERSE)\n", True, body, body),
+            ("override UNIVERSE := $(value UNIVERSE)\nPHASE_LABEL := $(UNIVERSE)\n", True, body, body),
+            ("UNIVERSE := literal\n" + read, None, None, None),
+        )
+        for origin in ("command-line", "environment"):
+            for source, accepted, first_value, final_value in cases:
+                self.universe_source(source + "unexport UNIVERSE\nexport PHASE_LABEL\n")
+                if accepted is None:
+                    accepted = origin == "environment"
+                    first_value, final_value = ("", "") if accepted else ("", "GENERATED_BINDING")
+                state = ((origin, "UNIVERSE", body),)
+                with self.subTest(origin=origin, source=source), self.case.session() as session:
+                    observed = self.original_input_observation(session, state)
+                    first = observed.semantics["native_dispatches"][0]["environment"]
+                    self.assertNotIn("UNIVERSE", first)
+                    self.assertEqual(first["PHASE_LABEL"], first_value)
+                    self.assertEqual(observed.semantics["domains"]["PHASE_LABEL"]["value"], final_value)
+                    if accepted:
+                        phase_census.analyze(session, observed, "all", state, self.case.commands(session))
+                    else:
+                        with self.assertRaisesRegex(MakeProbeError, "variable-universe"):
+                            phase_census.analyze(session, observed, "all", state, self.case.commands(session))
+                self.fixture.assert_clean(session)
+
+    def test_original_input_aliases_and_dependencies_are_not_source_declarations(self):
+        for source, body, rejected in (
+            ("ALIAS = $(UNIVERSE)\nPHASE_LABEL := $(filter GENERATED_BINDING,$(ALIAS))\n", "$(.VARIABLES:%=%)", True),
+            ("SELECTOR := UNIVERSE\nPHASE_LABEL := $(filter GENERATED_BINDING,$($(SELECTOR)))\n", "$(.VARIABLES:%=%)", True),
+            ("ALIAS = $(.VARIABLES:%=%)\nPHASE_LABEL := $(filter GENERATED_BINDING,$(UNIVERSE))\n", "$(ALIAS)", True),
+            ("SELECTOR := UNIVERSE\nPHASE_LABEL := $($(SELECTOR))\n", "literal", False),
+            ("LEAF := literal\nPHASE_LABEL := $(UNIVERSE)\n", "$(LEAF)", False),
+        ):
+            self.universe_source(source + "unexport UNIVERSE\nexport PHASE_LABEL\n")
+            state = (("command-line", "UNIVERSE", body),)
+            with self.subTest(source=source, body=body), self.case.session() as session:
+                observed = self.original_input_observation(session, state)
+                if rejected:
+                    with self.assertRaisesRegex(MakeProbeError, "variable-universe"):
+                        phase_census.analyze(session, observed, "all", state, self.case.commands(session))
+                else:
+                    usage, _, _, _ = phase_census.analyze(session, observed, "all", state, self.case.commands(session))
+                    self.assertNotIn("UNIVERSE", usage["defined"])
+                    self.assertIn("UNIVERSE", usage["dependencies"])
+                    self.assertEqual(observed.semantics["native_dispatches"][0]["environment"]["PHASE_LABEL"], "literal")
+                    if body == "$(LEAF)":
+                        self.assertIn("LEAF", usage["dependencies"]["UNIVERSE"])
+                        self.assertIn("LEAF", usage["all"])
+            self.fixture.assert_clean(session)
+
+    def test_original_input_lazy_branches_keep_unexecuted_bodies_out_of_closure(self):
+        for body, expected in (
+            ("$(and $(EMPTY),$(.VARIABLES:%=%))", ""),
+            ("$(or literal,$(.VARIABLES:%=%))", "literal"),
+            ("$(if yes,literal,$(.VARIABLES:%=%))", "literal"),
+            ("$(if ,$(.VARIABLES:%=%),literal)", "literal"),
+            ("$$(.VARIABLES:%=%)", "$(.VARIABLES:%=%)"),
+            ("$(value UNIVERSE)", "$(value UNIVERSE)"),
+        ):
+            self.universe_source("EMPTY :=\nPHASE_LABEL := $(UNIVERSE)\nunexport UNIVERSE\nexport PHASE_LABEL\n")
+            state = (("command-line", "UNIVERSE", body),)
+            with self.subTest(body=body), self.case.session() as session:
+                observed = self.original_input_observation(session, state)
+                self.assertEqual(observed.semantics["native_dispatches"][0]["environment"]["PHASE_LABEL"], expected)
+                usage, _, _, _ = phase_census.analyze(session, observed, "all", state, self.case.commands(session))
+                self.assertEqual(usage["defaults"], set())
+            self.fixture.assert_clean(session)
+
+    def test_forced_control_facts_cannot_replace_actual_original_precedence(self):
+        self.universe_source(
+            "ifeq ($(MAKECMDGOALS),other)\nHIDDEN ?= secret\nexport HIDDEN\nendif\n",
+        )
+        state = (("command-line", "MAKECMDGOALS", "other"),)
+        with self.case.session() as session:
+            observed = self.original_input_observation(session, state)
+            self.assertEqual(observed.semantics["native_dispatches"][0]["environment"]["HIDDEN"], "secret")
+            self.assertEqual(observed.semantics["domains"]["MAKECMDGOALS"], {
+                "origin": "command line", "flavor": "recursive", "value": "other",
+            })
+            proof = phase_census.OriginalSourceProof(session, observed)
+            part = proof.archive.passes[0]
+            phase = phase_census.SourcePass(
+                proof, part, proof.images[0], proof.exports.get(part.number, ()),
+                "all", state, self.case.commands(session), "Makefile",
+            )
+            stream, inputs, scoped = graph_probe._prepare_rule_templates(
+                session, "all", state, self.case.commands(session), observed, phase.sources,
+                primary_source="Makefile", phase=phase,
+            )
+            usage = graph_probe.source_census(
+                phase.sources, reference_units=stream, template_graph_inputs=inputs, template_scoped=scoped,
+                source_assignments=state, budget=session.budget, source_target="all",
+            )
+            self.assertIn("HIDDEN", usage["defaults"])
+            self.assertFalse(stream.mode_state.original_namespace_valid)
+            self.assertEqual(stream.mode_state.control_values, {})
+            with self.assertRaises(MakeProbeError):
+                phase_census.analyze(session, observed, "all", state, self.case.commands(session))
+        self.fixture.assert_clean(session)
+        domains = {"MAKECMDGOALS": {"kind": "explicit", "values": ["other"]}}
+        with self.case.session() as session:
+            with self.assertRaises(MakeProbeError):
+                self.original_input_plan(session, domains)
+        self.fixture.assert_clean(session)
+        bind = graph_probe._MakeSourceMode.bind_invocation
+        def omit_forced(mode, target):
+            forced = mode.forced
+            supplied = mode.invocation_inputs
+            mode.forced = forced - graph_probe.INVOCATION_CONTROL_READS
+            mode.invocation_inputs = supplied - graph_probe.INVOCATION_CONTROL_READS
+            try:
+                return bind(mode, target)
+            finally:
+                mode.forced = forced
+                mode.invocation_inputs = supplied
+        with self.case.session() as session:
+            with patch.object(graph_probe._MakeSourceMode, "bind_invocation", omit_forced):
+                result = self.original_input_plan(session, domains)
+            self.assertEqual(result["variable_census"]["defaults"], [])
+            supplied, = [row for row in result["record"]["variants"] if row["state"]]
+            self.assertEqual(supplied["record"]["native_dispatches"][0]["environment"]["HIDDEN"], "secret")
+        self.fixture.assert_clean(session)
+
+    def test_all_forced_invocation_facts_withhold_the_same_unproven_context(self):
+        for name in graph_probe.INVOCATION_CONTROL_READS:
+            for field in ("forced", "invocation_inputs"):
+                with self.subTest(name=name, field=field):
+                    mode = graph_probe._MakeSourceMode(**{field: frozenset((name,))})
+                    mode.bind_invocation("all")
+                    self.assertFalse(mode.original_namespace_valid)
+                    self.assertEqual((mode.control_values, mode.control_metadata, mode.control_reads), ({}, {}, set()))
+        mode = graph_probe._MakeSourceMode(forced=frozenset(("ORDINARY_INPUT",)))
+        mode.bind_invocation("all")
+        self.assertTrue(mode.original_namespace_valid)
+        self.assertEqual(mode.control_text("$(MAKECMDGOALS)"), "all")
+        self.assertEqual(mode.control_text("$(origin MAKECMDGOALS)"), "default")
+        self.assertEqual(mode.control_reads, graph_probe.INVOCATION_CONTROL_READS)
+
+    def test_environment_control_presence_is_not_mistaken_for_an_unforced_default(self):
+        self.universe_source("ifeq ($(MAKECMDGOALS),other)\nHIDDEN ?= secret\nexport HIDDEN\nendif\n")
+        state = (("environment", "MAKECMDGOALS", "other"),)
+        with self.case.session() as session:
+            observed = self.original_input_observation(session, state)
+            original = {row.name: row for row in session._original_source_archive(observed).passes[0].inputs[0].variables}
+            self.assertEqual((original["MAKECMDGOALS"].flags >> 26) & 7, 1)
+            self.assertEqual(original["MAKECMDGOALS"].value, "other")
+            self.assertEqual(observed.semantics["domains"]["MAKECMDGOALS"],
+                             {"origin": "environment", "flavor": "recursive", "value": "other"})
+            self.assertEqual(observed.semantics["native_dispatches"][0]["environment"]["HIDDEN"], "secret")
+            with self.assertRaises(MakeProbeError):
+                phase_census.analyze(session, observed, "all", state, self.case.commands(session))
+        self.fixture.assert_clean(session)
+    def test_initial_literal_exports_and_raw_shell_environments_are_distinct(self):
+        for origin in ("command-line", "environment"):
+            self.universe_source("KIND := $(origin UNIVERSE)\nPHASE_LABEL := stable\nexport PHASE_LABEL\n")
+            state = ((origin, "UNIVERSE", "literal"),)
+            with self.subTest(origin=origin), self.case.session() as session:
+                observed = self.original_input_observation(session, state)
+                self.assertEqual(observed.semantics["native_dispatches"][0]["environment"]["UNIVERSE"], "literal")
+                usage, _, _, _ = phase_census.analyze(session, observed, "all", state, self.case.commands(session))
+                self.assertIn("UNIVERSE", usage["recipe"])
+                self.assertNotIn("UNIVERSE", usage["defined"])
+            self.fixture.assert_clean(session)
+        body = "$(.VARIABLES:%=%)"
+        for during_read in (True, False):
+            consumer = ".DEFAULT_GOAL := all\nKIND := $(origin UNIVERSE)\nPHASE_LABEL := $(value UNIVERSE)\n"
+            consumer += ("TRIGGER := $(shell python3 capture.py)\nall: ;\n" if during_read
+                         else "all: ; @printf '%s' '$(shell python3 capture.py)'\n")
+            self.fixture.add("Makefile", consumer)
+            self.fixture.add("capture.py", "import os\nprint(os.environ['UNIVERSE'])\n")
+            state = (("environment", "UNIVERSE", body),)
+            with self.subTest(during_read=during_read), self.case.session() as session:
+                commands = {"python3 capture.py": session._native_context_command(make_probe.Command(
+                    ("/usr/bin/python3", "/repo/capture.py"), code=("capture.py",),
+                ))}
+                observed = session.make(
+                    "all", variables=("PHASE_LABEL",), assignments=state, commands=commands,
+                    observe_source_journal=True, source_journal_mode=source_directories.MODE,
+                )
+                dispatches = observed.semantics["native_dispatches"]
+                self.assertTrue(dispatches)
+                expansions = [dispatch for dispatch in dispatches if dispatch["kind"] == "value"]
+                self.assertTrue(expansions)
+                for dispatch in dispatches:
+                    self.assertEqual(dispatch["environment"]["UNIVERSE"], body)
+                for dispatch in expansions:
+                    self.assertEqual(dispatch["job"]["kind"], "expansion")
+                self.assertTrue(all(dispatch["job"]["kind"] == "recipe"
+                                    for dispatch in dispatches if dispatch["kind"] == "recipe"))
+                origins = [event for event in observed.source_effects["events"] if event["kind"] == "origin"]
+                self.assertEqual(len(origins), len(dispatches))
+                self.assertTrue(all(row["stage"] == ("source-read" if during_read else "after-read") for row in origins))
+                phase_census.analyze(session, observed, "all", state, commands)
+            self.fixture.assert_clean(session)
+
+    def test_unexported_original_recipe_reads_are_executed_and_scoped_unknowns_hold(self):
+        self.universe_source("PHASE_LABEL = $(filter GENERATED_BINDING,$(UNIVERSE))\nunexport UNIVERSE\n")
+        source = (self.fixture.root / "Makefile").read_text().replace(
+            "all: ;\n", "all: ; @printf '%s' '$(PHASE_LABEL)'\n",
+        )
+        for scoped in (False, True):
+            self.fixture.add("Makefile", source + ("all: override UNIVERSE := literal\n" if scoped else ""))
+            state = (("command-line", "UNIVERSE", "$(.VARIABLES:%=%)"),)
+            with self.subTest(scoped=scoped), self.case.session() as session:
+                observed = self.original_input_observation(session, state)
+                self.assertNotIn("UNIVERSE", observed.semantics["native_dispatches"][0]["environment"])
+                with self.assertRaisesRegex(MakeProbeError, "target/private binding" if scoped else "variable-universe"):
+                    phase_census.analyze(session, observed, "all", state, self.case.commands(session))
+            self.fixture.assert_clean(session)
+
+    def test_later_override_replaces_deferred_input_before_inline_or_block_recipe(self):
+        for inline in (True, False):
+            recipe = "all: ; +python3 capture.py $(UNIVERSE)\n" if inline else "all:\n\t+python3 capture.py $(UNIVERSE)\n"
+            self.fixture.add("Makefile", (
+                ".DEFAULT_GOAL := all\nunexport UNIVERSE\n" + recipe + "override UNIVERSE := literal\n"
+            ))
+            self.fixture.add("capture.py", "import sys\nprint(sys.argv[1])\n")
+            state = (("command-line", "UNIVERSE", "$(.VARIABLES:%=%)"),)
+            with self.subTest(inline=inline), self.case.session() as session:
+                commands = {"python3 capture.py literal": session._native_context_command(make_probe.Command(
+                    ("/usr/bin/python3", "/repo/capture.py", "literal"), code=("capture.py",),
+                ))}
+                observed = session.make(
+                    "all", variables=("UNIVERSE",), assignments=state, commands=commands,
+                    observe_source_journal=True, source_journal_mode=source_directories.MODE,
+                )
+                self.assertEqual(observed.semantics["native_dispatches"][0]["arguments"],
+                                 ["python3", "capture.py", "literal"])
+                self.assertEqual(observed.semantics["domains"]["UNIVERSE"]["value"], "literal")
+                phase_census.analyze(session, observed, "all", state, commands)
+            self.fixture.assert_clean(session)
+
     def test_executed_universe_reference_families_refuse_on_actual_original_passes(self):
         for declarations, expression in (
             ("", "$(.VARIABLES)"),
