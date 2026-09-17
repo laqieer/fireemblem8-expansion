@@ -5792,6 +5792,45 @@ independent intermediate/host/nested/parent/cleanup mutation coverage and
 every-pass source-use/obligation union still block phase certification. No
 full graph, quota change, broad suite or allocation17 is required here.
 
+For independent fixed-directory mutation windows, run:
+
+```sh
+python3 -m unittest scripts.validation_ownership.tests.test_source_journal -v
+```
+
+Start with admitted witnesses in the source and output-parent directories,
+but no generated C or include. Enable `observe_source_journal`. Require actual
+kernel create/write/close events, native begin/end acknowledgements, first-pass
+producer HIDDEN=secret despite final HIDDEN undefined, and separate terminal
+file-deletion events covering all ranges without gaps. The original wildcard
+guard must still refuse the touched source namespace.
+
+Create/delete an unregistered host file before and during a native window;
+also change and restore the original Makefile bytes. Require refusal even
+when final membership or bytes match. Remove the observer or corrupt its real
+kernel stream with overflow/truncation/foreign-watch records; require failure,
+not an empty successful journal. Alter actual request origin/sequence/stage,
+acknowledgement digest or terminal native receipts and require refusal.
+Copied/changed observations, remapped original directories, expired pins,
+nested Make and invalid selection values must not obtain a journal.
+
+Run the genuine default text/ARM/sed/header-transfer component with a clearly
+identified admitted existing-parent witness. Preserve that witness during
+ordinary-result cleanup; execute the real original recipes in both routes,
+leave C initially absent and retain tracked-header byte/stat immutability.
+Require all six native publication windows, the paired real rename cookie
+and terminal cleanup. This is an existing-parent profile control only.
+Without that witness, the original new-parent path must explicitly refuse
+before directory publication. Do not precreate parents or install a late
+watch and label the resulting blind interval complete.
+
+Keep ordinary/source-phase-only behavior and Main's native job/accounting
+unchanged. Preserve exact runtime/test ownership, the existing process-suite
+owner,98 case IDs and all prior automation. No numerical bound, guest
+permission, C ABI, CPP adapter, extra job, full graph/report or allocation17
+changes. Closing general new-directory coverage and every original source
+pass's obligations remains a prerequisite for full phase certification.
+
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while
 native per-file raw metadata remains `$(FLAGS)`. Do not eagerly copy the

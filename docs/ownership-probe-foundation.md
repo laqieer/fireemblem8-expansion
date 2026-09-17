@@ -324,6 +324,21 @@ This observes originating contexts and completed publications; it does not yet
 close intermediate/host/cleanup mutation coverage or grant a namespace
 exception. Default and read-trace-only calls retain their previous behavior.
 
+A further opt-in fixed-directory journal independently reads kernel mutation
+events across real native publication windows and terminal file cleanup.
+Its original directory pins and view/epoch survive for the issued observation
+lifetime; event/reply records cannot supply that identity themselves. Native
+actors remain parked with read-only source mounts, publication permissions
+stay unchanged, and all bytes/counts use existing allowances. Coalesced
+write/attribute events denote touched files, not exact write counts.
+The profile rejects every directory mutation and any output needing a new
+parent: late watch installation cannot recover transients in a new subtree.
+Nested queries, unknown host activity, watch loss and malformed or unmatched
+outcomes likewise refuse. Existing-parent native text/ARM/filter/transfer
+controls do not stand in for the unchanged missing-parent required root.
+General mutation coverage and every-pass source authority remain unimplemented;
+ordinary and source-phase-only behavior is unchanged.
+
 The graph's lifecycle consumer may additionally select
 `ProbeSession.make(..., observe_recipe_dispatch=True)` for the validated
 `recipe_dispatches` projection. It retains each complete recipe context,

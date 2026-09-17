@@ -253,6 +253,27 @@ still need complete coverage before any source-phase certificate is issued.
 Every-pass source reconstruction and first-pass obligation union remain held.
 Default and read-trace-only observations do not select this sidecar.
 
+`observe_source_journal=True` adds a default-off **fixed-original-directory**
+mutation collector and implies those source observations. Independent kernel
+events are captured through held original directory descriptors. Real native
+publication begin/end barriers, unchanged ownership/outcome checks and separate
+terminal file cleanup delimit the ordered windows. Unknown activity, changed
+inputs, extra paths/events, overflow, truncation, watch loss, remapping, forged
+barriers/receipts and nested Make queries reject. Directory watches remain
+bound to the original view; copied or expired observations cannot borrow pins.
+
+This deliberately refuses creation/removal of directories. A new, unwatched
+subtree can hide transient mutations before a later watch is installed; adding
+a watch afterward or comparing final directory bytes does not close that gap.
+All output parents must already belong to the admitted original directory
+image. An existing-parent fixture runs the genuine message/ARM/sed pipeline,
+but the unchanged required path that needs new `build` parents remains held.
+No parent is silently precreated. Kernel write/attribute coalescing is not
+reported as exact syscall counts. `source_journal.closed` closes only this
+fixed-directory observation, not general journal coverage or a source-phase
+certificate. New-directory coverage, every-pass reconstruction/obligation
+union and complete original-root small-plan acceptance remain outstanding.
+
 Registry declaration execution now has an explicit shared-session entry:
 `graph_registry.observe_declarations(loader, session)`. The selected loader
 must be the active public view and own the same budget. It invokes the real

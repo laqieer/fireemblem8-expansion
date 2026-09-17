@@ -1947,6 +1947,10 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/source_effects.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/source_journal.py"
         }
       ],
       "exclude": [
@@ -1997,6 +2001,10 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_source_effects.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_source_journal.py"
         }
       ]
     },
@@ -2051,6 +2059,10 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_source_effects.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_source_journal.py"
         }
       ],
       "exclude": []

@@ -41,6 +41,7 @@ from . import header_runtime as header_protocol
 from . import read_epochs
 from . import source_phases
 from . import source_effects
+from . import source_journal
 from .producer_channel import (
     ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
     publication_identity, validate_publication_confirmation,
@@ -253,6 +254,7 @@ class MakeObservation:
     read_trace: dict | None = None
     source_phases: dict | None = None
     source_effects: dict | None = None
+    source_journal: dict | None = None
 
 
 class _NamespaceUnavailable(MakeProbeError):
@@ -779,6 +781,8 @@ class ProbeSession:
         self._issued_header_launches = weakref.WeakSet()
         self._read_epoch_abi = None
         self._source_phase_records = {}
+        self._source_journal_active = []
+        self._source_journal_instances = weakref.WeakSet()
         self._namespace_images = {}
         self._namespace_frames = []
         self._namespace_pending = {}
@@ -1001,19 +1005,21 @@ class ProbeSession:
             os.close(descriptor)
         return capture
 
-    def _retain_source_phases(self, observation, images, capture):
+    def _retain_source_phases(self, observation, images, capture, journal=None):
         if not capture.closed or not capture.valid or not capture.native_complete:
             raise MakeProbeError("original entry images lack a completed native lifetime")
-        context = encoded((observation.read_trace, observation.source_phases, observation.source_effects))
+        context = encoded((observation.read_trace, observation.source_phases, observation.source_effects, observation.source_journal))
         self.budget.charge("cache", len(context))
         key = id(observation)
         def expired(reference):
             record = self._source_phase_records.get(key)
             if record is not None and record[0] is reference:
+                if record[6] is not None:
+                    record[6].close()
                 del self._source_phase_records[key]
         self._source_phase_records[key] = (
             weakref.ref(observation, expired), tuple(images), self.snapshot, self.tree,
-            self._namespace_epoch, context,
+            self._namespace_epoch, context, journal,
         )
 
     def _source_phase_images(self, observation):
@@ -1022,13 +1028,15 @@ class ProbeSession:
         if (
             record is None or record[0]() is not observation
             or record[2] is not self.snapshot or record[3] != self.tree or record[4] != self._namespace_epoch
-            or record[5] != encoded((observation.read_trace, observation.source_phases, observation.source_effects))
+            or record[5] != encoded((observation.read_trace, observation.source_phases, observation.source_effects, observation.source_journal))
         ):
             raise MakeProbeError("original entry-image observation is forged, changed or outlived its view")
         namespace = self._namespace_issued.get(id(observation))
         if namespace is None or namespace[0]() is not observation:
             raise MakeProbeError("original entry images lost their namespace lifetime")
         self._require_namespace(namespace[1])
+        if record[6] is not None:
+            record[6].validate_view()
         return record[1]
 
     def _invariant_directory(self, capture, directory):
@@ -1276,6 +1284,9 @@ class ProbeSession:
             self._header_launches.clear()
             self._issued_header_launches.clear()
             self._read_epoch_abi = None
+            finish_cleanup([journal.close for journal in tuple(self._source_journal_instances)])
+            self._source_journal_instances.clear()
+            self._source_journal_active.clear()
             self._source_phase_records.clear()
             self.runtime_inputs = ()
             self.runtime_dispatch = ()
@@ -1674,8 +1685,15 @@ class ProbeSession:
         header_runtime=None,
         observe_read_epochs=False,
         observe_source_phases=False, source_phase_observer=None,
+        observe_source_journal=False, source_journal_observer=None,
     ):
         self.budget.remaining()
+        if (
+            type(observe_source_journal) is not bool
+            or observe_source_journal and (mode != "make" or not observe_source_phases or source_journal_observer is None)
+            or not observe_source_journal and source_journal_observer is not None
+        ):
+            raise MakeProbeError("source journal requires its exact original-entry Make observer")
         if (
             type(observe_source_phases) is not bool
             or observe_source_phases and (mode != "make" or producer_handler is None or source_phase_observer is None)
@@ -1831,6 +1849,7 @@ class ProbeSession:
         barrier = 0
         source_requests = []
         source_publications = []
+        journal_receipts = []
         completion = None
         channel = None
         channel_directory = self.base / f"producer-{self.serial}"
@@ -1845,6 +1864,8 @@ class ProbeSession:
                 }
             if observe_source_phases:
                 config["source_effects"] = {"version": 1, "scope": config["producer_scope"]}
+            if observe_source_journal:
+                config["source_journal"] = {"version": 1, "scope": config["producer_scope"], "mode": source_journal.MODE}
             config["reserved_paths"] = list(self.loader.entries) if publication_allowed else None
             config["publication_limit"] = self.budget.limits.created_files
             if self.published_sources:
@@ -1919,6 +1940,53 @@ class ProbeSession:
             request = parse_json(packet, "producer request")
             if not isinstance(request, dict) or request.get("scope") != config["producer_scope"]:
                 raise MakeProbeError("foreign producer request scope")
+            if request.get("kind") == "journal-barrier":
+                if not observe_source_journal or not source_requests:
+                    raise MakeProbeError("unrequested or unissued source-journal window")
+                try:
+                    source_journal.validate_barrier(
+                        request, scope=config["producer_scope"], producer=sequence,
+                        barrier=len(journal_receipts) + 1, origin=source_requests[sequence - 1]["source_origin"],
+                    )
+                except ChannelError as error:
+                    raise MakeProbeError(str(error)) from error
+                reserved = request["reserved"]
+                if (
+                    not isinstance(reserved, dict) or set(reserved) != {"live", "processes", "memory", "pending"}
+                    or any(type(value) is not int for value in reserved.values())
+                    or not 1 <= reserved["live"] <= reserved["processes"] <= config["process_limit"]
+                    or not 1 <= reserved["memory"] <= config["memory_limit"]
+                    or not 1 <= reserved["pending"] <= config["pending_limit"]
+                ):
+                    raise MakeProbeError("source-journal window has invalid native reservations")
+                settle(request["counters"])
+                if (
+                    reserved["live"] > request["counters"]["live_process_peak"]
+                    or reserved["live"] > request["counters"]["processes"]
+                    or reserved["memory"] > request["counters"]["memory_peak"]
+                ):
+                    raise MakeProbeError("source-journal reservations contradict native state")
+                if request["stage"] == "end":
+                    validate_confirmation(sequence, request["publication"])
+                self.parked_capsules.append(reserved)
+                try:
+                    journal_sha256 = source_journal_observer(request)
+                finally:
+                    self.parked_capsules.pop()
+                reply = {
+                    "kind": "journal-resume",
+                    **{name: request[name] for name in ("scope", "barrier", "stage", "producer")},
+                    "origin_sha256": source_phases.digest(request["origin"]),
+                    "journal_sha256": journal_sha256, "limits": grants(),
+                }
+                bound = len(encoded(reply)) + 4
+                reply["limits"] = grants(bound)
+                source_journal.validate_resume(reply, request)
+                data = encoded(reply)
+                if len(data) + 4 > bound:
+                    raise MakeProbeError("source-journal grant encoding exceeded its reservation")
+                journal_receipts.append(source_journal.receipt(reply))
+                return data
             if request.get("kind") == "read-barrier":
                 if not observe_source_phases:
                     raise MakeProbeError("unrequested original entry-image barrier")
@@ -2132,6 +2200,9 @@ class ProbeSession:
             ) | (
                 {"source_effects"} if observe_source_phases and observed.get("ok") is True
                 and observed.get("returncode") == 0 else set()
+            ) | (
+                {"source_journal"} if observe_source_journal and observed.get("ok") is True
+                and observed.get("returncode") == 0 else set()
             ):
                 raise MakeProbeError("malformed supervisor result")
             observations = observed["observations"]
@@ -2183,6 +2254,11 @@ class ProbeSession:
                     raise MakeProbeError("original entry barrier transcript is incomplete")
                 if observe_source_phases:
                     observed["_source_effect_inputs"] = source_requests, source_publications
+                if observe_source_journal:
+                    try:
+                        source_journal.validate_native(observed["source_journal"], config["producer_scope"], journal_receipts)
+                    except ChannelError as error:
+                        raise MakeProbeError(str(error)) from error
             elif "read_trace" in observed:
                 raise MakeProbeError("unrequested or failed Make supplied an original read trace")
             if channel is not None:
@@ -3400,6 +3476,7 @@ class ProbeSession:
         self, target: str, *, makefile="Makefile", variables=(), assignments=(),
         owner_inputs=(), commands=None, observe_recipe_dispatch=False, definitions=(), observe_read_epochs=False,
         observe_source_phases=False,
+        observe_source_journal=False,
     ) -> MakeObservation:
         return self._make(
             target, makefile=makefile, variables=variables, assignments=assignments,
@@ -3407,6 +3484,7 @@ class ProbeSession:
             observe_recipe_dispatch=observe_recipe_dispatch, definitions=definitions,
             observe_read_epochs=observe_read_epochs,
             observe_source_phases=observe_source_phases,
+            observe_source_journal=observe_source_journal,
         )
 
     @terminal_failure
@@ -3453,8 +3531,15 @@ class ProbeSession:
         _original_inputs=False,
         observe_read_epochs=False,
         observe_source_phases=False,
+        observe_source_journal=False,
     ) -> MakeObservation:
         self.budget.remaining()
+        if (
+            type(observe_source_journal) is not bool
+            or observe_source_journal and (_original_inputs or self.make_depth)
+            or self._source_journal_active
+        ):
+            raise MakeProbeError("source journal requires a top-level, non-nested Make lifetime")
         if type(_original_inputs) is not bool:
             raise MakeProbeError("invalid original input observation selection")
         if type(observe_recipe_dispatch) is not bool:
@@ -3463,6 +3548,7 @@ class ProbeSession:
             raise MakeProbeError("original read epochs require a normal Make invocation")
         if type(observe_source_phases) is not bool or _original_inputs and observe_source_phases:
             raise MakeProbeError("original source phases require a normal Make invocation")
+        observe_source_phases = observe_source_phases or observe_source_journal
         observe_read_epochs = observe_read_epochs or observe_source_phases
         if not TARGET.fullmatch(target) or target.startswith(("-", "/")) or ".." in target.split("/"):
             raise MakeProbeError("invalid requested Make target")
@@ -3529,9 +3615,30 @@ class ProbeSession:
         namespace_capture = None if _original_inputs else self._begin_namespace(target, makefile, assignments)
         phase_entries = []
         phase_images = []
+        journal = None
+        if observe_source_journal:
+            journal = source_journal.FixedDirectoryJournal(self, namespace_capture.image)
+            self._source_journal_instances.add(journal)
+            self._source_journal_active.append(journal)
+
+        def journal_window(request):
+            pending = receipts[request["producer"] - 1]
+            if request["stage"] == "begin":
+                if isinstance(pending, _PendingHeaderEffect):
+                    effect = pending.effect
+                    paths = (effect.source, effect.path) if effect.operation == "transfer" else (effect.path,)
+                    journal.begin(request["origin"], effect.operation, paths)
+                else:
+                    journal.begin(request["origin"], "files", tuple(item.path for item in pending[2].generated))
+            else:
+                acknowledge(request["producer"], request["publication"])
+                journal.end(request["publication"])
+            return journal.state_digest()
 
         def capture_source_entry(request):
             self.budget.remaining()
+            if journal is not None:
+                journal.idle()
             if (
                 self.snapshot is not namespace_capture.image.snapshot or self.tree != namespace_capture.image.tree
                 or self._namespace_epoch != namespace_capture.epoch or namespace_capture.closed
@@ -3569,8 +3676,13 @@ class ProbeSession:
                 return
 
             def remove_file(name):
-                self._namespace_mutation("removed", name)
-                (self.tree / name).unlink(missing_ok=True)
+                def remove():
+                    self._namespace_mutation("removed", name)
+                    (self.tree / name).unlink(missing_ok=True)
+                if journal is None:
+                    remove()
+                else:
+                    journal.cleanup(name, remove)
 
             def remove_directory(name):
                 if (self.tree / name).exists():
@@ -3837,6 +3949,7 @@ class ProbeSession:
             lambda: _remove_owned_tree(control), lambda: _remove_owned_tree(root),
             lambda: setattr(self, "make_depth", depth),
             *( (lambda: self._end_namespace(namespace_capture),) if namespace_capture is not None else () ),
+            *( (journal.finish, self._source_journal_active.pop) if journal is not None else () ),
         ]):
             self.make_depth = depth + 1
             self._new_root(root_name, make=True)
@@ -3867,7 +3980,11 @@ class ProbeSession:
                 observe_read_epochs=observe_read_epochs,
                 observe_source_phases=observe_source_phases,
                 source_phase_observer=capture_source_entry if observe_source_phases else None,
+                observe_source_journal=observe_source_journal,
+                source_journal_observer=journal_window if journal is not None else None,
             )
+            if journal is not None:
+                journal.complete_native(observed["source_journal"]["scope"], observed["source_journal"]["receipts"])
             raw_events = self.budget.read_bytes(events_path, "event")
             native_events = Counter(bytes.fromhex(item) for item in observed["events"])
             self.budget.charge(
@@ -4035,6 +4152,7 @@ class ProbeSession:
                 observed.get("read_trace"),
                 phases,
                 observed.get("source_effects"),
+                None if journal is None else journal.payload,
             )
             if namespace_capture is not None:
                 namespace_capture.native_complete = True
@@ -4042,7 +4160,7 @@ class ProbeSession:
         if namespace_capture is not None:
             self._seal_namespace(namespace_capture, observation)
             if observe_source_phases:
-                self._retain_source_phases(observation, phase_images, namespace_capture)
+                self._retain_source_phases(observation, phase_images, namespace_capture, journal)
         return observation
 
     @terminal_failure

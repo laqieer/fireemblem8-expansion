@@ -36,6 +36,7 @@ if __package__:
     from .read_epochs import ReadEpochError
     from . import source_phases
     from .source_effects import NativeSourceEffects
+    from . import source_journal
     from .producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
@@ -52,6 +53,7 @@ else:
     from read_epochs import ReadEpochError
     import source_phases
     from source_effects import NativeSourceEffects
+    import source_journal
     from producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
@@ -294,6 +296,7 @@ class Policy:
         self.mode = config["mode"]
         self.read_trace = None
         self.source_effects = None
+        self.journal_receipts = None
         try:
             header_protocol.validate_launch(config)
         except ChannelError as error:
@@ -435,6 +438,11 @@ class Policy:
             self.read_trace = NativeReadTrace(self, request)
         if "source_effects" in config:
             self.source_effects = NativeSourceEffects(self, config["source_effects"])
+        if "source_journal" in config:
+            source_journal.validate_config(config["source_journal"], config.get("producer_scope"))
+            if self.source_effects is None:
+                raise Violation("source journal requires actual originating-read observation")
+            self.journal_receipts = []
         self.code_dirs = {"/repo"}
         self.source_dirs = set()
         for paths, directories in ((self.code, self.code_dirs), (self.sources, self.source_dirs)):
@@ -2908,6 +2916,30 @@ def supervise(config, drop_privileges):
         trace.confirm_barrier(request, reply["image_sha256"])
         release_invocation()
 
+    def journal_barrier(stage, sequence, origin, publication=None):
+        if policy.journal_receipts is None:
+            return
+        if not parking or channel is None or pid not in processes:
+            raise Violation("source publication lacks its actually parked native window")
+        request = {
+            "kind": "journal-barrier", "scope": config["producer_scope"],
+            "barrier": len(policy.journal_receipts) + 1, "stage": stage, "producer": sequence,
+            "origin": origin, "publication": publication,
+            "counters": policy.counters(), "reserved": policy.reservations(),
+        }
+        raw = channel.exchange(
+            encoded(request),
+            watch=[record.pidfd for record in processes.values()] + list(newborn_stops.values()),
+        )
+        reply = parse_json(raw, "source-journal acknowledgement")
+        source_journal.validate_resume(reply, request)
+        policy.apply_producer_limits(reply["limits"], ceilings)
+        channel.require_live([record.pidfd for record in processes.values()] + list(newborn_stops.values()))
+        channel.ensure_idle()
+        value = source_journal.receipt(reply)
+        policy.charge_metadata(len(encoded(value)))
+        policy.journal_receipts.append(value)
+
     def fulfill_producer():
         requester = policy.producer_requests[0]
         state = processes.get(requester)
@@ -2978,6 +3010,8 @@ def supervise(config, drop_privileges):
         ):
             raise Violation("malformed, foreign or out-of-order producer reply")
         policy.apply_producer_limits(reply["limits"], ceilings)
+        if policy.journal_receipts is not None and "adopt_sha256" in reply:
+            raise Violation("fixed-directory source journal cannot attribute nested publication")
         request_event, = _read_events(state.producer_frame, expected_mapping_count=0)
         key = f"{sequence - 1:016x}"
         if read_slot(key + ".cmd", 65536) != _event_command(request_event).encode("utf-8"):
@@ -3003,6 +3037,7 @@ def supervise(config, drop_privileges):
                 policy.source_effects.adoption(sequence, records)
         channel.require_live([record.pidfd for record in processes.values()] + list(newborn_stops.values()))
         channel.ensure_idle()
+        journal_barrier("begin", sequence, request.get("source_origin"))
         if effect_request is not None:
             try:
                 read_slot(key + ".files", config["file_limit"])
@@ -3022,6 +3057,7 @@ def supervise(config, drop_privileges):
             }
         if policy.source_effects is not None:
             policy.source_effects.publication(sequence, policy.publication_confirmation)
+        journal_barrier("end", sequence, request.get("source_origin"), policy.publication_confirmation)
         policy.producer_completed = sequence
         state.producer_slot = sequence - 1
         state.producer_ready = False
@@ -3130,6 +3166,13 @@ def supervise(config, drop_privileges):
                 result["read_trace"] = policy.read_trace.finish()
                 if policy.source_effects is not None:
                     result["source_effects"] = policy.source_effects.finish(result["read_trace"])
+                if policy.journal_receipts is not None:
+                    if len(policy.journal_receipts) != 2 * policy.producer_completed:
+                        raise Violation("native source-journal publication transcript is incomplete")
+                    result["source_journal"] = {
+                        "version": 1, "scope": config["producer_scope"], "mode": source_journal.MODE,
+                        "receipts": policy.journal_receipts, "closed": True,
+                    }
             if channel is not None:
                 result["rendezvous"] = {
                     "issued": policy.producer_issued, "completed": policy.producer_completed,
