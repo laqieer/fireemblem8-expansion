@@ -253,6 +253,24 @@ still need complete coverage before any source-phase certificate is issued.
 Every-pass source reconstruction and first-pass obligation union remain held.
 Default and read-trace-only observations do not select this sidecar.
 
+The session can reconstruct an authenticated source-phase observation with
+`_original_source_archive(observation)`. Its immutable records retain every
+actual read pass, original input scope/raw variable row, source entry and
+return flags/status, source version, open result and native goal-visit order.
+Byte-identical source images may share storage, but repeated visits and changed
+versions of the same pathname are never collapsed. Failed opens retain their
+negative result and absent source image; file-builtin and other non-source
+reads stay separate, including reads after source evaluation.
+
+Cached access rechecks the original observation/view/lifetime and performs
+no new native run. Copied, changed, foreign, expired or read-trace-only
+observations cannot supply the identity binding. Raw variable values and
+flags are not expanded or reinterpreted as effective special-variable
+semantics. Native return flags retain their unsigned32 ABI bound.
+This is a lossless source-data archive, not an include-omission permission,
+namespace certificate, source interpreter or completed obligation union.
+Those consumers still require the independent coverage and use-context proof.
+
 `observe_source_journal=True` adds a default-off **fixed-original-directory**
 mutation collector and implies those source observations. Independent kernel
 events are captured through held original directory descriptors. Real native

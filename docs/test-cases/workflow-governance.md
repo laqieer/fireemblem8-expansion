@@ -5720,6 +5720,32 @@ definitions. Independent mutation capture, original entry namespace use
 contexts and every pass's read/default/export/effect/obligation union remain
 the precise separate hold. No full graph/report or allocation17 is exercised.
 
+For the immutable per-pass archive, the existing whole `test_read_epochs`
+automation also owns the five archive methods. No additional suite or case
+ID is needed. Start with command-line FLAG, a raw unused error expression,
+source overrides, an included child and a genuinely remade include.
+Reconstruct through the session's original-source archive accessor. Require
+the original FLAG/raw expression in every input scope, distinct failed and
+successful include records, original entry/return flags and native goal order.
+The final source override must not backfill those original inputs.
+
+Repeat an include and add same-file and after-parse file-builtin reads.
+Require every real visit in entry order while nonsource reads stay separate.
+Use the same actual context-aware producer to replace a generated include
+between two real visits; preserve both bytes/identities rather than the latest
+filename mapping. A fixture's MAKE_RESTARTS expression may control its real
+behavior, but archive pass identity must come only from actual exec/read events.
+
+Check that repeated archive access launches no native run, immutable nested
+records have no writable field dictionary, and copied/changed/foreign/expired
+or unqualified observations reject. Corrupt actual status, visit coverage,
+input flags, source bytes and return flags below zero or above unsigned32;
+require rejection. The pre-fix return-flags control accepted10-2^32 and10+2^32
+in a real trace validator; this is a typed-data counterexample, not evidence
+of small-plan or whole-report admission. Keep the existing owned selector,
+resource limits and teardown. Archive availability does not waive general
+journal coverage, source-use semantics or the complete obligation union.
+
 For the original entry-image barrier, run:
 
 ```sh

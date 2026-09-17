@@ -2,6 +2,7 @@
 
 import base64
 import copy
+from dataclasses import replace
 import json
 from pathlib import Path
 import shlex
@@ -54,6 +55,160 @@ class ReadEpochTests(unittest.TestCase):
                 outputs=("build/remade.mk",),
             )},
         )
+
+    def archive_observation(self, session):
+        original = session._make
+        def with_phases(*args, **kwargs):
+            kwargs["observe_source_phases"] = True
+            return original(*args, **kwargs)
+        with patch.object(session, "_make", with_phases):
+            return self.observe(session, True)
+
+    def test_original_archive_keeps_every_pass_input_status_and_source_version(self):
+        with self.fixture.session(runtime_files=("/usr/include/build",)) as session:
+            observed = self.archive_observation(session)
+            runs = session.budget.runs
+            archive = session._original_source_archive(observed)
+            self.assertEqual(session.budget.runs, runs)
+            self.assertEqual(archive.scope, observed.read_trace["scope"])
+            self.assertEqual([part.number for part in archive.passes], [1, 2])
+            for part in archive.passes:
+                values = {row.name: row for scope in reversed(part.inputs) for row in scope.variables}
+                self.assertEqual(values["FLAG"].value, "command-line")
+                self.assertEqual((values["FLAG"].flags >> 26) & 7, 4)
+                self.assertEqual(values["CLI_LAZY"].value, "$(error snapshot must stay raw)")
+                self.assertTrue({"FILE_ONLY", "CHILD_ONLY", "EVAL_ONLY"}.isdisjoint(values))
+                self.assertEqual([visit.name for visit in part.visits],
+                                 ["Makefile", "child.mk", "build/remade.mk"])
+                main, child, included = part.visits
+                self.assertEqual(child.parent, main.number)
+                self.assertGreater(main.exit_seq, child.exit_seq)
+                self.assertEqual(main.source.data, self.source.encode())
+                self.assertEqual(part.entry_image[0], part.entry_seq + 1)
+                goals, = [event["goals"] for event in observed.read_trace["events"]
+                          if event["kind"] == "pass-exit" and event["pass"] == part.number]
+                self.assertEqual(part.goal_visits, tuple(goals))
+            failed, loaded = [part.visits[-1] for part in archive.passes]
+            self.assertEqual((failed.error, failed.source, failed.opens[0].result), (2, None, -2))
+            self.assertEqual(loaded.error, 0)
+            self.assertGreaterEqual(loaded.opens[0].result, 0)
+            self.assertIs(loaded.source, loaded.opens[0].source)
+            self.assertEqual(loaded.source.data, b"REMADE_ONLY := generated-value\n")
+            self.assertIs(archive.passes[0].visits[0].source, archive.passes[1].visits[0].source)
+            self.assertEqual(observed.semantics["domains"]["FLAG"]["value"], "source-final")
+            self.assertIs(session._original_source_archive(observed), archive)
+            self.assertEqual(session.budget.runs, runs)
+        self.fixture.assert_clean(session)
+        self.assertFalse(session._source_pass_archives)
+
+    def test_archive_repeated_visits_and_nonsource_reads_are_not_collapsed(self):
+        source = self.source.replace("include child.mk\n", "include child.mk\ninclude child.mk\n")
+        source = source.replace("all: ;", "all: ; @printf '%s' '$(file <child.mk)'")
+        self.fixture.add("Makefile", source)
+        with self.fixture.session(runtime_files=("/usr/include/build",)) as session:
+            observed = self.archive_observation(session)
+            archive = session._original_source_archive(observed)
+            for part in archive.passes:
+                self.assertEqual([visit.name for visit in part.visits],
+                                 ["Makefile", "child.mk", "child.mk", "build/remade.mk"])
+                first, second = part.visits[1:3]
+                self.assertNotEqual(first.number, second.number)
+                self.assertLess(first.exit_seq, second.entry_seq)
+                self.assertIs(first.source, second.source)
+                self.assertEqual(len([item for item in part.other_opens if item.name == "Makefile"]), 3)
+            outside = [item for part in archive.passes for item in part.other_opens if item.pass_number is None]
+            self.assertTrue(outside)
+            self.assertTrue(all(item.visit is None for item in outside))
+            self.assertEqual(sum(len(part.visits) for part in archive.passes), 8)
+        self.fixture.assert_clean(session)
+
+    def test_archive_preserves_replaced_include_contents_between_real_visits(self):
+        self.fixture.add("Makefile", (
+            ".DEFAULT_GOAL := all\nexport MAKE_RESTARTS\n"
+            "include build/remade.mk\n"
+            "ifeq ($(MAKE_RESTARTS),1)\n"
+            "TRIGGER := $(shell python3 writer.py)\ninclude build/remade.mk\nendif\n"
+            "build/remade.mk:\n\tpython3 writer.py\nall: ;\n"
+        ))
+        self.fixture.add("writer.py", (
+            "import os\nfrom pathlib import Path\n"
+            "out=Path('/work/build/remade.mk');out.parent.mkdir(parents=True,exist_ok=True)\n"
+            "out.write_text('VALUE := '+os.environ.get('MAKE_RESTARTS','initial')+'\\n')\n"
+        ))
+        with self.fixture.session(runtime_files=("/usr/include/build",)) as session:
+            command = session._native_context_command(Command(
+                ("/usr/bin/python3", "/repo/writer.py"), code=("writer.py",), outputs=("build/remade.mk",),
+            ))
+            observed = session.make(
+                "all", variables=("VALUE",), commands={"python3 writer.py": command}, observe_source_phases=True,
+            )
+            archive = session._original_source_archive(observed)
+            pairs = [
+                [visit for visit in part.visits if visit.name == "build/remade.mk"]
+                for part in archive.passes
+            ]
+            repeated, = [visits for visits in pairs if len(visits) == 2]
+            self.assertEqual([visit.error for visit in repeated], [0, 0])
+            self.assertLess(repeated[0].exit_seq, repeated[1].entry_seq)
+            self.assertNotEqual(repeated[0].source.data, repeated[1].source.data)
+            self.assertNotEqual(repeated[0].opens[-1].identity, repeated[1].opens[-1].identity)
+            writers = [row for row in observed.semantics["native_dispatches"] if row["arguments"][-1] == "writer.py"]
+            expected = [("VALUE := " + row["environment"].get("MAKE_RESTARTS", "initial") + "\n").encode()
+                        for row in writers]
+            self.assertEqual([visit.source.data for visit in repeated], expected)
+            self.assertTrue(any(visit.error == 2 and visit.source is None for visit in pairs[0]))
+            self.assertEqual(len(archive.passes),
+                             len([row for row in observed.read_trace["events"] if row["kind"] == "exec"]))
+        self.fixture.assert_clean(session)
+
+    def test_archive_rejects_unqualified_changed_copied_foreign_and_expired_observations(self):
+        with self.fixture.session(runtime_files=("/usr/include/build",)) as session:
+            unqualified = self.observe(session, True)
+            with self.assertRaises(MakeProbeError):
+                session._original_source_archive(unqualified)
+            observed = self.archive_observation(session)
+            archive = session._original_source_archive(observed)
+            self.assertFalse(hasattr(archive, "__dict__"))
+            with self.assertRaises(AttributeError):
+                archive.passes[0].number = 99
+            with self.assertRaises(TypeError):
+                archive.passes[0].inputs[0].variables[0] = None
+            with self.assertRaises(MakeProbeError):
+                session._original_source_archive(replace(observed))
+            entry = next(row for row in observed.read_trace["events"] if row["kind"] == "pass-entry")
+            entry["inputs"][0]["variables"][0][1] += "-changed"
+            with self.assertRaises(MakeProbeError):
+                session._original_source_archive(observed)
+        self.fixture.assert_clean(session)
+        with self.fixture.session(runtime_files=("/usr/include/build",)) as other:
+            with self.assertRaises(MakeProbeError):
+                other._original_source_archive(observed)
+        self.fixture.assert_clean(other)
+        with self.assertRaises(MakeProbeError):
+            session._original_source_archive(observed)
+
+    def test_archive_decoder_revalidates_actual_status_order_inputs_and_source_bytes(self):
+        with self.fixture.session(runtime_files=("/usr/include/build",)) as session:
+            observed = self.archive_observation(session)
+            for defect in ("status", "missing-visit", "input", "source", "negative-return-flags", "overflow-return-flags"):
+                changed = copy.deepcopy(observed.read_trace)
+                if defect == "status":
+                    next(row for row in changed["events"] if row["kind"] == "source-exit" and row["error"])["error"] = 0
+                elif defect == "missing-visit":
+                    changed["events"] = [row for row in changed["events"]
+                                         if not (row["kind"] == "source-entry" and row["visit"] == 2)]
+                    for number, row in enumerate(changed["events"], 1):
+                        row["seq"] = number
+                elif defect == "input":
+                    next(row for row in changed["events"] if row["kind"] == "pass-entry")["inputs"][0]["variables"][0][2] = True
+                elif defect == "source":
+                    changed["sources"][0]["data"] = ""
+                else:
+                    event = next(row for row in changed["events"] if row["kind"] == "source-exit")
+                    event["flags"] += -(1 << 32) if defect == "negative-return-flags" else 1 << 32
+                with self.subTest(defect=defect), self.assertRaises(read_epochs.ReadEpochError):
+                    read_epochs.reconstruct_archive(changed, budget=session.budget)
+        self.fixture.assert_clean(session)
 
     def test_actual_inputs_source_status_and_reexec_are_independent_of_final_values(self):
         with self.fixture.session(runtime_files=("/usr/include/build",)) as session:

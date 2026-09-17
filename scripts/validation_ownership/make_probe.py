@@ -781,6 +781,7 @@ class ProbeSession:
         self._issued_header_launches = weakref.WeakSet()
         self._read_epoch_abi = None
         self._source_phase_records = {}
+        self._source_pass_archives = {}
         self._source_journal_active = []
         self._source_journal_instances = weakref.WeakSet()
         self._namespace_images = {}
@@ -1016,6 +1017,7 @@ class ProbeSession:
             if record is not None and record[0] is reference:
                 if record[6] is not None:
                     record[6].close()
+                self._source_pass_archives.pop(key, None)
                 del self._source_phase_records[key]
         self._source_phase_records[key] = (
             weakref.ref(observation, expired), tuple(images), self.snapshot, self.tree,
@@ -1038,6 +1040,15 @@ class ProbeSession:
         if record[6] is not None:
             record[6].validate_view()
         return record[1]
+
+    def _original_source_archive(self, observation):
+        self._source_phase_images(observation)
+        key = id(observation)
+        if key not in self._source_pass_archives:
+            self._source_pass_archives[key] = read_epochs.reconstruct_archive(
+                observation.read_trace, budget=self.budget,
+            )
+        return self._source_pass_archives[key]
 
     def _invariant_directory(self, capture, directory):
         try:
@@ -1288,6 +1299,7 @@ class ProbeSession:
             self._source_journal_instances.clear()
             self._source_journal_active.clear()
             self._source_phase_records.clear()
+            self._source_pass_archives.clear()
             self.runtime_inputs = ()
             self.runtime_dispatch = ()
             self.runtime_root = None

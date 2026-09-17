@@ -7,6 +7,7 @@ from collections import Counter
 import hashlib
 import re
 import struct
+from typing import NamedTuple
 
 if __package__:
     from .authority import encoded
@@ -267,6 +268,142 @@ def validate_abi(value, data):
     return value
 
 
+class OriginalVariable(NamedTuple):
+    name: str
+    value: str
+    flags: int
+    filename: str | None
+    line: int
+    column: int
+
+
+class OriginalScope(NamedTuple):
+    parent: bool
+    variables: tuple[OriginalVariable, ...]
+
+
+class OriginalSource(NamedTuple):
+    number: int
+    mode: int
+    sha256: str
+    data: bytes
+
+
+class OriginalOpen(NamedTuple):
+    seq: int
+    name: str
+    mode: str
+    result: int
+    source: OriginalSource | None
+    identity: tuple | None
+
+
+class OriginalVisit(NamedTuple):
+    number: int
+    parent: int | None
+    name: str
+    flags: int
+    return_flags: int
+    entry_seq: int
+    exit_seq: int
+    resolved: str
+    error: int
+    source: OriginalSource | None
+    opens: tuple[OriginalOpen, ...]
+
+
+class OriginalOtherOpen(NamedTuple):
+    seq: int
+    pass_number: int | None
+    visit: int | None
+    name: str
+    mode: str
+    result: int
+
+
+class OriginalPass(NamedTuple):
+    exec: int
+    number: int
+    entry_seq: int
+    exit_seq: int
+    inputs: tuple[OriginalScope, ...]
+    visits: tuple[OriginalVisit, ...]
+    other_opens: tuple[OriginalOtherOpen, ...]
+    goal_visits: tuple[int, ...]
+    entry_image: tuple | None
+
+
+class OriginalArchive(NamedTuple):
+    scope: str
+    passes: tuple[OriginalPass, ...]
+    sources: tuple[OriginalSource, ...]
+
+
+def reconstruct_archive(trace, *, budget):
+    """Reconstruct data only; the session separately authenticates its observation."""
+    budget.remaining()
+    if not isinstance(trace, dict) or not isinstance(trace.get("scope"), str):
+        raise ReadEpochError("original source archive requires a complete typed trace")
+    validate_trace(
+        trace, trace["scope"], count_limit=budget.limits.observation_count,
+        file_limit=budget.limits.file_bytes, reserve=lambda size: budget.charge("cache", size),
+    )
+    budget.charge("cache", len(encoded(trace)))
+    sources = {
+        row["id"]: OriginalSource(row["id"], row["mode"], row["sha256"], base64.b64decode(row["data"], validate=True))
+        for row in trace["sources"]
+    }
+    executions, visits = {}, {}
+    for event in trace["events"]:
+        budget.remaining()
+        kind = event["kind"]
+        if kind == "exec":
+            executions[event["exec"]] = {"visits": [], "other": [], "image": None}
+        elif kind == "pass-entry":
+            executions[event["exec"]]["entry"] = event
+        elif kind == "entry-image":
+            executions[event["exec"]]["image"] = tuple(
+                event[name] for name in ("seq", "barrier", "input_sha256", "image_sha256")
+            )
+        elif kind == "source-entry":
+            visits[event["visit"]] = {"entry": event, "opens": []}
+            executions[event["exec"]]["visits"].append(event["visit"])
+        elif kind == "source-open":
+            visits[event["visit"]]["opens"].append(OriginalOpen(
+                event["seq"], event["name"], event["mode"], event["result"],
+                None if event["source"] is None else sources[event["source"]],
+                None if event["identity"] is None else tuple(event["identity"]),
+            ))
+        elif kind == "source-exit":
+            visits[event["visit"]]["exit"] = event
+        elif kind == "other-open":
+            executions[event["exec"]]["other"].append(OriginalOtherOpen(
+                event["seq"], event["pass"], event["visit"], event["name"], event["mode"], event["result"],
+            ))
+        elif kind == "pass-exit":
+            executions[event["exec"]]["exit"] = event
+    passes = []
+    for execution, value in executions.items():
+        budget.remaining()
+        entry, returned = value["entry"], value["exit"]
+        ordered = []
+        for number in value["visits"]:
+            visit = visits[number]
+            started, ended = visit["entry"], visit["exit"]
+            ordered.append(OriginalVisit(
+                number, started["parent"], started["name"], started["flags"], ended["flags"],
+                started["seq"], ended["seq"], ended["resolved"], ended["error"],
+                None if ended["source"] is None else sources[ended["source"]], tuple(visit["opens"]),
+            ))
+        passes.append(OriginalPass(
+            execution, entry["pass"], entry["seq"], returned["seq"],
+            tuple(OriginalScope(scope["parent"], tuple(OriginalVariable(*row) for row in scope["variables"]))
+                  for scope in entry["inputs"]),
+            tuple(ordered), tuple(value["other"]), tuple(returned["goals"]), value["image"],
+        ))
+    return OriginalArchive(trace["scope"], tuple(passes), tuple(sources.values()))
+
+
 def original_inputs(memory, pointer, deleted, *, count_limit, string):
     seen, result = set(), []
     while pointer:
@@ -471,7 +608,8 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
             if (
                 not active or type(event["visit"]) is not int or event["visit"] != active[-1]["visit"]
                 or type(event["error"]) is not int or not 0 <= event["error"] <= 4095
-                or type(event["flags"]) is not int or event["flags"] & 255 != active[-1]["flags"]
+                or type(event["flags"]) is not int or not 0 <= event["flags"] < 1 << 32
+                or event["flags"] & 255 != active[-1]["flags"]
                 or not isinstance(event["resolved"], str) or not event["resolved"] or len(event["resolved"].encode()) > 4096 or "\0" in event["resolved"]
                 or event["source"] != opened[event["visit"]]
                 or event["source"] is not None and type(event["source"]) is not int

@@ -339,6 +339,17 @@ controls do not stand in for the unchanged missing-parent required root.
 General mutation coverage and every-pass source authority remain unimplemented;
 ordinary and source-phase-only behavior is unchanged.
 
+Authenticated source-phase observations also support a cached immutable
+per-pass archive. It preserves original raw input scopes, entry/return status
+and flags, every repeated source visit/version and the native goal order,
+without promoting ordinary file reads to source evaluation. A failed source
+open has no invented image. The existing unsigned32 native return-flags field
+is validated in full, not only by its low byte. All retained/decoded data
+spends existing cache bounds; cached lookup rechecks identity/view/lifetime
+without launching another native query. This data representation does not
+interpret special-variable semantics, authorize missing includes or close
+the pending every-pass census and namespace proof.
+
 The graph's lifecycle consumer may additionally select
 `ProbeSession.make(..., observe_recipe_dispatch=True)` for the validated
 `recipe_dispatches` projection. It retains each complete recipe context,
