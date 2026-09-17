@@ -2946,6 +2946,10 @@
           "evidence": "scripts/validation_ownership/tests/test_reporter.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_graph_report.GraphReportTests.test_current_expiry_repair_can_compare_expired_historical_base -v",
+          "evidence": "scripts/validation_ownership/tests/test_graph_report.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_textprocess_imports_and_staging_consume_only_captured_python_sources scripts.validation_ownership.tests.test_producer.ProducerTests.test_textprocess_atomic_publication_retains_native_relocation_guard -v",
           "evidence": "scripts/validation_ownership/tests/test_producer.py"
         },
