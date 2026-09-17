@@ -3309,10 +3309,19 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             frames = [value for value in native["accessed"] if value.startswith("make-dispatch:")]
             self.assertEqual(len(frames), 1)
             dispatch = json.loads(frames[0].removeprefix("make-dispatch:"))
+            job_frames = [value for value in native["accessed"] if value.startswith("make-job-context:")]
+            self.assertEqual(len(job_frames), 1)
+            job = json.loads(job_frames[0].removeprefix("make-job-context:"))
+            self.assertEqual(job, {
+                "sequence": dispatch["sequence"], "kind": "recipe", "target": "all", "command_line": 1,
+            })
+            dispatch["job"] = job
             dispatch["ignore_errors"] = dispatch.pop("global_ignore_errors")
             self.assertEqual(dispatch, result.semantics["native_dispatches"][0])
             self.assertEqual(session.observations_used - before[0], native["observations"])
-            self.assertGreaterEqual(native["observation_bytes"], len(frames[0].encode()) + 128)
+            self.assertGreaterEqual(
+                native["observation_bytes"], len(frames[0].encode()) + len(job_frames[0].encode()) + 128,
+            )
             self.assertGreaterEqual(
                 session.budget.bytes["control"] - before[1],
                 native["observation_bytes"] + len(encoded(result.semantics)),
@@ -3322,6 +3331,7 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 "observations": native["observations"], "observation_bytes": native["observation_bytes"],
                 "control_delta": session.budget.bytes["control"] - before[1],
                 "native_dispatch_frame_bytes": len(frames[0].encode()),
+                "native_job_frame_bytes": len(job_frames[0].encode()),
                 "semantic_bytes": len(encoded(result.semantics)),
             }
         self.assertIsNone(session.base)
