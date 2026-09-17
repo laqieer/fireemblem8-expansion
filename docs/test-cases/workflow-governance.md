@@ -5903,6 +5903,53 @@ fixed-profile new-parent refusal, native-suite owner, exact module admission,
 BASE-renewal and CPP scopes are unchanged. Directory coverage does not waive
 every-pass source semantics/obligation union, full-root admission or allocation17.
 
+For every-pass source interpretation and obligation union, run:
+
+```sh
+python3 -m unittest scripts.validation_ownership.tests.test_phase_census -v
+```
+
+Use the real missing-source/include-remake fixture with the prewatched
+journal. Interpret both original passes. Require first-pass HIDDEN=secret
+in the actual producer environment and final HIDDEN undefined, while the
+union still contains its first-pass default. The complete small phase planner
+must reject that unsealed default. A no-default positive must complete, and
+constants differing between passes must be absent from the shared pruning set.
+Remove only the every-pass union in the paired control: the complete small
+planner again admits an empty default census despite that same actual first
+producer environment. Restore the union and require refusal. This is a
+small-planner counterexample, not a whole-report admission claim. First-pass
+graph, recipe and exported-variable dependencies must also survive the union.
+
+Compare recursive wildcard aliases, simple source-time snapshots, target/local
+overrides and literal metadata reads. Snapshots and body-lazy metadata controls
+remain valid; deferred recursive/opaque namespace use, parse-time/non-remake
+or unclosed mutations and unsupported initial flags/scopes reject. Copied,
+changed, foreign or expired observation data cannot supply the original images.
+Require actual failed-then-successful include visits and publication versions,
+not final MAKEFILE_LIST or attempted-open membership.
+Repeated includes remain distinct visits, while same-file and Make-looking
+data reads through `file` do not become additional source evaluations. A real
+within-pass replacement retains both observed source versions but cannot
+authorize source-time namespace evaluation. An actual original command-line
+input must govern its earlier snapshot despite a later source override;
+unused effectful bodies and literal metadata reads stay lazy.
+
+Restore the original raw C-source wildcard/default/append and derived header
+constructor to the genuine text/ARM/sed component. Retain its real goal/include
+guard, initially absent C/parents, actual outputs and unchanged tracked header.
+Both source passes must interpret from their own images, including the first
+failed dependency include. Exact source-time include/filter relations use the
+bounded grammar and GNU whitespace; non-ASCII pattern normalization is not a
+proof. Keep old constructor/POSIX/metadata/default/export and numeric controls.
+
+The separate full-root attempt also keeps the original header order-only
+toolchain check. Its missing live adapter is an explicit hold, not permission
+to remove that prerequisite, broaden shell/compiler authority or claim a
+completed original-root report. The source-phase option is explicit and the
+ordinary invariant planner remains unchanged. Preserve the existing native
+owner, case IDs, all automation and limits; no allocation17/H1 follows.
+
 For both literal and derived target lists, a new target-local flags append
 must remain recursive: a later RHS change produces `global later`, while
 native per-file raw metadata remains `$(FLAGS)`. Do not eagerly copy the

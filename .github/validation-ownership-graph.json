@@ -1955,6 +1955,10 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/source_directories.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/phase_census.py"
         }
       ],
       "exclude": [
@@ -2013,6 +2017,10 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_source_directories.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_phase_census.py"
         }
       ]
     },
@@ -2075,6 +2083,10 @@
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_source_directories.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_phase_census.py"
         }
       ],
       "exclude": []

@@ -119,6 +119,8 @@ class _SourceUnitStream(NamedTuple):
     native_exports: tuple = ()
     literal_modules: tuple = ()
     phase_tests: frozenset = frozenset()
+    mode_state: object = None
+    failed_sources: tuple = ()
 
 
 class _LiteralBindingModule(NamedTuple):
@@ -179,6 +181,7 @@ class _MakeSourceMode:
     template_mode: object = None
     original_target_value: object = None
     original_wildcard: object = None
+    original_include_value: object = None
     namespace_holds: set = field(default_factory=set)
 
     def __post_init__(self):
@@ -542,7 +545,7 @@ class _MakeSourceMode:
             if record is not None and record[0] == self.version:
                 return record[1]
         function = _make_function(expression)
-        if function is None or function[0] in {"notdir", "addprefix", "filter-out", "findstring", "strip", "and"}:
+        if function is None or function[0] in {"notdir", "addprefix", "filter", "filter-out", "findstring", "strip", "and"}:
             if function is None:
                 try:
                     literal = self.literal_text(expression)
@@ -666,7 +669,7 @@ class _MakeSourceMode:
                     return _join_make_text(_original_patsubst_parts(fact[1], self.budget), self.budget)
                 return None
             if (operation, len(arguments)) not in {
-                ("notdir", 1), ("addprefix", 2), ("filter-out", 2), ("findstring", 2), ("strip", 1),
+                ("notdir", 1), ("addprefix", 2), ("filter", 2), ("filter-out", 2), ("findstring", 2), ("strip", 1),
             }:
                 return None
             values = [self.exact_initializer_value(argument, active=active) for argument in arguments]
@@ -674,7 +677,7 @@ class _MakeSourceMode:
                 return None
             if operation == "findstring":
                 return values[0] if values[0] in values[1] else ""
-            patterns = _original_filter_patterns(values[0], self.budget) if operation == "filter-out" else ()
+            patterns = _original_filter_patterns(values[0], self.budget) if operation in {"filter", "filter-out"} else ()
             if patterns is None:
                 return None
 
@@ -682,7 +685,9 @@ class _MakeSourceMode:
                 first = True
                 for match in re.finditer(r"[^ \t\r\n\v\f]+", values[-1]):
                     self.checkpoint()
-                    if operation == "filter-out" and any(_patsubst_word(pattern, match[0]) for pattern in patterns):
+                    if operation in {"filter", "filter-out"} and (
+                        any(_patsubst_word(pattern, match[0]) for pattern in patterns) != (operation == "filter")
+                    ):
                         continue
                     if not first:
                         yield " "
@@ -1145,7 +1150,10 @@ def _include_names(header, mode=None):
         if mode is None:
             return None
         try:
+            original_expression = expression
             expression = mode.literal_text(expression)
+            if expression is None and mode.original_include_value is not None:
+                expression = mode.original_include_value(mode, original_expression)
         except RecursionError:
             return None
         if expression is None:
@@ -1434,40 +1442,75 @@ def _source_units(
     read_order=None, remade=False, native_exports=(), literal_modules=(), template_mode=None,
     original_target_value=None,
     original_wildcard=None,
+    native_pass=None, admitted_missing=frozenset(), original_forced=(),
+    original_include_value=None,
 ):
     decoded = {}
     mode = _MakeSourceMode(
         definitions={name: value for _, name, value in assignments},
-        forced=frozenset(name for origin, name, _ in assignments if origin == "command-line"),
+        forced=frozenset(name for origin, name, _ in assignments if origin == "command-line") | frozenset(original_forced),
         budget=budget,
         original_input=original_input,
         namespace=namespace,
         template_mode=template_mode,
         original_target_value=original_target_value,
         original_wildcard=original_wildcard,
+        original_include_value=original_include_value,
     )
     if target is not None:
         mode.bind_invocation(target)
     units, reading, unresolved_modes = {}, set(), []
     ordered, known_positions = [], set()
-    visits, unproven_include = [], False
+    visits, read_sources, failed_sources, native_parents = [], [], [], []
+    native_index = 0
+    unproven_include = False
 
     def visit(path, *, known=True):
+        nonlocal native_index
         mode.checkpoint()
         if path in reading:
             raise MakeProbeError("Make include parsing-mode context is recursive")
-        if path not in decoded:
+        native = None
+        if native_pass is not None:
+            if native_index >= len(native_pass.visits):
+                raise MakeProbeError("source interpretation has an unobserved native include")
+            native = native_pass.visits[native_index]
+            native_index += 1
+            if (
+                native.name.removeprefix("/repo/") != path
+                or native.resolved.removeprefix("/repo/") != path
+                or native.parent != (native_parents[-1] if native_parents else None)
+            ):
+                raise MakeProbeError("source interpretation differs from actual native visit/parent order")
+            if native.error:
+                if native.number not in admitted_missing or native.error != 2 or native.source is not None:
+                    raise MakeProbeError("source interpretation cannot omit an unproven failed include")
+                if budget is not None:
+                    budget.charge("cache", len(encoded((path, native.number, native.error))))
+                visits.append(path)
+                failed_sources.append(path)
+                return
+            if native.source is None:
+                raise MakeProbeError("successful source interpretation has no actual source bytes")
+            try:
+                decoded[path] = native.source.data.decode("utf-8")
+            except UnicodeDecodeError as error:
+                raise MakeProbeError(f"Make census source is not UTF-8: {path}") from error
+        elif path not in decoded:
             try:
                 decoded[path] = sources[path].decode("utf-8")
             except UnicodeDecodeError as error:
                 raise MakeProbeError(f"Make census source is not UTF-8: {path}") from error
-        previous = units.get(path)
+        previous = units.get(path) if native is None else None
         if previous is None:
             units[path] = []
         reading.add(path)
         if budget is not None:
             budget.charge("cache", len(encoded(path)))
         visits.append(path)
+        read_sources.append(path)
+        if native is not None:
+            native_parents.append(native.number)
 
         def included(names, active, current_mode):
             nonlocal unproven_include
@@ -1480,7 +1523,7 @@ def _source_units(
                 current_mode.uncertain("unproven include condition")
                 unproven_include = True
             for name in names:
-                if name in sources:
+                if name in sources or native_pass is not None:
                     visit(name, known=known and active is True)
                 else:
                     current_mode.uncertain("unobserved included source")
@@ -1507,11 +1550,15 @@ def _source_units(
         if previous is not None and count != len(previous):
             raise MakeProbeError("Make include source changed across original read contexts")
         reading.remove(path)
+        if native is not None:
+            native_parents.pop()
 
     if sources:
         visit(next(iter(sources)))
     if unproven_include:
         raise MakeProbeError("unproven original include outcome or source history")
+    if native_pass is not None and native_index != len(native_pass.visits):
+        raise MakeProbeError("source interpretation omitted an actual native visit")
     if read_order is not None and tuple(visits) != tuple(read_order):
         raise MakeProbeError("original include traversal differs from native MAKEFILE_LIST")
     if read_order is None:
@@ -1520,7 +1567,8 @@ def _source_units(
                 mode.posix = True if unresolved_modes and all(value is True for value in unresolved_modes) else None
                 visit(path, known=False)
     return _SourceUnitStream(
-        tuple(ordered), frozenset(known_positions), remade, tuple(visits), native_exports, literal_modules,
+        tuple(ordered), frozenset(known_positions), remade, tuple(read_sources), native_exports, literal_modules,
+        mode_state=mode if native_pass is not None else None, failed_sources=tuple(failed_sources),
     )
 
 
@@ -2196,11 +2244,15 @@ class _TemplateModeProof:
 
 def _prepare_rule_templates(
     session, target, state, commands, observation, sources, *, primary_source,
-    observe_dispatch=False, external_names=(),
+    observe_dispatch=False, external_names=(), phase=None,
 ):
-    read_order, remade, native_exports, literal_modules = _native_include_context(
-        session, observation, sources, state, primary_source=primary_source, commands=commands,
-    )
+    if phase is None:
+        read_order, remade, native_exports, literal_modules = _native_include_context(
+            session, observation, sources, state, primary_source=primary_source, commands=commands,
+        )
+    else:
+        read_order = tuple(visit.name.removeprefix("/repo/") for visit in phase.part.visits)
+        remade, native_exports, literal_modules = False, phase.exports, ()
     original_inputs = {
         name: {"origin": "undefined", "flavor": "undefined", "value": ""}
         for module in literal_modules for name, _ in module.bindings
@@ -2208,27 +2260,41 @@ def _prepare_rule_templates(
     has_empty_witness = any(not value for value in session.snapshot.files.values())
 
     def original_input(name):
+        if phase is not None:
+            return phase.input(name)
         if name in INVOCATION_CONTROL_READS | {"MAKEFILE_LIST", "MAKE_RESTARTS", "MAKELEVEL"} or not has_empty_witness:
             return None
         if name not in original_inputs:
             original_inputs.update(session.original_make_inputs(target, (name,), assignments=state))
         return original_inputs[name]
 
-    namespace = set(session.snapshot.files) | {item.path for item in observation.generated}
+    namespace = (
+        set(session.snapshot.files) | {item.path for item in observation.generated}
+        if phase is None else set(phase.namespace)
+    )
     namespace.update(parent.as_posix() for name in tuple(namespace) for parent in PurePosixPath(name).parents if parent.as_posix() != ".")
     namespace.update(session.snapshot.gitlink_roots)
     session.budget.charge("cache", len(encoded(sorted(namespace))))
-    template_mode = _TemplateModeProof(session, target, state, commands, observation, primary_source, observe_dispatch)
-    original_namespace = session._original_namespace(
-        observation, target=target, makefile=primary_source, assignments=state,
-    )
+    if phase is None:
+        template_mode = _TemplateModeProof(session, target, state, commands, observation, primary_source, observe_dispatch)
+        original_namespace = session._original_namespace(
+            observation, target=target, makefile=primary_source, assignments=state,
+        )
+        wildcard = lambda patterns: session._original_wildcard(original_namespace, patterns)
+    else:
+        template_mode = phase.template_mode()
+        wildcard = phase.wildcard
     units = _source_units(
-        sources, assignments=state, budget=session.budget, target=target,
+        sources, assignments=state if phase is None else (), budget=session.budget, target=target,
         original_input=original_input, namespace=frozenset(namespace),
         read_order=read_order, remade=remade, native_exports=native_exports, literal_modules=literal_modules,
         template_mode=template_mode,
         original_target_value=template_mode.text,
-        original_wildcard=lambda patterns: session._original_wildcard(original_namespace, patterns),
+        original_wildcard=wildcard,
+        native_pass=None if phase is None else phase.part,
+        admitted_missing=frozenset() if phase is None else phase.missing,
+        original_forced=() if phase is None else phase.forced,
+        original_include_value=None if phase is None else template_mode.text,
     )
     if literal_modules:
         units = units._replace(phase_tests=_literal_binding_phases(units, observation, session.budget))
@@ -2432,6 +2498,7 @@ def _prepare_rule_templates(
     return _SourceUnitStream(
         tuple(prepared), frozenset(prepared_known), units.remade, units.read_sources, units.native_exports,
         units.literal_modules, units.phase_tests,
+        units.mode_state, units.failed_sources,
     ), graph_inputs, scoped
 
 
@@ -3568,12 +3635,14 @@ def run_probe(
     loader, requested_targets, domains, dynamic_contracts, *, session,
     declared_external_names=(), environment_names=(), generated_path_names=(),
     symbolic_recipe_names=(), ambient_undefined_names=(), trusted_builtin_names=(),
-    scoped_variable_names=(), escaped_literal_names=(), dispatch_targets=(), **unused,
+    scoped_variable_names=(), escaped_literal_names=(), dispatch_targets=(), source_phases=False, **unused,
 ):
     if session is None or session.loader is not loader or session.snapshot is None:
         raise MakeProbeError("graph Make planning requires the selected shared report session")
     if unused:
         raise MakeProbeError("obsolete Make planner arguments are not supported")
+    if type(source_phases) is not bool:
+        raise MakeProbeError("source-phase planning requires a boolean selection")
     if not requested_targets:
         return {}
     external = set(declared_external_names)
@@ -3608,14 +3677,23 @@ def run_probe(
             observation = session.make(
                 target, makefile=primary_source, variables=variables, assignments=state, commands=commands,
                 observe_recipe_dispatch=observe_dispatch,
+                **({"observe_source_journal": True, "source_journal_mode": "prewatched-directories"} if source_phases else {}),
             )
-            loaded = _loaded_sources(session, observation, primary_source=primary_source)
-            reference_units, template_inputs, template_scoped = _prepare_rule_templates(
-                session, target, state, commands, observation, loaded, observe_dispatch=observe_dispatch,
-                primary_source=primary_source,
-                external_names=external | symbolic | environment,
-            )
-            source_union.update((path, loaded[path]) for path in reference_units.read_sources)
+            if source_phases:
+                from . import phase_census
+                usage, loaded, phase_streams, phase_usages = phase_census.analyze(
+                    session, observation, target, state, commands, primary_source=primary_source,
+                    external_names=external | symbolic | environment,
+                )
+                source_union.update(loaded)
+            else:
+                loaded = _loaded_sources(session, observation, primary_source=primary_source)
+                reference_units, template_inputs, template_scoped = _prepare_rule_templates(
+                    session, target, state, commands, observation, loaded, observe_dispatch=observe_dispatch,
+                    primary_source=primary_source,
+                    external_names=external | symbolic | environment,
+                )
+                source_union.update((path, loaded[path]) for path in reference_units.read_sources)
             scopes = [observation.semantics["domains"], *(
                 entry["variables"] for entry in observation.semantics["files"]
             )]
@@ -3625,13 +3703,14 @@ def run_probe(
                 }
                 for name, domain in domains.items()
             }
-            usage = source_census(
-                loaded, observed_values=observed_values, reference_units=reference_units,
-                template_graph_inputs=template_inputs, template_scoped=template_scoped,
-                source_assignments=state,
-                budget=session.budget,
-                source_target=target,
-            )
+            if not source_phases:
+                usage = source_census(
+                    loaded, observed_values=observed_values, reference_units=reference_units,
+                    template_graph_inputs=template_inputs, template_scoped=template_scoped,
+                    source_assignments=state,
+                    budget=session.budget,
+                    source_target=target,
+                )
             usages.append(usage)
             _graph_definitions(
                 session, target, state, commands, observation, usage, observe_dispatch=observe_dispatch,
