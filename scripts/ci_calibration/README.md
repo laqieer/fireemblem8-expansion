@@ -1,27 +1,28 @@
-# Prospective issue-180 original-root acceptance 18
+# Prospective issue-180 original-root acceptance 19
 
 **Local preparation only. No execution allocation, creation push or hosted
-qualification for18 is claimed. Never merge this diagnostic branch.** Main must bind
+qualification for19 is claimed. Never merge this diagnostic branch.** Main must bind
 the reviewed exact harness SHA in a separate launch freeze before any owner
 creation push.
 
 Preparation scope:
-[5725470674](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5725470674).
-CURRENT is `048c1bb3ab8008bbe862ad8072ed124e02fdb170`; BASE remains
+[5729175721](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5729175721).
+CURRENT is `61ee1d36db833fdc2a5430db52d82553fbaffba7`; BASE remains
 `ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`. The reviewed preparation
 `4dcbcb7e462a3d0953fea5b54d29c30954193ea7` is BASE's normal child, followed
 by the reviewed failure-preservation child
-`1a2d177749cec443c05021855e4f006cdae821f1`. This18 preparation is one new
-normal child of1a2d: exactly three normal commits above BASE, not a direct
+`1a2d177749cec443c05021855e4f006cdae821f1`, then the reviewed18 harness
+`e4c42d0f831806e4ecf1587ef7cbb977a7ff57e8`. This19 preparation is one new
+normal child ofe4: exactly four normal commits above BASE, not a direct
 single-commit BASE parent. Its identity guard preserves that exact chain and
 the original allowed diagnostic paths. The lineage helper and its
 `Owner.prepare` caller change only to admit that chain; the caller is not
 claimed wholly identical.
 The reference harness `038d1b9dba400911fa267d73424b8996c603e851` belongs to
-closed16; neither it nor closed17's1a2d tree/remote is modified, rerun or reopened.
+closed16; neither it nor closed17/18 trees or remotes are modified, rerun or reopened.
 
 The only prospective trigger is an absent-branch first owner creation push of
-`calibration/issue-180-ci-baseline-18`, workflow run1/attempt1 on public
+`calibration/issue-180-ci-baseline-19`, workflow run1/attempt1 on public
 GitHub-hosted Linux. Setup failure consumes that future scope. No dispatch,
 retry, resumed attempt, alternate source lane or automatic full-report call
 is supplied.
@@ -50,7 +51,8 @@ The workload is explicitly `original-root-acceptance`, fixture
 namespace, all declared repository roots/domains, public check/resolve, BASE
 model comparison, standalone verifier or H1. The old85b8 fixture label is
 history, never the executed candidate identity. CURRENT includes the
-independently accepted scoped-source and selective null-mount corrections.
+independently accepted scoped-source, selective null-mount and bounded
+source-diagnostic retention corrections.
 That source acceptance does not prove root completion or enable public source
 mode. Public adoption, a complete report and resource/H1 acceptance remain
 separate later scopes.
@@ -58,7 +60,7 @@ separate later scopes.
 ## Unchanged independent containment
 
 All seven actual hosted identity/memory/PID/disk/output/deadline/lifetime
-controls must qualify anew before any candidate import. Their historical16/17
+controls must qualify anew before any candidate import. Their historical16/17/18
 qualification is not reused. Kernel/entry/runtime/volume/lifetime algorithms,
 effective-capacity formulas, swap0/OOM grouping, nonroot/NNP/empty capabilities,
 readonly source/runtime and namespace/control protections are retained.
@@ -74,7 +76,7 @@ metrics/progress limits remain. No shipping limit or SDK repair is introduced.
 
 `policy.validate_report()` is unchanged but cannot accept this root result.
 Root completion uses a distinct closed validator and remains inside bounded
-`result.json`; `report.json` is not in scope18's artifact allowlist. All graph
+`result.json`; `report.json` is not in scope19's artifact allowlist. All graph
 attempt counters remain zero, and the worker's old graph entry explicitly
 refuses instead of performing an accidental second workload.
 
@@ -87,9 +89,10 @@ private base. Uncertain inner source ownership is not credited as clean by
 outer cgroup termination. The supervisor retains diagnostic resources rather
 than erase an unconfirmed root fixture.
 
-Local18 preparation may run only the smallest existing benign identity,
-lineage, parsed-workflow, policy and result controls plus actionlint. No
-candidate, Make/compiler, supervisor, root/report or privileged setup is run.
+Local19 preparation may run only pure/parsed/API and owned benign pipe
+controls, the smallest existing identity/lineage/policy/result controls and
+actionlint. No candidate, Make/compiler, supervisor phase, root/report or
+privileged setup is run.
 Other retained tests cover fixture/data contracts, inert API doubles and
 failure/retention negatives; they are not an additional execution allocation.
 Passing preparation controls are not hosted qualification or original-root
@@ -98,6 +101,120 @@ acceptance.
 All earlier native preimages, review evidence and diagnostic failures remain
 independent records. Successful root acceptance, if separately authorized and
 obtained, would still not be a public/full-report resource-sizing point.
+
+## Closed source-refusal publication
+
+Only an existing failed worker `error` frame may carry `source_refusal`.
+The worker binds the candidate's actual `MakeProbeError` type only after
+post-containment imports and its exact CURRENT/BASE check. Selection requires
+that exact type, one built-in string argument and one of61ee's two namespace
+refusal messages. Same-name classes, subclasses, different messages and
+unrelated three-argument formatter callers do not acquire this routing.
+The public CLI, source producer, native observer and `root_stage.py` are
+unchanged.
+
+The new **harness** format is `namespace-refusal-metadata-v1`, bound to
+source61ee. The upstream attachment has no numeric format version; mode and
+binding versions are not serialization versions. Each member has exactly
+`format`, `source_revision`, `status`, `metadata`, `unavailable`,
+`omitted_by_contract` and `publication_errors`. `available` requires metadata
+and null unavailability; `unavailable` requires null metadata and a closed
+stage/reason/type record. Neither status grants any proof or completion.
+Publication errors have fixed nullable `formatter`, `projection` and
+`validation` slots containing only reason and bounded type.
+
+The selected metadata fields are:
+
+| Record | Fields |
+|---|---|
+| Attribution | `kind`, `pass`, `exec`, `scope`, `source`, `condition`, `reader_names`, `carrier_path`, `unknown_writer`, `unsafe_unknown_causes`, `snapshot_facts`, `use_associations`, `association_status`, `use_kind` |
+| Occurrence | `path`, `stream_position`, `site`, `visit`, `visit_status`, `rule_number`, `recipe_ordinal`, `active` |
+| Site | `path`, `logical`, `start`, `end` |
+| Snapshot fact | `bindings`, `binding_status`, `binding_version`, `mode_version`, `source_fact_kind`, `source_fact_version`, `original_input_flags`, `dependency_names`, `namespace_carrier`, `unsafe`, `target_scopes`, `snapshot_decision`, `assignment_site_status` |
+| Binding | `origin`, `flavor` |
+| Writer | `kind`, `path`, `stream_position`, `site`; only a local-binder adds `names`, only an eval-writer adds `name` |
+| Association | `kind` alone for unproved; otherwise `kind`, `target`, `ordinal`, `job` |
+
+Writer-site tuples are converted positionally to the same closed site object;
+no arbitrary tuple/object is stringified. Missing/repeated visits and missing
+assignment sites stay explicit. An export aggregate retains its unavailable
+unique-occurrence reason. Snapshot decisions and origin/flavor/version facts
+are copied, not recomputed. A header-bound fact is not an exact value.
+Source-only obligations retain null jobs, reported recipe contexts retain
+their positive job IDs, and unproved/absent/mixed associations remain distinct.
+No missing association is inferred to be a source-only or executed job.
+Site coordinates refer to the original bounded fixture stream, not guessed
+upstream line numbers.
+
+The fixed omission list is `expression`, `read_form`, `unresolved`,
+`snapshot_facts.*.read_forms`, `__notes__`. These fields are **omitted by
+contract**, not truncated and not claimed absent. Their outer types are
+checked where present in the source dictionary, but omitted subtree contents
+are not visited. No text, prefix, digest, repr, raw definition/input value,
+generated C, source/native stream, command/environment body or arbitrary
+exception dictionary/frame local is exported. Upstream diagnostic
+unavailability is represented using its two named stage/type attributes;
+arbitrary notes are not published.
+
+The schema admits only exact built-in containers/scalars and closed
+keys/enums/tagged unions. It excludes subclasses, opaque objects, bytes,
+floats/nonfinite numbers and booleans-as-integers. Names are identifier-shaped
+and at most128 bytes; path/scope metadata is literal ASCII and at most4096;
+type identifiers are at most512 or the source's explicit unavailable-type
+sentinel. Integers preserve exact0..POLICY_SENTINEL values, with positive
+fields excluding0; original input flags remain31-bit.
+
+The **entire member** must fit the existing65536-byte `ERROR_BYTES`,32768
+projected cells and16MiB conservative storage ceilings. A schema-directed,
+fixed-depth first pass measures without constructing a full copy; only its
+admitted second pass builds the projection. Both passes check the same
+absolute deadline and bound strings/collections before growth. Unsupported,
+malformed, cyclic, oversized or expired input yields explicit unavailable
+metadata, never a partial path, repaired field, digest substitute or retry.
+
+The original `ProbeBudget` is already closed when worker error formatting
+runs. This serializer never reopens, replaces, refunds or falsely charges it.
+Source attribution retains its original admitted charges. Real output bytes
+still count against the existing combined16MiB channel,16MiB result file,
+4MiB metrics/progress and32MiB total artifact bounds. The two copies inside
+`result.json` both count. The independent deadline/lifetime/containment
+mechanisms remain; diagnostic bytes are not a new allowance.
+
+For the selected primary only, a formatter failure retains its validated
+actual type/message and empty frames, with `primary-formatter-failed` in the
+formatter slot explicitly marking incomplete formatting. Projection and
+validation failures keep only bounded secondary reason/type, clear their
+owned failed frames/context and do not mutate the original primary.
+Generic `policy.error_record` and unrelated unprintable errors are unchanged.
+All-closes and original-primary precedence remain the existing contract.
+
+The worker validates before emission; `Protocol.feed` validates again before
+retention. Bad optional metadata is replaced by a validated unavailable
+member without replacing the primary worker-error. A malformed outer
+envelope still fails closed. Non-error kinds, including successful result
+and probe-result, reject this member. No protocol completion, root success,
+report acceptance or data-to-proof conversion follows from its presence.
+Existing transport/artifact exhaustion can still prevent publication; there
+is no side channel or guarantee of a complete diagnostic.
+
+For the existing `TC-WORKFLOW-GATE-OWNERSHIP-001` diagnostic boundary, use
+the inert source-shaped fixtures, not a candidate or historical witness:
+
+1. Run `python3 -B -m unittest scripts.ci_calibration.test_root_stage.RootStageControls -k test_source_ -v`.
+2. Inspect the parsed error-frame/result data: all selected metadata survives,
+   the exact omission list is present and no raw omitted values appear.
+3. Exercise the same selectors' malformed/boundary/expired/formatter and
+   released-owner cases. The original failure remains primary; invalid
+   metadata is explicit and cannot pass a root/report validator.
+4. The independent omission/raw-forwarding/unbound-format/primary-replacement
+   restorations must fail their focused controls. Restore the normal functions
+   and retain the ordinary no-qualification/no-allocation result.
+
+Those controls also use an actual owned pipe and bounded artifact writer,
+not a supervisor phase or native observation. They clean their owned
+temporary files. Canonical-type stand-ins are test data, never source
+authority. No case/owner/flag is added, and no save, ROM/RAM, locale or
+generated-data format changes.
 
 ## Historical17 local preparation failure-preservation correction
 
@@ -130,7 +247,7 @@ controls did not exercise these combinations and do not prove this fix.
 At that local correction, CURRENT8d03, kernel/entry/runtime/volume/lifetime
 mechanisms, limits, protocol, seven hosted requirements, native/source guards
 and root-only claims remained unchanged. The old-behavior restoration control
-keeps its historical17 output identity; ordinary preparation controls now use18.
+keeps its historical17 output identity; ordinary preparation controls now use19.
 The later authorized hosted17 result is recorded separately below.
 
 ## Closed17 result and the accepted source correction
@@ -145,18 +262,40 @@ or resource-sizing point was produced.
 [Closure5724020088](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5724020088)
 remains final. All1-17 are closed, not retryable or reusable qualification.
 
-CURRENT048c is a normal child of accepted scoped-source80d and contains the
+The then-selected048c is a normal child of accepted scoped-source80d and contains the
 separately implemented, locally qualified and independently accepted selective
 `MS_NODEV` correction. Source/compatibility and local kernel evidence do not
 establish the historical hosted mount-lock or LSM decision, which17 did not
 record. This harness changes no device mapping or containment algorithm and
 does not replay either closed17 or the local kernel witness.
 
-Preparation18 changes only prospective identities, CURRENT, the exact normal
-lineage guard and matching controls/history. It does not allocate18. Main must
-independently accept the exact clean harness and freeze a separate one-shot
-launch before any owner creation push; no automatic retry or larger fallback
-is supplied.
+Preparation18 changed only prospective identities, CURRENT, the exact normal
+lineage guard and matching controls/history. It did not allocate18; the later
+owner launch was separate.
+
+## Closed18 result and the publication boundary
+
+Closed18 used harness `e4c42d0f831806e4ecf1587ef7cbb977a7ff57e8`, source
+`048c1bb3ab8008bbe862ad8072ed124e02fdb170` and
+[run35311509070](https://github.com/laqieer/fireemblem8-expansion/actions/runs/35311509070).
+All seven real hosted controls qualified. The original-root stage then
+refused a missing original parse-time namespace snapshot. Source status and
+inner/outer cleanup were confirmed, but the actual original reader/pass/
+carrier was not retained. There was no completed root or report.
+[Closure5725749138](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5725749138)
+remains final; all1-18 stay closed.
+
+The accepted small original C-source/object/words family accepts both passes;
+its disclosed recursive-late negative refuses an original source obligation.
+Neither is an attribution of closed18. Source61ee adds diagnostic attribution
+with corrected linear pre-admitted retention and secondary-frame cleanup;
+it does not change the original namespace admission decision.
+
+Preparation19 only routes bounded metadata for a separately authorized
+future failure. It does not run19, resolve the original semantic hold, enable
+public source mode, produce a report/sizing point or allocate provider/H1.
+Main must independently accept the exact harness and freeze a separate
+one-shot launch. No automatic retry or larger fallback is supplied.
 
 ## Historical closed16 preparation record (unchanged below)
 

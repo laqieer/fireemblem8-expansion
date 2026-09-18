@@ -5,17 +5,22 @@ import builtins
 import copy
 import dataclasses
 import errno
+import fcntl
+import gc
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import time
 from types import FunctionType, SimpleNamespace
 import typing
 import unittest
 from unittest import mock
+import weakref
 
-from scripts.ci_calibration import policy, root_stage, supervisor, worker
+from scripts.ci_calibration import kernel, policy, root_stage, supervisor, worker
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -84,9 +89,57 @@ def native_command_fixture():
     }
 
 
+class SourceRefusalFixtureError(RuntimeError):
+    """Inert canonical-type stand-in; these controls never import the candidate."""
+
+
+def source_refusal_fixture():
+    fact = {
+        "bindings": [{"origin": "file", "flavor": "simple"}],
+        "binding_status": "stored-original-binding", "binding_version": 0, "mode_version": 0,
+        "source_fact_kind": "header-bound", "source_fact_version": 0, "original_input_flags": 0,
+        "read_forms": ("MUST_NOT_EXPORT_SOURCE",), "dependency_names": ["SOURCE"],
+        "namespace_carrier": False, "unsafe": False, "target_scopes": ["obj/%.o"],
+        "snapshot_decision": "exact-original-value-unavailable",
+        "assignment_site_status": "unavailable-not-retained-by-global-binding",
+    }
+    carrier = copy.deepcopy(fact)
+    carrier.update(
+        bindings=[{"origin": "file", "flavor": "recursive"}], source_fact_kind=None,
+        source_fact_version=None, dependency_names=[], namespace_carrier=True,
+        snapshot_decision="not-simple",
+    )
+    return {
+        "kind": "source-refusal-attribution-not-a-proof", "pass": 1, "exec": 1,
+        "scope": "benign/source",
+        "source": {
+            "path": "Makefile", "stream_position": 8,
+            "site": {"path": "Makefile", "logical": 9, "start": 11, "end": 12},
+            "visit": 1, "visit_status": "unique-original-visit",
+            "rule_number": 0, "recipe_ordinal": 2, "active": True,
+        },
+        "condition": "namespace-dependency", "expression": "MUST_NOT_EXPORT_SOURCE",
+        "read_form": "MUST_NOT_EXPORT_SOURCE", "unresolved": [],
+        "reader_names": ["SNAPSHOT"], "carrier_path": ["SNAPSHOT", "SOURCE"],
+        "unknown_writer": False,
+        "unsafe_unknown_causes": [
+            {"kind": "local-binders", "path": "Makefile", "stream_position": 2,
+             "site": ("Makefile", 2, 3, 3), "names": ["LOCAL"]},
+        ],
+        "snapshot_facts": {"SNAPSHOT": fact, "SOURCE": carrier},
+        "use_associations": [
+            {"kind": "obligation", "target": "all", "ordinal": 2, "job": None},
+            {"kind": "recipe", "target": "all", "ordinal": 2, "job": 9},
+            {"kind": "unproved"},
+        ],
+        "association_status": "recorded",
+        "use_kind": "active-source-obligation; actual job status requires an association",
+    }
+
+
 class RootStageControls(unittest.TestCase):
     def setUp(self):
-        parent = ROOT / "build/test-artifacts/root18-benign"
+        parent = ROOT / "build/test-artifacts/root19-benign"
         parent.mkdir(parents=True, exist_ok=True)
         self.directory = tempfile.TemporaryDirectory(dir=parent)
         self.root = Path(self.directory.name)
@@ -121,15 +174,18 @@ class RootStageControls(unittest.TestCase):
                          environment="github-hosted", operating_system="Linux", event_name="push")
         scope = policy.validate_event(event, **arguments)
         self.assertEqual((scope["graph_sha"], scope["base_sha"]),
-                         ("048c1bb3ab8008bbe862ad8072ed124e02fdb170", "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"))
-        self.assertEqual(scope["branch"], "calibration/issue-180-ci-baseline-18")
+                         ("61ee1d36db833fdc2a5430db52d82553fbaffba7", "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"))
+        self.assertEqual(scope["branch"], "calibration/issue-180-ci-baseline-19")
         self.assertEqual(scope["workload_kind"], "original-root-acceptance")
         self.assertTrue(scope["source_phases"])
         self.assertFalse(scope["production_acceptance"])
         for key, value in (("attempt", "2"), ("run_number", "2"), ("environment", "self-hosted")):
             with self.subTest(key=key), self.assertRaises(policy.GuardError):
                 policy.validate_event(event, **{**arguments, key: value})
-        for branch in ("calibration/issue-180-ci-baseline-16", "calibration/issue-180-ci-baseline-17", "master"):
+        for branch in (
+            "calibration/issue-180-ci-baseline-16", "calibration/issue-180-ci-baseline-17",
+            "calibration/issue-180-ci-baseline-18", "master",
+        ):
             with self.subTest(branch=branch), self.assertRaises(policy.GuardError):
                 policy.validate_event({**event, "ref": "refs/heads/" + branch}, **arguments)
 
@@ -580,7 +636,7 @@ class RootStageControls(unittest.TestCase):
             }
         return value
 
-    def supervisor_failure(self, defect, *, output_prefix="issue180-ci-baseline-18-"):
+    def supervisor_failure(self, defect, *, output_prefix="issue180-ci-baseline-19-"):
         directory = self.root / defect
         directory.mkdir()
         output = directory / (output_prefix + "123")
@@ -695,32 +751,34 @@ class RootStageControls(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 self.supervisor_failure("post-qualified-volume", output_prefix="issue180-ci-baseline-17-")
 
-    def test_harness_identity_requires_the_exact_three_commit_normal_lineage(self):
+    def test_harness_identity_requires_the_exact_four_commit_normal_lineage(self):
         head = "a" * 40
         self.assertEqual(
-            (supervisor.RETAINED_HARNESS_SHA, supervisor.PREPARATION_SHA, policy.BASE),
-            ("1a2d177749cec443c05021855e4f006cdae821f1",
+            (supervisor.REVIEWED_HARNESS_SHA, supervisor.RETAINED_HARNESS_SHA, supervisor.PREPARATION_SHA, policy.BASE),
+            ("e4c42d0f831806e4ecf1587ef7cbb977a7ff57e8",
+             "1a2d177749cec443c05021855e4f006cdae821f1",
              "4dcbcb7e462a3d0953fea5b54d29c30954193ea7",
              "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"),
         )
         expected = [
-            f"{head} {supervisor.RETAINED_HARNESS_SHA}",
+            f"{head} {supervisor.REVIEWED_HARNESS_SHA}",
+            f"{supervisor.REVIEWED_HARNESS_SHA} {supervisor.RETAINED_HARNESS_SHA}",
             f"{supervisor.RETAINED_HARNESS_SHA} {supervisor.PREPARATION_SHA}",
             f"{supervisor.PREPARATION_SHA} {policy.BASE}",
         ]
         supervisor.validate_harness_lineage(expected, head)
-        for rows in (
+        bad = [
             [f"{head} {policy.BASE}"],
-            [f"{head} {supervisor.PREPARATION_SHA}", expected[2]],
-            [f"{head} {'b' * 40}", *expected[1:]],
-            [expected[0], f"{supervisor.RETAINED_HARNESS_SHA} {'b' * 40}", expected[2]],
-            [*expected[:2], f"{supervisor.PREPARATION_SHA} {'b' * 40}"],
-            [f"{head} {supervisor.RETAINED_HARNESS_SHA} {'b' * 40}", *expected[1:]],
-            [expected[0], f"{supervisor.RETAINED_HARNESS_SHA} {supervisor.PREPARATION_SHA} {'b' * 40}", expected[2]],
-            [*expected[:2], f"{supervisor.PREPARATION_SHA} {policy.BASE} {'b' * 40}"],
-            expected[:2],
+            [f"{head} {supervisor.RETAINED_HARNESS_SHA}", *expected[2:]],
+            [f"{head} {supervisor.PREPARATION_SHA}", expected[3]],
+            expected[:3],
             [*expected, f"{policy.BASE} {'b' * 40}"],
-        ):
+        ]
+        for index, row in enumerate(expected):
+            bad.append([*expected[:index], row + " " + "b" * 40, *expected[index + 1:]])
+            child, _ = row.split()
+            bad.append([*expected[:index], child + " " + "b" * 40, *expected[index + 1:]])
+        for rows in bad:
             with self.subTest(rows=rows), self.assertRaises(policy.GuardError):
                 supervisor.validate_harness_lineage(rows, head)
 
@@ -760,6 +818,476 @@ class RootStageControls(unittest.TestCase):
             supervisor.root_retention({"mode": "root", "first_cause": {"error": {"root_cleanup": {"unknown": True}}}})
         with self.assertRaises(policy.GuardError):
             supervisor.Artifacts(self.root / "artifacts").write("report.json", root)
+
+    def source_error(self):
+        error = SourceRefusalFixtureError(policy.SOURCE_REFUSAL_MESSAGES[0])
+        error.source_attribution = source_refusal_fixture()
+        return error
+
+    def project_source(self, error, *, revision=None, deadline=None):
+        return policy.project_source_refusal(
+            error, revision=policy.GRAPH if revision is None else revision,
+            deadline=time.monotonic() + 30 if deadline is None else deadline,
+        )
+
+    def route_source(self, error, *, revision=None, deadline=None):
+        sampler = SimpleNamespace(snapshot=lambda: {
+            "phase": "inert-source-failure", "budget": {"closed": True, "bytes": {"cache": 123}},
+        })
+        return worker.graph_error_record(
+            error, sampler, None, source_binding=(
+                SourceRefusalFixtureError, policy.GRAPH if revision is None else revision,
+                time.monotonic() + 30 if deadline is None else deadline,
+            ),
+        )
+
+    def assert_source_available(self, error=None):
+        error = self.source_error() if error is None else error
+        record = self.route_source(error)
+        self.assertIn("source_refusal", record)
+        member = record["source_refusal"]
+        self.assertEqual(member["status"], "available")
+        self.assertIs(policy.validate_source_refusal(member), member)
+        self.assertEqual(record["chain"][0], {
+            "type": "SourceRefusalFixtureError", "message": policy.SOURCE_REFUSAL_MESSAGES[0],
+        })
+        self.assertNotIn(b"MUST_NOT_EXPORT_SOURCE", policy.encoded(record))
+        self.assertEqual(set(member["metadata"]), set(error.source_attribution) - {
+            "expression", "read_form", "unresolved",
+        })
+        return record
+
+    def test_source_projection_keeps_closed_metadata_and_all_variants(self):
+        error = self.source_error()
+        original = copy.deepcopy(error.source_attribution)
+        expected = copy.deepcopy(original)
+        for field in ("expression", "read_form", "unresolved"):
+            del expected[field]
+        for fact in expected["snapshot_facts"].values():
+            del fact["read_forms"]
+        for cause in expected["unsafe_unknown_causes"]:
+            cause["site"] = dict(zip(("path", "logical", "start", "end"), cause["site"]))
+        member = self.assert_source_available(error)["source_refusal"]
+        self.assertEqual(member["metadata"], expected)
+        self.assertEqual(error.source_attribution, original)
+        self.assertEqual(member["omitted_by_contract"], [
+            "expression", "read_form", "unresolved", "snapshot_facts.*.read_forms", "__notes__",
+        ])
+        for condition in ("unresolved-selector", "direct-wildcard", "namespace-dependency"):
+            error.source_attribution["condition"] = condition
+            with self.subTest(condition=condition):
+                self.assertEqual(self.project_source(error)["metadata"]["condition"], condition)
+        error.source_attribution.update(
+            condition="export-namespace-dependency",
+            source={"status": "unavailable", "reason": "export aggregate has no unique source occurrence"},
+            expression=None, read_form=None, use_associations=[], association_status="unavailable-not-inferred",
+            use_kind="export-read aggregate; no unique source occurrence",
+        )
+        self.assertEqual(self.project_source(error)["metadata"]["source"], error.source_attribution["source"])
+        for field, values in (
+            ("binding_status", ("unavailable", "version-mismatch", "stored-original-binding")),
+            ("snapshot_decision", (
+                "disabled-by-unknown-writer", "not-examined", "unsafe-binding", "ambiguous-binding",
+                "not-simple", "exact-original-snapshot", "exact-original-value-unavailable",
+            )),
+            ("source_fact_kind", (None, "exact", "header-bound")),
+            ("binding_version", (None, 0, policy.POLICY_SENTINEL)),
+            ("original_input_flags", (None, 0, (1 << 31) - 1)),
+            ("bindings", (None, [])),
+        ):
+            for value in values:
+                fresh = self.source_error()
+                fresh.source_attribution["snapshot_facts"]["SNAPSHOT"][field] = value
+                with self.subTest(field=field, value=value):
+                    self.assertEqual(self.project_source(fresh)["metadata"]["snapshot_facts"]["SNAPSHOT"][field], value)
+        for origin in ("default", "environment", "file", "command line", "override", "unknown", "undefined"):
+            for flavor in ("simple", "recursive", "unknown", "undefined"):
+                fresh = self.source_error()
+                bindings = [{"origin": origin, "flavor": flavor}]
+                fresh.source_attribution["snapshot_facts"]["SNAPSHOT"]["bindings"] = bindings
+                self.assertEqual(self.project_source(fresh)["metadata"]["snapshot_facts"]["SNAPSHOT"]["bindings"], bindings)
+        for kind in ("unproved-local-binder-analysis", "local-binders", "unproved-eval-writer", "eval-writer"):
+            fresh = self.source_error()
+            writer = {"kind": kind, "path": "Makefile", "stream_position": 2, "site": None}
+            if kind == "local-binders":
+                writer["names"] = ["LOCAL"]
+            elif kind == "eval-writer":
+                writer["name"] = "LOCAL"
+            fresh.source_attribution["unsafe_unknown_causes"] = [writer]
+            self.assertEqual(self.project_source(fresh)["metadata"]["unsafe_unknown_causes"], [writer])
+
+    def test_source_unavailable_facts_and_associations_are_not_invented(self):
+        for associations in (
+            [], [{"kind": "unproved"}],
+            [{"kind": "obligation", "target": "all", "ordinal": 0, "job": None}],
+            [{"kind": "recipe", "target": "all", "ordinal": 0, "job": 9}],
+            source_refusal_fixture()["use_associations"],
+        ):
+            error = self.source_error()
+            error.source_attribution["use_associations"] = associations
+            status = "recorded" if associations else "unavailable-not-inferred"
+            error.source_attribution["association_status"] = status
+            error.source_attribution["source"].update(
+                visit=None, visit_status="unavailable-or-repeated", site=None, active=None,
+                recipe_ordinal=None, rule_number=None,
+            )
+            result = self.project_source(error)["metadata"]
+            self.assertEqual(result["use_associations"], associations)
+            self.assertEqual(result["association_status"], status)
+            self.assertEqual(result["source"], error.source_attribution["source"])
+        for stage in ("source-data", "bounded-serialization", "retention-accounting"):
+            for kind in ("MakeProbeError", "unavailable-type-name-exceeds-existing-bound"):
+                error = SourceRefusalFixtureError(policy.SOURCE_REFUSAL_MESSAGES[0])
+                error.source_attribution_unavailable = stage
+                error.source_attribution_failure_type = kind
+                error.__notes__ = ["MUST_NOT_EXPORT_SOURCE"]
+                result = self.project_source(error)
+                self.assertEqual(result["unavailable"], {
+                    "stage": stage, "reason": "upstream-unavailable", "failure_type": kind,
+                })
+                self.assertIsNone(result["metadata"])
+                self.assertNotIn(b"MUST_NOT_EXPORT_SOURCE", policy.encoded(result))
+        error = SourceRefusalFixtureError(policy.SOURCE_REFUSAL_MESSAGES[1])
+        result = self.project_source(error)
+        self.assertEqual(result["unavailable"]["reason"], "not-attached")
+        error.source_attribution_unavailable = "source-data"
+        self.assertEqual(self.project_source(error)["status"], "unavailable")
+        error.source_attribution_failure_type = "X" * 513
+        self.assertEqual(self.project_source(error)["unavailable"]["reason"], "failure-type-over-bound")
+        error.source_attribution = source_refusal_fixture()
+        self.assertEqual(self.project_source(error)["unavailable"]["reason"], "invalid-source-shape")
+
+    def test_source_omitted_subtrees_are_never_visited_or_formatted(self):
+        called = []
+        class Opaque:
+            def forbidden(self, *args):
+                called.append(True)
+                raise AssertionError("raw omitted value was inspected")
+            __str__ = __repr__ = __iter__ = __eq__ = forbidden
+        opaque = Opaque()
+        error = self.source_error()
+        error.source_attribution["unresolved"] = [opaque]
+        error.source_attribution["snapshot_facts"]["SNAPSHOT"]["read_forms"] = (opaque,)
+        error.__notes__ = [opaque]
+        self.assert_source_available(error)
+        for name in ("expression", "read_form", "unresolved"):
+            fresh = self.source_error()
+            fresh.source_attribution[name] = opaque
+            self.assertEqual(self.project_source(fresh)["status"], "unavailable")
+        fresh = self.source_error()
+        fresh.source_attribution["snapshot_facts"]["SNAPSHOT"]["read_forms"] = opaque
+        self.assertEqual(self.project_source(fresh)["status"], "unavailable")
+        wire = self.project_source(error)
+        wire["source_revision"] = opaque
+        self.assertEqual(policy.retain_source_refusal(wire)["status"], "unavailable")
+        self.assertEqual(called, [])
+
+    def test_source_projection_rejects_malformed_types_names_and_cycles(self):
+        for path, value in (
+            (("pass",), True), (("exec",), 0), (("pass",), 1.0), (("pass",), policy.POLICY_SENTINEL + 1),
+            (("kind",), "foreign"), (("scope",), "/foreign"), (("scope",), "parent/../foreign"),
+            (("source", "path"), "a//b"), (("source", "path"), "bad$(name)"),
+            (("source", "site", "end"), 1), (("source", "active"), 1),
+            (("reader_names",), ["NOT-A-NAME"]), (("reader_names",), ["A" * 129]),
+            (("reader_names",), ("A",)), (("source", "path"), "A" * 4097),
+            (("use_associations",), [{"kind": "obligation", "target": "all", "ordinal": 1, "job": 1}]),
+            (("use_associations",), [{"kind": "recipe", "target": "all", "ordinal": 1, "job": None}]),
+            (("use_associations",), [{"kind": "recipe", "target": "../all", "ordinal": 1, "job": 1}]),
+            (("use_associations",), [{"kind": "unproved", "job": 1}]),
+            (("snapshot_facts", "SNAPSHOT", "original_input_flags"), 1 << 31),
+            (("snapshot_facts", "SNAPSHOT", "mode_version"), -1),
+            (("snapshot_facts", "SNAPSHOT", "source_fact_kind"), "value-from-header"),
+            (("snapshot_facts", "SNAPSHOT", "namespace_carrier"), 1),
+            (("snapshot_facts", "SNAPSHOT", "target_scopes"), ["a%%b"]),
+            (("unsafe_unknown_causes",), [{"kind": "eval-writer", "path": "Makefile", "stream_position": 1,
+                                         "site": ("Makefile", 1), "name": "A"}]),
+        ):
+            error = self.source_error()
+            owner = error.source_attribution
+            for name in path[:-1]:
+                owner = owner[name]
+            owner[path[-1]] = value
+            with self.subTest(path=path, type=type(value).__name__):
+                result = self.project_source(error)
+                self.assertEqual(result["status"], "unavailable")
+                self.assertIsNone(result["metadata"])
+                policy.validate_source_refusal(result)
+        for location in ("top", "fact"):
+            error = self.source_error()
+            owner = error.source_attribution if location == "top" else error.source_attribution["snapshot_facts"]["SNAPSHOT"]
+            owner["raw_definition"] = "MUST_NOT_EXPORT_SOURCE"
+            self.assertEqual(self.project_source(error)["status"], "unavailable")
+        for constructor in (lambda data: type("ForeignDict", (dict,), {})(data), lambda data: None):
+            error = self.source_error()
+            error.source_attribution = constructor(error.source_attribution)
+            self.assertEqual(self.project_source(error)["status"], "unavailable")
+        error = self.source_error()
+        error.source_attribution["reader_names"].append(error.source_attribution["reader_names"])
+        self.assertEqual(self.project_source(error)["status"], "unavailable")
+        error = self.source_error()
+        error.source_attribution["snapshot_facts"]["SNAPSHOT"]["bindings"].append(error.source_attribution)
+        self.assertEqual(self.project_source(error)["status"], "unavailable")
+
+    def test_source_projection_checks_existing_bounds_before_full_copy(self):
+        original = policy._SourceProjection.__init__
+        constructed = []
+        def observe(instance, **keywords):
+            constructed.append(keywords.get("build", False))
+            original(instance, **keywords)
+        for field, values in (
+            ("reader_names", ["A"] * policy.ORIGINAL_LIMITS["entries"]),
+            ("target_scopes", ["A" * 4096] * 17),
+        ):
+            error = self.source_error()
+            owner = error.source_attribution if field == "reader_names" else error.source_attribution["snapshot_facts"]["SNAPSHOT"]
+            owner[field] = values
+            constructed.clear()
+            with mock.patch.object(policy._SourceProjection, "__init__", observe):
+                result = self.project_source(error)
+            self.assertEqual(result["unavailable"]["reason"], "metadata-bound")
+            self.assertNotIn(True, constructed)
+        error = self.source_error()
+        scopes = error.source_attribution["snapshot_facts"]["SNAPSHOT"]["target_scopes"] = []
+        base = len(policy.encoded(self.project_source(error)))
+        scopes.extend(["A" * 4096] * ((policy.ERROR_BYTES - base) // 4099))
+        current = self.project_source(error)
+        self.assertEqual(current["status"], "available")
+        remaining = policy.ERROR_BYTES - len(policy.encoded(current))
+        scope = error.source_attribution["scope"]
+        if remaining > 4096 - len(scope):
+            scopes.append("B" * (remaining - 3))
+        else:
+            error.source_attribution["scope"] += "B" * remaining
+        current = self.project_source(error)
+        self.assertEqual(current["status"], "available")
+        self.assertEqual(len(policy.encoded(current)), policy.ERROR_BYTES)
+        measured = policy._SourceProjection()
+        measured.value(current, "member")
+        self.assertEqual(measured.size, len(policy.encoded(current)))
+        self.assertLessEqual(measured.cells, policy.ORIGINAL_LIMITS["entries"])
+        self.assertLessEqual(measured.storage, policy.ORIGINAL_LIMITS["file_bytes"])
+        error.source_attribution["source"]["site"]["path"] += "A"
+        self.assertEqual(self.project_source(error)["unavailable"]["reason"], "metadata-bound")
+        self.assertEqual(self.project_source(self.source_error(), deadline=time.monotonic() - 1)["unavailable"]["reason"], "deadline")
+        for deadline in (True, float("nan"), float("inf"), 0):
+            self.assertEqual(self.project_source(self.source_error(), deadline=deadline)["unavailable"]["reason"], "deadline")
+
+    def test_source_binding_uses_exact_type_message_revision_and_no_budget_reopening(self):
+        error = self.source_error()
+        touched = []
+        class ClosedBudget:
+            closed = True
+            def forbidden(self, *args):
+                touched.append(True)
+                raise AssertionError("closed probe budget was reopened")
+            remaining = charge = close = forbidden
+        sampler = SimpleNamespace(budget=ClosedBudget(), snapshot=lambda: {"budget": {"closed": True}})
+        deadline = time.monotonic() + 30
+        binding = SourceRefusalFixtureError, policy.GRAPH, deadline
+        record = worker.graph_error_record(error, sampler, None, source_binding=binding)
+        self.assertEqual(record["source_refusal"]["status"], "available")
+        self.assertEqual(touched, [])
+        self.assertNotIn("source_refusal", worker.graph_error_record(error, sampler, None))
+        for candidate in (
+            type("SourceRefusalFixtureError", (RuntimeError,), {})(error.args[0]),
+            type("Subclass", (SourceRefusalFixtureError,), {})(error.args[0]),
+            SourceRefusalFixtureError("unrelated"), SourceRefusalFixtureError(error.args[0], "extra"),
+        ):
+            candidate.source_attribution = source_refusal_fixture()
+            self.assertNotIn("source_refusal", worker.graph_error_record(candidate, sampler, None, source_binding=binding))
+        for message in policy.SOURCE_REFUSAL_MESSAGES:
+            candidate = SourceRefusalFixtureError(message)
+            candidate.source_attribution = source_refusal_fixture()
+            self.assertIn("source_refusal", worker.graph_error_record(candidate, sampler, None, source_binding=binding))
+        self.assert_foreign_source_unavailable()
+
+    def assert_foreign_source_unavailable(self):
+        member = self.route_source(self.source_error(), revision="b" * 40)["source_refusal"]
+        self.assertEqual(member["status"], "unavailable")
+        self.assertEqual(member["unavailable"]["reason"], "unsupported-source-revision")
+        self.assertEqual(member["source_revision"], "61ee1d36db833fdc2a5430db52d82553fbaffba7")
+
+    def assert_selected_formatter_primary(self):
+        error = self.source_error()
+        with mock.patch.object(policy, "error_record", side_effect=RuntimeError("MUST_NOT_EXPORT_FORMATTER")):
+            try:
+                record = self.route_source(error)
+            except BaseException as failure:
+                self.fail("formatter replaced selected primary with " + type(failure).__name__)
+        self.assertEqual(record["chain"][0], {
+            "type": "SourceRefusalFixtureError", "message": error.args[0],
+        })
+        self.assertEqual(record["frames"], [])
+        self.assertEqual(record["source_refusal"]["publication_errors"]["formatter"], {
+            "reason": "primary-formatter-failed", "failure_type": "RuntimeError",
+        })
+        self.assertNotIn(b"MUST_NOT_EXPORT_FORMATTER", policy.encoded(record))
+
+    def test_source_publication_failures_preserve_primary_and_release_owned_frames(self):
+        self.assert_selected_formatter_primary()
+        for location in ("formatter", "projection"):
+            references = []
+            class Owner:
+                def __str__(self):
+                    raise AssertionError("secondary owner must not be formatted")
+            def fail(*args, **keywords):
+                owner = Owner()
+                references.append(weakref.ref(owner))
+                raise RuntimeError(owner)
+            error = self.source_error()
+            try:
+                raise error
+            except SourceRefusalFixtureError:
+                trace, cause, context = error.__traceback__, error.__cause__, error.__context__
+                target = "error_record" if location == "formatter" else "_project_source_refusal"
+                with mock.patch.object(policy, target, side_effect=fail):
+                    record = self.route_source(error)
+                self.assertIs(error.__traceback__, trace)
+                self.assertIs(error.__cause__, cause)
+                self.assertIs(error.__context__, context)
+            gc.collect()
+            self.assertTrue(references)
+            self.assertTrue(all(reference() is None for reference in references))
+            self.assertEqual(record["chain"][0]["message"], error.args[0])
+            self.assertEqual(record["source_refusal"]["publication_errors"][location]["failure_type"], "RuntimeError")
+            if location == "projection":
+                self.assertEqual(record["source_refusal"]["status"], "unavailable")
+        class Unprintable(RuntimeError):
+            def __str__(self):
+                raise ValueError("unrelated formatter failure")
+        with self.assertRaisesRegex(ValueError, "unrelated formatter"):
+            worker.graph_error_record(Unprintable("unrelated"), SimpleNamespace(snapshot=lambda: {}), None)
+
+    def test_source_error_pipe_round_trip_is_bounded_and_never_completion(self):
+        record = self.assert_source_available()
+        ready = {"scope": "source-unit", "kind": "ready", "data": {}}
+        rejected = {"scope": "source-unit", "kind": "error", "data": record}
+        expected = policy.encoded(ready) + b"\n" + policy.encoded(rejected) + b"\n"
+        reader, writer = os.pipe()
+        try:
+            self.assertLess(len(expected), fcntl.fcntl(writer, fcntl.F_GETPIPE_SZ))
+            with os.fdopen(writer, "wb") as outgoing:
+                writer = None
+                with mock.patch.object(kernel.sys, "stdout", SimpleNamespace(buffer=outgoing)):
+                    kernel.emit("source-unit", "ready", {})
+                    kernel.emit("source-unit", "error", record)
+            with os.fdopen(reader, "rb") as incoming:
+                reader = None
+                raw = incoming.read(policy.ERROR_BYTES + 1)
+        finally:
+            for descriptor in (reader, writer):
+                if descriptor is not None:
+                    os.close(descriptor)
+        self.assertEqual(raw, expected)
+        parser = supervisor.Protocol("source-unit", policy.OUTPUT_BYTES)
+        self.assertEqual(parser.feed(raw), [ready, rejected])
+        self.assertEqual(parser.total, len(raw))
+        self.assertFalse(parser.finished)
+        for validate in (policy.validate_root_result, policy.validate_report, supervisor.validate_root_phase):
+            with self.assertRaises(policy.GuardError):
+                validate(record)
+        result = {"status": "failed", "first_error": {"type": "worker-error", "error": record},
+                  "phase": {"first_cause": {"type": "worker-error", "error": record}}}
+        artifacts = supervisor.Artifacts(self.root / "source-artifacts")
+        artifacts.write("result.json", result)
+        self.assertEqual((artifacts.root / "result.json").stat().st_size, len(policy.encoded(result)) + 1)
+        self.assertEqual(json.loads((artifacts.root / "result.json").read_text()), result)
+        with self.assertRaises(policy.GuardError):
+            artifacts.write("report.json", result)
+
+    def test_source_wire_validation_discards_only_bad_optional_metadata(self):
+        record = self.assert_source_available()
+        for path, value in (
+            (("format",), "future"), (("source_revision",), "b" * 40),
+            (("metadata", "pass"), True), (("metadata", "expression"), "MUST_NOT_EXPORT_SOURCE"),
+            (("metadata", "snapshot_facts", "SNAPSHOT", "read_forms"), ["MUST_NOT_EXPORT_SOURCE"]),
+            (("publication_errors", "formatter"), {"reason": "foreign", "failure_type": None}),
+        ):
+            changed = copy.deepcopy(record)
+            owner = changed["source_refusal"]
+            for field in path[:-1]:
+                owner = owner[field]
+            owner[path[-1]] = value
+            parser = supervisor.Protocol("source-unit", policy.OUTPUT_BYTES)
+            output, = parser.feed(policy.encoded({"scope": "source-unit", "kind": "error", "data": changed}) + b"\n")
+            self.assertEqual(output["data"]["chain"], record["chain"])
+            member = output["data"]["source_refusal"]
+            self.assertEqual(member["status"], "unavailable")
+            self.assertEqual(member["unavailable"]["reason"], "invalid-wire-metadata")
+            self.assertIsNotNone(member["publication_errors"]["validation"])
+            self.assertNotIn(b"MUST_NOT_EXPORT_SOURCE", policy.encoded(output))
+            self.assertFalse(parser.finished)
+        for kind in ("ready", "progress", "root-start", "graph-start", "result", "probe-result", "cleanup-error", "escaped"):
+            parser = supervisor.Protocol("source-unit", policy.OUTPUT_BYTES)
+            if kind != "ready":
+                parser.feed(policy.encoded({"scope": "source-unit", "kind": "ready", "data": {}}) + b"\n")
+            with self.subTest(kind=kind), self.assertRaises(policy.GuardError):
+                parser.feed(policy.encoded({"scope": "source-unit", "kind": kind, "data": record}) + b"\n")
+        for change in ({"scope": "foreign"}, {"extra": True}, {"kind": "foreign"}, {"data": []}):
+            parser = supervisor.Protocol("source-unit", policy.OUTPUT_BYTES)
+            with self.assertRaises(policy.GuardError):
+                parser.feed(policy.encoded({**{"scope": "source-unit", "kind": "error", "data": record}, **change}) + b"\n")
+
+    def test_source_wire_validation_failure_releases_owners_and_keeps_primary(self):
+        record = self.assert_source_available()
+        references = []
+        class Owner:
+            def __repr__(self):
+                raise AssertionError("wire failure owner must not be formatted")
+        def fail(value):
+            owner = Owner()
+            references.append(weakref.ref(owner))
+            raise RuntimeError(owner)
+        parser = supervisor.Protocol("source-unit", policy.OUTPUT_BYTES)
+        with mock.patch.object(policy, "validate_source_refusal", side_effect=fail):
+            output, = parser.feed(policy.encoded({
+                "scope": "source-unit", "kind": "error", "data": record,
+            }) + b"\n")
+        gc.collect()
+        self.assertTrue(references)
+        self.assertTrue(all(reference() is None for reference in references))
+        self.assertEqual(output["data"]["chain"], record["chain"])
+        member = output["data"]["source_refusal"]
+        self.assertEqual(member["status"], "unavailable")
+        self.assertEqual(member["publication_errors"]["validation"], {
+            "reason": "invalid-wire-metadata", "failure_type": "RuntimeError",
+        })
+        self.assertFalse(parser.finished)
+        policy.validate_source_refusal(member)
+
+    def test_source_routing_restorations_break_focused_controls(self):
+        source = subprocess.check_output(
+            ["/usr/bin/git", "-C", str(ROOT), "show",
+             supervisor.REVIEWED_HARNESS_SHA + ":scripts/ci_calibration/worker.py"], text=True, timeout=10,
+        )
+        node, = [node for node in ast.parse(source).body if isinstance(node, ast.FunctionDef) and node.name == "graph_error_record"]
+        namespace = dict(vars(worker))
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "<reviewed-omission>", "exec"), namespace)
+        function = namespace["graph_error_record"]
+        old = FunctionType(function.__code__, vars(worker), function.__name__, function.__defaults__)
+        def omit(error, sampler, observer, *, source_binding=None):
+            return old(error, sampler, observer)
+        with mock.patch.object(worker, "graph_error_record", side_effect=omit):
+            with self.assertRaises(AssertionError):
+                self.assert_source_available()
+        def forward(error, **keywords):
+            return policy._source_envelope(error.source_attribution)
+        with mock.patch.object(policy, "project_source_refusal", side_effect=forward):
+            with self.assertRaises(policy.GuardError):
+                self.assert_source_available()
+        original = policy.project_source_refusal
+        def unbound(error, **keywords):
+            return original(error, **{**keywords, "revision": policy.SOURCE_REFUSAL_REVISION})
+        with mock.patch.object(policy, "project_source_refusal", side_effect=unbound):
+            with self.assertRaises(AssertionError):
+                self.assert_foreign_source_unavailable()
+        original_route = worker.graph_error_record
+        def replace_primary(error, sampler, observer, *, source_binding=None):
+            policy.error_record(error)
+            return original_route(error, sampler, observer, source_binding=source_binding)
+        with mock.patch.object(worker, "graph_error_record", side_effect=replace_primary):
+            with self.assertRaises(AssertionError):
+                self.assert_selected_formatter_primary()
 
 
 if __name__ == "__main__":

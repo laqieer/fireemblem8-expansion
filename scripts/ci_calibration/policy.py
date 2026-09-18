@@ -5,14 +5,18 @@ from __future__ import annotations
 import errno
 import hashlib
 import json
+import math
 import re
+import sys
+import time
+import traceback
 
 
 REPOSITORY = "laqieer/fireemblem8-expansion"
-BRANCH = "calibration/issue-180-ci-baseline-18"
-WORKFLOW = ".github/workflows/issue180-ci-baseline-18.yml"
+BRANCH = "calibration/issue-180-ci-baseline-19"
+WORKFLOW = ".github/workflows/issue180-ci-baseline-19.yml"
 BASE = "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"
-GRAPH = "048c1bb3ab8008bbe862ad8072ed124e02fdb170"
+GRAPH = "61ee1d36db833fdc2a5430db52d82553fbaffba7"
 WORKLOAD_KIND = "original-root-acceptance"
 FIXTURE_VERSION = "original-root-single-message-disabled-bgm-v1"
 ROOT_TARGET = "expansion-modern-all"
@@ -504,3 +508,460 @@ def error_record(error):
             break
         current = current.__cause__ or current.__context__
     return {"chain": chain, "frames": frames}
+
+
+SOURCE_REFUSAL_REVISION = "61ee1d36db833fdc2a5430db52d82553fbaffba7"
+SOURCE_REFUSAL_FORMAT = "namespace-refusal-metadata-v1"
+SOURCE_REFUSAL_KIND = "source-refusal-attribution-not-a-proof"
+SOURCE_REFUSAL_MESSAGES = (
+    "deferred namespace use lacks an original parse-time snapshot",
+    "exported namespace body crosses an unproven mutation interval",
+)
+SOURCE_REFUSAL_OMISSIONS = (
+    "expression", "read_form", "unresolved", "snapshot_facts.*.read_forms", "__notes__",
+)
+_SOURCE_TYPE_UNAVAILABLE = "unavailable-type-name-exceeds-existing-bound"
+_SOURCE_STAGES = (
+    "selection", "source-data", "bounded-serialization", "retention-accounting",
+    "projection", "wire-validation",
+)
+_SOURCE_REASONS = (
+    "not-attached", "upstream-unavailable", "unsupported-source-revision",
+    "unsupported-source-shape", "invalid-source-shape", "metadata-bound", "deadline",
+    "projection-exception", "primary-formatter-failed", "unsupported-projection-format",
+    "invalid-wire-metadata", "failure-type-over-bound",
+)
+_SOURCE_SITE = (
+    ("path", "path"), ("logical", "integer"), ("start", "positive"), ("end", "positive"),
+)
+_SOURCE_OCCURRENCE = (
+    ("path", "path"), ("stream_position", "integer"), ("site", ("optional", "site")),
+    ("visit", ("optional", "positive")),
+    ("visit_status", ("enum", ("unique-original-visit", "unavailable-or-repeated"))),
+    ("rule_number", ("optional", "integer")), ("recipe_ordinal", ("optional", "integer")),
+    ("active", ("optional", "boolean")),
+)
+_SOURCE_AGGREGATE = (
+    ("status", ("literal", "unavailable")),
+    ("reason", ("literal", "export aggregate has no unique source occurrence")),
+)
+_SOURCE_FACT = (
+    ("bindings", ("optional", ("array", "binding"))),
+    ("binding_status", ("enum", ("unavailable", "version-mismatch", "stored-original-binding"))),
+    ("binding_version", ("optional", "integer")), ("mode_version", "integer"),
+    ("source_fact_kind", ("optional", ("enum", ("exact", "header-bound")))),
+    ("source_fact_version", ("optional", "integer")),
+    ("original_input_flags", ("optional", "flags")),
+    ("dependency_names", ("array", "name")), ("namespace_carrier", "boolean"),
+    ("unsafe", "boolean"), ("target_scopes", ("array", "target")),
+    ("snapshot_decision", ("enum", (
+        "disabled-by-unknown-writer", "not-examined", "unsafe-binding", "ambiguous-binding",
+        "not-simple", "exact-original-snapshot", "exact-original-value-unavailable",
+    ))),
+    ("assignment_site_status", ("literal", "unavailable-not-retained-by-global-binding")),
+)
+_SOURCE_METADATA = (
+    ("kind", ("literal", SOURCE_REFUSAL_KIND)), ("pass", "positive"), ("exec", "positive"),
+    ("scope", "scope"), ("source", "occurrence"),
+    ("condition", ("enum", (
+        "unresolved-selector", "direct-wildcard", "namespace-dependency", "export-namespace-dependency",
+    ))),
+    ("reader_names", ("array", "name")), ("carrier_path", ("array", "name")),
+    ("unknown_writer", "boolean"), ("unsafe_unknown_causes", ("array", "writer")),
+    ("snapshot_facts", "fact-map"), ("use_associations", ("array", "association")),
+    ("association_status", ("enum", ("recorded", "unavailable-not-inferred"))),
+    ("use_kind", ("enum", (
+        "active-source-obligation; actual job status requires an association",
+        "export-read aggregate; no unique source occurrence",
+    ))),
+)
+_SOURCE_FAILURE = (
+    ("reason", ("enum", _SOURCE_REASONS)), ("failure_type", ("optional", "type-name")),
+)
+_SOURCE_MEMBER = (
+    ("format", ("literal", SOURCE_REFUSAL_FORMAT)),
+    ("source_revision", ("literal", SOURCE_REFUSAL_REVISION)),
+    ("status", ("enum", ("available", "unavailable"))),
+    ("metadata", ("optional", "metadata")), ("unavailable", ("optional", "unavailable")),
+    ("omitted_by_contract", ("exact-array", SOURCE_REFUSAL_OMISSIONS)),
+    ("publication_errors", "publication-errors"),
+)
+_SOURCE_MAP_CELL = 2 * sys.getsizeof({None: None})
+_SOURCE_LIST_CELL = 2 * sys.getsizeof([None])
+_SOURCE_ABSENT = object()
+
+
+class _SourceProjectionError(GuardError):
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+
+class _SourceProjection:
+    """Fixed-schema measurement precedes construction; raw omitted subtrees are never walked."""
+
+    def __init__(self, *, upstream=False, build=False, admitted=None, deadline=None):
+        self.upstream, self.build, self.admitted, self.deadline = upstream, build, admitted, deadline
+        self.cells = self.size = self.storage = 0
+        if deadline is not None and (
+            type(deadline) not in (int, float) or not math.isfinite(deadline) or deadline <= 0
+        ):
+            raise _SourceProjectionError("deadline")
+
+    def checkpoint(self):
+        if self.deadline is not None and time.monotonic() >= self.deadline:
+            raise _SourceProjectionError("deadline")
+
+    def account(self, *, cells=0, size=0, storage=0):
+        self.checkpoint()
+        values = self.cells + cells, self.size + size, self.storage + storage
+        if (
+            values[0] > ORIGINAL_LIMITS["entries"] or values[1] > ERROR_BYTES
+            or values[2] > ORIGINAL_LIMITS["file_bytes"]
+            or self.admitted is not None and any(a > b for a, b in zip(values, self.admitted))
+        ):
+            raise _SourceProjectionError("metadata-bound")
+        self.cells, self.size, self.storage = values
+
+    def text(self, value, *, maximum=4096, pattern=None):
+        if type(value) is not str:
+            raise _SourceProjectionError("invalid-source-shape")
+        if len(value) > maximum:
+            raise _SourceProjectionError("metadata-bound")
+        if not value or any(not 32 <= ord(character) <= 126 for character in value):
+            raise _SourceProjectionError("invalid-source-shape")
+        if pattern is not None and re.fullmatch(pattern, value) is None:
+            raise _SourceProjectionError("invalid-source-shape")
+        self.account(
+            cells=1, size=2 + len(value) + value.count('"') + value.count("\\"),
+            storage=sys.getsizeof(value),
+        )
+        return value if self.build else None
+
+    def scalar(self, value, kind):
+        if kind == "null":
+            valid, size = value is None, 4
+        elif kind == "boolean":
+            valid, size = type(value) is bool, 4 if value is True else 5
+        else:
+            maximum = (1 << 31) - 1 if kind == "flags" else POLICY_SENTINEL
+            valid = type(value) is int and int(kind == "positive") <= value <= maximum
+            size, remaining = 1, value if valid else 0
+            while remaining >= 10:
+                size, remaining = size + 1, remaining // 10
+        if not valid:
+            raise _SourceProjectionError("invalid-source-shape")
+        self.account(cells=1, size=size, storage=sys.getsizeof(value))
+        return value if self.build else None
+
+    @staticmethod
+    def keys(value, schema, extra=()):
+        if type(value) is not dict or len(value) != len(schema) + len(extra):
+            raise _SourceProjectionError("unsupported-source-shape")
+        names = tuple(name for name, _ in schema) + extra
+        if any(type(key) is not str or key not in names for key in value):
+            raise _SourceProjectionError("unsupported-source-shape")
+
+    @staticmethod
+    def variant(value, maximum):
+        if type(value) is not dict or len(value) > maximum or any(type(key) is not str for key in value):
+            raise _SourceProjectionError("unsupported-source-shape")
+
+    def record(self, value, schema, *, extra=(), positional=False):
+        if positional:
+            if type(value) is not tuple or len(value) != len(schema):
+                raise _SourceProjectionError("invalid-source-shape")
+        else:
+            self.keys(value, schema, extra)
+        self.account(cells=1, size=2, storage=sys.getsizeof({}))
+        result = {} if self.build else None
+        for index, (key, kind) in enumerate(schema):
+            self.account(size=1 + bool(index), storage=_SOURCE_MAP_CELL)
+            self.text(key)
+            field = self.value(value[index] if positional else value[key], kind)
+            if result is not None:
+                result[key] = field
+        return result
+
+    def array(self, value, kind, *, exact=False):
+        if type(value) is not list:
+            raise _SourceProjectionError("invalid-source-shape")
+        if len(value) > ORIGINAL_LIMITS["entries"] - self.cells:
+            raise _SourceProjectionError("metadata-bound")
+        if exact and len(value) != len(kind):
+            raise _SourceProjectionError("invalid-source-shape")
+        self.account(cells=1, size=2, storage=sys.getsizeof([]))
+        result = [] if self.build else None
+        for index, child in enumerate(value):
+            self.account(size=bool(index), storage=_SOURCE_LIST_CELL)
+            field = self.value(child, ("literal", kind[index]) if exact else kind)
+            if result is not None:
+                result.append(field)
+        return result
+
+    def site(self, value, *, positional=False):
+        result = self.record(value, _SOURCE_SITE, positional=positional)
+        start, end = (value[2], value[3]) if positional else (value["start"], value["end"])
+        if end < start:
+            raise _SourceProjectionError("invalid-source-shape")
+        return result
+
+    def metadata(self, value):
+        extra = ("expression", "read_form", "unresolved") if self.upstream else ()
+        self.keys(value, _SOURCE_METADATA, extra)
+        if self.upstream and (
+            type(value["expression"]) not in (str, type(None))
+            or type(value["read_form"]) not in (str, type(None))
+            or type(value["unresolved"]) is not list
+        ):
+            raise _SourceProjectionError("invalid-source-shape")
+        return self.record(value, _SOURCE_METADATA, extra=extra)
+
+    def fact(self, value):
+        extra = ("read_forms",) if self.upstream else ()
+        self.keys(value, _SOURCE_FACT, extra)
+        if self.upstream and type(value["read_forms"]) not in (list, tuple):
+            raise _SourceProjectionError("invalid-source-shape")
+        return self.record(value, _SOURCE_FACT, extra=extra)
+
+    def fact_map(self, value):
+        if type(value) is not dict:
+            raise _SourceProjectionError("invalid-source-shape")
+        if 2 * len(value) > ORIGINAL_LIMITS["entries"] - self.cells:
+            raise _SourceProjectionError("metadata-bound")
+        self.account(cells=1, size=2, storage=sys.getsizeof({}))
+        result = {} if self.build else None
+        for index, (name, fact) in enumerate(value.items()):
+            self.account(size=1 + bool(index), storage=_SOURCE_MAP_CELL)
+            self.value(name, "name")
+            field = self.fact(fact)
+            if result is not None:
+                result[name] = field
+        return result
+
+    def value(self, value, kind):
+        self.checkpoint()
+        if type(kind) is tuple:
+            tag, argument = kind
+            if tag == "optional":
+                return self.scalar(value, "null") if value is None else self.value(value, argument)
+            if tag == "literal":
+                if type(value) is not type(argument) or value != argument:
+                    raise _SourceProjectionError("unsupported-source-shape")
+                return self.text(value)
+            if tag == "enum":
+                if type(value) is not str or value not in argument:
+                    raise _SourceProjectionError("unsupported-source-shape")
+                return self.text(value)
+            if tag in {"array", "exact-array"}:
+                return self.array(value, argument, exact=tag == "exact-array")
+            raise _SourceProjectionError("unsupported-source-shape")
+        if kind in {"integer", "positive", "flags", "boolean"}:
+            return self.scalar(value, kind)
+        if kind == "name":
+            return self.text(value, maximum=128, pattern=r"\.?[A-Za-z_][A-Za-z0-9_]*")
+        if kind in {"path", "scope", "target"}:
+            pattern = r"[A-Za-z0-9_./+%-]+" if kind == "target" else r"[A-Za-z0-9_./+-]+"
+            result = self.text(value, pattern=pattern)
+            if (
+                re.search(r"(^|/)\.\.(/|$)", value)
+                or kind != "target" and (
+                    value.startswith("/") or value.endswith("/") or "//" in value
+                    or re.search(r"(^|/)\.(/|$)", value)
+                )
+                or kind == "target" and value.count("%") > 1
+            ):
+                raise _SourceProjectionError("invalid-source-shape")
+            return result
+        if kind == "type-name":
+            if type(value) is str and len(value) > 512:
+                raise _SourceProjectionError("failure-type-over-bound")
+            return self.text(
+                value, maximum=512,
+                pattern=None if type(value) is str and value == _SOURCE_TYPE_UNAVAILABLE else r"[A-Za-z_][A-Za-z0-9_]*",
+            )
+        if kind == "site":
+            return self.site(value)
+        if kind == "writer-site":
+            return self.scalar(None, "null") if value is None else self.site(value, positional=self.upstream)
+        if kind == "metadata":
+            return self.metadata(value)
+        if kind == "fact-map":
+            return self.fact_map(value)
+        if kind == "binding":
+            return self.record(value, (
+                ("origin", ("enum", ("default", "environment", "file", "command line", "override", "unknown", "undefined"))),
+                ("flavor", ("enum", ("simple", "recursive", "unknown", "undefined"))),
+            ))
+        if kind == "occurrence":
+            self.variant(value, len(_SOURCE_OCCURRENCE))
+            return self.record(value, _SOURCE_AGGREGATE if "status" in value else _SOURCE_OCCURRENCE)
+        if kind == "writer":
+            self.variant(value, 5)
+            writer = value.get("kind")
+            kinds = ("unproved-local-binder-analysis", "local-binders", "unproved-eval-writer", "eval-writer")
+            if type(writer) is not str or writer not in kinds:
+                raise _SourceProjectionError("unsupported-source-shape")
+            schema = (
+                ("kind", ("enum", kinds)), ("path", "path"),
+                ("stream_position", "integer"), ("site", "writer-site"),
+            )
+            if writer == "local-binders":
+                schema += (("names", ("array", "name")),)
+            elif writer == "eval-writer":
+                schema += (("name", "name"),)
+            return self.record(value, schema)
+        if kind == "association":
+            self.variant(value, 4)
+            association = value.get("kind")
+            if type(association) is not str or association not in {"unproved", "obligation", "recipe"}:
+                raise _SourceProjectionError("unsupported-source-shape")
+            schema = (("kind", ("literal", association)),)
+            if association != "unproved":
+                schema += (("target", "target"), ("ordinal", "integer"), ("job", (
+                    "optional", "positive"
+                ) if association == "obligation" else "positive"))
+                if association == "obligation" and value.get("job") is not None:
+                    raise _SourceProjectionError("invalid-source-shape")
+            return self.record(value, schema)
+        if kind == "failure":
+            return self.record(value, _SOURCE_FAILURE)
+        if kind == "unavailable":
+            return self.record(value, (("stage", ("enum", _SOURCE_STAGES)), *_SOURCE_FAILURE))
+        if kind == "publication-errors":
+            return self.record(value, tuple((name, ("optional", "failure")) for name in (
+                "formatter", "projection", "validation",
+            )))
+        if kind == "member":
+            self.keys(value, _SOURCE_MEMBER)
+            if type(value["format"]) is not str or value["format"] != SOURCE_REFUSAL_FORMAT:
+                raise _SourceProjectionError("unsupported-projection-format")
+            if (
+                type(value["source_revision"]) is not str
+                or GRAPH != SOURCE_REFUSAL_REVISION or value["source_revision"] != SOURCE_REFUSAL_REVISION
+            ):
+                raise _SourceProjectionError("unsupported-source-revision")
+            status = value["status"]
+            if (
+                type(status) is not str or status not in {"available", "unavailable"}
+                or status == "available" and (value["metadata"] is None or value["unavailable"] is not None)
+                or status == "unavailable" and (value["metadata"] is not None or value["unavailable"] is None)
+            ):
+                raise _SourceProjectionError("invalid-source-shape")
+            return self.record(value, _SOURCE_MEMBER)
+        raise _SourceProjectionError("unsupported-source-shape")
+
+
+def source_primary(error, binding):
+    if type(binding) is not tuple or len(binding) != 3 or type(error) is not binding[0]:
+        return False
+    arguments = BaseException.__getattribute__(error, "args")
+    return (
+        type(arguments) is tuple and len(arguments) == 1 and type(arguments[0]) is str
+        and arguments[0] in SOURCE_REFUSAL_MESSAGES
+    )
+
+
+def source_exception_type(error):
+    name = type.__getattribute__(type(error), "__name__")
+    if type(name) is not str or len(name) > 512:
+        return _SOURCE_TYPE_UNAVAILABLE
+    return name if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) else None
+
+
+def source_publication_failure(error, reason, *, primary=None):
+    internal = type(error) is _SourceProjectionError
+    detail = {
+        "reason": error.reason if internal and type(error.reason) is str and error.reason in _SOURCE_REASONS else reason,
+        "failure_type": None if internal else source_exception_type(error),
+    }
+    if error is not primary:
+        traceback.clear_frames(error.__traceback__)
+        error.__traceback__ = None
+        error.__cause__ = error.__context__ = None
+    return detail
+
+
+def _source_envelope(metadata=None, unavailable=None, *, formatter=None, projection=None, validation=None):
+    return {
+        "format": SOURCE_REFUSAL_FORMAT, "source_revision": SOURCE_REFUSAL_REVISION,
+        "status": "available" if unavailable is None else "unavailable",
+        "metadata": metadata, "unavailable": unavailable,
+        "omitted_by_contract": list(SOURCE_REFUSAL_OMISSIONS),
+        "publication_errors": {"formatter": formatter, "projection": projection, "validation": validation},
+    }
+
+
+def validate_source_refusal(value):
+    measured = _SourceProjection()
+    measured.value(value, "member")
+    return value
+
+
+def unavailable_source_refusal(stage, reason, *, failure_type=None, formatter=None, projection=None, validation=None):
+    result = _source_envelope(
+        unavailable={"stage": stage, "reason": reason, "failure_type": failure_type},
+        formatter=formatter, projection=projection, validation=validation,
+    )
+    _SourceProjection().value(result, "member")
+    return result
+
+
+def _project_source_refusal(error, revision, deadline, formatter):
+    if type(revision) is not str or revision != SOURCE_REFUSAL_REVISION or GRAPH != SOURCE_REFUSAL_REVISION:
+        raise _SourceProjectionError("unsupported-source-revision")
+    if type(deadline) not in (int, float) or not math.isfinite(deadline) or deadline <= 0:
+        raise _SourceProjectionError("deadline")
+    values = []
+    for name in ("source_attribution", "source_attribution_unavailable", "source_attribution_failure_type"):
+        try:
+            value = BaseException.__getattribute__(error, name)
+        except AttributeError:
+            value = _SOURCE_ABSENT
+        values.append(value)
+    data, stage, failure_type = values
+    if data is not _SOURCE_ABSENT:
+        if stage is not _SOURCE_ABSENT or failure_type is not _SOURCE_ABSENT:
+            raise _SourceProjectionError("invalid-source-shape")
+        envelope = _source_envelope(data, formatter=formatter)
+    elif stage is _SOURCE_ABSENT and failure_type is _SOURCE_ABSENT:
+        envelope = _source_envelope(
+            unavailable={"stage": "selection", "reason": "not-attached", "failure_type": None},
+            formatter=formatter,
+        )
+    elif type(stage) is str and stage in _SOURCE_STAGES[1:4] and failure_type is not _SOURCE_ABSENT:
+        envelope = _source_envelope(
+            unavailable={"stage": stage, "reason": "upstream-unavailable", "failure_type": failure_type},
+            formatter=formatter,
+        )
+    else:
+        raise _SourceProjectionError("invalid-source-shape")
+    measured = _SourceProjection(upstream=True, deadline=deadline)
+    measured.value(envelope, "member")
+    extent = measured.cells, measured.size, measured.storage
+    builder = _SourceProjection(upstream=True, build=True, admitted=extent, deadline=deadline)
+    result = builder.value(envelope, "member")
+    if (builder.cells, builder.size, builder.storage) != extent:
+        raise _SourceProjectionError("invalid-source-shape")
+    return validate_source_refusal(result)
+
+
+def project_source_refusal(error, *, revision, deadline, formatter=None):
+    try:
+        return _project_source_refusal(error, revision, deadline, formatter)
+    except BaseException as failure:
+        detail = source_publication_failure(failure, "projection-exception", primary=error)
+    return unavailable_source_refusal(
+        "projection", detail["reason"], failure_type=detail["failure_type"],
+        formatter=formatter, projection=detail,
+    )
+
+
+def retain_source_refusal(value):
+    try:
+        return validate_source_refusal(value)
+    except BaseException as failure:
+        detail = source_publication_failure(failure, "invalid-wire-metadata")
+    return unavailable_source_refusal(
+        "wire-validation", "invalid-wire-metadata", validation=detail,
+    )

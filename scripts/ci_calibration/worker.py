@@ -407,13 +407,29 @@ def calibration_budget(limits_type, budget_type, deadline):
     return budget, limits, original, classified
 
 
-def graph_error_record(error, sampler, observer):
-    record = policy.error_record(error)
+def graph_error_record(error, sampler, observer, *, source_binding=None):
+    selected = policy.source_primary(error, source_binding)
+    formatter = None
+    if selected:
+        try:
+            record = policy.error_record(error)
+        except BaseException as failure:
+            formatter = policy.source_publication_failure(failure, "primary-formatter-failed", primary=error)
+            record = {
+                "chain": [{"type": policy.source_exception_type(error), "message": error.args[0]}],
+                "frames": [],
+            }
+    else:
+        record = policy.error_record(error)
     record["counters"] = sampler.snapshot()
     record["observation_failure"] = (
         observer.capture(error) if observer is not None
         else observation_failure.unavailable("binding-not-ready")
     )
+    if selected:
+        record["source_refusal"] = policy.project_source_refusal(
+            error, revision=source_binding[1], deadline=source_binding[2], formatter=formatter,
+        )
     return record
 
 
@@ -457,10 +473,11 @@ def root(config):
     budget = None
     observer = None
     primary = None
+    source_binding = None
     try:
         sys.path.insert(0, "/repo")
         from scripts.validation_ownership.authority import git
-        from scripts.validation_ownership.budget import Limits, ProbeBudget
+        from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
         from scripts.validation_ownership.make_probe import ProbeSession
         if __package__:
             from . import root_stage
@@ -475,6 +492,7 @@ def root(config):
         base = git(candidate, budget, "rev-parse", policy.BASE + "^{commit}").decode().strip()
         if (head, base) != (policy.GRAPH, policy.BASE):
             raise policy.GuardError("actual root candidate HEAD/BASE differ from the frozen scope")
+        source_binding = MakeProbeError, head, budget.deadline
         kernel.emit(config["scope"], "root-start", {
             "head": head, "base": base, "workload_kind": policy.WORKLOAD_KIND,
             "fixture_version": policy.FIXTURE_VERSION, "source_phases": True,
@@ -499,7 +517,7 @@ def root(config):
         }
     except BaseException as error:
         primary = error
-        record = graph_error_record(error, sampler, observer)
+        record = graph_error_record(error, sampler, observer, source_binding=source_binding)
         cleanup = getattr(error, "root_cleanup_state", None)
         if cleanup is not None:
             record["root_cleanup"] = cleanup
