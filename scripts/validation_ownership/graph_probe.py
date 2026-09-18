@@ -116,6 +116,12 @@ class MakeSourceUnit(NamedTuple):
     site: object = None
 
 
+class _BindingRead(NamedTuple):
+    text: str
+    context: str = "staged"
+    header: bool = False
+
+
 class _SourceUnitStream(NamedTuple):
     ordered: tuple
     known_positions: frozenset
@@ -1984,7 +1990,7 @@ class _UnresolvedName(ValueError):
     pass
 
 
-def _make_expression_spans(line, *, staged=False, require_complete=False):
+def _make_expression_spans(line, *, staged=False, require_complete=False, strict_dollars=False):
     stack = []
     index = 0
     while index < len(line):
@@ -2001,7 +2007,7 @@ def _make_expression_spans(line, *, staged=False, require_complete=False):
                 yield start - 2, index + 1, line[start:index]
         elif stack and line[index] == ("(" if stack[-1][1] == ")" else "{"):
             stack.append((None, stack[-1][1]))
-        elif staged and line[index] == "$":
+        elif (staged or strict_dollars) and line[index] == "$":
             token = line[index:index + 2]
             if not REFERENCE.fullmatch(token) and not SCOPED.fullmatch(token):
                 raise _UnresolvedName("incomplete or unsupported dollar token")
@@ -2273,11 +2279,42 @@ def _template_wildcard_bound(pattern, namespace, budget=None):
     return "header-bound", (pattern,)
 
 
-def _foreach_read_bindings(expression, budget=None):
+def _binding_reads(unit):
+    ordinary = unit.active is True and unit.body is None
+    if unit.text.startswith("\t"):
+        context = "ordinary-recipe" if ordinary and unit.kind == "recipe" else "staged"
+        yield _BindingRead(unit.text, context)
+    else:
+        header, inline = split_inline_recipe(unit.text)
+        yield _BindingRead(header, header=True)
+        if inline:
+            context = "ordinary-recipe" if ordinary and unit.kind == "rule" else "staged"
+            yield _BindingRead(inline, context)
+    if unit.body is not None:
+        yield _BindingRead(unit.body)
+
+
+def _foreach_read_bindings(expression, budget=None, *, context="staged"):
     """Return possible local names, or no closed global-literal context."""
+    if context not in {"staged", "ordinary-recipe"}:
+        raise MakeProbeError("unproven local-binding expansion context")
+    staged = context != "ordinary-recipe"
     names = set()
     try:
-        for start, stop, body in _make_expression_spans(expression, staged=True, require_complete=True):
+        if not staged:
+            # A reparse or opaque invocation can activate escaped operations.
+            # Keep the old conservative scan for that entire expression.
+            for _, _, body in _make_expression_spans(
+                expression, require_complete=True, strict_dollars=True,
+            ):
+                if budget is not None:
+                    budget.remaining()
+                if re.match(r"(?:eval|call|guile)[ \t\r\n\v\f]", body):
+                    staged = True
+                    break
+        for start, stop, body in _make_expression_spans(
+            expression, staged=staged, require_complete=True, strict_dollars=True,
+        ):
             if budget is not None:
                 budget.remaining()
             if not re.match(r"foreach[ \t\r\n\v\f]", body):
@@ -3518,15 +3555,9 @@ def source_census(
                 if budget is not None:
                     budget.charge("cache", len(encoded((name, constant))))
                 constant_writes.setdefault(name, []).append(constant)
-        if unit.text.startswith("\t"):
-            scope_expressions = (unit.text,)
-        else:
-            header, inline_recipe = split_inline_recipe(unit.text)
-            scope_expressions = (strip_comment(header), inline_recipe)
-        if unit.body is not None:
-            scope_expressions += (unit.body,)
-        for expression in scope_expressions:
-            local_bindings = _foreach_read_bindings(expression, budget)
+        for read in _binding_reads(unit):
+            expression = strip_comment(read.text) if read.header else read.text
+            local_bindings = _foreach_read_bindings(expression, budget, context=read.context)
             if local_bindings is None:
                 unknown_writer = True
             else:

@@ -1,7 +1,7 @@
 """Every-pass obligations from actual native source/image/mutation history."""
 
 import copy
-from dataclasses import replace
+from dataclasses import asdict, replace
 import gc
 import shlex
 import subprocess
@@ -31,6 +31,279 @@ class PhaseCensusTests(unittest.TestCase):
         return session.make(
             "all", variables=("HIDDEN", "FILES"), commands=self.case.commands(session),
             observe_source_journal=True, source_journal_mode=source_directories.MODE,
+        )
+
+    def recipe_binding_source(self, recipe=None, *, remake=False, extra=""):
+        modern = (foundation.ROOT / "modern.mk").read_text()
+        start = modern.index("\t@sed -E 's/(^|[[:space:]])($(MODERN_GENERATED_HEADER_BASENAME_RE))")
+        stop = modern.index("\t@rm -f \"$@.tmp\"\n", start)
+        original_filter = modern[start:stop]
+        self.assertEqual(len(original_filter.splitlines()), 5)
+        def statement(prefix):
+            line, = [line for line in modern.splitlines() if line.startswith(prefix)]
+            return line + "\n"
+        source = (
+            ".DEFAULT_GOAL := all\nMODERN_OUTPUT_DIR := build/modern/release/aapcs\n"
+            "MODERN_GENERATED_HEADER_BASENAME_RE := missing\\.h\nSAFE := unchanged\n"
+            + extra
+            + statement("MODERN_ALL_C_SOURCES ?=")
+            + statement("ifeq (,$(findstring src/msg_data.c,")
+            + statement("MODERN_ALL_C_SOURCES += src/msg_data.c")
+            + "endif\n"
+            + statement("MODERN_ALL_C_OBJECTS := $(addprefix")
+            + statement("MODERN_ALL_OBJECTS :=")
+            + statement("MODERN_ALL_C_HEADER_DEPS :=")
+        )
+        if remake:
+            source += (
+                "$(MODERN_ALL_C_HEADER_DEPS):\n\tpython3 writer.py\n"
+                "include $(MODERN_ALL_C_HEADER_DEPS)\n"
+            )
+        source += (
+            ".PHONY: all\nall:\n"
+            "\t@printf 'Built %s modern relocatable objects in %s\\n' "
+            "'$(words $(MODERN_ALL_OBJECTS))' '$(MODERN_OUTPUT_DIR)'\n"
+            "unused-filter: fixture.c\n"
+        )
+        return source + (original_filter if recipe is None else recipe), original_filter
+
+    def recipe_binding_model(self, budget, recipe=None, *, extra=""):
+        """Actual parser/consumers over pure source data, not native authority."""
+        source, original_filter = self.recipe_binding_source(recipe, extra=extra)
+        session = SimpleNamespace(budget=budget)
+        def wildcard(pattern):
+            self.assertEqual(pattern, "src/*.c")
+            return ""
+        mode = graph_probe._MakeSourceMode(
+            budget=budget, namespace=frozenset(),
+            original_input=lambda name: {"origin": "undefined", "flavor": "undefined", "value": ""},
+            original_execution=lambda *args: None, original_wildcard=wildcard,
+            template_mode=phase_census.SourceTemplates(session, "all", (), {}, None, "Makefile", False),
+        )
+        units = tuple(graph_probe.make_source_units(source, mode=mode, source_path="Makefile"))
+        stream = graph_probe._SourceUnitStream(
+            tuple(("Makefile", index, unit) for index, unit in enumerate(units)),
+            frozenset(range(len(units))), mode_state=mode,
+        )
+        usage = graph_probe.source_census(
+            {"Makefile": source.encode()}, reference_units=stream, budget=budget, source_target="all",
+        )
+        phase = SimpleNamespace(
+            session=session, inputs={}, read_inputs=set(),
+            part=SimpleNamespace(number=1, exec=1, visits=[SimpleNamespace(number=1, resolved="Makefile")]),
+            proof=SimpleNamespace(archive=SimpleNamespace(scope="pure-recipe-context-not-authority")),
+            recipe_contexts={}, patterns=(("src/*.c", ""),), expanding_exports=set(),
+        )
+        return phase, stream, usage, original_filter
+
+    def test_ordinary_recipe_dollar_context_keeps_active_and_staged_bindings(self):
+        _, original = self.recipe_binding_source()
+        for expression in (
+            original, original.replace("MODERN_GENERATED_HEADER_BASENAME_RE", "OTHER_PATTERN"),
+            original.replace("$(MODERN_GENERATED_HEADER_BASENAME_RE)", "${OTHER_PATTERN}"),
+            "printf '%s' '$$) $$} $$' \"$${item}\"",
+            "awk '{ print $$0 }' input", "printf '$$'", "printf '$$$$'",
+        ):
+            with self.subTest(expression=expression):
+                self.assertEqual(graph_probe._foreach_read_bindings(expression, context="ordinary-recipe"), set())
+        self.assertIsNone(graph_probe._foreach_read_bindings(original))
+        for expression, expected in (
+            ("$$(foreach ITEM,word,$$(VALUE))", set()),
+            ("$$$(foreach ITEM,word,$(VALUE))", {"ITEM"}),
+            ("$$$$(foreach ITEM,word,$$(VALUE))", set()),
+            ("$$$$$(foreach ITEM,word,$(VALUE))", {"ITEM"}),
+            ("'$(foreach ITEM,word,$(VALUE))'", {"ITEM"}),
+            ("'# ${foreach ITEM,word,${foreach INNER,word,${VALUE}}}'", {"ITEM", "INNER"}),
+            ("$(eval SLOT := $$(foreach ITEM,word,$$(VALUE)))", {"ITEM"}),
+            ("$(call BODY,$$(foreach ITEM,word,$$(VALUE)))", {"ITEM"}),
+            ("$(guile $$(foreach ITEM,word,$$(VALUE)))", {"ITEM"}),
+            ("$(if yes,$(eval SLOT := $$(foreach $(BINDER),word,$$(VALUE))))", None),
+            ("$(foreach $(BINDER),word,$(VALUE))", None),
+            ("${foreach ${BINDER},word,${VALUE}}", None),
+            ("$(foreach $N,word,$(VALUE))", None),
+            ("$(foreach ITEM,word)", None),
+            ("$(foreach ITEM,word,$(VALUE)", None),
+            ("printf '$)'", None), ("printf '$'", None), ("printf '$$$'", None),
+            ("printf '${VALUE'", None), ("printf '$(VALUE'", None),
+        ):
+            with self.subTest(expression=expression):
+                self.assertEqual(graph_probe._foreach_read_bindings(expression, context="ordinary-recipe"), expected)
+        self.assertEqual(
+            graph_probe._foreach_read_bindings("$$(foreach ITEM,word,$$(VALUE))"), {"ITEM"},
+        )
+        with self.assertRaises(MakeProbeError):
+            graph_probe._foreach_read_bindings("literal", context="unproved")
+        budget = ProbeBudget(Limits(cache_bytes=1))
+        try:
+            with self.assertRaisesRegex(MakeProbeError, "cache byte"):
+                graph_probe._foreach_read_bindings("$(foreach LONG_NAME,word,value)", budget, context="ordinary-recipe")
+        finally:
+            budget.close()
+        with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
+            graph_probe._foreach_read_bindings("$(VALUE)", budget, context="ordinary-recipe")
+
+    def test_binding_roles_separate_inline_headers_definitions_and_unproved_recipes(self):
+        source = (
+            "ASSIGN = $$)\ndefine BODY\n$$)\nendef\n"
+            "head$$(foreach HEADER,word,literal): ; @printf '$$)'\n"
+            "block:\n\t@printf '$$)'\n"
+        )
+        units = tuple(graph_probe.make_source_units(source))
+        assignment, = [unit for unit in units if unit.kind == "assignment"]
+        definition, = [unit for unit in units if unit.kind == "define"]
+        inline, = [unit for unit in units if "; @printf" in unit.text]
+        block, = [unit for unit in units if unit.kind == "recipe"]
+        for unit in (assignment, definition, block._replace(kind=None), block._replace(active=None)):
+            with self.subTest(kind=unit.kind, active=unit.active):
+                self.assertTrue(all(read.context == "staged" for read in graph_probe._binding_reads(unit)))
+        header, recipe = graph_probe._binding_reads(inline)
+        self.assertTrue(header.header)
+        self.assertEqual(graph_probe._foreach_read_bindings(header.text, context=header.context), {"HEADER"})
+        self.assertFalse(recipe.header)
+        self.assertEqual(graph_probe._foreach_read_bindings(recipe.text, context=recipe.context), set())
+        read, = graph_probe._binding_reads(block)
+        self.assertEqual(read.context, "ordinary-recipe")
+        self.assertEqual(graph_probe._foreach_read_bindings(read.text, context=read.context), set())
+
+    def test_original_filter_context_closes_both_consumers_without_new_snapshot_proof(self):
+        budget = ProbeBudget()
+        try:
+            phase, stream, usage, original = self.recipe_binding_model(budget)
+            self.assertIs(phase.session.budget, stream.mode_state.template_mode.session.budget)
+            self.assertEqual(graph_probe._foreach_read_bindings(original, budget, context="ordinary-recipe"), set())
+            self.assertEqual(usage["read_constants"]["SAFE"], "unchanged")
+            self.assertEqual(usage["read_constants"]["MODERN_OUTPUT_DIR"], "build/modern/release/aapcs")
+            self.assertIn("MODERN_ALL_C_SOURCES", usage["defaults"])
+            for name in ("MODERN_ALL_C_OBJECTS", "MODERN_ALL_OBJECTS"):
+                binding, = stream.mode_state.definitions[name]
+                version, fact = stream.mode_state.template_values[name]
+                self.assertEqual((binding.origin, binding.flavor, version, fact[0]), ("file", "simple", 0, "exact"))
+            inspected = []
+            exact = stream.mode_state.exact_reference
+            def record(name, *args, **kwargs):
+                inspected.append(name)
+                return exact(name, *args, **kwargs)
+            with patch.object(stream.mode_state, "exact_reference", record):
+                phase_census._deferred_namespace_check(phase, stream, usage)
+            self.assertTrue({"MODERN_ALL_C_OBJECTS", "MODERN_ALL_OBJECTS"} <= set(inspected))
+            self.assertEqual((budget.runs, budget.states), (0, 0))
+        finally:
+            budget.close()
+
+    def test_later_real_or_unproved_binders_still_hold_both_source_consumers(self):
+        for expression, phase_accepts, safe_constant in (
+            ("$(foreach SAFE,changed,$(SAFE))", True, False),
+            ("${foreach SAFE,changed,${SAFE}}", True, False),
+            ("$(foreach OUTER,word,$(foreach SAFE,changed,$(SAFE)))", True, False),
+            ("$(foreach MODERN_ALL_OBJECTS,changed,$(MODERN_ALL_OBJECTS))", True, True),
+            ("$(foreach MODERN_ALL_OBJECTS,changed,$(foreach MODERN_ALL_C_OBJECTS,changed,$(MODERN_ALL_OBJECTS)))",
+             False, True),
+            ("$(foreach $(BINDER),changed,$(SAFE))", False, False),
+            ("${foreach ${BINDER},changed,${SAFE}}", False, False),
+            ("$(foreach $N,changed,$(SAFE))", False, False),
+            ("$(eval SLOT := $$(foreach $(BINDER),changed,$$(SAFE)))", False, False),
+            ("$(call BODY,$$(foreach $(BINDER),changed,$$(SAFE)))", False, False),
+            ("$(guile $$(foreach $(BINDER),changed,$$(SAFE)))", False, False),
+            ("$(foreach SAFE,changed", False, False),
+            ("$)", False, False),
+        ):
+            budget = ProbeBudget()
+            try:
+                with self.subTest(expression=expression):
+                    phase, stream, usage, _ = self.recipe_binding_model(
+                        budget, "\t@printf '%s' '# " + expression + "'\n",
+                        extra="BINDER := SAFE\nN := SAFE\n",
+                    )
+                    self.assertEqual("SAFE" in usage["read_constants"], safe_constant)
+                    self.assertIn("MODERN_ALL_C_SOURCES", usage["defaults"])
+                    if phase_accepts:
+                        phase_census._deferred_namespace_check(phase, stream, usage)
+                    else:
+                        with self.assertRaises(MakeProbeError):
+                            phase_census._deferred_namespace_check(phase, stream, usage)
+            finally:
+                budget.close()
+
+    def test_original_filter_obligation_survives_actual_native_include_remake(self):
+        header = "build/modern/release/aapcs/src/msg_data.headers.d"
+        names = ("MODERN_ALL_C_SOURCES", "MODERN_ALL_C_OBJECTS", "MODERN_ALL_OBJECTS", "MODERN_ALL_C_HEADER_DEPS")
+        source, original = self.recipe_binding_source(remake=True)
+        self.fixture.add("Makefile", source)
+        self.fixture.add("fixture.c", "/* input of the unselected filter source obligation */\n")
+        self.fixture.add("writer.py", (
+            "from pathlib import Path\n"
+            "source=Path('/work/src/msg_data.c');source.parent.mkdir(parents=True,exist_ok=True)\n"
+            "source.write_text('/* actual bounded source publication */\\n')\n"
+            "header=Path('/work/" + header + "');header.parent.mkdir(parents=True,exist_ok=True)\n"
+            "header.write_text('# actual namespace-changing include\\n')\n"
+        ))
+        self.assertFalse((self.fixture.root / "src/msg_data.c").exists())
+        self.assertFalse((self.fixture.root / "build").exists())
+        self.last_recipe_context = {
+            "stage": "before-native", "source": source, "original_filter": original,
+            "initial_absence": {"src/msg_data.c": True, "build": True},
+            "evidence_class": "new focused include-remake positive, not a closed witness or root",
+        }
+        session = self.case.session()
+        self.last_recipe_context["limits"] = asdict(session.budget.limits)
+        with session:
+            commands = {"python3 writer.py": session._native_context_command(make_probe.Command(
+                ("/usr/bin/python3", "/repo/writer.py"), code=("writer.py",),
+                outputs=("src/msg_data.c", header),
+            ))}
+            self.last_recipe_context["stage"] = "native-observation"
+            observed = session.make(
+                "all", definitions=names, commands=commands,
+                observe_source_journal=True, source_journal_mode=source_directories.MODE,
+            )
+            self.last_recipe_context.update(
+                native=observed.semantics, read_trace=observed.read_trace,
+                source_phases=observed.source_phases, source_effects=observed.source_effects,
+                source_journal=observed.source_journal, stage="source-analysis",
+            )
+            usage, _, streams, parts = phase_census.analyze(
+                session, observed, "all", (), commands, external_names={"MODERN_ALL_C_SOURCES"},
+            )
+            self.assertEqual(len(parts), 2)
+            self.assertIn("MODERN_ALL_C_SOURCES", usage["defaults"])
+            self.assertTrue(all("MODERN_ALL_C_SOURCES" in part["defaults"] for part in parts))
+            self.assertTrue(all(part["read_constants"]["SAFE"] == "unchanged" for part in parts))
+            for stream in streams:
+                filter_unit, = [unit for _, _, unit in stream.ordered if unit.text == original.rstrip("\n")]
+                self.assertIs(filter_unit.active, True)
+                self.assertEqual(filter_unit.kind, "recipe")
+                self.assertEqual(next(graph_probe._binding_reads(filter_unit)).context, "ordinary-recipe")
+                for name in ("MODERN_ALL_C_OBJECTS", "MODERN_ALL_OBJECTS"):
+                    binding, = stream.mode_state.definitions[name]
+                    version, fact = stream.mode_state.template_values[name]
+                    self.assertEqual((binding.origin, binding.flavor, version, fact[0]), ("file", "simple", 0, "exact"))
+            dispatches = observed.semantics["native_dispatches"]
+            self.assertFalse(any(row["job"]["target"] == "unused-filter" for row in dispatches))
+            reader, = [row for row in dispatches if row["job"]["target"] == "all"]
+            self.assertEqual(reader["arguments"], [
+                "printf", "Built %s modern relocatable objects in %s\\n",
+                "1", "build/modern/release/aapcs",
+            ])
+            images = observed.source_phases["entries"]
+            self.assertEqual({name for name, _ in images[0]["image"]["members"]["src"]}, {"keep.h"})
+            self.assertEqual({name for name, _ in images[1]["image"]["members"]["src"]}, {"keep.h", "msg_data.c"})
+            archive = session._original_source_archive(observed)
+            self.assertEqual([visit.error for part in archive.passes for visit in part.visits
+                              if visit.name == header], [2, 0])
+            self.last_recipe_context.update(
+                stage="analysis-accepted",
+                analysis={"passes": len(parts), "defaults": sorted(usage["defaults"]),
+                          "read_constants": usage["read_constants"]},
+                accounting={"runs": session.budget.runs, "states": session.budget.states,
+                            "bytes": dict(session.budget.bytes)},
+            )
+        self.fixture.assert_clean(session)
+        self.assertTrue(session.budget.closed)
+        self.assertFalse(session.budget.producer_waiters)
+        self.last_recipe_context.update(
+            stage="complete",
+            cleanup={"helper_assert_clean": True, "budget_closed": True, "children": 0,
+                     "waiters": 0, "pending_commands": session.pending_commands, "base": None},
         )
 
     def namespace_diagnostic_data(self, budget):

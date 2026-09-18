@@ -466,9 +466,26 @@ temporal/value/target/branch fact. The ordinary reporter and current diagnostic
 harness do not serialize the custom attribution automatically; publication
 and any later root attempt need their own accepted scope.
 
-The default invariant planner remains unchanged. Full original-root acceptance
+The invariant planner remains the default public path. Full original-root acceptance
 and resource measurement remain separate from source correctness; no phase
 result authorizes a shell/profile, bound split or quota workaround.
+
+Ordinary-recipe local-binding analysis has an explicit original-source
+expansion context shared by the read-constant and per-pass snapshot consumers.
+A literal `$$` pair is consumed once in a proved active recipe; unsupported
+active dollars and malformed references remain holds. Inline headers keep
+their separate staged context. Assignments, define bodies, unknown roles and
+expressions containing active reparse/opaque invocation retain the conservative
+scan, including escaped `foreach` operations. Shell quotes and hash data do
+not suppress genuine Make binders.
+
+ROOT19's available cause site maps statically to the original header-filter
+recipe; the token-level explanation is not an observed internal runtime
+message or ROOT18 attribution. Pure controls reproduce both consumers'
+false unknown, and the focused include-remake positive retains the later
+unselected filter obligation without executing its compiler/filter pipeline.
+This adds no native command permission, budget or source value proof, and
+does not establish original-root or public-report completion.
 
 The graph's lifecycle consumer may additionally select
 `ProbeSession.make(..., observe_recipe_dispatch=True)` for the validated

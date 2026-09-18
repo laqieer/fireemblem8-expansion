@@ -912,9 +912,11 @@ def _check_deferred_namespace(phase, stream, usage, causes, snapshot_checks):
         filename, index, unit = occurrence
         if unit.active is False:
             continue
-        expressions = [unit.text, *(() if unit.body is None else (unit.body,))]
-        for expression in expressions:
-            locals_ = graph._foreach_read_bindings(expression, phase.session.budget)
+        for read in graph._binding_reads(unit):
+            expression = read.text
+            locals_ = graph._foreach_read_bindings(
+                expression, phase.session.budget, context=read.context,
+            )
             if locals_ is None:
                 unknown = True
                 note_cause({"kind": "unproved-local-binder-analysis", "path": filename,

@@ -4094,6 +4094,22 @@ proof semantics and nonchronological history; no candidate clock is accepted.
     diagnostic exception. An unrelated successful reader must still succeed
     when optional diagnostic bookkeeping cannot fit. These are pure
     allocation/lifetime controls, not additional native witnesses.
+20. For [ordinary recipe binding context](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5730756125),
+    retain the original five-line generated-header filter as a later active
+    source obligation after the default/findstring/manual append and simple
+    C-object/all-object constructors and words reader. First exercise the
+    actual pure helper and both source consumers. The ordinary recipe's
+    `$$` end anchor must not invent an unknown local binder; the original
+    exact version0 facts remain subject to the existing snapshot checks.
+
+    In the focused source build, start without generated C or public build
+    parents and use the existing bounded typed writer for a real C/header
+    include-remake publication. Keep the filter recipe active on an
+    unselected target, with its ordinary prerequisite supplied as an input.
+    Require both original passes, retained defaults, actual words/printf
+    arguments and clean teardown. No filter/compiler execution, profile
+    expansion or root/report claim follows. This is a separately authorized
+    focused positive, not a replay of the closed initial witnesses.
 
 ### Expected result
 
@@ -4144,6 +4160,12 @@ releases temporary collections and diagnostic traceback references, including
 partial projection owners. The primary source frames remain available.
 Secondary stage/type evidence is explicit and bounded; no raw diagnostic
 exception is retained merely to preserve its traceback.
+
+The recipe context is established by original source syntax, not a job
+association or terminal value. The shared classifier consumes literal `$$`
+pairs only in proved ordinary recipe expansion. Whole-source constant and
+per-pass snapshot eligibility recover without bypassing unknown writers or
+creating a new temporal proof. Later unselected source obligations still count.
 
 Immutable verifier batches return exactly the individually read bytes, preserve
 path/mode/gitlink/source authority and reject every trusted-tree or loaded-module
@@ -6142,6 +6164,26 @@ All of these controls remain in the same indexed phase module and case.
 
 #### Namespace refusal attribution controls
 
+For ordinary-recipe binding context, vary paired-dollar punctuation and
+end-of-input, odd/even dollar runs, renamed variables, braced references and
+neutral command spelling. Keep unescaped unsupported dollars and incomplete
+expressions negative. A rule's inline header, define/assignment body or
+unproved source role must not inherit its recipe segment's context.
+
+Retain direct/braced/nested `foreach`, computed/referenced/short binders,
+context-free escaped `foreach`, and nested eval/reparse/opaque-call holds.
+Operations inside single quotes or hash-containing recipe data remain Make
+operations. Restore the old helper's staged classification independently:
+the same original filter must again return unknown, erase eligible whole-source
+read constants and disable the namespace snapshot loop. Restore the correction
+and require both consumers to recover with identical original source facts
+and default obligations.
+
+An unsafe outer object alias alone can still terminate at a different safe
+simple snapshot. Do not label that existing positive a new admission: the
+joint local-shadowing negative must actually remove each relevant snapshot
+stop. Preserve the exact old/current outcomes when authoring such controls.
+
 Use the existing phase-module pure parsed-data/actual-function controls.
 Exercise direct wildcard, unresolved selector, dependency and export-refusal
 branches; unknown/eval/scoped/ambiguous/stale bindings; exact-snapshot positives;
@@ -6876,6 +6918,13 @@ no evaluator/source permission, numerical allowance or refund is introduced.
 It retains original input objects as legitimate caller/source context while
 releasing diagnostic-only temporaries on failure.
 
+Ordinary-recipe dollar context is a framework parsing capability, not a
+temporal-snapshot change or optional gameplay flag. It depends on the original
+unit role, existing inline split and both binder consumers. Staged/effectful
+contexts, source/input/history/default/export/native guards and diagnostic
+retention remain dependencies. Public source selection, Make recipes,
+native profiles, ROM/RAM/save, generated-data and locale formats are unchanged.
+
 The graph does not execute selected gates and cannot skip or narrow validation.
 A later independently accepted issue must prove selection non-inferiority
 before any delivery behavior can consume these explanations.
@@ -6926,6 +6975,11 @@ unchanged source bytes/Git state across simulated fixture exceptions.
   Pure shared-prefix, duplicate/cycle, pre-admission and retained-exception
   controls cover linear storage and cleanup without adding a module, owner,
   case or native witness allocation.
+  The phase module also covers ordinary recipe contexts, both pure consumers,
+  staged/local negatives and the focused native include-remake positive.
+  The already-mapped make-probe scope/laziness method retains its staged
+  default controls and adds explicit ordinary-context cases. No new selector,
+  blanket automation, case ID, module or ownership permission is required.
 
 The focused A/V fixtures also execute the title fingerprint comparator with
 missing/changed framebuffer controls, the actual presentation runner's
@@ -6974,6 +7028,14 @@ Do not keep rejected diagnostic graphs through raw chained exceptions or
 failed helper frames. Clear transient source notes on every exit and retain
 only the bounded secondary stage/type. Never clear the primary caller/source
 context or refund spent admission to make a control pass.
+
+Keep pure model-only fixture data separate from issued native authority.
+Its template and phase facades must share the same real bounded budget; never
+make production templates accept a missing session. Preserve setup failures
+and failed author expectations honestly, together with the corrected evidence.
+The native filter obligation is source-only when unselected; do not invent
+a corresponding job. Source acceptance, future genuine-root allocation,
+public reporting, resource sizing and H1 remain separate gates.
 
 Rollback is a normal revert of issue #180's dedicated commit; existing broader
 validation behavior is unchanged.

@@ -339,6 +339,23 @@ snapshot; literal metadata reads remain body-lazy. Each pass has fresh source
 state, and only constants valid and equal in every pass survive the union.
 First-pass defaults remain obligations even when absent from final metadata.
 The union also retains first-pass graph, recipe, export and dependency reads.
+Local-binder analysis uses the original source-unit role. In a proven active
+ordinary recipe, including an inline recipe segment, each `$$` pair is literal
+dollar data for that Make expansion. This supports shell/awk/printf data and
+regex end anchors without tool, target, variable or pathname exceptions.
+Strict checking of active dollar references and incomplete expressions remains
+enabled separately; this is not a global non-staged scan.
+
+Rule headers, assignments, define bodies and unproved source roles retain the
+conservative staged context. An active nested `eval`, opaque `call` or `guile`
+keeps that entire expression conservative because another expansion can
+activate escaped operations. Genuine `foreach` binders inside shell quotes or
+hash-containing recipe data still count. Both whole-source read constants and
+per-pass namespace snapshots use this same classification, including later
+active unselected source obligations. Existing snapshot uniqueness, scope,
+flavor, version and exact-reference checks are unchanged; no new temporal
+snapshot or terminal-value permission is granted.
+
 Repeated source visits retain their order and bytes; same-file or Make-looking
 `file` data reads do not supply source evaluations. Within-pass replacement
 remains unsupported even when both versions were successfully captured.

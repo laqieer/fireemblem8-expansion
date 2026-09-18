@@ -5147,6 +5147,19 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             ("$(foreach EMPTY,word", None),
         ):
             self.assertEqual(graph_probe._foreach_read_bindings(expression), expected)
+        for expression, expected in (
+            ("printf '$$)'", set()),
+            ("$$(foreach EMPTY,word,$$(VALUE))", set()),
+            ("$$$(foreach EMPTY,word,$(VALUE))", {"EMPTY"}),
+            ("'# ${foreach EMPTY,word,${VALUE}}'", {"EMPTY"}),
+            ("$(eval VALUE := $$(foreach EMPTY,word,$$(VALUE)))", {"EMPTY"}),
+            ("$(call BODY,$$(foreach ${BINDER},word,$$(VALUE)))", None),
+            ("printf '$)'", None),
+        ):
+            with self.subTest(ordinary_recipe=expression):
+                self.assertEqual(
+                    graph_probe._foreach_read_bindings(expression, context="ordinary-recipe"), expected,
+                )
 
     def test_ignored_make_comments_do_not_disable_lazy_read_constants(self):
         self.original_input_witness()
