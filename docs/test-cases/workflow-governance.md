@@ -5853,6 +5853,34 @@ No budget, CI job/command count, case ID, source-phase permission or allocation1
 changes. Actual ARM/sed is exercised by the following separate controls;
 complete per-pass source authority is not inferred from component success.
 
+Run the pure HeaderV3/shared-return controls without native setup:
+
+```sh
+python3 -B -m unittest \
+  scripts.validation_ownership.tests.test_header_pipeline.HeaderReceiptInertTests -v
+```
+
+They use the real parser, authenticator, guard reservation/commit methods,
+immutable views, private fingerprint and `ProbeSession` issue/claim/retire
+methods under inert dependencies. Require valid complete, conditional-short,
+repeated-occurrence and report-array-permuted transcripts. Omission,
+insertion, resequencing, payload/count/digest repair with the original tag,
+foreign completion fields, decimal terminals and malformed rows must reject.
+The retained version-1 parser must reproduce the original repaired-count
+omission acceptance as the restoration negative.
+
+Require exact fingerprint vectors for every scalar/container tag, Unicode
+surrogates, signed zero, list/tuple equivalence, dictionary-order neutrality,
+aliases, cycles, unsupported subclasses, integer/float domains and cumulative
+work exhaustion. Exercise exact owner/object/thread/job/view/epoch binding,
+copy/replay/purpose/mutation failures, original result values after claim,
+retirement, pre-growth row and terminal boundaries, retained failed charges,
+single-count transfer, and key-reference release. Immutable runtime rows must
+retain ordinary JSON/index/equality behavior, return themselves from
+copy/deepcopy, reject every ordinary mutator/reinitialization, and contain only
+the existing eight semantic keys. These controls are protocol and custody
+evidence only; they do not qualify a native sed/libselinux execution.
+
 For the actual ARM/SDK/sed header pipeline, run:
 
 ```sh

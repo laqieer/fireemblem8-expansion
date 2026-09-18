@@ -332,7 +332,7 @@ class Policy:
             self.toolchain = toolchain_runtime.validate_launch(config)
             if self.toolchain is not None:
                 toolchain_runtime.verify_workspace(Path(config["root"]) / "work", self.toolchain["workspace"])
-            header_protocol.validate_launch(config)
+            self.header_runtime = header_protocol.validate_launch(config)
         except ChannelError as error:
             raise Violation(str(error)) from error
         try:
@@ -383,6 +383,13 @@ class Policy:
         self.filter_kernel = None if dependency is None else dependency.get("filter_kernel")
         self.kernel_streams = {}
         self.kernel_sequence = 0
+        self.kernel_has_first_statfs = False
+        self.kernel_manifest = None
+        self.kernel_row_limit = None
+        self.kernel_terminal_limit = None
+        self.kernel_terminal_reservation = None
+        if self.filter_kernel is not None:
+            self.reserve_header_completion()
         self.header_roots, self.header_entries, self.header_files, self.header_verified = {}, {}, {}, {}
         self.toolchain_inputs = {} if self.toolchain is None else {
             "/repo/" + row[0]: row for row in self.toolchain["inputs"]
@@ -508,6 +515,90 @@ class Policy:
             ):
                 raise Violation("aggregate filesystem-observation budget exhausted")
             attempted.add(value)
+
+    def reserve_header_completion(self):
+        if type(self.header_runtime) is not header_protocol._FilterLaunch:
+            raise Violation("sed header runtime lacks its private completion verifier")
+        try:
+            row_limit = header_protocol.row_wire_limit(
+                self.filter_kernel,
+                count_limit=self.config["observation_count"],
+                file_limit=self.config["file_limit"],
+            )
+            terminal_limit = header_protocol.terminal_wire_limit(
+                self.header_runtime.scope, self.header_runtime.binding,
+                count_limit=self.config["observation_count"],
+            )
+        except ChannelError as error:
+            raise Violation(str(error)) from error
+        charge = (
+            terminal_limit + 128
+            + header_protocol.terminal_private_reservation(terminal_limit)
+        )
+        attempted = self.observation_attempts["accessed"]
+        if (
+            sum(map(len, self.observation_attempts.values())) >= self.config["observation_count"]
+            or self.observation_bytes + charge > self.config["observation_limit"]
+        ):
+            raise Violation("header completion reservation exceeds observation authority")
+        reservation = object()
+        self.observation_bytes += charge
+        attempted.add(reservation)
+        self.kernel_row_limit = row_limit
+        self.kernel_terminal_limit = terminal_limit
+        self.kernel_terminal_reservation = reservation
+        self.kernel_manifest = hashlib.sha256()
+        self.kernel_manifest.update(b"[")
+
+    def reserve_header_row(self):
+        charge = (
+            self.kernel_row_limit + 128
+            + header_protocol.row_private_reservation(self.kernel_row_limit)
+        )
+        attempted = self.observation_attempts["accessed"]
+        if (
+            sum(map(len, self.observation_attempts.values())) >= self.config["observation_count"]
+            or self.observation_bytes + charge > self.config["observation_limit"]
+        ):
+            raise Violation("header kernel row exceeds reserved observation authority")
+        reservation = object()
+        self.observation_bytes += charge
+        attempted.add(reservation)
+        return reservation
+
+    def commit_header_observation(self, reservation, value, limit):
+        if (
+            reservation not in self.observation_attempts["accessed"]
+            or not isinstance(value, str) or len(value.encode("ascii")) > limit
+            or value in self.accessed
+        ):
+            raise Violation("header observation transfer is malformed or repeated")
+        self.observation_attempts["accessed"].remove(reservation)
+        self.observation_attempts["accessed"].add(value)
+        self.accessed.add(value)
+
+    def header_completion(self, main_status):
+        try:
+            if (
+                type(main_status) is not int or main_status != 0 or self.kernel_streams
+                or not self.kernel_sequence or not self.kernel_has_first_statfs
+                or self.kernel_terminal_reservation is None or self.kernel_manifest is None
+            ):
+                raise Violation("successful sed runtime lacks a complete header transcript")
+            manifest = self.kernel_manifest.copy()
+            manifest.update(b"]")
+            record = header_protocol.completion(
+                self.header_runtime.scope, self.header_runtime.binding,
+                self.header_runtime.receipt_key, self.kernel_sequence, manifest.hexdigest(),
+            )
+            value = header_protocol.KERNEL_END + encoded(record).decode("ascii")
+            self.commit_header_observation(
+                self.kernel_terminal_reservation, value, self.kernel_terminal_limit,
+            )
+            self.kernel_terminal_reservation = None
+        finally:
+            self.header_runtime = None
+            self.kernel_manifest = None
 
     def observe(self, name, value):
         self.reserve_observation(name, value)
@@ -1869,12 +1960,31 @@ class Policy:
         return True
 
     def kernel_record(self, operation, path, result, *, data=None, count=None, digest=None, eof=None):
+        try:
+            header_protocol.validate_row_values(
+                self.filter_kernel, self.kernel_sequence + 1, operation, path, result,
+                data, count, digest, eof,
+                count_limit=self.config["observation_count"] - 1,
+                file_limit=self.config["file_limit"],
+            )
+        except ChannelError as error:
+            raise Violation(str(error)) from error
+        reservation = self.reserve_header_row()
         self.kernel_sequence += 1
         row = {
             "sequence": self.kernel_sequence, "operation": operation, "path": path,
             "result": result, "data": data, "bytes": count, "sha256": digest, "eof": eof,
         }
-        self.observe("accessed", header_protocol.KERNEL_PREFIX + encoded(row).decode("ascii"))
+        wire = encoded(row)
+        value = header_protocol.KERNEL_PREFIX + wire.decode("ascii")
+        if len(value) > self.kernel_row_limit:
+            raise Violation("header kernel row exceeded its admitted schema shape")
+        if self.kernel_sequence != 1:
+            self.kernel_manifest.update(b",")
+        self.kernel_manifest.update(wire)
+        if operation == "statfs" and path == header_protocol.STATFS_PATHS[0]:
+            self.kernel_has_first_statfs = True
+        self.commit_header_observation(reservation, value, self.kernel_row_limit)
 
     def header_runtime_access(self, state, path, operation, mode, *, source=False):
         if not source and any(
@@ -3476,10 +3586,8 @@ def supervise(config, drop_privileges):
                     "stage": toolchain_runtime.STAGES[policy.toolchain["stage"]],
                     "stdin": bytes(policy.toolchain_stdin).decode("utf-8", "strict"), "eof": policy.toolchain_eof,
                 }).decode("ascii"))
-            if error is None and policy.filter_kernel is not None:
-                if policy.kernel_streams:
-                    raise Violation("successful sed runtime retained unclosed kernel inputs")
-                policy.observe("accessed", header_protocol.KERNEL_END + str(policy.kernel_sequence))
+            if error is None and policy.filter_kernel is not None and main_status == 0:
+                policy.header_completion(main_status)
             result = {
                 "ok": error is None,
                 "returncode": main_status,
@@ -3539,6 +3647,7 @@ def supervise(config, drop_privileges):
                     raise
         finish_cleanup([
             reap_owned, policy.close_private_install_parents, finish_channel, write_report,
+            lambda: setattr(policy, "header_runtime", None),
             *([] if policy.directory_installs is None else [policy.directory_installs.close]),
             *([] if policy.read_trace is None else [policy.read_trace.close]),
             *([] if channel is None else [channel.close]),

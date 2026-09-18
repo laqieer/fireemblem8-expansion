@@ -1,17 +1,21 @@
 """Actual original ARM/sed header steps, not a substitute full-root census."""
 
 import copy
+import errno
+import hashlib
 import json
+import math
 from dataclasses import replace
 from pathlib import Path
 import shlex
 import subprocess
+import threading
 import unittest
 from unittest.mock import patch
 
-from scripts.validation_ownership import arm_headers, header_runtime
-from scripts.validation_ownership.authority import ENVIRONMENT
-from scripts.validation_ownership.budget import MakeProbeError
+from scripts.validation_ownership import arm_headers, header_runtime, make_probe, syscall_guard
+from scripts.validation_ownership.authority import ENVIRONMENT, encoded as canonical
+from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
 from scripts.validation_ownership.graph_commands import MakeCommands, ROOT_RUNTIME_FILES, _literal_header_words
 from scripts.validation_ownership.make_probe import Command, RuntimeTool
 from scripts.validation_ownership.producer_channel import ChannelError
@@ -61,6 +65,7 @@ class ArmHeaderPipelineTests(unittest.TestCase):
         self.assertFalse(session._header_profiles)
         self.assertFalse(session._header_launches)
         self.assertFalse(session._issued_header_launches)
+        self.assertFalse(session._native_returns)
 
     def ordinary(self):
         completed = subprocess.run(
@@ -423,6 +428,531 @@ class ArmHeaderPipelineTests(unittest.TestCase):
         )
         with patch.object(check_docs, "parse_test_case_registry", return_value=(selected, [])):
             self.assertEqual(check_docs.check_test_case_registry(str(root)), [])
+
+
+class HeaderReceiptInertTests(unittest.TestCase):
+    def setUp(self):
+        self.profile = {
+            "version": 1,
+            "statfs": [[path, False] for path in header_runtime.STATFS_PATHS],
+            "reads": list(header_runtime.READ_PATHS),
+            "absent": list(header_runtime.ABSENT_PATHS),
+        }
+        self.key = bytes(range(32))
+        self.scope = "session/command"
+        self.binding = "1" * 64
+        self.verifier = header_runtime._FilterLaunch(self.scope, self.binding, self.key)
+
+    @staticmethod
+    def row(sequence, operation="absent", path="/etc/selinux/config", **changes):
+        value = {
+            "sequence": sequence, "operation": operation, "path": path,
+            "result": -errno.ENOENT, "data": None, "bytes": None,
+            "sha256": None, "eof": None,
+        }
+        value.update(changes)
+        return value
+
+    def signed(self, rows):
+        digest = hashlib.sha256(canonical(rows)).hexdigest()
+        completion = header_runtime.completion(
+            self.scope, self.binding, self.key, len(rows), digest,
+        )
+        return (
+            [header_runtime.KERNEL_PREFIX + canonical(row).decode("ascii") for row in rows],
+            completion,
+        )
+
+    def authenticate(self, rows, completion=None, *, order=None, reserve=lambda size: None):
+        values, signed = self.signed(rows)
+        if completion is not None:
+            signed = completion
+        values.append(header_runtime.KERNEL_END + canonical(signed).decode("ascii"))
+        if order is not None:
+            values = [values[index] for index in order]
+        return header_runtime.authenticate_records(
+            values, self.profile, self.verifier,
+            count_limit=32, file_limit=65536, reserve=reserve,
+        )
+
+    def complete_rows(self):
+        return [
+            self.row(1, "statfs", "/sys/fs/selinux"),
+            self.row(
+                2, "stream", "/proc/filesystems", result=0, bytes=7,
+                sha256="2" * 64, eof=True,
+            ),
+            self.row(
+                3, "stream", "/proc/filesystems", result=0, bytes=7,
+                sha256="2" * 64, eof=True,
+            ),
+            self.row(4),
+        ]
+
+    def test_authenticated_actual_transcripts_preserve_order_repeats_and_short_paths(self):
+        rows = self.complete_rows()
+        transcript = self.authenticate(rows, order=(3, 1, 4, 0, 2))
+        self.assertEqual([row.sequence for row in transcript.rows], [1, 2, 3, 4])
+        self.assertEqual([row.path for row in transcript.rows[1:3]], ["/proc/filesystems"] * 2)
+        short = self.authenticate([self.row(1, "statfs", "/sys/fs/selinux")])
+        self.assertEqual(len(short.rows), 1)
+        many = [self.row(1, "statfs", "/sys/fs/selinux")] + [
+            self.row(
+                sequence, "stream", "/proc/mounts", result=0, bytes=0,
+                sha256="0" * 64, eof=False,
+            )
+            for sequence in range(2, 8)
+        ]
+        self.assertEqual(len(self.authenticate(many).rows), 7)
+
+    def test_unchanged_tag_rejects_coherent_omission_insertion_resequence_and_payload_repairs(self):
+        rows = self.complete_rows()
+        _, original = self.signed(rows)
+        mutations = []
+        for omitted_sequence in range(1, len(rows) + 1):
+            omitted = [dict(row) for row in rows if row["sequence"] != omitted_sequence]
+            for sequence, row in enumerate(omitted, 1):
+                row["sequence"] = sequence
+            mutations.append(omitted)
+        for inserted_sequence in range(1, len(rows) + 1):
+            inserted = [dict(row) for row in rows]
+            inserted.insert(inserted_sequence, dict(rows[inserted_sequence - 1]))
+            for sequence, row in enumerate(inserted, 1):
+                row["sequence"] = sequence
+            mutations.append(inserted)
+        resequenced = [dict(row) for row in rows]
+        resequenced[1]["sequence"], resequenced[2]["sequence"] = 3, 2
+        mutations.append(resequenced)
+        for field, value in (
+            ("operation", "unknown"), ("path", "/proc/mounts"), ("result", 1), ("data", "00"),
+            ("bytes", 8), ("sha256", "3" * 64), ("eof", False),
+        ):
+            payload = [dict(row) for row in rows]
+            payload[1][field] = value
+            mutations.append(payload)
+        for changed in mutations:
+            repaired = {
+                **original,
+                "count": len(changed),
+                "manifest_sha256": hashlib.sha256(canonical(changed)).hexdigest(),
+            }
+            with self.subTest(rows=changed), self.assertRaises(ChannelError):
+                self.authenticate(changed, repaired)
+        for changed in (
+            {**original, "count": original["count"] - 1},
+            {**original, "manifest_sha256": "3" * 64},
+        ):
+            with self.assertRaises(ChannelError):
+                self.authenticate(rows, changed)
+
+    def test_completion_and_existing_payload_shapes_remain_closed(self):
+        rows = self.complete_rows()
+        _, completion = self.signed(rows)
+        bad = [
+            {**completion, "version": 1},
+            {**completion, "scope": "foreign"},
+            {**completion, "binding": "2" * 64},
+            {**completion, "status": 1},
+            {**completion, "tag": completion["tag"].upper()},
+            {**completion, "extra": None},
+        ]
+        for value in bad:
+            with self.subTest(value=value), self.assertRaises(ChannelError):
+                self.authenticate(rows, value)
+        values, completion = self.signed(rows)
+        wire = values + [header_runtime.KERNEL_END + canonical(completion).decode("ascii")]
+        with self.assertRaises(ChannelError):
+            header_runtime.authenticate_records(
+                wire, self.profile,
+                header_runtime._FilterLaunch(self.scope, self.binding, b"x" * 32),
+                count_limit=32, file_limit=65536,
+            )
+        for terminals in ([], [wire[-1], wire[-1]]):
+            with self.assertRaises(ChannelError):
+                header_runtime.authenticate_records(
+                    [*values, *terminals], self.profile, self.verifier,
+                    count_limit=32, file_limit=65536,
+                )
+        decimal = [
+            *(header_runtime.KERNEL_PREFIX + canonical(row).decode("ascii") for row in rows),
+            header_runtime.KERNEL_END + str(len(rows)),
+        ]
+        with self.assertRaises(ChannelError):
+            header_runtime.authenticate_records(
+                decimal, self.profile, self.verifier, count_limit=32, file_limit=65536,
+            )
+        without_first = [self.row(1)]
+        with self.assertRaises(ChannelError):
+            self.authenticate(without_first)
+        malformed = [dict(row) for row in rows]
+        malformed[1]["eof"] = 0
+        with self.assertRaises(ChannelError):
+            self.authenticate(malformed)
+
+    def test_old_count_only_omission_preimage_is_the_restoration_negative(self):
+        rows = self.complete_rows()[:2]
+        old = [
+            header_runtime.KERNEL_PREFIX + canonical(rows[0]).decode("ascii"),
+            header_runtime.KERNEL_END + "1",
+        ]
+        self.assertEqual(
+            header_runtime.records(old, self.profile, count_limit=32, file_limit=65536),
+            (rows[0],),
+        )
+        _, original = self.signed(rows)
+        repaired = {
+            **original, "count": 1,
+            "manifest_sha256": hashlib.sha256(canonical(rows[:1])).hexdigest(),
+        }
+        with self.assertRaises(ChannelError):
+            self.authenticate(rows[:1], repaired)
+
+    def test_launch_versions_and_private_key_consumption_are_exact(self):
+        dependency = {"executables": ["/usr/bin/sed"], "filter_kernel": self.profile}
+        config = {
+            "root": "/root", "mode": "compile", "argv": ["/usr/bin/sed"],
+            "environment": {}, "code": [], "sources": [], "enumerations": [],
+            "executables": ["/usr/bin/sed"], "mounts": [], "dependency": dependency,
+        }
+        config["header_runtime"] = {
+            "version": 2, "scope": "root", "binding": header_runtime.launch_binding(config),
+            "receipt_key": self.key.hex(),
+        }
+        with patch.object(header_runtime, "launch_scope", return_value="root"):
+            retained = copy.deepcopy(config)
+            header_runtime.validate_launch(retained, consume_key=False)
+            self.assertIn("receipt_key", retained["header_runtime"])
+            launch = header_runtime.validate_launch(config)
+        self.assertEqual(launch.receipt_key, self.key)
+        self.assertNotIn("receipt_key", config["header_runtime"])
+
+    def test_guard_reserves_then_commits_without_double_charge_or_refund(self):
+        policy = syscall_guard.Policy.__new__(syscall_guard.Policy)
+        policy.config = {
+            "observation_count": 3, "observation_limit": 1_000_000, "file_limit": 65536,
+        }
+        policy.filter_kernel = self.profile
+        policy.header_runtime = self.verifier
+        policy.observation_attempts = {name: set() for name in ("consumed", "code_consumed", "accessed")}
+        policy.observation_bytes = 0
+        policy.accessed = set()
+        policy.kernel_streams = {}
+        policy.kernel_sequence = 0
+        policy.kernel_has_first_statfs = False
+        policy.kernel_manifest = policy.kernel_row_limit = policy.kernel_terminal_limit = None
+        policy.kernel_terminal_reservation = None
+        policy.reserve_header_completion()
+        reserved = policy.observation_bytes
+        self.assertEqual(len(policy.observation_attempts["accessed"]), 1)
+        policy.kernel_record("statfs", "/sys/fs/selinux", -errno.ENOENT)
+        row_charge = policy.observation_bytes - reserved
+        self.assertGreater(row_charge, policy.kernel_row_limit + 128)
+        self.assertEqual(len(policy.observation_attempts["accessed"]), 2)
+        before_terminal = policy.observation_bytes
+        policy.header_completion(0)
+        self.assertEqual(policy.observation_bytes, before_terminal)
+        self.assertEqual(len(policy.observation_attempts["accessed"]), 2)
+        transcript = header_runtime.authenticate_records(
+            policy.accessed, self.profile, self.verifier,
+            count_limit=3, file_limit=65536,
+        )
+        self.assertEqual(len(transcript.rows), 1)
+        self.assertIsNone(policy.header_runtime)
+        failed_status = syscall_guard.Policy.__new__(syscall_guard.Policy)
+        failed_status.__dict__.update({
+            **policy.__dict__,
+            "header_runtime": self.verifier,
+            "kernel_manifest": hashlib.sha256(b"["),
+            "kernel_terminal_reservation": object(),
+        })
+        with self.assertRaises(syscall_guard.Violation):
+            failed_status.header_completion(1)
+        self.assertIsNone(failed_status.header_runtime)
+        open_stream = syscall_guard.Policy.__new__(syscall_guard.Policy)
+        open_stream.__dict__.update({
+            **policy.__dict__,
+            "header_runtime": self.verifier,
+            "kernel_streams": {(1, 2): {}},
+            "kernel_manifest": hashlib.sha256(b"["),
+            "kernel_terminal_reservation": object(),
+        })
+        with self.assertRaises(syscall_guard.Violation):
+            open_stream.header_completion(0)
+        self.assertIsNone(open_stream.header_runtime)
+
+    def test_guard_rejects_before_growth_and_retains_failed_reservations(self):
+        def policy(limit=1_000_000):
+            value = syscall_guard.Policy.__new__(syscall_guard.Policy)
+            value.config = {"observation_count": 3, "observation_limit": limit, "file_limit": 64}
+            value.filter_kernel = self.profile
+            value.header_runtime = self.verifier
+            value.observation_attempts = {
+                name: set() for name in ("consumed", "code_consumed", "accessed")
+            }
+            value.observation_bytes = 0
+            value.accessed = set()
+            value.kernel_streams = {}
+            value.kernel_sequence = 0
+            value.kernel_has_first_statfs = False
+            value.kernel_manifest = value.kernel_row_limit = value.kernel_terminal_limit = None
+            value.kernel_terminal_reservation = None
+            return value
+
+        exact = policy()
+        row_limit = header_runtime.row_wire_limit(self.profile, count_limit=3, file_limit=64)
+        terminal_limit = header_runtime.terminal_wire_limit(self.scope, self.binding, count_limit=3)
+        exact.config["observation_limit"] = (
+            terminal_limit + 128 + header_runtime.terminal_private_reservation(terminal_limit)
+            + row_limit + 128 + header_runtime.row_private_reservation(row_limit)
+        )
+        exact.reserve_header_completion()
+        exact.kernel_record("statfs", "/sys/fs/selinux", -errno.ENOENT)
+        self.assertEqual(exact.observation_bytes, exact.config["observation_limit"])
+        too_small = policy(exact.config["observation_limit"] - 1)
+        too_small.reserve_header_completion()
+        with self.assertRaises(syscall_guard.Violation):
+            too_small.kernel_record("statfs", "/sys/fs/selinux", -errno.ENOENT)
+        invalid = policy()
+        invalid.reserve_header_completion()
+        before = invalid.observation_bytes, len(invalid.observation_attempts["accessed"])
+        with self.assertRaises(syscall_guard.Violation):
+            invalid.kernel_record(
+                "stream", "/proc/filesystems", 0, count=65, digest="0" * 64, eof=False,
+            )
+        self.assertEqual(
+            (invalid.observation_bytes, len(invalid.observation_attempts["accessed"])), before,
+        )
+        failed = policy()
+        failed.reserve_header_completion()
+        with patch.object(syscall_guard, "encoded", side_effect=RuntimeError("encode fault")):
+            with self.assertRaises(RuntimeError):
+                failed.kernel_record("statfs", "/sys/fs/selinux", -errno.ENOENT)
+        self.assertEqual(len(failed.observation_attempts["accessed"]), 2)
+        self.assertFalse(failed.accessed)
+        with self.assertRaises(syscall_guard.Violation):
+            failed.header_completion(0)
+        self.assertIsNone(failed.header_runtime)
+
+    def test_immutable_views_preserve_json_shape_and_reject_ordinary_mutation(self):
+        transcript = self.authenticate(self.complete_rows())
+        views = header_runtime.immutable_views(transcript)
+        view = views[0]
+        self.assertEqual(len(canonical(views)), transcript.semantic_size)
+        self.assertEqual(json.loads(json.dumps(views)), [row.mapping() for row in transcript.rows])
+        self.assertIs(copy.copy(view), view)
+        self.assertIs(copy.deepcopy(view), view)
+        mutations = [
+            lambda: view.__setitem__("path", "changed"),
+            lambda: view.__delitem__("path"),
+            view.clear, lambda: view.pop("path"), view.popitem,
+            lambda: view.setdefault("x", 1), lambda: view.update({"x": 1}),
+            lambda: view.__ior__({"x": 1}), lambda: view.__init__({}),
+        ]
+        for mutation in mutations:
+            with self.subTest(mutation=mutation), self.assertRaises(TypeError):
+                mutation()
+        copied = dict(view)
+        copied["path"] = "changed"
+        self.assertNotEqual(copied, view)
+        self.assertEqual(set(view), set(header_runtime.ROW_FIELDS))
+
+    def test_native_value_fingerprint_exact_types_aliases_unicode_and_work(self):
+        vectors = [
+            (None, "78037ec9f39c31763d6434b47888cc98e7b330de8c60682363a9a4e6a6e13bb8"),
+            (False, "a37f684c3af66ed546604ef16e342212af64c10f07ece520b2b79d0bb3f24f27"),
+            (True, "93dc61a380aed9209cb3164cfa16f916d7ab645fa526297b5180a3715b1b65a4"),
+            (0, "1320306fdee567d967b24a4768b18b3a9e7f1916f177cf1d4930c5229f136f37"),
+            (-1, "e3bf2ae44b178dfff8e93380af451b4b75940937e4933b9878013a1f4736bf59"),
+            (1.5, "37991ed4f7173ca59e3a77fc244a4d8bce1db15f0ca0e7da85bf3b1eaa5a43f2"),
+            ("A\ud800😀", "8de7537b5a731b3b0fca3de92533e9c2a07d35beaadf2c6d190f897892cad983"),
+            ([None, True, -1], "56455efbfc1c508737d00f42bc4bc82b255523f7594a93350288e85778c71081"),
+            ({"z": 0, "a": "x"}, "f6bb635b90f749ed1334e47ebd23e8785a9701a745787f923e913a54390b61e4"),
+        ]
+        def fingerprint(value, charges=None):
+            return make_probe._native_value_fingerprint(
+                value, reserve=(lambda size: None if charges is None else charges.append(size)),
+                remaining=lambda: None, node_limit=128,
+            )
+        for value, expected in vectors:
+            self.assertEqual(fingerprint(value).hex(), expected)
+        self.assertEqual(fingerprint([1, "x"]), fingerprint((1, "x")))
+        self.assertEqual(fingerprint({"a": 1, "b": 2}), fingerprint({"b": 2, "a": 1}))
+        self.assertNotEqual(fingerprint(True), fingerprint(1))
+        self.assertNotEqual(fingerprint(0.0), fingerprint(-0.0))
+        self.assertNotEqual(fingerprint("😀"), fingerprint("\ud83d\ude00"))
+        alias = ["x"]
+        self.assertEqual(fingerprint([alias, alias]), fingerprint([["x"], ["x"]]))
+        cycle = []
+        cycle.append(cycle)
+        for value in (1 << 64, -(1 << 64), math.inf, math.nan, b"x", {1: "x"}, cycle):
+            with self.subTest(value=type(value)), self.assertRaises(MakeProbeError):
+                fingerprint(value)
+        class String(str):
+            pass
+        with self.assertRaises(MakeProbeError):
+            fingerprint(String("x"))
+        with self.assertRaises(MakeProbeError):
+            make_probe._native_value_fingerprint(
+                [1, 2], reserve=lambda size: None, remaining=lambda: None, node_limit=2,
+            )
+        charges = []
+        fingerprint({"a": [1, 2, 3]}, charges)
+        first = sum(charges)
+        fingerprint({"a": [1, 2, 3]}, charges)
+        self.assertEqual(sum(charges), 2 * first)
+        used = 0
+        def bounded(size):
+            nonlocal used
+            if used + size > 600:
+                raise MakeProbeError("exhausted")
+            used += size
+        with self.assertRaises(MakeProbeError):
+            make_probe._native_value_fingerprint(
+                "x" * 100, reserve=bounded, remaining=lambda: None, node_limit=128,
+            )
+
+    def test_shared_native_return_is_context_bound_one_use_and_freezes_values(self):
+        budget = ProbeBudget(Limits(control_bytes=1024 * 1024))
+        session = make_probe.ProbeSession.__new__(make_probe.ProbeSession)
+        session.budget = budget
+        session.owner_thread = threading.get_ident()
+        session.snapshot = object()
+        session.tree = Path("/source")
+        session._namespace_epoch = 7
+        session._native_issue_owner = None
+        session._native_returns = {}
+        owner = make_probe._HeaderRuntimeLaunch()
+        command, live, step = object(), object(), object()
+        context = (command, live, step)
+        completed = subprocess.CompletedProcess(("sed",), 0, b"original", b"")
+        observed = {
+            "ok": True, "returncode": 0, "accessed": ["row"], "metadata": (),
+            "consumed": [], "code_consumed": [], "executed": ["sed"],
+        }
+        payload = self.authenticate([self.row(1, "statfs", "/sys/fs/selinux")])
+        with patch.object(session, "_native_return_context", return_value=context):
+            session._native_issue_owner = owner
+            session._issue_native_return(
+                header_runtime.FILTER_PURPOSE, owner, completed, observed, payload,
+            )
+            claimed = session._claim_native_return(
+                header_runtime.FILTER_PURPOSE, owner, completed, observed,
+            )
+            self.assertEqual((claimed.stdout, claimed.stderr, claimed.returncode),
+                             (b"original", b"", 0))
+            completed.stdout = b"replacement"
+            observed["accessed"].clear()
+            observed["executed"].clear()
+            self.assertEqual(claimed.stdout, b"original")
+            self.assertEqual(claimed.executed, ("sed",))
+            self.assertEqual(len(claimed.payload.rows), 1)
+            with self.assertRaises(MakeProbeError):
+                session._claim_native_return(
+                    header_runtime.FILTER_PURPOSE, owner, completed, observed,
+                )
+        self.assertFalse(session._native_returns)
+
+    def test_shared_native_return_rejects_mutation_copy_purpose_context_and_retires(self):
+        def session():
+            value = make_probe.ProbeSession.__new__(make_probe.ProbeSession)
+            value.budget = ProbeBudget(Limits(control_bytes=1024 * 1024))
+            value.owner_thread = threading.get_ident()
+            value.snapshot = object()
+            value.tree = Path("/source")
+            value._namespace_epoch = 2
+            value._native_issue_owner = None
+            value._native_returns = {}
+            return value
+
+        payload = self.authenticate([self.row(1, "statfs", "/sys/fs/selinux")])
+        for defect in (
+            "status", "stdout", "stderr", "report", "copy", "report-copy",
+            "owner-copy", "purpose", "context", "snapshot", "epoch", "thread",
+        ):
+            current = session()
+            owner = make_probe._HeaderRuntimeLaunch()
+            issued_owner = owner
+            completed = subprocess.CompletedProcess(("sed",), 0, b"out", b"err")
+            observed = {
+                "ok": True, "returncode": 0, "accessed": ["row"], "metadata": (),
+                "consumed": [], "code_consumed": [], "executed": ["sed"],
+            }
+            context = (object(), object(), object())
+            with self.subTest(defect=defect), patch.object(
+                current, "_native_return_context", side_effect=[
+                    context, (object(), context[1], context[2]) if defect == "context" else context,
+                ],
+            ):
+                current._native_issue_owner = owner
+                current._issue_native_return(
+                    header_runtime.FILTER_PURPOSE, owner, completed, observed, payload,
+                )
+                claimed_completed, claimed_observed = completed, observed
+                purpose = header_runtime.FILTER_PURPOSE
+                if defect == "status":
+                    completed.returncode = 1
+                elif defect == "stdout":
+                    completed.stdout = b"changed"
+                elif defect == "stderr":
+                    completed.stderr = b"changed"
+                elif defect == "report":
+                    observed["accessed"].append("changed")
+                elif defect == "copy":
+                    claimed_completed = copy.copy(completed)
+                elif defect == "report-copy":
+                    claimed_observed = copy.deepcopy(observed)
+                elif defect == "owner-copy":
+                    owner = copy.copy(owner)
+                elif defect == "purpose":
+                    purpose = "toolchain-step-v2"
+                elif defect == "snapshot":
+                    current.snapshot = object()
+                elif defect == "epoch":
+                    current._namespace_epoch += 1
+                thread = patch.object(
+                    make_probe, "get_ident",
+                    return_value=threading.get_ident() + 1,
+                ) if defect == "thread" else patch.object(
+                    make_probe, "get_ident", wraps=make_probe.get_ident,
+                )
+                with thread, self.assertRaises(MakeProbeError):
+                    current._claim_native_return(purpose, owner, claimed_completed, claimed_observed)
+                current._retire_native_return(
+                    header_runtime.FILTER_PURPOSE, issued_owner, completed, observed,
+                )
+                self.assertFalse(current._native_returns)
+        current = session()
+        owner = make_probe._HeaderRuntimeLaunch()
+        completed = subprocess.CompletedProcess(("sed",), 0, b"out", b"err")
+        observed = {
+            "ok": True, "returncode": 0, "accessed": [], "metadata": (),
+            "consumed": [], "code_consumed": [], "executed": ["sed"],
+        }
+        context = (object(), object(), object())
+        with patch.object(current, "_native_return_context", return_value=context):
+            current._native_issue_owner = owner
+            current._issue_native_return(
+                header_runtime.FILTER_PURPOSE, owner, completed, observed, payload,
+            )
+            current._retire_native_return(
+                header_runtime.FILTER_PURPOSE, owner, completed, observed,
+            )
+        self.assertFalse(current._native_returns)
+        current = session()
+        owner = make_probe._HeaderRuntimeLaunch()
+        completed = subprocess.CompletedProcess(("sed",), 0, b"out", b"err")
+        observed = {
+            "ok": True, "returncode": 0, "accessed": [], "metadata": (),
+            "consumed": [], "code_consumed": [], "executed": ["sed"],
+        }
+        current.budget = ProbeBudget(Limits(control_bytes=1))
+        with patch.object(current, "_native_return_context", return_value=context):
+            current._native_issue_owner = owner
+            with self.assertRaises(MakeProbeError):
+                current._issue_native_return(
+                    header_runtime.FILTER_PURPOSE, owner, completed, observed, payload,
+                )
+        self.assertFalse(current._native_returns)
 
 
 if __name__ == "__main__":

@@ -198,6 +198,29 @@ the native configuration is serialized. A caller-created dictionary cannot
 grant the SDK or kernel-input profile. Full original source-read-phase
 authority remains separate and unimplemented.
 
+The filter launch alone is version 2 and carries a fresh key in the private
+trusted configuration. Before candidate execution, the supervisor reserves
+one terminal observation and its exact maximum wire size plus separately
+accounted slot, encoder and hash workspace. Each actual row similarly reserves
+one count, its closed-schema maximum and construction workspace before row
+allocation. Successful publication transfers each private reservation once,
+without a second count or refund; a partial encode, hash or transfer cannot
+sign a prefix. The manifest is streamed in sequence order and retains no
+second ordered row list. Its maximum is derived from the issued observation
+count, file limit, exact profile shapes, scope and binding—not from an
+assumption that every allowed path executes.
+
+After the parent validates a successful report, the shared private
+native-return seam fingerprints the complete parsed report with exact builtin
+value tags, bounded big-endian lengths, signed fixed-width integers, finite
+IEEE binary64 values, exact Unicode code points, ordered arrays and
+lexicographically sorted exact string keys. Lists and tuples have the same
+value encoding; aliases are revisited, while cycles, subclasses, bool-as-int,
+nonfinite values and out-of-domain integers reject. Every issue and claim pays
+its own traversal, sorting, hash and retained-reference work from existing
+budgets. No whole-report JSON encoding, new limit, opaque report capability or
+toolchain placeholder is introduced.
+
 An opt-in original read trace uses the actual GNU4.3 entry/return ABI and four
 x86-64 hardware execution-breakpoint slots. The runtime ELF, decoded control
 flow, globals, real source fopen call sites and stopped process/frame are
