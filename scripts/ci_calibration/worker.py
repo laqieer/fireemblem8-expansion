@@ -422,16 +422,30 @@ def graph(config):
 
 
 def finish_root(scope, sampler, budget, primary):
-    failure = None
+    active = sys.exception()
+    closing = []
+    reporting = [active] if primary is not None and active is not None and active is not primary else []
     for close in (sampler.close, *(() if budget is None else (budget.close,))):
         try:
             close()
         except BaseException as error:
-            if failure is None:
-                failure = error
+            closing.append(error)
+    for error in closing:
+        try:
             kernel.emit(scope, "cleanup-error", policy.error_record(error))
-    if primary is None and failure is not None:
-        raise failure
+        except BaseException as error:
+            reporting.append(error)
+    if not closing and not reporting:
+        return
+    failure = primary if primary is not None else (closing or reporting)[0]
+    for stage, errors in (("close", closing), ("report", reporting)):
+        for error in errors:
+            if error is failure:
+                continue
+            message = f"after owned root {stage}: {type(error).__name__}: {error}"
+            failure.cleanup_errors = (*getattr(failure, "cleanup_errors", ()), message)
+            failure.add_note(message)
+    raise failure
 
 
 def root(config):

@@ -7,8 +7,13 @@ creation push.
 
 Preparation scope:
 [5722633638](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5722633638).
-CURRENT is `8d03b518c714ff4915220af4568f0274f3c8d292`; BASE and the single
-harness-commit parent are `ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`.
+CURRENT is `8d03b518c714ff4915220af4568f0274f3c8d292`; BASE remains
+`ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`. The reviewed preparation
+`4dcbcb7e462a3d0953fea5b54d29c30954193ea7` is BASE's normal child; this
+failure-preservation correction is one normal child of that preparation.
+The final harness therefore has an exact two-commit lineage, not a direct
+single-commit BASE parent. Its identity guard preserves that chain and the
+original allowed diagnostic paths.
 The reference harness `038d1b9dba400911fa267d73424b8996c603e851` belongs to
 closed16 and is not modified, rerun or reopened.
 
@@ -88,6 +93,39 @@ or original-root acceptance.
 All earlier native preimages, review evidence and diagnostic failures remain
 independent records. Successful root acceptance, if separately authorized and
 obtained, would still not be a public/full-report resource-sizing point.
+
+## Local preparation failure-preservation correction
+
+[Correction scope5723396827](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5723396827)
+addresses two independently reproduced Mediums without allocating17.
+The reviewed4dcb tree remains immutable. Author benign preimages use the
+actual functions and inert API/phase doubles, separately from C's inline
+2744/2746 executions; they are not hosted qualification.
+
+An earlier `finish_root` emitted a diagnostic inside its close loop. When the
+sampler close raised and the channel then raised `BrokenPipeError`, the budget
+close was skipped. The escaping transport error retained the cleanup error as
+context; the defect was not loss of every trace. The correction attempts every
+owned close before reporting and attempts each report independently. An
+original workload failure takes precedence, otherwise the first cleanup
+failure does. Secondary close/report failures are attached explicitly, and
+reporting cannot turn unperformed cleanup into success.
+
+The old supervisor fallback could borrow `preflight[-1].first_cause` after
+all seven simulated controls qualified. Their legitimate lifetime-eof
+negative then hid a later volume/setup exception or root-phase pre-return
+failure. Cause selection now uses only a currently failing phase validation;
+after qualification the phase reference is cleared. Setup and calls that
+raise before returning keep the actual caught exception, while genuinely
+failing current preflight/root results retain their own cause.
+
+Focused benign controls cover both defects and restore each old behavior
+independently to demonstrate regression detection. Earlier passing Main/C
+controls did not exercise these combinations and do not prove this fix.
+CURRENT, kernel/entry/runtime/volume/lifetime mechanisms, limits, protocol,
+seven hosted requirements, native/source guards and root-only claims remain
+unchanged. Independent correction review and a separate exact launch freeze
+are still required; no push, root/native/report run or17 allocation occurred.
 
 ## Historical closed16 preparation record (unchanged below)
 

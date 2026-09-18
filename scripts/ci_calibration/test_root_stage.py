@@ -4,12 +4,13 @@ import ast
 import builtins
 import copy
 import dataclasses
+import errno
 import json
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-from types import SimpleNamespace
+from types import FunctionType, SimpleNamespace
 import typing
 import unittest
 from unittest import mock
@@ -480,16 +481,232 @@ class RootStageControls(unittest.TestCase):
             sampler = SimpleNamespace(close=mock.Mock(side_effect=first))
             budget = SimpleNamespace(close=mock.Mock(side_effect=second))
             with mock.patch.object(worker.kernel, "emit") as emitted:
-                if primary is None:
-                    with self.assertRaises(RuntimeError) as caught:
-                        worker.finish_root("unit/root", sampler, budget, primary)
-                    self.assertIs(caught.exception, first)
-                else:
+                with self.assertRaises(RuntimeError) as caught:
                     worker.finish_root("unit/root", sampler, budget, primary)
+                self.assertIs(caught.exception, first if primary is None else primary)
                 sampler.close.assert_called_once_with()
                 budget.close.assert_called_once_with()
                 self.assertEqual(emitted.call_count, 2)
                 self.assertTrue(all(call.args[:2] == ("unit/root", "cleanup-error") for call in emitted.call_args_list))
+                self.assertTrue(any("budget cleanup" in message for message in caught.exception.cleanup_errors))
+
+    def assert_broken_cleanup_channel(self, primary=None, *, both_closes_fail=False):
+        first = RuntimeError("first sampler cleanup")
+        second = ValueError("second budget cleanup")
+        reports = []
+        sampler = SimpleNamespace(close=mock.Mock(side_effect=first))
+        budget = SimpleNamespace(close=mock.Mock(side_effect=second if both_closes_fail else None))
+        def emit(*arguments):
+            reports.append((arguments, sampler.close.call_count, budget.close.call_count))
+            raise BrokenPipeError("actual unit reporting channel closed")
+        escaped = None
+        with mock.patch.object(worker.kernel, "emit", side_effect=emit):
+            try:
+                worker.finish_root("unit/root", sampler, budget, primary)
+            except BaseException as error:
+                escaped = error
+        self.assertEqual((sampler.close.call_count, budget.close.call_count), (1, 1))
+        self.assertIs(escaped, primary if primary is not None else first)
+        self.assertEqual(len(reports), 2 if both_closes_fail else 1)
+        self.assertTrue(all(record[1:] == (1, 1) for record in reports))
+        self.assertTrue(any("BrokenPipeError" in message for message in escaped.cleanup_errors))
+        if both_closes_fail:
+            self.assertTrue(any("second budget cleanup" in message for message in escaped.cleanup_errors))
+        if primary is not None:
+            self.assertTrue(any("first sampler cleanup" in message for message in escaped.cleanup_errors))
+
+    def test_broken_reporting_never_skips_closes_or_replaces_the_primary(self):
+        for primary in (None, RuntimeError("original root failure")):
+            for both in (False, True):
+                with self.subTest(primary=primary, both=both):
+                    self.assert_broken_cleanup_channel(primary, both_closes_fail=both)
+
+    def test_original_workload_survives_an_already_failing_error_report(self):
+        original = RuntimeError("original workload")
+        sampler = SimpleNamespace(close=mock.Mock())
+        budget = SimpleNamespace(close=mock.Mock())
+        try:
+            try:
+                raise original
+            except RuntimeError:
+                raise BrokenPipeError("primary error reporting failed")
+        except BrokenPipeError:
+            with self.assertRaises(RuntimeError) as caught:
+                worker.finish_root("unit/root", sampler, budget, original)
+        self.assertIs(caught.exception, original)
+        self.assertEqual((sampler.close.call_count, budget.close.call_count), (1, 1))
+        self.assertTrue(any("primary error reporting failed" in note for note in original.cleanup_errors))
+
+    @staticmethod
+    def qualified_phase_record(mode):
+        paths = (
+            "/proc/self/oom_score_adj", "/proc/self/oom_adj", "/proc/sys/kernel/kptr_restrict",
+            "/proc/sys/vm/overcommit_memory", "/proc/sys/kernel/overflowuid", "/proc/sys/kernel/overflowgid",
+        )
+        proc = {
+            "pid": 1, "proc_pid": 1, "oom_score_adj_after": "0", "proc_mount_flags": 14,
+            "denied_writes": {
+                path: {"opened": True, "errno": errno.EPERM, "before": "0", "after": "0"} for path in paths
+            },
+            "sysrq_write_open": {"exposed": True, "errno": errno.EPERM},
+        }
+        value = {
+            "mode": mode,
+            "identity": {"uid": 999, "gid": 999, "cgroup": "/unit", "namespaces": {"user": 1}},
+            "empty": True, "empty_before_outer_cleanup": True, "watchdog_reaped": True,
+            "returncode": 0, "first_cause": None, "probe": {},
+            "kernel": {"memory_events": {"oom_kill": 1}},
+            "escaped": {"unit": True}, "held_descendants_terminal": 2,
+            "caller_lifetime_control_exercised": mode == "lifetime",
+        }
+        if mode == "identity":
+            value["probe"] = {
+                "proc_protection": proc,
+                "nested": {
+                    "uid": 0, "uid_map": ["0", "999", "1"], "gid_map": ["0", "999", "1"],
+                    "no_new_privs": "1", "cgroup": "/unit", "namespaces": {"user": 2},
+                    "cgroup_control_probe": {"namespace_denied": errno.EPERM}, "proc_protection": proc,
+                },
+            }
+        if mode == "memory":
+            value["first_cause"] = {"type": "cgroup-oom", "message": "expected unit memory rejection"}
+        if mode == "output":
+            value.update(first_cause={"type": "output-bound"}, output_exceeded=True, output_bytes=65537)
+        if mode in {"deadline", "lifetime"}:
+            value["first_cause"] = {
+                "type": "deadline" if mode == "deadline" else "lifetime-eof",
+                "message": "Expected caller closure",
+            }
+        return value
+
+    def supervisor_failure(self, defect):
+        directory = self.root / defect
+        directory.mkdir()
+        output = directory / "issue180-ci-baseline-17-123"
+        event = {
+            "ref": "refs/heads/" + policy.BRANCH, "before": "0" * 40, "after": "a" * 40,
+            "created": True, "deleted": False,
+            "repository": {"full_name": policy.REPOSITORY, "private": False},
+            "sender": {"login": "laqieer"},
+        }
+        event_path = directory / "event.json"
+        event_path.write_text(json.dumps(event))
+        args = SimpleNamespace(
+            operation="plan", output=str(output), event=str(event_path), sha="a" * 40,
+            run_id="123", attempt="1", run_number="1", runner_environment="github-hosted",
+            runner_os="Linux", event_name="push", harness="inert-harness", candidate="inert-candidate",
+        )
+        actual = RuntimeError("INERT_" + defect.upper() + "_FAILURE")
+        phase_cause = {"type": "unit-current-phase-error", "error": {"kind": defect}}
+        modes, cleanup, prepared, qualified = [], [], [], []
+        validate = supervisor.validate_probe
+        class Owner:
+            def __init__(self, *arguments):
+                self.scope = arguments[1]
+            def prepare(self):
+                prepared.append(True)
+            def volume(self, name, size):
+                if name == "graph-volume" and defect == "post-qualified-volume":
+                    raise actual
+                def close():
+                    if defect == "post-qualified-close":
+                        raise actual
+                return SimpleNamespace(close=close)
+            def cleanup(self):
+                cleanup.append(True)
+            def source_status(self, label):
+                pass
+        def phase(owner, mode, *arguments, **keywords):
+            modes.append(mode)
+            if mode == "root":
+                if defect == "root-before-return":
+                    raise actual
+                return {"mode": "root", "first_cause": phase_cause, "returncode": 1}
+            if mode == "pids" and defect == "preflight-before-return":
+                raise actual
+            result = self.qualified_phase_record(mode)
+            if mode == "pids" and defect == "failing-preflight-result":
+                result.update(returncode=1, first_cause=phase_cause)
+            return result
+        def qualification(result):
+            validate(result)
+            qualified.append(result["mode"])
+        facts = {
+            "memory_total": 16 * policy.GIB, "memory_available": 12 * policy.GIB,
+            "disk_available": 24 * policy.GIB, "cpus": 4, "threads_max": 100000, "threads_current": 500,
+            "cgroup_ancestors": [{"path": "/", "memory_max": None, "memory_current": 0,
+                                  "pids_max": None, "pids_current": 0}],
+        }
+        facade = SimpleNamespace(flags=SimpleNamespace(isolated=True, no_site=True), dont_write_bytecode=True)
+        with mock.patch.object(supervisor, "arguments", return_value=args), \
+             mock.patch.object(supervisor, "sys", facade), mock.patch.object(supervisor.os, "geteuid", return_value=0), \
+             mock.patch.object(supervisor.os, "chown"), mock.patch.object(supervisor, "Owner", Owner), \
+             mock.patch.object(supervisor, "capacity_facts", return_value=facts), \
+             mock.patch.object(supervisor, "phase", side_effect=phase), \
+             mock.patch.object(supervisor, "validate_probe", side_effect=qualification):
+            self.assertEqual(supervisor.main(), 0)
+            args.operation = "run"
+            status = supervisor.main()
+        result = json.loads((output / "result.json").read_text())
+        self.assertEqual(status, 1)
+        self.assertEqual(result["status"], "failed")
+        self.assertFalse(result["production_acceptance"])
+        self.assertEqual(prepared, [True])
+        expected = phase_cause if defect in {"failing-preflight-result", "failing-root-result"} else policy.error_record(actual)
+        self.assertEqual(result["first_error"], expected)
+        if defect.startswith("post-qualified"):
+            self.assertEqual(qualified, ["identity", "memory", "pids", "disk", "output", "deadline", "lifetime"])
+            self.assertNotIn("root", modes)
+            self.assertEqual(cleanup, [True])
+        if defect in {"root-before-return", "failing-root-result"}:
+            self.assertEqual(modes.count("root"), 1)
+            self.assertEqual(cleanup, [])
+            self.assertFalse(result["cleanup_confirmed"])
+        return result
+
+    def test_supervisor_setup_and_prereturn_failures_never_borrow_qualified_negative_causes(self):
+        for defect in ("post-qualified-volume", "post-qualified-close", "root-before-return", "preflight-before-return"):
+            with self.subTest(defect=defect):
+                self.supervisor_failure(defect)
+
+    def test_supervisor_preserves_genuinely_failing_current_phase_causes(self):
+        for defect in ("failing-preflight-result", "failing-root-result"):
+            with self.subTest(defect=defect):
+                self.supervisor_failure(defect)
+
+    def old_function(self, module, name):
+        path = "scripts/ci_calibration/" + module.__name__.rsplit(".", 1)[-1] + ".py"
+        source = subprocess.check_output(
+            ["/usr/bin/git", "-C", str(ROOT), "show", supervisor.PREPARATION_SHA + ":" + path],
+            text=True, timeout=10,
+        )
+        node, = [node for node in ast.parse(source).body if isinstance(node, ast.FunctionDef) and node.name == name]
+        namespace = dict(vars(module))
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "<retained-preparation-control>", "exec"), namespace)
+        function = namespace[name]
+        return FunctionType(function.__code__, vars(module), name, function.__defaults__, function.__closure__)
+
+    def test_restoring_each_old_failure_path_breaks_its_benign_regression(self):
+        with mock.patch.object(worker, "finish_root", self.old_function(worker, "finish_root")):
+            with self.assertRaises(AssertionError):
+                self.assert_broken_cleanup_channel()
+        with mock.patch.object(supervisor, "main", self.old_function(supervisor, "main")):
+            with self.assertRaises(AssertionError):
+                self.supervisor_failure("post-qualified-volume")
+
+    def test_harness_identity_requires_the_exact_two_commit_normal_lineage(self):
+        head = "a" * 40
+        expected = [f"{head} {supervisor.PREPARATION_SHA}", f"{supervisor.PREPARATION_SHA} {policy.BASE}"]
+        supervisor.validate_harness_lineage(expected, head)
+        for rows in (
+            [f"{head} {policy.BASE}"],
+            [f"{head} {'b' * 40}", expected[1]],
+            [expected[0], f"{supervisor.PREPARATION_SHA} {'b' * 40}"],
+            [f"{head} {supervisor.PREPARATION_SHA} {'b' * 40}", expected[1]],
+            [*expected, f"{policy.BASE} {'b' * 40}"],
+        ):
+            with self.subTest(rows=rows), self.assertRaises(policy.GuardError):
+                supervisor.validate_harness_lineage(rows, head)
 
     def test_root_counters_and_supervisor_result_cannot_credit_outer_cleanup_alone(self):
         root = result_fixture()

@@ -32,6 +32,15 @@ HERE = Path(__file__).resolve().parent
 LIFECYCLE = HERE.parent / "validation_ownership/lifecycle.py"
 CGROOT = Path("/sys/fs/cgroup")
 ROOT_ENV = {**policy.CLEAN_ENV, "PATH": "/usr/sbin:/usr/bin:/sbin:/bin"}
+PREPARATION_SHA = "4dcbcb7e462a3d0953fea5b54d29c30954193ea7"
+
+
+def validate_harness_lineage(lines, head):
+    if lines != [
+        f"{head} {PREPARATION_SHA}",
+        f"{PREPARATION_SHA} {policy.BASE}",
+    ]:
+        raise policy.GuardError("diagnostic requires its exact normal correction/preparation/BASE lineage")
 
 
 def apparmor_text(name):
@@ -703,8 +712,10 @@ class Owner:
             raise policy.GuardError("harness does not match the actual workflow SHA")
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
-        if git(self.harness, "rev-parse", "HEAD^").decode().strip() != policy.BASE:
-            raise policy.GuardError("diagnostic must be one non-delivery commit directly on the frozen base")
+        validate_harness_lineage(
+            git(self.harness, "rev-list", "--parents", "--max-count=2", "HEAD").decode().splitlines(),
+            self.scope["harness_sha"],
+        )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
         if any(
             name and name.decode() != policy.WORKFLOW and not name.decode().startswith("scripts/ci_calibration/")
@@ -938,6 +949,7 @@ def main():
     first = None
     cleanup_error = None
     result = None
+    failing_phase = None
     preflight = []
     started = time.monotonic()
     artifacts.write("result.json", {
@@ -968,7 +980,9 @@ def main():
             )
             preflight.append(observed)
             artifacts.write("preflight.json", {"status": "qualifying", "probes": preflight})
+            failing_phase = observed
             validate_probe(observed)
+            failing_phase = None
         artifacts.write("preflight.json", {"status": "qualified", "probes": preflight})
         probe_volume.close()
         facts = capacity_facts(output.parent)
@@ -983,13 +997,13 @@ def main():
             owner, "root", graph_volume, memory=envelope["memory_max"],
             pids=envelope["pids_max"], seconds=policy.GRAPH_SECONDS,
         )
+        failing_phase = result
         checked = validate_root_phase(result)
+        failing_phase = None
         scope["root_check_completed"] = True
         result["validation"] = checked
     except BaseException as error:
-        observed_cause = result.get("first_cause") if result is not None else (
-            preflight[-1].get("first_cause") if preflight else None
-        )
+        observed_cause = failing_phase.get("first_cause") if isinstance(failing_phase, dict) else None
         first = observed_cause or policy.error_record(error)
     finally:
         if owner is not None:
