@@ -4078,6 +4078,22 @@ proof semantics and nonchronological history; no candidate clock is accepted.
     source obligations from actual issued job associations; unavailable
     associations must stay unavailable. These two bounded observations do
     not identify ROOT18's historical reader or grant another root allocation.
+19. For the [diagnostic retention correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5727758683),
+    use the pure phase-module controls with 201/801 original bindings and
+    200/800 dependency edges. Keep default limits and precharge cache to
+    leave 4096 bytes. Hold the actual source exception and its traceback
+    while measuring newly retained allocations and container state; exclude
+    the caller's existing input graph. Both cases must retain the same
+    primary namespace refusal, without an unadmitted fan-out graph or
+    partial attribution hidden in a raw secondary traceback.
+
+    With sufficient unchanged cache, inspect the real selected carrier path,
+    one predecessor per queued name and the admission before projection
+    construction. Include duplicate/cyclic edges and a simple-snapshot stop.
+    Check count/file/cache/deadline failures and an unprintable chained
+    diagnostic exception. An unrelated successful reader must still succeed
+    when optional diagnostic bookkeeping cannot fit. These are pure
+    allocation/lifetime controls, not additional native witnesses.
 
 ### Expected result
 
@@ -4123,6 +4139,11 @@ bounded data explains the current original-state decision without re-entering
 evaluation or supplying a value/proof. The existing successful candidate
 remains successful, and recursive-late use remains a refusal. A diagnostic
 failure cannot replace the primary source error.
+Shared-prefix fan-out has linear diagnostic workspace. Rejected retention
+releases temporary collections and diagnostic traceback references, including
+partial projection owners. The primary source frames remain available.
+Secondary stage/type evidence is explicit and bounded; no raw diagnostic
+exception is retained merely to preserve its traceback.
 
 Immutable verifier batches return exactly the individually read bytes, preserve
 path/mode/gitlink/source authority and reject every trusted-tree or loaded-module
@@ -6131,12 +6152,25 @@ failure and retain the exact primary source error with a secondary cause/note,
 never partial success or silent truncation. These pure controls are not
 native/root proof.
 
+Restore the published ancestry-copy/late-retention behavior independently.
+The 201/801 retained-state regression must fail at its actual collection or
+allocation bound, not merely because a new attribute is absent. Separately
+restore raw secondary traceback retention while keeping the linear traversal
+and admissions intact; actual projection owners must remain alive and fail
+the lifetime control. Restore the correction and require both controls to
+pass. Use runtime container structure, measured retained allocations and
+the selected dependency path together, not exact-byte fingerprints, source
+spelling or a larger stress graph.
+
 The source error's custom attribution is available to an in-process caller.
 The ordinary reporter prints only the existing primary message. The current
 diagnostic harness records exception chains and code-frame identities, plus
 counters/native-failure metadata; it does not include custom attributes or
 notes. A chained diagnostic failure can appear as a secondary exception, but
-that does not publish the detailed source record. Keep any harness publication
+the corrected source helper supplies only a sanitized bounded stage/type
+exception, not raw failed-construction frames. That does not publish the
+detailed source record or fix the formatter for other exception families.
+Keep any harness publication
 change or later bounded root run under a separate accepted scope.
 
 #### Required scoped-source negative and restoration controls
@@ -6837,6 +6871,10 @@ Refusal attribution is diagnostic-only and depends on the existing original
 source state and error/budget seams. It changes neither snapshot admission nor
 public/harness routing. Successful small snapshot evidence is not a semantic
 fix or retrospective attribution of an earlier root failure.
+The diagnostic retention correction also preserves these boundaries:
+no evaluator/source permission, numerical allowance or refund is introduced.
+It retains original input objects as legitimate caller/source context while
+releasing diagnostic-only temporaries on failure.
 
 The graph does not execute selected gates and cannot skip or narrow validation.
 A later independently accepted issue must prove selection non-inferiority
@@ -6885,6 +6923,9 @@ unchanged source bytes/Git state across simulated fixture exceptions.
   The same module also covers bounded namespace attribution and its pure
   formatting/accounting/no-reentry controls, plus the existing native
   recursive-alias and snapshot/laziness cases.
+  Pure shared-prefix, duplicate/cycle, pre-admission and retained-exception
+  controls cover linear storage and cleanup without adding a module, owner,
+  case or native witness allocation.
 
 The focused A/V fixtures also execute the title fingerprint comparator with
 missing/changed framebuffer controls, the actual presentation runner's
@@ -6929,6 +6970,10 @@ secondary evidence. Only a complete charged attribution record is attached;
 missing visits/sites/associations remain missing. Preserve the first accepted
 semantic candidate and the separately labeled recursive-late refusal; never
 replace either with a claim about an unrecorded historical root context.
+Do not keep rejected diagnostic graphs through raw chained exceptions or
+failed helper frames. Clear transient source notes on every exit and retain
+only the bounded secondary stage/type. Never clear the primary caller/source
+context or refund spent admission to make a control pass.
 
 Rollback is a normal revert of issue #180's dedicated commit; existing broader
 validation behavior is unchanged.

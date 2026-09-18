@@ -2,11 +2,15 @@
 
 import copy
 from dataclasses import replace
+import gc
 import shlex
 import subprocess
+import sys
+import tracemalloc
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+import weakref
 
 from scripts.validation_ownership import graph_probe, make_probe, phase_census, read_epochs, source_directories
 from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
@@ -89,7 +93,7 @@ class PhaseCensusTests(unittest.TestCase):
             self.assertEqual(fact["source_fact_kind"], "header-bound")
             self.assertEqual(fact["snapshot_decision"], "exact-original-value-unavailable")
             self.assertEqual(data["association_status"], "unavailable-not-inferred")
-            self.assertEqual(budget.bytes["cache"], len(graph_probe.encoded(data)))
+            self.assertGreater(budget.bytes["cache"], len(graph_probe.encoded(data)))
             self.assertFalse(budget.failed)
             self.assertNotIn("value", fact)
         finally:
@@ -127,15 +131,15 @@ class PhaseCensusTests(unittest.TestCase):
             class UnprintableDiagnostic(RuntimeError):
                 def __str__(self):
                     raise AssertionError("secondary exception must not be formatted")
-            size = phase_census._namespace_attribution_size
-            def fail_size(value, owner):
+            project = phase_census._namespace_projection
+            def fail_projection(*args, **kwargs):
                 if fault == "serialization":
                     raise ValueError("controlled serializer failure")
                 if fault == "unprintable":
                     raise UnprintableDiagnostic()
-                return size(value, owner)
+                return project(*args, **kwargs)
             try:
-                with self.subTest(fault=fault), patch.object(phase_census, "_namespace_attribution_size", fail_size):
+                with self.subTest(fault=fault), patch.object(phase_census, "_namespace_projection", fail_projection):
                     with self.assertRaises(MakeProbeError) as caught:
                         phase_census._namespace_refusal(
                             phase, stream.mode_state, usage,
@@ -157,11 +161,17 @@ class PhaseCensusTests(unittest.TestCase):
                 }[fault]
                 self.assertEqual(caught.exception.source_attribution_unavailable, expected_stage)
                 expected_type = {
-                    "serialization": ValueError, "unprintable": UnprintableDiagnostic,
-                }.get(fault, MakeProbeError)
-                self.assertIs(type(caught.exception.__cause__), expected_type)
+                    "serialization": "ValueError", "unprintable": "UnprintableDiagnostic",
+                }.get(fault, "MakeProbeError")
+                self.assertEqual(caught.exception.source_attribution_failure_type, expected_type)
+                self.assertIs(type(caught.exception.__cause__), MakeProbeError)
+                self.assertIsNone(caught.exception.__cause__.__traceback__)
+                self.assertIsNone(caught.exception.__cause__.__context__)
                 self.assertEqual(budget.failed, fault in {"cache", "closed"})
-                self.assertEqual(budget.bytes.get("cache", 0), 0)
+                if fault in {"cache", "closed", "overflow"}:
+                    self.assertEqual(budget.bytes.get("cache", 0), 0)
+                else:
+                    self.assertGreater(budget.bytes["cache"], 0)
                 self.assertTrue(any("namespace attribution unavailable during" in note
                                     for note in caught.exception.__notes__))
             finally:
@@ -271,6 +281,279 @@ class PhaseCensusTests(unittest.TestCase):
             self.assertFalse(budget.failed)
         finally:
             budget.close()
+
+    def namespace_graph_data(self, budget, dependencies, carriers, reader):
+        """Consistent parsed graph inputs; no native authority or observation."""
+        phase, stream, usage = self.namespace_diagnostic_data(budget)
+        values = {
+            name: "$(wildcard src/*.c)" if name in carriers
+            else " ".join("$(" + child + ")" for child in children)
+            for name, children in dependencies.items()
+        }
+        mode = stream.mode_state
+        mode.definitions = {
+            name: frozenset((graph_probe._ModeBinding("file", "recursive", value),))
+            for name, value in values.items()
+        }
+        mode.binding_versions = {(None, name): 0 for name in values}
+        mode.template_values = {}
+        unit = stream.ordered[0][2]._replace(text="\t@printf '%s' '$(" + reader + ")'")
+        stream = stream._replace(ordered=(("Makefile", 8, unit),))
+        usage.update(
+            source_expressions={name: [value] for name, value in values.items()},
+            execution_dependencies=dependencies,
+            read_expressions={name: [value] for name, value in values.items()},
+            definitions={name: [value] for name, value in values.items()},
+        )
+        return phase, stream, usage
+
+    def namespace_retention_data(self, size, budget):
+        width = (size - 1) // 2
+        prefix = tuple("PREFIX_" + str(index) for index in range(width + 1))
+        leaves = tuple("LEAF_" + str(index) for index in range(width))
+        dependencies = {name: (prefix[index + 1],) for index, name in enumerate(prefix[:-1])}
+        dependencies[prefix[-1]] = leaves
+        dependencies.update((name, ()) for name in leaves)
+        return self.namespace_graph_data(budget, dependencies, {leaves[-1]}, prefix[0])
+
+    def held_namespace_error(self, phase, stream, usage):
+        try:
+            phase_census._deferred_namespace_check(phase, stream, usage)
+        except MakeProbeError as error:
+            return error
+        self.fail("the recursive namespace consumer must refuse")
+
+    def namespace_retained_cells(self, error, inputs):
+        """Count newly retained containers, excluding the caller's input graph."""
+        containers = (dict, list, tuple, set, frozenset)
+        original, pending = set(), list(inputs)
+        while pending:
+            value = pending.pop()
+            if id(value) in original:
+                continue
+            original.add(id(value))
+            if isinstance(value, dict):
+                pending.extend(value.keys())
+                pending.extend(value.values())
+            elif isinstance(value, containers):
+                pending.extend(value)
+            elif isinstance(value, (SimpleNamespace, graph_probe._MakeSourceMode, ProbeBudget)):
+                pending.append(vars(value))
+        seen, cells = set(original), 0
+        current, exceptions = error, set()
+        while current is not None and id(current) not in exceptions:
+            exceptions.add(id(current))
+            pending.append(vars(current))
+            trace = current.__traceback__
+            while trace is not None:
+                if trace.tb_frame.f_globals.get("__name__") == phase_census.__name__:
+                    pending.extend(trace.tb_frame.f_locals.values())
+                trace = trace.tb_next
+            current = current.__cause__ or current.__context__
+        while pending:
+            value = pending.pop()
+            if id(value) in seen:
+                continue
+            seen.add(id(value))
+            if isinstance(value, dict):
+                cells += 2 * len(value)
+                pending.extend(value.keys())
+                pending.extend(value.values())
+            elif isinstance(value, containers):
+                cells += len(value)
+                pending.extend(value)
+        return cells
+
+    def test_namespace_failed_retention_drops_shared_prefix_graphs_and_tracebacks(self):
+        for size in (201, 801):
+            budget = ProbeBudget()
+            phase, stream, usage = self.namespace_retention_data(size, budget)
+            budget.charge("cache", budget.limits.cache_bytes - 4096)
+            original_cache = budget.bytes["cache"]
+            gc.collect()
+            tracemalloc.start()
+            try:
+                with self.subTest(bindings=size):
+                    error = self.held_namespace_error(phase, stream, usage)
+                    gc.collect()
+                    retained, _ = tracemalloc.get_traced_memory()
+                    cells = self.namespace_retained_cells(error, (phase, stream, usage))
+                    extent = len(usage["execution_dependencies"]) + sum(
+                        map(len, usage["execution_dependencies"].values())
+                    )
+                    self.assertEqual(str(error), "deferred namespace use lacks an original parse-time snapshot")
+                    self.assertFalse(hasattr(error, "source_attribution"))
+                    self.assertLessEqual(cells, extent)
+                    self.assertLess(retained, extent * sys.getsizeof((None, None)) + 4096)
+                    self.assertEqual(error.source_attribution_failure_type, "MakeProbeError")
+                    self.assertIsNone(error.__cause__.__traceback__)
+                    self.assertIsNone(error.__cause__.__context__)
+                    self.assertLessEqual(budget.bytes["cache"] - original_cache, 4096)
+                    self.assertTrue(any(
+                        frame.tb_frame.f_globals.get("__name__") == phase_census.__name__
+                        and all(any(value is original for value in frame.tb_frame.f_locals.values())
+                                for original in (phase, stream, usage))
+                        for frame in self.namespace_tracebacks(error)
+                    ))
+            finally:
+                tracemalloc.stop()
+                budget.close()
+
+    def namespace_tracebacks(self, error):
+        trace = error.__traceback__
+        while trace is not None:
+            yield trace
+            trace = trace.tb_next
+
+    def test_namespace_linear_links_preserve_selected_paths_and_admit_before_projection(self):
+        for size in (201, 801):
+            budget = ProbeBudget()
+            phase, stream, usage = self.namespace_retention_data(size, budget)
+            traversals, projections = [], []
+            path_code = phase_census._namespace_carrier_path.__code__
+            previous = sys.getprofile()
+            def observe(frame, event, result):
+                if frame.f_code is path_code and event == "return" and result is not None:
+                    dependencies = usage["execution_dependencies"]
+                    parents, = [
+                        value for value in frame.f_locals.values()
+                        if isinstance(value, dict) and value.keys() == dependencies.keys()
+                        and all(parent is None or isinstance(parent, str) for parent in value.values())
+                    ]
+                    pending, = [
+                        value for value in frame.f_locals.values()
+                        if isinstance(value, list) and len(value) == (size - 1) // 2 - 1
+                        and all(isinstance(name, str) for name in value)
+                    ]
+                    traversals.append((
+                        len(parents), len(pending),
+                        all(parent is None or name in dependencies[parent] for name, parent in parents.items()),
+                        all(isinstance(name, str) for name in pending),
+                    ))
+            project = phase_census._namespace_projection
+            def observed_projection(out, *args, **kwargs):
+                before = budget.bytes.get("cache", 0)
+                result = project(out, *args, **kwargs)
+                projections.append((out.admitted, before, out.count, out.size, out.storage, result is None))
+                return result
+            try:
+                with self.subTest(bindings=size), patch.object(phase_census, "_namespace_projection", observed_projection):
+                    sys.setprofile(observe)
+                    error = self.held_namespace_error(phase, stream, usage)
+                    sys.setprofile(previous)
+                    data = error.source_attribution
+                    width = (size - 1) // 2
+                    expected = ["PREFIX_" + str(index) for index in range(width + 1)] + ["LEAF_" + str(width - 1)]
+                    self.assertEqual(data["carrier_path"], expected)
+                    self.assertEqual(traversals, [(size, width - 1, True, True)])
+                    measured, constructed = projections
+                    self.assertIsNone(measured[0])
+                    self.assertTrue(measured[-1])
+                    self.assertEqual(constructed[0], measured[2:5])
+                    self.assertGreaterEqual(constructed[1] - measured[1], measured[3] + measured[4])
+                    self.assertEqual(phase_census._namespace_attribution_size(data, budget),
+                                     len(graph_probe.encoded(data)))
+                    self.assertFalse(budget.failed)
+            finally:
+                sys.setprofile(previous)
+                budget.close()
+
+    def test_namespace_cycles_duplicate_edges_and_snapshot_stops_keep_real_paths(self):
+        budget = ProbeBudget()
+        try:
+            dependencies = {
+                "ROOT": ("LEFT", "RIGHT", "LEFT", "SAFE"),
+                "LEFT": ("ROOT", "TAIL"), "RIGHT": ("TAIL", "ROOT", "TAIL"),
+                "TAIL": ("SOURCE",), "SOURCE": (), "SAFE": ("SOURCE",),
+            }
+            phase, stream, usage = self.namespace_graph_data(budget, dependencies, {"SOURCE"}, "ROOT")
+            stream.mode_state.definitions["SAFE"] = frozenset((
+                graph_probe._ModeBinding("file", "simple", "fixed"),
+            ))
+            error = self.held_namespace_error(phase, stream, usage)
+            path = error.source_attribution["carrier_path"]
+            self.assertEqual(path, ["ROOT", "RIGHT", "TAIL", "SOURCE"])
+            self.assertEqual(len(path), len(set(path)))
+            self.assertNotIn("SAFE", path)
+            for parent, child in zip(path, path[1:]):
+                self.assertIn(child, dependencies[parent])
+        finally:
+            budget.close()
+
+    def test_namespace_projection_failures_release_owned_frames_and_keep_bounded_secondary(self):
+        for fault in ("size", "count", "cache", "deadline", "chained"):
+            limits = Limits(file_bytes=512) if fault == "size" else Limits(observations=20) if fault == "count" else Limits()
+            budget = ProbeBudget(limits)
+            phase, stream, usage = self.namespace_diagnostic_data(budget)
+            references = []
+            initialize = phase_census._NamespaceRecord.__init__
+            def track(instance, *args, **kwargs):
+                initialize(instance, *args, **kwargs)
+                references.append(weakref.ref(instance))
+            project = phase_census._namespace_projection
+            class UnprintableDiagnostic(RuntimeError):
+                def __str__(self):
+                    raise AssertionError("raw secondary exception was formatted")
+            def interrupted(out, *args, **kwargs):
+                result = project(out, *args, **kwargs)
+                if out.admitted is not None:
+                    if fault == "deadline":
+                        budget.started -= budget.limits.seconds + 1
+                        budget.remaining()
+                    elif fault == "chained":
+                        try:
+                            raise ValueError("owned projected-record frame")
+                        except ValueError as cause:
+                            raise UnprintableDiagnostic() from cause
+                return result
+            if fault == "cache":
+                budget.charge("cache", budget.limits.cache_bytes - 4096)
+            try:
+                with self.subTest(fault=fault), patch.object(phase_census._NamespaceRecord, "__init__", track), \
+                     patch.object(phase_census, "_namespace_projection", interrupted):
+                    try:
+                        phase_census._namespace_refusal(
+                            phase, stream.mode_state, usage, "deferred namespace use lacks an original parse-time snapshot",
+                            condition="direct-wildcard" if fault == "size" else "namespace-dependency",
+                            occurrence=stream.ordered[0], expression="reader", value="reader",
+                            names={"readers": set() if fault == "size" else {"SNAPSHOT"}, "carriers": {"SOURCE"}},
+                            unresolved=(), snapshots=set(), unsafe=set(), unknown=False, snapshot_checks={},
+                            causes=[], attribution_overflow=False,
+                        )
+                    except MakeProbeError as caught:
+                        error = caught
+                    else:
+                        self.fail("the original source error must remain")
+                self.assertEqual(str(error), "deferred namespace use lacks an original parse-time snapshot")
+                self.assertFalse(hasattr(error, "source_attribution"))
+                self.assertTrue(references)
+                gc.collect()
+                self.assertTrue(all(reference() is None for reference in references))
+                self.assertIsNone(error.__cause__.__traceback__)
+                self.assertIsNone(error.__cause__.__cause__)
+                self.assertIsNone(error.__cause__.__context__)
+                self.assertEqual(error.source_attribution_failure_type,
+                                 "UnprintableDiagnostic" if fault == "chained" else "MakeProbeError")
+                self.assertTrue(error.__notes__)
+            finally:
+                budget.close()
+
+    def test_namespace_unavailable_bookkeeping_does_not_reject_an_unrelated_positive(self):
+        for size in (201, 801):
+            budget = ProbeBudget()
+            phase, stream, usage = self.namespace_retention_data(size, budget)
+            stream = stream._replace(ordered=((
+                "Makefile", 8, stream.ordered[0][2]._replace(text="\t@printf stable"),
+            ),))
+            budget.charge("cache", budget.limits.cache_bytes - 4096)
+            before = dict(budget.bytes)
+            try:
+                with self.subTest(bindings=size):
+                    phase_census._deferred_namespace_check(phase, stream, usage)
+                    self.assertEqual(budget.bytes, before)
+                    self.assertFalse(budget.failed)
+            finally:
+                budget.close()
 
     def test_scoped_model_preserves_raw_append_and_source_time_rhs(self):
         mode = graph_probe._MakeSourceMode(

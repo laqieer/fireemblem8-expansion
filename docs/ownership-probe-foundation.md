@@ -446,8 +446,18 @@ the original error. They retain already computed original pass/site,
 condition, carrier/dependency, binding-version and snapshot-exclusion facts;
 missing source/native associations remain unavailable. Formatting does not
 evaluate Make again or manufacture a namespace/source capability. The
-existing file/count/byte/deadline limits bound the data, and accounting or
-formatting failure remains explicit and secondary to the original refusal.
+existing file/count/byte/deadline limits bound the data. The dependency walk
+uses one predecessor per queued name and reconstructs only its selected
+carrier path. Workspace and record-container extents are admitted before
+growth, not after building a shared-prefix fan-out. Transient source notes
+that cannot fit do not turn a successful source decision into a refusal.
+
+Accounting or formatting failure remains explicit and secondary to the
+original refusal. Failed diagnostic frames and partial collections are
+released; a bounded stage/type and sanitized secondary error replace the raw
+diagnostic traceback. Original source context is not erased. Pure retained-
+exception allocation controls cover this lifetime boundary; their byte
+measurements are not native/root resource-sizing evidence.
 
 The successful small SIMPLE-snapshot candidate is not changed into a failing
 historical ROOT18 reader. A separately labeled recursive-late negative

@@ -437,12 +437,28 @@ unavailable; a source obligation is not relabeled as an executed job.
 
 The formatter walks existing dependency facts only. It does not re-enter the
 Make evaluator, inspect arbitrary frame locals, dump original/generated
-streams or create a proof. Canonical JSON size is bounded before retention
-using the existing file/count/deadline limits, and retained data spends the
-existing cache allowance. If attribution or accounting fails, the original
-source refusal stays primary; `source_attribution_unavailable`, an explicit
-secondary note and the diagnostic cause identify that failure. Partial or
-silently truncated records cannot stand in for complete attribution.
+streams or create a proof. Each queued name has one predecessor link; only
+the selected carrier path is reconstructed. Shared prefixes are not copied
+into queued children. Existing input extents and count/file/deadline bounds
+admit the linear workspace against the existing cache allowance before it
+grows. A data-only projection measures JSON bytes and conservative container
+storage without constructing the full record; that extent is charged before
+the record's containers are built. No allowance is increased or refunded.
+
+Transient source-decision notes borrow computed source objects and check
+count/storage extents before growth. If they cannot fit, an otherwise
+accepted source decision still succeeds without spending diagnostic cache.
+All notes are cleared on exit. A refused source decision instead reports
+attribution unavailability explicitly; it never receives a partial record.
+
+If collection, construction or accounting fails, the original source refusal
+stays primary. `source_attribution_unavailable` and
+`source_attribution_failure_type`, a bounded note and a sanitized secondary
+`MakeProbeError` retain the stage/type. Failed diagnostic frames are cleared,
+and raw secondary exceptions are not attached: their tracebacks could retain
+unadmitted queues or partial records. Original caller/source context remains
+on the primary exception. This does not repair the separate harness formatter
+or authorize it to publish custom attributes.
 
 This is observability, not temporal-snapshot admission. The faithful small
 original C-source/object/header snapshot family already accepts both passes.
