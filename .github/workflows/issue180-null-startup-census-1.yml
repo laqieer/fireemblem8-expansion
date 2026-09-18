@@ -1,0 +1,87 @@
+name: Issue 180 ordinary-CI startup census 1
+
+on:
+  push:
+    branches: [diagnostic/issue-180-null-startup-census-1]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue180-null-startup-census-1
+  cancel-in-progress: false
+
+jobs:
+  startup-census:
+    if: >-
+      github.repository == 'laqieer/fireemblem8-expansion' &&
+      github.event.repository.private == false &&
+      github.actor == 'laqieer' &&
+      github.triggering_actor == 'laqieer' &&
+      github.event.sender.login == 'laqieer' &&
+      github.event.created == true &&
+      github.event.deleted == false &&
+      github.run_number == 1 &&
+      github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      EXPECTED_BUILD_SHA: 048c1bb3ab8008bbe862ad8072ed124e02fdb170
+
+    steps:
+    - name: Checkout this exact non-delivery harness
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ github.sha }}
+        path: harness
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Record the first-creation scope before setup
+      run: |
+        /usr/bin/python3 -I -S -B "$GITHUB_WORKSPACE/harness/scripts/ci_startup_census/census.py" plan \
+          --harness "$GITHUB_WORKSPACE/harness" --candidate "$GITHUB_WORKSPACE/candidate" \
+          --output "$RUNNER_TEMP/issue180-null-startup-census-1-$GITHUB_RUN_ID"
+
+    - name: Checkout the immutable native-CI candidate separately
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: 048c1bb3ab8008bbe862ad8072ed124e02fdb170
+        path: candidate
+        fetch-depth: 0
+        submodules: recursive
+        persist-credentials: false
+
+    - name: Verify checked-out revision
+      working-directory: candidate
+      run: |
+        ACTUAL_SHA="$(git rev-parse HEAD)"
+        printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
+        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"
+
+    - name: Install extended host dependencies
+      run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-dev libpng-dev pkg-config python3-venv
+
+    - name: Record one ordinary-user outer startup only
+      working-directory: candidate
+      run: |
+        /usr/bin/timeout --signal=KILL 45s \
+          /usr/bin/python3 -I -S -B "$GITHUB_WORKSPACE/harness/scripts/ci_startup_census/census.py" run \
+          --harness "$GITHUB_WORKSPACE/harness" --candidate "$GITHUB_WORKSPACE/candidate" \
+          --output "$RUNNER_TEMP/issue180-null-startup-census-1-$GITHUB_RUN_ID"
+
+    - name: Upload only bounded census records
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+      with:
+        name: issue180-null-startup-census-1-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+        retention-days: 7
+        if-no-files-found: error
+        path: |
+          ${{ runner.temp }}/issue180-null-startup-census-1-${{ github.run_id }}/scope.json
+          ${{ runner.temp }}/issue180-null-startup-census-1-${{ github.run_id }}/attempt.json
+          ${{ runner.temp }}/issue180-null-startup-census-1-${{ github.run_id }}/prelaunch.json
+          ${{ runner.temp }}/issue180-null-startup-census-1-${{ github.run_id }}/launch.json
+          ${{ runner.temp }}/issue180-null-startup-census-1-${{ github.run_id }}/stdout
+          ${{ runner.temp }}/issue180-null-startup-census-1-${{ github.run_id }}/stderr
+          ${{ runner.temp }}/issue180-null-startup-census-1-${{ github.run_id }}/result.json
