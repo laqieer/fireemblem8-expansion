@@ -4,10 +4,13 @@ import ast
 import copy
 from contextlib import contextmanager
 from dataclasses import replace
+import hashlib
 import inspect
 import json
+import os
 from pathlib import Path
 import shlex
+import stat
 import textwrap
 import subprocess
 import unittest
@@ -20,6 +23,483 @@ from scripts.validation_ownership.budget import MakeProbeError
 from scripts.validation_ownership.graph_commands import MakeCommands, ROOT_RUNTIME_FILES
 from scripts.validation_ownership.make_probe import Command
 from scripts.validation_ownership.tests import test_foundation as foundation
+
+
+class ToolchainProtocolDataTests(unittest.TestCase):
+    """Pure model-data controls for the dormant stage-4 protocol helpers."""
+
+    def model(self, path="/work/ccL3VdjV.s"):
+        driver = [
+            "/usr/bin/arm-none-eabi-gcc", "-isystem", "/usr/include/newlib",
+            "-mcpu=arm7tdmi", "-mthumb", "-mthumb-interwork", "-ffreestanding",
+            "-fno-pic", "-fno-pie", "-c", "-x", "c", "-o", "/dev/null", "-",
+        ]
+        cc1 = [
+            "/usr/lib/gcc/arm-none-eabi/13.2.1/cc1", "-quiet", "-imultilib",
+            "thumb/nofp", "-D__USES_INITFINI__", "-isystem", "/usr/include/newlib",
+            "-", "-quiet", "-dumpbase", "-", "-mcpu=arm7tdmi", "-mthumb",
+            "-mthumb-interwork", "-mfloat-abi=soft", "-mlibarch=armv4t",
+            "-march=armv4t", "-ffreestanding", "-fno-pie", "-o", path,
+        ]
+        assembler = [
+            "/usr/lib/gcc/arm-none-eabi/13.2.1/../../../arm-none-eabi/bin/as",
+            "-march=armv4t", "-mthumb-interwork", "-mfloat-abi=soft", "-meabi=5",
+            "-o", "/dev/null", path,
+        ]
+        images = [
+            ["/usr/bin/arm-none-eabi-gcc", 1, 11, 0o100755, 100, 101, 102],
+            ["/usr/lib/gcc/arm-none-eabi/13.2.1/cc1", 1, 12, 0o100755, 200, 201, 202],
+            ["/usr/lib/arm-none-eabi/bin/as", 1, 13, 0o100755, 300, 301, 302],
+        ]
+        executions = [
+            {
+                "stage": "compile", "sequence": sequence, "path": image[0],
+                "identity": image[1:], "argv": argv, "environment": {"LANG": "C", "EMPTY": ""},
+            }
+            for sequence, (image, argv) in enumerate(zip(images, (driver, cc1, assembler)), 1)
+        ]
+        profile = {
+            "version": 2, "stage": 4, "stdin": toolchain_runtime.COMPILE_INPUT,
+            "inputs": [], "driver_identity": images[0][1:], "images": images,
+            "workspace": [9, 10, stat.S_IFDIR | 0o700],
+        }
+        roles = toolchain_runtime.compile_operand_roles(
+            executions, profile, driver, complete=True,
+        )
+        actor_pids = (401, 402, 403)
+        mode = stat.S_IFREG | 0o600
+        created = [21, 22, mode, 0, 1000, 1000, 1]
+        writer_opened = [21, 22, mode, 0, 1000, 1001, 1]
+        sealed = [21, 22, mode, 64, 1001, 1002, 1]
+        retired = [21, 22, mode, 64, 1001, 1003, 0]
+        digest = "a" * 64
+        receipt = {
+            "version": 1,
+            "scope": "probe-model/make-root-1",
+            "binding": "b" * 64,
+            "stage": "compile",
+            "role": "stage4-assembly",
+            "path": path,
+            "workspace": list(profile["workspace"]),
+            "actors": [
+                {
+                    "exec_sequence": sequence,
+                    "pid": actor_pids[sequence - 1],
+                    "birth_sequence": 500 + sequence,
+                    "exec_record_sha256": hashlib.sha256(
+                        toolchain_runtime.encoded(row)
+                    ).hexdigest(),
+                }
+                for sequence, row in enumerate(executions, 1)
+            ],
+            "creation": {
+                "order": 1, "syscall_sequence": 10, "syscall": "openat",
+                "exec_sequence": 1, "pid": actor_pids[0], "fd": 7,
+                "flags": os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC,
+                "requested_mode": 0o600, "result": 7, "identity": created,
+            },
+            "creator_close": {
+                "order": 2, "syscall_sequence": 11, "syscall": "close", "result": 0,
+            },
+            "writer": {
+                "exec_sequence": 2, "pid": actor_pids[1],
+                "operand": {"kind": "output", "option": "-o", "argv_index": roles.output.argv_index},
+                "open": {
+                    "order": 3, "syscall_sequence": 20, "syscall": "openat", "fd": 8,
+                    "flags": os.O_WRONLY | os.O_TRUNC | os.O_CLOEXEC,
+                    "requested_mode": 0, "result": 8, "identity": writer_opened,
+                },
+                "completed": {
+                    "order": 6, "close_order": 4, "close_syscall_sequence": 30,
+                    "close_result": 0, "write_calls": 2, "written_bytes": 64,
+                    "extent": 64, "sha256": digest, "identity": sealed,
+                },
+                "exit": {"order": 5, "result": 0},
+            },
+            "reader": {
+                "exec_sequence": 3, "pid": actor_pids[2],
+                "operand": {"kind": "input", "argv_index": roles.input.argv_index},
+                "open": {
+                    "order": 7, "syscall_sequence": 40, "syscall": "openat", "fd": 9,
+                    "flags": os.O_RDONLY | os.O_CLOEXEC, "result": 9, "identity": sealed,
+                },
+                "completed": {
+                    "order": 8, "close_syscall_sequence": 50, "close_result": 0,
+                    "read_calls": 2, "read_bytes": 64, "extent": 64,
+                    "sha256": digest, "eof_observed": False, "identity": sealed,
+                },
+                "exit": {"order": 9, "result": 0},
+            },
+            "retirement": {
+                "order": 10, "syscall_sequence": 60, "syscall": "unlinkat",
+                "exec_sequence": 1, "pid": actor_pids[0], "result": 0,
+                "before_identity": sealed, "after_identity": retired, "path_absent": True,
+            },
+            "driver_exit": {"order": 11, "result": 0},
+            "complete": True,
+        }
+        limits = toolchain_runtime.IntermediateLimits(
+            file_limit=4096, observation_count=128, observation_limit=65536,
+            write_limit=4096, creation_limit=4, process_limit=8, memory_limit=65536,
+            syscall_limit=100, deadline=1000.0,
+        )
+        return {
+            "driver": driver, "executions": executions, "profile": profile, "roles": roles,
+            "receipt": receipt, "launch": {
+                "version": 2, "scope": receipt["scope"], "binding": receipt["binding"],
+            },
+            "limits": limits,
+        }
+
+    def wire(self, model, *, receipt=None):
+        return toolchain_runtime.INTERMEDIATE_PREFIX + json.dumps(
+            model["receipt"] if receipt is None else receipt,
+            separators=(",", ":"), ensure_ascii=True,
+        )
+
+    def parse(self, model, *, receipt=None, values=None, reserve=lambda size: None):
+        if values is None:
+            values = [self.wire(model, receipt=receipt)]
+        return toolchain_runtime.intermediate_record(
+            values, profile=model["profile"], launch=model["launch"],
+            executions=model["executions"], returncode=0, limits=model["limits"],
+            reserve=reserve,
+        )
+
+    def probes(self, model):
+        return tuple(copy.deepcopy(model["executions"])) + ({
+            "stage": "compile", "stdin": toolchain_runtime.COMPILE_INPUT, "eof": True,
+        },)
+
+    def test_retained_argv_roles_are_grammar_derived_and_shift_with_options(self):
+        model = self.model()
+        roles = model["roles"]
+        self.assertEqual((roles.output.argv_index, roles.input.argv_index), (20, 7))
+        self.assertEqual((roles.output.value, roles.input.value), (
+            "/work/ccL3VdjV.s", "/work/ccL3VdjV.s",
+        ))
+        shifted = copy.deepcopy(model["executions"])
+        shifted[1]["argv"].insert(1, "-quiet")
+        shifted[2]["argv"].insert(1, "-mthumb")
+        shifted_roles = toolchain_runtime.compile_operand_roles(
+            shifted, model["profile"], shifted[0]["argv"], complete=True,
+        )
+        self.assertEqual((shifted_roles.output.argv_index, shifted_roles.input.argv_index), (21, 8))
+        self.assertEqual(shifted_roles.output.value, roles.output.value)
+
+    def test_repeated_quiet_and_incomplete_actual_prefix_are_closed_data(self):
+        model = self.model()
+        driver_only = toolchain_runtime.compile_operand_roles(
+            model["executions"][:1], model["profile"], model["driver"], complete=False,
+        )
+        writer_prefix = toolchain_runtime.compile_operand_roles(
+            model["executions"][:2], model["profile"], model["driver"], complete=False,
+        )
+        self.assertEqual(driver_only, toolchain_runtime.CompileRoles(1, None, None, None, None))
+        self.assertEqual(writer_prefix.writer_sequence, 2)
+        self.assertIsNone(writer_prefix.reader_sequence)
+        self.assertEqual(model["executions"][1]["argv"].count("-quiet"), 2)
+        with self.assertRaises(MakeProbeError):
+            toolchain_runtime.compile_operand_roles(
+                model["executions"][:2], model["profile"], model["driver"], complete=True,
+            )
+
+    def test_declared_separate_and_attached_child_options_remain_meaningful(self):
+        model = self.model()
+        rows = copy.deepcopy(model["executions"])
+        output_index = rows[1]["argv"].index("-o")
+        rows[1]["argv"][output_index:output_index] = [
+            "-dumpbase-ext", ".c", "-mabi=apcs-gnu", "-fno-pic",
+        ]
+        input_index = len(rows[2]["argv"]) - 1
+        rows[2]["argv"][input_index:input_index] = ["-mfpu=vfp"]
+        roles = toolchain_runtime.compile_operand_roles(
+            rows, model["profile"], rows[0]["argv"], complete=True,
+        )
+        self.assertEqual(roles.output.argv_index, model["roles"].output.argv_index + 4)
+        self.assertEqual(roles.input.argv_index, model["roles"].input.argv_index + 1)
+        changed = copy.deepcopy(rows)
+        changed[1]["argv"][changed[1]["argv"].index("-dumpbase-ext") + 1] = ".ii"
+        self.assertNotEqual(
+            toolchain_runtime.encoded(rows), toolchain_runtime.encoded(changed),
+        )
+
+    def test_role_grammar_rejects_unknown_arity_positions_and_path_reuse(self):
+        mutations = {
+            "duplicate-cc1-output": lambda rows: rows[1]["argv"].extend(
+                ["-o", "/work/ccL3VdjV.s"]
+            ),
+            "extra-cc1-positional": lambda rows: rows[1]["argv"].append("extra.c"),
+            "response-file": lambda rows: rows[1]["argv"].append("@response"),
+            "unknown-option": lambda rows: rows[1]["argv"].insert(1, "-pipe"),
+            "empty-attached": lambda rows: rows[1]["argv"].insert(1, "-mcpu="),
+            "non-string": lambda rows: rows[1]["argv"].append(7),
+            "duplicate-as-output": lambda rows: rows[2]["argv"].extend(["-o", "/dev/null"]),
+            "foreign-as-output": lambda rows: rows[2]["argv"].__setitem__(6, "/work/out.o"),
+            "foreign-as-input": lambda rows: rows[2]["argv"].__setitem__(7, "/work/other.s"),
+            "path-used-as-dumpbase": lambda rows: rows[1]["argv"].__setitem__(
+                rows[1]["argv"].index("-dumpbase") + 1, "/work/ccL3VdjV.s"
+            ),
+            "too-many-argv": lambda rows: rows[1]["argv"].__setitem__(
+                slice(1, 1), ["-quiet"] * toolchain_runtime.COMPILE_ARG_LIMIT
+            ),
+            "oversized-token": lambda rows: rows[1]["argv"].insert(1, "-D" + "X" * 4096),
+        }
+        model = self.model()
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                rows = copy.deepcopy(model["executions"])
+                mutate(rows)
+                with self.assertRaises(MakeProbeError):
+                    toolchain_runtime.compile_operand_roles(
+                        rows, model["profile"], rows[0]["argv"], complete=True,
+                    )
+
+    def test_exact_model_receipt_validates_and_is_canonical_immutable_bytes(self):
+        model = self.model()
+        charges = []
+        canonical = self.parse(model, reserve=charges.append)
+        self.assertIs(type(canonical), bytes)
+        self.assertEqual(canonical, toolchain_runtime.encoded(model["receipt"]))
+        self.assertGreaterEqual(len(charges), 4)
+        self.assertTrue(all(type(value) is int and value > 0 for value in charges))
+        self.assertEqual(charges[-1], len(canonical))
+        reordered = {key: model["receipt"][key] for key in reversed(model["receipt"])}
+        self.assertEqual(self.parse(model, receipt=reordered), canonical)
+
+    def test_receipt_duplicate_fields_extras_and_foreign_stage_never_validate(self):
+        model = self.model()
+        payload = json.dumps(model["receipt"], separators=(",", ":"))
+        duplicate = toolchain_runtime.INTERMEDIATE_PREFIX + payload.replace(
+            '"version":1', '"version":1,"version":1', 1,
+        )
+        with self.assertRaises(MakeProbeError):
+            self.parse(model, values=[duplicate])
+        extra = copy.deepcopy(model["receipt"])
+        extra["grant"] = True
+        with self.assertRaises(MakeProbeError):
+            self.parse(model, receipt=extra)
+        with self.assertRaises(MakeProbeError):
+            self.parse(model, values=[self.wire(model), self.wire(model)])
+        foreign = copy.deepcopy(model)
+        foreign["profile"]["stage"] = 3
+        with self.assertRaises(MakeProbeError):
+            toolchain_runtime.intermediate_record(
+                [self.wire(model)], profile=foreign["profile"], launch=model["launch"],
+                executions=model["executions"], returncode=0, limits=model["limits"],
+            )
+        self.assertIsNone(toolchain_runtime.intermediate_record(
+            [], profile=foreign["profile"], launch=model["launch"],
+            executions=(), returncode=0, limits=model["limits"],
+        ))
+        with self.assertRaises(MakeProbeError):
+            toolchain_runtime.intermediate_record(
+                [self.wire(model)], profile=model["profile"], launch=model["launch"],
+                executions=model["executions"], returncode=1, limits=model["limits"],
+            )
+
+    def test_receipt_type_role_actor_and_success_result_matrix_rejects(self):
+        mutations = (
+            ("bool-order", ("creation", "order"), True),
+            ("fd-bound", ("creation", "fd"), 128),
+            ("failed-create", ("creation", "result"), -1),
+            ("wrong-actor", ("writer", "pid"), 401),
+            ("wrong-index", ("reader", "operand", "argv_index"), 6),
+            ("wrong-exec-digest", ("actors", 1, "exec_record_sha256"), "c" * 64),
+            ("failed-writer-exit", ("writer", "exit", "result"), 1),
+            ("false-complete", ("complete",), False),
+            ("foreign-binding", ("binding",), "d" * 64),
+            ("preexisting-size", ("creation", "identity", 3), 1),
+        )
+        model = self.model()
+        for name, path, value in mutations:
+            with self.subTest(name=name):
+                receipt = copy.deepcopy(model["receipt"])
+                current = receipt
+                for component in path[:-1]:
+                    current = current[component]
+                current[path[-1]] = value
+                with self.assertRaises(MakeProbeError):
+                    self.parse(model, receipt=receipt)
+
+    def test_receipt_content_order_and_retirement_progression_are_independent(self):
+        mutations = (
+            (("writer", "completed", "written_bytes"), 63),
+            (("reader", "completed", "read_bytes"), 63),
+            (("reader", "completed", "sha256"), "e" * 64),
+            (("reader", "open", "identity", 1), 99),
+            (("writer", "completed", "order"), 4),
+            (("retirement", "path_absent"), False),
+            (("retirement", "after_identity", 5), 1002),
+            (("retirement", "after_identity", 6), 1),
+        )
+        model = self.model()
+        baseline = self.parse(model)
+        for path, value in mutations:
+            receipt = copy.deepcopy(model["receipt"])
+            current = receipt
+            for component in path[:-1]:
+                current = current[component]
+            current[path[-1]] = value
+            with self.subTest(path=path), self.assertRaises(MakeProbeError):
+                self.parse(model, receipt=receipt)
+            current[path[-1]] = copy.deepcopy(
+                self.value_at(model["receipt"], path)
+            )
+            self.assertEqual(self.parse(model, receipt=receipt), baseline)
+
+    @staticmethod
+    def value_at(value, path):
+        for component in path:
+            value = value[component]
+        return value
+
+    def test_retirement_check_removal_exposes_the_targeted_model_adversary_then_restores(self):
+        model = self.model()
+        receipt = copy.deepcopy(model["receipt"])
+        receipt["retirement"]["after_identity"][0] += 1
+        with self.assertRaises(MakeProbeError):
+            self.parse(model, receipt=receipt)
+        with patch.object(toolchain_runtime, "_retirement_progression", return_value=True):
+            self.assertIs(type(self.parse(model, receipt=receipt)), bytes)
+        with self.assertRaises(MakeProbeError):
+            self.parse(model, receipt=receipt)
+
+    def test_receipt_pre_growth_wire_node_depth_and_issued_bounds_reject(self):
+        model = self.model()
+        oversized = toolchain_runtime.INTERMEDIATE_PREFIX + '{"path":"' + "x" * 65536 + '"}'
+        deep = toolchain_runtime.INTERMEDIATE_PREFIX + "[" * 11 + "0" + "]" * 11
+        nodes = toolchain_runtime.INTERMEDIATE_PREFIX + "[" + ",".join("0" for _ in range(513)) + "]"
+        for name, value in (("wire", oversized), ("depth", deep), ("nodes", nodes)):
+            with self.subTest(name=name), self.assertRaises(MakeProbeError):
+                self.parse(model, values=[value])
+        small = copy.deepcopy(model)
+        small["limits"] = replace(model["limits"], observation_limit=len(self.wire(model)) - 1)
+        with self.assertRaises(MakeProbeError):
+            self.parse(small)
+        small = copy.deepcopy(model)
+        small["limits"] = replace(model["limits"], file_limit=63)
+        with self.assertRaises(MakeProbeError):
+            self.parse(small)
+        long_path = "/work/" + "x" * 4091
+        with self.assertRaises(MakeProbeError):
+            self.model(long_path)
+
+    def test_reservation_refusal_precedes_json_container_growth(self):
+        model = self.model()
+        calls = []
+
+        def refuse(size):
+            calls.append(size)
+            raise MakeProbeError("model admission refused")
+
+        with patch.object(toolchain_runtime.json, "loads", side_effect=AssertionError("decoded")):
+            with self.assertRaisesRegex(MakeProbeError, "model admission refused"):
+                self.parse(model, reserve=refuse)
+        self.assertEqual(len(calls), 1)
+
+    def test_projection_replaces_only_two_roles_and_preserves_raw_model_data(self):
+        model = self.model()
+        raw = self.probes(model)
+        before = copy.deepcopy(raw)
+        receipt = self.parse(model)
+        projected = toolchain_runtime.project_compile_identity(raw, receipt, model["roles"])
+        self.assertEqual(raw, before)
+        self.assertEqual(set(projected), {"runtime_probes", "toolchain_semantics"})
+        reference = {
+            "kind": "toolchain-intermediate-ref", "version": 1, "role": "stage4-assembly",
+        }
+        self.assertEqual(projected["runtime_probes"][1]["argv"][20], reference)
+        self.assertEqual(projected["runtime_probes"][2]["argv"][7], reference)
+        changed = [
+            (row_index, argv_index)
+            for row_index, (old, new) in enumerate(zip(raw, projected["runtime_probes"]))
+            if "argv" in old
+            for argv_index, (left, right) in enumerate(zip(old["argv"], new["argv"]))
+            if left != right
+        ]
+        self.assertEqual(changed, [(1, 20), (2, 7)])
+        summary, = projected["toolchain_semantics"]["intermediates"]
+        self.assertEqual((summary["mode"], summary["bytes"], summary["sha256"]), (0o600, 64, "a" * 64))
+        self.assertTrue(all(summary[name] for name in (
+            "created", "writer_completed", "reader_completed", "retired",
+        )))
+
+    def test_retained_name_only_raw_failure_projects_to_equal_role_data(self):
+        first = self.model("/work/ccL3VdjV.s")
+        second = self.model("/work/ccBRFQFs.s")
+        first_raw, second_raw = self.probes(first), self.probes(second)
+        self.assertNotEqual(
+            toolchain_runtime.encoded(first_raw), toolchain_runtime.encoded(second_raw),
+        )
+        first_projected = toolchain_runtime.project_compile_identity(
+            first_raw, self.parse(first), first["roles"],
+        )
+        second_projected = toolchain_runtime.project_compile_identity(
+            second_raw, self.parse(second), second["roles"],
+        )
+        self.assertEqual(first_projected, second_projected)
+
+    def test_projection_keeps_meaningful_runtime_content_and_outer_facts_unequal(self):
+        model = self.model()
+        receipt = self.parse(model)
+        baseline = toolchain_runtime.project_compile_identity(
+            self.probes(model), receipt, model["roles"],
+        )
+        mutations = []
+        environment = list(self.probes(model))
+        environment[1]["environment"]["LANG"] = "C.UTF-8"
+        mutations.append(("environment", environment, receipt, model["roles"]))
+        identity = list(self.probes(model))
+        identity[2]["identity"][1] += 1
+        mutations.append(("executable-identity", identity, receipt, model["roles"]))
+        stdin = list(self.probes(model))
+        stdin[3]["stdin"] += " "
+        mutations.append(("stdin", stdin, receipt, model["roles"]))
+        ordered = list(self.probes(model))
+        ordered[1]["argv"][1], ordered[1]["argv"][4] = ordered[1]["argv"][4], ordered[1]["argv"][1]
+        ordered_roles = toolchain_runtime.compile_operand_roles(
+            ordered[:3], model["profile"], ordered[0]["argv"], complete=True,
+        )
+        mutations.append(("non-role-order", ordered, receipt, ordered_roles))
+        content_model = copy.deepcopy(model)
+        content_model["receipt"]["writer"]["completed"]["sha256"] = "f" * 64
+        content_model["receipt"]["reader"]["completed"]["sha256"] = "f" * 64
+        content = self.parse(content_model)
+        mutations.append(("assembly-content", self.probes(model), content, model["roles"]))
+        for name, raw, selected_receipt, roles in mutations:
+            with self.subTest(name=name):
+                self.assertNotEqual(
+                    toolchain_runtime.project_compile_identity(raw, selected_receipt, roles),
+                    baseline,
+                )
+        outer = {
+            **baseline, "returncode": 0, "stdout_sha256": "1" * 64,
+            "publication": {"policy": "none"}, "header_kernel": {"digest": "2" * 64},
+        }
+        for field, value in (
+            ("returncode", 1), ("stdout_sha256", "3" * 64),
+            ("publication", {"policy": "replace"}), ("header_kernel", {"digest": "4" * 64}),
+        ):
+            changed = copy.deepcopy(outer)
+            changed[field] = value
+            self.assertNotEqual(changed, outer)
+
+    def test_projection_dictionary_order_is_semantic_preserving_but_operand_mismatch_rejects(self):
+        model = self.model()
+        raw = self.probes(model)
+        reordered = tuple(
+            dict(reversed(list(row.items()))) if type(row) is dict else row for row in raw
+        )
+        receipt = self.parse(model)
+        self.assertEqual(
+            toolchain_runtime.project_compile_identity(raw, receipt, model["roles"]),
+            toolchain_runtime.project_compile_identity(reordered, receipt, model["roles"]),
+        )
+        changed = list(copy.deepcopy(raw))
+        changed[1]["argv"][model["roles"].output.argv_index] = "/work/other.s"
+        with self.assertRaises(MakeProbeError):
+            toolchain_runtime.project_compile_identity(changed, receipt, model["roles"])
 
 
 class ModernToolchainTests(unittest.TestCase):
