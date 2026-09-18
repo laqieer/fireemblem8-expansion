@@ -20,7 +20,7 @@ import threading
 import time
 import unittest
 import venv
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import FrozenInstanceError, asdict, dataclass, fields, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -10762,6 +10762,1060 @@ class ObservationAllowanceTests(unittest.TestCase):
                     self.assertEqual(resolved, [] if defect == "above-capsule" else ["printf one"])
                     self.assertTrue(session.budget.failed)
                     self.assertTrue(session.budget.closed)
+
+
+class OutcomeCustodyTests(unittest.TestCase):
+    """O1-O6: real custody APIs, no child/namespace/privilege operations."""
+
+    TOKEN = "a" * 32
+    DEADLINE = 130.0
+    B = 262144
+
+    class Stream:
+        def __init__(self, fd, name, events, error=None, before=False, observe=None):
+            self.fd, self.name, self.events = fd, name, events
+            self.error, self.before, self.observe = error, before, observe
+            self.closed = False
+
+        def fileno(self):
+            return self.fd
+
+        def close(self):
+            self.events.append(self.name)
+            if self.observe is not None:
+                self.observe()
+            if self.error is not None and self.before:
+                raise self.error
+            self.closed = True
+            if self.error is not None:
+                raise self.error
+
+    class Child:
+        def __init__(self):
+            self.pid, self.returncode = 101, None
+
+    class Selector:
+        def __init__(self, close, select_error=None, lifetime=False):
+            self.keys, self.closing = {}, close
+            self.select_error, self.lifetime = select_error, lifetime
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *ignored):
+            self.close()
+
+        def register(self, stream, events, data=None):
+            fd = stream if type(stream) is int else stream.fileno()
+            key = selectors.SelectorKey(stream, fd, events, data)
+            self.keys[fd] = key
+            return key
+
+        def unregister(self, stream):
+            return self.keys.pop(stream if type(stream) is int else stream.fileno())
+
+        def get_map(self):
+            return self.keys
+
+        def select(self, timeout=None):
+            if timeout == 0:
+                return []
+            if self.select_error is not None:
+                raise self.select_error
+            if self.lifetime:
+                return [(self.keys[0], selectors.EVENT_READ)]
+            return [(key, selectors.EVENT_READ) for key in tuple(self.keys.values())]
+
+        def close(self):
+            self.keys.clear()
+            self.closing()
+
+    @staticmethod
+    def _signals(stack):
+        stack.enter_context(patch.object(signal, "pthread_sigmask", return_value=set()))
+        stack.enter_context(patch.object(signal, "sigpending", return_value=set()))
+        stack.enter_context(patch.object(signal, "signal", return_value=signal.SIG_DFL))
+        stack.enter_context(patch.object(signal, "raise_signal"))
+
+    def _binding(self):
+        from scripts.validation_ownership import lifecycle as life
+        return life._FixtureBinding("readonly", 1001, 1002, self.DEADLINE, 3, 4, 1001)
+
+    def _worker(self):
+        return {
+            "mode": "readonly", "before": [3, 4, 5, 6, 7, 15], "after": [3, 4, 5, 6, 7, 11],
+            "failure": None, "calls": [[442, 4096, 0, 4, 0, 0, 32]], "caps": [0, 0, 0, 0, 0, 1],
+            "denied": [errno.EROFS, errno.EACCES, errno.EACCES], "null_io": True, "fd_closed": True,
+            "local_nonzero_topology": True,
+        }
+
+    def _records(self, status=0):
+        from scripts.validation_ownership import lifecycle as life
+        report = life._cleanup_wire(life._CleanupReport("R", self.DEADLINE).value())
+        return [
+            {"v": 1, "role": "R", "phase": "before", "binding": self._binding().wire(), "pid": 201,
+             "kind": "normal-exit", "stage": "worker", "status": status, "error": None,
+             "result": self._worker(), "setup_status": 0},
+            {"v": 1, "role": "R", "phase": "after", "binding": self._binding().wire(), "pid": 201,
+             "before": "before", "cleanup": report, "disposition": "return", "status": status},
+            {"v": 1, "role": "L", "phase": "before", "token": self.TOKEN, "pid": 101,
+             "kind": "normal-exit", "stage": "wait", "status": status, "error": None,
+             "wait": [101, 1001, int(signal.SIGCHLD), os.CLD_EXITED if status >= 0 else os.CLD_KILLED,
+                      status if status >= 0 else -status]},
+            {"v": 1, "role": "L", "phase": "after", "token": self.TOKEN, "pid": 101,
+             "before": "before", "cleanup": report, "disposition": "return", "status": status},
+        ]
+
+    @staticmethod
+    def _wire(records):
+        from scripts.validation_ownership import lifecycle as life
+        return b"".join(life._encode_frame(value) for value in records)
+
+    def _coordinator(self, status=7, *, fault=None, before=False, data=None, diagnostics=b"opaque",
+                     default=False, capture_failure=None):
+        from scripts.validation_ownership import budget as budgeting, lifecycle as life
+        events, latches = [], []
+        faults = set() if fault is None else set(fault.split("+"))
+        earlier = (
+            KeyboardInterrupt("inert interrupt") if "interrupt" in faults
+            else subprocess.TimeoutExpired("inert", 1) if "wait-timeout" in faults
+            else ValueError("inert earlier exception")
+        )
+        cleanup = OSError(errno.EIO, "inert close exception")
+        child = self.Child()
+        owner = result = view = None
+        budget = None
+        summary = {}
+        try:
+            with ExitStack() as stack:
+                self._signals(stack)
+                stack.enter_context(patch.object(budgeting.time, "monotonic", return_value=100.0))
+                stack.enter_context(patch.object(budgeting.secrets, "token_hex", return_value=self.TOKEN))
+                budget = ProbeBudget(Limits(seconds=30))
+                budget.started = 100.0
+                if not default:
+                    owner = budget.reserve_outcome()
+                    owner._bind_fixture(self._binding())
+                source = self._wire(self._records(status)) if data is None else data
+                offsets = [0, 0]
+
+                def observe():
+                    if owner is not None:
+                        latches.append((owner._status, owner._streams is not None))
+
+                streams = {
+                    name: self.Stream(fd, name, events, cleanup if name in faults else None, before, observe)
+                    for fd, name in ((10, "stdout"), (11, "stderr"), (12, "lifetime"))
+                }
+                child.stdout, child.stderr, child.stdin = streams["stdout"], streams["stderr"], streams["lifetime"]
+                waits = []
+
+                def wait(timeout=None):
+                    waits.append(timeout)
+                    if len(waits) == 1 and faults & {"wait", "wait-timeout", "unreaped"}:
+                        raise earlier
+                    if "unreaped" in faults:
+                        raise cleanup
+                    if len(waits) > 1:
+                        observe()
+                        events.append("wait")
+                        if "reap" in faults:
+                            raise cleanup
+                    child.returncode = status
+                    if "remaining" in faults and len(waits) == 1:
+                        budget.failed = True
+                    return status
+
+                child.wait, child.poll = wait, lambda: child.returncode
+
+                def read(fd, size):
+                    if faults & {"read", "interrupt"} and fd == 11:
+                        raise earlier
+                    index = fd - 10
+                    content = source if index == 0 else diagnostics
+                    chunk = content[offsets[index]:offsets[index] + size]
+                    offsets[index] += len(chunk)
+                    return chunk
+
+                def selector_close():
+                    events.append("selector")
+                    observe()
+                    if faults & {"selector", "body-selector"}:
+                        raise cleanup
+
+                selector = self.Selector(selector_close, earlier if "body-selector" in faults else None)
+                stack.enter_context(patch.object(budgeting, "ordinary_executable"))
+                launch = stack.enter_context(patch.object(budgeting.subprocess, "Popen", return_value=child))
+                stack.enter_context(patch.object(budgeting.selectors, "DefaultSelector", return_value=selector))
+                stack.enter_context(patch.object(budgeting.os, "set_blocking"))
+                stack.enter_context(patch.object(budgeting.os, "read", read))
+                charge = budget.charge
+                if "deferred" in faults:
+                    stack.enter_context(patch.object(signal, "sigpending", return_value={signal.SIGTERM}))
+                    stack.enter_context(patch.object(signal, "sigtimedwait", return_value=object()))
+                    def deferred(signum):
+                        if "stderr" in events:
+                            raise cleanup
+                    stack.enter_context(patch.object(signal, "raise_signal", deferred))
+                if "charge" in faults:
+                    def charging(category, size):
+                        if category == "output":
+                            raise earlier
+                        return charge(category, size)
+                    stack.enter_context(patch.object(budget, "charge", charging))
+                if "conversion" in faults:
+                    def conversion(buffer, size):
+                        raise capture_failure if capture_failure is not None else earlier
+                    stack.enter_context(patch.object(budgeting, "_capture_bytes", conversion))
+                if "completed" in faults:
+                    def completed(*args):
+                        raise earlier
+                    stack.enter_context(patch.object(budgeting.subprocess, "CompletedProcess", completed))
+                try:
+                    result = budget.run(
+                        [*NAMESPACE_LAUNCHER, "/usr/bin/true"], env=ENVIRONMENT,
+                        privileged=True, output_limit=self.B, outcome=owner,
+                    )
+                except BaseException as error:
+                    summary["raised"] = "earlier" if error is earlier or error is capture_failure else (
+                        "cleanup" if error is cleanup else type(error).__name__
+                    )
+                    life._forget_error(error)
+                else:
+                    summary["raised"] = None
+                try:
+                    budget.close(**({} if default else {"report": owner._cleanup}))
+                except BaseException as error:
+                    summary["close_failed"] = True
+                    life._forget_error(error)
+                summary.update(
+                    failed=budget.failed, runs=budget.runs, events=tuple(events),
+                    closed=tuple(stream.closed for stream in streams.values()),
+                    remaining_children=len(budget.children), latches=tuple(latches),
+                    argv=tuple(launch.call_args.args[0]), launch_fds=launch.call_args.kwargs["pass_fds"],
+                    result_status=None if result is None else result.returncode,
+                    costs=dict(budget.bytes), entries=budget._outcome_entries,
+                    waits=tuple(waits), capture_counts=tuple(offsets), waited_status=child.returncode,
+                )
+                if owner is not None:
+                    if not owner._terminal:
+                        summary["custody_lost"] = True
+                    else:
+                        view = owner.snapshot()
+                        summary.update(
+                            custody_lost=False, status=view.outer_returncode, error=view.outer_error,
+                            capture_complete=view.capture_complete, available=view.capture_available,
+                            custody=view.custody_complete, frame_error=view.frame_error,
+                            returned=view.api_returned, reaped=view.reaped, qualified=view.qualified,
+                            cleanup_complete=view.cleanup.complete, cleanup_count=view.cleanup.count,
+                            uncertain=view.cleanup.uncertain,
+                            cached=all(owner.snapshot() is view for _ in range(20)),
+                            bytes_equal=view.stdout == source and view.stderr == diagnostics,
+                            shared=result is not None and result.stdout is view.stdout and result.stderr is view.stderr,
+                            frame_status=tuple(None if frame is None else frame.status for frame in view.frames),
+                            frame_kinds=tuple(None if frame is None else frame.kind for frame in view.frames),
+                            stream_lengths=(None if view.stdout is None else len(view.stdout),
+                                            None if view.stderr is None else len(view.stderr)),
+                            opaque_repr=repr(source) not in repr(view) and repr(diagnostics) not in repr(view),
+                        )
+                else:
+                    summary["bytes_equal"] = result is not None and result.stdout == source and result.stderr == diagnostics
+        finally:
+            # No raw API exception/capture/parser refs enter a retained testcase
+            # failure. The assertions run only after this helper has returned.
+            life._forget_error(earlier)
+            life._forget_error(cleanup)
+            if capture_failure is not None:
+                life._forget_error(capture_failure)
+            result = view = None
+            if owner is not None:
+                if not owner._spent or owner._terminal:
+                    owner.release()
+            if budget is not None:
+                budget.children.clear()  # Inert handles only; no simulated result credit.
+        return summary
+
+    def _watchdog(self, status=7, *, fault=None, before=False, main=False, default=False, keep_wire=False):
+        from scripts.validation_ownership import lifecycle as life
+        child = self.Child()
+        faults = set() if fault is None else set(fault.split("+"))
+        earlier = (
+            life.WatchdogInterrupted("inert interrupt") if "interrupt" in faults
+            else TimeoutError("inert wait timeout") if "wait-timeout" in faults
+            else ValueError("inert earlier exception")
+        )
+        cleanup = (
+            PermissionError(errno.EPERM, "inert signal denial") if faults & {"group", "desc-signal"}
+            else OSError(errno.EIO, "inert cleanup exception")
+        )
+        events, writes, before_cleanup, fd_closes, waits = [], [], [], [], []
+        descendants = {202, 203} if faults & {"descendant", "desc-signal", "desc-reap"} else set()
+        allocated = set()
+        facts = {}
+        setup_seen = False
+        writes_attempted = 0
+        now = [100.0]
+
+        def own_children():
+            nonlocal setup_seen
+            if not setup_seen:
+                setup_seen = True
+                return []
+            return sorted(descendants)
+
+        def observe_cleanup():
+            before_cleanup.append(bool(writes) and json.loads(writes[0][4:]).get("status") == status)
+
+        def waitid(*args):
+            waits.append(args)
+            if faults & {"wait", "wait-timeout", "interrupt"} and len(waits) == 1:
+                raise earlier
+            if len(waits) == 1 and faults & {"lifetime", "timeout"}:
+                if "timeout" in faults:
+                    now[0] = self.DEADLINE
+                return None
+            return SimpleNamespace(
+                si_pid=999 if "wrong-child" in faults else child.pid, si_uid=1001,
+                si_signo=int(signal.SIGCHLD),
+                si_code=os.CLD_EXITED if status >= 0 else os.CLD_KILLED,
+                si_status=status if status >= 0 else -status,
+            )
+
+        def wait(timeout=None):
+            observe_cleanup()
+            events.append("reap")
+            if "reap" in faults and before:
+                raise cleanup
+            child.returncode = status
+            if "reap" in faults:
+                raise cleanup
+            if "agreement" in faults:
+                child.returncode = 0 if status else 7
+            return child.returncode
+
+        child.wait = wait
+
+        def opening(pid):
+            if "setup" in faults:
+                raise earlier
+            descriptor = 40 if pid == 101 else pid
+            allocated.add(descriptor)
+            return descriptor
+
+        def closing(fd):
+            observe_cleanup()
+            events.append("pidfd")
+            fd_closes.append(fd)
+            if ("pidfd" in faults and fd == 40) or ("descendant" in faults and fd == 202):
+                if not before:
+                    allocated.discard(fd)
+                raise cleanup
+            allocated.discard(fd)
+
+        def selector_close():
+            observe_cleanup()
+            events.append("selector")
+            if "selector" in faults:
+                raise cleanup
+
+        def write(fd, data):
+            nonlocal writes_attempted
+            writes_attempted += 1
+            if fault == "epipe" or fault == "after-epipe" and writes_attempted == 2:
+                raise BrokenPipeError(errno.EPIPE, "inert publication")
+            if fault == "short" or fault == "after-short" and writes_attempted == 2:
+                writes.append(data[:3])
+                return 3
+            if fault == "eagain" and writes_attempted == 1:
+                raise BlockingIOError(errno.EAGAIN, "inert readiness")
+            writes.append(data)
+            return len(data)
+
+        def reaping(pid, options):
+            if "desc-reap" in faults and pid == 202:
+                raise ChildProcessError("inert unconfirmed descendant")
+            descendants.discard(pid)
+            return pid, 0
+
+        try:
+            with ExitStack() as stack:
+                self._signals(stack)
+                stack.enter_context(patch.object(life, "ordinary_executable"))
+                stack.enter_context(patch.object(life, "require_pidfds"))
+                stack.enter_context(patch.object(life, "owned_children", own_children))
+                stack.enter_context(patch.object(life, "prctl"))
+                stack.enter_context(patch.object(life.time, "monotonic", side_effect=lambda: now[0]))
+                stack.enter_context(patch.object(life.os, "fstat", side_effect=lambda fd: SimpleNamespace(
+                    st_mode=stat.S_IFREG if fault == "pipe" else stat.S_IFIFO,
+                    st_dev=3, st_ino=100 if fault == "alias" else 100 + fd,
+                )))
+                stack.enter_context(patch.object(life.fcntl, "fcntl", return_value=os.O_WRONLY))
+                stack.enter_context(patch.object(life.os, "fpathconf", return_value=4095 if fault == "pipe-buf" else 4096))
+                stack.enter_context(patch.object(life.os, "set_blocking"))
+                stack.enter_context(patch.object(life.os, "pidfd_open", opening))
+                stack.enter_context(patch.object(life.os, "close", closing))
+                stack.enter_context(patch.object(life.os, "waitid", waitid))
+                stack.enter_context(patch.object(life.os, "waitpid", reaping))
+                kill = stack.enter_context(patch.object(life.os, "killpg", side_effect=cleanup if "group" in faults else None))
+                def pidfd_signal(descriptor, signum):
+                    if "desc-signal" in faults and descriptor == 202:
+                        raise cleanup
+                stack.enter_context(patch.object(life.signal, "pidfd_send_signal", pidfd_signal))
+                stack.enter_context(patch.object(life.select, "select", return_value=([], [1], [])))
+                stack.enter_context(patch.object(life.os, "write", write))
+                launch = stack.enter_context(patch.object(life.subprocess, "Popen", return_value=child))
+                stack.enter_context(patch.object(life.selectors, "DefaultSelector", return_value=self.Selector(
+                    selector_close, lifetime="lifetime" in faults,
+                )))
+                if "handler" in faults:
+                    def restore_handler(signum, handler):
+                        if "reap" in events:
+                            raise cleanup
+                        return signal.SIG_DFL
+                    stack.enter_context(patch.object(signal, "signal", restore_handler))
+                if "deferred" in faults:
+                    stack.enter_context(patch.object(signal, "sigpending", return_value={signal.SIGTERM}))
+                    stack.enter_context(patch.object(signal, "sigtimedwait", return_value=object()))
+                    def deferred(signum):
+                        if "reap" in events:
+                            raise cleanup
+                    stack.enter_context(patch.object(signal, "raise_signal", deferred))
+                if fault == "deadline-publish":
+                    actual_publish = life._OutcomePublisher.publish
+                    def expire(publisher, value):
+                        now[0] = self.DEADLINE
+                        return actual_publish(publisher, value)
+                    stack.enter_context(patch.object(life._OutcomePublisher, "publish", expire))
+                if fault in ("encode-before", "encode-after"):
+                    original_encode = life._encode_frame
+                    def encode(value):
+                        if value["phase"] == ("before" if fault == "encode-before" else "after"):
+                            raise earlier
+                        return original_encode(value)
+                    stack.enter_context(patch.object(life, "_encode_frame", encode))
+                if main:
+                    stack.enter_context(patch.object(life, "sys", SimpleNamespace(
+                        flags=SimpleNamespace(isolated=True, no_site=True), stderr=sys.stderr,
+                        implementation=sys.implementation, getsizeof=sys.getsizeof,
+                        argv=["lifecycle.py", str(self.DEADLINE),
+                              *([] if default else ["--outcome-v1", self.TOKEN]), "--", "/usr/bin/true"],
+                    )))
+                    stack.enter_context(patch("builtins.print"))
+                    self_signal = stack.enter_context(patch.object(life.os, "kill"))
+                    stack.enter_context(patch.object(life.os, "_exit", side_effect=SystemExit))
+                try:
+                    actual = life.main() if main else life.run(
+                        [*NAMESPACE_LAUNCHER, "/usr/bin/true"], self.DEADLINE,
+                        outcome_token=None if default else self.TOKEN,
+                    )
+                except BaseException as error:
+                    facts["raised"] = "earlier" if error is earlier else (
+                        "cleanup" if error is cleanup else type(error).__name__
+                    )
+                    life._forget_error(error)
+                    actual = None
+                else:
+                    facts["raised"] = None
+                records = []
+                for data in writes:
+                    if len(data) >= 4 and len(data) - 4 == int.from_bytes(data[:4], "little"):
+                        records.append(json.loads(data[4:]))
+                facts.update(
+                    result=actual, frames=records, cleanup_latched=tuple(before_cleanup),
+                    launches=launch.call_count, writes_attempted=writes_attempted,
+                    events=tuple(events), fd_closes=tuple(fd_closes), fd_unconfirmed=len(allocated),
+                    child_status=child.returncode, killed=kill.call_count,
+                    wait_flags=all(item[2] == os.WEXITED | os.WNOHANG | os.WNOWAIT for item in waits),
+                    descendants=len(descendants),
+                    self_signals=tuple(call.args[1] for call in self_signal.call_args_list) if main else (),
+                )
+                if keep_wire:
+                    facts["wire"] = tuple(writes)
+        finally:
+            life._forget_error(earlier)
+            life._forget_error(cleanup)
+        return facts
+
+    def test_o1_coordinator_custody_oracle(self):
+        facts = self._coordinator(7, fault="stdout")
+        self.assertEqual(facts["raised"], "cleanup")
+        self.assertEqual(facts["waited_status"], 7)
+        self.assertTrue(all(facts["capture_counts"]))
+        self._custody_oracle_reached = True
+        self.assertFalse(facts.get("custody_lost"), "C lost the pre-cleanup observation")
+        self.assertEqual(facts.get("status"), 7)
+        self.assertTrue(facts.get("bytes_equal"))
+        self.assertEqual(facts.get("raised"), "cleanup")
+
+    def test_o1_watchdog_custody_oracle(self):
+        facts = self._watchdog(7, fault="selector")
+        before = next((value["status"] for value in facts["frames"] if value["phase"] == "before"), None)
+        observed, raised = all(facts["cleanup_latched"]), facts["raised"]
+        reaped, launched = facts["child_status"], facts["launches"]
+        facts.clear()
+        self.assertEqual((raised, reaped, launched), ("cleanup", 7, 1))
+        self._custody_oracle_reached = True
+        self.assertEqual(before, 7, "L lost its owned WNOWAIT observation")
+        self.assertTrue(observed)
+        self.assertEqual(raised, "cleanup")
+
+    def test_o1_normal_observation_precedes_each_real_cleanup(self):
+        for status in (7, 0, -9, 125):
+            for fault in ("selector", "stdout", "stderr", "lifetime", "reap", "deferred"):
+                for before in (False, True):
+                    with self.subTest(layer="C", status=status, site=fault, before=before):
+                        facts = self._coordinator(status, fault=fault, before=before)
+                        self.assertFalse(facts["custody_lost"])
+                        self.assertEqual(facts["status"], status)
+                        self.assertTrue(facts["bytes_equal"])
+                        self.assertTrue(facts["latches"])
+                        self.assertTrue(all(item == (status, True) for item in facts["latches"]))
+                        self.assertEqual(facts["raised"], "cleanup")
+                        self.assertFalse(facts["returned"])
+                        self.assertFalse(facts["cleanup_complete"])
+                        self.assertTrue(facts["failed"])
+                        self.assertFalse(facts["qualified"])
+                        for name in ("selector", "stdout", "stderr", "lifetime"):
+                            self.assertEqual(facts["events"].count(name), 1)
+                        if fault in ("stdout", "stderr", "lifetime"):
+                            self.assertEqual(facts["closed"][("stdout", "stderr", "lifetime").index(fault)], not before)
+            for fault in ("selector", "pidfd", "reap", "descendant", "handler", "group", "desc-signal"):
+                for before in (False, True):
+                    with self.subTest(layer="L", status=status, site=fault, before=before):
+                        facts = self._watchdog(status, fault=fault, before=before)
+                        # Only finite fixture bytes/records remain, never an API exception.
+                        self.assertTrue(facts["cleanup_latched"])
+                        self.assertTrue(all(facts["cleanup_latched"]))
+                        self.assertEqual(facts["frames"][0]["status"], status)
+                        self.assertEqual(facts["raised"], "cleanup")
+                        self.assertEqual(facts["frames"][1]["disposition"], "raise")
+                        self.assertTrue(facts["wait_flags"])
+                        self.assertEqual(len(facts["fd_closes"]), len(set(facts["fd_closes"])))
+                        self.assertEqual(facts["descendants"], 0)
+                        if fault in ("pidfd", "descendant"):
+                            self.assertEqual(facts["fd_unconfirmed"], int(before))
+                        if fault == "reap":
+                            self.assertEqual(facts["child_status"], None if before else status)
+                        facts.clear()
+
+    def test_o1_composed_l_nonzero_actual_125_then_c_cleanup(self):
+        inner = self._watchdog(7, fault="pidfd", main=True, keep_wire=True)
+        actual, wire = inner["result"], b"".join(inner["wire"])
+        inner.clear()
+        facts = self._coordinator(actual, fault="stderr", data=self._wire(self._records(7)[:2]) + wire)
+        wire = None
+        self.assertEqual(actual, 125)
+        self.assertEqual(facts["status"], 125)
+        self.assertEqual(facts["frame_status"], (7, 7, 7, None))
+        self.assertTrue(facts["bytes_equal"])
+        self.assertFalse(facts["returned"])
+        self.assertFalse(facts["qualified"])
+        self.assertEqual(facts["raised"], "cleanup")
+
+    def test_o2_zero_or_valid_inner_records_never_qualify_outer_failure(self):
+        for status in (0, 125, -9):
+            for fault in (None, "stdout", "unreaped", "read", "body-selector"):
+                with self.subTest(status=status, fault=fault):
+                    facts = self._coordinator(status, fault=fault, data=self._wire(self._records()))
+                    self.assertFalse(facts["qualified"])
+                    if fault:
+                        self.assertTrue(facts["failed"])
+                        self.assertFalse(facts["returned"])
+                    if fault == "unreaped":
+                        self.assertFalse(facts["reaped"])
+                        self.assertTrue(facts["uncertain"])
+        facts = self._watchdog(0, fault="deferred", main=True)
+        result, before_status, after = facts["result"], facts["frames"][0]["status"], facts["frames"][1]
+        facts.clear()
+        self.assertEqual((result, before_status), (125, 0))
+        self.assertEqual(after["disposition"], "raise")
+        self.assertGreater(after["cleanup"]["count"], 0)
+        facts = self._watchdog(0, fault="desc-reap", main=True)
+        actual = (facts["result"], facts["descendants"], facts["fd_unconfirmed"],
+                  len(facts["fd_closes"]), facts["frames"][-1]["cleanup"]["uncertain"])
+        facts.clear()
+        self.assertEqual(actual[:4], (125, 1, 0, 3))
+        self.assertNotEqual(actual[4], 0)
+
+    def test_o3_prior_exceptions_and_cleanup_status_are_distinct(self):
+        for fault in ("wait", "read", "body-selector", "charge", "unreaped",
+                      "wait+stdout", "read+selector", "body-selector+deferred",
+                      "interrupt+stdout", "wait-timeout+stderr"):
+            facts = self._coordinator(125, fault=fault)
+            self.assertEqual(facts["raised"], "earlier")
+            self.assertIsNone(facts["status"])
+            self.assertFalse(facts["capture_complete"])
+            self.assertIsNotNone(facts["error"])
+        for fault in ("setup", "wait", "lifetime", "timeout", "wrong-child", "setup+selector",
+                      "wait+pidfd", "lifetime+selector", "interrupt+pidfd", "wait-timeout+selector"):
+            facts = self._watchdog(7, fault=fault)
+            records, result = facts["frames"], facts["raised"]
+            facts.clear()
+            if fault == "timeout":
+                self.assertEqual(result, "TimeoutError")
+                self.assertEqual(records, [])
+                continue
+            self.assertEqual(records[0]["kind"], "exception")
+            self.assertIsNone(records[0]["status"])
+            self.assertIsNone(records[0]["wait"])
+            self.assertIsNotNone(result)
+            if fault in ("setup", "wait", "setup+selector", "wait+pidfd", "interrupt+pidfd", "wait-timeout+selector"):
+                self.assertEqual(result, "earlier")
+            if fault in ("lifetime", "lifetime+selector"):
+                self.assertEqual(result, "BrokenPipeError")
+        for fault in ("remaining", "conversion", "completed"):
+            facts = self._coordinator(7, fault=fault)
+            self.assertEqual(facts["status"], 7)
+            self.assertFalse(facts["returned"])
+            self.assertFalse(facts["qualified"])
+            self.assertEqual(facts["available"], fault != "conversion")
+
+    def test_o4_strict_frames_and_binding_no_resynchronization(self):
+        records = self._records()
+        good = self._wire(records)
+        controls = [
+            b"", good[:2], good[:5], good[:-1], self._wire(records[:3]),
+            (4093).to_bytes(4, "little") + b" " * 4093,
+            self._wire([records[0], records[0], *records[2:]]),
+            self._wire([records[1], records[0], *records[2:]]),
+        ]
+        for index, changes in (
+            (0, {"command": "no"}), (2, {"token": "b" * 32}), (2, {"status": True}),
+            (2, {"wait": [102, 1001, int(signal.SIGCHLD), os.CLD_EXITED, 0]}),
+            (2, {"wait": [101, 1001, int(signal.SIGCHLD), os.CLD_STOPPED, 9]}),
+            (2, {"wait": [101, 1001, int(signal.SIGCHLD), os.CLD_KILLED, 0]}),
+            (3, {"pid": 102}), (0, {"kind": "exception"}),
+        ):
+            changed = [dict(value) for value in records]
+            changed[index].update(changes)
+            controls.append(self._wire(changed))
+        for index, replacement in ((0, "writable"), (1, 1003), (2, 1003), (3, 131.0), (4, 9), (5, 9), (6, 9)):
+            changed = [dict(value) for value in records]
+            changed[0]["binding"] = self._binding().wire()
+            changed[0]["binding"][index] = replacement
+            controls.append(self._wire(changed))
+        body = json.dumps(records[0], separators=(",", ":")).replace('"v":1', '"v":1,"v":1').encode()
+        controls.append(len(body).to_bytes(4, "little") + body)
+        for data in controls:
+            facts = self._coordinator(0, data=data)
+            self.assertFalse(facts["custody"])
+            self.assertIsNotNone(facts["frame_error"])
+            self.assertFalse(facts["qualified"])
+        facts = self._coordinator(0, data=self._wire([records[0], records[2], records[1], records[3]]))
+        self.assertTrue(facts["custody"])
+        self.assertTrue(facts["bytes_equal"])
+        reordered = []
+        for record in records:
+            body = json.dumps(record, sort_keys=True, separators=(",", ":")).encode().replace(b'"v"', b'"\\u0076"')
+            reordered.append(len(body).to_bytes(4, "little") + body)
+        facts = self._coordinator(0, data=b"".join(reordered))
+        self.assertTrue(facts["custody"])
+        self.assertEqual(facts["frame_status"], (0, 0, 0, 0))
+        # Stderr can resemble a perfect receipt but never fills any slot.
+        facts = self._coordinator(0, data=b"", diagnostics=good)
+        self.assertFalse(facts["custody"])
+        self.assertEqual(facts["frame_status"], (None,) * 4)
+
+    def test_o4_creator_zero_is_not_worker_completion(self):
+        records = self._records(7)
+        normal = self._coordinator(7, data=self._wire(records))
+        self.assertEqual(normal["frame_status"][0], 7)
+        records[0].update(stage="creator", status=0, result=None)
+        facts = self._coordinator(125, data=self._wire(records))
+        self.assertFalse(facts["custody"])
+        records[0].update(kind="exception", status=None, error=[1, errno.EIO])
+        records[1].update(disposition="raise", status=None)
+        facts = self._coordinator(125, data=self._wire(records))
+        self.assertTrue(facts["custody"])
+        self.assertEqual(facts["frame_kinds"][0], "exception")
+        self.assertIsNone(facts["frame_status"][0])
+        self.assertFalse(facts["qualified"])
+
+    def test_o4_publication_errors_are_real_failures_not_delivered_causes(self):
+        for fault in ("epipe", "short", "after-epipe", "after-short", "deadline-publish", "encode-before", "encode-after",
+                      "pipe", "alias", "pipe-buf"):
+            facts = self._watchdog(7, fault=fault, main=True)
+            result, launches, records = facts["result"], facts["launches"], facts["frames"]
+            facts.clear()
+            self.assertEqual(result, 125)
+            if fault in ("pipe", "alias", "pipe-buf"):
+                self.assertEqual(launches, 0)
+            if fault in ("epipe", "short", "deadline-publish", "encode-before"):
+                self.assertFalse(any(value["phase"] == "before" for value in records))
+        facts = self._watchdog(7, fault="eagain")
+        actual, attempts, phases = facts["result"], facts["writes_attempted"], [item["phase"] for item in facts["frames"]]
+        facts.clear()
+        self.assertEqual(actual, 7)
+        self.assertEqual(attempts, 3)
+        self.assertEqual(phases, ["before", "after"])
+
+    def test_o5_preallocation_affinity_and_exact_monotonic_bounds(self):
+        from scripts.validation_ownership import budget as budgeting, lifecycle as life
+        for change in (
+            {"cache_bytes": 552959}, {"pending_bytes": 4095}, {"entries": 51},
+            {"output_bytes": self.B - 1}, {"process_output_bytes": self.B - 1},
+            {"total_bytes": 552960 + 4096 - 1},
+        ):
+            with self.subTest(limit=change), patch.object(budgeting, "_RunOutcome") as constructor:
+                budget = ProbeBudget(Limits(**change))
+                with self.assertRaises(MakeProbeError):
+                    budget.reserve_outcome()
+                constructor.assert_not_called()
+        with patch.object(life.sys, "getsizeof", return_value=1024), patch.object(budgeting, "_RunOutcome") as constructor:
+            with self.assertRaises(MakeProbeError):
+                ProbeBudget().reserve_outcome()
+            constructor.assert_not_called()
+        for size in (True, 16384, 16385, life._JSON_WORK_BYTES + 8191, self.B + 1):
+            with patch.object(budgeting, "_RunOutcome") as constructor:
+                with self.assertRaises(MakeProbeError):
+                    ProbeBudget().reserve_outcome(output_limit=size)
+                constructor.assert_not_called()
+        minimum = life._JSON_WORK_BYTES + 8192
+        budget = ProbeBudget(Limits(entries=52, cache_bytes=2 * minimum + 28672, pending_bytes=4096))
+        owner = budget.reserve_outcome(output_limit=minimum)
+        values = (budget.bytes.copy(), budget.states, budget.runs, budget._outcome_entries)
+        owner.release()
+        self.assertEqual(values, ({"cache": 2 * minimum + 28672, "pending": 4096}, 1, 0, 52))
+        self.assertEqual(values[0], budget.bytes)
+        with self.assertRaises(MakeProbeError):
+            owner.snapshot()
+        with self.assertRaises(MakeProbeError):
+            budget.reserve_outcome(output_limit=minimum)
+        budget = ProbeBudget()
+        owner = budget.reserve_outcome()
+        foreign = life._CleanupReport("C", budget.deadline)
+        with self.assertRaises(MakeProbeError):
+            budget.close(report=foreign)
+        budget.close(report=owner._cleanup)
+        owner.release()
+        for problem in ("foreign", "subclass", "spent", "ordinal", "closed", "failed", "session", "broker", "input", "ordinary"):
+            budget = ProbeBudget()
+            owner = budget.reserve_outcome()
+            supplied, kwargs = owner, {}
+            if problem == "foreign":
+                budget = ProbeBudget()
+            elif problem == "subclass":
+                class Substitute(budgeting._RunOutcome):
+                    pass
+                supplied = object.__new__(Substitute)
+            elif problem == "spent":
+                owner._spent = True
+            elif problem == "ordinal":
+                budget.runs += 1
+            elif problem in ("closed", "failed"):
+                setattr(budget, problem, True)
+            elif problem == "session":
+                budget.session_started = True
+            elif problem == "broker":
+                kwargs["producer_channel"] = object()
+                kwargs["producer_handler"] = object()
+            elif problem == "input":
+                kwargs["input_data"] = b"x"
+            with patch.object(subprocess, "Popen") as launch:
+                with self.assertRaises(MakeProbeError):
+                    budget.run(
+                        [*NAMESPACE_LAUNCHER, "/usr/bin/true"], env=ENVIRONMENT,
+                        privileged=problem != "ordinary", output_limit=self.B, outcome=supplied, **kwargs,
+                    )
+                launch.assert_not_called()
+            owner._terminal = True
+            owner.release()
+
+    def test_o5_cumulative_cleanup_entries_do_not_format_or_keep_errors(self):
+        from scripts.validation_ownership import lifecycle as life
+
+        class Unprintable(OSError):
+            def __str__(self):
+                raise AssertionError("raw exception formatting")
+
+        report = life._CleanupReport("C", self.DEADLINE)
+        primary = ValueError("existing")
+        huge = Unprintable(errno.EIO, b"x" * (1024 * 1024))
+        done = []
+        try:
+            with ExitStack() as stack:
+                self._signals(stack)
+                for group in range(6):
+                    def bad():
+                        raise huge
+                    life.finish_cleanup(
+                        [("stdout", bad), ("stderr", bad), ("lifetime", bad), ("wait", lambda: done.append(group))],
+                        primary=primary, report=report,
+                    )
+            value = report.value()
+            finite = (value.count, len(value.errors), value.overflow, value.complete,
+                      len(life._encode_frame({"report": life._cleanup_wire(value)})),
+                      hasattr(primary, "cleanup_errors"), hasattr(primary, "__notes__"), len(done))
+            references = tuple(type(item).__name__ for item in __import__("gc").get_referents(report))
+        finally:
+            life._forget_error(primary)
+            life._forget_error(huge)
+            huge = primary = None
+        self.assertEqual(finite[:4], (17, 16, True, False))
+        self.assertLessEqual(finite[4], 4096)
+        self.assertEqual(finite[5:], (False, False, 6))
+        self.assertNotIn("Unprintable", references)
+        class UnavailableErrno(OSError):
+            @property
+            def errno(self):
+                raise ValueError("inert metadata access")
+        metadata = life._CleanupReport("L", self.DEADLINE)
+        metadata.error("pidfd", UnavailableErrno())
+        self.assertTrue(metadata.value().metadata_failed)
+        self.assertFalse(metadata.value().complete)
+
+    def test_o5_representation_admission_and_peak_lifetime(self):
+        import gc
+        import tracemalloc
+        from scripts.validation_ownership import budget as budgeting, lifecycle as life
+        for payload in (
+            b"[" * 7 + b"0" + b"]" * 7, b'{"x":"' + b"x" * 65 + b'"}',
+            b"[" + b"0," * 192 + b"0]", b'{"v":NaN}', b'{"v":1e9999}',
+        ):
+            with patch.object(life.json, "loads", wraps=json.loads) as decode:
+                with self.assertRaises(ValueError):
+                    value = life._json_read(payload)
+                    if type(value) is dict and any(type(item) is float and not __import__("math").isfinite(item)
+                                                   for item in value.values()):
+                        raise ValueError("finite schema rejection")
+                if payload != b'{"v":NaN}' and payload != b'{"v":1e9999}':
+                    decode.assert_not_called()
+        binding = self._binding()
+        records = self._records(7)
+        for role in (1, 3):
+            report = life._CleanupReport("R" if role == 1 else "L", self.DEADLINE)
+            for _ in range(16):
+                report.error("stdout", OSError(errno.EIO, "fixed"))
+            records[role].update(cleanup=life._cleanup_wire(report.value()), disposition="raise", status=None)
+        wire = self._wire(records)
+        # Pad all four frames to F, not just a typical short success record.
+        padded = bytearray()
+        offset = 0
+        while offset < len(wire):
+            size = int.from_bytes(wire[offset:offset + 4], "little")
+            body = wire[offset + 4:offset + 4 + size]
+            padded.extend((4092).to_bytes(4, "little") + body + b" " * (4092 - size))
+            offset += size + 4
+        source = bytes(padded)
+        diagnostics = b"x" * (self.B - len(source))
+        gc.collect()
+        tracemalloc.start()
+        try:
+            with patch.object(budgeting.time, "monotonic", return_value=100.0):
+                budget = ProbeBudget(Limits(seconds=30))
+                budget.started = 100.0
+                baseline = tracemalloc.get_traced_memory()[0]
+                tracemalloc.reset_peak()
+                owner = budget.reserve_outcome()
+                owner._token = self.TOKEN
+                owner._bind_fixture(binding)
+                for _ in range(16):
+                    owner._cleanup.error("stderr", OSError(4095, "fixed"))
+                owner._cleanup.value()
+                owner._spent = True
+                owner._append(0, source)
+                owner._append(1, diagnostics)
+                owner._observe(7, True)
+                owner._freeze()
+                owner._terminal = True
+                view = owner.snapshot()
+                worker = life._private_worker_record(json.dumps(self._worker(), separators=(",", ":")).encode())
+                peak = tracemalloc.get_traced_memory()[1] - baseline
+                facts = (view.capture_available, view.custody_complete, all(
+                    owner.snapshot() is view for _ in range(50)
+                ), len(worker), peak, budget.bytes["cache"])
+                alias = subprocess.CompletedProcess([], 7, view.stdout, view.stderr)
+                owner.release()
+                retained = (len(alias.stdout), len(alias.stderr), owner._streams, owner._snapshot, owner._frames)
+                view = alias = worker = None
+                gc.collect()
+                after_release = tracemalloc.get_traced_memory()[0] - baseline
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(facts[:4], (True, True, True, 10))
+        self.assertLessEqual(facts[4], facts[5])
+        self.assertEqual(retained, (16384, 245760, None, None, None))
+        self.assertLess(after_release, 32768)
+
+    def test_o5_exact_stream_and_private_worker_boundaries(self):
+        from scripts.validation_ownership import lifecycle as life
+        frames = []
+        for value in self._records():
+            frame = life._encode_frame(value)
+            frames.append((4092).to_bytes(4, "little") + frame[4:] + b" " * (4096 - len(frame)))
+        output = b"".join(frames)
+        errors = b"x" * (self.B - len(output))
+        facts = self._coordinator(0, data=output, diagnostics=errors)
+        self.assertTrue(facts["custody"])
+        self.assertTrue(facts["bytes_equal"])
+        self.assertEqual(facts["stream_lengths"], (16384, 245760))
+        self.assertEqual(facts["costs"]["output"], self.B)
+        for stdout, stderr in ((output + b"x", errors), (output, errors + b"x")):
+            facts = self._coordinator(0, data=stdout, diagnostics=stderr)
+            self.assertFalse(facts["capture_complete"])
+            self.assertIsNone(facts["status"])
+            self.assertEqual(facts["raised"], "MakeProbeError")
+            self.assertEqual(facts["stream_lengths"][0], 16384)
+            self.assertLessEqual(facts["stream_lengths"][1], 245760)
+        worker = json.dumps(self._worker(), separators=(",", ":")).encode()
+        complete = worker + b" " * (4096 - len(worker))
+        self.assertEqual(life._private_worker_record(complete)[0], "readonly")
+        for mode in life._MODES:
+            fixture = self._worker()
+            fixture["mode"] = mode
+            if mode == "wrong-device":
+                fixture["calls"] = []
+            elif mode == "old":
+                fixture["calls"] = [["legacy-remount", 4138]]
+            if mode not in ("readonly", "writable"):
+                fixture["failure"] = [1, errno.ENOSYS if mode == "unsupported" else errno.EPERM]
+                fixture["null_io"] = False
+            observed = life._private_worker_record(json.dumps(fixture, separators=(",", ":")).encode())
+            self.assertEqual(observed[0], mode)
+            self.assertEqual(observed[7], fixture["null_io"])
+        with patch.object(life.json, "loads") as decoded:
+            with self.assertRaises(ValueError):
+                life._private_worker_record(complete + b"x")
+            decoded.assert_not_called()
+        with self.assertRaises(ValueError):
+            life._private_worker_record(life._encode_frame(self._records()[0])[4:])
+
+    def test_o5_retained_failure_releases_raw_exception_and_captures(self):
+        import gc
+        import weakref
+        from scripts.validation_ownership import lifecycle as life
+
+        class Payload:
+            pass
+
+        def case():
+            payload = Payload()
+            reference = weakref.ref(payload)
+            original = ValueError(payload, b"x" * 262144)
+            facts = self._coordinator(7, fault="conversion+stderr", capture_failure=original)
+            life._forget_error(original)
+            original = payload = None
+            gc.collect()
+            return reference, facts["status"], facts["available"], facts["raised"]
+
+        reference, status, available, raised = case()
+        try:
+            raise AssertionError("bounded custody failure")
+        except AssertionError as error:
+            retained = error
+        gc.collect()
+        released = reference() is None
+        context = retained.__context__
+        life._forget_error(retained)
+        retained = None
+        self.assertTrue(released)
+        self.assertIsNone(context)
+        self.assertEqual((status, available, raised), (7, False, "earlier"))
+
+    def test_o5_owned_pipe_atomic_publication_and_no_recycled_authority(self):
+        from scripts.validation_ownership import lifecycle as life
+        read, write = os.pipe2(os.O_CLOEXEC | os.O_NONBLOCK)
+        guard_read, guard_write = os.pipe2(os.O_CLOEXEC)
+        old_fstat, old_fcntl = os.fstat, life.fcntl.fcntl
+        old_blocking, old_conf, old_write = os.set_blocking, os.fpathconf, os.write
+        old_select = life.select.select
+        data = None
+        try:
+            with ExitStack() as stack:
+                stack.enter_context(patch.object(life.os, "fstat", lambda fd: old_fstat(write if fd == 1 else fd)))
+                stack.enter_context(patch.object(life.fcntl, "fcntl", lambda fd, op: old_fcntl(write if fd == 1 else fd, op)))
+                stack.enter_context(patch.object(life.os, "set_blocking", lambda fd, flag: old_blocking(write if fd == 1 else fd, flag)))
+                stack.enter_context(patch.object(life.os, "fpathconf", lambda fd, name: old_conf(write if fd == 1 else fd, name)))
+                stack.enter_context(patch.object(life.os, "write", lambda fd, value: old_write(write if fd == 1 else fd, value)))
+                publisher = life._OutcomePublisher(self.TOKEN, time.monotonic() + 5, guard_read)
+                filled = 0
+                while filled < self.B:
+                    try:
+                        filled += old_write(write, b"x" * 4096)
+                    except BlockingIOError:
+                        break
+                waits = []
+                def writable(readers, writers, errors, timeout):
+                    waits.append(timeout)
+                    while True:
+                        try:
+                            if not os.read(read, 4096):
+                                break
+                        except BlockingIOError:
+                            break
+                    return old_select([], [write], [], timeout)
+                stack.enter_context(patch.object(life.select, "select", writable))
+                publisher.publish(self._records()[2])
+                data = os.read(read, 4096)
+                valid = json.loads(data[4:])["status"] == 0 and len(data) == int.from_bytes(data[:4], "little") + 4
+                os.close(read)
+                read = None
+                with self.assertRaises(BrokenPipeError):
+                    publisher.publish(self._records()[3])
+                finite = (valid, len(waits), publisher.attempted, publisher.sent)
+        finally:
+            data = None
+            for descriptor in (read, write, guard_read, guard_write):
+                if descriptor is not None:
+                    os.close(descriptor)
+        self.assertEqual(finite, (True, 1, 2, 1))
+        child = self.Child()
+        child.returncode = 7
+        report = life._CleanupReport("L", self.DEADLINE)
+        with patch.object(os, "killpg") as signal_group, patch.object(os, "waitid") as waitid:
+            life.terminate(child, report=report)
+            signal_group.assert_not_called()
+            waitid.assert_not_called()
+
+    def test_o6_none_preserves_actual_default_contract_and_optin_returns(self):
+        for status in (7, 0, -9, 125):
+            facts = self._coordinator(status, default=True, data=b"default-output")
+            self.assertEqual(facts["result_status"], status)
+            self.assertTrue(facts["bytes_equal"])
+            self.assertNotIn("--outcome-v1", facts["argv"])
+            self.assertNotIn("cache", facts["costs"])
+            self.assertEqual(facts["entries"], 0)
+            self.assertEqual(facts["launch_fds"], ())
+            opted = self._coordinator(status)
+            self.assertEqual(opted["result_status"], status)
+            self.assertEqual(opted["status"], status)
+            self.assertTrue(opted["shared"])
+            self.assertTrue(opted["cached"])
+            self.assertTrue(opted["opaque_repr"])
+            self.assertIn("--outcome-v1", opted["argv"])
+            self.assertFalse(opted["qualified"])
+            inner = self._watchdog(status, default=True)
+            result, write_count = inner["result"], inner["writes_attempted"]
+            inner.clear()
+            self.assertEqual(result, status)
+            self.assertEqual(write_count, 0)
+        for default in (False, True):
+            facts = self._watchdog(-9, main=True, default=default)
+            actual = (facts["raised"], facts["self_signals"])
+            facts.clear()
+            self.assertEqual(actual, ("SystemExit", (9,)))
+        from scripts.validation_ownership import lifecycle as life
+        with patch.object(life, "sys", SimpleNamespace(
+            flags=SimpleNamespace(isolated=True, no_site=True), stderr=sys.stderr,
+            argv=["lifecycle.py", str(self.DEADLINE), "--", "/usr/bin/printf", "--outcome-v1"],
+        )), patch.object(life, "run", side_effect=ValueError("ordinary diagnostic")), patch("builtins.print") as diagnostic:
+            result = life.main()
+            ordinary = diagnostic.call_args.args == ("namespace watchdog: ordinary diagnostic",)
+        self.assertEqual(result, 125)
+        self.assertTrue(ordinary)
+        for arguments in (
+            ["--outcome-v1", "bad", "--", "/usr/bin/true"],
+            ["--outcome-v1", self.TOKEN, "--outcome-v1", self.TOKEN, "--", "/usr/bin/true"],
+            ["--outcome-v1", self.TOKEN, "--fd", "9", "--", "/usr/bin/true"],
+            ["--outcome-v1", self.TOKEN, "--path", "receipt", "--", "/usr/bin/true"],
+            ["--stdin-fd", "3", "--outcome-v1", self.TOKEN, "--", "/usr/bin/true"],
+        ):
+            with patch.object(life, "sys", SimpleNamespace(
+                flags=SimpleNamespace(isolated=True, no_site=True), stderr=sys.stderr,
+                argv=["lifecycle.py", str(self.DEADLINE), *arguments],
+            )), patch.object(life, "run") as run, patch("builtins.print"):
+                self.assertEqual(life.main(), 125)
+                run.assert_not_called()
 
 
 if __name__ == "__main__":

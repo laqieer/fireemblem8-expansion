@@ -1483,6 +1483,152 @@ failure. With no primary failure, the deferred exception propagates; default
 OS termination actions take effect only after owned resources are removed.
 Failed/interrupted cleanup never resets or extends the aggregate lifetime.
 
+### Opt-in outcome custody (observation, not qualification)
+
+The [#180 prerequisite freeze](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5733870035)
+addresses two distinct loss boundaries. A normal, nonzero `Popen.wait()` result
+is not a Python exception: a later selector/stream finalizer can prevent
+`ProbeBudget.run` from delivering its `CompletedProcess`. The watchdog likewise
+observes a waitable leader with `WNOWAIT`, but subsequent cleanup can make its
+actual `main()` return **125**, not that leader's status. Preserving an existing
+exception alone does not preserve either normal observation.
+
+This is a narrow, opt-in host API prerequisite. It does **not** implement the
+restricted namespace bootstrap, a privileged witness, a trusted R/W writer
+barrier, backend selection, or a new command permission. It does not repair or
+qualify the seven restricted-host null-mount modes. No gameplay/configuration
+flag, Limits field, owner, case ID, Build workflow, ROM/RAM/save, locale, generated
+game format, modern/debug/release, or archival output changes.
+
+| API | Contract |
+| --- | --- |
+| `ProbeBudget.reserve_outcome(output_limit=262144)` | One private affine owner, bound to this bare budget, original deadline and next run ordinal; no process is launched. |
+| `ProbeBudget.run(..., outcome=owner)` | Requires the exact existing guarded privileged prefix, matching explicit `output_limit`, `category="output"`, no input or producer channel/handler, and no started `ProbeSession`. Existing executable, sudo-n, lifetime and close-fds checks remain. |
+| `owner.snapshot()` | After the capture attempt is terminal, returns immutable admitted observations, streams or explicit unavailability, four fixed frame slots, and finite cleanup facts. Does not call `remaining()`, perform I/O, retry, or learn a status from cleanup. |
+| `owner.release()` | Invalidates later access/use, drops owned stream/parser/report references and the active slot. Does not refund counters, reopen the budget, reap a child, delete a fixture, or destroy caller-held aliases. |
+| `lifecycle.run(..., outcome_token=token)` | Latches its validated, owned `waitid(P_PID, WEXITED\|WNOHANG\|WNOWAIT)` tuple before teardown; publishes before/after facts on the existing stdout pipe. |
+| `finish_cleanup(..., report=...)`, `terminate(..., report=...)`, `ProbeBudget._terminate/close(..., report=...)` | One concrete prepaid, cumulative role report, not a callback/sink. The owner holds C's private `_cleanup` report; finish budget cleanup with that same report before inspecting/releasing custody. Foreign budget reports reject. |
+
+All optional arguments default to **None**. That path retains the existing
+argv, input/output bytes, returns, exception identities/notes, signal handling,
+and exception-to-125 behavior, without new report admissions or frames. Only
+the opt-in watchdog argv adds `--outcome-v1 TOKEN` before `--`; it is not
+forwarded to the payload. No publisher-FD/path/socket/command option exists.
+
+On the opt-in C path, capture buffers are owned from the first admitted byte.
+A normal integer wait result and EOF state are latched **before** the next
+deadline check, selector close, bytes/result conversion or final teardown.
+Selector cleanup preserves an earlier body exception. Clean cleanup returns
+the actual `CompletedProcess`, including nonzero/125/signal status, sharing the
+owner's immutable bytes. Failed cleanup still raises and fails the budget;
+there is no replacement successful result. An earlier read/wait/setup error
+keeps its identity; poll, cached return codes and cleanup waits cannot fill
+the normal-status cell. Failed byte conversion explicitly makes capture
+unavailable. A partial accepted prefix is never a completed receipt.
+The eventual fixture must also make nonzero, invalid or incomplete results
+terminal using the existing budget rejection path before reporting them;
+this observation API does not silently reinterpret such results as exceptions.
+
+L publishes its before record while the leader is still owned and unreaped.
+It does not assign `child.returncode` or reap early. Cleanup still attempts the
+sole-reaper, pidfd, selector and handler obligations; its observed status must
+agree with the reaped status. Publication failure is secondary to an earlier
+exception, otherwise a failure. After publication uses the **same original
+deadline**, including on failure; it cannot attest its own future pipe close,
+exit, or enclosing cleanup. A normally observed 7 plus L cleanup failure is
+still actual outer 125. A later C cleanup exception preserves those separate
+facts, not a returned `CompletedProcess`.
+
+#### Closed data format and allocation
+
+Each record is a four-byte little-endian length followed by strict ASCII JSON,
+at most **4096 bytes including the header**. The only slots are R-before,
+R-after, L-before and L-after. Each role orders before/after once; global
+interleaving is allowed. Equivalent key order and valid JSON escapes remain
+data-equivalent. Duplicate keys/slots (including escaped duplicate keys), unknown
+fields, overlong strings, excessive nesting/nodes, nonfinite numbers, booleans in
+integer fields, misbound tokens/identities, malformed or partial frames reject
+without resynchronization. Earlier valid slots may remain observations;
+missing later custody never becomes success. Stderr is opaque diagnostics.
+
+The fixed records carry version/role/phase/owned PID and either a first fact
+(finite kind/stage/error and signed status) or a bounded cleanup/disposition.
+L-before additionally carries the validated PID/UID/SIGCHLD/code/status tuple;
+L records carry the fresh 32-lowercase-hex invocation token. R records instead
+match a private fixture binding: mode, independent U/G, original deadline and
+parent device/inode/owner. Private `_bind_fixture` installs only those
+comparison values, before the run, and is **not** a fixture pinning or
+authentication API.
+
+The private W-result decoder accepts only the original mode's bounded semantic
+data: mode; before/after device/inode/mode/rdev/mount-ID/flags; a finite failure
+tag/errno rather than an arbitrary message; zero or one selective/old-remount
+call; five capability sets plus NNP; the three denial errnos; null I/O, FD-close
+and nonzero-topology booleans. It cannot accept an R/L envelope, a claimed wait
+status, or a command. This decoder and benign R **data fixtures** are not a W,
+R publisher, namespace transition, or trusted-writer barrier. No untrusted
+worker record is forwarded as a top-level frame.
+
+L validates inherited FD1 as a FIFO writer distinct from the lifetime pipe,
+requires `PIPE_BUF >= 4096`, and makes it nonblocking before launch. Each
+publication is one atomic write. EAGAIN waits for readiness under the original
+deadline; short write, EPIPE or expiry fails, without rewind, duplicate before,
+alternate channel or file. If that channel failed, the cause itself may be
+unavailable. Token freshness and the exact guarded prefix are **not origin
+authentication**. Snapshots always report `qualified=False`; even four intact
+zero records cannot qualify a mode, outer failure or unknown owner cleanup.
+
+For `B=output_limit`, `F=4096` and `E=4096`, reserve **2B + 4F + 3E** cache
+bytes (552,960 at B=256 KiB), F pending bytes for the future private W record,
+the actual watchdog argv including option/token, one planned state and **52**
+monotonic entries (four slots plus 3×16 errors). The existing Limits and total
+budget must admit these subdivisions; real stream bytes still spend output.
+Stdout is at most 4F=16 KiB; stderr at most B−4F; combined capture is at most B.
+There are no refunds on conversion, release, or a failed attempt.
+
+Wire length alone is not the Python heap bound. Captures use fixed-size
+bytearrays, not growing prefix lists. Before decoding or encoding, the codec
+admits at most 192 nodes, depth six, 64-character ASCII strings and bounded
+scalars, with a separate conservative **172,032-byte** workspace for
+containers, pairs/memo, strings and transient encode/decode representations.
+Supported CPython object headers are checked before construction. Mutable
+captures are dropped before decoding; byte conversion overlaps at most one
+buffer pair and one immutable pair. The admission equation also covers all
+retained slots/reports and the private W buffer/workspace. Consequently this
+representation supports **180,224 ≤ B ≤ 262,144**; smaller or insufficient
+budgets reject before owner construction/launch, not by increasing the quota
+or dropping error completeness. None callers keep their existing smaller
+stream limits. These are custody-storage bounds, not a claim to bound the
+whole interpreter's RSS, pre-existing caller objects, or external aliases.
+
+Each role's report has at most 16 error entries **across all cleanup groups**,
+not 16 per call. Its count saturates at 17 with explicit overflow; metadata
+failure/uncertain release also makes it incomplete. Reports retain finite
+stage/type/integer data, no exception objects, tracebacks, reprs, messages,
+secondary-error histories or notes. Raw FD authority is withdrawn before
+fallible close; a possibly recycled integer is not retried. Independent
+remaining closes/reaps are attempted, waits stay deadline-bounded, and
+unconfirmed children remain owned. A close fault after confirmed release and
+one before release both fail, but do not authorize another close/signal.
+
+Repeated snapshots at unchanged state reuse the same admitted immutable
+value. Later explicit budget cleanup may replace that one cached summary,
+never append a history; callers must drop earlier aliases before that work.
+Inspect only after cleanup, produce a finite semantic summary, discard
+`CompletedProcess`, snapshots, raw exceptions and their traceback/context
+references, then release the owner. Raise a retained unittest failure only
+after leaving the API exception handler. `raise ... from None` does not itself
+release those references. Already returned Python aliases remain the caller's
+responsibility after `release()`.
+
+The [existing ownership case procedure](test-cases/workflow-governance.md#bounded-outcome-custody-prerequisite-o1o6)
+maps the actual-API positives, paired failures, independent shipping-L/C
+restorations, allocation/lifetime controls and default regressions. No new
+platform/setup permission follows from that evidence. Dependencies are the
+existing budget, lifecycle and owned capture pipes; no gameplay-feature,
+profile, save or localization conflicts. Future fixed R/N/W code still needs
+its own freeze, restricted-host setup proof and all seven real modes.
+
 Every budget subprocess, including ordinary Git/compiler commands, namespace
 availability probes and capsules, uses a fresh exclusive-reaper watchdog.
 Its trusted executable must be root-owned, non-writable by other users, and

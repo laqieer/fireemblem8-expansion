@@ -3805,6 +3805,103 @@ expiry. A valid past Delete must still satisfy every proof and strict UTC
 timestamp rule. The old history-time comparison admits the expired controls;
 neither sleeping nor changing the machine clock is needed.
 
+### Bounded outcome custody prerequisite (O1–O6)
+
+This subsection belongs to **TC-WORKFLOW-GATE-OWNERSHIP-001**, under the
+[pre-edit #180 freeze](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5733870035).
+It is a host API prerequisite, not a new namespace mode or a replacement for
+the broader case. See the [API/storage contract](../ownership-probe-foundation.md#opt-in-outcome-custody-observation-not-qualification).
+
+1. From the unchanged source root on Linux/CPython, run:
+
+   ```sh
+   python3 -B -m unittest scripts.validation_ownership.tests.test_foundation.OutcomeCustodyTests -v
+   ```
+
+   These O controls call the real `ProbeBudget.run`, lifecycle run/main,
+   cleanup, framing, snapshot and release APIs. Process/syscall/selector/clock
+   boundaries are inert; the one real FIFO control uses only owned pipes.
+   They launch no child, sudo, namespace, compiler, Make, helper or native
+   supervisor. No packages, ROM, SDK, policy change, credentials or remote
+   workflow are prerequisites. Fixtures use the existing 30-second budget;
+   ordinary 35-second wait/45-second enclosing and 1 MiB future fixture
+   ceilings are not increased or allocated as a new workload.
+
+2. **O1/O2 positive and failing results:** require 7/0/−9/125 observations
+   already present at selector, stream, lifetime, reap, pidfd, descendant-FD
+   and handler cleanup. Inject before-release and after-release faults.
+   Every failed cleanup still raises; zero never becomes successful cleanup.
+   The composed control must preserve inner 7, actual L main 125, and the C
+   cleanup exception, with no returned `CompletedProcess` and no qualification.
+
+3. **O3 precedence:** inject earlier setup/read/capture/wait/lifetime errors,
+   then later cleanup faults/reaps. Require the same original exception,
+   unavailable normal outer status, and no promotion of cleanup's 7/125.
+   A deadline exhausted before publication may deliver **no** before record;
+   require failure/unavailability, not a promise that the cause arrived.
+
+4. **O4 closed records:** require interleaved valid roles to parse, but reject
+   partial/oversized/duplicate/unknown/misbound fields, nonfinite/type errors,
+   false owned-child identities, and worker attempts at R/L framing. N0 is
+   setup data, not a successful worker mode. Exercise EPIPE, short writes,
+   deadline/pipe failures, capture charging/conversion and missing after/EOF.
+   Seven R/W mode representations here are benign **data**, not seven real
+   helper outcomes. Stderr resembling a receipt supplies no record.
+
+5. **O5 admission/lifetime:** inspect exact B/F/E, 52-entry and cache/pending
+   charges, max-size frames/streams/private W record and one-byte overshoots.
+   Unsupported heap representations and insufficient reservations must fail
+   before construction/launch. Saturate the same role report across cleanup
+   groups with huge, unprintable exceptions; require bounded tags and explicit
+   overflow rather than strings or histories. Require no repeated uncertain
+   FD close, no recycled-leader signal, unreaped ownership retained, stable
+   snapshot identity, release invalidation, and separately released caller
+   aliases/raw traceback/context references before a retained testcase failure.
+   The allocation control measures the actual CPython peak with maximum
+   captures, four records, three-role accounting and transient representations.
+
+6. **Independent restoration negatives:** preserve the immediate pre-edit
+   `budget.py` and `lifecycle.py` outside tracked source before editing. Load
+   one shipping function at a time in an isolated test interpreter, with only
+   an adapter removing its unknown `outcome`/`outcome_token` keyword; do not
+   replace its control flow. Run respectively
+   `OutcomeCustodyTests.test_o1_coordinator_custody_oracle` and
+   `OutcomeCustodyTests.test_o1_watchdog_custody_oracle`. Old C must lose the
+   pre-cleanup status/bytes; old L must emit no owned WNOWAIT observation.
+   Each oracle must fail as an assertion, not from a fixture/type/setup error.
+   Remove that one in-memory substitution and require both corrected oracles
+   to pass. Do not overwrite an accepted tree or commit source snapshots.
+   Git supplies history/review and the restoration preimage, not behavioral
+   evidence by raw source text.
+
+7. **O6/default:** None must retain old argv, actual output/status/exception/
+   notes, negative-signal and 125 behavior, with no new reports or frames.
+   If checking ordinary-child compatibility separately, run only the existing
+   focused regressions:
+
+   ```sh
+   python3 -B -m unittest \
+     scripts.validation_ownership.tests.test_foundation.FoundationTests.test_cleanup_finishes_all_actions_and_replays_pending_signals_afterward \
+     scripts.validation_ownership.tests.test_foundation.FoundationTests.test_budget_cleanup_defers_signal_until_children_and_pipes_are_closed \
+     scripts.validation_ownership.tests.test_foundation.FoundationTests.test_privileged_budget_uses_real_watchdog_without_running_sudo \
+     scripts.validation_ownership.tests.test_foundation.FoundationTests.test_watchdog_child_readiness_uses_the_absolute_deadline -v
+   ```
+
+   Those separately recorded existing regressions use ordinary owned children
+   and unchanged bounds, replacing the privileged prefix rather than running
+   sudo/unshare. The new O controls must not be repurposed to launch a witness.
+
+**Cleanup and limits:** release the custody owner and all external CP/snapshot/
+exception references; close only owned pipes and retain uncertain child
+ownership as failure. No fixture path, namespace or foreign object is removed
+by this API. No new case IDs/owners or existing automation are replaced.
+The API is default-off by an explicit per-call object, not a gameplay/build
+flag. It depends only on the existing budget/lifecycle/pipes, with no
+ROM/RAM/save/locale/generated-format or modern/archival profile interaction.
+Restricted-host setup and the four actual null-mount methods/seven modes
+remain separate unqualified requirements. An intact token/frame is not
+authentication, and a snapshot never grants a successful mode.
+
 Run `python3 -m unittest scripts.validation_ownership.tests.test_graph_report.GraphReportTests.test_current_expiry_repair_can_compare_expired_historical_base -v`
 for the bounded public comparison route. Keep an immutable, originally valid
 BASE deadline before the fixed validation instant, then renew CURRENT or remove
@@ -9446,6 +9543,15 @@ Make, a compiler, a native supervisor, a root report or SDK discovery. Their
 private fixture is bounded to 1 MiB, output to 256 KiB and the independent
 watchdog to 30 seconds. Run them fail-fast; no sudo, new device nodes, host
 mount changes or permission fallback is part of this regression.
+
+The separate [O1–O6 custody prerequisite](#bounded-outcome-custody-prerequisite-o1o6)
+only preserves bounded observations across the existing C/L cleanup boundaries.
+It implements neither the restricted backend nor trusted R/N/W code. Its mock
+and owned-pipe evidence does not qualify creation/entry policy, the old-remount
+control, actual selective helper I/O/denials, or any of these seven modes.
+Keep startup failures (including actual outer 125 and missing custody) failing.
+The future restricted bootstrap still requires its own technical freeze,
+representative host mechanism proof and every original effect/denial/cleanup.
 
 ### Actions
 
