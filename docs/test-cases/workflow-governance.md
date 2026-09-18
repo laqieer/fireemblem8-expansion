@@ -9276,6 +9276,14 @@ start absent; it does not precreate message C or replace the original check
 with a benign command. Default release/AAPCS and focused debug/APCS-GNU
 inputs are supported.
 
+The setup-only null-mount controls below additionally require Linux x86-64
+with `mount_setattr`, a nonzero invoking UID/GID, and unprivileged user/mount
+namespaces with util-linux `--map-current-user --keep-caps`. They do not run
+Make, a compiler, a native supervisor, a root report or SDK discovery. Their
+private fixture is bounded to 1 MiB, output to 256 KiB and the independent
+watchdog to 30 seconds. Run them fail-fast; no sudo, new device nodes, host
+mount changes or permission fallback is part of this regression.
+
 ### Actions
 
 1. From the source root, run the command under **Automation** below.
@@ -9339,12 +9347,26 @@ inputs are supported.
    Failed fixture drafts are diagnostic development records, not preserved
    production-defect evidence or successful validation.
 
+7. Run the separate setup-only command under **Automation**. In a private
+   outer user/mount namespace, keep the invoking nonzero self-mapped IDs for
+   setup, then drop all five capability sets and set NNP before the inner
+   root mapping. Bind existing null/zero devices; do not create devices.
+   Compare inherited readonly and ordinary writable parent cases using the
+   actual production helper. Require the same null object and mount ID,
+   exactly `flags_after = flags_before & ~NODEV`, and no change to readonly,
+   nosuid, noexec or unrelated attributes. After the privilege drop, null
+   returns EOF and accepts one tiny write; readonly regular source/runtime
+   writes and the other nodev-protected device remain denied.
+
 ### Expected result
 
 Each supported ordinary and confined invocation agrees on stdout, stderr and
 status while preserving the original source bytes and file metadata. Actual
 compiler, input and SDK observations support the result; a failed required
 check cannot become an ownership certificate even when Make ignores its exit.
+The setup-only null exception preserves the inherited mount restrictions and
+the exact device/mount through a single nonrecursive attribute transition.
+No descriptor, process or private mount/fixture remains after the controls.
 
 ### Negative control
 
@@ -9390,6 +9412,27 @@ admission for the keyword, assignment and pattern controls. Existing
 whitespace and parser-local refactors remain green; no blanket quote ban,
 general shell evaluator, source identity gate or new execution grant is added.
 
+#### Inherited readonly null-device regression
+
+The [selective-transition contract](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5724379393)
+and [nonzero-parent witness amendment](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5724703509)
+retain this case. The closed hosted root17 failed at the old full bind-remount;
+its exact kernel lock/LSM branch was not recorded. The local pre-edit evidence
+has three cumulative setup attempts, not three successful transitions: the
+first parent-UID0 setup stopped at its nested UID map, then the amended old
+and selective arms qualified. Preserve that distinction and the actual local
+groups/maps; local namespace identity is not a hosted observation.
+
+Restoring only the old `0x102a` remount must reproduce real `EPERM` on the
+readonly-parent fixture. The actual selective helper must still succeed on
+that fixture without clearing readonly. A wrong device must fail before the
+attribute call. A same-null replacement mount at the syscall boundary must
+not receive the transition: its mount ID changes, it remains nodev-protected,
+and the helper reports substitution. Controlled `ENOSYS` and locked-attribute
+`EPERM` return unchanged state and no remount fallback. Unissued launch/config
+controls and the original root-setup cold-import/recursive-attribute refusal
+remain required. These controls neither repair nor rerun SDK/resource work.
+
 ### Interactions and save compatibility
 
 Dependencies are the delivered native dispatch/runtime-tool/C-SDK foundation;
@@ -9402,6 +9445,19 @@ format, archival or modern build behavior changes.
 
 ```bash
 python3 -m unittest scripts.validation_ownership.tests.test_toolchain_runtime -v
+```
+
+Setup-only selective-null coverage, without the compiler suite:
+
+```sh
+python3 -m unittest -f \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_toolchain_null_mount_preserves_readonly_and_writable_parents \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_toolchain_null_mount_rejects_wrong_and_substituted_devices \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_toolchain_null_mount_failures_have_no_remount_fallback \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_toolchain_null_old_remount_restores_readonly_rejection \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_toolchain_null_exception_requires_an_issued_launch \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_recursive_mount_attribute_failure_has_no_top_only_fallback \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_root_setup_rejects_unsupported_recursive_attributes_before_supervision -v
 ```
 
 The runtime file belongs to the existing trusted verifier inventory and
@@ -9427,6 +9483,14 @@ use only the real bound null device and its owned assembly temporary; other
 devices remain denied. The existing budgets charge all work, and original
 private roots, children, waiters and capability registries are cleaned on
 both success and failure.
+
+The setup-only tests use their own unprivileged namespace/watchdog and exact
+owned temporary fixture. After workers exit, namespace teardown removes only
+their private mounts; descriptors and the fixture are closed/removed by their
+independent owner. Never unmount, remove or change a host/global or another
+worktree path. A setup, identity, restriction or cleanup failure is a failure,
+not a skipped native proof. No source acceptance, diagnostic18 or new H1
+allocation follows from these local controls.
 
 No full graph resource,
 provider/H1, managed-admission or remote-completion claim follows from this

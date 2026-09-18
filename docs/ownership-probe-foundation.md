@@ -108,14 +108,35 @@ access or Make source-read authority.
 
 Recursive bind mounts receive their restrictions through `mount_setattr` with
 `AT_RECURSIVE`, using an `O_PATH`-pinned mount root. Read-only, noexec, nosuid and
-nodev apply to every copied submount, not just the top bind. Attribute clearing
-is never requested, so stronger source restrictions remain intact. The initial
+nodev apply to every copied submount, not just the top bind. Generic recursive
+bind setup never requests attribute clearing, so stronger source restrictions
+remain intact. The initial
 root is recursively sealed before deliberate writable work/control mounts and
 the separate read-only executable interceptor are installed. These exceptions
 do not make inherited submounts writable or executable accidentally.
 An unavailable recursive-attribute operation rejects before candidate
 supervision; there is no top-level-remount fallback. All changes are confined
 to the launcher's private mount namespace, not the host's source mounts.
+
+The already issued modern-toolchain syntax/compile profile has one narrow
+device exception: its exact `/dev/null` bind must still be the same actual
+character device `1:3`. Setup pins both the source and target, checks bounded
+kernel mount IDs and complete mount flags, then clears only the target's local
+`NODEV` attribute with a nonrecursive, fd-addressed `mount_setattr`. Readonly,
+nosuid, noexec, atime and propagation restrictions are not relaxed; path or
+mount substitution, a blocked source device, unsupported operation or locked
+attribute fails closed. There is no full-remount, RW, privilege or preopened-FD
+fallback. The native stage/last-executable null-write rules stay unchanged.
+
+The setup-only regression in
+[the existing toolchain case](test-cases/workflow-governance.md#tc-workflow-ownership-modern-toolchain-001-execute-the-original-modern-toolchain-prerequisite)
+uses no Make, compiler or SDK workload. It requires an ordinary nonzero
+invoking UID/GID, Linux x86-64 with `mount_setattr`, and installed unprivileged
+user/mount namespace support including util-linux `--map-current-user` and
+`--keep-caps`. An extra local outer namespace preserves that nonzero ID for
+setup, drops all capability sets and sets NNP before the inner root mapping.
+This is local mechanism evidence, not hosted mount/lock/LSM telemetry.
+Unsupported topology fails rather than using the separate sudo route.
 
 The syscall supervisor remains outside the chroot. It follows every child,
 uses kernel-identified entry/exit stops, fails on unadmitted syscalls, and

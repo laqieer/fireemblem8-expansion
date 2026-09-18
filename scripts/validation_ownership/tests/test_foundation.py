@@ -6487,6 +6487,278 @@ print(json.dumps({"submount_levels":3,"source_flags_unchanged":True,
             self.assertIs(sys.modules["toolchain_runtime"], original_toolchain)
         self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
 
+    def null_mount_kernel_control(self, mode):
+        self.assertNotEqual(os.getuid(), 0, "null-mount fixture requires an ordinary invoking user")
+        fixture = self.directory / ("null-mount-" + mode)
+        fixture.mkdir()
+        program = self.directory / ("null-mount-" + mode + ".py")
+        program.write_text(r'''
+import ctypes,errno,json,os,stat,subprocess,sys
+from pathlib import Path
+from types import SimpleNamespace
+sys.path.insert(0,sys.argv[1])
+import sandbox_exec as setup
+LIBC=ctypes.CDLL(None,use_errno=True)
+mode,stage,fixture=sys.argv[2],sys.argv[3],Path(sys.argv[4])
+uid,gid=int(sys.argv[5]),int(sys.argv[6])
+def flags():
+    return {key:value.strip() for key,value in
+            (line.split(":",1) for line in Path("/proc/self/status").read_text().splitlines())}
+def drop():
+    for capability in range(64):
+        if LIBC.prctl(24,capability,0,0,0) and ctypes.get_errno()!=errno.EINVAL:
+            raise OSError(ctypes.get_errno(),"bounding capability drop")
+    if LIBC.prctl(47,4,0,0,0): raise OSError(ctypes.get_errno(),"ambient drop")
+    class Header(ctypes.Structure):
+        _fields_=[("version",ctypes.c_uint32),("pid",ctypes.c_int)]
+    class Data(ctypes.Structure):
+        _fields_=[("effective",ctypes.c_uint32),("permitted",ctypes.c_uint32),("inheritable",ctypes.c_uint32)]
+    header,data=Header(0x20080522,0),(Data*2)()
+    if LIBC.capset(ctypes.byref(header),ctypes.byref(data)): raise OSError(ctypes.get_errno(),"capability drop")
+    if LIBC.prctl(38,1,0,0,0): raise OSError(ctypes.get_errno(),"NNP")
+    value=flags()
+    assert value["NoNewPrivs"]=="1"
+    assert all(int(value[name],16)==0 for name in ("CapInh","CapPrm","CapEff","CapBnd","CapAmb"))
+    return {name:value[name] for name in ("CapInh","CapPrm","CapEff","CapBnd","CapAmb","NoNewPrivs")}
+def mount_state(path):
+    descriptor=os.open(path,os.O_PATH|os.O_NOFOLLOW|os.O_CLOEXEC)
+    try:
+        info=os.fstat(descriptor)
+        with open("/proc/self/fdinfo/"+str(descriptor),"rb") as source: data=source.read(4097)
+        assert len(data)<=4096
+        mount_id=int(next(line.split(b":",1)[1] for line in data.splitlines() if line.startswith(b"mnt_id:")))
+        return {"identity":[info.st_dev,info.st_ino,info.st_mode,info.st_rdev],
+                "mount_id":mount_id,"flags":os.fstatvfs(descriptor).f_flag}
+    finally: os.close(descriptor)
+def attrs(path,value):
+    setup.recursive_attributes(path,value)
+def bind_device(source,target,readonly):
+    setup.mount(source,target,setup.MS_BIND|setup.MS_REC)
+    attrs(target,setup.MS_NOSUID|setup.MS_NOEXEC|(setup.MS_RDONLY if readonly else 0))
+if stage=="outer":
+    assert os.getuid()==os.geteuid()==uid>0 and os.getgid()==gid>0
+    assert Path("/proc/self/uid_map").read_text().split()==[str(uid),str(uid),"1"]
+    assert Path("/proc/self/gid_map").read_text().split()==[str(gid),str(gid),"1"]
+    outer_user=os.stat("/proc/self/ns/user").st_ino
+    work=fixture/"volume";work.mkdir()
+    if LIBC.mount(b"tmpfs",os.fsencode(work),b"tmpfs",14,b"size=1048576,mode=0700"):
+        raise OSError(ctypes.get_errno(),"private bounded tmpfs")
+    for name in ("null","zero"):
+        (work/name).touch()
+        bind_device(Path("/dev")/name,work/name,mode!="writable")
+    for name in ("source","runtime"):
+        (work/name).mkdir();(work/name/"canary").write_bytes(name.encode())
+        setup.bind(work/name,work/name)
+    worker=drop()
+    assert os.getuid()==uid and os.getgid()==gid
+    child=subprocess.run(["/usr/bin/unshare","--user","--map-root-user","--mount","--fork",
+                          "--kill-child","--propagation","private","/usr/bin/python3","-I","-S","-B",
+                          __file__,sys.argv[1],mode,"inner",str(work),str(uid),str(gid),str(outer_user)],
+                         check=False)
+    assert child.returncode==0,child.returncode
+    raise SystemExit(0)
+assert os.getuid()==os.geteuid()==os.getgid()==0
+assert Path("/proc/self/uid_map").read_text().split()==["0",str(uid),"1"]
+assert Path("/proc/self/gid_map").read_text().split()==["0",str(gid),"1"]
+assert os.stat("/proc/self/ns/user").st_ino!=int(sys.argv[7])
+assert flags()["NoNewPrivs"]=="1"
+root=fixture/"root"
+for name in ("dev","repo","usr"): (root/name).mkdir(parents=True)
+for name in ("null","zero"): (root/"dev"/name).touch()
+setup.bind(root,root,executable=True)
+setup.bind(fixture/"source",root/"repo")
+setup.bind(fixture/"runtime",root/"usr",executable=True)
+setup.bind(fixture/("zero" if mode=="wrong-device" else "null"),root/"dev/null",writable=True)
+setup.bind(fixture/"zero",root/"dev/zero",writable=True)
+target=root/"dev/null"
+before=mount_state(target)
+descriptors=set(os.listdir("/proc/self/fd"))
+calls=[]
+original_ctypes=setup.ctypes
+class Library:
+    def syscall(self,*args):
+        value=ctypes.cast(args[4],ctypes.POINTER(setup.MountAttributes)).contents
+        if mode=="old":
+            request=setup.MS_REMOUNT|setup.MS_BIND|setup.MS_NOSUID|setup.MS_NOEXEC
+            calls.append(["legacy-remount",request])
+            return LIBC.mount(None,os.fsencode(target),None,request,None)
+        calls.append([args[0].value,args[3].value,value.attr_set,value.attr_clr,
+                      value.propagation,value.userns_fd,args[5].value])
+        if mode in {"unsupported","locked"}:
+            ctypes.set_errno(errno.ENOSYS if mode=="unsupported" else errno.EPERM)
+            return -1
+        if mode=="substituted":
+            if LIBC.mount(os.fsencode(fixture/"null"),os.fsencode(target),None,setup.MS_BIND|setup.MS_REC,None):
+                raise OSError(ctypes.get_errno(),"owned replacement mount")
+            descriptor=os.open(target,os.O_PATH|os.O_NOFOLLOW|os.O_CLOEXEC)
+            try:
+                restriction=setup.MountAttributes(attr_set=14)
+                if LIBC.syscall(ctypes.c_long(442),ctypes.c_int(descriptor),ctypes.c_char_p(b""),
+                                ctypes.c_uint(4096),ctypes.byref(restriction),ctypes.c_size_t(32)):
+                    raise OSError(ctypes.get_errno(),"replacement restriction")
+            finally: os.close(descriptor)
+        return LIBC.syscall(*args)
+    def mount(self,*args):
+        raise AssertionError("selective helper attempted a remount fallback")
+members=dict(vars(ctypes));members["CDLL"]=lambda *args,**kwargs:Library()
+setup.ctypes=SimpleNamespace(**members)
+failure=None
+try:
+    try:
+        setup._enable_toolchain_null(root)
+    except (OSError,RuntimeError) as error:
+        failure={"type":type(error).__name__,"message":str(error),"errno":getattr(error,"errno",None)}
+finally:
+    setup.ctypes=original_ctypes
+assert set(os.listdir("/proc/self/fd"))==descriptors
+after=mount_state(target)
+if mode in {"readonly","writable"}:
+    assert failure is None,failure
+    assert calls==[[442,4096,0,4,0,0,32]],calls
+    assert before["identity"]==after["identity"] and before["mount_id"]==after["mount_id"]
+    assert after["flags"]==before["flags"]&~os.ST_NODEV
+    assert bool(after["flags"]&os.ST_RDONLY)==(mode=="readonly")
+elif mode=="wrong-device":
+    assert failure is not None and not calls
+    assert before==after
+elif mode=="substituted":
+    assert failure is not None and failure["type"]=="RuntimeError"
+    assert calls==[[442,4096,0,4,0,0,32]]
+    assert before["identity"]==after["identity"] and before["mount_id"]!=after["mount_id"]
+    assert after["flags"]&os.ST_NODEV
+else:
+    assert failure is not None and failure["errno"]==(errno.ENOSYS if mode=="unsupported" else errno.EPERM)
+    assert before==after
+    assert calls==([["legacy-remount",4138]] if mode=="old" else [[442,4096,0,4,0,0,32]])
+worker=drop()
+denied={}
+for name in ("repo","usr"):
+    try: fd=os.open(root/name/"canary",os.O_WRONLY|os.O_CLOEXEC)
+    except OSError as error:
+        assert error.errno in (errno.EROFS,errno.EPERM,errno.EACCES)
+        denied[name]=error.errno
+    else:
+        os.close(fd);raise AssertionError("readonly regular fixture became writable")
+try: fd=os.open(root/"dev/zero",os.O_RDONLY|os.O_CLOEXEC)
+except OSError as error:
+    assert error.errno in (errno.EPERM,errno.EACCES)
+    denied["other-device"]=error.errno
+else:
+    os.close(fd);raise AssertionError("other device escaped nodev")
+io=False
+if failure is None:
+    fd=os.open(target,os.O_RDWR|os.O_NOFOLLOW|os.O_CLOEXEC)
+    try: assert os.read(fd,1)==b"" and os.write(fd,b"x")==1
+    finally: os.close(fd)
+    io=True
+assert set(os.listdir("/proc/self/fd"))==descriptors
+print(json.dumps({"mode":mode,"before":before,"after":after,"failure":failure,"calls":calls,
+                  "post_drop":worker,"denied":denied,"null_io":io,"fd_closed":True,
+                  "local_nonzero_topology":True}),flush=True)
+''')
+        stdout, stderr = self.directory / (mode + ".stdout"), self.directory / (mode + ".stderr")
+        before = set(os.listdir("/proc/self/fd"))
+        reader, writer = os.pipe2(os.O_CLOEXEC)
+        child = None
+        def limits():
+            resource.setrlimit(resource.RLIMIT_FSIZE, (256 * 1024, 256 * 1024))
+        try:
+            with stdout.open("wb") as output, stderr.open("wb") as errors:
+                child = subprocess.Popen([
+                    "/usr/bin/python3", "-I", "-S", "-B", str(TRUSTED_ROOT / "lifecycle.py"),
+                    str(time.monotonic() + 30), "--",
+                    "/usr/bin/unshare", "--user", "--map-current-user", "--keep-caps", "--mount",
+                    "--fork", "--kill-child", "--propagation", "private",
+                    "/usr/bin/python3", "-I", "-S", "-B", str(program), str(TRUSTED_ROOT), mode,
+                    "outer", str(fixture), str(os.getuid()), str(os.getgid()),
+                ], stdin=reader, stdout=output, stderr=errors, env=ENVIRONMENT,
+                   close_fds=True, start_new_session=True, preexec_fn=limits)
+                os.close(reader)
+                reader = -1
+                child.wait(timeout=35)
+            self.assertEqual(child.returncode, 0, stderr.read_text())
+            self.assertLessEqual(stdout.stat().st_size, 256 * 1024)
+            self.assertLessEqual(stderr.stat().st_size, 256 * 1024)
+            result = json.loads(stdout.read_text())
+            self.assertEqual(result["mode"], mode)
+            self.assertTrue(result["fd_closed"])
+            self.assertTrue(result["local_nonzero_topology"])
+            self.assertEqual(result["post_drop"]["NoNewPrivs"], "1")
+            self.assertTrue(all(int(result["post_drop"][name], 16) == 0
+                                for name in ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb")))
+            self.assertEqual(set(result["denied"]), {"repo", "usr", "other-device"})
+            return result
+        finally:
+            if reader >= 0:
+                os.close(reader)
+            os.close(writer)
+            if child is not None and child.poll() is None:
+                descriptor = os.pidfd_open(child.pid)
+                try:
+                    signal.pidfd_send_signal(descriptor, signal.SIGTERM)
+                    child.wait(timeout=5)
+                finally:
+                    os.close(descriptor)
+            self.assertFalse(Path(f"/proc/self/task/{os.getpid()}/children").read_text().strip())
+            self.assertEqual(set(os.listdir("/proc/self/fd")), before)
+
+    def test_toolchain_null_mount_preserves_readonly_and_writable_parents(self):
+        for mode in ("readonly", "writable"):
+            with self.subTest(mode=mode):
+                result = self.null_mount_kernel_control(mode)
+                self.assertIsNone(result["failure"])
+                self.assertTrue(result["null_io"])
+                self.assertEqual(result["before"]["identity"], result["after"]["identity"])
+                self.assertEqual(result["before"]["mount_id"], result["after"]["mount_id"])
+                self.assertEqual(result["after"]["flags"], result["before"]["flags"] & ~os.ST_NODEV)
+
+    def test_toolchain_null_mount_rejects_wrong_and_substituted_devices(self):
+        for mode in ("wrong-device", "substituted"):
+            with self.subTest(mode=mode):
+                result = self.null_mount_kernel_control(mode)
+                self.assertIsNotNone(result["failure"])
+                self.assertFalse(result["null_io"])
+                self.assertTrue(result["after"]["flags"] & os.ST_NODEV)
+
+    def test_toolchain_null_mount_failures_have_no_remount_fallback(self):
+        for mode, expected in (("unsupported", errno.ENOSYS), ("locked", errno.EPERM)):
+            with self.subTest(mode=mode):
+                result = self.null_mount_kernel_control(mode)
+                self.assertEqual(result["failure"]["errno"], expected)
+                self.assertEqual(result["before"], result["after"])
+                self.assertFalse(result["null_io"])
+
+    def test_toolchain_null_old_remount_restores_readonly_rejection(self):
+        result = self.null_mount_kernel_control("old")
+        self.assertEqual(result["failure"]["errno"], errno.EPERM)
+        self.assertEqual(result["before"], result["after"])
+        self.assertFalse(result["null_io"])
+
+    def test_toolchain_null_exception_requires_an_issued_launch(self):
+        from scripts.validation_ownership import sandbox_exec
+        config = self.directory / "null-launch-config.json"
+        search = list(sys.path)
+        local = SimpleNamespace(
+            flags=SimpleNamespace(isolated=True, no_site=True),
+            argv=["sandbox_exec.py", str(config)], path=search,
+        )
+        for extra in (
+            {"toolchain_runtime": {}},
+            {"dependency": {"toolchain_probe": {}}, "toolchain_runtime": {}},
+        ):
+            with self.subTest(extra=extra):
+                config.write_text(json.dumps({"root": str(self.root), "mounts": [], **extra}))
+                with patch.object(sys, "path", search), patch.object(
+                    sandbox_exec, "sys", local,
+                ), patch.object(sandbox_exec, "mount") as mount, patch.object(
+                    sandbox_exec, "_enable_toolchain_null",
+                ) as enable, patch.dict(sys.modules):
+                    sys.modules.pop("toolchain_runtime", None)
+                    with self.assertRaisesRegex(RuntimeError, "unrelated|unbound"):
+                        sandbox_exec.main()
+                mount.assert_not_called()
+                enable.assert_not_called()
+
     @contextmanager
     def owned_process(self, argv):
         child = subprocess.Popen(

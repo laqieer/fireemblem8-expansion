@@ -3290,6 +3290,10 @@
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_toolchain_runtime -v",
           "evidence": "scripts/validation_ownership/tests/test_toolchain_runtime.py"
+        },
+        {
+          "command": "python3 -m unittest -f scripts.validation_ownership.tests.test_foundation.FoundationTests.test_toolchain_null_mount_preserves_readonly_and_writable_parents scripts.validation_ownership.tests.test_foundation.FoundationTests.test_toolchain_null_mount_rejects_wrong_and_substituted_devices scripts.validation_ownership.tests.test_foundation.FoundationTests.test_toolchain_null_mount_failures_have_no_remount_fallback scripts.validation_ownership.tests.test_foundation.FoundationTests.test_toolchain_null_old_remount_restores_readonly_rejection scripts.validation_ownership.tests.test_foundation.FoundationTests.test_toolchain_null_exception_requires_an_issued_launch scripts.validation_ownership.tests.test_foundation.FoundationTests.test_recursive_mount_attribute_failure_has_no_top_only_fallback scripts.validation_ownership.tests.test_foundation.FoundationTests.test_root_setup_rejects_unsupported_recursive_attributes_before_supervision -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         }
       ]
     },

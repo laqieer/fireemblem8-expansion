@@ -68,6 +68,62 @@ def recursive_attributes(target, flags):
         os.close(descriptor)
 
 
+def _enable_toolchain_null(root):
+    flags = os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC
+    source_path, target_path = Path("/dev/null"), root / "dev/null"
+
+    def state(descriptor):
+        info = os.fstat(descriptor)
+        if not stat.S_ISCHR(info.st_mode) or info.st_rdev != os.makedev(1, 3):
+            raise RuntimeError("toolchain null output is not the actual null device")
+        with open(f"/proc/self/fdinfo/{descriptor}", "rb") as stream:
+            data = stream.read(4097)
+        ids = [line.partition(b":")[2].strip() for line in data.splitlines() if line.startswith(b"mnt_id:")]
+        if len(data) > 4096 or len(ids) != 1 or not ids[0].isdigit() or not 0 < int(ids[0]) < 1 << 64:
+            raise RuntimeError("toolchain null output lacks a bounded mount identity")
+        identity = (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid, info.st_rdev)
+        return identity, int(ids[0]), os.fstatvfs(descriptor).f_flag
+
+    def visible(path, expected):
+        descriptor = os.open(path, flags)
+        try:
+            if state(descriptor) != expected:
+                raise RuntimeError("toolchain null mount or object was substituted")
+        finally:
+            os.close(descriptor)
+
+    source = os.open(source_path, flags)
+    try:
+        target = os.open(target_path, flags)
+        try:
+            original_source, before = state(source), state(target)
+            if original_source[0] != before[0] or original_source[2] & os.ST_NODEV:
+                raise RuntimeError("toolchain null output differs from its unblocked source device")
+            required = os.ST_NOSUID | os.ST_NODEV | os.ST_NOEXEC
+            if before[2] & required != required:
+                raise RuntimeError("toolchain null mount lacks its required restrictions")
+            visible(source_path, original_source)
+            visible(target_path, before)
+            attributes = MountAttributes(attr_clr=MS_NODEV)
+            libc = ctypes.CDLL(None, use_errno=True)
+            # Only remove the local device restriction; inherited readonly stays intact.
+            if libc.syscall(
+                ctypes.c_long(SYS_MOUNT_SETATTR), ctypes.c_int(target), ctypes.c_char_p(b""),
+                ctypes.c_uint(AT_EMPTY_PATH), ctypes.byref(attributes), ctypes.c_size_t(ctypes.sizeof(attributes)),
+            ):
+                error = ctypes.get_errno()
+                raise OSError(error, "cannot enable the exact confined toolchain null device", str(target_path))
+            expected = before[0], before[1], before[2] & ~os.ST_NODEV
+            if state(target) != expected or state(source) != original_source:
+                raise RuntimeError("toolchain null transition changed unrelated mount or device state")
+            visible(source_path, original_source)
+            visible(target_path, expected)
+        finally:
+            os.close(target)
+    finally:
+        os.close(source)
+
+
 def drop_privileges(config):
     libc = ctypes.CDLL(None, use_errno=True)
     # UID 0 in a private user namespace is still stripped of all capabilities.
@@ -114,14 +170,7 @@ def main():
         expected = {"source": "/dev/null", "target": "/dev/null", "writable": True, "executable": False}
         if [item for item in config["mounts"] if item["target"] == "/dev/null"] != [expected]:
             raise RuntimeError("toolchain null output lost its exact device mount")
-        source = os.stat("/dev/null")
-        target = (root / "dev/null").stat()
-        if (
-            not stat.S_ISCHR(target.st_mode) or target.st_rdev != os.makedev(1, 3)
-            or (source.st_dev, source.st_ino) != (target.st_dev, target.st_ino)
-        ):
-            raise RuntimeError("toolchain null output differs from the actual system device")
-        mount(None, root / "dev/null", MS_REMOUNT | MS_BIND | MS_NOSUID | MS_NOEXEC)
+        _enable_toolchain_null(root)
     from syscall_guard import supervise
     return supervise(config, lambda: drop_privileges(config))
 
