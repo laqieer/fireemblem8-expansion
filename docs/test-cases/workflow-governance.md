@@ -3837,6 +3837,12 @@ the broader case. See the [API/storage contract](../ownership-probe-foundation.m
 3. **O3 precedence:** inject earlier setup/read/capture/wait/lifetime errors,
    then later cleanup faults/reaps. Require the same original exception,
    unavailable normal outer status, and no promotion of cleanup's 7/125.
+   Pair pending-byte admission and Popen failures with a raising signal-mask
+   restoration. The original setup fact must already be retained at restoration;
+   the interruption is bounded secondary evidence, not the API primary or
+   clean cleanup. Also exercise failed mask setup and successful acquisition
+   followed by failed restoration. Preserve the caller's preblocked mask and
+   the child's original pre-exec mask; all remaining owned cleanup still runs.
    A deadline exhausted before publication may deliver **no** before record;
    require failure/unavailability, not a promise that the cause arrived.
 

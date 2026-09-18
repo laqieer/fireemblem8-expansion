@@ -674,8 +674,10 @@ class ProbeBudget:
         try:
             ordinary_executable(argv[0])
             ordinary_executable(argv[len(NAMESPACE_LAUNCHER)])
-            mask = signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGINT, signal.SIGTERM))
+            mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+            acquisition_error = None
             try:
+                signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGINT, signal.SIGTERM))
                 launcher = [
                     "/usr/bin/sudo", "-n", "--", "/usr/bin/python3", "-I", "-S", "-B",
                     str(Path(__file__).resolve().with_name("lifecycle.py")), str(self.deadline),
@@ -691,8 +693,21 @@ class ProbeBudget:
                     preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, mask),
                 )
                 self.children[child] = True
+            except BaseException as error:
+                acquisition_error = error
+                outcome._exception("setup", error)
+                raise
             finally:
-                signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+                report.attempt("mask")
+                try:
+                    signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+                except BaseException as error:
+                    report.unsure("mask")
+                    report.error("mask", error)
+                    if acquisition_error is None:
+                        raise
+                    if error is not acquisition_error:
+                        _lifecycle._forget_error(error)
             selector = selectors.DefaultSelector()
             body_error = None
             try:

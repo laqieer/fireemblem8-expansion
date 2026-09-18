@@ -11259,6 +11259,143 @@ class OutcomeCustodyTests(unittest.TestCase):
         self.assertTrue(observed)
         self.assertEqual(raised, "cleanup")
 
+    def test_o3_acquisition_failure_precedes_mask_restoration(self):
+        from scripts.validation_ownership import budget as budgeting, lifecycle as life
+        for failure in ("launch", "admission", "block", None):
+            for interrupted in (True, False):
+                with self.subTest(failure=failure, interrupted=interrupted):
+                    original_mask = {signal.SIGUSR1}
+                    current_mask = set(original_mask)
+                    setup_error = OSError(errno.EAGAIN, "inert acquisition failure")
+                    interruption = KeyboardInterrupt("inert mask restoration")
+                    original_errors, restoration_facts, events = [], [], []
+                    block_failed = restored = False
+                    owner = view = result = budget = None
+                    raised = None
+                    try:
+                        with ExitStack() as stack:
+                            self._signals(stack)
+                            stack.enter_context(patch.object(budgeting.time, "monotonic", return_value=100.0))
+                            stack.enter_context(patch.object(budgeting.secrets, "token_hex", return_value=self.TOKEN))
+                            budget = ProbeBudget(Limits(seconds=30))
+                            budget.started = 100.0
+                            owner = budget.reserve_outcome()
+                            owner._bind_fixture(self._binding())
+                            if failure == "admission":
+                                budget.charge("pending", budget.limits.pending_bytes - budget.bytes["pending"])
+                            actual_charge = budget.charge
+
+                            def charge(category, size):
+                                try:
+                                    return actual_charge(category, size)
+                                except MakeProbeError as error:
+                                    original_errors.append(error)
+                                    raise
+
+                            def mask(how, requested):
+                                nonlocal block_failed, restored
+                                previous = set(current_mask)
+                                if how == signal.SIG_BLOCK:
+                                    current_mask.update(requested)
+                                    if failure == "block" and requested and not block_failed:
+                                        block_failed = True
+                                        original_errors.append(setup_error)
+                                        raise setup_error
+                                else:
+                                    self.assertEqual(how, signal.SIG_SETMASK)
+                                    current_mask.clear()
+                                    current_mask.update(requested)
+                                    if not restored:
+                                        restored = True
+                                        restoration_facts.append(owner._error)
+                                        if interrupted:
+                                            raise interruption
+                                return previous
+
+                            child = self.Child()
+                            streams = [
+                                self.Stream(fd, name, events)
+                                for fd, name in ((10, "stdout"), (11, "stderr"), (12, "lifetime"))
+                            ]
+                            child.stdout, child.stderr, child.stdin = streams
+
+                            def wait(timeout=None):
+                                child.returncode = 0
+                                return 0
+
+                            def launch(*args, **kwargs):
+                                if failure == "launch":
+                                    original_errors.append(setup_error)
+                                    raise setup_error
+                                return child
+
+                            wire, offset = self._wire(self._records()), 0
+
+                            def read(fd, size):
+                                nonlocal offset
+                                if fd == 11:
+                                    return b""
+                                chunk = wire[offset:offset + size]
+                                offset += len(chunk)
+                                return chunk
+
+                            child.wait, child.poll = wait, lambda: child.returncode
+                            stack.enter_context(patch.object(budget, "charge", charge))
+                            stack.enter_context(patch.object(signal, "pthread_sigmask", mask))
+                            stack.enter_context(patch.object(budgeting, "ordinary_executable"))
+                            popen = stack.enter_context(patch.object(budgeting.subprocess, "Popen", side_effect=launch))
+                            stack.enter_context(patch.object(budgeting.selectors, "DefaultSelector",
+                                                            return_value=self.Selector(lambda: events.append("selector"))))
+                            stack.enter_context(patch.object(budgeting.os, "set_blocking"))
+                            stack.enter_context(patch.object(budgeting.os, "read", read))
+                            try:
+                                result = budget.run(
+                                    [*NAMESPACE_LAUNCHER, "/usr/bin/true"], env=ENVIRONMENT,
+                                    privileged=True, output_limit=self.B, outcome=owner,
+                                )
+                            except BaseException as error:
+                                raised = error
+                            budget.close(report=owner._cleanup)
+                            view = owner.snapshot()
+                            self.assertEqual(popen.call_count, int(failure not in ("admission", "block")))
+                            self.assertEqual(current_mask, original_mask)
+                            self.assertFalse(budget.children)
+                            self.assertTrue(restoration_facts)
+                            if failure is not None:
+                                self.assertEqual(len(original_errors), 1)
+                                self.assertIs(raised, original_errors[0])
+                                self.assertEqual(view.outer_error, life._error_value(original_errors[0]))
+                                self.assertEqual(restoration_facts[0], view.outer_error)
+                                self.assertEqual(view.outer_stage, "setup")
+                                self.assertIsNone(view.outer_returncode)
+                            elif interrupted:
+                                self.assertIs(raised, interruption)
+                                self.assertEqual(view.outer_error, life._error_value(interruption))
+                                self.assertIsNone(view.outer_returncode)
+                            else:
+                                self.assertIsNone(raised)
+                                self.assertEqual(result.returncode, 0)
+                                self.assertEqual(view.outer_returncode, 0)
+                                self.assertTrue(view.cleanup.complete)
+                            if interrupted:
+                                self.assertFalse(view.cleanup.complete)
+                                bit = 1 << life._STAGES.index("mask")
+                                self.assertTrue(view.cleanup.failed & bit)
+                                self.assertTrue(view.cleanup.uncertain & bit)
+                            if failure is None:
+                                self.assertTrue(all(stream.closed for stream in streams))
+                            if popen.called:
+                                current_mask.update(life.TERMINATING)
+                                popen.call_args.kwargs["preexec_fn"]()
+                                self.assertEqual(current_mask, original_mask)
+                    finally:
+                        view = result = raised = wire = None
+                        if owner is not None:
+                            owner.release()
+                        for error in (*original_errors, setup_error, interruption):
+                            life._forget_error(error)
+                        original_errors.clear()
+
     def test_o1_normal_observation_precedes_each_real_cleanup(self):
         for status in (7, 0, -9, 125):
             for fault in ("selector", "stdout", "stderr", "lifetime", "reap", "deferred"):
