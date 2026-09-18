@@ -4,6 +4,7 @@ import copy
 from dataclasses import replace
 import shlex
 import subprocess
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -27,6 +28,249 @@ class PhaseCensusTests(unittest.TestCase):
             "all", variables=("HIDDEN", "FILES"), commands=self.case.commands(session),
             observe_source_journal=True, source_journal_mode=source_directories.MODE,
         )
+
+    def namespace_diagnostic_data(self, budget):
+        """Parsed-data unit fixture, not native authority or a source proof."""
+        mode = graph_probe._MakeSourceMode(budget=budget)
+        mode.definitions = {
+            "SNAPSHOT": frozenset((graph_probe._ModeBinding("file", "simple", None),)),
+            "SOURCE": frozenset((graph_probe._ModeBinding("file", "recursive", "$(wildcard src/*.c)"),)),
+        }
+        mode.binding_versions = {(None, name): 0 for name in mode.definitions}
+        mode.template_values = {"SNAPSHOT": (0, ("header-bound", ("composition", "$(SOURCE)")))}
+        unit = graph_probe.MakeSourceUnit(
+            "\t@printf '%s' '$(SNAPSHOT)'", kind="recipe", recipe_ordinal=2,
+            site=graph_probe._SourceSite("Makefile", 9, 11, 12),
+        )
+        phase = SimpleNamespace(
+            session=SimpleNamespace(budget=budget), inputs={}, read_inputs=set(),
+            part=SimpleNamespace(number=3, exec=4, visits=[SimpleNamespace(number=7, resolved="Makefile")]),
+            proof=SimpleNamespace(archive=SimpleNamespace(scope="parsed-data-unit-not-authority")),
+            recipe_contexts={}, patterns=(("src/*.c", ""),), expanding_exports=set(),
+        )
+        stream = graph_probe._SourceUnitStream(
+            (("Makefile", 8, unit),), frozenset((0,)), mode_state=mode,
+        )
+        usage = {
+            "source_expressions": {"SNAPSHOT": ["$(SOURCE)"], "SOURCE": ["$(wildcard src/*.c)"]},
+            "execution_dependencies": {"SNAPSHOT": {"SOURCE"}, "SOURCE": set()},
+            "read_expressions": {"SNAPSHOT": ["$(SOURCE)"], "SOURCE": ["$(wildcard src/*.c)"]},
+            "definitions": {"SNAPSHOT": ["$(SOURCE)"], "SOURCE": ["$(wildcard src/*.c)"]},
+            "observed_values": {},
+        }
+        return phase, stream, usage
+
+    def test_namespace_attribution_uses_only_computed_facts_and_charges_retention(self):
+        budget = ProbeBudget()
+        try:
+            phase, stream, usage = self.namespace_diagnostic_data(budget)
+            mode = stream.mode_state
+            with patch.object(mode, "exact_reference", side_effect=AssertionError("evaluator re-entry")), \
+                 patch.object(graph_probe, "selected_names", side_effect=AssertionError("selector re-entry")), \
+                 patch.object(phase_census, "_has_namespace", side_effect=AssertionError("namespace re-entry")):
+                with self.assertRaises(MakeProbeError) as caught:
+                    phase_census._namespace_refusal(
+                        phase, mode, usage, "deferred namespace use lacks an original parse-time snapshot",
+                        condition="namespace-dependency", occurrence=stream.ordered[0],
+                        expression=stream.ordered[0][2].text[1:], value=stream.ordered[0][2].text[1:],
+                        names={"readers": {"SNAPSHOT"}, "carriers": {"SOURCE"}}, unresolved=(),
+                        snapshots=set(), unsafe=set(), unknown=False,
+                        snapshot_checks={"SNAPSHOT": "exact-original-value-unavailable", "SOURCE": "not-simple"},
+                        causes=[], attribution_overflow=False,
+                    )
+            error = caught.exception
+            self.assertEqual(str(error), "deferred namespace use lacks an original parse-time snapshot")
+            data = error.source_attribution
+            self.assertEqual((data["pass"], data["exec"], data["source"]["visit"]), (3, 4, 7))
+            self.assertEqual(data["source"]["site"], {"path": "Makefile", "logical": 9, "start": 11, "end": 12})
+            self.assertEqual(data["carrier_path"], ["SNAPSHOT", "SOURCE"])
+            fact = data["snapshot_facts"]["SNAPSHOT"]
+            self.assertEqual(fact["bindings"], [{"origin": "file", "flavor": "simple"}])
+            self.assertEqual(fact["source_fact_kind"], "header-bound")
+            self.assertEqual(fact["snapshot_decision"], "exact-original-value-unavailable")
+            self.assertEqual(data["association_status"], "unavailable-not-inferred")
+            self.assertEqual(budget.bytes["cache"], len(graph_probe.encoded(data)))
+            self.assertFalse(budget.failed)
+            self.assertNotIn("value", fact)
+        finally:
+            budget.close()
+
+    def test_namespace_diagnostic_size_matches_existing_encoding_and_bounds(self):
+        budget = ProbeBudget()
+        try:
+            for value in (None, True, False, 123, -42, "\0\n\\\"é😀", (), [],
+                          {"site": ("Makefile", 1, 2), "flags": [0, None, True], "empty": {}}):
+                with self.subTest(value=value):
+                    self.assertEqual(phase_census._namespace_attribution_size(value, budget),
+                                     len(graph_probe.encoded(value)))
+        finally:
+            budget.close()
+        for limits, value, message in (
+            (Limits(file_bytes=8), "éé", "file/record"),
+            (Limits(observations=2), {"one": 1}, "observation"),
+            (Limits(), {1: "bad"}, "non-string field"),
+            (Limits(), {"bad": object()}, "unsupported data"),
+        ):
+            budget = ProbeBudget(limits)
+            try:
+                with self.subTest(message=message), self.assertRaisesRegex(MakeProbeError, message):
+                    phase_census._namespace_attribution_size(value, budget)
+            finally:
+                budget.close()
+
+    def test_namespace_diagnostic_failure_keeps_primary_refusal(self):
+        for fault in ("cache", "serialization", "closed", "overflow", "unprintable"):
+            budget = ProbeBudget(Limits(cache_bytes=1) if fault == "cache" else Limits())
+            phase, stream, usage = self.namespace_diagnostic_data(budget)
+            if fault == "closed":
+                budget.close()
+            class UnprintableDiagnostic(RuntimeError):
+                def __str__(self):
+                    raise AssertionError("secondary exception must not be formatted")
+            size = phase_census._namespace_attribution_size
+            def fail_size(value, owner):
+                if fault == "serialization":
+                    raise ValueError("controlled serializer failure")
+                if fault == "unprintable":
+                    raise UnprintableDiagnostic()
+                return size(value, owner)
+            try:
+                with self.subTest(fault=fault), patch.object(phase_census, "_namespace_attribution_size", fail_size):
+                    with self.assertRaises(MakeProbeError) as caught:
+                        phase_census._namespace_refusal(
+                            phase, stream.mode_state, usage,
+                            "deferred namespace use lacks an original parse-time snapshot",
+                            condition="namespace-dependency", occurrence=stream.ordered[0],
+                            expression="reader", value="reader",
+                            names={"readers": {"SNAPSHOT"}, "carriers": {"SOURCE"}}, unresolved=(),
+                            snapshots=set(), unsafe=set(), unknown=False, snapshot_checks={},
+                            causes=[], attribution_overflow=fault == "overflow",
+                        )
+                self.assertEqual(str(caught.exception), "deferred namespace use lacks an original parse-time snapshot")
+                self.assertFalse(hasattr(caught.exception, "source_attribution"))
+                expected_stage = {
+                    "cache": "retention-accounting",
+                    "serialization": "bounded-serialization",
+                    "unprintable": "bounded-serialization",
+                    "closed": "source-data",
+                    "overflow": "source-data",
+                }[fault]
+                self.assertEqual(caught.exception.source_attribution_unavailable, expected_stage)
+                expected_type = {
+                    "serialization": ValueError, "unprintable": UnprintableDiagnostic,
+                }.get(fault, MakeProbeError)
+                self.assertIs(type(caught.exception.__cause__), expected_type)
+                self.assertEqual(budget.failed, fault in {"cache", "closed"})
+                self.assertEqual(budget.bytes.get("cache", 0), 0)
+                self.assertTrue(any("namespace attribution unavailable during" in note
+                                    for note in caught.exception.__notes__))
+            finally:
+                budget.close()
+
+    def test_namespace_guard_diagnostic_branches_preserve_refusals_and_snapshot_positive(self):
+        for kind in ("dependency", "direct", "computed", "unknown-writer", "scoped",
+                     "ambiguous", "stale", "eval-writer", "export", "snapshot"):
+            budget = ProbeBudget()
+            try:
+                phase, stream, usage = self.namespace_diagnostic_data(budget)
+                mode = stream.mode_state
+                unit = stream.ordered[0][2]
+                if kind == "direct":
+                    unit = unit._replace(text="\t@printf '%s' '$(wildcard src/*.c)'")
+                elif kind == "computed":
+                    unit = unit._replace(text="\t@printf '%s' '$($(SELECTOR))'")
+                    usage["definitions"]["SELECTOR"] = [None]
+                elif kind == "scoped":
+                    mode.target_definitions = {"target": {"SNAPSHOT": mode.definitions["SNAPSHOT"]}}
+                elif kind == "ambiguous":
+                    mode.definitions["SNAPSHOT"] = frozenset((
+                        graph_probe._ModeBinding("file", "simple", "one"),
+                        graph_probe._ModeBinding("file", "simple", "two"),
+                    ))
+                elif kind == "stale":
+                    mode.binding_versions[None, "SNAPSHOT"] = 1
+                elif kind == "export":
+                    phase.expanding_exports.add("SNAPSHOT")
+                    stream = stream._replace(ordered=())
+                elif kind in {"unknown-writer", "snapshot"}:
+                    mode.definitions["SNAPSHOT"] = frozenset((graph_probe._ModeBinding("file", "simple", "fixed"),))
+                if kind != "export":
+                    stream = stream._replace(ordered=(("Makefile", 8, unit),))
+                if kind in {"unknown-writer", "eval-writer"}:
+                    writer = graph_probe.MakeSourceUnit(
+                        "UNUSED = $(foreach $(BINDER),item,literal)" if kind == "unknown-writer"
+                        else "$(eval SNAPSHOT := rewritten)",
+                        site=graph_probe._SourceSite("Makefile", 2, 2, 2),
+                    )
+                    stream = stream._replace(ordered=(("Makefile", 1, writer), *stream.ordered))
+                with self.subTest(kind=kind):
+                    if kind == "snapshot":
+                        phase_census._deferred_namespace_check(phase, stream, usage)
+                        continue
+                    with self.assertRaises(MakeProbeError) as caught:
+                        phase_census._deferred_namespace_check(phase, stream, usage)
+                    data = caught.exception.source_attribution
+                    expected = {
+                        "direct": "direct-wildcard", "computed": "unresolved-selector",
+                        "export": "export-namespace-dependency",
+                    }.get(kind, "namespace-dependency")
+                    self.assertEqual(data["condition"], expected)
+                    if kind == "unknown-writer":
+                        self.assertTrue(data["unknown_writer"])
+                        self.assertEqual(data["snapshot_facts"]["SNAPSHOT"]["snapshot_decision"],
+                                         "disabled-by-unknown-writer")
+                        self.assertEqual(data["unsafe_unknown_causes"][0]["site"], writer.site)
+                    elif kind == "scoped":
+                        self.assertEqual(data["snapshot_facts"]["SNAPSHOT"]["target_scopes"], ["target"])
+                    elif kind == "ambiguous":
+                        self.assertEqual(data["snapshot_facts"]["SNAPSHOT"]["snapshot_decision"], "ambiguous-binding")
+                    elif kind == "stale":
+                        self.assertEqual(data["snapshot_facts"]["SNAPSHOT"]["binding_status"], "version-mismatch")
+                    elif kind == "eval-writer":
+                        self.assertEqual(data["snapshot_facts"]["SNAPSHOT"]["snapshot_decision"], "unsafe-binding")
+                        self.assertEqual(data["unsafe_unknown_causes"][0]["kind"], "eval-writer")
+                    elif kind == "export":
+                        self.assertEqual(str(caught.exception), "exported namespace body crosses an unproven mutation interval")
+                        self.assertEqual(data["source"]["status"], "unavailable")
+                    else:
+                        self.assertEqual(str(caught.exception), "deferred namespace use lacks an original parse-time snapshot")
+            finally:
+                budget.close()
+
+    def test_namespace_attribution_missing_visits_and_context_kinds_are_explicit_data(self):
+        budget = ProbeBudget()
+        try:
+            phase, stream, usage = self.namespace_diagnostic_data(budget)
+            unit = stream.ordered[0][2]
+            phase.part.visits.append(SimpleNamespace(number=8, resolved="Makefile"))
+            phase.recipe_contexts[id(unit)] = [
+                graph_probe._ScopeContext("target", "target", "obligation", ordinal=2),
+                graph_probe._ScopeContext("target", "target", "recipe", ordinal=2, job=9),
+                None,
+            ]
+            with self.assertRaises(MakeProbeError) as caught:
+                phase_census._deferred_namespace_check(phase, stream, usage)
+            data = caught.exception.source_attribution
+            self.assertIsNone(data["source"]["visit"])
+            self.assertEqual(data["source"]["visit_status"], "unavailable-or-repeated")
+            self.assertEqual(data["use_associations"], [
+                {"kind": "obligation", "target": "target", "ordinal": 2, "job": None},
+                {"kind": "recipe", "target": "target", "ordinal": 2, "job": 9},
+                {"kind": "unproved"},
+            ])
+            self.assertEqual(data["kind"], "source-refusal-attribution-not-a-proof")
+        finally:
+            budget.close()
+        budget = ProbeBudget(Limits(observations=1))
+        try:
+            phase, stream, usage = self.namespace_diagnostic_data(budget)
+            stream.mode_state.definitions["SNAPSHOT"] = frozenset((
+                graph_probe._ModeBinding("file", "simple", "fixed"),
+            ))
+            phase_census._deferred_namespace_check(phase, stream, usage)
+            self.assertFalse(budget.failed)
+        finally:
+            budget.close()
 
     def test_scoped_model_preserves_raw_append_and_source_time_rhs(self):
         mode = graph_probe._MakeSourceMode(
@@ -1315,12 +1559,12 @@ class PhaseCensusTests(unittest.TestCase):
         self.fixture.assert_clean(session)
 
     def test_recursive_aliases_and_metadata_laziness_use_source_time_snapshots(self):
-        for extra, expression, accepted in (
-            ("SNAP := $(wildcard src/*.c)\nALIAS = $(SNAP)\n", "$(ALIAS)", True),
-            ("LAZY = $(wildcard src/*.c)\nALIAS = $(LAZY)\n", "$(ALIAS)", False),
-            ("LAZY = $(wildcard src/*.c)\n", "$(value LAZY)", True),
-            ("SNAP := $(wildcard src/*.c)\nall: SNAP = $(wildcard src/*.c)\n", "$(SNAP)", False),
-            ("SNAP := $(wildcard src/*.c)\n", "$(foreach SNAP,local,$(SNAP))", False),
+        for extra, expression, accepted, diagnostic in (
+            ("SNAP := $(wildcard src/*.c)\nALIAS = $(SNAP)\n", "$(ALIAS)", True, False),
+            ("LAZY = $(wildcard src/*.c)\nALIAS = $(LAZY)\n", "$(ALIAS)", False, True),
+            ("LAZY = $(wildcard src/*.c)\n", "$(value LAZY)", True, False),
+            ("SNAP := $(wildcard src/*.c)\nall: SNAP = $(wildcard src/*.c)\n", "$(SNAP)", False, False),
+            ("SNAP := $(wildcard src/*.c)\n", "$(foreach SNAP,local,$(SNAP))", False, False),
         ):
             self.positive_source(extra, "all:\n\t@printf '%s' '" + expression + "'\n")
             with self.subTest(expression=expression, accepted=accepted), self.case.session() as session:
@@ -1328,8 +1572,16 @@ class PhaseCensusTests(unittest.TestCase):
                 if accepted:
                     phase_census.analyze(session, observed, "all", (), self.case.commands(session))
                 else:
-                    with self.assertRaises(MakeProbeError):
+                    with self.assertRaises(MakeProbeError) as caught:
                         phase_census.analyze(session, observed, "all", (), self.case.commands(session))
+                    if diagnostic:
+                        self.assertEqual(str(caught.exception), "deferred namespace use lacks an original parse-time snapshot")
+                        data = caught.exception.source_attribution
+                        self.assertEqual(data["condition"], "namespace-dependency")
+                        self.assertEqual(data["carrier_path"], ["ALIAS", "LAZY"])
+                        self.assertEqual(data["source"]["path"], "Makefile")
+                        self.assertEqual(data["snapshot_facts"]["LAZY"]["snapshot_decision"], "not-simple")
+                        self.assertFalse(session.budget.failed)
             self.fixture.assert_clean(session)
 
     def test_parse_time_and_unclosed_nonremake_mutations_do_not_get_entry_authority(self):

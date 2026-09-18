@@ -4062,6 +4062,22 @@ proof semantics and nonchronological history; no candidate clock is accepted.
     metadata-only dollar data lazy. Use fail-fast local native-bearing
     selections (`python3 -B -m unittest -f ...`); stop an unexpected setup or
     ownership error without changing guards, profiles or limits.
+18. For [namespace refusal attribution](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5726588532),
+    keep the actual original default/findstring/manual append, simple
+    C-object/all-object/header constructors and words/printf consumer in the
+    bounded semantic fixture. Preserve initial C absence and genuine typed
+    include-remake publication. The candidate already accepts both passes;
+    do not invent a temporal-snapshot failure. In the disclosed negative,
+    change only the words operand to the recursive C-source carrier and
+    require the existing namespace refusal, original pass/site/condition,
+    carrier path, recursive-versus-simple facts and clean teardown.
+
+    Inspect `MakeProbeError.source_attribution` only as diagnostic data.
+    Compare the raw reader and already computed read form, known visit/rule/
+    ordinal, unsafe/unknown causes and snapshot exclusions. Distinguish
+    source obligations from actual issued job associations; unavailable
+    associations must stay unavailable. These two bounded observations do
+    not identify ROOT18's historical reader or grant another root allocation.
 
 ### Expected result
 
@@ -4101,6 +4117,12 @@ facts govern immediate reads; native metadata and job arguments corroborate,
 but never create, those facts. Each required native use is accounted for, and
 source-only obligations before a remake are not mislabeled as native jobs.
 Unselected active declarations and first-pass defaults survive the union.
+
+Namespace observability preserves the old refusal/type/status. Its attached
+bounded data explains the current original-state decision without re-entering
+evaluation or supplying a value/proof. The existing successful candidate
+remains successful, and recursive-late use remains a refusal. A diagnostic
+failure cannot replace the primary source error.
 
 Immutable verifier batches return exactly the individually read bytes, preserve
 path/mode/gitlink/source authority and reject every trusted-tree or loaded-module
@@ -6097,6 +6119,26 @@ again be rejected. Restore both fixes. Keep the original input, control,
 filter, namespace, lifetime, unexport/lazy and private/scoped holds intact.
 All of these controls remain in the same indexed phase module and case.
 
+#### Namespace refusal attribution controls
+
+Use the existing phase-module pure parsed-data/actual-function controls.
+Exercise direct wildcard, unresolved selector, dependency and export-refusal
+branches; unknown/eval/scoped/ambiguous/stale bindings; exact-snapshot positives;
+and the existing serialization/count/cache/closed-lifetime bounds. Require
+precise exclusion fields where available and explicit missing data otherwise.
+Forbid evaluator re-entry during formatting. Inject formatting/accounting
+failure and retain the exact primary source error with a secondary cause/note,
+never partial success or silent truncation. These pure controls are not
+native/root proof.
+
+The source error's custom attribution is available to an in-process caller.
+The ordinary reporter prints only the existing primary message. The current
+diagnostic harness records exception chains and code-frame identities, plus
+counters/native-failure metadata; it does not include custom attributes or
+notes. A chained diagnostic failure can appear as a secondary exception, but
+that does not publish the detailed source record. Keep any harness publication
+change or later bounded root run under a separate accepted scope.
+
 #### Required scoped-source negative and restoration controls
 
 Independently restore the old literal-pattern, scoped-immediate-RHS and
@@ -6791,6 +6833,11 @@ Its dependents are later genuine-root/required-scope acceptance and public
 reporter adoption; it does not change that public selector or authorize a
 resource/provider/H1 run. Save, generated-data format and ROM/RAM are unchanged.
 
+Refusal attribution is diagnostic-only and depends on the existing original
+source state and error/budget seams. It changes neither snapshot admission nor
+public/harness routing. Successful small snapshot evidence is not a semantic
+fix or retrospective attribution of an earlier root failure.
+
 The graph does not execute selected gates and cannot skip or narrow validation.
 A later independently accepted issue must prove selection non-inferiority
 before any delivery behavior can consume these explanations.
@@ -6835,6 +6882,9 @@ unchanged source bytes/Git state across simulated fixture exceptions.
   raw/expanded and source-time distinctions, independent restored holds,
   corroboration loss, empty append, unqualified contexts and shared limits.
   No new module, case ID or execution owner is introduced.
+  The same module also covers bounded namespace attribution and its pure
+  formatting/accounting/no-reentry controls, plus the existing native
+  recursive-alias and snapshot/laziness cases.
 
 The focused A/V fixtures also execute the title fingerprint comparator with
 missing/changed framebuffer controls, the actual presentation runner's
@@ -6873,6 +6923,12 @@ authorized fixture correction. A non-fail-fast development batch continuing
 after a failure is not immediate stopping; later local native-bearing selections
 must be fail-fast. Successful projected recipes are not produced objects/assets,
 full-source acceptance, a public report or resource calibration.
+
+Retain the original source failure if diagnostic retention fails, with explicit
+secondary evidence. Only a complete charged attribution record is attached;
+missing visits/sites/associations remain missing. Preserve the first accepted
+semantic candidate and the separately labeled recursive-late refusal; never
+replace either with a claim about an unrecorded historical root context.
 
 Rollback is a normal revert of issue #180's dedicated commit; existing broader
 validation behavior is unchanged.

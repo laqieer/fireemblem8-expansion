@@ -441,6 +441,21 @@ conversion or compilation. Their pre-existing raw LZ operands are fixture
 inputs, not published outputs. The legacy ordinary `-rR` and native built-in
 CPP contexts remain distinct.
 
+Namespace-denial diagnostics may attach bounded source-only attribution to
+the original error. They retain already computed original pass/site,
+condition, carrier/dependency, binding-version and snapshot-exclusion facts;
+missing source/native associations remain unavailable. Formatting does not
+evaluate Make again or manufacture a namespace/source capability. The
+existing file/count/byte/deadline limits bound the data, and accounting or
+formatting failure remains explicit and secondary to the original refusal.
+
+The successful small SIMPLE-snapshot candidate is not changed into a failing
+historical ROOT18 reader. A separately labeled recursive-late negative
+exercises the unchanged guard. This diagnostic-only capability grants no
+temporal/value/target/branch fact. The ordinary reporter and current diagnostic
+harness do not serialize the custom attribution automatically; publication
+and any later root attempt need their own accepted scope.
+
 The default invariant planner remains unchanged. Full original-root acceptance
 and resource measurement remain separate from source correctness; no phase
 result authorizes a shell/profile, bound split or quota workaround.

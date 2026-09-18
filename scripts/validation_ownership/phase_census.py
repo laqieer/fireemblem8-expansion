@@ -577,6 +577,179 @@ class OriginalSourceProof:
         self.session._source_phase_images(self.observation)
 
 
+def _namespace_attribution_size(record, budget):
+    """Measure the existing ASCII JSON encoding before retaining error data."""
+    pending, count, size = [record], 0, 0
+    limit = budget.limits.observation_count
+    while pending:
+        budget.remaining()
+        value = pending.pop()
+        count += 1
+        if count > limit:
+            raise MakeProbeError("namespace attribution exceeds existing observation bound")
+        if isinstance(value, str):
+            size += 2
+            for character in value:
+                budget.remaining()
+                code = ord(character)
+                size += (
+                    2 if character in '"\\\b\f\n\r\t' else 1 if 32 <= code <= 126
+                    else 6 if code <= 0xFFFF else 12
+                )
+                if size > budget.limits.file_bytes:
+                    raise MakeProbeError("namespace attribution exceeds existing file/record admission")
+        elif value is None:
+            size += 4
+        elif type(value) is bool:
+            size += 4 if value else 5
+        elif type(value) is int:
+            size += len(encoded(value))
+        elif isinstance(value, (tuple, list, dict)):
+            length = len(value)
+            size += 2 + max(0, length - 1)
+            children_count = length * (2 if isinstance(value, dict) else 1)
+            if count + len(pending) + children_count > limit:
+                raise MakeProbeError("namespace attribution exceeds existing observation bound")
+            if isinstance(value, dict):
+                if any(not isinstance(key, str) for key in value):
+                    raise MakeProbeError("namespace attribution has a non-string field")
+                size += length
+                children = tuple(value.keys()) + tuple(value.values())
+            else:
+                children = value
+            pending.extend(children)
+        else:
+            raise MakeProbeError("namespace attribution has an unsupported data value")
+        if size > budget.limits.file_bytes:
+            raise MakeProbeError("namespace attribution exceeds existing file/record admission")
+    return size
+
+
+def _namespace_refusal(phase, mode, usage, message, *, condition, occurrence,
+                       expression, value, names, unresolved, snapshots, unsafe,
+                       unknown, snapshot_checks, causes, attribution_overflow):
+    failure = MakeProbeError(message)
+    budget = phase.session.budget
+    stage = "source-data"
+    try:
+        budget.remaining()
+        limit = budget.limits.observation_count
+        if attribution_overflow:
+            raise MakeProbeError("namespace attribution exceeds existing observation bound")
+        dependencies = usage["execution_dependencies"]
+        # Traversal uses the guard's already computed dependency facts, not the
+        # Make evaluator. The actual carrier set is supplied by the decision.
+        carriers = names["carriers"]
+        readers = names["readers"]
+        pending = (
+            [(name, (name,)) for name in readers]
+            if condition in {"namespace-dependency", "export-namespace-dependency"} else []
+        )
+        seen, path = set(), ()
+        while pending:
+            budget.remaining()
+            name, ancestry = pending.pop()
+            if name in seen or name in snapshots:
+                continue
+            if len(seen) >= limit:
+                raise MakeProbeError("namespace attribution exceeds existing observation bound")
+            seen.add(name)
+            if name in carriers:
+                path = ancestry
+                break
+            children = dependencies.get(name, ())
+            if len(pending) + len(children) > limit:
+                raise MakeProbeError("namespace attribution exceeds existing observation bound")
+            pending.extend((child, (*ancestry, child)) for child in children)
+        relevant = tuple(dict.fromkeys((*readers, *path)))
+        if len(relevant) > limit or len(causes) > limit:
+            raise MakeProbeError("namespace attribution exceeds existing observation bound")
+        facts = {}
+        for name in relevant:
+            budget.remaining()
+            bindings = mode.definitions.get(name)
+            original = phase.inputs.get(name)
+            fact = mode.template_values.get(name)
+            facts[name] = {
+                "bindings": None if bindings is None else [
+                    {"origin": binding.origin, "flavor": binding.flavor}
+                    for binding in bindings
+                ],
+                "binding_status": (
+                    "unavailable" if bindings is None else "version-mismatch"
+                    if mode.binding_versions.get((None, name), 0) != mode.version else "stored-original-binding"
+                ),
+                "binding_version": mode.binding_versions.get((None, name)),
+                "mode_version": mode.version,
+                "source_fact_kind": None if fact is None else fact[1][0],
+                "source_fact_version": None if fact is None else fact[0],
+                "original_input_flags": None if original is None else original.flags,
+                "read_forms": usage["read_expressions"].get(name, ()),
+                "dependency_names": sorted(dependencies.get(name, ())),
+                "namespace_carrier": name in carriers,
+                "unsafe": name in unsafe,
+                "target_scopes": sorted(scope for scope, definitions in mode.target_definitions.items()
+                                        if name in definitions),
+                "snapshot_decision": (
+                    "disabled-by-unknown-writer" if unknown else snapshot_checks.get(name, "not-examined")
+                ),
+                "assignment_site_status": "unavailable-not-retained-by-global-binding",
+            }
+        source = {"status": "unavailable", "reason": "export aggregate has no unique source occurrence"}
+        associations = []
+        if occurrence is not None:
+            filename, index, unit = occurrence
+            site = unit.site
+            visits = [visit.number for visit in phase.part.visits
+                      if visit.resolved.removeprefix("/repo/") == filename]
+            source = {
+                "path": filename, "stream_position": index,
+                "site": None if site is None else {
+                    "path": site.path, "logical": site.logical, "start": site.start, "end": site.end,
+                },
+                "visit": visits[0] if len(visits) == 1 else None,
+                "visit_status": "unique-original-visit" if len(visits) == 1 else "unavailable-or-repeated",
+                "rule_number": None if unit.source_rule is None else unit.source_rule.number,
+                "recipe_ordinal": unit.recipe_ordinal, "active": unit.active,
+            }
+            associations = [
+                {"kind": "unproved"} if context is None else {
+                    "kind": context.kind, "target": context.target,
+                    "ordinal": context.ordinal, "job": context.job,
+                }
+                for context in phase.recipe_contexts.get(id(unit), ())
+            ]
+        record = {
+            "kind": "source-refusal-attribution-not-a-proof",
+            "pass": phase.part.number, "exec": phase.part.exec,
+            "scope": phase.proof.archive.scope, "source": source,
+            "condition": condition, "expression": expression, "read_form": value,
+            "unresolved": [str(error) for error in unresolved],
+            "reader_names": sorted(readers), "carrier_path": list(path),
+            "unknown_writer": unknown, "unsafe_unknown_causes": causes,
+            "snapshot_facts": facts,
+            "use_associations": associations,
+            "association_status": "recorded" if associations else "unavailable-not-inferred",
+            "use_kind": (
+                "active-source-obligation; actual job status requires an association"
+                if occurrence is not None else "export-read aggregate; no unique source occurrence"
+            ),
+        }
+        stage = "bounded-serialization"
+        size = _namespace_attribution_size(record, budget)
+        stage = "retention-accounting"
+        budget.charge("cache", size)
+        failure.source_attribution = record
+    except BaseException as diagnostic:
+        # Diagnostic failure cannot replace or erase the original source denial.
+        failure.source_attribution_unavailable = stage
+        try:
+            failure.add_note("namespace attribution unavailable during " + stage + " (" + type(diagnostic).__name__ + ")")
+        finally:
+            raise failure from diagnostic
+    raise failure
+
+
 def _deferred_namespace_check(phase, stream, usage):
     mode = stream.mode_state
     if not mode.original_namespace_valid:
@@ -585,8 +758,18 @@ def _deferred_namespace_check(phase, stream, usage):
         return
     unsafe = set().union(*(values.keys() for values in mode.target_definitions.values())) if mode.target_definitions else set()
     unknown = False
+    causes = []
+    attribution_overflow = False
+    attribution_limit = phase.session.budget.limits.observation_count
+    def note_cause(record):
+        nonlocal attribution_overflow
+        if len(causes) >= attribution_limit:
+            attribution_overflow = True
+        else:
+            causes.append(record)
     recipes = []
-    for _, _, unit in stream.ordered:
+    for occurrence in stream.ordered:
+        filename, index, unit = occurrence
         if unit.active is False:
             continue
         expressions = [unit.text, *(() if unit.body is None else (unit.body,))]
@@ -594,29 +777,54 @@ def _deferred_namespace_check(phase, stream, usage):
             locals_ = graph._foreach_read_bindings(expression, phase.session.budget)
             if locals_ is None:
                 unknown = True
+                note_cause({"kind": "unproved-local-binder-analysis", "path": filename,
+                            "stream_position": index, "site": unit.site})
             else:
                 unsafe.update(locals_)
+                if locals_:
+                    note_cause({"kind": "local-binders", "path": filename,
+                                "stream_position": index, "site": unit.site, "names": sorted(locals_)})
             for body in graph.make_expressions(expression):
                 if body.startswith(("eval ", "eval\t")):
                     assignment = graph.ASSIGNMENT.fullmatch(body[5:].lstrip(graph.MAKE_SPACE))
                     if assignment is None:
                         unknown = True
+                        note_cause({"kind": "unproved-eval-writer", "path": filename,
+                                    "stream_position": index, "site": unit.site})
                     else:
                         unsafe.add(assignment["name"])
+                        note_cause({"kind": "eval-writer", "path": filename,
+                                    "stream_position": index, "site": unit.site, "name": assignment["name"]})
         if unit.text.startswith("\t"):
-            recipes.append(unit.text[1:])
+            recipes.append((occurrence, unit.text[1:]))
         else:
             _, inline = graph.split_inline_recipe(unit.text)
             if inline:
-                recipes.append(inline)
+                recipes.append((occurrence, inline))
     snapshots = set()
+    snapshot_checks = {}
+    def note_snapshot(name, decision):
+        nonlocal attribution_overflow
+        if len(snapshot_checks) >= attribution_limit:
+            attribution_overflow = True
+        else:
+            snapshot_checks[name] = decision
     if not unknown:
         for name, values in tuple(mode.definitions.items()):
-            if name in unsafe or len(values) != 1:
+            if name in unsafe:
+                note_snapshot(name, "unsafe-binding")
+                continue
+            if len(values) != 1:
+                note_snapshot(name, "ambiguous-binding")
                 continue
             value = next(iter(values))
-            if value.flavor == "simple" and mode.exact_reference(name) is not None:
+            if value.flavor != "simple":
+                note_snapshot(name, "not-simple")
+            elif mode.exact_reference(name) is not None:
                 snapshots.add(name)
+                note_snapshot(name, "exact-original-snapshot")
+            else:
+                note_snapshot(name, "exact-original-value-unavailable")
     carriers = {name for name, values in usage["source_expressions"].items() if any(_has_namespace(value) for value in values)}
     carriers.update(name for name in phase.read_inputs if name in phase.inputs and _has_namespace(phase.inputs[name].value))
     dependencies = usage["execution_dependencies"]
@@ -631,16 +839,32 @@ def _deferred_namespace_check(phase, stream, usage):
                 return True
             pending.extend(dependencies.get(name, ()))
         return False
-    for expression in recipes:
+    for occurrence, expression in recipes:
         value = graph._without_literal_metadata(expression)
         unresolved = []
         names = graph.references(value) | graph.selected_names(
             (value,), usage["definitions"], usage["observed_values"], unresolved=unresolved,
         )
-        if unresolved or _has_namespace(value) or reaches(names):
-            raise MakeProbeError("deferred namespace use lacks an original parse-time snapshot")
+        condition = (
+            "unresolved-selector" if unresolved else "direct-wildcard" if _has_namespace(value)
+            else "namespace-dependency" if reaches(names) else None
+        )
+        if condition is not None:
+            _namespace_refusal(
+                phase, mode, usage, "deferred namespace use lacks an original parse-time snapshot",
+                condition=condition, occurrence=occurrence, expression=expression, value=value,
+                names={"readers": names, "carriers": carriers}, unresolved=unresolved,
+                snapshots=snapshots, unsafe=unsafe, unknown=unknown, snapshot_checks=snapshot_checks,
+                causes=causes, attribution_overflow=attribution_overflow,
+            )
     if reaches(phase.expanding_exports):
-        raise MakeProbeError("exported namespace body crosses an unproven mutation interval")
+        _namespace_refusal(
+            phase, mode, usage, "exported namespace body crosses an unproven mutation interval",
+            condition="export-namespace-dependency", occurrence=None, expression=None, value=None,
+            names={"readers": phase.expanding_exports, "carriers": carriers}, unresolved=(),
+            snapshots=snapshots, unsafe=unsafe, unknown=unknown, snapshot_checks=snapshot_checks,
+            causes=causes, attribution_overflow=attribution_overflow,
+        )
 
 
 def union_usages(usages):

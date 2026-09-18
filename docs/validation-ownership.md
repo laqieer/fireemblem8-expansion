@@ -425,6 +425,42 @@ from expanded target-local job arguments. Legacy ordinary Make with `-rR`
 selects a different CPP prefix from the unchanged native built-in context;
 only the measured CC1/flag portions are compared as equivalent.
 
+Deferred namespace refusals retain their existing `MakeProbeError` type and
+message, with optional bounded `source_attribution` data for an in-process
+diagnostic consumer. The record identifies the original pass/exec, known
+source site/visit/rule/ordinal, the failing selector/wildcard/dependency
+condition, a carrier path and relevant snapshot decisions. It records
+origin/flavor/version/fact kinds, unsafe or unknown writers and already
+computed read forms without recovering a value again. A repeated or missing
+visit, assignment site or native-use association remains explicitly
+unavailable; a source obligation is not relabeled as an executed job.
+
+The formatter walks existing dependency facts only. It does not re-enter the
+Make evaluator, inspect arbitrary frame locals, dump original/generated
+streams or create a proof. Canonical JSON size is bounded before retention
+using the existing file/count/deadline limits, and retained data spends the
+existing cache allowance. If attribution or accounting fails, the original
+source refusal stays primary; `source_attribution_unavailable`, an explicit
+secondary note and the diagnostic cause identify that failure. Partial or
+silently truncated records cannot stand in for complete attribution.
+
+This is observability, not temporal-snapshot admission. The faithful small
+original C-source/object/header snapshot family already accepts both passes.
+A disclosed recursive-late consumer instead produces an attributable
+namespace refusal. Neither result recovers ROOT18's unrecorded historical
+reader or proves whole-root/report acceptance. Header-bound facts remain
+distinct from exact values; no variable-name exemption or snapshot waiver
+is added.
+
+Publication is separate: the ordinary reporter prints the unchanged primary
+error string, not the attached data. The current diagnostic harness's
+`policy.error_record` preserves exception chains and code-frame identities,
+not custom attributes or notes; its worker adds counters and native-failure
+information. Consequently the new details do not automatically appear in
+that harness's artifacts. Any bounded publication routing needs separate
+owner acceptance; this capability does not change the harness or allocate
+another root/H1 run.
+
 The ordinary invariant/default planner path remains available. This opt-in
 source path does not relax any live command or resource boundary. The genuine
 original root retains its header order-only toolchain check, original recipe
