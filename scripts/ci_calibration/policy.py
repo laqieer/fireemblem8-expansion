@@ -9,10 +9,10 @@ import re
 
 
 REPOSITORY = "laqieer/fireemblem8-expansion"
-BRANCH = "calibration/issue-180-ci-baseline-17"
-WORKFLOW = ".github/workflows/issue180-ci-baseline-17.yml"
+BRANCH = "calibration/issue-180-ci-baseline-18"
+WORKFLOW = ".github/workflows/issue180-ci-baseline-18.yml"
 BASE = "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"
-GRAPH = "8d03b518c714ff4915220af4568f0274f3c8d292"
+GRAPH = "048c1bb3ab8008bbe862ad8072ed124e02fdb170"
 WORKLOAD_KIND = "original-root-acceptance"
 FIXTURE_VERSION = "original-root-single-message-disabled-bgm-v1"
 ROOT_TARGET = "expansion-modern-all"

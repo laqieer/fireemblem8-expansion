@@ -1,24 +1,27 @@
-# Prospective issue-180 original-root acceptance 17
+# Prospective issue-180 original-root acceptance 18
 
 **Local preparation only. No execution allocation, creation push or hosted
-qualification is claimed. Never merge this diagnostic branch.** Main must bind
+qualification for18 is claimed. Never merge this diagnostic branch.** Main must bind
 the reviewed exact harness SHA in a separate launch freeze before any owner
 creation push.
 
 Preparation scope:
-[5722633638](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5722633638).
-CURRENT is `8d03b518c714ff4915220af4568f0274f3c8d292`; BASE remains
+[5725470674](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5725470674).
+CURRENT is `048c1bb3ab8008bbe862ad8072ed124e02fdb170`; BASE remains
 `ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`. The reviewed preparation
-`4dcbcb7e462a3d0953fea5b54d29c30954193ea7` is BASE's normal child; this
-failure-preservation correction is one normal child of that preparation.
-The final harness therefore has an exact two-commit lineage, not a direct
-single-commit BASE parent. Its identity guard preserves that chain and the
-original allowed diagnostic paths.
+`4dcbcb7e462a3d0953fea5b54d29c30954193ea7` is BASE's normal child, followed
+by the reviewed failure-preservation child
+`1a2d177749cec443c05021855e4f006cdae821f1`. This18 preparation is one new
+normal child of1a2d: exactly three normal commits above BASE, not a direct
+single-commit BASE parent. Its identity guard preserves that exact chain and
+the original allowed diagnostic paths. The lineage helper and its
+`Owner.prepare` caller change only to admit that chain; the caller is not
+claimed wholly identical.
 The reference harness `038d1b9dba400911fa267d73424b8996c603e851` belongs to
-closed16 and is not modified, rerun or reopened.
+closed16; neither it nor closed17's1a2d tree/remote is modified, rerun or reopened.
 
 The only prospective trigger is an absent-branch first owner creation push of
-`calibration/issue-180-ci-baseline-17`, workflow run1/attempt1 on public
+`calibration/issue-180-ci-baseline-18`, workflow run1/attempt1 on public
 GitHub-hosted Linux. Setup failure consumes that future scope. No dispatch,
 retry, resumed attempt, alternate source lane or automatic full-report call
 is supplied.
@@ -46,14 +49,16 @@ The workload is explicitly `original-root-acceptance`, fixture
 `original-root-single-message-disabled-bgm-v1`. It is not the complete source
 namespace, all declared repository roots/domains, public check/resolve, BASE
 model comparison, standalone verifier or H1. The old85b8 fixture label is
-history, never the executed candidate identity. Public source-mode selection
-remains unchanged. Broader original pattern/target-local scope holds require
-their own evidence before a reviewed public adoption edge and later report.
+history, never the executed candidate identity. CURRENT includes the
+independently accepted scoped-source and selective null-mount corrections.
+That source acceptance does not prove root completion or enable public source
+mode. Public adoption, a complete report and resource/H1 acceptance remain
+separate later scopes.
 
 ## Unchanged independent containment
 
 All seven actual hosted identity/memory/PID/disk/output/deadline/lifetime
-controls must qualify anew before any candidate import. Their historical16
+controls must qualify anew before any candidate import. Their historical16/17
 qualification is not reused. Kernel/entry/runtime/volume/lifetime algorithms,
 effective-capacity formulas, swap0/OOM grouping, nonroot/NNP/empty capabilities,
 readonly source/runtime and namespace/control protections are retained.
@@ -69,7 +74,7 @@ metrics/progress limits remain. No shipping limit or SDK repair is introduced.
 
 `policy.validate_report()` is unchanged but cannot accept this root result.
 Root completion uses a distinct closed validator and remains inside bounded
-`result.json`; `report.json` is not in scope17's artifact allowlist. All graph
+`result.json`; `report.json` is not in scope18's artifact allowlist. All graph
 attempt counters remain zero, and the worker's old graph entry explicitly
 refuses instead of performing an accidental second workload.
 
@@ -82,22 +87,22 @@ private base. Uncertain inner source ownership is not credited as clean by
 outer cgroup termination. The supervisor retains diagnostic resources rather
 than erase an unconfirmed root fixture.
 
-Local preparation may run only focused benign host tests and actionlint.
-`test_root_stage.py` uses pure pinned-source parsing, generated fixture/data
-contracts, inert API doubles and strict result/retention negatives; it does
-not run the candidate planner or native source pipeline. Existing output
-controls use owned benign processes with explicit unit cgroup shims, never
-privileged containment. A passing preparation test is not hosted qualification
-or original-root acceptance.
+Local18 preparation may run only the smallest existing benign identity,
+lineage, parsed-workflow, policy and result controls plus actionlint. No
+candidate, Make/compiler, supervisor, root/report or privileged setup is run.
+Other retained tests cover fixture/data contracts, inert API doubles and
+failure/retention negatives; they are not an additional execution allocation.
+Passing preparation controls are not hosted qualification or original-root
+acceptance.
 
 All earlier native preimages, review evidence and diagnostic failures remain
 independent records. Successful root acceptance, if separately authorized and
 obtained, would still not be a public/full-report resource-sizing point.
 
-## Local preparation failure-preservation correction
+## Historical17 local preparation failure-preservation correction
 
 [Correction scope5723396827](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5723396827)
-addresses two independently reproduced Mediums without allocating17.
+addressed two independently reproduced Mediums before any17 allocation.
 The reviewed4dcb tree remains immutable. Author benign preimages use the
 actual functions and inert API/phase doubles, separately from C's inline
 2744/2746 executions; they are not hosted qualification.
@@ -122,10 +127,36 @@ failing current preflight/root results retain their own cause.
 Focused benign controls cover both defects and restore each old behavior
 independently to demonstrate regression detection. Earlier passing Main/C
 controls did not exercise these combinations and do not prove this fix.
-CURRENT, kernel/entry/runtime/volume/lifetime mechanisms, limits, protocol,
-seven hosted requirements, native/source guards and root-only claims remain
-unchanged. Independent correction review and a separate exact launch freeze
-are still required; no push, root/native/report run or17 allocation occurred.
+At that local correction, CURRENT8d03, kernel/entry/runtime/volume/lifetime
+mechanisms, limits, protocol, seven hosted requirements, native/source guards
+and root-only claims remained unchanged. The old-behavior restoration control
+keeps its historical17 output identity; ordinary preparation controls now use18.
+The later authorized hosted17 result is recorded separately below.
+
+## Closed17 result and the accepted source correction
+
+Closed17 used harness `1a2d177749cec443c05021855e4f006cdae821f1` and CURRENT
+`8d03b518c714ff4915220af4568f0274f3c8d292` in
+[run35297514427](https://github.com/laqieer/fireemblem8-expansion/actions/runs/35297514427).
+All seven real hosted controls qualified. The one original-root attempt then
+failed at the old candidate's `/dev/null` bind-remount with `EPERM`. Source
+status and inner/outer cleanup were confirmed; no completed root, graph report
+or resource-sizing point was produced.
+[Closure5724020088](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5724020088)
+remains final. All1-17 are closed, not retryable or reusable qualification.
+
+CURRENT048c is a normal child of accepted scoped-source80d and contains the
+separately implemented, locally qualified and independently accepted selective
+`MS_NODEV` correction. Source/compatibility and local kernel evidence do not
+establish the historical hosted mount-lock or LSM decision, which17 did not
+record. This harness changes no device mapping or containment algorithm and
+does not replay either closed17 or the local kernel witness.
+
+Preparation18 changes only prospective identities, CURRENT, the exact normal
+lineage guard and matching controls/history. It does not allocate18. Main must
+independently accept the exact clean harness and freeze a separate one-shot
+launch before any owner creation push; no automatic retry or larger fallback
+is supplied.
 
 ## Historical closed16 preparation record (unchanged below)
 

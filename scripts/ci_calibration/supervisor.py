@@ -33,14 +33,16 @@ LIFECYCLE = HERE.parent / "validation_ownership/lifecycle.py"
 CGROOT = Path("/sys/fs/cgroup")
 ROOT_ENV = {**policy.CLEAN_ENV, "PATH": "/usr/sbin:/usr/bin:/sbin:/bin"}
 PREPARATION_SHA = "4dcbcb7e462a3d0953fea5b54d29c30954193ea7"
+RETAINED_HARNESS_SHA = "1a2d177749cec443c05021855e4f006cdae821f1"
 
 
 def validate_harness_lineage(lines, head):
     if lines != [
-        f"{head} {PREPARATION_SHA}",
+        f"{head} {RETAINED_HARNESS_SHA}",
+        f"{RETAINED_HARNESS_SHA} {PREPARATION_SHA}",
         f"{PREPARATION_SHA} {policy.BASE}",
     ]:
-        raise policy.GuardError("diagnostic requires its exact normal correction/preparation/BASE lineage")
+        raise policy.GuardError("diagnostic requires its exact normal root18/root17/preparation/BASE lineage")
 
 
 def apparmor_text(name):
@@ -713,7 +715,7 @@ class Owner:
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
         validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=2", "HEAD").decode().splitlines(),
+            git(self.harness, "rev-list", "--parents", "--max-count=3", "HEAD").decode().splitlines(),
             self.scope["harness_sha"],
         )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
@@ -917,7 +919,7 @@ def main():
         environment=args.runner_environment, operating_system=args.runner_os, event_name=args.event_name,
     )
     output = Path(args.output).absolute()
-    if output.name != "issue180-ci-baseline-17-" + args.run_id or output.is_symlink():
+    if output.name != "issue180-ci-baseline-18-" + args.run_id or output.is_symlink():
         raise policy.GuardError("output does not identify the single owned artifact directory")
     artifacts = Artifacts(output)
     if args.operation == "plan":

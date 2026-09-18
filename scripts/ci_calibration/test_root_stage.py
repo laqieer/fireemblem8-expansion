@@ -86,7 +86,7 @@ def native_command_fixture():
 
 class RootStageControls(unittest.TestCase):
     def setUp(self):
-        parent = ROOT / "build/test-artifacts/root17-benign"
+        parent = ROOT / "build/test-artifacts/root18-benign"
         parent.mkdir(parents=True, exist_ok=True)
         self.directory = tempfile.TemporaryDirectory(dir=parent)
         self.root = Path(self.directory.name)
@@ -121,14 +121,15 @@ class RootStageControls(unittest.TestCase):
                          environment="github-hosted", operating_system="Linux", event_name="push")
         scope = policy.validate_event(event, **arguments)
         self.assertEqual((scope["graph_sha"], scope["base_sha"]),
-                         ("8d03b518c714ff4915220af4568f0274f3c8d292", "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"))
+                         ("048c1bb3ab8008bbe862ad8072ed124e02fdb170", "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"))
+        self.assertEqual(scope["branch"], "calibration/issue-180-ci-baseline-18")
         self.assertEqual(scope["workload_kind"], "original-root-acceptance")
         self.assertTrue(scope["source_phases"])
         self.assertFalse(scope["production_acceptance"])
         for key, value in (("attempt", "2"), ("run_number", "2"), ("environment", "self-hosted")):
             with self.subTest(key=key), self.assertRaises(policy.GuardError):
                 policy.validate_event(event, **{**arguments, key: value})
-        for branch in ("calibration/issue-180-ci-baseline-16", "master"):
+        for branch in ("calibration/issue-180-ci-baseline-16", "calibration/issue-180-ci-baseline-17", "master"):
             with self.subTest(branch=branch), self.assertRaises(policy.GuardError):
                 policy.validate_event({**event, "ref": "refs/heads/" + branch}, **arguments)
 
@@ -579,10 +580,10 @@ class RootStageControls(unittest.TestCase):
             }
         return value
 
-    def supervisor_failure(self, defect):
+    def supervisor_failure(self, defect, *, output_prefix="issue180-ci-baseline-18-"):
         directory = self.root / defect
         directory.mkdir()
-        output = directory / "issue180-ci-baseline-17-123"
+        output = directory / (output_prefix + "123")
         event = {
             "ref": "refs/heads/" + policy.BRANCH, "before": "0" * 40, "after": "a" * 40,
             "created": True, "deleted": False,
@@ -692,17 +693,32 @@ class RootStageControls(unittest.TestCase):
                 self.assert_broken_cleanup_channel()
         with mock.patch.object(supervisor, "main", self.old_function(supervisor, "main")):
             with self.assertRaises(AssertionError):
-                self.supervisor_failure("post-qualified-volume")
+                self.supervisor_failure("post-qualified-volume", output_prefix="issue180-ci-baseline-17-")
 
-    def test_harness_identity_requires_the_exact_two_commit_normal_lineage(self):
+    def test_harness_identity_requires_the_exact_three_commit_normal_lineage(self):
         head = "a" * 40
-        expected = [f"{head} {supervisor.PREPARATION_SHA}", f"{supervisor.PREPARATION_SHA} {policy.BASE}"]
+        self.assertEqual(
+            (supervisor.RETAINED_HARNESS_SHA, supervisor.PREPARATION_SHA, policy.BASE),
+            ("1a2d177749cec443c05021855e4f006cdae821f1",
+             "4dcbcb7e462a3d0953fea5b54d29c30954193ea7",
+             "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"),
+        )
+        expected = [
+            f"{head} {supervisor.RETAINED_HARNESS_SHA}",
+            f"{supervisor.RETAINED_HARNESS_SHA} {supervisor.PREPARATION_SHA}",
+            f"{supervisor.PREPARATION_SHA} {policy.BASE}",
+        ]
         supervisor.validate_harness_lineage(expected, head)
         for rows in (
             [f"{head} {policy.BASE}"],
-            [f"{head} {'b' * 40}", expected[1]],
-            [expected[0], f"{supervisor.PREPARATION_SHA} {'b' * 40}"],
-            [f"{head} {supervisor.PREPARATION_SHA} {'b' * 40}", expected[1]],
+            [f"{head} {supervisor.PREPARATION_SHA}", expected[2]],
+            [f"{head} {'b' * 40}", *expected[1:]],
+            [expected[0], f"{supervisor.RETAINED_HARNESS_SHA} {'b' * 40}", expected[2]],
+            [*expected[:2], f"{supervisor.PREPARATION_SHA} {'b' * 40}"],
+            [f"{head} {supervisor.RETAINED_HARNESS_SHA} {'b' * 40}", *expected[1:]],
+            [expected[0], f"{supervisor.RETAINED_HARNESS_SHA} {supervisor.PREPARATION_SHA} {'b' * 40}", expected[2]],
+            [*expected[:2], f"{supervisor.PREPARATION_SHA} {policy.BASE} {'b' * 40}"],
+            expected[:2],
             [*expected, f"{policy.BASE} {'b' * 40}"],
         ):
             with self.subTest(rows=rows), self.assertRaises(policy.GuardError):

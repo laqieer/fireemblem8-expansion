@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import selectors
+import shlex
 import signal
 import stat
 import subprocess
@@ -741,11 +742,13 @@ class CalibrationControls(unittest.TestCase):
 
     def test_workflow_is_push_only_separate_pinned_and_least_privilege(self):
         data = yaml.load((REPO / policy.WORKFLOW).read_text(), Loader=yaml.BaseLoader)
+        self.assertEqual(data["name"], "Issue 180 disposable original-root acceptance 18")
         self.assertEqual(data["on"], {"push": {"branches": [policy.BRANCH]}})
         self.assertEqual(data["permissions"], {"contents": "read"})
-        self.assertEqual(data["concurrency"]["group"], "issue180-disposable-diagnostic-baseline-17")
-        self.assertEqual(set(data["jobs"]), {"disposable-root-acceptance-17"})
-        job = data["jobs"]["disposable-root-acceptance-17"]
+        self.assertEqual(data["concurrency"]["group"], "issue180-disposable-diagnostic-baseline-18")
+        self.assertEqual(set(data["jobs"]), {"disposable-root-acceptance-18"})
+        job = data["jobs"]["disposable-root-acceptance-18"]
+        self.assertEqual(job["name"], "Disposable original-root acceptance only 18")
         self.assertEqual(job["runs-on"], "ubuntu-latest")
         self.assertNotIn("container", job)
         self.assertNotIn("strategy", job)
@@ -766,11 +769,23 @@ class CalibrationControls(unittest.TestCase):
         uploads = [step for step in steps if step.get("uses", "").startswith("actions/upload-artifact@")]
         self.assertEqual(len(uploads), 1)
         self.assertEqual(uploads[0]["uses"], "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a")
+        self.assertEqual(uploads[0]["with"]["name"],
+                         "issue180-ci-baseline-18-${{ github.run_id }}-attempt-${{ github.run_attempt }}")
         uploaded = uploads[0]["with"]["path"].splitlines()
-        self.assertEqual([path.rsplit("/", 1)[1] for path in uploaded], list(policy.ARTIFACT_NAMES))
+        self.assertEqual(uploaded, [
+            "${{ runner.temp }}/issue180-ci-baseline-18-${{ github.run_id }}/" + name
+            for name in policy.ARTIFACT_NAMES
+        ])
         self.assertTrue(all("*" not in path and "/candidate/" not in path and "/harness/" not in path for path in uploaded))
+        outputs = []
         for step in steps:
             self.assertNotIn("continue-on-error", step)
+            if "run" in step:
+                argv = shlex.split(step["run"])
+                if "--output" in argv:
+                    self.assertEqual(argv.count("--output"), 1)
+                    outputs.append(argv[argv.index("--output") + 1])
+        self.assertEqual(outputs, ["$RUNNER_TEMP/issue180-ci-baseline-18-$GITHUB_RUN_ID"] * 2)
         self.assertNotIn("secrets.", json.dumps(data))
 
 
