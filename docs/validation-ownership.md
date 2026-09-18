@@ -386,6 +386,45 @@ such invocation facts, while ordinary unforced facts remain available.
 Required unknown target/private/local execution contexts still refuse instead
 of borrowing a global input value.
 
+The [required scoped-source capability](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5723100448)
+extends that original-source model for asset-compression overrides and per-file
+compiler options. Proved exact target lists and narrowly supported literal
+single-percent scopes have typed, source-ordered bindings; they are not writes
+to the global definition map. Scoped immediate RHS reads use their actual
+source-point context. A later global/native value cannot replace the earlier
+`CC1 := $(CC1_OLD)` result.
+
+Target-specific `+=` keeps its raw recursive tail and applicable inherited
+base, even when the global base is simple. A variable RHS remains deferred,
+while an append to an existing local simple value retains immediate timing.
+Empty inherited tails preserve GNU's separator after a nonempty base:
+`FLAGS := early; unit.o: FLAGS +=; FLAGS := late` produces the actual argument
+`late `, although global raw metadata is `late` and target raw metadata is an
+empty file/recursive value. These three facts are deliberately distinct.
+No trimming or terminal-value bootstrap supplies the proof.
+
+The source walk retains original rule/target/prerequisite and recipe-ordinal
+contexts. A required scoped use is bound to its original target/stem and
+source-derived ancestry. Actual native raw recipes and expanded job arguments
+corroborate that source proof; a failed association remains a refusal even if
+another target uses the same recipe successfully. Direct argv and shell
+dispatch are compared through their existing typed/lexical boundaries.
+Source-only obligations before a remake are marked separately from native jobs.
+Earlier-pass defaults and unselected active declarations remain obligations.
+Owned context identity, view/lifetime checks and the existing cache,
+observation-count,512-name and deadline bounds apply throughout.
+
+Unknown or computed/escaped selectors, overlapping scopes, unqualified
+parent/shared-child inheritance, private/override combinations,
+automatic-sensitive assignment contexts and unproved consumer/stem relations
+remain held. This does not add a general Make or shell evaluator. The genuine
+small LZ witness keeps its original copied rules and three explicitly
+pre-existing raw operands; its actual conversion projections do not certify
+asset production. Native raw global/per-file metadata is reported separately
+from expanded target-local job arguments. Legacy ordinary Make with `-rR`
+selects a different CPP prefix from the unchanged native built-in context;
+only the measured CC1/flag portions are compared as equivalent.
+
 The ordinary invariant/default planner path remains available. This opt-in
 source path does not relax any live command or resource boundary. The genuine
 original root retains its header order-only toolchain check, original recipe

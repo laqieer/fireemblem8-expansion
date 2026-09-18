@@ -4037,6 +4037,31 @@ proof semantics and nonchronological history; no candidate clock is accepted.
     The corrected mapping tests use the approved dependency-free parser and
     also run under no-site startup. Do not add site paths, install another
     dependency, drop `-S` or silently discard failed imports.
+17. For the [required scoped-source capability](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5723100448),
+    use the existing phase-module automation and its unchanged native helper.
+    Retain the original LZ pattern/exact/unmatched declarations and consumers.
+    Seed the three selected `.4bpp`/`.8bpp` operands as small, pre-existing
+    regular fixture inputs before ordinary/native Make; record their identities
+    and do not describe them as generated assets. Compare the actual
+    `-mindist 2`, `-mindist 3` and empty-flag consumer expansions, while retaining
+    the native conversion projections as projections only.
+
+    Retain the original legacy exact-target compiler/flag assignments and the
+    modern simple flag constructor plus raw target appends. Compare actual
+    per-file origin/flavor/raw values and expanded native job target/ordinal/
+    arguments, not just global definitions. Keep the ordinary `-rR` versus
+    native built-in CPP difference visible. Require the legacy O1, recursive
+    append, old compiler and global controls, and all three modern option
+    overrides plus the global control. No compiler execution is inferred.
+
+    Change an immediate RHS source before and after the scoped assignment:
+    the earlier snapshot must remain. Change a deferred append RHS before use:
+    the later value must be read. With `FLAGS := early; unit.o: FLAGS +=;
+    FLAGS := late`, require global raw `late`, target raw empty/file/recursive
+    and the exact native argument `late ` including its final space. Keep
+    metadata-only dollar data lazy. Use fail-fast local native-bearing
+    selections (`python3 -B -m unittest -f ...`); stop an unexpected setup or
+    ownership error without changing guards, profiles or limits.
 
 ### Expected result
 
@@ -4069,6 +4094,13 @@ and checks actual read coverage over that same complete set. Coherent initial
 omissions and complete reads with partial declarations reject. The later
 standalone-verifier complete-diff guard and foundation-introduction behavior
 remain unchanged.
+
+The scoped-source positives preserve distinct global and target bindings,
+raw recursive append tails and their inherited bases. Original source-point
+facts govern immediate reads; native metadata and job arguments corroborate,
+but never create, those facts. Each required native use is accounted for, and
+source-only obligations before a remake are not mislabeled as native jobs.
+Unselected active declarations and first-pass defaults survive the union.
 
 Immutable verifier batches return exactly the individually read bytes, preserve
 path/mode/gitlink/source authority and reject every trusted-tree or loaded-module
@@ -6065,6 +6097,36 @@ again be rejected. Restore both fixes. Keep the original input, control,
 filter, namespace, lifetime, unexport/lazy and private/scoped holds intact.
 All of these controls remain in the same indexed phase module and case.
 
+#### Required scoped-source negative and restoration controls
+
+Independently restore the old literal-pattern, scoped-immediate-RHS and
+blanket deferred-scoped-name holds. The corresponding original LZ, legacy
+and modern positives must fail at the restored boundary, while retaining the
+same genuine issued observation and clean teardown. Do not substitute a
+fixture/path-policy failure for an intended removal result.
+
+Remove only scoped lookup or the inherited append base and require the
+actual native consumer consistency to fail. Replace an earlier immediate
+RHS with the recorded later global value and require rejection, not a new
+source fact. Preserve first-pass HIDDEN/default obligations in the real
+include-remake fixture; removing only their union must expose the lost
+obligation without claiming a whole-report bypass.
+
+Require unknown/computed/escaped destinations, overlapping scopes,
+parent/shared-child inheritance, private/override combinations and
+automatic-sensitive assignments to remain held. Literal metadata must not
+execute an unused body, and command-line precedence must not erase a genuinely
+evaluated immediate RHS. Copied/expired use contexts and stricter existing
+count/byte/deadline allowances must reject rather than reset their budgets.
+
+For the two-job corroboration control, declare its synthetic aggregation
+target `.PHONY: all`, retain both scoped values and the generic object recipe,
+then make exactly one actual job unproved. The other valid context cannot
+hide it. The earlier non-phony fixture failed on an `all.o` pathname before
+the mutation and had incomplete-journal cleanup; that remains setup evidence,
+not the intended control or an inferred syscall history. The precise fixture
+correction changes no production Makefile, native policy or permission.
+
 Restore the original raw C-source wildcard/default/append and derived header
 constructor to the genuine text/ARM/sed component. Retain its real goal/include
 guard, initially absent C/parents, actual outputs and unchanged tracked header.
@@ -6723,6 +6785,12 @@ foundation; issue #264's lifecycle-launch performance work is independent and
 not required by this correction. Native/generated-binding semantics, process
 policy, CI topology/timeouts and publisher limits remain unchanged.
 
+The scoped-source extension depends on the existing issued source/job
+authority and is independent of the separately pinned root-harness preparation.
+Its dependents are later genuine-root/required-scope acceptance and public
+reporter adoption; it does not change that public selector or authorize a
+resource/provider/H1 run. Save, generated-data format and ROM/RAM are unchanged.
+
 The graph does not execute selected gates and cannot skip or narrow validation.
 A later independently accepted issue must prove selection non-inferiority
 before any delivery behavior can consume these explanations.
@@ -6762,6 +6830,11 @@ unchanged source bytes/Git state across simulated fixture exceptions.
   every candidate source's content, absence, mode and symlink mutation.
 - `python3 -m unittest scripts.validation_ownership.tests.test_graph_report.GraphReportTests.test_document_serialization_without_semantic_change_does_not_invalidate -v`
   -- one real small CURRENT/BASE report, not a full repository measurement.
+- `python3 -B -m unittest -f -v scripts.validation_ownership.tests.test_phase_census`
+  -- existing whole-module ownership also covers the scoped native positives,
+  raw/expanded and source-time distinctions, independent restored holds,
+  corroboration loss, empty append, unqualified contexts and shared limits.
+  No new module, case ID or execution owner is introduced.
 
 The focused A/V fixtures also execute the title fingerprint comparator with
 missing/changed framebuffer controls, the actual presentation runner's
@@ -6792,6 +6865,14 @@ failure cases. Never delete another run's directory to reset a test. Retain
 benchmark logs outside the committed source and remove only owned scratch
 artifacts when finished. These focused results do not certify full graph,
 calibration, H1, native review, or whole Build CI performance.
+
+Scoped-source fixtures keep all original input identities unchanged, close the
+actual session, clear source archives/contexts and remove only their owned
+scratch directories. Preserve setup failures and their first cause before any
+authorized fixture correction. A non-fail-fast development batch continuing
+after a failure is not immediate stopping; later local native-bearing selections
+must be fail-fast. Successful projected recipes are not produced objects/assets,
+full-source acceptance, a public report or resource calibration.
 
 Rollback is a normal revert of issue #180's dedicated commit; existing broader
 validation behavior is unchanged.

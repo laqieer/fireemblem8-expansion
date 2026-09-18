@@ -370,7 +370,7 @@ corresponding entry image, then unions reads/defaults/dependencies/effects.
 Constants are intersected across passes; final definitions cannot erase
 first-pass HIDDEN. Plain global input flags/origins are interpreted from the
 validated GNU ABI, while unsupported special/private/dynamic behavior holds.
-Deferred namespace-bearing aliases, target/local overrides and unknown effect
+Deferred namespace-bearing aliases, unproved target/local scopes and unknown effect
 timing do not borrow a source-time snapshot; metadata-only reads stay lazy.
 The original executed-read closure is checked on every pass, independently
 of wildcard use. Unsupported variable-universe references and their computed
@@ -392,6 +392,34 @@ undefined, as confirmed by the native metadata controls.
 Requested invocation goals
 cannot replace authentic forced control values; the normal unforced facts and
 the existing unsupported supplied-control boundary remain separate.
+
+The required scoped-source capability keeps exact/source-proved target lists
+and literal single-percent target scopes separate from global definitions.
+Original declaration sites, assignment order, origin/flavor and versions
+govern scoped immediate RHS reads. Target-specific append retains a raw
+recursive tail and its applicable inherited base, including when the global
+base is simple. For an empty tail over the later nonempty base `late`, GNU's
+actual argument is `late ` with its final separator; neither the old base
+`early` nor a trimmed value is equivalent.
+
+Scoped deferred reads require an owned original consumer context. Source rule,
+target/stem and command ordinal are derived from the original source walk;
+actual native raw recipes and expanded job arguments corroborate the result.
+They cannot supply an earlier definition or refresh a missing source fact.
+An unproved job cannot disappear behind another valid use of the same recipe.
+Required source-only contexts before an include remake remain explicitly
+marked obligations, not invented native jobs. Unselected active declarations,
+including the legacy `menu_def` append, remain in the source census.
+
+The existing source/cache/count/deadline and observation lifetimes bound this
+typed state. Computed or escaped destinations, overlapping scopes, unqualified
+parent/shared-child inheritance, scoped private/override combinations and
+automatic-sensitive assignments remain held. The original LZ and per-file
+compiler witnesses are projected recipe/source evidence, not successful asset
+conversion or compilation. Their pre-existing raw LZ operands are fixture
+inputs, not published outputs. The legacy ordinary `-rR` and native built-in
+CPP contexts remain distinct.
+
 The default invariant planner remains unchanged. Full original-root acceptance
 and resource measurement remain separate from source correctness; no phase
 result authorizes a shell/profile, bound split or quota workaround.

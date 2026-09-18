@@ -10,6 +10,7 @@ import re
 import copy
 import hashlib
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from itertools import chain
 from typing import NamedTuple
@@ -110,6 +111,9 @@ class MakeSourceUnit(NamedTuple):
     phase_command: str | None = None
     reads: tuple = ()
     created_bindings: tuple = ()
+    source_rule: object = None
+    recipe_ordinal: int | None = None
+    site: object = None
 
 
 class _SourceUnitStream(NamedTuple):
@@ -153,6 +157,69 @@ class _ModeBinding:
     origin: str
     flavor: str
     value: str | None
+    inherited: tuple = ()
+    scope: str | None = None
+
+
+class _ScopeContext(NamedTuple):
+    target: str | None
+    selector: str
+    kind: str
+    rule: object = None
+    ordinal: int | None = None
+    job: int | None = None
+
+
+class _ScopeDeclaration(NamedTuple):
+    selector: str
+    name: str
+    operator: str
+    site: object
+    version: int
+
+
+class _SourceRule(NamedTuple):
+    number: int
+    site: object
+    targets: tuple | None
+    target_pattern: str | None
+    prerequisites: tuple | None
+    first_prerequisite: str | None
+
+
+def _scope_pattern_stem(pattern, target):
+    if "%" not in pattern:
+        return "" if pattern == target else None
+    prefix, suffix = pattern.split("%")
+    if not target.startswith(prefix) or not target.endswith(suffix) or len(target) < len(prefix) + len(suffix):
+        return None
+    return target[len(prefix):len(target) - len(suffix) if suffix else len(target)]
+
+
+def _scopes_overlap(left, right):
+    if "%" not in left:
+        return _scope_pattern_stem(right, left) is not None
+    if "%" not in right:
+        return _scope_pattern_stem(left, right) is not None
+    left_prefix, left_suffix = left.split("%")
+    right_prefix, right_suffix = right.split("%")
+    return (
+        (left_prefix.startswith(right_prefix) or right_prefix.startswith(left_prefix))
+        and (left_suffix.endswith(right_suffix) or right_suffix.endswith(left_suffix))
+    )
+
+
+def _scope_words(value, *, patterns=True):
+    if value is None:
+        return None
+    words = tuple(re.findall(r"[^ \t\r\n\v\f]+", value))
+    if any(
+        re.fullmatch(r"[A-Za-z0-9_./+%\-]+", word) is None
+        or word.count("%") > int(patterns) or ".." in word.split("/")
+        for word in words
+    ):
+        return None
+    return words
 
 
 UNPROVEN_BINDING = _ModeBinding("unknown", "unknown", None)
@@ -186,6 +253,11 @@ class _MakeSourceMode:
     original_execution: object = None
     invocation_inputs: frozenset = frozenset()
     namespace_holds: set = field(default_factory=set)
+    scope_declarations: list = field(default_factory=list)
+    inherited_appends: set = field(default_factory=set)
+    scope_context: _ScopeContext | None = None
+    scope_lookup_guard: object = None
+    source_rule_count: int = 0
 
     def __post_init__(self):
         self.definitions = {
@@ -194,6 +266,42 @@ class _MakeSourceMode:
         }
 
     def binding(self, name, scope=None):
+        if scope is None and self.scope_lookup_guard is not None:
+            self.scope_lookup_guard(self, name)
+        if scope is None and self.scope_context is not None:
+            context = self.scope_context
+            if context.target is None:
+                if name in self.scoped_names():
+                    raise MakeProbeError("unproven target-pattern RHS binding: " + name)
+                return self.raw_binding(name)
+            selectors = self.matching_scopes(context.target)
+            if selectors:
+                selected, = selectors
+                if (selected, name) in self.declared_scopes() and name in self.target_definitions.get(selected, {}):
+                    values = self.raw_binding(name, selected)
+                    bases = (
+                        self.raw_binding(name) if (selected, name) in self.inherited_appends else ()
+                    )
+                    bases = tuple(
+                        _ModeBinding(base.origin, base.flavor, self.template_snapshot(name))
+                        if base.flavor == "simple" and base.value is None else base
+                        for base in bases
+                    )
+                    result = frozenset(
+                        _ModeBinding(value.origin, value.flavor, value.value,
+                                     () if base is None else (base,), selected)
+                        for value in values for base in (bases or (None,))
+                    )
+                    if self.budget is not None:
+                        self.budget.charge("cache", len(encoded((
+                            selected, name, [(value.origin, value.flavor, value.value) for value in values],
+                            [(value.origin, value.flavor, value.value) for value in bases],
+                        ))))
+                    return result
+            return self.raw_binding(name)
+        return self.raw_binding(name, scope)
+
+    def raw_binding(self, name, scope=None):
         definitions = self.definitions if scope is None else self.target_definitions.get(scope, {})
         if name in definitions:
             if self.binding_versions.get((scope, name), 0) != self.version:
@@ -208,7 +316,7 @@ class _MakeSourceMode:
                 values = frozenset(
                     value if value.origin == "command line"
                     else UNPROVEN_BINDING if value.origin == "unknown" else UNDEFINED_BINDING
-                    for value in self.binding(name)
+                    for value in self.raw_binding(name)
                 )
             else:
                 values = frozenset((UNDEFINED_BINDING,))
@@ -223,6 +331,100 @@ class _MakeSourceMode:
                 values = frozenset((_ModeBinding(record["origin"], record["flavor"], record["value"]),))
         self.retain_binding(name, values, scope)
         return values
+
+    def declared_scopes(self):
+        return {(record.selector, record.name) for record in self.scope_declarations}
+
+    def scoped_names(self):
+        return {record.name for record in self.scope_declarations}
+
+    def matching_scopes(self, target):
+        selectors = set()
+        for record in self.scope_declarations:
+            self.checkpoint()
+            if _scope_pattern_stem(record.selector, target) is not None:
+                selectors.add(record.selector)
+        if len(selectors) > 1:
+            raise MakeProbeError("unproven overlapping target/pattern bindings: " + target)
+        return tuple(selectors)
+
+    @contextmanager
+    def using_scope(self, context):
+        if not isinstance(context, _ScopeContext):
+            raise MakeProbeError("scoped source lookup requires its typed context")
+        previous = self.scope_context
+        self.scope_context = context
+        try:
+            yield
+        finally:
+            self.scope_context = previous
+
+    def binding_parts(self, binding):
+        return (*binding.inherited, _ModeBinding(binding.origin, binding.flavor, binding.value))
+
+    def binding_values(self, binding, active):
+        choices = {""}
+        for index, part in enumerate(self.binding_parts(binding)):
+            self.checkpoint()
+            if part.flavor == "undefined":
+                values = ("",)
+            elif part.value is None or part.flavor == "unknown":
+                return None
+            elif part.flavor == "recursive":
+                values = self.literal_values(part.value, active)
+                if values is None:
+                    return None
+            else:
+                values = (part.value,)
+            combined = set()
+            for before in choices:
+                for value in values:
+                    text = before + (" " if index and before else "") + value
+                    if self.budget is not None:
+                        self.budget.charge("cache", len(encoded(text)))
+                    combined.add(text)
+                    if len(combined) > 512:
+                        raise MakeProbeError("literal Make context exceeds the existing bounded context plan")
+            choices = combined
+        return choices
+
+    def source_rule(self, header, *, literal=False, site=None):
+        header, _ = split_inline_recipe(strip_comment(header))
+        separators = _rule_separators(header)
+        if not separators or len(separators) > 2:
+            return None
+        left = header[:separators[0]].strip(MAKE_SPACE)
+        if left.startswith(".") and "/" not in left:
+            return None
+        def resolve(value, target=False):
+            if literal or "$" not in value:
+                return value
+            return self.exact_target_text(value) if target else self.exact_initializer_value(value)
+        targets = _scope_words(resolve(left, True))
+        if targets is not None and any(
+            "%" in target and "/" not in target and not target.startswith("%") for target in targets
+        ):
+            targets = None
+        pattern = None
+        if len(separators) == 2:
+            patterns = _scope_words(resolve(header[separators[0] + 1:separators[1]].strip(MAKE_SPACE)))
+            if patterns is None or len(patterns) != 1 or patterns[0].count("%") != 1:
+                targets = None
+            else:
+                pattern = patterns[0]
+        right = resolve(header[separators[-1] + 1:].strip(MAKE_SPACE))
+        prerequisites = _scope_words(
+            right.replace("|", " ") if right is not None and right.count("|") <= 1 else None,
+        )
+        normal = _scope_words(right.split("|", 1)[0]) if right is not None else None
+        first = None if normal is None else normal[0] if normal else ""
+        self.source_rule_count += 1
+        if self.budget is not None and self.source_rule_count > self.budget.limits.observation_count:
+            raise MakeProbeError("scoped source rule count exceeds existing observation bound")
+        rule = _SourceRule(self.source_rule_count, site or self.site, targets, pattern, prerequisites, first)
+        if self.budget is not None:
+            self.budget.charge("cache", len(encoded(rule)))
+        return rule
 
     def retain_binding(self, name, values, scope=None):
         definitions = self.definitions if scope is None else self.target_definitions.setdefault(scope, {})
@@ -302,17 +504,11 @@ class _MakeSourceMode:
                         if value is None or metadata != "value" and value == "unknown":
                             return None
                         choices.add(value)
-                    elif binding.flavor == "undefined":
-                        choices.add("")
-                    elif binding.value is None or binding.flavor == "unknown":
-                        return None
-                    elif binding.flavor == "recursive":
-                        expanded = self.literal_values(binding.value, (*active, name))
+                    else:
+                        expanded = self.binding_values(binding, (*active, name))
                         if expanded is None:
                             return None
                         choices.update(expanded)
-                    else:
-                        choices.add(binding.value)
             if not choices:
                 return None
             combined = set()
@@ -545,7 +741,8 @@ class _MakeSourceMode:
         if forwarded:
             name = forwarded[1] or forwarded[2]
             record = self.template_values.get(name)
-            if record is not None and record[0] == self.version:
+            unscoped = self.scope_context is None or all(value.scope is None for value in self.binding(name))
+            if unscoped and record is not None and record[0] == self.version:
                 return record[1]
         function = _make_function(expression)
         if function is None or function[0] in {"notdir", "addprefix", "filter", "filter-out", "findstring", "strip", "and"}:
@@ -598,10 +795,30 @@ class _MakeSourceMode:
         literal = self.literal_text("$(" + name + ")", active)
         if literal is not None:
             return literal if "$" not in literal and "\0" not in literal else None
+        if binding.inherited:
+            parts = []
+            for part in self.binding_parts(binding):
+                value = (
+                    part.value if part.flavor == "simple" else ""
+                    if part.flavor == "undefined" else self.exact_initializer_value(part.value, active=(*active, name))
+                    if part.flavor == "recursive" and part.value is not None else None
+                )
+                if value is None or "$" in value or "\0" in value:
+                    return None
+                parts.append(value)
+            value = parts[0]
+            for tail in parts[1:]:
+                value = _join_make_text((value, " " if value else "", tail), self.budget)
+            return value
         if binding.flavor == "recursive" and binding.value is not None:
             return self.exact_initializer_value(binding.value, active=(*active, name))
+        if binding.scope is not None:
+            return None
+        return self.template_snapshot(name) if binding.flavor == "simple" else None
+
+    def template_snapshot(self, name):
         record = self.template_values.get(name)
-        if binding.flavor != "simple" or record is None or record[0] != self.version:
+        if record is None or record[0] != self.version:
             return None
         kind, value = record[1]
         if kind == "exact":
@@ -726,6 +943,8 @@ class _MakeSourceMode:
             return False
         if literal is not None:
             return _template_header_data(literal)
+        if binding.inherited:
+            return False
         if binding.flavor == "recursive" and binding.value is not None:
             forwarded = NAME_PART.fullmatch(binding.value)
             if forwarded:
@@ -785,8 +1004,9 @@ class _MakeSourceMode:
                     seen.add(name)
                     self.retain_reads((name,))
                     for binding in self.binding(name):
-                        if binding.flavor == "recursive" and binding.value is not None:
-                            pending.append(binding.value)
+                        for part in self.binding_parts(binding):
+                            if part.flavor == "recursive" and part.value is not None:
+                                pending.append(part.value)
         return self.exact_initializer_value(expression)
 
     def effectful(self, expression, *, automatic=False):
@@ -873,8 +1093,12 @@ class _MakeSourceMode:
                         pending.append((None, arguments[2], False, scoped, None))
                     pending.extend((None, argument, False, local, None) for argument in arguments[:2])
                 elif operation in {"origin", "flavor", "value"}:
-                    self.retain_reads(metadata for _, _, metadata in _literal_metadata(value[start:stop])
-                                      if metadata not in local)
+                    metadata_names = tuple(metadata for _, _, metadata in _literal_metadata(value[start:stop])
+                                           if metadata not in local)
+                    self.retain_reads(metadata_names)
+                    if self.scope_lookup_guard is not None:
+                        for metadata in metadata_names:
+                            self.scope_lookup_guard(self, metadata)
                     if not tuple(_literal_metadata(value[start:stop])):
                         pending.extend((None, argument, False, local, None) for argument in arguments)
                 else:
@@ -889,6 +1113,10 @@ class _MakeSourceMode:
                     self.last_effect_input = name or operation[1]
                     return True
             self.retain_reads(metadata for _, _, metadata in _literal_metadata(value))
+            if self.scope_lookup_guard is not None:
+                for _, _, metadata in _literal_metadata(value):
+                    if metadata not in local:
+                        self.scope_lookup_guard(self, metadata)
             value = _without_literal_metadata(value)
             dependencies = references(value)
             for body in make_expressions(value):
@@ -908,10 +1136,14 @@ class _MakeSourceMode:
                     if binding.flavor == "unknown" or binding.flavor == "recursive" and binding.value is None:
                         self.last_effect_input = dependency
                         return True
-                    if binding.flavor == "recursive":
-                        pending.append((dependency, binding.value, False, local, binding))
-                    elif self.original_execution is not None:
-                        self.original_execution(self, dependency, binding, binding.value, local)
+                    for part in reversed(self.binding_parts(binding)):
+                        if part.flavor == "unknown" or part.flavor == "recursive" and part.value is None:
+                            self.last_effect_input = dependency
+                            return True
+                        if part.flavor == "recursive":
+                            pending.append((dependency, part.value, False, local, part))
+                        elif self.original_execution is not None:
+                            self.original_execution(self, dependency, part, part.value, local)
         return False
 
     def evaluate(self, expression, *, active=True):
@@ -1022,13 +1254,17 @@ class _MakeSourceMode:
         literal_choices = None
         template_value = None
         read_value = None
-        if scope is None and (
+        if (scope is None or self.original_execution is not None) and (
             operator in SIMPLE_ASSIGNMENT_OPERATORS or operator == "+=" and effect.immediate is True
         ):
             try:
                 literal_choices = self.literal_values(value)
             except RecursionError:
                 literal_choices = None
+            if scope is not None and self.original_execution is not None and literal_choices is None:
+                exact = self.exact_initializer_value(value)
+                if exact is not None:
+                    literal_choices = frozenset((exact,))
             if operator in SIMPLE_ASSIGNMENT_OPERATORS and literal_choices is None:
                 template_value = self.template_initializer(value)
             elif operator == "+=" and active is True and effect.applies is True:
@@ -1044,7 +1280,7 @@ class _MakeSourceMode:
         emitted = ()
         if effect.immediate is not False:
             read_value = _prune_and(value, self.exact_initializer_value, self.budget)
-            if scope is not None and references(read_value):
+            if scope is not None and references(read_value) and self.original_execution is None:
                 self.uncertain("unproven target-specific RHS expansion context")
             emitted = self.evaluate(value, active=active)
         if emitted and definitions.get(name, ()) != previous:
@@ -1115,6 +1351,8 @@ class _MakeSourceMode:
                     target = self.exact_target_text(assignment["target"].strip(MAKE_SPACE))
             except RecursionError:
                 target = None
+        if self.original_execution is not None:
+            return self.assign_original_scopes(assignment, target, override=override, active=active)
         if not target or any(character in target for character in "$%*?[]\\;|"):
             self.uncertain("unproven target-specific assignment context")
             return _AssignmentEffect(None, None)
@@ -1130,6 +1368,67 @@ class _MakeSourceMode:
             for index in range(2)
         ))
         return result._replace(emitted=tuple(item for effect in effects for item in effect.emitted))
+
+    def assign_original_scopes(self, assignment, target, *, override, active):
+        name, operator = assignment["name"], assignment["operator"]
+        modifiers = assignment[0][assignment.end("target"):assignment.start("name")].replace(":", " ").split()
+        if override or "private" in modifiers:
+            raise MakeProbeError("original execution has an unproven target/private binding: " + name)
+        selectors = _scope_words(target)
+        if (
+            active is not True or not selectors
+            or operator not in {"=", ":=", "::=", "+="}
+            or next(computed_selectors(assignment["target"]), None) is not None
+            or name in INVOCATION_CONTROL_READS | SOURCE_HISTORY_CONTROLS | {"MAKELEVEL"}
+            or SCOPED.search(assignment["value"]) is not None
+        ):
+            raise MakeProbeError("unproven original scoped assignment context: " + name)
+        effects = []
+        for selector in selectors:
+            self.checkpoint()
+            if selector.startswith(".") and "/" not in selector:
+                raise MakeProbeError("unproven scoped special-target assignment")
+            if any(record.selector != selector and _scopes_overlap(record.selector, selector)
+                   for record in self.scope_declarations):
+                raise MakeProbeError("unproven overlapping target/pattern bindings: " + selector)
+            declaration = _ScopeDeclaration(selector, name, operator, self.site, self.version)
+            if self.budget is not None:
+                if len(self.scope_declarations) >= self.budget.limits.observation_count:
+                    raise MakeProbeError("scoped binding count exceeds existing observation bound")
+                self.budget.charge("cache", len(encoded(declaration)))
+            previous = self.raw_binding(name, selector)
+            inherited = (
+                (selector, name) in self.inherited_appends
+                or operator == "+=" and all(value.flavor == "undefined" for value in previous)
+            )
+            context = _ScopeContext(None if "%" in selector else selector, selector, "assignment")
+            with self.using_scope(context):
+                if operator in SIMPLE_ASSIGNMENT_OPERATORS:
+                    if self.effectful(assignment["value"]):
+                        raise MakeProbeError("unproven original scoped immediate RHS: " + name)
+                    value = self.literal_text(assignment["value"].lstrip(MAKE_SPACE))
+                    if value is None:
+                        value = self.exact_initializer_value(assignment["value"].lstrip(MAKE_SPACE))
+                    if value is None:
+                        raise MakeProbeError("unproven original scoped immediate RHS: " + name)
+                effect = self.assign(
+                    name, operator, assignment["value"], active=active, scope=selector,
+                )
+            if effect.applies is True:
+                if operator != "+=":
+                    self.inherited_appends.discard((selector, name))
+                elif inherited:
+                    self.inherited_appends.add((selector, name))
+            self.scope_declarations.append(declaration)
+            effects.append(effect)
+        result = _AssignmentEffect(*(
+            effects[0][index] if all(effect[index] == effects[0][index] for effect in effects) else None
+            for index in range(2)
+        ))
+        return result._replace(
+            emitted=tuple(item for effect in effects for item in effect.emitted),
+            read_value=effects[0].read_value if all(effect.read_value == effects[0].read_value for effect in effects) else None,
+        )
 
 
 def _condition_operands(arguments):
@@ -1324,6 +1623,7 @@ def make_source_units(
     pending_posix = False
     conditions, active = [], True
     phase, phase_target = None, None
+    source_rule, recipe_ordinal = None, 0
 
     def record_pending():
         nonlocal pending_posix
@@ -1336,7 +1636,7 @@ def make_source_units(
                 pending_posix = False
 
     def contextual_unit(line, body=None, assignment=None, emitted=(), created_bindings=()):
-        nonlocal phase_target
+        nonlocal phase_target, source_rule, recipe_ordinal
         statement = strip_comment(line).strip(MAKE_SPACE)
         kind = (
             "recipe" if line.startswith("\t") else "define" if body is not None
@@ -1357,10 +1657,28 @@ def make_source_units(
                 phase_target = target
         elif phase is not None and kind == "recipe":
             command = _phase_recipe_text(mode, line, phase_target)
+        selected_rule, ordinal = None, None
+        if mode.original_execution is not None and active is not False:
+            if kind == "rule":
+                source_rule = mode.source_rule(statement)
+                recipe_ordinal = 0
+                if split_inline_recipe(statement)[1].strip(MAKE_SPACE):
+                    recipe_ordinal = 1
+                    ordinal = recipe_ordinal
+                selected_rule = source_rule
+            elif kind == "recipe":
+                if line[1:].strip(MAKE_SPACE):
+                    recipe_ordinal += 1
+                    ordinal = recipe_ordinal if active is True else None
+                selected_rule = source_rule
+            elif statement and not re.match(r"^(?:ifeq|ifneq|ifdef|ifndef|else|endif)(?:[ \t]|$)", statement):
+                source_rule, recipe_ordinal = None, 0
         return MakeSourceUnit(
             line, body, conditional_depth=len(conditions), active=active, assignment=assignment, emitted=emitted, kind=kind,
             phase=phase, phase_target=target, phase_command=command, reads=tuple(sorted(mode.reads)),
             created_bindings=created_bindings,
+            source_rule=selected_rule, recipe_ordinal=ordinal,
+            site=mode.site if mode.original_execution is not None else None,
         )
 
     for chunk in chunks:
@@ -2515,6 +2833,7 @@ def _prepare_rule_templates(
     replacements, omitted, graph_inputs, scoped = {}, set(), set(), set()
     for path, index, variable, values, (macro_path, macro_index, macro) in callers:
         position = positions[path, index]
+        caller_site = ordered[position][2].site
         if position not in known_positions:
             raise MakeProbeError("rule-template caller lacks proven original source ordering")
         macro_name = DEFINE.match(strip_comment(macro.text))[1]
@@ -2572,8 +2891,20 @@ def _prepare_rule_templates(
                             raise MakeProbeError("rule-template wildcard lacks a reference-preserving namespace")
             # This is the proved reference IR, never a Makefile executed by the
             # probe. GNU Make already supplied the actual graph/recipe result.
-            instantiated.append(MakeSourceUnit(target_text + ":" + prerequisite_text, native_literal_header=True))
-            instantiated.extend(MakeSourceUnit(recipe.replace("$$", "$")) for recipe in recipe_texts)
+            proved_header = target_text + ":" + prerequisite_text
+            source_rule = (
+                None if phase is None else units.mode_state.source_rule(
+                    proved_header, literal=True, site=caller_site,
+                )
+            )
+            instantiated.append(MakeSourceUnit(
+                proved_header, native_literal_header=True, source_rule=source_rule, site=caller_site,
+            ))
+            instantiated.extend(
+                MakeSourceUnit(recipe.replace("$$", "$"), source_rule=source_rule,
+                               recipe_ordinal=ordinal, site=caller_site)
+                for ordinal, recipe in enumerate(recipe_texts, 1)
+            )
             scoped.add("1")
         replacements[path, index] = instantiated
         omitted.add((macro_path, macro_index))

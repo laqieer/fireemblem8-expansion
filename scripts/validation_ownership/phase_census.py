@@ -6,6 +6,7 @@ from itertools import chain
 from pathlib import PurePosixPath
 from .authority import encoded, relative_path
 from .budget import MakeProbeError
+from .graph_commands import _shell_tokens
 from .make_probe import _NamespaceUnavailable
 from . import graph_probe as graph
 
@@ -82,6 +83,12 @@ class SourcePass:
         self.data_exports = set()
         self.deferred_execution = False
         self.unproven_scoped_names = set()
+        self.recipe_contexts = {}
+        self.job_contexts = {}
+        self.issued_contexts = {}
+        self.scope_parents = {}
+        self.scope_graph_error = None
+        self.scope_mode = None
 
     def input(self, name):
         self.read_inputs.add(name)
@@ -105,8 +112,8 @@ class SourcePass:
 
     def record_execution(self, mode, name, binding, value, local):
         if self.deferred_execution and name in self.unproven_scoped_names:
-            raise MakeProbeError("original execution has an unproven target/private binding: " + name)
-        if name not in self.inputs or binding.flavor == "undefined":
+            self.require_scoped_context(mode, name)
+        if (name not in self.inputs and name not in mode.scoped_names()) or binding.flavor == "undefined":
             return
         if binding.flavor not in {"simple", "recursive"} or value is None:
             raise MakeProbeError("original execution lacks its effective binding: " + name)
@@ -120,15 +127,279 @@ class SourcePass:
                 raise MakeProbeError("original source has an unsupported variable-universe read")
             if self.deferred_execution and _has_namespace(executing):
                 raise MakeProbeError("deferred original namespace use lacks a source-time snapshot")
+            if self.deferred_execution and name in mode.scoped_names():
+                if local and mode.effect_initializer_value("$(" + name + ")", local) is None:
+                    raise MakeProbeError("unproven local-sensitive scoped binding: " + name)
+                if mode.literal_text("$(" + name + ")") is None and mode.exact_reference(name) is None:
+                    raise MakeProbeError("unproven original scoped value at use: " + name)
         key = name, binding.flavor, binding.value, value
         if key not in self.executions:
             self.session.budget.charge("cache", len(encoded(key)))
             self.executions[key] = None
 
+    def require_scoped_context(self, mode, name):
+        context = mode.scope_context
+        if name not in self.unproven_scoped_names or not (
+            self.deferred_execution or context is not None and context.kind in {"recipe", "obligation"}
+        ):
+            return
+        if (
+            context is None or self.issued_contexts.get(id(context)) is not context
+            or mode is not self.scope_mode or name not in mode.scoped_names()
+        ):
+            raise MakeProbeError("original execution has an unproven target/private binding: " + name)
+        self.proof.require_live()
+        if self.scope_graph_error is not None or context.target not in self.scope_parents:
+            raise MakeProbeError(
+                "scoped use lacks its original source ancestry: " + name
+                + (": " + self.scope_graph_error if self.scope_graph_error is not None else "")
+            )
+        pending, seen = list(self.scope_parents[context.target]), set()
+        if len(pending) > 1:
+            raise MakeProbeError("unproven shared-child scoped context: " + name)
+        while pending:
+            mode.checkpoint()
+            parent = pending.pop()
+            if parent == context.target:
+                raise MakeProbeError("unproven cyclic scoped context")
+            if parent in seen:
+                raise MakeProbeError("unproven cyclic scoped context")
+            seen.add(parent)
+            selectors = mode.matching_scopes(parent)
+            if any((selector, name) in mode.declared_scopes() for selector in selectors):
+                raise MakeProbeError("unproven parent-inherited scoped binding: " + name)
+            parents = self.scope_parents.get(parent, ())
+            if len(parents) > 1:
+                raise MakeProbeError("unproven shared-child scoped context: " + name)
+            pending.extend(parents)
+
+    @staticmethod
+    def matching_rule(rule, target):
+        if rule is None or rule.targets is None:
+            return ()
+        return tuple(
+            selector for selector in rule.targets
+            if graph._scope_pattern_stem(selector, target) is not None
+        )
+
+    def rendered_recipe(self, mode, expression, context):
+        rule = context.rule
+        pattern = rule.target_pattern or context.selector
+        stem = graph._scope_pattern_stem(pattern, context.target)
+        if stem is None or rule.prerequisites is None:
+            return None
+        first = rule.first_prerequisite
+        if first is None:
+            return None
+        if "%" in first:
+            if "%" not in pattern:
+                return None
+            first = first.replace("%", stem)
+        automatic = {"@": context.target, "<": first}
+        if "%" in pattern:
+            automatic["*"] = stem
+
+        def resolve(part, body):
+            base = graph._make_reference_base(body)
+            modifier = base[-1:] if len(base) == 2 and base[-1:] in {"D", "F"} else ""
+            name = base[:-1] if modifier else base
+            if name in automatic:
+                value = automatic[name]
+                if modifier:
+                    value = PurePosixPath(value).parent.as_posix() if modifier == "D" else PurePosixPath(value).name
+                suffix = body[len(base):]
+                if suffix:
+                    if not suffix.startswith(":") or suffix.count("=") != 1 or "$" in suffix:
+                        return None
+                    source, replacement = suffix[1:].split("=", 1)
+                    if "%" not in source:
+                        source, replacement = "%" + source, "%" + replacement
+                    if not graph._supported_patsubst(source, replacement):
+                        return None
+                    return graph._join_make_text(
+                        graph._original_patsubst_parts((source, replacement, value), self.session.budget),
+                        self.session.budget,
+                    )
+                return value
+            value = mode.literal_text(part)
+            return mode.exact_initializer_value(part) if value is None else value
+
+        expression = expression.lstrip(graph.MAKE_SPACE)
+        while expression[:1] in {"@", "-", "+"}:
+            expression = expression[1:].lstrip(graph.MAKE_SPACE)
+        normalized = graph.SCOPED.sub(
+            lambda match: "$(" + next(item for item in match.groups() if item is not None) + ")",
+            expression,
+        )
+        self.session.budget.charge("cache", len(encoded(normalized)))
+        return graph._resolve_make_text(normalized, resolve, self.session.budget)
+
+    def retain_scope_context(self, unit, context):
+        if len(self.issued_contexts) >= self.session.budget.limits.observation_count:
+            raise MakeProbeError("scoped use count exceeds existing observation bound")
+        self.session.budget.charge("cache", len(encoded(context)))
+        self.issued_contexts[id(context)] = context
+        self.recipe_contexts.setdefault(id(unit), []).append(context)
+        if context.kind == "recipe":
+            self.job_contexts[context.job] = context
+
+    @staticmethod
+    def corroborates_recipe(rendered, event):
+        if event["arguments"][0] in {"/bin/sh", "/bin/bash"}:
+            expected = graph._normalized_shell_commands(rendered, "original scoped recipe")
+            actual = graph._normalized_shell_commands(graph._event_command(event), "native scoped recipe")
+            return bool(expected) and expected == actual
+        try:
+            tokens = _shell_tokens(rendered, "original scoped direct recipe")
+        except MakeProbeError:
+            return False
+        return (
+            not any(token.operator or token.io_number for token in tokens)
+            and [token.value for token in tokens] == event["arguments"]
+        )
+
+    def prepare_scope_contexts(self, mode, stream, recipes):
+        self.scope_mode = mode
+        rules = {unit.source_rule for _, _, unit in stream.ordered
+                 if unit.active is not False and unit.source_rule is not None}
+        if any(rule.targets is None for rule in rules):
+            self.scope_graph_error = "unproven source target constructor"
+        else:
+            pending = [self.target]
+            self.scope_parents = {self.target: set()}
+            while pending and self.scope_graph_error is None:
+                mode.checkpoint()
+                parent = pending.pop()
+                for rule in rules:
+                    matches = self.matching_rule(rule, parent)
+                    if not matches:
+                        continue
+                    if len(matches) != 1 or rule.prerequisites is None:
+                        self.scope_graph_error = "unproven source prerequisite context"
+                        break
+                    selector, = matches
+                    pattern = rule.target_pattern or selector
+                    stem = graph._scope_pattern_stem(pattern, parent)
+                    for prerequisite in rule.prerequisites:
+                        mode.checkpoint()
+                        if (
+                            rule.target_pattern is None and "%" in selector and "/" not in selector
+                            and "/" in parent and "%" in prerequisite and not prerequisite.startswith("%")
+                        ):
+                            self.scope_graph_error = "unproven directory-sensitive prerequisite pattern"
+                            break
+                        if "%" in prerequisite and "%" not in pattern:
+                            self.scope_graph_error = "unproven source prerequisite stem"
+                            break
+                        child = prerequisite.replace("%", stem) if "%" in prerequisite and stem is not None else prerequisite
+                        if graph._scope_words(child, patterns=False) != (child,):
+                            self.scope_graph_error = "unproven source prerequisite name"
+                            break
+                        new_child = child not in self.scope_parents
+                        if new_child:
+                            if len(self.scope_parents) >= self.session.budget.limits.observation_count:
+                                raise MakeProbeError("scoped ancestry exceeds existing observation bound")
+                        if new_child or parent not in self.scope_parents[child]:
+                            self.session.budget.charge("cache", len(encoded((parent, child))))
+                        if new_child:
+                            self.scope_parents[child] = set()
+                            pending.append(child)
+                        if parent not in self.scope_parents[child]:
+                            self.scope_parents[child].add(parent)
+        original_recipes = {}
+        for unit, expression in recipes:
+            if unit.source_rule is not None:
+                original_recipes.setdefault(unit.source_rule, []).append(expression)
+        native_recipes = {
+            item["target"]: item["recipe"] for item in self.proof.observation.semantics["files"]
+        }
+        jobs = self.proof.jobs.get(self.part.number, ())
+        for event in jobs:
+            self.session.budget.remaining()
+            job = event["job"]
+            candidates = [
+                unit for unit, _ in recipes
+                if unit.active is True and unit.recipe_ordinal == job["command_line"]
+                and len(self.matching_rule(unit.source_rule, job["target"])) == 1
+            ]
+            if not candidates:
+                raise MakeProbeError("scoped source has an unproven native recipe occurrence")
+            if len(candidates) != 1:
+                for unit in candidates:
+                    self.recipe_contexts.setdefault(id(unit), []).append(None)
+                continue
+            unit, = candidates
+            rule = unit.source_rule
+            original = "".join(expression.rstrip("\n") + "\n" for expression in original_recipes[rule])
+            if native_recipes.get(job["target"]) != original:
+                self.recipe_contexts.setdefault(id(unit), []).append(None)
+                continue
+            context = graph._ScopeContext(
+                job["target"], self.matching_rule(rule, job["target"])[0], "recipe",
+                rule, job["command_line"], event["sequence"],
+            )
+            expression = next(expression for candidate, expression in recipes if candidate is unit)
+            with mode.using_scope(context):
+                rendered = self.rendered_recipe(mode, expression, context)
+            if rendered is None:
+                self.recipe_contexts.setdefault(id(unit), []).append(None)
+                continue
+            if not self.corroborates_recipe(rendered, event):
+                self.recipe_contexts.setdefault(id(unit), []).append(None)
+                continue
+            self.retain_scope_context(unit, context)
+        # Required source contexts remain obligations even if this pass remakes
+        # its includes before dispatching the final goal. They are not fake jobs.
+        native_slots = {(event["job"]["target"], event["job"]["command_line"]) for event in jobs}
+        if self.scope_graph_error is None:
+            for unit, _ in recipes:
+                if unit.active is not True or unit.recipe_ordinal is None:
+                    continue
+                for target in self.scope_parents:
+                    mode.checkpoint()
+                    matches = self.matching_rule(unit.source_rule, target)
+                    if len(matches) != 1 or (target, unit.recipe_ordinal) in native_slots:
+                        continue
+                    context = graph._ScopeContext(
+                        target, matches[0], "obligation", unit.source_rule, unit.recipe_ordinal,
+                    )
+                    self.retain_scope_context(unit, context)
+
+    def deferred_expression(self, mode, expression, context):
+        if context is None:
+            return mode.effectful(expression, automatic=True)
+        with mode.using_scope(context):
+            return mode.effectful(expression, automatic=True)
+
+    def classify_export(self, mode, name, context):
+        if context is not None:
+            with mode.using_scope(context):
+                return self.classify_export(mode, name, None)
+        bindings = mode.binding(name)
+        if len(bindings) != 1:
+            raise MakeProbeError("export has an ambiguous original binding: " + name)
+        binding = next(iter(bindings))
+        if _export_expands(binding):
+            self.expanding_exports.add(name)
+            if mode.effectful("$(" + name + ")", automatic=True):
+                raise MakeProbeError("original exported execution has an unproven effect or binding")
+        elif not _fixed_environment_binding(name, binding):
+            if name not in self.data_exports:
+                self.session.budget.charge("cache", len(encoded((
+                    "export-data", name, binding.origin, binding.flavor, binding.value,
+                ))))
+            self.data_exports.add(name)
+
     def prepare_deferred_reads(self, stream):
         mode = stream.mode_state
         if not mode.original_namespace_valid:
-            raise MakeProbeError("original source has an unproven execution context")
+            detail = ""
+            if mode.first_uncertainty is not None:
+                site, reason, name = mode.first_uncertainty
+                detail = ": " + (site.label() if site is not None else "<original input>") + ": " + reason
+                if name:
+                    detail += " [" + name + "]"
+            raise MakeProbeError("original source has an unproven execution context" + detail)
         self.unproven_scoped_names = set().union(
             *(values.keys() for values in mode.target_definitions.values())
         ) if mode.target_definitions else set()
@@ -137,7 +408,7 @@ class SourcePass:
             if unit.active is False:
                 continue
             if unit.text.startswith("\t"):
-                recipes.append(unit.text[1:])
+                recipes.append((unit, unit.text[1:]))
             else:
                 header, inline = graph.split_inline_recipe(unit.text)
                 if graph.CONDITIONAL_NAME.match(header):
@@ -146,31 +417,26 @@ class SourcePass:
                 if assignment is not None and "private" in header[:assignment.start("name")].split():
                     self.unproven_scoped_names.add(assignment["name"])
                 if inline:
-                    recipes.append(inline)
+                    recipes.append((unit, inline))
+        if mode.scope_declarations:
+            self.prepare_scope_contexts(mode, stream, recipes)
+        mode.scope_lookup_guard = self.require_scoped_context
         controls = graph.INVOCATION_CONTROL_READS | graph.SOURCE_HISTORY_CONTROLS | {"MAKELEVEL"}
         self.deferred_execution = True
         try:
-            for expression in recipes:
-                if mode.effectful(expression, automatic=True):
-                    raise MakeProbeError("original deferred execution has an unproven effect or binding")
-            for name in self.exports:
-                if name in controls:
-                    continue
-                if name in self.unproven_scoped_names:
-                    raise MakeProbeError("export has an unproven target/private binding: " + name)
-                bindings = mode.binding(name)
-                if len(bindings) != 1:
-                    raise MakeProbeError("export has an ambiguous original binding: " + name)
-                binding = next(iter(bindings))
-                if _export_expands(binding):
-                    self.expanding_exports.add(name)
-                    if mode.effectful("$(" + name + ")", automatic=True):
-                        raise MakeProbeError("original exported execution has an unproven effect or binding")
-                elif not _fixed_environment_binding(name, binding):
-                    self.session.budget.charge("cache", len(encoded((
-                        "export-data", name, binding.origin, binding.flavor, binding.value,
-                    ))))
-                    self.data_exports.add(name)
+            for unit, expression in recipes:
+                for context in self.recipe_contexts.get(id(unit), (None,)):
+                    if self.deferred_expression(mode, expression, context):
+                        raise MakeProbeError("original deferred execution has an unproven effect or binding")
+            if mode.scope_declarations:
+                for event in self.proof.jobs.get(self.part.number, ()):
+                    context = self.job_contexts.get(event["sequence"])
+                    for name in event["environment"].keys() - controls:
+                        self.classify_export(mode, name, context)
+            else:
+                for name in self.exports:
+                    if name not in controls:
+                        self.classify_export(mode, name, None)
         finally:
             self.deferred_execution = False
 
@@ -284,10 +550,13 @@ class OriginalSourceProof:
         dispatches = {event["dispatch"]: origins[event["origin"]]
                       for event in observation.source_effects["events"] if event["kind"] == "dispatch"}
         self.exports = {}
+        self.jobs = {}
         for event in observation.semantics["native_dispatches"]:
             origin = dispatches[event["sequence"]]
             if _recipe_export_context(origin, event):
                 self.exports.setdefault(origin["pass"], set()).update(event["environment"])
+                self.session.budget.charge("cache", len(encoded((origin["pass"], event["sequence"]))))
+                self.jobs.setdefault(origin["pass"], []).append(event)
 
     def _published_visit(self, visit, minimum=0):
         if visit.source is None:

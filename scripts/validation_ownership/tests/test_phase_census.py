@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts.validation_ownership import graph_probe, make_probe, phase_census, read_epochs, source_directories
-from scripts.validation_ownership.budget import MakeProbeError
+from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
 from scripts.validation_ownership.tests import test_source_phases as phases
 from scripts.validation_ownership.tests import test_foundation as foundation
 
@@ -27,6 +27,482 @@ class PhaseCensusTests(unittest.TestCase):
             "all", variables=("HIDDEN", "FILES"), commands=self.case.commands(session),
             observe_source_journal=True, source_journal_mode=source_directories.MODE,
         )
+
+    def test_scoped_model_preserves_raw_append_and_source_time_rhs(self):
+        mode = graph_probe._MakeSourceMode(
+            original_input=lambda name: {"origin": "undefined", "flavor": "undefined", "value": ""},
+            original_execution=lambda *arguments: None,
+        )
+        list(graph_probe.make_source_units(
+            "BASE := early\nFLAGS := global\nunit.o: TOOL := $(BASE)\n"
+            "unit.o: FLAGS += $(TAIL)\nTAIL := first\nBASE := late\nTAIL := final\n",
+            mode=mode,
+        ))
+        self.assertEqual(mode.raw_binding("TOOL", "unit.o"),
+                         frozenset((graph_probe._ModeBinding("file", "simple", "early"),)))
+        raw, = mode.raw_binding("FLAGS", "unit.o")
+        self.assertEqual((raw.origin, raw.flavor, raw.value), ("file", "recursive", "$(TAIL)"))
+        context = graph_probe._ScopeContext("unit.o", "unit.o", "assignment")
+        with mode.using_scope(context):
+            self.assertEqual(mode.literal_text("$(TOOL)|$(FLAGS)"), "early|global final")
+            self.assertEqual(mode.literal_text("$(value FLAGS)|$(flavor FLAGS)"), "$(TAIL)|recursive")
+        self.assertIsNone(mode.scope_context)
+        self.assertEqual(mode.literal_text("$(FLAGS)"), "global")
+        list(graph_probe.make_source_units(
+            "VALUES := one.c two.h\nCOMPOSED = $(filter %.c,$(VALUES))\nunit.o: COMPOSED +=\n"
+            "VALUES := late.c\n",
+            mode=mode,
+        ))
+        with mode.using_scope(context):
+            self.assertEqual(mode.exact_reference("COMPOSED"), "late.c ")
+
+    def test_unproved_scope_selector_grammar_stays_held(self):
+        for selector, prelude in (
+            ("$($(SELECTOR))", "SELECTOR := TARGET\nTARGET := unit.o\n"),
+            (r"unit\ name.o", ""),
+            ("dir/%/%.o", ""),
+            ("$(MISSING)", ""),
+        ):
+            mode = graph_probe._MakeSourceMode(
+                original_input=lambda name: {"origin": "undefined", "flavor": "undefined", "value": ""},
+                original_execution=lambda *arguments: None,
+            )
+            with self.subTest(selector=selector), self.assertRaises(MakeProbeError):
+                list(graph_probe.make_source_units(prelude + selector + ": FLAGS := local\n", mode=mode))
+
+    def test_scoped_state_uses_existing_count_byte_and_deadline_bounds(self):
+        def make_mode(budget):
+            return graph_probe._MakeSourceMode(
+                budget=budget,
+                original_input=lambda name: {"origin": "undefined", "flavor": "undefined", "value": ""},
+                original_execution=lambda *arguments: None,
+            )
+        budget = ProbeBudget(Limits(observations=1))
+        try:
+            mode = make_mode(budget)
+            with self.assertRaisesRegex(MakeProbeError, "scoped binding count"):
+                list(graph_probe.make_source_units("one: FLAGS := first\ntwo: FLAGS := second\n", mode=mode))
+            self.assertEqual(mode.declared_scopes(), {("one", "FLAGS")})
+            self.assertNotIn("two", mode.target_definitions)
+            self.assertGreater(budget.bytes["cache"], 0)
+        finally:
+            budget.close()
+        budget = ProbeBudget(Limits(cache_bytes=1))
+        try:
+            mode = make_mode(budget)
+            with self.assertRaisesRegex(MakeProbeError, "cache byte"):
+                list(graph_probe.make_source_units("one: FLAGS := first\n", mode=mode))
+            self.assertEqual(mode.scope_declarations, [])
+        finally:
+            budget.close()
+        budget = ProbeBudget()
+        mode = make_mode(budget)
+        budget.close()
+        with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
+            list(graph_probe.make_source_units("one: FLAGS := first\n", mode=mode))
+
+    def scoped_source_fixture(self, family):
+        source = {name: (foundation.ROOT / name).read_text()
+                  for name in ("Makefile", "modern.mk")}
+
+        def statement(path, prefix):
+            lines = source[path].splitlines(keepends=True)
+            indices = [index for index, line in enumerate(lines) if line.startswith(prefix)]
+            self.assertEqual(len(indices), 1)
+            start = stop = indices[0]
+            while lines[stop].rstrip("\n").endswith("\\"):
+                stop += 1
+            return "".join(lines[start:stop + 1])
+
+        def interval(path, start, following):
+            offset = source[path].index(start)
+            return source[path][offset:source[path].index(following, offset + len(start))]
+
+        legacy_objects = ("src/agb_sram.o", "src/bmitem.o", "src/m4a.o", "src/rng.o")
+        modern_objects = ("src/agb_sram.o", "src/m4a.o", "src/banim-ekrbattle.o", "src/rng.o")
+        if family == "lz":
+            targets = (
+                "graphics/misc/opinfo_letter/letter_00.4bpp.lz",
+                "graphics/banim/dragonfx/Img_DemonLightSprites_087A5BA4.4bpp.lz",
+                "graphics/misc/opinfo_letter/letter_00.8bpp.lz",
+            )
+            program = (
+                ".DEFAULT_GOAL := all\nEXE :=\n"
+                + statement("Makefile", "GBAGFX     :=")
+                + statement("Makefile", "%.4bpp: %.png")
+                + statement("Makefile", "%.8bpp: %.png")
+                + statement("Makefile", "%.lz: % ;")
+                + statement("Makefile", "graphics/misc/opinfo_letter/%.4bpp.lz:")
+                + statement("Makefile", targets[1] + ":")
+                + ".PHONY: all\nall: " + " ".join(targets) + "\n"
+            )
+            for path in (
+                "graphics/misc/opinfo_letter/letter_00.png",
+                "graphics/banim/dragonfx/Img_DemonLightSprites_087A5BA4.png",
+            ):
+                self.fixture.add(path, (foundation.ROOT / path).read_bytes())
+            for target in targets:
+                self.fixture.add(target[:-3], bytes(range(64 if ".8bpp" in target else 32)))
+            names = ("LZ_FLAGS", "GBAGFX")
+        elif family == "legacy":
+            targets = legacy_objects
+            program = ".DEFAULT_GOAL := all\nEXE :=\n" + "".join(
+                statement("Makefile", prefix) for prefix in (
+                    "PREFIX ?=", "CPP ?=", "CPPFLAGS :=", "CC1     :=", "CC1_OLD :=",
+                    "CC1FLAGS :=", "DEPS_DIR     :=",
+                )
+            )
+            program += "LEGACY_C_OBJECTS := " + " ".join(targets) + "\n"
+            program += "".join(statement("Makefile", prefix) for prefix in (
+                "src/agb_sram.o: CC1FLAGS :=", "src/m4a.o: CC1 :=",
+                "src/bmitem.o: CC1FLAGS +=", "src/menu_def.o: CC1FLAGS +=",
+                "$(LEGACY_C_OBJECTS): %.o: %.c",
+            ))
+            compiler = "\t$(CPP) $(CPPFLAGS) $< | iconv -f UTF-8 -t CP932 | $(CC1) $(CC1FLAGS) -o $*.s\n"
+            self.assertIn(compiler, source["Makefile"])
+            program += compiler + ".PHONY: all\nall: $(LEGACY_C_OBJECTS)\n"
+            for target in targets:
+                self.fixture.add(".dep/" + target[:-2] + ".d", "# pre-existing bounded fixture input\n")
+                self.fixture.add(target[:-2] + ".c", (foundation.ROOT / (target[:-2] + ".c")).read_bytes())
+            names = ("CC1", "CC1FLAGS", "CC1_OLD")
+        else:
+            self.assertEqual(family, "modern")
+            targets = tuple("build/expansion-modern/release/aapcs/" + name for name in modern_objects)
+            program = (
+                ".DEFAULT_GOAL := all\nMODERN_CONFIG := release\nMODERN_ABI := aapcs\n"
+                "MODERN_CC := arm-none-eabi-gcc\nMODERN_DRIVER_FLAGS :=\n"
+                "MODERN_DEFINE_FLAGS :=\nMODERN_INCLUDE_FLAGS := -Iinclude -I.\n"
+                + "".join(statement("modern.mk", prefix) for prefix in (
+                    "MODERN_ARCH_FLAGS :=", "MODERN_LANGUAGE_FLAGS :=", "MODERN_RUNTIME_FLAGS :=",
+                    "MODERN_LAYOUT_FLAGS :=", "MODERN_WARNING_FLAGS :=",
+                ))
+                + interval("modern.mk", "ifeq ($(MODERN_CONFIG),debug)\n", "MODERN_CFLAGS :=")
+                + "".join(statement("modern.mk", prefix) for prefix in (
+                    "MODERN_CFLAGS :=", "MODERN_BUILD_ROOT :=", "MODERN_OUTPUT_DIR :=",
+                    "MODERN_BANIM_OVERLAY_LAYOUT_FLAGS :=",
+                    "$(MODERN_OUTPUT_DIR)/src/agb_sram.o: MODERN_CFLAGS +=",
+                    "$(MODERN_OUTPUT_DIR)/src/m4a.o: MODERN_CFLAGS +=",
+                    "$(MODERN_OUTPUT_DIR)/src/banim-ekrbattle.o: MODERN_CFLAGS +=",
+                ))
+                + interval("modern.mk", "$(MODERN_OUTPUT_DIR)/%.o: %.c\n",
+                           "ifneq ($(strip $(MODERN_UI_PRESENTATION_AVAILABLE)),)")
+                + ".PHONY: all\nall: " + " ".join(targets) + "\n"
+            )
+            for target in modern_objects:
+                self.fixture.add(target[:-2] + ".c", (foundation.ROOT / (target[:-2] + ".c")).read_bytes())
+            names = ("MODERN_CFLAGS", "MODERN_BANIM_OVERLAY_LAYOUT_FLAGS")
+        self.fixture.add("Makefile", program)
+        return targets, names
+
+    def scoped_observation(self, session, names):
+        return session.make(
+            "all", definitions=names, commands={}, observe_recipe_dispatch=True,
+            observe_source_journal=True, source_journal_mode=source_directories.MODE,
+        )
+
+    def assert_scoped_values(self, family, targets, observed, stream):
+        mode = stream.mode_state
+        phase = mode.scope_lookup_guard.__self__
+        checked = set()
+        for event in observed.semantics["native_dispatches"]:
+            target = event["job"]["target"]
+            if target not in targets:
+                continue
+            words = shlex.split(event["arguments"][2].rstrip(";"))
+            if words[:2] == ["mkdir", "-p"]:
+                continue
+            context = phase.job_contexts[event["sequence"]]
+            with mode.using_scope(context):
+                if family == "lz":
+                    value = mode.literal_text("$(LZ_FLAGS)")
+                    self.assertEqual(shlex.split(value), words[3:])
+                elif family == "legacy":
+                    start = max(index for index, word in enumerate(words) if word == "|") + 1
+                    self.assertEqual(mode.literal_text("$(CC1)"), words[start])
+                    self.assertEqual(shlex.split(mode.literal_text("$(CC1FLAGS)")), words[start + 1:-2])
+                else:
+                    self.assertEqual(shlex.split(mode.literal_text("$(MODERN_CFLAGS)")),
+                                     words[1:words.index("-MMD")])
+            checked.add(target)
+        self.assertEqual(checked, set(targets))
+        self.assertIsNone(mode.scope_context)
+
+    def test_original_scoped_lz_legacy_modern_values_use_actual_job_contexts(self):
+        for family in ("lz", "legacy", "modern"):
+            targets, names = self.scoped_source_fixture(family)
+            ordinary = subprocess.run(
+                ["/usr/bin/make", "-rR", "-n", "--no-print-directory", "all"],
+                cwd=self.fixture.root, env=graph_probe.ENVIRONMENT, capture_output=True, timeout=20,
+            )
+            self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+            with self.subTest(family=family), self.case.session() as session:
+                observed = self.scoped_observation(session, names)
+                usage, _, streams, per_pass = phase_census.analyze(session, observed, "all", (), {})
+                self.assertEqual(len(per_pass), 1)
+                self.assertTrue(observed.source_journal["closed"])
+                self.assert_scoped_values(family, targets, observed, streams[0])
+                mode = streams[0].mode_state
+                if family == "lz":
+                    self.assertIn("LZ_FLAGS", usage["recipe"])
+                    self.assertEqual(len(observed.semantics["native_dispatches"]), 6)
+                    self.assertEqual(mode.literal_text("$(origin LZ_FLAGS)"), "undefined")
+                elif family == "legacy":
+                    self.assertIn(("src/menu_def.o", "CC1FLAGS"), mode.declared_scopes())
+                    raw, = mode.raw_binding("CC1FLAGS", "src/bmitem.o")
+                    self.assertEqual((raw.flavor, raw.value), ("recursive", "-Wno-error"))
+                    self.assertIn(b"arm-none-eabi-cpp", ordinary.stdout)
+                    self.assertTrue(observed.semantics["native_dispatches"][0]["arguments"][2].startswith("cc -E "))
+                else:
+                    name = "build/expansion-modern/release/aapcs/src/banim-ekrbattle.o"
+                    raw, = mode.raw_binding("MODERN_CFLAGS", name)
+                    self.assertEqual((raw.flavor, raw.value),
+                                     ("recursive", "$(MODERN_BANIM_OVERLAY_LAYOUT_FLAGS)"))
+            self.fixture.assert_clean(session)
+
+    def test_original_scope_holds_restore_independently_on_native_witnesses(self):
+        assign = graph_probe._MakeSourceMode.assign
+        scopes = graph_probe._MakeSourceMode.assign_original_scopes
+        require = phase_census.SourcePass.require_scoped_context
+        for family in ("lz", "legacy", "modern"):
+            targets, names = self.scoped_source_fixture(family)
+            with self.subTest(family=family), self.case.session() as session:
+                observed = self.scoped_observation(session, names)
+                _, _, streams, _ = phase_census.analyze(session, observed, "all", (), {})
+                self.assert_scoped_values(family, targets, observed, streams[0])
+                restored = []
+                if family == "lz":
+                    def old_pattern(mode, assignment, target, **kwargs):
+                        if target and "%" in target:
+                            restored.append("pattern")
+                            mode.uncertain("unproven target-specific assignment context")
+                            return graph_probe._AssignmentEffect(None, None)
+                        return scopes(mode, assignment, target, **kwargs)
+                    owner, name, replacement = graph_probe._MakeSourceMode, "assign_original_scopes", old_pattern
+                elif family == "legacy":
+                    def old_rhs(mode, name, operator, value, **kwargs):
+                        if kwargs.get("scope") is not None and operator in graph_probe.SIMPLE_ASSIGNMENT_OPERATORS \
+                                and graph_probe.references(value):
+                            restored.append("rhs")
+                            mode.uncertain("unproven target-specific RHS expansion context")
+                        return assign(mode, name, operator, value, **kwargs)
+                    owner, name, replacement = graph_probe._MakeSourceMode, "assign", old_rhs
+                else:
+                    def old_read(phase, mode, name):
+                        if phase.deferred_execution and name in phase.unproven_scoped_names:
+                            restored.append("read")
+                            raise MakeProbeError("original execution has an unproven target/private binding: " + name)
+                        return require(phase, mode, name)
+                    owner, name, replacement = phase_census.SourcePass, "require_scoped_context", old_read
+                with patch.object(owner, name, replacement):
+                    with self.assertRaises(MakeProbeError):
+                        phase_census.analyze(session, observed, "all", (), {})
+                self.assertTrue(restored)
+                self.assertFalse(session.budget.failed)
+                self.assertTrue(observed.source_journal["closed"])
+            self.fixture.assert_clean(session)
+
+    def test_scoped_globalizing_and_append_base_removals_lose_native_consistency(self):
+        targets, names = self.scoped_source_fixture("modern")
+        binding = graph_probe._MakeSourceMode.binding
+        parts = graph_probe._MakeSourceMode.binding_parts
+
+        def globalized(mode, name, scope=None):
+            if scope is None and mode.scope_context is not None and mode.scope_context.kind == "recipe":
+                return mode.raw_binding(name)
+            return binding(mode, name, scope)
+
+        def without_base(mode, value):
+            return parts(mode, value)[-1:]
+
+        with self.case.session() as session:
+            observed = self.scoped_observation(session, names)
+            _, _, streams, _ = phase_census.analyze(session, observed, "all", (), {})
+            self.assert_scoped_values("modern", targets, observed, streams[0])
+            for name, replacement in (("binding", globalized), ("binding_parts", without_base)):
+                with self.subTest(removal=name), patch.object(graph_probe._MakeSourceMode, name, replacement):
+                    with self.assertRaisesRegex(MakeProbeError, "target/private binding"):
+                        phase_census.analyze(session, observed, "all", (), {})
+                self.assertFalse(session.budget.failed)
+        self.fixture.assert_clean(session)
+
+    def test_scoped_original_rhs_append_versions_and_terminal_borrowing(self):
+        self.fixture.add("Makefile", (
+            ".DEFAULT_GOAL := all\nBASE := early\nFLAGS := global\n"
+            "unit.o: TOOL := $(BASE)\nunit.o: FLAGS += $(TAIL)\n"
+            "BASE := late\nTAIL := first\nTAIL := final\nall: unit.o\n"
+            "unit.o:\n\t@printf '%s\\n' '$(TOOL)' '$(FLAGS)' '$(value FLAGS)' '$(flavor FLAGS)'\n"
+        ))
+        with self.case.session() as session:
+            observed = self.scoped_observation(session, ("BASE", "FLAGS", "TOOL", "TAIL"))
+            _, _, streams, _ = phase_census.analyze(session, observed, "all", (), {})
+            mode = streams[0].mode_state
+            phase = mode.scope_lookup_guard.__self__
+            context = phase.job_contexts[observed.semantics["native_dispatches"][0]["sequence"]]
+            with mode.using_scope(context):
+                self.assertEqual(mode.literal_text("$(TOOL)|$(FLAGS)"), "early|global final")
+                self.assertEqual(mode.literal_text("$(value FLAGS)|$(flavor FLAGS)"), "$(TAIL)|recursive")
+            self.assertEqual(observed.semantics["definitions"]["global"]["BASE"]["value"], "late")
+            local = next(row["variables"] for row in observed.semantics["definitions"]["files"]
+                         if row["target"] == "unit.o")
+            self.assertEqual(local["TOOL"]["value"], "early")
+            self.assertIn("global final", graph_probe._event_command(observed.semantics["native_dispatches"][0]))
+            assign = graph_probe._MakeSourceMode.assign_original_scopes
+            borrowed = []
+
+            def terminal_rhs(current, assignment, target, **kwargs):
+                result = assign(current, assignment, target, **kwargs)
+                reference = graph_probe.NAME_PART.fullmatch(assignment["value"].strip())
+                if assignment["operator"] == ":=" and reference is not None:
+                    name = reference[1] or reference[2]
+                    value = observed.semantics["definitions"]["global"][name]["value"]
+                    current.retain_binding(assignment["name"], (
+                        graph_probe._ModeBinding("file", "simple", value),
+                    ), target)
+                    borrowed.append(value)
+                return result
+
+            with patch.object(graph_probe._MakeSourceMode, "assign_original_scopes", terminal_rhs):
+                with self.assertRaisesRegex(MakeProbeError, "target/private binding"):
+                    phase_census.analyze(session, observed, "all", (), {})
+            self.assertEqual(borrowed, ["late"])
+            with mode.using_scope(copy.copy(context)):
+                with self.assertRaisesRegex(MakeProbeError, "target/private binding"):
+                    mode.literal_text("$(FLAGS)")
+        self.fixture.assert_clean(session)
+        with mode.using_scope(context):
+            with self.assertRaises(MakeProbeError):
+                mode.literal_text("$(FLAGS)")
+
+    def test_scoped_command_line_precedence_eager_reads_and_metadata_laziness(self):
+        cases = (
+            ("unit.o: FLAGS += $(.VARIABLES)\n", (("command-line", "FLAGS", "command"),), True),
+            ("unit.o: FLAGS := $(.VARIABLES)\n", (("command-line", "FLAGS", "command"),), False),
+            ("unit.o: FLAGS = $(.VARIABLES)\n", (), True),
+        )
+        for declaration, state, accepted in cases:
+            metadata = "$(value FLAGS)" if not state else "$(FLAGS)"
+            self.fixture.add("Makefile", (
+                ".DEFAULT_GOAL := all\nunexport FLAGS\n" + declaration
+                + "all: unit.o\nunit.o:\n\t@printf '%s\\n' '" + metadata + "'\n"
+            ))
+            with self.subTest(declaration=declaration), self.case.session() as session:
+                observed = session.make(
+                    "all", definitions=("FLAGS",), assignments=state, commands={},
+                    observe_source_journal=True, source_journal_mode=source_directories.MODE,
+                )
+                command = observed.semantics["native_dispatches"][0]["arguments"]
+                self.assertIn("command" if state else "$(.VARIABLES)", " ".join(command))
+                if accepted:
+                    phase_census.analyze(session, observed, "all", state, {})
+                else:
+                    with self.assertRaises(MakeProbeError):
+                        phase_census.analyze(session, observed, "all", state, {})
+            self.fixture.assert_clean(session)
+
+    def test_unqualified_scoped_contexts_remain_native_backed_refusals(self):
+        cases = (
+            ("unit%.o: FLAGS := one\n%it.o: FLAGS := two\nall: unit.o\n", "overlapping"),
+            ("unit.o: private FLAGS := local\nall: unit.o\n", "target/private"),
+            ("unit.o: override FLAGS := local\nall: unit.o\n", "target/private"),
+            ("unit.o: FLAGS := $@\nall: unit.o\n", "scoped assignment"),
+            ("parent: FLAGS := same\nall: parent\nparent: unit.o\n", "parent-inherited"),
+            ("left: FLAGS := same\nright: FLAGS := same\nall: left right\nleft right: unit.o\n", "shared-child"),
+            ("unused.o: FLAGS := $(.VARIABLES)\nall: unit.o\n", "scoped immediate RHS"),
+        )
+        for declarations, error in cases:
+            self.fixture.add("Makefile", (
+                ".DEFAULT_GOAL := all\nFLAGS := same\n" + declarations
+                + "unit.o:\n\t@printf '%s\\n' '$(FLAGS)'\n"
+            ))
+            with self.subTest(declarations=declarations), self.case.session() as session:
+                observed = self.scoped_observation(session, ("FLAGS",))
+                self.assertTrue(observed.semantics["native_dispatches"])
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    phase_census.analyze(session, observed, "all", (), {})
+            self.fixture.assert_clean(session)
+
+    def test_scoped_source_obligations_survive_an_earlier_remake_pass(self):
+        original = (self.fixture.root / "Makefile").read_text()
+        self.fixture.add("Makefile", original.replace("all: ;\n", (
+            "FLAGS := global\nTAIL := tail\nall: FLAGS += $(TAIL)\n"
+            "all:\n\t@printf '%s' '$(FLAGS)'\n"
+        )))
+        with self.case.session() as session:
+            observed = self.native(session)
+            usage, _, streams, individual = phase_census.analyze(
+                session, observed, "all", (), self.case.commands(session),
+            )
+            self.assertEqual(len(individual), 2)
+            self.assertIn("HIDDEN", individual[0]["defaults"])
+            self.assertNotIn("HIDDEN", individual[1]["defaults"])
+            self.assertIn("HIDDEN", usage["defaults"])
+            first = streams[0].mode_state.scope_lookup_guard.__self__
+            self.assertTrue(any(context.kind == "obligation" and context.job is None
+                                for context in first.issued_contexts.values()))
+            self.assertIn("FLAGS", individual[0]["recipe"])
+            with patch.object(phase_census, "union_usages", side_effect=lambda values: values[-1]):
+                broken, _, _, _ = phase_census.analyze(
+                    session, observed, "all", (), self.case.commands(session),
+                )
+            self.assertNotIn("HIDDEN", broken["defaults"])
+        self.fixture.assert_clean(session)
+
+    def test_scoped_append_flavors_empty_tails_and_simple_dollar_data_are_native(self):
+        cases = (
+            ("FLAGS = base-$(BODY)\nBODY := early\nunit.o: FLAGS += $(TAIL)\n"
+             "BODY := late\nTAIL := final\n", "base-late final"),
+            ("FLAGS := global\nTAIL := early\nunit.o: FLAGS := local\n"
+             "unit.o: FLAGS += $(TAIL)\nTAIL := late\n", "local early"),
+            ("FLAGS := early\nunit.o: FLAGS +=\nFLAGS := late\n", "late "),
+            ("unit.o: FLAGS := $$(error data-not-code)\n", "$(error data-not-code)"),
+            ("VALUES := one.c two.h\nunit.o: FLAGS := $(filter %.c,$(VALUES))\nVALUES := late.c\n", "one.c"),
+            ("VALUES := one.c two.h\nFLAGS := $(filter %.c,$(VALUES))\n"
+             "unit.o: FLAGS += tail\nVALUES := late.c\n", "one.c tail"),
+        )
+        for declarations, expected in cases:
+            self.fixture.add("Makefile", (
+                ".DEFAULT_GOAL := all\n" + declarations
+                + "all: unit.o\nunit.o:\n\t@printf '%s' '$(FLAGS)'\n"
+            ))
+            with self.subTest(declarations=declarations), self.case.session() as session:
+                observed = self.scoped_observation(session, ("FLAGS",))
+                _, _, streams, _ = phase_census.analyze(session, observed, "all", (), {})
+                mode = streams[0].mode_state
+                phase = mode.scope_lookup_guard.__self__
+                event = observed.semantics["native_dispatches"][0]
+                with mode.using_scope(phase.job_contexts[event["sequence"]]):
+                    self.assertEqual(mode.literal_text("$(FLAGS)"), expected)
+                if expected == "late ":
+                    self.assertEqual(observed.semantics["definitions"]["global"]["FLAGS"]["value"], "late")
+                    local = next(row["variables"]["FLAGS"] for row in observed.semantics["definitions"]["files"]
+                                 if row["target"] == "unit.o")
+                    self.assertEqual(local, {"origin": "file", "flavor": "recursive", "value": ""})
+                    self.assertEqual(event["arguments"], ["printf", "%s", "late "])
+                self.assertIn(expected, graph_probe._event_command(event))
+            self.fixture.assert_clean(session)
+
+    def test_one_unproved_scoped_job_cannot_hide_behind_another_context(self):
+        self.fixture.add("Makefile", (
+            ".DEFAULT_GOAL := all\nFLAGS := global\none.o: FLAGS := one\n"
+            "two.o: FLAGS := two\n.PHONY: all\nall: one.o two.o\n%.o:\n\t@printf '%s' '$(FLAGS)'\n"
+        ))
+        corroborate = phase_census.SourcePass.corroborates_recipe
+        with self.case.session() as session:
+            observed = self.scoped_observation(session, ("FLAGS",))
+            phase_census.analyze(session, observed, "all", (), {})
+            rejected = []
+
+            def lose_one(rendered, event):
+                if event["job"]["target"] == "two.o":
+                    rejected.append(event["sequence"])
+                    return False
+                return corroborate(rendered, event)
+
+            with patch.object(phase_census.SourcePass, "corroborates_recipe", staticmethod(lose_one)):
+                with self.assertRaisesRegex(MakeProbeError, "target/private binding"):
+                    phase_census.analyze(session, observed, "all", (), {})
+            self.assertEqual(len(rejected), 1)
+        self.fixture.assert_clean(session)
 
     def test_first_pass_default_survives_actual_final_namespace_and_definition_change(self):
         with self.case.session() as session:
