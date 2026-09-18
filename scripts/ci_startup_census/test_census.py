@@ -144,6 +144,120 @@ class CensusPreparationTests(unittest.TestCase):
         stack.enter_context(patch.object(census.subprocess, "Popen", side_effect=AssertionError("real launch forbidden")))
         return facts, launch
 
+    def observed_cleanup_case(self, status, *, faults=(), prior=None):
+        case = type(self)("test_output_limits_are_the_original_finite_file_limits")
+        real_close, real_dup, real_listdir, real_open = census.os.close, census.os.dup, census.os.listdir, Path.open
+        actual_launch = census.launch_once
+        owned = set()
+        handles, events, shared = {}, [], {}
+        before = len(real_listdir("/proc/self/fd"))
+        case.setUp()
+        child = SimpleNamespace(pid=12345, returncode=None)
+        wait_calls = []
+
+        def failure(point):
+            events.append({
+                "fault": point, "published": shared["result"]["outer_returncode"],
+                "first_error": shared["result"]["first_error"], "child_returncode": child.returncode,
+            })
+            raise OSError(errno.EIO, "controlled " + point + " cleanup failure")
+
+        class Output:
+            def __init__(self, stream, name):
+                self.stream, self.name = stream, name
+
+            def write(self, data):
+                return self.stream.write(data)
+
+            def close(self):
+                self.stream.close()
+                events.append({"close": self.name})
+                if self.name in faults:
+                    failure(self.name)
+
+        def open_stream(path, mode="r", *args, **kwargs):
+            stream = real_open(path, mode, *args, **kwargs)
+            if path.parent == case.output and path.name in {"stdout", "stderr"} and mode == "xb":
+                return Output(stream, path.name)
+            return stream
+
+        def launch(argv, **kwargs):
+            events.append({"mock_launch": list(argv)})
+            handles["reader"] = kwargs["stdin"]
+            if status == 0:
+                kwargs["stdout"].write(case.child_records())
+            kwargs["stderr"].write(b"synthetic mapping refusal\n" if status else b"")
+            return child
+
+        def pidfd(_pid):
+            if prior == "setup":
+                raise OSError(errno.EMFILE, "controlled pre-wait setup failure")
+            descriptor = real_dup(handles["reader"])
+            handles["pidfd"] = descriptor
+            owned.add(descriptor)
+            return descriptor
+
+        def pipe2(flags):
+            reader, writer = real_pipe2(flags)
+            handles["lifetime"] = writer
+            owned.update((reader, writer))
+            return reader, writer
+
+        def close(descriptor):
+            point = next((name for name in ("reader", "lifetime", "pidfd")
+                          if handles.get(name) == descriptor and descriptor in owned), None)
+            real_close(descriptor)
+            owned.discard(descriptor)
+            if point is not None:
+                events.append({"close": point})
+                if point in faults:
+                    failure(point)
+
+        def wait(timeout):
+            wait_calls.append(timeout)
+            if len(wait_calls) == 1 and timeout == census.WAIT_SECONDS:
+                if prior == "wait":
+                    raise subprocess.TimeoutExpired("controlled normal wait", timeout)
+                if prior == "unobserved":
+                    child.returncode = 1
+                    return Mock(name="not-an-observed-exit")
+            child.returncode = status
+            return status
+
+        def observed_launch(*args):
+            shared["result"] = args[-1]
+            return actual_launch(*args)
+
+        child.wait = Mock(side_effect=wait)
+        child.poll = Mock(side_effect=lambda: child.returncode)
+        real_pipe2 = census.os.pipe2
+        try:
+            case.prepare()
+            with ExitStack() as stack:
+                case.run_seams(stack, observed_launch)
+                stack.enter_context(patch.object(census.subprocess, "Popen", side_effect=launch))
+                stack.enter_context(patch.object(census.os, "pipe2", side_effect=pipe2))
+                stack.enter_context(patch.object(census.os, "pidfd_open", side_effect=pidfd))
+                stack.enter_context(patch.object(census.os, "close", side_effect=close))
+                stack.enter_context(patch.object(census.signal, "pthread_sigmask", return_value=set()))
+                stack.enter_context(patch.object(census.signal, "pidfd_send_signal", side_effect=AssertionError(
+                    "mock child settles on its first cleanup wait",
+                )))
+                stack.enter_context(patch.object(Path, "open", open_stream))
+                outcome = census.run(case.harness, case.candidate, case.output, case.event, case.context)
+            result = json.loads((case.output / "result.json").read_text())
+            self.assertEqual((case.output / "stderr").read_bytes(), b"synthetic mapping refusal\n" if status else b"")
+            self.assertEqual((case.output / "stdout").read_bytes(), case.child_records() if status == 0 else b"")
+            self.assertEqual(sum("mock_launch" in event for event in events), 1)
+            self.assertFalse(result["production_acceptance"])
+            self.assertFalse(result["historical_failure_fixed"])
+            return outcome, result, events, wait_calls
+        finally:
+            for descriptor in tuple(owned):
+                real_close(descriptor)
+            case.doCleanups()
+            self.assertEqual(len(real_listdir("/proc/self/fd")), before)
+
     def child_records(self):
         return (
             census.encoded({"kind": "first-outer-entry", "identity": self.scope})
@@ -432,11 +546,11 @@ class CensusPreparationTests(unittest.TestCase):
 
     def test_failed_mapping_is_preserved_once_without_child_facts_or_retry(self):
         self.prepare()
-        def denied(argv, environment, candidate, output, lifecycle, state):
+        def denied(argv, environment, candidate, output, lifecycle, result):
             self.assertEqual(tuple(argv[7:16]), census.NS_ARGUMENTS)
             (output / "stdout").write_bytes(b"")
             (output / "stderr").write_bytes(b"unshare: fixture uid_map denial\n")
-            state.update(watchdog_launched=True, watchdog_reaped=True, pidfd_closed=True, lifetime_closed=True)
+            result["cleanup"].update(watchdog_launched=True, watchdog_reaped=True, pidfd_closed=True, lifetime_closed=True)
             return 1
         with ExitStack() as stack:
             facts, launch = self.run_seams(stack, denied)
@@ -455,7 +569,7 @@ class CensusPreparationTests(unittest.TestCase):
 
     def test_cold_success_is_census_only_not_historical_repair(self):
         self.prepare()
-        def accepted(argv, environment, candidate, output, lifecycle, state):
+        def accepted(argv, environment, candidate, output, lifecycle, result):
             (output / "stdout").write_bytes(self.child_records())
             (output / "stderr").write_bytes(b"")
             return 0
@@ -471,7 +585,7 @@ class CensusPreparationTests(unittest.TestCase):
 
     def test_first_mapping_error_survives_secondary_output_and_cleanup_failures(self):
         self.prepare()
-        def denied(argv, environment, candidate, output, lifecycle, state):
+        def denied(argv, environment, candidate, output, lifecycle, result):
             (output / "stdout").write_bytes(b"not JSON\n")
             (output / "stderr").write_bytes(b"original uid_map denial\n")
             return 1
@@ -519,21 +633,25 @@ class CensusPreparationTests(unittest.TestCase):
         def wait(timeout):
             self.assertEqual(timeout, census.WAIT_SECONDS)
             child.returncode = 1
+            return 1
         child.wait = Mock(side_effect=wait)
         child.poll = Mock(side_effect=lambda: child.returncode)
         state = {"watchdog_launched": False, "watchdog_reaped": True, "pidfd_closed": True, "lifetime_closed": True}
+        outcome = {"cleanup": state, "outer_returncode": None, "first_error": None}
         with patch.object(census.os, "pipe2", return_value=(41, 42)), patch.object(
             census.os, "pidfd_open", return_value=43,
         ), patch.object(census.os, "close") as close, patch.object(
             census.subprocess, "Popen", return_value=child,
         ) as launch, patch.object(census.signal, "pthread_sigmask", return_value={signal.SIGUSR1}) as mask:
             result = census.launch_once(argv, {"PATH": "/usr/bin:/bin"}, self.candidate,
-                                         self.output, FakeLifecycle, state)
+                                         self.output, FakeLifecycle, outcome)
             with patch.object(census, "child_limits") as limit:
                 launch.call_args.kwargs["preexec_fn"]()
             limit.assert_called_once_with()
             self.assertEqual(mask.call_args.args, (signal.SIG_SETMASK, {signal.SIGUSR1}))
         self.assertEqual(result, 1)
+        self.assertEqual(outcome["outer_returncode"], 1)
+        self.assertEqual(outcome["first_error"]["type"], "outer-startup-exit")
         self.assertEqual(launch.call_args.args[0], argv)
         self.assertEqual(launch.call_args.kwargs["stdin"], 41)
         self.assertTrue(launch.call_args.kwargs["close_fds"])
@@ -544,16 +662,18 @@ class CensusPreparationTests(unittest.TestCase):
     def test_launch_failure_still_closes_lifetime_without_signaling_unowned_pid(self):
         self.output.mkdir()
         state = {"watchdog_launched": False, "watchdog_reaped": True, "pidfd_closed": True, "lifetime_closed": True}
+        outcome = {"cleanup": state, "outer_returncode": None, "first_error": None}
         with patch.object(census.os, "pipe2", return_value=(41, 42)), patch.object(
             census.os, "close",
         ) as close, patch.object(census.subprocess, "Popen", side_effect=OSError("launch failed")), patch.object(
             census.signal, "pidfd_send_signal", side_effect=AssertionError("no owned process"),
         ), patch.object(census.signal, "pthread_sigmask", return_value=set()):
             with self.assertRaisesRegex(OSError, "launch failed"):
-                census.launch_once(["fixed"], {}, self.candidate, self.output, FakeLifecycle, state)
+                census.launch_once(["fixed"], {}, self.candidate, self.output, FakeLifecycle, outcome)
         self.assertEqual([call.args[0] for call in close.call_args_list], [42, 41])
         self.assertFalse(state["watchdog_launched"])
         self.assertTrue(state["lifetime_closed"])
+        self.assertIsNone(outcome["outer_returncode"])
 
     def test_timeout_closes_lifetime_then_signals_only_owned_pidfd_and_reaps(self):
         self.output.mkdir()
@@ -565,8 +685,10 @@ class CensusPreparationTests(unittest.TestCase):
             if len(waits) < 3:
                 raise subprocess.TimeoutExpired("fixed fixture", timeout)
             child.returncode = 1
+            return 1
         child.wait, child.poll = Mock(side_effect=wait), Mock(return_value=None)
         state = {"watchdog_launched": False, "watchdog_reaped": True, "pidfd_closed": True, "lifetime_closed": True}
+        outcome = {"cleanup": state, "outer_returncode": None, "first_error": None}
         with patch.object(census.os, "pipe2", return_value=(41, 42)), patch.object(
             census.os, "pidfd_open", return_value=43,
         ), patch.object(census.os, "close", side_effect=lambda fd: events.append(("close", fd))), patch.object(
@@ -575,17 +697,18 @@ class CensusPreparationTests(unittest.TestCase):
             census.signal, "pidfd_send_signal", side_effect=lambda *args: events.append(("signal", args)),
         ):
             with self.assertRaises(subprocess.TimeoutExpired):
-                census.launch_once(["fixed"], {}, self.candidate, self.output, FakeLifecycle, state)
+                census.launch_once(["fixed"], {}, self.candidate, self.output, FakeLifecycle, outcome)
         self.assertEqual(waits, [35, 5, 5])
         self.assertEqual(events, [
             ("close", 41), ("close", 42), ("signal", (43, signal.SIGTERM)), ("close", 43),
         ])
         self.assertTrue(all(state[name] for name in ("watchdog_reaped", "pidfd_closed", "lifetime_closed")))
+        self.assertIsNone(outcome["outer_returncode"])
 
     def test_uncertain_cleanup_never_becomes_success_when_returncode_is_missing(self):
         self.prepare()
-        def timeout(argv, environment, candidate, output, lifecycle, state):
-            state.update(watchdog_launched=True, watchdog_reaped=False, lifetime_closed=False)
+        def timeout(argv, environment, candidate, output, lifecycle, result):
+            result["cleanup"].update(watchdog_launched=True, watchdog_reaped=False, lifetime_closed=False)
             raise subprocess.TimeoutExpired("fixed", 35)
         with ExitStack() as stack:
             _, launch = self.run_seams(stack, timeout)
@@ -595,6 +718,94 @@ class CensusPreparationTests(unittest.TestCase):
         self.assertIsNone(value["outer_returncode"])
         self.assertEqual(value["first_error"]["type"], "TimeoutExpired")
         self.assertFalse(value["cleanup"]["cleanup_confirmed"])
+
+    def test_observed_nonzero_exit_survives_every_fallible_close(self):
+        for faults in ((), ("pidfd",), ("lifetime",), ("stderr",), ("stdout",), ("lifetime", "pidfd")):
+            with self.subTest(faults=faults):
+                status, result, events, waits = self.observed_cleanup_case(1, faults=faults)
+                self.assertEqual(status, 1)
+                self.assertEqual(result["outer_returncode"], 1)
+                self.assertEqual(result["first_error"], {
+                    "type": "outer-startup-exit", "returncode": 1, "raw_stderr_artifact": "stderr",
+                })
+                self.assertEqual(waits, [35])
+                self.assertEqual(result["cleanup"]["cleanup_confirmed"], not faults)
+                self.assertEqual({event["close"] for event in events if "close" in event},
+                                 {"reader", "lifetime", "pidfd", "stdout", "stderr"})
+                if faults:
+                    self.assertEqual(result["secondary_error"]["type"], "OSError")
+                    self.assertEqual(result["secondary_error"]["errno"], errno.EIO)
+                    self.assertTrue(result["secondary_error"]["cleanup_errors"])
+                    for event in events:
+                        if "fault" in event:
+                            self.assertEqual(event["published"], 1)
+                            self.assertEqual(event["first_error"]["type"], "outer-startup-exit")
+                else:
+                    self.assertNotIn("secondary_error", result)
+
+    def test_zero_exit_with_cleanup_error_is_not_a_successful_census(self):
+        for point in ("pidfd", "lifetime", "stderr"):
+            with self.subTest(point=point):
+                status, result, events, waits = self.observed_cleanup_case(0, faults=(point,))
+                self.assertEqual(status, 1)
+                self.assertEqual(result["outer_returncode"], 0)
+                self.assertEqual(result["first_error"]["type"], "OSError")
+                self.assertFalse(result["cleanup"]["cleanup_confirmed"])
+                self.assertFalse(result["post_unshare_census"]["available"])
+                self.assertEqual(waits, [35])
+                event, = [event for event in events if "fault" in event]
+                self.assertEqual(event["published"], 0)
+                self.assertIsNone(event["first_error"])
+        status, result, _events, waits = self.observed_cleanup_case(0)
+        self.assertEqual(status, 0)
+        self.assertTrue(result["cleanup"]["cleanup_confirmed"])
+        self.assertTrue(result["outer_entry_reached"])
+        self.assertEqual(waits, [35])
+
+    def test_pre_status_failures_are_not_replaced_by_cleanup_exits_or_errors(self):
+        for prior, point, expected in (
+            ("setup", "lifetime", "OSError"), ("wait", "pidfd", "TimeoutExpired"),
+            ("wait", "lifetime", "TimeoutExpired"), ("wait", "stderr", "TimeoutExpired"),
+            ("unobserved", "pidfd", "CensusError"),
+        ):
+            with self.subTest(prior=prior, point=point):
+                status, result, events, waits = self.observed_cleanup_case(1, faults=(point,), prior=prior)
+                self.assertEqual(status, 1)
+                self.assertIsNone(result["outer_returncode"])
+                self.assertEqual(result["first_error"]["type"], expected)
+                self.assertIn("controlled pre-wait" if prior == "setup" else
+                              "controlled normal wait" if prior == "wait" else "observed integer",
+                              result["first_error"]["message"])
+                self.assertTrue(result["first_error"]["cleanup_errors"])
+                self.assertFalse(result["cleanup"]["cleanup_confirmed"])
+                self.assertEqual(waits, [5] if prior == "setup" else [35, 5] if prior == "wait" else [35])
+                self.assertTrue(all(event["published"] is None for event in events if "fault" in event))
+                if point == "pidfd":
+                    self.assertEqual(next(event for event in events if event.get("fault") == point)["child_returncode"], 1)
+
+    def test_cleanup_evidence_is_bounded_and_observation_rejects_defaults(self):
+        for notes in (
+            ("x" * (census.RECORD_BYTES * 2),),
+            tuple("diagnostic-" + str(index) for index in range(census.FACT_BYTES)),
+            ("\U0001f600" * census.FACT_BYTES,),
+        ):
+            error = OSError(errno.EIO, "controlled close")
+            error.cleanup_errors = notes
+            record = census._error_record(error)
+            self.assertEqual(record["errno"], errno.EIO)
+            self.assertLessEqual(len(census.encoded(record["cleanup_errors"])), census.FACT_BYTES)
+            self.assertIn("truncated", record["cleanup_errors"][-1])
+        for value in (None, True, Mock(name="default-status")):
+            result = {"outer_returncode": None, "first_error": None}
+            with self.assertRaises(census.CensusError):
+                census._record_outer_exit(result, value)
+            self.assertIsNone(result["outer_returncode"])
+        result = {"outer_returncode": None, "first_error": None}
+        census._record_outer_exit(result, -9)
+        census._record_outer_exit(result, -9)
+        with self.assertRaises(census.CensusError):
+            census._record_outer_exit(result, 0)
+        self.assertEqual(result["first_error"]["returncode"], -9)
 
     def test_output_limits_are_the_original_finite_file_limits(self):
         with patch.object(census.resource, "setrlimit") as limit:

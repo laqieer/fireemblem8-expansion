@@ -69,7 +69,13 @@ window; the child restores the original inherited mask before its original
 file-size limit. The exact argv/deadline is persisted before launch, including
 when a later hard kill prevents a final result.
 Cleanup failures remain failures and preserve uncertainty; they cannot overwrite
-the first mapping error. A pre-existing fixture is not acquired or recursively
+the first mapping error. The integer status returned by the normal wait is
+published before stream, lifetime or pidfd cleanup. A known nonzero status
+stays primary; cleanup diagnostics are bounded secondary evidence and cannot
+confirm cleanup. Zero plus cleanup failure still fails. Earlier setup/wait
+failures remain primary, and a status first obtained while reaping is never
+promoted to a normal observation.
+A pre-existing fixture is not acquired or recursively
 removed after setup refusal; its contents remain intact and cleanup uncertainty
 is explicit. A hard outer kill or setup failure can leave no final
 result record: that is incomplete evidence, never success.
@@ -107,3 +113,11 @@ collect local census facts, execute namespace commands, or import/run the
 production test suite. All original four methods/seven expectations, production
 source, existing Build workflow, permissions, skips and numeric limits remain
 unchanged.
+
+The normal local continuation of reviewed `7a3d3df553b6b9a421c9c8acc33e952d50f6b038`
+retains its `1001ad8e0633f344fbec8fc1ebd508c007d752eb` / BASE history without
+amendment. Its diagnostic-only primary-preservation correction is frozen in
+[comment 5729509326](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5729509326).
+Mocked API/owned-pipe regressions cover normal exit plus stream/lifetime/pidfd
+failure and earlier failures plus cleanup; they execute no collector or child
+workload. The separate exact launch freeze remains required.

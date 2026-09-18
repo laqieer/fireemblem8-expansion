@@ -373,13 +373,64 @@ def child_limits():
     resource.setrlimit(resource.RLIMIT_FSIZE, (STREAM_BYTES, STREAM_BYTES))
 
 
-def launch_once(argv, environment, candidate, output, lifecycle, state):
-    reader = writer = child = descriptor = None
+def _record_outer_exit(result, status):
+    if type(status) is not int:
+        raise CensusError("normal wait did not return an observed integer exit status")
+    known = result["outer_returncode"]
+    if known is not None and (type(known) is not int or known != status):
+        raise CensusError("normal wait exit status changed after observation")
+    result["outer_returncode"] = status
+    if status and result["first_error"] is None:
+        result["first_error"] = {
+            "type": "outer-startup-exit", "returncode": status, "raw_stderr_artifact": "stderr",
+        }
+
+
+def _error_record(error):
+    notes = []
+    marker = " [cleanup diagnostics truncated]"
+    for item in getattr(error, "cleanup_errors", ()):
+        text = str(item)
+        if len(text) <= FACT_BYTES and len(encoded([*notes, text])) <= FACT_BYTES:
+            notes.append(text)
+            continue
+        while notes and len(encoded([*notes, marker])) > FACT_BYTES:
+            text = notes.pop()
+        low, high = 0, min(len(text), FACT_BYTES)
+        while low < high:
+            middle = (low + high + 1) // 2
+            if len(encoded([*notes, text[:middle] + marker])) <= FACT_BYTES:
+                low = middle
+            else:
+                high = middle - 1
+        notes.append(text[:low] + marker)
+        break
+    return {
+        "type": type(error).__name__, "message": str(error)[:FACT_BYTES],
+        "errno": getattr(error, "errno", None), "cleanup_errors": notes,
+    }
+
+
+def launch_once(argv, environment, candidate, output, lifecycle, result):
+    state = result["cleanup"]
+    reader = writer = child = descriptor = stdout = stderr = None
     inherited_mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
 
     def child_setup():
         signal.pthread_sigmask(signal.SIG_SETMASK, inherited_mask)
         child_limits()
+
+    def close_stdout():
+        nonlocal stdout
+        if stdout is not None:
+            stdout.close()
+            stdout = None
+
+    def close_stderr():
+        nonlocal stderr
+        if stderr is not None:
+            stderr.close()
+            stderr = None
 
     def close_reader():
         nonlocal reader
@@ -411,29 +462,33 @@ def launch_once(argv, environment, candidate, output, lifecycle, state):
         state["pidfd_closed"] = True
 
     try:
-        with (output / "stdout").open("xb") as stdout, (output / "stderr").open("xb") as stderr:
-            def acquire():
-                nonlocal child, descriptor, reader, writer
-                reader, writer = os.pipe2(os.O_CLOEXEC)
-                state["lifetime_closed"] = False
-                child = subprocess.Popen(
-                    argv, cwd=candidate, stdin=reader, stdout=stdout, stderr=stderr,
-                    env=environment, close_fds=True, start_new_session=True, preexec_fn=child_setup,
-                )
-                state["watchdog_launched"] = True
-                state["watchdog_reaped"] = False
-                state["watchdog_pid"] = child.pid
-                descriptor = os.pidfd_open(child.pid)
-                state["pidfd_closed"] = False
-                os.close(reader)
-                reader = None
-            lifecycle.finish_cleanup([acquire])
-            child.wait(timeout=WAIT_SECONDS)
-        return child.returncode
+        def acquire():
+            nonlocal child, descriptor, reader, writer, stdout, stderr
+            stdout = (output / "stdout").open("xb")
+            state["streams_closed"] = False
+            stderr = (output / "stderr").open("xb")
+            reader, writer = os.pipe2(os.O_CLOEXEC)
+            state["lifetime_closed"] = False
+            child = subprocess.Popen(
+                argv, cwd=candidate, stdin=reader, stdout=stdout, stderr=stderr,
+                env=environment, close_fds=True, start_new_session=True, preexec_fn=child_setup,
+            )
+            state["watchdog_launched"] = True
+            state["watchdog_reaped"] = False
+            state["watchdog_pid"] = child.pid
+            descriptor = os.pidfd_open(child.pid)
+            state["pidfd_closed"] = False
+            os.close(reader)
+            reader = None
+        lifecycle.finish_cleanup([acquire])
+        status = child.wait(timeout=WAIT_SECONDS)
+        _record_outer_exit(result, status)
+        return status
     finally:
         lifecycle.finish_cleanup(
-            [close_writer, close_reader, reap, close_descriptor,
-             lambda: state.update(lifetime_closed=writer is None and reader is None)],
+            [close_stderr, close_stdout, close_writer, close_reader, reap, close_descriptor,
+             lambda: state.update(lifetime_closed=writer is None and reader is None,
+                                  streams_closed=stdout is None and stderr is None)],
             primary=sys.exc_info()[1],
         )
 
@@ -532,7 +587,7 @@ def run(harness, candidate, output, event, context):
         raise CensusError("planned identity or context disclosure differs")
     write_record(output / "attempt.json", {"identity": scope, "attempts": 1, "claimed_before_setup": True})
     state = {"watchdog_launched": False, "watchdog_reaped": True, "pidfd_closed": True, "lifetime_closed": True,
-             "fixture_owned": False, "fixture_removed": False, "source_unchanged": False,
+             "streams_closed": True, "fixture_owned": False, "fixture_removed": False, "source_unchanged": False,
              "cleanup_confirmed": False}
     result = {"identity": scope, "context_differences": list(CONTEXT_DIFFERENCES),
               "first_error": None, "outer_returncode": None, "outer_entry_reached": False,
@@ -586,20 +641,14 @@ def run(harness, candidate, output, event, context):
         write_record(output / "launch.json", {
             "identity": scope, "argv": argv, "deadline": deadline, "monotonic_start": time.monotonic(),
         })
-        result["outer_returncode"] = launch_once(argv, environment, candidate, output, lifecycle, state)
-        if result["outer_returncode"]:
-            result["first_error"] = {"type": "outer-startup-exit", "returncode": result["outer_returncode"],
-                                     "raw_stderr_artifact": "stderr"}
+        _record_outer_exit(result, launch_once(argv, environment, candidate, output, lifecycle, result))
         stdout = read_bounded(output / "stdout", STREAM_BYTES)
         stderr = read_bounded(output / "stderr", STREAM_BYTES)
         result["stream_bytes"] = {"stdout": len(stdout), "stderr": len(stderr)}
         marker, post = parse_outer(stdout, scope, result["outer_returncode"])
         result["outer_entry_reached"], result["post_unshare_census"] = marker, post
     except (CensusError, OSError, ValueError, subprocess.SubprocessError) as error:
-        record = {
-            "type": type(error).__name__, "message": str(error)[:FACT_BYTES], "errno": getattr(error, "errno", None),
-            "cleanup_errors": list(getattr(error, "cleanup_errors", ())),
-        }
+        record = _error_record(error)
         if result["first_error"] is None:
             result["first_error"] = record
         else:
@@ -641,7 +690,7 @@ def run(harness, candidate, output, event, context):
         state["errors"] = cleanup_errors
         state["cleanup_confirmed"] = (
             state["fixture_removed"] and state["source_unchanged"] and not cleanup_errors
-            and all(state[name] for name in ("watchdog_reaped", "pidfd_closed", "lifetime_closed"))
+            and all(state[name] for name in ("watchdog_reaped", "pidfd_closed", "lifetime_closed", "streams_closed"))
         )
         result["elapsed_seconds"] = time.monotonic() - start
         write_record(output / "result.json", result)
