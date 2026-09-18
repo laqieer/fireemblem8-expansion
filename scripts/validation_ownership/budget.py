@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import os
+import secrets
 import selectors
 import signal
 import stat
@@ -13,9 +14,11 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 if __package__:
+    from . import lifecycle as _lifecycle
     from .lifecycle import finish_cleanup, ordinary_executable
     from .producer_channel import ChannelError
 else:
+    import lifecycle as _lifecycle
     from lifecycle import finish_cleanup, ordinary_executable
     from producer_channel import ChannelError
 
@@ -31,6 +34,195 @@ NAMESPACE_LAUNCHER = (
     "/usr/bin/unshare", "--mount", "--net", "--pid", "--fork",
     "--kill-child", "--propagation", "private",
 )
+
+_OUTCOME_KEY = object()
+_OUTCOME_MAX = 256 * 1024
+_OUTCOME_ENTRIES = 4 + 3 * _lifecycle._ERROR_ENTRIES
+
+
+def _outcome_allocation(output_limit):
+    if not _lifecycle._representation_supported():
+        raise MakeProbeError("unsupported outcome representation")
+    frames, errors = 4 * _lifecycle._FRAME_BYTES, 3 * _lifecycle._ERROR_BYTES
+    reserved = 2 * output_limit + frames + errors
+    # Fixed cells/buffer headers and the one read/conversion scratch fit inside
+    # the frame/report subdivisions while mutable and immutable captures overlap.
+    capture_peak = 2 * output_limit + 2 * _lifecycle._FRAME_BYTES + errors
+    # Parse only after dropping mutable captures. Include the private W record,
+    # all four retained slots, all three reports, and encode/decode/container
+    # workspace (not merely the JSON wire length).
+    decode_peak = (
+        output_limit + frames + errors + 2 * _lifecycle._FRAME_BYTES
+        + _lifecycle._JSON_WORK_BYTES
+    )
+    if max(capture_peak, decode_peak) > reserved:
+        raise MakeProbeError("outcome representation cannot fit the frozen cache reservation")
+    return reserved
+
+
+def _capture_bytes(buffer, size):
+    return bytes(memoryview(buffer)[:size])
+
+
+@dataclass(frozen=True, slots=True)
+class _RunSnapshot:
+    outer_returncode: int | None
+    outer_error: tuple | None
+    outer_stage: str | None
+    stdout: bytes | None = field(repr=False)
+    stderr: bytes | None = field(repr=False)
+    capture_complete: bool
+    capture_available: bool
+    frames: tuple
+    frame_error: str | None
+    custody_complete: bool
+    cleanup: _lifecycle._CleanupValue
+    api_returned: bool
+    reaped: bool
+
+    @property
+    def qualified(self):
+        # Neither the exact prefix nor a token authenticates a future worker.
+        return False
+
+
+class _RunOutcome:
+    __slots__ = (
+        "_budget", "_deadline", "_ordinal", "_token", "_limit", "_spent", "_released",
+        "_binding", "_buffers", "_sizes", "_streams", "_freeze_attempted",
+        "_capture_complete", "_capture_available", "_status", "_error", "_stage",
+        "_frames", "_frame_error", "_parsed", "_cleanup", "_terminal", "_returned",
+        "_reaped", "_snapshot", "_revision",
+    )
+
+    def __init__(self, key, budget, output_limit):
+        if key is not _OUTCOME_KEY:
+            raise TypeError("reserve outcome ownership through its budget")
+        self._budget, self._deadline, self._ordinal = budget, budget.deadline, budget.runs + 1
+        self._token, self._limit = secrets.token_hex(16), output_limit
+        self._spent = self._released = self._freeze_attempted = False
+        self._binding = None
+        self._buffers = [
+            bytearray(4 * _lifecycle._FRAME_BYTES),
+            bytearray(output_limit - 4 * _lifecycle._FRAME_BYTES),
+        ]
+        self._sizes = [0, 0]
+        self._streams = None
+        self._capture_complete = self._capture_available = False
+        self._status = self._error = self._stage = None
+        self._frames = [None] * 4
+        self._frame_error = None
+        self._parsed = self._terminal = self._returned = self._reaped = False
+        self._cleanup = _lifecycle._CleanupReport("C", self._deadline)
+        self._snapshot = None
+        self._revision = -1
+
+    def _live(self):
+        if self._released:
+            raise MakeProbeError("outcome owner was released")
+
+    def _bind_fixture(self, binding):
+        self._live()
+        if (
+            self._spent or self._binding is not None or type(binding) is not _lifecycle._FixtureBinding
+            or binding.deadline != self._deadline
+        ):
+            raise MakeProbeError("invalid private outcome fixture binding")
+        self._binding = binding
+
+    def _observe(self, status, complete):
+        if not _lifecycle._status(status):
+            raise MakeProbeError("outcome normal wait requires a signed integer status")
+        self._status = status
+        self._capture_complete = complete
+
+    def _exception(self, stage, error):
+        if self._error is None:
+            self._stage, self._error = stage, _lifecycle._error_value(error)
+
+    def _append(self, index, chunk):
+        stop = self._sizes[index] + len(chunk)
+        if stop > len(self._buffers[index]):
+            self._budget.reject("outcome stream exceeds its fixed subdivision")
+        self._buffers[index][self._sizes[index]:stop] = chunk
+        self._sizes[index] = stop
+
+    def _freeze(self):
+        if self._freeze_attempted:
+            return
+        self._freeze_attempted = True
+        try:
+            stdout = _capture_bytes(self._buffers[0], self._sizes[0])
+            stderr = _capture_bytes(self._buffers[1], self._sizes[1])
+            self._streams = (stdout, stderr)
+            self._capture_available = True
+        finally:
+            self._buffers = None
+
+    def _parse(self):
+        if self._parsed:
+            return
+        self._parsed = True
+        if not self._capture_available:
+            self._frame_error = "capture-unavailable"
+            return
+        data, offset, count = self._streams[0], 0, 0
+        try:
+            while offset < len(data):
+                if count == 4 or len(data) - offset < 4:
+                    raise ValueError("outcome header/count")
+                size = int.from_bytes(memoryview(data)[offset:offset + 4], "little")
+                if size > _lifecycle._FRAME_BYTES - 4 or size == 0 or size + 4 > len(data) - offset:
+                    raise ValueError("outcome partial/oversize frame")
+                body = data[offset + 4:offset + 4 + size]
+                frame = _lifecycle._decode_frame(
+                    body, self._token, self._binding,
+                    (self._frames[0], self._frames[2]),
+                )
+                slot = (0 if frame.role == "R" else 2) + (frame.phase == "after")
+                if self._frames[slot] is not None:
+                    raise ValueError("outcome duplicate slot")
+                self._frames[slot] = frame
+                body = frame = None
+                count += 1
+                offset += size + 4
+            if count != 4:
+                self._frame_error = "missing-frame"
+        except (ValueError, TypeError, OverflowError, MemoryError, RecursionError) as error:
+            self._frame_error = "invalid-frame"
+            _lifecycle._forget_error(error)
+        if not self._capture_complete and self._frame_error is None:
+            self._frame_error = "capture-incomplete"
+
+    def snapshot(self):
+        self._live()
+        if not self._terminal:
+            raise MakeProbeError("outcome snapshot requires a finished capture attempt")
+        self._parse()
+        if self._snapshot is None or self._revision != self._cleanup.revision:
+            # No owner-held history. Caller aliases must be dropped before later
+            # cleanup/release; invalidation cannot delete external references.
+            self._snapshot = None
+            self._revision = self._cleanup.revision
+            streams = (None, None) if self._streams is None else self._streams
+            self._snapshot = _RunSnapshot(
+                self._status, self._error, self._stage, *streams,
+                self._capture_complete, self._capture_available, tuple(self._frames),
+                self._frame_error, self._frame_error is None, self._cleanup.value(),
+                self._returned, self._reaped,
+            )
+        return self._snapshot
+
+    def release(self):
+        self._live()
+        if self._spent and not self._terminal:
+            raise MakeProbeError("cannot release a running outcome")
+        self._released = True
+        budget, self._budget = self._budget, None
+        self._buffers = self._streams = self._frames = self._snapshot = self._binding = self._cleanup = None
+        self._error = self._sizes = None
+        if budget._outcome is self:
+            budget._outcome = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +285,8 @@ class ProbeBudget:
     closed: bool = field(default=False, init=False)
     session_started: bool = field(default=False, init=False)
     producer_waiters: list = field(default_factory=list, init=False)
+    _outcome: _RunOutcome | None = field(default=None, init=False, repr=False)
+    _outcome_entries: int = field(default=0, init=False, repr=False)
 
     @property
     def deadline(self) -> float:
@@ -166,14 +360,58 @@ class ProbeBudget:
             return data
 
     @staticmethod
-    def _terminate(child: subprocess.Popen, privileged=False):
+    def _terminate(child: subprocess.Popen, privileged=False, *, report=None):
+        if report is not None:
+            _lifecycle._report(report)
+
+            def wait():
+                try:
+                    child.wait(timeout=max(0, report.deadline - time.monotonic()))
+                    if not _lifecycle._status(child.returncode):
+                        raise MakeProbeError("outcome cleanup did not confirm a reap")
+                except BaseException:
+                    if not _lifecycle._status(child.returncode):
+                        report.unsure("wait")
+                    raise
+
+            return finish_cleanup([
+                ("lifetime", lambda: _lifecycle._close_stream(child, "stdin", report)),
+                ("wait", wait),
+            ], report=report)
         # Every launch has a sole-reaper watchdog. This outer Popen may already
         # be reaped: its numeric PID is never authority for a signal.
         if child.stdin is not None:
             child.stdin.close()
         child.wait()
 
-    def close(self):
+    def close(self, *, report=None):
+        if report is not None:
+            _lifecycle._report(report)
+            if (
+                self._outcome is None or self._outcome._cleanup is not report
+                or report.role != "C" or report.deadline != self.deadline
+            ):
+                self.reject("foreign outcome cleanup report")
+            self.closed = True
+
+            def stop(child, privileged):
+                try:
+                    self._terminate(child, privileged, report=report)
+                finally:
+                    if _lifecycle._status(child.returncode):
+                        self.children.pop(child, None)
+
+            actions = []
+            for child, privileged in tuple(self.children.items()):
+                actions.append(("leader", lambda child=child, privileged=privileged: stop(child, privileged)))
+                for name in ("stdout", "stderr"):
+                    actions.append((name, lambda child=child, name=name: _lifecycle._close_stream(child, name, report)))
+            try:
+                finish_cleanup(actions, report=report)
+            except BaseException:
+                self.failed = True
+                raise
+            return
         self.closed = True
         def stop(child, privileged):
             self._terminate(child, privileged)
@@ -182,6 +420,33 @@ class ProbeBudget:
             lambda child=child, privileged=privileged: stop(child, privileged)
             for child, privileged in tuple(self.children.items())
         ])
+
+    def reserve_outcome(self, *, output_limit=262144):
+        self.remaining()
+        if (
+            self.session_started or self.producer_waiters or self._outcome is not None
+            or self.children or self.runs >= self.limits.runs
+            or type(output_limit) is not int or not 4 * _lifecycle._FRAME_BYTES < output_limit <= _OUTCOME_MAX
+            or output_limit > self.limits.process_output_bytes
+            or self.bytes.get("output", 0) + output_limit > self.limits.output_bytes
+            or self._outcome_entries + _OUTCOME_ENTRIES > self.limits.entries
+        ):
+            self.reject("outcome requires one unspent bare-budget reservation")
+        try:
+            size = _outcome_allocation(output_limit)
+        except MakeProbeError:
+            self.failed = True
+            raise
+        self.plan(1, pending=1)
+        self.charge("pending", _lifecycle._FRAME_BYTES)
+        self.charge("cache", size)
+        self._outcome_entries += _OUTCOME_ENTRIES
+        try:
+            self._outcome = _RunOutcome(_OUTCOME_KEY, self, output_limit)
+        except BaseException:
+            self.failed = True
+            raise
+        return self._outcome
 
     def run(
         self,
@@ -195,7 +460,14 @@ class ProbeBudget:
         privileged: bool = False,
         producer_channel=None,
         producer_handler=None,
+        outcome=None,
     ) -> subprocess.CompletedProcess[bytes]:
+        if outcome is not None:
+            return self._run_outcome(
+                argv, env=env, cwd=cwd, output_limit=output_limit, input_data=input_data,
+                category=category, privileged=privileged, producer_channel=producer_channel,
+                producer_handler=producer_handler, outcome=outcome,
+            )
         self.remaining()
         if (producer_channel is None) != (producer_handler is None):
             self.reject("incomplete private producer channel")
@@ -369,6 +641,153 @@ class ProbeBudget:
             except BaseException:
                 self.failed = True
                 raise
+
+    def _run_outcome(
+        self, argv, *, env, cwd, output_limit, input_data, category,
+        privileged, producer_channel, producer_handler, outcome,
+    ):
+        self.remaining()
+        limit = self.limits.process_output_bytes if output_limit is None else output_limit
+        if (
+            type(outcome) is not _RunOutcome or self._outcome is not outcome
+            or outcome._budget is not self or outcome._released or outcome._spent
+            or outcome._ordinal != self.runs + 1 or outcome._deadline != self.deadline
+            or self.session_started or self.producer_waiters or self.children
+            or type(limit) is not int or limit != outcome._limit or category != "output"
+            or input_data is not None or producer_channel is not None or producer_handler is not None
+            or privileged is not True or len(argv) <= len(NAMESPACE_LAUNCHER)
+            or tuple(argv[:len(NAMESPACE_LAUNCHER)]) != NAMESPACE_LAUNCHER
+        ):
+            self.reject("outcome requires its single-use exact guarded bare-budget launch")
+        if (
+            self.runs >= self.limits.runs or limit > self.limits.process_output_bytes
+            or self.bytes.get("output", 0) + limit > self.limits.output_bytes
+            or sum(self.bytes.values()) + limit > self.limits.total_bytes
+        ):
+            self.reject("outcome stream reservation exceeds remaining budget")
+        outcome._spent = True
+        self.runs += 1
+        child = selector = result = None
+        primary = None
+        stage = "setup"
+        report = outcome._cleanup
+        try:
+            ordinary_executable(argv[0])
+            ordinary_executable(argv[len(NAMESPACE_LAUNCHER)])
+            mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+            acquisition_error = None
+            try:
+                signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGINT, signal.SIGTERM))
+                launcher = [
+                    "/usr/bin/sudo", "-n", "--", "/usr/bin/python3", "-I", "-S", "-B",
+                    str(Path(__file__).resolve().with_name("lifecycle.py")), str(self.deadline),
+                    "--outcome-v1", outcome._token, "--", *argv,
+                ]
+                self.charge("pending", sum(len(os.fsencode(arg)) + 1 for arg in launcher))
+                if sum(self.bytes.values()) + limit > self.limits.total_bytes:
+                    self.reject("outcome aggregate stream headroom exhausted before launch")
+                child = subprocess.Popen(
+                    launcher, cwd=cwd, env=env, stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, pass_fds=(),
+                    close_fds=True, start_new_session=True,
+                    preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, mask),
+                )
+                self.children[child] = True
+            except BaseException as error:
+                acquisition_error = error
+                outcome._exception("setup", error)
+                raise
+            finally:
+                report.attempt("mask")
+                try:
+                    signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+                except BaseException as error:
+                    report.unsure("mask")
+                    report.error("mask", error)
+                    if acquisition_error is None:
+                        raise
+                    if error is not acquisition_error:
+                        _lifecycle._forget_error(error)
+            selector = selectors.DefaultSelector()
+            body_error = None
+            try:
+                for index, stream in enumerate((child.stdout, child.stderr)):
+                    os.set_blocking(stream.fileno(), False)
+                    selector.register(stream, selectors.EVENT_READ, index)
+                eof = 0
+                stage = "capture"
+                while selector.get_map():
+                    for key, _ in selector.select(min(self.remaining(), 0.05)):
+                        if key.fd not in selector.get_map():
+                            continue
+                        available = len(outcome._buffers[key.data]) - outcome._sizes[key.data]
+                        chunk = os.read(key.fd, min(_lifecycle._FRAME_BYTES, available + 1))
+                        if not chunk:
+                            selector.unregister(key.fileobj)
+                            eof |= 1 << key.data
+                            continue
+                        self.charge("output", len(chunk))
+                        outcome._append(key.data, chunk)
+                        chunk = None
+                stage = "wait"
+                status = child.wait(timeout=self.remaining())
+                outcome._observe(status, eof == 3)
+                if type(child.returncode) is not int or child.returncode != status:
+                    raise MakeProbeError("outcome normal wait/reap disagreement")
+                stage = "freeze"
+                outcome._freeze()
+                self.remaining()
+            except BaseException as error:
+                body_error = error
+                outcome._exception(stage, error)
+                raise
+            finally:
+                stage = "selector"
+                finish_cleanup([("selector", selector.close)], primary=body_error, report=report)
+                selector = None
+            stage = "freeze"
+            result = subprocess.CompletedProcess(argv, outcome._status, *outcome._streams)
+        except BaseException as error:
+            primary = error
+            outcome._exception(stage, error)
+            self.failed = True
+            raise
+        finally:
+            if not outcome._freeze_attempted:
+                try:
+                    outcome._freeze()
+                except BaseException as error:
+                    report.error("freeze", error)
+                    if primary is None:
+                        primary = error
+                    elif error is not primary:
+                        _lifecycle._forget_error(error)
+            actions = []
+            if child is not None:
+                def stop():
+                    try:
+                        self._terminate(child, True, report=report)
+                    finally:
+                        if _lifecycle._status(child.returncode):
+                            self.children.pop(child, None)
+                actions.append(("leader", stop))
+                for name in ("stdout", "stderr"):
+                    actions.append((name, lambda name=name: _lifecycle._close_stream(child, name, report)))
+            try:
+                finish_cleanup(actions, primary=primary, report=report)
+            except BaseException as error:
+                self.failed = True
+                outcome._exception("cleanup", error)
+                raise
+            finally:
+                outcome._terminal = True
+                outcome._reaped = child is not None and child not in self.children
+            if primary is not None and not self.failed:
+                self.failed = True
+                outcome._exception("freeze", primary)
+                raise primary
+        outcome._returned = True
+        return result
 
 
 def text(data: bytes, boundary: str, encoding: str = "utf-8") -> str:

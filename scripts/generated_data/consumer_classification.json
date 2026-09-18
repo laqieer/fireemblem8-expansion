@@ -4560,6 +4560,10 @@
     "tools/gba-playtest/tests/test_debugtools_registry.py|tool-symbol|chapter|test_selector_default_and_commit_are_chapter4": {
       "category": "reviewed-exclusion",
       "reason": "a unittest method name describing a fixed regression assertion, not a runtime/generated-data chapter ID consumer"
+    },
+    "tools/gba-playtest/tests/test_host_only_mode.py|tool-symbol|character|pid": {
+      "category": "reviewed-exclusion",
+      "reason": "Operating-system grandchild process identifier in bounded profile-lifecycle tests, read from an owned fixture and passed to os.pidfd_open; it is not a Fire Emblem character ID or generated-data consumer."
     }
   },
   "schema_version": 1

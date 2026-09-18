@@ -7,6 +7,7 @@ import ctypes
 import errno
 import json
 import os
+import stat
 import sys
 from pathlib import Path
 
@@ -67,6 +68,62 @@ def recursive_attributes(target, flags):
         os.close(descriptor)
 
 
+def _enable_toolchain_null(root):
+    flags = os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC
+    source_path, target_path = Path("/dev/null"), root / "dev/null"
+
+    def state(descriptor):
+        info = os.fstat(descriptor)
+        if not stat.S_ISCHR(info.st_mode) or info.st_rdev != os.makedev(1, 3):
+            raise RuntimeError("toolchain null output is not the actual null device")
+        with open(f"/proc/self/fdinfo/{descriptor}", "rb") as stream:
+            data = stream.read(4097)
+        ids = [line.partition(b":")[2].strip() for line in data.splitlines() if line.startswith(b"mnt_id:")]
+        if len(data) > 4096 or len(ids) != 1 or not ids[0].isdigit() or not 0 < int(ids[0]) < 1 << 64:
+            raise RuntimeError("toolchain null output lacks a bounded mount identity")
+        identity = (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid, info.st_rdev)
+        return identity, int(ids[0]), os.fstatvfs(descriptor).f_flag
+
+    def visible(path, expected):
+        descriptor = os.open(path, flags)
+        try:
+            if state(descriptor) != expected:
+                raise RuntimeError("toolchain null mount or object was substituted")
+        finally:
+            os.close(descriptor)
+
+    source = os.open(source_path, flags)
+    try:
+        target = os.open(target_path, flags)
+        try:
+            original_source, before = state(source), state(target)
+            if original_source[0] != before[0] or original_source[2] & os.ST_NODEV:
+                raise RuntimeError("toolchain null output differs from its unblocked source device")
+            required = os.ST_NOSUID | os.ST_NODEV | os.ST_NOEXEC
+            if before[2] & required != required:
+                raise RuntimeError("toolchain null mount lacks its required restrictions")
+            visible(source_path, original_source)
+            visible(target_path, before)
+            attributes = MountAttributes(attr_clr=MS_NODEV)
+            libc = ctypes.CDLL(None, use_errno=True)
+            # Only remove the local device restriction; inherited readonly stays intact.
+            if libc.syscall(
+                ctypes.c_long(SYS_MOUNT_SETATTR), ctypes.c_int(target), ctypes.c_char_p(b""),
+                ctypes.c_uint(AT_EMPTY_PATH), ctypes.byref(attributes), ctypes.c_size_t(ctypes.sizeof(attributes)),
+            ):
+                error = ctypes.get_errno()
+                raise OSError(error, "cannot enable the exact confined toolchain null device", str(target_path))
+            expected = before[0], before[1], before[2] & ~os.ST_NODEV
+            if state(target) != expected or state(source) != original_source:
+                raise RuntimeError("toolchain null transition changed unrelated mount or device state")
+            visible(source_path, original_source)
+            visible(target_path, expected)
+        finally:
+            os.close(target)
+    finally:
+        os.close(source)
+
+
 def drop_privileges(config):
     libc = ctypes.CDLL(None, use_errno=True)
     # UID 0 in a private user namespace is still stripped of all capabilities.
@@ -98,6 +155,9 @@ def main():
     if not sys.flags.isolated or not sys.flags.no_site or len(sys.argv) != 2:
         raise SystemExit("sandbox launcher requires Python -I -S and trusted config")
     config = json.loads(Path(sys.argv[1]).read_bytes())
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from toolchain_runtime import validate_launch
+    toolchain = validate_launch(config)
     root = Path(config["root"])
     # Seal inherited submounts before installing deliberate child exceptions.
     bind(root, root, executable=True)
@@ -106,7 +166,11 @@ def main():
     for item in config["mounts"]:
         bind(item["source"], root / item["target"].lstrip("/"),
              writable=item["writable"], executable=item["executable"])
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    if toolchain is not None and toolchain["stage"] >= 3:
+        expected = {"source": "/dev/null", "target": "/dev/null", "writable": True, "executable": False}
+        if [item for item in config["mounts"] if item["target"] == "/dev/null"] != [expected]:
+            raise RuntimeError("toolchain null output lost its exact device mount")
+        _enable_toolchain_null(root)
     from syscall_guard import supervise
     return supervise(config, lambda: drop_privileges(config))
 

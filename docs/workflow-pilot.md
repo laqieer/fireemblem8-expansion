@@ -183,9 +183,9 @@ The diagnostic classifier can select this path with `--adaptive --repository
 owner/repo`; the Build workflow enables it only when its trusted base contains
 the implementation. A base predating deployment retains the full bootstrap.
 
-There is still **one Build workflow and eight jobs**. A review-first PR event
+There is still **one Build workflow, now with nine jobs**. A review-first PR event
 runs identity/router/classifier plus tiny `host-tests`/`build` continuity
-checks; `extended-host-tests` and `legacy` are platform-skipped. Its classifier
+checks; `ownership-tests`, `extended-host-tests` and `legacy` are platform-skipped. Its classifier
 is `review-first-classifier`, not full evidence. The canonical `summary`
 deliberately fails with a waiting-for-full explanation until the full run
 replaces it: green preflight is never merge permission. Concurrent candidates
@@ -193,8 +193,21 @@ retain the full graph immediately. Exact-head security and Copilot are
 requested/observed concurrently by the existing delivery coordinator, not a
 new reviewer service.
 
+The PR-only exact-base ownership step intentionally receives no
+`reviewed-evolution` mode or scope from candidate YAML. A strict PR-event
+observation of a legitimate evolution therefore remains a failed exact-base
+observation; it is never relabeled as update authority. Review-first
+candidates instead use the coordinator-owned independent qualification and
+local verifier capture described below. The later input-free
+`workflow_dispatch` runs the complete Build while its PR-only ownership step
+reports not-applicable. Neither that event nor the not-applicable result is
+authority: `assess_candidate`, dispatch reservation, and final full-run
+admission all require the same qualified local capture. Thus candidate flags
+cannot authorize evolution, and the complete managed final lane can admit an
+independently reviewed update without weakening the strict PR fallback.
+
 After accepted clean review and security, the coordinator uses one input-free
-`workflow_dispatch` on the actual candidate branch. All eight jobs run.
+`workflow_dispatch` on the actual candidate branch. All nine jobs run.
 Before checkout, `event-identity` uses bounded authenticated GitHub metadata
 to resolve one open same-repository PR at that exact branch/head and selects
 its integration-base SHA, even when the default branch predates this feature.
@@ -379,6 +392,11 @@ use the existing trusted executor returning an actual `ProcessResult` and its
 parsed measurements. Candidate JSON cannot supply commands or a passed flag.
 Native PID/exit/RSS belongs to the **check process**, not an LLM owner.
 Unmeasured quantities remain `null`, not guessed zeroes or resource claims.
+
+Ownership evolution follows the
+[canonical ownership contract](validation-ownership.md#coordinator-owned-review-and-capture)
+using this coordinator-check seam. `coordinator_local_ready`, `assess_observed`
+and `assess_candidate` require the same live qualification.
 
 Every registered check must finish successfully at the same head/base/worktree.
 Each observation retains the complete registered definition set, so changing,
@@ -1226,7 +1244,7 @@ The automated and human procedure is
 
 Issue [#177](https://github.com/laqieer/fireemblem8-expansion/issues/177)
 adds a no-checkout `event-identity` validator, parsed fail-closed
-`event-router`, and mode-specific classifier check ahead of the four expensive
+`event-router`, and mode-specific classifier check ahead of the five expensive
 workers. For pull requests with complete identity,
 the router checks out
 the exact current `pull_request.base.sha` with the pinned checkout action, no
@@ -1248,18 +1266,18 @@ common setup only. Every normalized full or metadata run must contain exactly
 one successful identity context and one successful router setup context;
 missing, failed, skipped, renamed, duplicate, or
 unknown setup contexts are invalid. Full candidate runs
-expose `event-classifier`, `host-tests`, `build`,
+expose `event-classifier`, `host-tests`, `ownership-tests`, `build`,
 `extended-host-tests`, `legacy`, and `summary`. The running `summary` context
 is the sole candidate attestation; it succeeds only after the same full run's
-classifier and all four workers succeed. Metadata-only runs expose the running
+classifier and all five workers succeed. Metadata-only runs expose the running
 `metadata-classifier` plus the same canonical worker checks `host-tests`,
-`build`, `extended-host-tests`, `legacy`, and `summary`.
+`ownership-tests`, `build`, `extended-host-tests`, `legacy`, and `summary`.
 Metadata-only mode requires runner-backed `success` for `host-tests`/`build`
 because those jobs run only the trusted continuity adapters, which
 independently revalidate the raw edited pull-request event and exact
 body/title-only `changes` payload from the runner-owned file-backed
 `GITHUB_EVENT_PATH` before succeeding, and exact `skipped` for
-`extended-host-tests`/`legacy`. Those adapters accept only a same-owner
+`ownership-tests`/`extended-host-tests`/`legacy`. Those adapters accept only a same-owner
 regular event file up to 1 MiB, read at most one additional EOF byte, and do
 not env-copy large body/title/changes JSON. Repository branch protection
 therefore keeps the live canonical `host-tests`, `build`, and `summary`
@@ -1303,7 +1321,7 @@ nonzero values that underflow to zero are rejected, including huge exponents;
 normal finite values, representable subnormals, and signed zero remain valid.
 The parsed tree receives a recursive finite-number check before
 classification, so an unused overflowing field cannot accompany an otherwise
-metadata-only event. An `edited` event suppresses `host-tests`, `build`,
+metadata-only event. An `edited` event suppresses expensive steps in `host-tests`/`build` and skips `ownership-tests`,
 `extended-host-tests`, and `legacy` only when:
 
 - the event has a complete pull-request base and exact head identity;
@@ -1335,18 +1353,18 @@ DEL, space, `~`, `^`, `:`, `?`, `*`, `[`, backslash, `..`, `@{`,
 leading/trailing/repeated slash, leading-dot or `.lock` components, and a
 trailing dot are invalid. Git-valid slash, dash, and dot forms remain valid.
 An invalid base ref is incomplete base identity: a validated head runs all
-four workers at that exact head and summary fails; an invalid head runs none.
+five workers at that exact head and summary fails; an invalid head runs none.
 
 Base-only edits, mixed edits, unknown fields, incomplete change records,
 unknown actions, `opened`, `synchronize`, `reopened`, and `master` pushes with
 complete identity select the complete required graph. A classifier
 parser/runtime failure (including malformed, duplicate-key, or non-finite
-JSON) on a PR with a validated authoritative PR head also runs all four
+JSON) on a PR with a validated authoritative PR head also runs all five
 workers at that exact `pull_request.head.sha` under canonical worker names; it
 never uses merge `github.sha`. Summary verifies that every fallback worker
 succeeded, then summary still fails to
 surface the classifier defect. On a `master` push, classifier failure with a
-validated authoritative `github.sha` similarly runs all four workers and the
+validated authoritative `github.sha` similarly runs all five workers and the
 master-only publisher at that exact push SHA, audits success, then fails
 summary. A classifier failure with no validated PR/push fallback SHA or another
 unsupported result starts no worker/publisher and fails summary. Missing
@@ -1358,7 +1376,7 @@ metadata-only edit, `summary` succeeds only
 when classification succeeded, the classified head still equals the event
 head, the classified base still equals the event base, suppression is exactly
 false, `host-tests`/`build` succeed through the no-checkout continuity
-adapters, `extended-host-tests`/`legacy` are exactly
+adapters, `ownership-tests`/`extended-host-tests`/`legacy` are exactly
 `skipped`, and a trusted no-checkout Actions API query classifies exact prior
 runs newest-first so only the newest conclusively full run for the same
 repository, PR number, authoritative base SHA, and immutable head SHA can
@@ -1373,7 +1391,7 @@ evidence by itself. On a full event, normal workers check out the classifier's
 exact nonempty head output. Any
 missing, empty, malformed, or event-mismatched base ref/SHA with a valid exact
 PR head sets `head_valid=true`, `identity_valid=false`, and
-`full_fallback=true`. All four workers run at that exact head, then normal
+`full_fallback=true`. All five workers run at that exact head, then normal
 `summary` audits them and fails because full base identity is unavailable or
 incoherent. A syntactically valid direct base SHA remains in
 `expected_base` for diagnostics even when another base component is invalid;
@@ -1426,7 +1444,7 @@ Build workflow preserves the live branch-protection contract directly: metadata
 body/title edits run the distinct `metadata-classifier` attestation plus
 canonical `host-tests`/`build` continuity adapters and a canonical continuity
 `summary` that do not checkout or execute candidate code, while
-`extended-host-tests` and `legacy` remain platform-skipped. The adapters
+`ownership-tests`, `extended-host-tests` and `legacy` remain platform-skipped. The adapters
 independently reject missing, base-retarget, unknown, empty, duplicate, or
 unchanged raw `changes` payloads. The canonical metadata `summary` succeeds
 only after a trusted no-checkout Actions API proof confirms one prior
@@ -1437,7 +1455,7 @@ names, while metadata-only runs still remain ineligible candidate evidence by
 themselves even when those continuity attestations succeed.
 The current Build workflow also supports the input-free full
 `workflow_dispatch` described in [adaptive candidate gating](#adaptive-review-first-candidate-gates).
-That dispatch retains all eight jobs; preflight alone or an early/unbound run
+That dispatch retains all nine jobs; preflight alone or an early/unbound run
 is not full candidate evidence, and publication remains master-push-only.
 
 A live metadata exercise must use a disposable validation-only PR whose base
@@ -1454,7 +1472,7 @@ created/event/branch/head fields before each exact-ID watcher, and installs
 idempotent compare-and-swap cleanup before remote mutation. The evaluator
 scans all raw REST jobs before normalization: metadata workers are admissible
 only when `host-tests`/`build` report runner-backed `success` from the trusted
-continuity adapters and `extended-host-tests`/`legacy` report `skipped` with
+continuity adapters and `ownership-tests`/`extended-host-tests`/`legacy` report `skipped` with
 no assigned runner, including the documented platform-only `started_at`
 timestamp quirk for the skipped jobs.
 
@@ -2099,7 +2117,7 @@ exact `.github/workflow-pilot-decisions.json` blob IDs from hydrated trees,
 and fetches those blobs explicitly without hydrating unrelated blobs. Both
 bounded phases recheck that `HEAD`, refs, and FETCH_HEAD are unchanged and
 that `HEAD` still equals `EXPECTED_BUILD_SHA`. This hydration is environment
-setup, not a 29th local semantic gate; local
+setup, not an additional local semantic gate; local
 `scripts.upstream_port verify` remains network-independent.
 The deterministic read-only owner handoff is:
 
@@ -2134,9 +2152,9 @@ At job scope, router and mode-classifier have separate closed setup mappings.
 Every combined worker has a closed direct mapping: classifier dependency and
 fail-closed condition,
 `runs-on: ubuntu-latest`, its reviewed environment, and `steps`. The
-comprehensive `build` worker has `timeout-minutes: 90`; `host-tests`,
-`extended-host-tests`, and `legacy` remain 60 minutes, while all setup jobs and
-summary remain 5. Host, modern, extended-host, and legacy therefore reject
+comprehensive `build` and `ownership-tests` workers have `timeout-minutes: 90`;
+`host-tests`, `extended-host-tests`, and `legacy` remain 60 minutes, while all
+setup jobs and summary remain 5. Host, ownership, modern, extended-host, and legacy therefore reject
 containers, services, matrices/strategies, job permissions/defaults,
 other dependencies, conditions/advisory mode, deployment environments, concurrency,
 reusable-job `uses`/secrets, custom shell context, unknown fields, duplicate
@@ -2144,8 +2162,10 @@ keys, reordered keys, and complex key aliases. Patch publication and summary
 retain separate closed contracts, including coherent push identity,
 worker/publisher audit, and dynamic full/metadata summary name.
 
-The 90-minute build ceiling covers observed shared-runner compile variance
-without changing any Build content. The coordinator's
+The 90-minute build ceiling covers observed shared-runner compile variance.
+The ownership envelope provides bounded headroom after its measured timeout,
+without changing probe/fixture limits or claiming complete graph sizing.
+Neither changes required Build content. The coordinator's
 `timeout 90m gh run watch <run-id> --interval 30 --exit-status` can expire near
 that ceiling; after one exact status query, it re-arms one watcher once only if
 the run remains nonterminal.

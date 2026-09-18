@@ -52,10 +52,17 @@ python3 -m unittest scripts.texttools.tests.test_textprocess_publication -v
 ```
 
 It is not hidden in the `test_multilang_codec*.py` pattern and does not
-rediscover unrelated text suites. The upstream mirror retains all prior 30
-gates and adds this gate, for **31 gates and the same eight jobs**. Job
+rediscover unrelated text suites. The independent #268 change retained all
+30 master gates and added this gate. Its normal integration with #180 retains
+both parent inventories, for **34 gates and the same nine jobs**. Job
 conditions, timeouts, required contexts, approvals and master-only build-once
 patch publication remain unchanged.
+
+The integrated ownership graph admits only the exact producer and test paths
+to `surface.text-publication`. Its positive owner is the actual extended-host
+step; workflow mutation controls supply the adversarial owner. Both paths
+have independent sealed oracle expectations, and the test is actually
+collected by the command above, not attributed to generic host discovery.
 
 ## TC-TEXT-ATOMIC-PUBLICATION-001: Publish complete shared text outputs
 
@@ -98,6 +105,12 @@ patch publication remain unchanged.
    source snapshot or depending on the renderers' write-call grouping.
    The exact preimage producer may also be run in a disposable copy; its
    recorded failures remain distinct from the fixed publisher's positives.
+6. For the #180 integration, run
+   `python3 -m unittest tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_text_publication_graph_admission_collection_and_oracle_are_exact -v`.
+   Require exact-path admission and real module collection, one positive and
+   one adversarial owner, and failure after either edge is removed or
+   redirected to a generic host owner. A prefix-only rule cannot admit the
+   new test or document. The other texttools paths retain their prior owners.
 
 **Expected result:** all readers see complete per-file versions; generated
 bytes and IDs match the serial reference, and both concurrent same-input
@@ -105,7 +118,8 @@ producers succeed. The former direct-to-final writer is the negative control.
 
 **Dependencies/conflicts:** existing text parsing/Huffman/Make interfaces and
 host compiler only. There is no gameplay, save, ABI, locale catalog, item-cap
-or profile-identity change and no new feature flag. Independent ownership work
-in #180 consumes the fix after integration; it is not part of this change.
+or profile-identity change and no new feature flag. The independent #268
+production fix is retained by #180's normal master integration; its real
+concurrent object profiles consume the same complete shared text outputs.
 No manual criterion or broad ROM/archival build is required. Roll back by a
 normal fix-forward/revert rather than serializing builds or skipping this gate.

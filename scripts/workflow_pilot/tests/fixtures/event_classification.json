@@ -177,6 +177,7 @@
         "extended-host-tests",
         "host-tests",
         "legacy",
+        "ownership-tests",
         "summary"
       ],
       "expected_summary_success": false,
@@ -212,6 +213,7 @@
         "extended-host-tests",
         "host-tests",
         "legacy",
+        "ownership-tests",
         "summary"
       ],
       "expected_summary_success": false,
@@ -247,6 +249,7 @@
         "extended-host-tests",
         "host-tests",
         "legacy",
+        "ownership-tests",
         "summary"
       ],
       "expected_summary_success": false,
@@ -311,6 +314,7 @@
         "extended-host-tests",
         "host-tests",
         "legacy",
+        "ownership-tests",
         "summary"
       ],
       "expected_summary_success": false,
@@ -548,6 +552,7 @@
           "extended-host-tests",
           "host-tests",
           "legacy",
+          "ownership-tests",
           "summary"
         ],
         "reason": "base-edit",
@@ -600,6 +605,7 @@
           "extended-host-tests",
           "host-tests",
           "legacy",
+          "ownership-tests",
           "summary"
         ],
         "reason": "mixed-edit",
@@ -655,6 +661,7 @@
           "extended-host-tests",
           "host-tests",
           "legacy",
+          "ownership-tests",
           "summary"
         ],
         "reason": "unknown-edit",
@@ -702,6 +709,7 @@
           "extended-host-tests",
           "host-tests",
           "legacy",
+          "ownership-tests",
           "summary"
         ],
         "reason": "incomplete-edit",
@@ -747,6 +755,7 @@
           "extended-host-tests",
           "host-tests",
           "legacy",
+          "ownership-tests",
           "summary"
         ],
         "reason": "pull-request-opened",
@@ -789,6 +798,7 @@
           "extended-host-tests",
           "host-tests",
           "legacy",
+          "ownership-tests",
           "summary"
         ],
         "reason": "pull-request-synchronize",
@@ -831,6 +841,7 @@
           "extended-host-tests",
           "host-tests",
           "legacy",
+          "ownership-tests",
           "summary"
         ],
         "reason": "pull-request-reopened",
@@ -873,6 +884,7 @@
           "extended-host-tests",
           "host-tests",
           "legacy",
+          "ownership-tests",
           "summary"
         ],
         "reason": "missing-pull-request-base",
@@ -1000,6 +1012,7 @@
           "extended-host-tests",
           "host-tests",
           "legacy",
+          "ownership-tests",
           "summary"
         ],
         "reason": "master-push",

@@ -746,7 +746,8 @@ Concurrent, unknown and paused decisions retain the broader full workflow.
 Preflight is not candidate Build evidence. Accepted findings abandon the
 exact head before any cancellation, and stale/duplicate evidence never grants
 merge. Preserve #179 local/family review, every final objective/manual gate,
-all eight full Build jobs and automatic exact-master publication/completion.
+all full Build jobs declared by the current workflow, including
+`ownership-tests`, and automatic exact-master publication/completion.
 The coordinator alone owns the state, dispatch and existing run watchers.
 
 ### Trusted push ownership

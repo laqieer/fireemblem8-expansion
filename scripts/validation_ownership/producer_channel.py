@@ -10,12 +10,17 @@ import struct
 import time
 import re
 
+if __package__:
+    from .lifecycle import finish_cleanup
+else:
+    from lifecycle import finish_cleanup
+
 
 class ChannelError(RuntimeError):
     pass
 
 
-PUBLICATION_POLICIES = ("replace", "if-content-changed")
+PUBLICATION_POLICIES = ("replace", "if-content-changed", "if-content-changed-preserve-mode")
 PUBLICATION_MAGIC = b"VOGEN2\0\0"
 
 
@@ -39,6 +44,12 @@ def validate_publication_identity(value, mode, size):
 
 
 def validate_publication_confirmation(value, *, count_limit, file_limit):
+    if isinstance(value, dict) and value.get("kind") == "filesystem":
+        if __package__:
+            from .header_effects import validate_confirmation
+        else:
+            from header_effects import validate_confirmation
+        return validate_confirmation(value, count_limit=count_limit, file_limit=file_limit)
     if (
         not isinstance(value, dict) or set(value) != {"slot", "owner", "policy", "outputs"}
         or type(value["slot"]) is not int or value["slot"] < 0
@@ -67,13 +78,70 @@ def validate_publication_confirmation(value, *, count_limit, file_limit):
     return value
 
 
+def validate_dispatch_context(value, arguments=None):
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"sequence", "executable", "arguments", "cwd", "environment", "rebuilding_makefiles"}
+        or type(value["sequence"]) is not int or value["sequence"] < 1
+        or not isinstance(value["executable"], str) or not isinstance(value["cwd"], str)
+        or not value["executable"].startswith("/") or not value["cwd"].startswith("/")
+        or os.path.normpath(value["executable"]) != value["executable"]
+        or os.path.normpath(value["cwd"]) != value["cwd"]
+        or not isinstance(value["arguments"], list) or not 1 <= len(value["arguments"]) <= 1024
+        or not isinstance(value["environment"], dict) or type(value["rebuilding_makefiles"]) is not bool
+        or any(not isinstance(item, str) or "\0" in item for item in value["arguments"])
+        or any(not isinstance(name, str) or not name or "=" in name or "\0" in name
+               or not isinstance(content, str) or "\0" in content
+               for name, content in value["environment"].items())
+        or "\0" in value["executable"] or "\0" in value["cwd"]
+        or arguments is not None and value["arguments"] != arguments
+    ):
+        raise ChannelError("malformed or mismatched native dispatch context")
+    try:
+        size = sum(len(item.encode("utf-8", "strict")) + 1 for item in value["arguments"])
+        size += sum(len((name + "=" + content).encode("utf-8", "strict")) + 1
+                    for name, content in value["environment"].items())
+        if size > 65536 or any(
+            not 0 < len(value[name].encode("utf-8", "strict")) <= 4096 for name in ("executable", "cwd")
+        ):
+            raise ChannelError("native dispatch context exceeds its existing frame bounds")
+    except UnicodeEncodeError as error:
+        raise ChannelError("native dispatch context is not strict UTF-8") from error
+    return value
+
+
+def validate_job_context(value, sequence=None):
+    if (
+        not isinstance(value, dict) or set(value) != {"sequence", "kind", "target", "command_line"}
+        or type(value["sequence"]) is not int or value["sequence"] < 1
+        or sequence is not None and value["sequence"] != sequence
+        or not isinstance(value["kind"], str) or value["kind"] not in {"recipe", "expansion"}
+    ):
+        raise ChannelError("malformed or unbound native job context")
+    if value["kind"] == "expansion":
+        if value["target"] is not None or value["command_line"] is not None:
+            raise ChannelError("expansion context claims a recipe target")
+    elif (
+        not isinstance(value["target"], str) or not value["target"] or "\0" in value["target"]
+        or type(value["command_line"]) is not int or not 0 <= value["command_line"] < 1 << 32
+    ):
+        raise ChannelError("native recipe context lacks its target/index")
+    try:
+        if value["target"] is not None and len(value["target"].encode("utf-8", "strict")) > 4096:
+            raise ChannelError("native recipe target exceeds its existing bound")
+    except UnicodeEncodeError as error:
+        raise ChannelError("native recipe target is not strict UTF-8") from error
+    return value
+
+
 class ProducerChannel:
-    def __init__(self, connection, *, deadline, limit, charge=None):
+    def __init__(self, connection, *, deadline, limit, charge=None, descriptor_receiver=None):
         self.connection = connection
         self.connection.setblocking(False)
         self.deadline = deadline
         self.limit = limit
         self.charge = charge
+        self.descriptor_receiver = descriptor_receiver
         self.buffer = bytearray()
         self.expected = None
         self.closed = False
@@ -224,17 +292,38 @@ class ProducerChannel:
         raise ChannelError("unsolicited or duplicate producer message outside an exchange")
 
     def receive(self):
+        result = []
+        finish_cleanup([lambda: result.append(self._receive())])
+        return result[0]
+
+    def _receive(self):
         self.remaining()
         try:
-            data = self.connection.recv(65536)
+            data, ancillary, flags, _ = self.connection.recvmsg(
+                65536, socket.CMSG_SPACE(struct.calcsize("i")), socket.MSG_CMSG_CLOEXEC,
+            )
         except BlockingIOError:
             return None
         except ConnectionError as error:
             raise ChannelError(f"producer rendezvous receive failed: {error}") from error
+        descriptors = []
+        malformed = bool(flags & socket.MSG_CTRUNC)
+        for level, kind, value in ancillary:
+            if level != socket.SOL_SOCKET or kind != socket.SCM_RIGHTS or len(value) % struct.calcsize("i"):
+                malformed = True
+                continue
+            descriptors.extend(struct.unpack(f"{len(value) // struct.calcsize('i')}i", value))
+        if malformed or descriptors and (len(descriptors) != 1 or self.descriptor_receiver is None):
+            for descriptor in descriptors:
+                os.close(descriptor)
+            raise ChannelError("unrequested or malformed producer descriptor handoff")
+        if descriptors:
+            # The receiver owns the actual fd before any byte charge can fail.
+            self.descriptor_receiver(descriptors[0])
         if not data:
             raise ChannelError("producer rendezvous EOF")
         if self.charge is not None:
-            self.charge(len(data))
+            self.charge(len(data) + len(descriptors) * struct.calcsize("i"))
         self.buffer.extend(data)
         if self.expected is None and len(self.buffer) >= 4:
             self.expected = struct.unpack_from("<I", self.buffer)[0]
@@ -250,13 +339,22 @@ class ProducerChannel:
         return result
 
     def send(self, data):
+        return self._send(data)
+
+    def send_descriptor(self, data, descriptor):
+        if type(descriptor) is not int or descriptor < 0:
+            raise ChannelError("invalid producer descriptor")
+        os.fstat(descriptor)
+        return self._send(data, descriptor)
+
+    def _send(self, data, descriptor=None):
         self.remaining()
         if self.write_closed or self.listening:
             raise ChannelError("producer channel has no writable reply phase")
         if not isinstance(data, bytes) or not 1 <= len(data) <= self.limit:
             raise ChannelError("invalid producer reply byte bound")
         if self.charge is not None:
-            self.charge(len(data) + 4)
+            self.charge(len(data) + 4 + (struct.calcsize("i") if descriptor is not None else 0))
         frame = memoryview(struct.pack("<I", len(data)) + data)
         offset = 0
         with selectors.DefaultSelector() as selector:
@@ -265,7 +363,13 @@ class ProducerChannel:
                 if not selector.select(min(self.remaining(), 0.05)):
                     continue
                 try:
-                    written = self.connection.send(frame[offset:offset + 65536])
+                    if descriptor is not None and offset == 0:
+                        written = self.connection.sendmsg(
+                            [frame[:65536]],
+                            [(socket.SOL_SOCKET, socket.SCM_RIGHTS, struct.pack("i", descriptor))],
+                        )
+                    else:
+                        written = self.connection.send(frame[offset:offset + 65536])
                 except BlockingIOError:
                     continue
                 except ConnectionError as error:
@@ -275,8 +379,17 @@ class ProducerChannel:
                 offset += written
 
     def exchange(self, data, *, watch=()):
+        return self._exchange(data, watch=watch)
+
+    def exchange_descriptor(self, data, descriptor, *, watch=()):
+        return self._exchange(data, descriptor=descriptor, watch=watch)
+
+    def _exchange(self, data, *, descriptor=None, watch=()):
         self.ensure_idle()
-        self.send(data)
+        if descriptor is None:
+            self.send(data)
+        else:
+            self.send_descriptor(data, descriptor)
         with selectors.DefaultSelector() as selector:
             selector.register(self.connection, selectors.EVENT_READ, "reply")
             for descriptor in watch:

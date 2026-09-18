@@ -3084,7 +3084,7 @@ def require_metadata_success(run: RunState) -> None:
             raise MetadataEditError(
                 f"metadata continuity job {name} is not runner-backed success"
             )
-    for name in ("extended-host-tests", "legacy"):
+    for name in candidate_evidence.METADATA_SKIPPED_JOB_IDS:
         job = jobs[name]
         if (
             job.status != "completed"
@@ -3123,7 +3123,7 @@ def require_metadata_failure(run: RunState) -> None:
             raise MetadataEditError(
                 f"failed metadata continuity job {name} is not canonical success"
             )
-    for name in ("extended-host-tests", "legacy"):
+    for name in candidate_evidence.METADATA_SKIPPED_JOB_IDS:
         job = jobs[name]
         if (
             job.status != "completed"

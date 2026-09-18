@@ -28,10 +28,10 @@ directly.
 source-changing push/PR.** A PR candidate uses the complete combined Build
 gate and Copilot review concurrently. Parsed body/title-only edits retain the
 identity validator/router plus the running `metadata-classifier` context and
-the canonical worker checks `host-tests`, `build`, `extended-host-tests`,
+the canonical worker checks `host-tests`, `ownership-tests`, `build`, `extended-host-tests`,
 `legacy`, and `summary`. In metadata mode, `host-tests` and
 `build` run only a trusted no-checkout continuity attestation so the existing
-required live contexts stay green; `extended-host-tests` and `legacy` remain
+required live contexts stay green; `ownership-tests`, `extended-host-tests` and `legacy` remain
 platform-skipped with no runner. That attestation reads the runner-owned
 file-backed `GITHUB_EVENT_PATH` payload directly instead of env-copying the
 PR body/title/changes JSON. Metadata `summary` is also a continuity-only
@@ -53,10 +53,10 @@ candidate evidence by themselves.
 Base, mixed, unknown/incomplete,
 opened, synchronize, and reopened events with complete identity fail closed to
 the complete graph. Any missing, malformed, or incoherent base ref/SHA with a
-valid exact PR head also runs the four workers at that head and fails normal
+valid exact PR head also runs the five workers at that head and fails normal
 summary; a valid base SHA may be retained only for diagnostics. Missing,
 malformed, stale, or spoofed head identity runs none. A classifier failure with
-a validated authoritative PR head runs all four workers at that exact head
+a validated authoritative PR head runs all five workers at that exact head
 under canonical worker names, then summary still fails. A master-push
 classifier failure does the same at validated
 `github.sha` and audits the master-only publisher before failing; without a
@@ -74,7 +74,7 @@ Base refs are bounded to 1024 UTF-8 bytes and must satisfy full
 is not used, and lone `@` is rejected. Python applies the equivalent grammar
 without a subprocess, while trusted bootstrap quotes the full ref to system
 Git and never checks it out. Invalid base refs are incomplete identity: a
-valid exact head runs all four workers and fails summary; an invalid head runs
+valid exact head runs all five workers and fails summary; an invalid head runs
 none.
 Trusted event setup accepts identity only as an exact lowercase 40-hex SHA. A
 PR also requires its numeric event number and exact
@@ -108,8 +108,10 @@ No custom UID, namespace, cgroup, supervisor, broker or capability platform is
 part of this contract. The retired isolation proposals are superseded, not
 claimed to have passed their tests.
 
-The modern `build` job, including master-only packaging, retains its
-90-minute ceiling. Host, extended-host and archival jobs retain 60 minutes;
+The modern `build` job, including master-only packaging, and the ownership
+worker have 90-minute CI envelopes. The ownership envelope follows its
+measured timeout and does not change probe limits or establish full-graph
+resource sizing. Host, extended-host and archival jobs retain 60 minutes;
 identity/router/classifier and summary retain 5 minutes.
 The same validation jobs run on candidates and master; only packaging/upload
 steps are master-only.
@@ -230,7 +232,7 @@ no ROM build or network access is required for either.
 
 Prefer focused local checks during iteration. A no-checkout `event-identity`
 validator, base-authoritative `event-router`, and mode-specific classifier
-check precede candidate `host-tests`, `build`, `extended-host-tests`, `legacy`,
+check precede candidate `host-tests`, `ownership-tests`, `build`, `extended-host-tests`, `legacy`,
 and fail-closed `summary` jobs plus Copilot review. Metadata uses runner-backed
 `host-tests`/`build` continuity adapters and still emits canonical `summary`;
 those adapters independently revalidate the raw edited pull-request event from

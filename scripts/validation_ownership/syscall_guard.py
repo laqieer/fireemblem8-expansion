@@ -28,17 +28,41 @@ if __package__:
     from .authority import _event_command, _read_events, encoded, parse_json
     from .lifecycle import finish_cleanup
     from .metadata_transport import encode_metadata_transport
+    from . import private_install as install_protocol
+    from . import header_effects
+    from . import arm_headers
+    from . import header_runtime as header_protocol
+    from . import toolchain_runtime
+    from .read_trace import NativeReadTrace
+    from .read_epochs import ReadEpochError
+    from . import source_phases
+    from .source_effects import NativeSourceEffects
+    from . import source_journal
+    from . import source_directories
+    from . import file_ownership
     from .producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
-        publication_identity, validate_publication_identity,
+        publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
     )
 else:
     from authority import _event_command, _read_events, encoded, parse_json
     from lifecycle import finish_cleanup
     from metadata_transport import encode_metadata_transport
+    import private_install as install_protocol
+    import header_effects
+    import arm_headers
+    import header_runtime as header_protocol
+    import toolchain_runtime
+    from read_trace import NativeReadTrace
+    from read_epochs import ReadEpochError
+    import source_phases
+    from source_effects import NativeSourceEffects
+    import source_journal
+    import source_directories
+    import file_ownership
     from producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
-        publication_identity, validate_publication_identity,
+        publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
     )
 
 
@@ -53,12 +77,15 @@ MAP_ANONYMOUS = 0x20
 # Fixed placement, loader hints and stacks do not alias pages or change their
 # size. Growing/huge-page and unknown flags cannot bypass 4 KiB reservations.
 MMAP_FLAGS = 3 | 0x10 | MAP_ANONYMOUS | 0x800 | 0x1000 | 0x20000 | 0x100000
-VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE = (
+VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY = (
     0x564F4D4B00000001, 0x564F4D4B00000002, 0x564F4D4B00000003, 0x564F4D4B00000004,
-    0x564F4D4B00000005,
+    0x564F4D4B00000005, 0x564F4D4B00000006,
 )
 VO_RECIPE, VO_VALUE, VO_VALIDATE = 0x564F4D4B00000011, 0x564F4D4B00000012, 0x564F4D4B00000013
 VO_LIVE = 0x564F4D4B00000014
+VO_JOB_CONTEXT = 0x564F4D4B00000007
+VO_SOURCE_IO = 0x564F4D4B00000008
+VO_TOOLCHAIN_STATUS = 0x564F4D4B00000009
 STACK_LIMIT = 16 * 1024 * 1024
 SYSCALL_MEMORY_LIMIT = 65536
 
@@ -118,6 +145,25 @@ def cstring(pid, address):
     raise Violation("pathname exceeds bound")
 
 
+def recipe_arguments(pid, address, *, label="argument", byte_limit=SYSCALL_MEMORY_LIMIT, allow_empty=False):
+    arguments = []
+    size = 0
+    for index in range(1025):
+        pointer = int.from_bytes(memory(pid, address + 8 * index, 8), "little")
+        if not pointer:
+            if not arguments and not allow_empty:
+                raise Violation("empty native recipe " + label + " vector")
+            return arguments
+        if index == 1024:
+            break
+        value = cstring(pid, pointer)
+        size += len(value.encode("utf-8")) + 1
+        if size > byte_limit:
+            break
+        arguments.append(value)
+    raise Violation("native recipe " + label + " vector exceeds its frame bound")
+
+
 def directory_entries(data, *, wide):
     names = []
     offset = 0
@@ -168,6 +214,22 @@ def execute_mode_allows(info, uid, gids):
     return bool(info.st_mode & stat.S_IXOTH)
 
 
+@dataclass(frozen=True, slots=True)
+class _RetiredJob:
+    namespace_pid: int
+    native_dispatch_sequence: int
+    role: str
+    helper_kind: int
+    context: tuple[str, str | None, int | None] | None
+
+    @property
+    def native_job_context(self):
+        if self.context is None:
+            return None
+        kind, target, command_line = self.context
+        return {"kind": kind, "target": target, "command_line": command_line}
+
+
 @dataclass
 class Process:
     role: str
@@ -182,7 +244,12 @@ class Process:
     memory_reservation: int = 0
     break_end: int = 0
     dispatch: tuple | None = None
+    dispatch_origin: int | None = None
     helper_kind: int = 0
+    native_dispatch_sequence: int | None = None
+    native_dispatch_context: dict | None = None
+    native_job_context: dict | None = None
+    namespace_pid: int | None = None
     observer_ready: bool = False
     memory_group: int = 0
     memory_limit: int = 0
@@ -207,26 +274,75 @@ class Process:
     dependency_image: str | None = None
     dependency_stop: tuple[int, int, int] | None = None
     path_context: tuple[str, int, str | None] | None = None
+    toolchain_exec: tuple | None = None
+    toolchain_status: int | None = None
+    toolchain_status_queried: bool = False
 
     def clone(self):
         return Process(
             role=self.role, cwd=self.cwd, fds=dict(self.fds), entering=False,
             observer_ranges=self.observer_ranges, bootstrap=self.bootstrap,
             break_end=self.break_end, dispatch=self.dispatch, observer_ready=self.observer_ready,
+            dispatch_origin=self.dispatch_origin,
             memory_group=self.memory_group, memory_limit=self.memory_limit,
             dependency_image=self.dependency_image,
         )
 
     def close(self):
+        if self.pending is not None and self.pending[0] == "private-install":
+            self.pending[1].close()
+            self.pending = None
         if self.pidfd >= 0:
             os.close(self.pidfd)
             self.pidfd = -1
+
+
+@dataclass
+class _PendingInstall:
+    source: str
+    destination: str
+    source_identity: tuple
+    parent: str
+    parent_fd: int
+    source_fd: int
+    arguments: tuple
+    sequence: int
+
+    def close(self):
+        descriptors = self.source_fd, self.parent_fd
+        self.source_fd = self.parent_fd = -1
+        for descriptor in descriptors:
+            if descriptor >= 0:
+                os.close(descriptor)
 
 
 class Policy:
     def __init__(self, config):
         self.config = config
         self.mode = config["mode"]
+        self.read_trace = None
+        self.source_effects = None
+        self.journal_receipts = None
+        self.directory_installs = None
+        self.file_opened = None
+        self.file_cleanup_enabled = "file_cleanup" in config
+        if self.file_cleanup_enabled:
+            file_ownership.validate_config(config["file_cleanup"], config)
+        try:
+            self.toolchain = toolchain_runtime.validate_launch(config)
+            if self.toolchain is not None:
+                toolchain_runtime.verify_workspace(Path(config["root"]) / "work", self.toolchain["workspace"])
+            header_protocol.validate_launch(config)
+        except ChannelError as error:
+            raise Violation(str(error)) from error
+        try:
+            self.private_install = install_protocol.validate_config(config.get("private_install"), config)
+        except install_protocol.InstallError as error:
+            raise Violation(str(error)) from error
+        self.install_parents = dict(self.private_install.parents) if self.private_install else {}
+        self.install_parent_fds = {}
+        self.install_attempts = set()
+        self.install_completed = set()
         self.code = {"/repo/" + path for path in config["code"]}
         self.sources = {"/repo/" + path for path in config["sources"]}
         self.enumerations = {posixpath.normpath("/repo/" + path) for path in config["enumerations"]}
@@ -256,15 +372,36 @@ class Policy:
         self.total_processes = 0
         self.live_process_peak = 0
         self.make_pid = 0
+        self.closed_processes = set()
+        self.retired_jobs = {}
         self.make_restarts = 0
+        self.dispatch_sequence = 0
         self.executable = set(config["executables"])
         self.executable.update(self.resolve(path) for path in config["executables"])
         self.runtime_closure = set(config.get("runtime_closure", ()))
         dependency = config.get("dependency")
+        self.filter_kernel = None if dependency is None else dependency.get("filter_kernel")
+        self.kernel_streams = {}
+        self.kernel_sequence = 0
+        self.header_roots, self.header_entries, self.header_files, self.header_verified = {}, {}, {}, {}
+        self.toolchain_inputs = {} if self.toolchain is None else {
+            "/repo/" + row[0]: row for row in self.toolchain["inputs"]
+        }
+        self.toolchain_stdin = bytearray()
+        self.toolchain_eof = False
+        self.toolchain_temporaries = {}
+        if dependency and "header_search" in dependency:
+            try:
+                self.header_roots, self.header_entries, self.header_files = arm_headers.validate_search(
+                    dependency["header_search"], dependency["executables"][:2] if self.toolchain is not None else dependency["executables"],
+                    count_limit=config["observation_count"], file_limit=config["file_limit"],
+                )
+            except ChannelError as error:
+                raise Violation(str(error)) from error
         if dependency:
             self.runtime_closure.update(dependency["runtime_files"])
         self.runtime_directories = set()
-        for name in self.runtime_closure | self.executable | {"/lib/vo-observer.so"}:
+        for name in self.runtime_closure | self.executable | set(self.header_roots) | {"/lib/vo-observer.so"}:
             parent = posixpath.dirname(name)
             while parent:
                 self.runtime_directories.add(parent)
@@ -293,6 +430,9 @@ class Policy:
             }
             self.dependency_stat_probes = {
                 self.resolve(path) for path in dependency["runtime_stat_probes"]
+            }
+            self.dependency_metadata_descendants = {
+                self.resolve(path).rstrip("/") for path in dependency["metadata_descendants"]
             }
             self.dependency_loader_probes = {self.resolve(path) for path in self.loader_probes}
             self.dependency_interpreter = self.resolve(dependency["runtime_interpreter"])
@@ -327,6 +467,28 @@ class Policy:
             "/repo/libgcc_s.so.1", "/repo/libgcc.a", "/repo/libc.so.6",
             "/repo/libc_nonshared.a", "/repo/ld-linux-x86-64.so.2",
         })
+        if "read_epochs" in config:
+            request = config["read_epochs"]
+            if (
+                self.mode != "make" or not isinstance(request, dict)
+                or set(request) != {"version", "scope", "abi"}
+                or type(request["version"]) is not int or request["version"] not in {1, 2}
+                or request["scope"] != config.get("producer_scope")
+            ):
+                raise Violation("original-read observation lacks its exact Make scope")
+            self.read_trace = NativeReadTrace(self, request)
+        if "source_effects" in config:
+            self.source_effects = NativeSourceEffects(self, config["source_effects"])
+        if "source_journal" in config:
+            if not isinstance(config["source_journal"], dict):
+                raise Violation("source journal configuration is not a typed object")
+            if self.source_effects is None:
+                raise Violation("source journal requires actual originating-read observation")
+            if config["source_journal"].get("mode") == source_directories.MODE:
+                self.directory_installs = source_directories.NativeDirectoryInstalls(self, config["source_journal"])
+            else:
+                source_journal.validate_config(config["source_journal"], config.get("producer_scope"))
+            self.journal_receipts = []
         self.code_dirs = {"/repo"}
         self.source_dirs = set()
         for paths, directories in ((self.code, self.code_dirs), (self.sources, self.source_dirs)):
@@ -652,22 +814,27 @@ class Policy:
                 directory = os.open(view, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
                 try:
                     parts = name.split("/")
+                    parents = []
                     for part in parts[:-1]:
+                        parents.append(part)
                         created = False
                         try:
                             following = os.open(
                                 part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory,
                             )
                         except FileNotFoundError:
-                            self.reserve_creation()
-                            os.mkdir(part, 0o755, dir_fd=directory)
-                            following = os.open(
-                                part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory,
-                            )
+                            if self.directory_installs is not None:
+                                following = self.directory_installs.create("/".join(parents), directory)
+                            else:
+                                self.reserve_creation()
+                                os.mkdir(part, 0o755, dir_fd=directory)
+                                following = os.open(
+                                    part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory,
+                                )
                             created = True
                         os.close(directory)
                         directory = following
-                        if created and self.config["sudo_drop"]:
+                        if created and self.config["sudo_drop"] and self.directory_installs is None:
                             # Transfer before adding children, so even failed publication
                             # remains removable by the unprivileged report owner.
                             os.fchown(directory, self.config["runner_uid"], self.config["runner_gid"])
@@ -687,7 +854,7 @@ class Policy:
                         ):
                             raise Violation("published output identity or type changed")
                     retain = (
-                        policy == "if-content-changed" and current is not None
+                        policy != "replace" and current is not None
                         and current.st_size == size
                         and self._content_matches(source, directory, parts[-1], size, identity)
                     )
@@ -705,6 +872,8 @@ class Policy:
                         mode = stat.S_IMODE(current.st_mode)
                         effect = "retained"
                     else:
+                        if policy == "if-content-changed-preserve-mode" and current is not None:
+                            mode = stat.S_IMODE(current.st_mode)
                         self.written += size
                         if self.written > self.config["write_limit"]:
                             raise Violation("aggregate generated publication byte budget exhausted")
@@ -725,6 +894,10 @@ class Policy:
                         with os.fdopen(output, "wb", buffering=0) as destination:
                             if self.config["sudo_drop"]:
                                 os.fchown(destination.fileno(), self.config["runner_uid"], self.config["runner_gid"])
+                            if self.file_cleanup_enabled:
+                                if self.file_opened is None:
+                                    raise Violation("actual publication has no file ownership receiver")
+                                self.file_opened(name, destination.fileno(), owner, directory)
                             left = size
                             while left:
                                 data = take(min(left, SYSCALL_MEMORY_LIMIT))
@@ -761,6 +934,160 @@ class Policy:
             if publication_identity(os.fstat(source.fileno())) != publication_identity(status):
                 raise Violation("generated mapping changed during publication")
         return effective
+
+    def _effect_parent(self, path, *, create=False):
+        view = next(item["source"] for item in self.config["mounts"] if item["target"] == "/repo")
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME
+        descriptor = os.open(view, flags)
+        created, parts = [], []
+        try:
+            for part in path.split("/") if path else ():
+                if time.monotonic() >= self.config["deadline"]:
+                    raise Violation("aggregate deadline exhausted during header directory creation")
+                parts.append(part)
+                try:
+                    following = os.open(part, flags, dir_fd=descriptor)
+                except FileNotFoundError:
+                    if not create:
+                        raise Violation("header effect parent is absent")
+                    if self.directory_installs is not None:
+                        following = self.directory_installs.create("/".join(parts), descriptor)
+                    else:
+                        self.reserve_creation()
+                        os.mkdir(part, 0o755, dir_fd=descriptor)
+                        following = os.open(part, flags, dir_fd=descriptor)
+                        if self.config["sudo_drop"]:
+                            os.fchown(following, self.config["runner_uid"], self.config["runner_gid"])
+                    info = os.fstat(following)
+                    created.append(["/".join(parts), info.st_dev, info.st_ino, info.st_mode])
+                os.close(descriptor)
+                descriptor = following
+            return descriptor, created
+        except BaseException:
+            os.close(descriptor)
+            raise
+
+    def _effect_source(self, expected, parent):
+        expected = header_effects.validate_record(expected)
+        path, owner, mode, size, digest, identity = expected
+        if size > self.config["file_limit"] or self.published.get(path) != (bytes.fromhex(owner), identity):
+            raise Violation("header effect source is foreign or stale")
+        descriptor = os.open(
+            posixpath.basename(path),
+            os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOATIME | os.O_CLOEXEC,
+            dir_fd=parent,
+        )
+        try:
+            if publication_identity(os.fstat(descriptor)) != identity:
+                raise Violation("header effect source identity changed")
+            self.charge_metadata(size)
+            actual = hashlib.sha256()
+            remaining = size
+            while remaining:
+                if time.monotonic() >= self.config["deadline"]:
+                    raise Violation("aggregate deadline exhausted during header source verification")
+                data = os.read(descriptor, min(remaining, SYSCALL_MEMORY_LIMIT))
+                if not data:
+                    raise Violation("header effect source was truncated")
+                actual.update(data)
+                remaining -= len(data)
+            if os.read(descriptor, 1) or actual.hexdigest() != digest:
+                raise Violation("header effect source contents changed")
+            if publication_identity(os.fstat(descriptor)) != identity:
+                raise Violation("header effect source changed during verification")
+            return descriptor, expected
+        except BaseException:
+            os.close(descriptor)
+            raise
+
+    def apply_header_effect(self, request, state, slot):
+        if (
+            state.native_job_context is None or state.native_job_context["kind"] != "recipe"
+            or state.native_dispatch_context is None
+            or not state.native_dispatch_context["rebuilding_makefiles"]
+        ):
+            raise Violation("header effect lacks its actual remake job")
+        target = state.native_job_context["target"]
+        effect = header_effects.Effect(
+            request["operation"], request["path"], request["source"],
+            request["expected"], request["owner"],
+        )
+        try:
+            header_effects.validate_effect(effect, target)
+        except (ChannelError, ValueError) as error:
+            raise Violation(str(error)) from error
+        required_line = {"directory": 1, "retire": 4, "transfer": 5}[effect.operation]
+        if state.native_job_context["command_line"] != required_line:
+            raise Violation("header effect has the wrong actual recipe ordinal")
+        self.publication_name(target)
+        result = {
+            "kind": "filesystem", "slot": slot, "owner": effect.owner,
+            "operation": effect.operation, "path": effect.path, "source": effect.source,
+            "before": None, "after": None, "directories": [],
+        }
+        if effect.operation == "directory":
+            directory, created = self._effect_parent(effect.path, create=True)
+            os.close(directory)
+            result["directories"] = created
+        else:
+            source = effect.path if effect.operation == "retire" else effect.source
+            self.publication_name(source)
+            directory, _ = self._effect_parent(posixpath.dirname(source))
+            pinned = -1
+            try:
+                pinned, before = self._effect_source(effect.expected, directory)
+                if publication_identity(os.stat(
+                    posixpath.basename(source), dir_fd=directory, follow_symlinks=False,
+                )) != before[5]:
+                    raise Violation("header effect source name changed")
+                result["before"] = list(before)
+                if effect.operation == "retire":
+                    os.unlink(posixpath.basename(source), dir_fd=directory)
+                    retired = publication_identity(os.fstat(pinned))
+                    if retired[:5] != before[5][:5] or retired[6] != 0:
+                        raise Violation("header retirement did not unlink its actual source object")
+                    del self.published[source]
+                else:
+                    try:
+                        previous = os.stat(
+                            posixpath.basename(effect.path), dir_fd=directory, follow_symlinks=False,
+                        )
+                    except FileNotFoundError:
+                        previous = None
+                    if previous is not None and (
+                        not stat.S_ISREG(previous.st_mode)
+                        or self.published.get(effect.path) != (bytes.fromhex(effect.owner), publication_identity(previous))
+                    ):
+                        raise Violation("header transfer would replace a foreign or changed output")
+                    os.rename(
+                        posixpath.basename(source), posixpath.basename(effect.path),
+                        src_dir_fd=directory, dst_dir_fd=directory,
+                    )
+                    info = os.stat(posixpath.basename(effect.path), dir_fd=directory, follow_symlinks=False)
+                    identity = publication_identity(info)
+                    if identity != publication_identity(os.fstat(pinned)) or identity[:5] != before[5][:5] or identity[6] != before[5][6]:
+                        raise Violation("header transfer did not preserve the actual source object")
+                    del self.published[source]
+                    self.published[effect.path] = (bytes.fromhex(effect.owner), identity)
+                    result["after"] = [effect.path, effect.owner, *before[2:5], list(identity)]
+                try:
+                    os.stat(posixpath.basename(source), dir_fd=directory, follow_symlinks=False)
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise Violation("header filesystem effect retained its original source entry")
+            finally:
+                if pinned >= 0:
+                    os.close(pinned)
+                os.close(directory)
+        try:
+            header_effects.validate_confirmation(
+                result, count_limit=self.config["creation_limit"], file_limit=self.config["file_limit"],
+            )
+        except (ChannelError, ValueError) as error:
+            raise Violation(str(error)) from error
+        self.charge_metadata(len(encoded(result)))
+        return result
 
     def counters(self):
         return {
@@ -800,6 +1127,109 @@ class Policy:
         return state.role == "make" and any(
             start <= registers.rip < end for start, end in state.observer_ranges
         )
+
+    def require_fresh_process(self, pid):
+        if pid in self.closed_processes or pid in self.retired_jobs:
+            raise Violation("native process reused a retired identity")
+
+    def retire_job(self, pid, state):
+        if self.processes.get(pid) is not state:
+            raise Violation("retired job is not its actual tracked process")
+        sequence = state.native_dispatch_sequence
+        if sequence is None:
+            if state.native_dispatch_context is not None or state.namespace_pid is not None:
+                raise Violation("retired helper has incomplete dispatch identity")
+            return
+        if (
+            self.mode != "make" or type(pid) is not int or not 0 < pid < 1 << 31
+            or pid == self.make_pid or state.role not in {"make", "helper"}
+            or type(sequence) is not int or not 0 < sequence <= self.dispatch_sequence
+            or type(state.namespace_pid) is not int or state.namespace_pid != pid
+            or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE, VO_LIVE}
+            or state.pidfd < 0 or pid in self.retired_jobs or pid in self.closed_processes
+            or any(job.native_dispatch_sequence == sequence for job in self.retired_jobs.values())
+            or any(other is not state and other.native_dispatch_sequence == sequence
+                   for other in self.processes.values())
+        ):
+            raise Violation("retired job lacks a unique authenticated helper identity")
+        try:
+            dispatch = validate_dispatch_context(state.native_dispatch_context)
+            if dispatch["sequence"] != sequence:
+                raise ChannelError("retired job dispatch sequence changed")
+            context = state.native_job_context
+            if context is not None:
+                if not isinstance(context, dict):
+                    raise ChannelError("retired job context is not a native record")
+                validate_job_context({"sequence": sequence, **context}, sequence)
+                context = (context["kind"], context["target"], context["command_line"])
+        except ChannelError as error:
+            raise Violation(str(error)) from error
+        if len(self.retired_jobs) >= min(
+            self.config["descendant_limit"], self.total_processes, self.dispatch_sequence,
+        ):
+            raise Violation("retired job count exceeds its admitted process/dispatch extent")
+        record = (pid, sequence, state.role, state.helper_kind, context)
+        self.charge_metadata(len(encoded(record)))
+        self.retired_jobs[pid] = _RetiredJob(*record)
+
+    def observe_job_context(self, pid, state, pointer, size):
+        if state.role != "make" or pid != self.make_pid or not state.observer_ready or size != 24:
+            raise Violation("invalid native job-context sender or frame")
+        record = memory(pid, pointer, size)
+        self.charge_metadata(size)
+        child_pid, target_pointer, command_line = (
+            int.from_bytes(record[offset:offset + 8], "little") for offset in (0, 8, 16)
+        )
+        if not 0 < child_pid < 1 << 31 or command_line >= 1 << 32 or child_pid == self.make_pid:
+            raise Violation("invalid native job-context process/index")
+        child = self.processes.get(child_pid)
+        if child is None:
+            child = self.retired_jobs.get(child_pid)
+            if child is None:
+                raise Violation("native job context refers to an untracked or non-job process")
+            if type(child) is not _RetiredJob or child.namespace_pid != child_pid:
+                raise Violation("retired job context lost its authenticated helper identity")
+        elif child_pid in self.closed_processes or child_pid in self.retired_jobs:
+            raise Violation("native job context collides with a retired process")
+        if child.role not in {"make", "helper"}:
+            raise Violation("native job context refers to a non-Make child")
+        if child.namespace_pid is not None and child.namespace_pid != child_pid:
+            raise Violation("native job context differs from the observed namespace PID")
+        target = cstring(pid, target_pointer) if target_pointer else None
+        if target_pointer and not target or not target_pointer and command_line:
+            raise Violation("native job context has an invalid target/index")
+        context = {
+            "kind": "recipe" if target is not None else "expansion",
+            "target": target, "command_line": command_line if target is not None else None,
+        }
+        if child.native_job_context is not None and child.native_job_context != context:
+            raise Violation("native job context changed for its actual process")
+        if isinstance(child, _RetiredJob):
+            if child.native_job_context is None:
+                try:
+                    validate_job_context({"sequence": child.native_dispatch_sequence, **context})
+                except ChannelError as error:
+                    raise Violation(str(error)) from error
+                record = (
+                    child.namespace_pid, child.native_dispatch_sequence, child.role, child.helper_kind,
+                    (context["kind"], context["target"], context["command_line"]),
+                )
+                self.charge_metadata(len(encoded(record)))
+                child = _RetiredJob(*record)
+                self.retired_jobs[child_pid] = child
+        else:
+            child.native_job_context = context
+        self.emit_job_context(child)
+
+    def emit_job_context(self, state):
+        if state.native_job_context is None or state.native_dispatch_sequence is None:
+            return
+        context = {"sequence": state.native_dispatch_sequence, **state.native_job_context}
+        try:
+            validate_job_context(context)
+        except ChannelError as error:
+            raise Violation(str(error)) from error
+        self.observe("accessed", "make-job-context:" + encoded(context).decode("ascii"))
 
     def resolve(self, name, *, follow_final=True):
         # Only trusted, immutable symlinks remain: candidate symlinks and
@@ -866,6 +1296,186 @@ class Policy:
         if fd not in state.fds:
             raise Violation(f"unavailable inherited/unknown descriptor {fd}")
         return state.fds[fd]
+
+    def pin_private_install_parents(self):
+        for name, expected in self.install_parents.items():
+            actual = Path(self.config["root"]) / name.lstrip("/")
+            descriptor = os.open(actual, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            self.install_parent_fds[name] = descriptor
+            self.charge_metadata(len(name.encode("utf-8")) + 64)
+            if install_protocol.directory_identity(os.fstat(descriptor)) != expected:
+                raise Violation("private install initial parent identity changed")
+
+    def close_private_install_parents(self):
+        descriptors = tuple(self.install_parent_fds.values())
+        self.install_parent_fds.clear()
+        for descriptor in descriptors:
+            os.close(descriptor)
+
+    def _install_parent(self, parent):
+        for name, expected in self.install_parents.items():
+            if parent != name and not parent.startswith(name + "/"):
+                continue
+            if (
+                name not in self.install_parent_fds
+                or install_protocol.directory_identity(os.fstat(self.install_parent_fds[name])) != expected
+            ):
+                raise Violation("private install lacks its original pinned parent")
+            actual = Path(self.config["root"]) / name.lstrip("/")
+            descriptor = os.open(actual, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            try:
+                if install_protocol.directory_identity(os.fstat(descriptor)) != expected:
+                    raise Violation("private install parent identity changed")
+            finally:
+                os.close(descriptor)
+        return os.dup(self.install_parent_fds[parent])
+
+    def _install_path(self, pid, state, address, dirfd):
+        path = self.path(pid, state, address, dirfd, follow_final=False)
+        spelling, descriptor, base = state.path_context
+        literal = spelling if base is None else base.rstrip("/") + "/" + spelling
+        try:
+            install_protocol.private_path(path)
+        except install_protocol.InstallError as error:
+            raise Violation(str(error)) from error
+        if literal != path or posixpath.dirname(path) not in self.install_parents:
+            raise Violation("private install has an alias or unpinned parent")
+        if base is not None:
+            if base not in self.install_parents:
+                raise Violation("private install relative lookup has an unpinned base")
+            kernel = f"/proc/{pid}/cwd" if descriptor == -100 else f"/proc/{pid}/fd/{descriptor}"
+            if install_protocol.directory_identity(os.stat(kernel)) != self.install_parents[base]:
+                raise Violation("private install cwd/dirfd identity changed")
+        return path, (address, spelling)
+
+    def _install_aliases(self, pid, state, source, destination, identity):
+        directory = Path(f"/proc/{pid}/fd")
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                self.charge_metadata(len(entry.name) + 64)
+                if not entry.name.isdecimal():
+                    raise Violation("private install has an unknown descriptor")
+                descriptor = int(entry.name)
+                if descriptor not in state.fds:
+                    raise Violation("private install has an untracked descriptor")
+                info = os.stat(entry.path)
+                if (
+                    stat.S_ISREG(info.st_mode) and (info.st_dev, info.st_ino) == identity[:2]
+                    or state.fds[descriptor] in {source, destination}
+                ):
+                    raise Violation("private install source/destination has an active descriptor alias")
+        with open(f"/proc/{pid}/maps", "rb") as stream:
+            data = stream.read(SYSCALL_MEMORY_LIMIT + 1)
+        self.charge_metadata(len(data))
+        if len(data) > SYSCALL_MEMORY_LIMIT:
+            raise Violation("private install mapping inventory exceeds observation bound")
+        for row in data.splitlines():
+            fields = row.split(None, 5)
+            if len(fields) < 5:
+                raise Violation("private install mapping inventory is incomplete")
+            try:
+                device = tuple(int(part, 16) for part in fields[3].split(b":"))
+                inode = int(fields[4])
+            except ValueError as error:
+                raise Violation("private install mapping identity is invalid") from error
+            if (
+                b"w" in fields[1] and b"s" in fields[1]
+                or device == (os.major(identity[0]), os.minor(identity[0])) and inode == identity[1]
+            ):
+                raise Violation("private install has a shared or source-backed mapping")
+
+    def prepare_private_install(self, pid, state, registers):
+        if self.private_install is None:
+            raise Violation("candidate directory-entry relocation is forbidden")
+        if (
+            self.mode != "command" or state.role != "command" or state.bootstrap
+            or set(self.processes) != {pid} or self.newborn_stops
+        ):
+            raise Violation("private install requires its sole post-bootstrap command actor")
+        if registers.orig_rax == 82:
+            old_pointer, new_pointer = registers.rdi, registers.rsi
+            old_dir = new_dir = -100
+        else:
+            if registers.orig_rax == 316 and registers.r8:
+                raise Violation("private install does not admit rename flags")
+            old_dir, old_pointer = signed(registers.rdi), registers.rsi
+            new_dir, new_pointer = signed(registers.rdx), registers.r10
+        source, old_argument = self._install_path(pid, state, old_pointer, old_dir)
+        destination, new_argument = self._install_path(pid, state, new_pointer, new_dir)
+        parent = posixpath.dirname(source)
+        if (
+            posixpath.dirname(destination) != parent
+            or destination not in self.private_install.destinations or destination in self.install_attempts
+            or source == destination
+        ):
+            raise Violation("private install destination is unissued, repeated or cross-parent")
+        parent_fd = self._install_parent(parent)
+        source_fd = -1
+        try:
+            try:
+                os.stat(posixpath.basename(destination), dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise Violation("private install destination already exists")
+            source_fd = os.open(
+                posixpath.basename(source), os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent_fd,
+            )
+            info = os.fstat(source_fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_mode & 0o7000:
+                raise Violation("private install source is not a single-link regular file")
+            identity = publication_identity(info)
+            self._install_aliases(pid, state, source, destination, identity)
+            self.reserve_creation()
+            self.install_attempts.add(destination)
+            state.pending = ("private-install", _PendingInstall(
+                source, destination, identity, parent, parent_fd, source_fd,
+                (old_argument, new_argument), len(self.install_attempts),
+            ))
+        except BaseException:
+            if source_fd >= 0:
+                os.close(source_fd)
+            os.close(parent_fd)
+            raise
+
+    def finish_private_install(self, pid, pending, result):
+        try:
+            for address, spelling in pending.arguments:
+                if cstring(pid, address) != spelling:
+                    raise Violation("private install pathname changed across the kernel operation")
+            if install_protocol.directory_identity(os.fstat(pending.parent_fd)) != self.install_parents[pending.parent]:
+                raise Violation("private install pinned parent changed")
+            checked = self._install_parent(pending.parent)
+            os.close(checked)
+            identity = None
+            if result == 0:
+                try:
+                    os.stat(posixpath.basename(pending.source), dir_fd=pending.parent_fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise Violation("private install did not retire its source name")
+                installed = os.stat(
+                    posixpath.basename(pending.destination), dir_fd=pending.parent_fd, follow_symlinks=False,
+                )
+                identity = publication_identity(installed)
+                pinned = publication_identity(os.fstat(pending.source_fd))
+                before = pending.source_identity
+                if (
+                    identity != pinned or identity[:5] != before[:5] or identity[6] != 1
+                    or not stat.S_ISREG(identity[2])
+                ):
+                    raise Violation("private install changed the pinned regular-file contents or identity")
+                self.install_completed.add(pending.destination)
+            elif result > 0:
+                raise Violation("private install returned an invalid kernel status")
+            self.observe("accessed", install_protocol.PREFIX + encoded({
+                "version": 1, "scope": self.private_install.scope, "sequence": pending.sequence,
+                "source": pending.source, "destination": pending.destination,
+                "result": result, "identity": identity,
+            }).decode("ascii"))
+        finally:
+            pending.close()
 
     def source_mode(self, path):
         for forbidden in self.config["forbidden_paths"]:
@@ -1117,6 +1727,12 @@ class Policy:
             or self.dependency_image_identity(f"/proc/{pid}/exe") != expected
         ):
             raise Violation("dependency executable differs from its verified image")
+        if self.toolchain is not None:
+            info = os.stat(f"/proc/{pid}/exe")
+            if [
+                info.st_dev, info.st_ino, info.st_mode, info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+            ] != dict((row[0], row[1:]) for row in self.toolchain["images"])[path]:
+                raise Violation("toolchain executable changed its original command identity")
 
     def verify_dependency_mapping_span(self, image, start, end, raw_offset, ip, instruction):
         if not re.fullmatch(rb"[0-9a-fA-F]{1,16}", raw_offset):
@@ -1208,8 +1824,32 @@ class Policy:
         )
         driver = (
             operation == "metadata"
-            and path in self.dependency_stat_probes | self.dependency_directories
+            and (
+                path in self.dependency_stat_probes | self.dependency_directories
+                or any(
+                    path.startswith(directory + "/")
+                    for directory in self.dependency_metadata_descendants
+                )
+            )
             and state.dependency_image == self.config["dependency"]["executables"][0]
+            and origin in {
+                self.dependency_image_ids[state.dependency_image],
+                self.dependency_image_ids[self.dependency_libc],
+            }
+        )
+        frontend = (
+            self.header_roots and operation in {"read", "metadata"}
+            and state.dependency_image == self.config["dependency"]["executables"][1]
+            and any(path == root or path.startswith(root + "/") for root in self.header_roots)
+            and origin in {
+                self.dependency_image_ids[state.dependency_image],
+                self.dependency_image_ids[self.dependency_libc],
+            }
+        )
+        filter_input = (
+            self.filter_kernel is not None and operation in {"read", "metadata"}
+            and path in {*header_protocol.STATFS_PATHS, *header_protocol.READ_PATHS, *header_protocol.ABSENT_PATHS}
+            and state.dependency_image == "/usr/bin/sed"
             and origin in {
                 self.dependency_image_ids[state.dependency_image],
                 self.dependency_image_ids[self.dependency_libc],
@@ -1219,10 +1859,117 @@ class Policy:
             image = self.dependency_interpreter
         elif driver:
             image = state.dependency_image if origin == self.dependency_image_ids[state.dependency_image] else self.dependency_libc
+        elif frontend:
+            image = state.dependency_image if origin == self.dependency_image_ids[state.dependency_image] else self.dependency_libc
+        elif filter_input:
+            image = state.dependency_image if origin == self.dependency_image_ids[state.dependency_image] else self.dependency_libc
         else:
             return False
         self.verify_dependency_mapping_span(image, *mapping, ip, instruction)
         return True
+
+    def kernel_record(self, operation, path, result, *, data=None, count=None, digest=None, eof=None):
+        self.kernel_sequence += 1
+        row = {
+            "sequence": self.kernel_sequence, "operation": operation, "path": path,
+            "result": result, "data": data, "bytes": count, "sha256": digest, "eof": eof,
+        }
+        self.observe("accessed", header_protocol.KERNEL_PREFIX + encoded(row).decode("ascii"))
+
+    def header_runtime_access(self, state, path, operation, mode, *, source=False):
+        if not source and any(
+            path == excluded or path.startswith(excluded + "/")
+            for excluded in self.config["dependency"]["header_search"]["excluded"]
+        ):
+            raise Violation("unsupported C++ SDK namespace is not an absent C header")
+        expected = (self.toolchain_inputs if source else self.header_files).get(path)
+        if self.toolchain is not None and self.toolchain["stage"] == 4 and operation == "read":
+            raise Violation("the tiny toolchain compile cannot consume a source/SDK header")
+        if expected is not None:
+            if (
+                operation not in {"read", "metadata"}
+                or state.dependency_image != self.config["dependency"]["executables"][1]
+            ):
+                raise Violation("ARM SDK input lacks its actual C frontend")
+            descriptor = os.open(
+                Path(self.config["root"]) / path.lstrip("/"),
+                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+            )
+            with os.fdopen(descriptor, "rb") as stream:
+                before = publication_identity(os.fstat(stream.fileno()))
+                if before[2:4] != (stat.S_IFREG | expected[1], expected[2]) or (
+                    before[6] < 1 if source else before[6] != 1
+                ):
+                    raise Violation("captured ARM SDK input changed type, mode or extent")
+                if path in self.header_verified:
+                    if self.header_verified[path] != before:
+                        raise Violation("captured ARM SDK input changed during execution")
+                else:
+                    self.charge_metadata(expected[2])
+                    digest, remaining = hashlib.sha256(), expected[2]
+                    while remaining:
+                        if time.monotonic() >= self.config["deadline"]:
+                            raise Violation("ARM SDK read exhausted the existing deadline")
+                        data = stream.read(min(remaining, SYSCALL_MEMORY_LIMIT))
+                        if not data:
+                            raise Violation("captured ARM SDK input was truncated")
+                        digest.update(data)
+                        remaining -= len(data)
+                    if stream.read(1) or digest.hexdigest() != expected[3]:
+                        raise Violation("captured ARM SDK input differs from its exact bytes")
+                    if publication_identity(os.fstat(stream.fileno())) != before:
+                        raise Violation("captured ARM SDK input changed during its actual read")
+                    self.header_verified[path] = before
+            if not source:
+                self.defer_observation(state, "accessed", arm_headers.PREFIX + encoded(expected).decode("ascii"))
+            return
+        if self.header_entries.get(path) == "directory" and operation == "metadata":
+            if mode is None or not stat.S_ISDIR(mode):
+                raise Violation("captured ARM SDK directory changed")
+            self.defer_observation(state, "accessed", path)
+            return
+        if (
+            path not in self.header_entries and mode is None and operation in {"read", "metadata"}
+            and self.dependency_negative_purpose(state, path, operation)
+        ):
+            self.defer_observation(state, "accessed", path)
+            return
+        raise Violation("ungranted or changed ARM SDK entry is not a missing header")
+
+    def toolchain_private_access(self, state, path, operation):
+        stage = self.toolchain["stage"]
+        executables = self.config["executables"]
+        if path == "/work" and operation == "metadata":
+            return
+        if path == "/dev" and stage >= 3 and operation == "metadata":
+            return
+        if path == "/dev/null":
+            if stage < 3 or operation not in {"read", "write", "metadata"} or (
+                operation == "write" and state.dependency_image != executables[-1]
+            ):
+                raise Violation("toolchain probe escaped its exact null output")
+            return
+        if stage != 4 or not re.fullmatch(r"/work/cc[A-Za-z0-9]{6}\.s", path) or operation not in {"read", "write", "metadata"}:
+            raise Violation("toolchain probe escaped its one private assembly temporary")
+        info = None
+        try:
+            info = (Path(self.config["root"]) / path.lstrip("/")).lstat()
+        except FileNotFoundError:
+            pass
+        if path not in self.toolchain_temporaries:
+            if self.toolchain_temporaries or info is not None or state.dependency_image != executables[0]:
+                raise Violation("toolchain temporary is preexisting, repeated or foreign")
+            self.toolchain_temporaries[path] = None
+        if info is not None:
+            identity = info.st_dev, info.st_ino, info.st_mode, info.st_nlink
+            if (
+                not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_mode & 0o777 != 0o600
+                or self.toolchain_temporaries[path] not in {None, identity}
+            ):
+                raise Violation("toolchain temporary changed its actual owned object")
+            self.toolchain_temporaries[path] = identity
+        elif self.toolchain_temporaries[path] is not None and operation != "metadata":
+            raise Violation("toolchain temporary disappeared before its actual compiler operation")
 
     def dependency_runtime_access(self, state, path, operation):
         full = Path(self.config["root"]) / path.lstrip("/")
@@ -1232,13 +1979,35 @@ class Policy:
             mode = None
         except OSError as error:
             raise Violation(f"dependency runtime path has an unsupported type: {path}") from error
+        if self.filter_kernel is not None and path in header_protocol.READ_PATHS:
+            if (
+                operation not in {"read", "metadata"} or mode is None or not stat.S_ISREG(mode)
+                or not self.dependency_negative_purpose(state, path, operation)
+            ):
+                raise Violation("sed kernel input escaped its actual readonly runtime purpose")
+            self.defer_observation(state, "accessed", path)
+            return
+        if self.filter_kernel is not None and path in header_protocol.ABSENT_PATHS:
+            if operation != "metadata" or mode is not None or not self.dependency_negative_purpose(state, path, operation):
+                raise Violation("sed negative configuration input changed or escaped its runtime purpose")
+            state.pending = ("kernel-absent", path)
+            return
+        if any(path == root or path.startswith(root + "/") for root in self.header_roots):
+            self.header_runtime_access(state, path, operation, mode)
+            return
         allowed = (
             operation in {"read", "metadata"} and path in self.dependency_files
             and mode is not None and stat.S_ISREG(mode)
             or operation == "metadata" and path in self.dependency_directories
             and mode is not None and stat.S_ISDIR(mode)
+            or operation == "metadata" and path in self.dependency_stat_probes
+            and self.dependency_negative_purpose(state, path, operation)
+            or operation == "metadata" and any(
+                path.startswith(directory + "/")
+                for directory in self.dependency_metadata_descendants
+            ) and self.dependency_negative_purpose(state, path, operation)
             or mode is None and (
-                operation == "metadata" and path in self.dependency_stat_probes | self.dependency_directories
+                operation == "metadata" and path in self.dependency_directories
                 or operation in {"read", "metadata"} and path in self.dependency_loader_probes
             ) and self.dependency_negative_purpose(state, path, operation)
         )
@@ -1249,6 +2018,12 @@ class Policy:
     def check(self, state, path, operation, *, observer=False):
         if path.startswith("<"):
             return
+        if self.toolchain is not None:
+            if path in {"/work", "/dev", "/dev/null"} or path.startswith("/work/"):
+                self.toolchain_private_access(state, path, operation)
+                return
+            if path in self.toolchain_inputs:
+                self.header_runtime_access(state, path, operation, self.source_mode(path), source=True)
         if state.role == "make" and state.observer_ready:
             if path == "/lib/vo-observer.so" and not observer:
                 raise Violation("supervisor observer image access denied")
@@ -1454,11 +2229,20 @@ class Policy:
         state.observations.clear()
         state.observation_needs_bytes = False
         trusted = self.observer(state, r)
-        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE}:
+        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY, VO_JOB_CONTEXT, VO_SOURCE_IO, VO_TOOLCHAIN_STATUS}:
             if a == VO_QUERY_KIND:
                 if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE, VO_LIVE}:
                     raise Violation("unauthenticated interceptor kind query")
                 state.pending = ("helper_kind", state.helper_kind)
+            elif a == VO_TOOLCHAIN_STATUS:
+                if (
+                    state.role != "helper" or state.helper_kind != VO_LIVE
+                    or state.producer_slot is None or not state.producer_event_written
+                    or state.toolchain_status_queried or b or c
+                ):
+                    raise Violation("unissued or repeated toolchain outcome query")
+                state.toolchain_status_queried = True
+                state.pending = ("toolchain-status", 2 if state.toolchain_status is None else state.toolchain_status)
             elif a == VO_METADATA:
                 entries = self.config.get("mapping_entries", ())
                 if (
@@ -1491,21 +2275,39 @@ class Policy:
             else:
                 if not trusted:
                     raise Violation("unauthenticated Make dispatch notification")
-                if a == VO_READY:
+                if a == VO_JOB_CONTEXT:
+                    self.observe_job_context(pid, state, b, c)
+                elif a == VO_READY:
                     if b or c or state.observer_ready:
                         raise Violation("invalid observer bootstrap notification")
                     state.observer_ready = True
+                    if self.read_trace is not None:
+                        self.read_trace.ready(pid)
+                elif a == VO_SOURCE_IO:
+                    if self.read_trace is None or state.role != "make" or not state.observer_ready:
+                        raise Violation("unissued original-source stream notification")
+                    self.read_trace.source_io(pid, state, b, c)
+                elif a == VO_JOB_POLICY:
+                    if (
+                        state.role != "make" or pid != self.make_pid or not state.observer_ready
+                        or not 0 < b < 1 << 31 or c not in {0, 1, 2, 3}
+                    ):
+                        raise Violation("invalid native Make job policy")
+                    self.observe("accessed", "make-job-policy:" + encoded([b, c]).decode("ascii"))
                 elif b:
                     path = self.path(pid, state, b)
-                    if path not in self.executable or path == "/control/interceptor" or c not in {0, 1}:
+                    if path not in self.executable or path == "/control/interceptor" or not 0 <= c <= 7:
                         raise Violation(f"untrusted executable dispatch: {path}")
                     if self.runtime_metadata(path, parents=False):
                         self.check_optional_make_spelling(state, path, "execute")
+                    if self.source_effects is not None:
+                        state.dispatch_origin = self.source_effects.originate(pid, state, path, bool(c & 4))
                     state.dispatch = (path, c)
                 else:
                     if c:
                         raise Violation("invalid Make dispatch completion")
                     state.dispatch = None
+                    state.dispatch_origin = None
         elif n in {2, 85, 257}:  # open, creat, openat
             flags = c if n == 257 else b
             follow = n == 85 or not (
@@ -1519,6 +2321,12 @@ class Policy:
             writing = creating or bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_TRUNC))
             operation = "write" if writing else "metadata" if state.role == "helper" and flags & os.O_PATH else "read"
             self.check(state, path, operation, observer=trusted)
+            if (
+                state.role == "make" and state.observer_ready and operation == "read"
+                and not flags & (os.O_DIRECTORY | os.O_PATH)
+                and (path == "/repo" or path.startswith("/repo/"))
+            ):
+                self.observe("accessed", "make-open:" + encoded([path, state.path_context[0]]).decode("ascii"))
             if creating:
                 self.reserve_creation()
             state.pending = ("open", path)
@@ -1542,7 +2350,29 @@ class Policy:
                 if mode is not None and stat.S_ISREG(mode):
                     state.pending = ("make-source-exec", (path, n == 439 and bool(d & 0x200)))
             self.begin_metadata(pid, state, r, path)
+        elif n == 137:
+            if self.filter_kernel is None:
+                raise Violation("unadmitted syscall 137")
+            raw = cstring(pid, a)
+            path = self.path(pid, state, a)
+            if (
+                path != raw or path not in header_protocol.STATFS_PATHS
+                or not self.dependency_negative_purpose(state, path, "metadata")
+            ):
+                raise Violation("sed statfs escaped its exact verified runtime input")
+            present = dict(self.filter_kernel["statfs"])[path]
+            try:
+                info = (Path(self.config["root"]) / path.lstrip("/")).lstat()
+            except FileNotFoundError:
+                if present:
+                    raise Violation("sed statfs lost its actual directory binding")
+            else:
+                if not present or not stat.S_ISDIR(info.st_mode):
+                    raise Violation("sed statfs binding differs from its declared presence")
+            state.pending = ("kernel-statfs", (path, b, present))
         elif n in {5, 138}:  # fstat, fstatfs
+            if n == 138 and (pid, a) in self.kernel_streams:
+                raise Violation("sed kernel stream filesystem queries are unsupported")
             path = self.check_fd(state, a, "metadata", r)
             self.begin_metadata(pid, state, r, path)
         elif n in {0, 17, 19}:  # read/pread/readv
@@ -1551,6 +2381,17 @@ class Policy:
             state.observation_needs_bytes = True
             if state.role == "helper" and path.startswith("/control/map/") and path.endswith(".meta"):
                 state.pending = ("metadata-input", None)
+            if self.filter_kernel is not None and path in header_protocol.READ_PATHS:
+                if n != 0 or (pid, a) not in self.kernel_streams or c > SYSCALL_MEMORY_LIMIT:
+                    raise Violation("sed kernel stream escaped its sequential bounded read")
+                state.pending = ("kernel-read", (a, b, c))
+            if self.toolchain is not None and path == "<stdin>":
+                if (
+                    n != 0 or self.toolchain["stage"] < 3 or c > SYSCALL_MEMORY_LIMIT
+                    or state.dependency_image != self.config["executables"][1]
+                ):
+                    raise Violation("toolchain stdin lacks its exact actual frontend")
+                state.pending = ("toolchain-stdin", (b, c))
         elif n in {1, 18, 20}:  # write/pwrite/writev
             path = self.check_fd(state, a, "write", r)
             state.kernel_io = path
@@ -1579,6 +2420,8 @@ class Policy:
         elif n == 3:
             state.pending = ("close", a)
         elif n in {8, 74, 75, 73}:
+            if (pid, a) in self.kernel_streams:
+                raise Violation("sed kernel stream seek/descriptor mutation is unsupported")
             self.check_fd(state, a, "read", r)
         elif n in {78, 217}:
             path = self.check_fd(state, a, "directory", r)
@@ -1600,6 +2443,8 @@ class Policy:
                     raise Violation("shared writable mappings/argument races are forbidden")
             if not d & MAP_ANONYMOUS:
                 path = self.check_fd(state, descriptor, "read", r)
+                if self.filter_kernel is not None and path in header_protocol.READ_PATHS:
+                    raise Violation("sed kernel stream mappings are unsupported")
                 # Even MAP_PRIVATE + O_RDONLY can observe another process's
                 # writes to the backing inode until COW. Closing/duplicating/
                 # hardlinking the FD does not make /work immutable.
@@ -1639,6 +2484,22 @@ class Policy:
                 if len(self.executed) >= len(expected) or path != expected[len(self.executed)]:
                     raise Violation("dependency execution escaped the driver/cc1 profile")
                 state.exec_path = path
+                if self.toolchain is not None:
+                    arguments = recipe_arguments(pid, b)
+                    remaining = SYSCALL_MEMORY_LIMIT - sum(len(value.encode("utf-8")) + 1 for value in arguments)
+                    environment = {}
+                    for value in recipe_arguments(pid, c, label="environment", byte_limit=remaining, allow_empty=True):
+                        name, separator, content = value.partition("=")
+                        if not separator or not name or name in environment:
+                            raise Violation("toolchain exec has a malformed environment")
+                        environment[name] = content
+                    if (
+                        not arguments or self.resolve(arguments[0]) != path
+                        or state.bootstrap and (arguments != self.config["argv"] or environment != self.config["environment"])
+                        or not state.bootstrap and state.dependency_image != expected[0]
+                    ):
+                        raise Violation("toolchain exec escaped its issued driver/parent arguments")
+                    state.toolchain_exec = arguments, environment
             if self.mode == "make":
                 if state.bootstrap and path == "/usr/bin/make":
                     role = "make"
@@ -1655,8 +2516,35 @@ class Policy:
                     role = "helper"
                     source, required = state.dispatch
                     state.helper_kind = VO_VALUE if (
-                        required or source == "/usr/bin/make" or self.fd(state, 1) == "<pipe>"
+                        required & 1 or source == "/usr/bin/make" or self.fd(state, 1) == "<pipe>"
                     ) else VO_RECIPE
+                    arguments = recipe_arguments(pid, b)
+                    remaining = SYSCALL_MEMORY_LIMIT - sum(len(value.encode("utf-8")) + 1 for value in arguments)
+                    environment = {}
+                    for value in recipe_arguments(
+                        pid, c, label="environment", byte_limit=remaining, allow_empty=True,
+                    ):
+                        name, separator, content = value.partition("=")
+                        if not separator or not name or name in environment:
+                            raise Violation("malformed or duplicate native Make export")
+                        environment[name] = content
+                    self.dispatch_sequence += 1
+                    state.native_dispatch_sequence = self.dispatch_sequence
+                    context = {
+                        "sequence": self.dispatch_sequence, "environment": environment,
+                        "executable": source, "arguments": arguments,
+                        "cwd": state.cwd, "rebuilding_makefiles": bool(required & 4),
+                    }
+                    try:
+                        validate_dispatch_context(context)
+                    except ChannelError as error:
+                        raise Violation(str(error)) from error
+                    state.native_dispatch_context = context
+                    self.emit_job_context(state)
+                    self.observe("accessed", "make-dispatch:" + encoded({
+                        **context, "kind": "recipe" if state.helper_kind == VO_RECIPE else "value",
+                        "global_ignore_errors": bool(required & 2),
+                    }).decode("ascii"))
                     if state.helper_kind == VO_VALUE and self.config.get("producer_endpoint"):
                         state.helper_kind = VO_LIVE
                     state.dispatch = None
@@ -1669,6 +2557,8 @@ class Policy:
             self.reserve_exec(pid, state)
             state.pending = ("exec", role)
         elif n in {56, 57, 58}:
+            if self.private_install is not None or self.filter_kernel is not None:
+                raise Violation("private install command cannot create another actor")
             if n == 56:
                 allowed = 0x100 | 0x4000 | 0x100000 | 0x200000 | 0x1000000 | 0xFF
                 if a & ~allowed or (a & 0xFF) != signal.SIGCHLD:
@@ -1679,6 +2569,8 @@ class Policy:
             self.reserve_process(state)
             self.reserve_memory(pid, state, 0, copies=1)
         elif n == 435:
+            if self.private_install is not None or self.filter_kernel is not None:
+                raise Violation("private install command cannot create another actor")
             if b < 64 or b > 88:
                 raise Violation("unknown clone3 structure")
             flags = int.from_bytes(memory(pid, a, 8), "little")
@@ -1696,16 +2588,22 @@ class Policy:
             state.pending = ("pipe", a)
         elif n in {32, 33, 292}:
             path = self.fd(state, a)
+            if (pid, a) in self.kernel_streams or (pid, b) in self.kernel_streams:
+                raise Violation("sed kernel stream descriptor aliases are unsupported")
             self.check(state, path, "read", observer=trusted)
             state.pending = ("dup", path)
         elif n == 72:
             path = self.fd(state, a)
+            if (pid, a) in self.kernel_streams and b not in {1, 2, 3}:
+                raise Violation("sed kernel stream fcntl mutation is unsupported")
             if b in {0, 1030}:
                 self.check(state, path, "read", observer=trusted)
                 state.pending = ("dup", path)
             elif b not in {1, 2, 3, 4, 5, 6, 7, 1031, 1032}:
                 raise Violation("unknown fcntl operation")
         elif n == 16:
+            if (pid, a) in self.kernel_streams:
+                raise Violation("sed kernel stream ioctl queries are unsupported")
             self.fd(state, a)
             if b not in {0x5401, 0x5413, 0x541B, 0x5450, 0x5451}:
                 raise Violation(f"unknown ioctl operation {b:#x}")
@@ -1746,9 +2644,7 @@ class Policy:
         elif n in {88, 266}:
             raise Violation("candidate symlink creation is forbidden")
         elif n in {82, 264, 316}:
-            # Moving a cwd/dirfd ancestor changes the kernel's '..' meaning
-            # without changing its recorded path. No supported tool needs it.
-            raise Violation("candidate directory-entry relocation is forbidden")
+            self.prepare_private_install(pid, state, r)
         elif n == 86:
             for pointer in (a, b):
                 self.check(state, self.path(pid, state, pointer, follow_final=False), "write")
@@ -1795,6 +2691,9 @@ class Policy:
         elif n == 158:
             if a not in {0x1001, 0x1002, 0x1003, 0x1004}:
                 raise Violation("unknown arch_prctl")
+        elif n in {60, 231}:
+            if any(owner == pid for owner, _ in self.kernel_streams):
+                raise Violation("sed runtime exited with an unclosed kernel input")
         elif n not in {
             7, 11, 13, 14, 15, 23, 24, 26, 27, 28, 35, 36, 37, 38,
             39, 60, 61, 63, 79, 96, 97, 98, 99, 100, 102, 104, 107, 108,
@@ -1818,14 +2717,70 @@ class Policy:
         if r.orig_rax == 12 and result > 0:
             state.break_end = result
         operation, value = pending if pending is not None else (None, None)
+        if operation == "private-install":
+            self.finish_private_install(pid, value, result)
+            return
+        if operation == "kernel-statfs":
+            path, address, present = value
+            if result != (0 if present else -errno.ENOENT):
+                raise Violation("sed statfs returned an unexpected actual result")
+            data = None
+            if present:
+                self.charge_metadata(120)
+                data = memory(pid, address, 120).hex()
+            self.kernel_record("statfs", path, result, data=data)
+            return
+        if operation == "kernel-absent":
+            if result != -errno.ENOENT:
+                raise Violation("sed negative configuration observation changed")
+            self.kernel_record("absent", value, result)
+            return
+        if operation == "kernel-read":
+            descriptor, address, requested = value
+            stream = self.kernel_streams.get((pid, descriptor))
+            if stream is None or result < 0 or result > requested:
+                raise Violation("sed kernel read failed or lost its actual descriptor")
+            if result:
+                if stream["bytes"] + result > self.config["file_limit"]:
+                    raise Violation("sed kernel input exceeds its existing byte bound")
+                self.charge_metadata(result)
+                stream["digest"].update(memory(pid, address, result))
+                stream["bytes"] += result
+            else:
+                stream["eof"] = True
+        if operation == "toolchain-stdin":
+            address, requested = value
+            expected = self.toolchain["stdin"].encode("utf-8")
+            if result < 0 or result > requested or len(self.toolchain_stdin) + result > len(expected):
+                raise Violation("toolchain stdin exceeded its exact issued extent")
+            self.charge_metadata(result)
+            actual = memory(pid, address, result) if result else b""
+            if actual != expected[len(self.toolchain_stdin):len(self.toolchain_stdin) + result]:
+                raise Violation("toolchain stdin differs from its actual issued bytes")
+            self.toolchain_stdin.extend(actual)
+            self.toolchain_eof |= result == 0
         if result < 0:
             if operation == "make-source-exec" and result == -errno.EACCES and self.source_execute_allowed(pid, *value):
                 raise Violation(f"Make source executable lookup denied by noexec view: {value[0]}")
             return
         if operation in {"open", "dup"}:
             state.fds[result] = value
+            if operation == "open" and self.filter_kernel is not None and value in header_protocol.READ_PATHS:
+                if (pid, result) in self.kernel_streams:
+                    raise Violation("sed kernel descriptor was reused before actual close")
+                self.kernel_streams[pid, result] = {
+                    "path": value, "bytes": 0, "digest": hashlib.sha256(), "eof": False,
+                }
         elif operation == "close":
             state.fds.pop(value, None)
+            if self.read_trace is not None:
+                self.read_trace.fd_closed(pid, value)
+            stream = self.kernel_streams.pop((pid, value), None)
+            if stream is not None:
+                self.kernel_record(
+                    "stream", stream["path"], 0, count=stream["bytes"],
+                    digest=stream["digest"].hexdigest(), eof=stream["eof"],
+                )
         elif operation == "pipe":
             data = memory(pid, value, 8)
             for offset in (0, 4):
@@ -1833,6 +2788,16 @@ class Policy:
         elif operation == "cwd":
             state.cwd = value
         elif operation == "helper_kind":
+            if state.native_dispatch_sequence is not None and value == state.helper_kind:
+                if not 0 < result < 1 << 31 or result != pid or state.namespace_pid not in {None, result}:
+                    raise Violation("invalid native helper PID identity")
+                state.namespace_pid = result
+                self.observe("accessed", "make-helper:" + encoded([
+                    state.native_dispatch_sequence, result,
+                ]).decode("ascii"))
+            r.rax = value
+            ptrace(SETREGS, pid, 0, ctypes.byref(r))
+        elif operation == "toolchain-status":
             r.rax = value
             ptrace(SETREGS, pid, 0, ctypes.byref(r))
         elif operation == "directory":
@@ -1913,6 +2878,17 @@ def supervise(config, drop_privileges):
             os.chdir("/repo")
             os.umask(0o022)
             os.closerange(3, 65536)
+            if policy.toolchain is not None:
+                if policy.toolchain["stdin"]:
+                    reader, writer = os.pipe()
+                    data = toolchain_runtime.input_bytes(policy.toolchain)
+                    if os.write(writer, data) != len(data):
+                        raise Violation("incomplete selected toolchain stdin")
+                    os.close(writer)
+                    os.dup2(reader, 0)
+                    os.close(reader)
+                if policy.toolchain["stage"] < 3:
+                    os.dup2(1, 2)
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
             resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))
             resource.setrlimit(resource.RLIMIT_FSIZE, (config["file_limit"], config["file_limit"]))
@@ -1940,7 +2916,10 @@ def supervise(config, drop_privileges):
         state = processes.get(child)
         if state is None:
             return
-        if parking or state.producer_ready:
+        if parking or state.producer_ready or (
+            policy.read_trace is not None and child == policy.read_trace.pid
+            and policy.read_trace.pending_barrier is not None
+        ):
             state.parked = True
             return
         if state.deferred_entry is not None:
@@ -1962,9 +2941,12 @@ def supervise(config, drop_privileges):
         state = processes.get(stopped)
         if state is None:
             if os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGSTOP:
+                if policy.read_trace is not None:
+                    policy.read_trace.clear(stopped)
                 if stopped not in newborn_stops:
                     policy.total_processes += 1
                     newborn_stops[stopped] = os.pidfd_open(stopped)
+                policy.require_fresh_process(stopped)
                 policy.account_processes()
                 return
             raise Violation("unrecorded sandbox descendant")
@@ -1973,8 +2955,15 @@ def supervise(config, drop_privileges):
             unfulfilled = state.producer_requested and (
                 state.producer_slot is None or not state.producer_event_written
             )
-            del processes[stopped]
-            state.close()
+            try:
+                if config["mode"] == "make":
+                    policy.retire_job(stopped, state)
+            finally:
+                del processes[stopped]
+                state.close()
+            if config["mode"] == "make":
+                policy.charge_metadata(16)
+                policy.closed_processes.add(stopped)
             vfork_waiters.pop(stopped, None)
             release_vfork(stopped)
             if stopped == pid:
@@ -1984,15 +2973,22 @@ def supervise(config, drop_privileges):
             if code != 0 and not (
                 stopped == pid and (config["mode"] == "make"
                 or config.get("metadata_validation") and code in {1, 2})
+                or policy.toolchain is not None
+                or state.role == "helper" and state.toolchain_status == code == 1
+                and state.toolchain_status_queried and state.producer_event_written
             ):
                 raise Violation(f"sandbox process exited unsuccessfully: {code}")
             return
         state.parked = True
         sig = os.WSTOPSIG(status)
         event = status >> 16
+        if sig == signal.SIGSTOP and policy.read_trace is not None and stopped != policy.read_trace.pid:
+            policy.read_trace.clear(stopped)
         if sig == signal.SIGTRAP and event in {1, 2, 3}:
             child = ctypes.c_ulong()
             ptrace(0x4201, stopped, 0, ctypes.byref(child))
+            if child.value in processes:
+                raise Violation("native fork reused an active process identity")
             if child.value not in newborn_stops:
                 policy.total_processes += 1
             record = state.clone()
@@ -2003,6 +2999,7 @@ def supervise(config, drop_privileges):
             if not already_stopped:
                 record.pidfd = os.pidfd_open(child.value)
             processes[child.value] = record
+            policy.require_fresh_process(child.value)
             if not state.process_reservation:
                 raise Violation("unreserved process creation")
             state.process_reservation = False
@@ -2023,6 +3020,18 @@ def supervise(config, drop_privileges):
                 state.dependency_stop = None
                 policy.reserve_observation("accessed", "dependency-exec:" + str(len(policy.executed)) + state.exec_path)
                 policy.executed.append(state.exec_path)
+                if policy.toolchain is not None:
+                    if state.toolchain_exec is None:
+                        raise Violation("toolchain execution lost its actual argument observation")
+                    info = os.stat(f"/proc/{stopped}/exe")
+                    arguments, environment = state.toolchain_exec
+                    policy.observe("accessed", toolchain_runtime.EXEC_PREFIX + encoded({
+                        "stage": toolchain_runtime.STAGES[policy.toolchain["stage"]],
+                        "sequence": len(policy.executed), "path": state.exec_path,
+                        "identity": [info.st_dev, info.st_ino, info.st_mode, info.st_size, info.st_mtime_ns, info.st_ctime_ns],
+                        "argv": arguments, "environment": environment,
+                    }).decode("ascii"))
+                    state.toolchain_exec = None
                 state.exec_path = None
             if state.bootstrap:
                 descriptors = {entry.name for entry in Path(f"/proc/{stopped}/fd").iterdir()}
@@ -2030,6 +3039,10 @@ def supervise(config, drop_privileges):
                 if descriptors != {"0", "1", "2"}:
                     raise Violation("initial guest exec inherited a nonstandard descriptor")
             state.role = state.pending[1]
+            if policy.read_trace is not None:
+                policy.read_trace.actual_exec(stopped, state.role == "make")
+            if policy.source_effects is not None and state.role == "helper":
+                policy.source_effects.helper_exec(stopped, state)
             state.bootstrap = False
             state.fds = {0: "<stdin>", 1: "<stdout>", 2: "<stderr>"}
             state.observer_ranges = ()
@@ -2069,6 +3082,8 @@ def supervise(config, drop_privileges):
                 state.kernel_call = None
             else:
                 raise Violation("kernel did not identify syscall entry/exit")
+        elif sig == signal.SIGTRAP and event == 0 and policy.read_trace is not None:
+            policy.read_trace.trap(stopped, state)
         elif sig not in {signal.SIGSTOP, signal.SIGCHLD, signal.SIGTRAP}:
             raise Violation(f"sandbox signal {sig}")
         resume(stopped)
@@ -2104,12 +3119,8 @@ def supervise(config, drop_privileges):
                 raise Violation("producer result slot changed during read")
             return data
 
-    def fulfill_producer():
+    def park_invocation():
         nonlocal parking
-        requester = policy.producer_requests[0]
-        state = processes.get(requester)
-        if state is None or not state.producer_ready or channel is None:
-            raise Violation("missing parked producer request")
         parking = True
         while True:
             if time.monotonic() >= config["deadline"]:
@@ -2121,28 +3132,175 @@ def supervise(config, drop_privileges):
             if not any(unsettled(record) for record in processes.values()):
                 break
             time.sleep(0.0001)
-        if requester not in processes or pid not in processes:
-            raise Violation("producer context died before request notification")
-        policy.producer_issued += 1
-        sequence = policy.producer_issued
+
+    def release_invocation():
+        nonlocal parking
+        parking = False
+        for child, record in tuple(processes.items()):
+            if record.parked:
+                resume(child)
+
+    def fulfill_read_barrier():
+        trace = policy.read_trace
+        if trace is None or trace.pending_barrier is None or channel is None:
+            raise Violation("missing actual source-entry barrier")
+        park_invocation()
+        if pid not in processes or trace.pid != pid:
+            raise Violation("source-entry process died before its barrier")
         request = {
-            "kind": "request", "scope": config["producer_scope"], "sequence": sequence,
-            "completed": policy.producer_completed, "frame": state.producer_frame.hex(),
-            "counters": policy.counters(), "reserved": policy.reservations(),
+            "kind": "read-barrier", "scope": config["producer_scope"], **trace.pending_barrier,
+            "issued": policy.producer_issued, "completed": policy.producer_completed,
             "publication": policy.publication_confirmation,
+            "counters": policy.counters(), "reserved": policy.reservations(),
         }
         raw = channel.exchange(
             encoded(request),
             watch=[record.pidfd for record in processes.values()] + list(newborn_stops.values()),
         )
+        reply = parse_json(raw, "source-entry acknowledgement")
+        try:
+            source_phases.validate_resume(reply, request)
+        except ChannelError as error:
+            raise Violation(str(error)) from error
+        policy.apply_producer_limits(reply["limits"], ceilings)
+        channel.require_live([record.pidfd for record in processes.values()] + list(newborn_stops.values()))
+        channel.ensure_idle()
+        trace.confirm_barrier(request, reply["image_sha256"])
+        release_invocation()
+
+    def journal_barrier(stage, sequence, origin, publication=None):
+        if policy.journal_receipts is None:
+            return
+        if not parking or channel is None or pid not in processes:
+            raise Violation("source publication lacks its actually parked native window")
+        request = {
+            "kind": "journal-barrier", "scope": config["producer_scope"],
+            "barrier": len(policy.journal_receipts) + 1, "stage": stage, "producer": sequence,
+            "origin": origin, "publication": publication,
+            "counters": policy.counters(), "reserved": policy.reservations(),
+        }
+        raw = channel.exchange(
+            encoded(request),
+            watch=[record.pidfd for record in processes.values()] + list(newborn_stops.values()),
+        )
+        reply = parse_json(raw, "source-journal acknowledgement")
+        source_journal.validate_resume(reply, request)
+        policy.apply_producer_limits(reply["limits"], ceilings)
+        channel.require_live([record.pidfd for record in processes.values()] + list(newborn_stops.values()))
+        channel.ensure_idle()
+        value = source_journal.receipt(reply)
+        policy.charge_metadata(len(encoded(value)))
+        policy.journal_receipts.append(value)
+
+    def directory_handoff(phase, fields):
+        if not parking or channel is None or pid not in processes or policy.directory_installs is None:
+            raise Violation("directory handoff has no actually parked native producer")
+        request = {
+            "kind": "directory-handoff", **fields, "phase": phase,
+            "counters": policy.counters(), "reserved": policy.reservations(),
+        }
+        source_directories.validate_request(
+            request, scope=config["producer_scope"], producer=policy.producer_issued,
+            origin=policy.directory_installs.origin,
+        )
+        raw = channel.exchange(
+            encoded(request),
+            watch=[record.pidfd for record in processes.values()] + list(newborn_stops.values()),
+        )
+        reply = parse_json(raw, "prewatched directory acknowledgement")
+        source_directories.validate_reply(reply, request)
+        policy.apply_producer_limits(reply["limits"], ceilings)
+        channel.require_live([record.pidfd for record in processes.values()] + list(newborn_stops.values()))
+        channel.ensure_idle()
+        return reply["journal_sha256"]
+
+    if policy.directory_installs is not None:
+        policy.directory_installs.exchange = directory_handoff
+
+    def opened_file(path, descriptor, owner, parent):
+        if not parking or channel is None or pid not in processes:
+            raise Violation("file ownership registration has no parked native publisher")
+        request = {
+            "kind": "file-opened", "scope": config["producer_scope"],
+            "producer": policy.producer_issued, "owner": owner, "path": path,
+            "identity": list(publication_identity(os.fstat(descriptor))),
+            "parent": list(file_ownership.directory_identity(os.fstat(parent))[:3]),
+            "counters": policy.counters(), "reserved": policy.reservations(),
+        }
+        file_ownership.validate_request(request, config["producer_scope"], policy.producer_issued)
+        pin = os.open(
+            f"/proc/self/fd/{descriptor}", os.O_RDONLY | os.O_CLOEXEC | os.O_NOATIME,
+        )
+        try:
+            raw = channel.exchange_descriptor(
+                encoded(request), pin,
+                watch=[record.pidfd for record in processes.values()] + list(newborn_stops.values()),
+            )
+        finally:
+            os.close(pin)
+        reply = parse_json(raw, "actual-file ownership acknowledgement")
+        file_ownership.validate_reply(reply, request)
+        policy.apply_producer_limits(reply["limits"], ceilings)
+        if publication_identity(os.fstat(descriptor)) != tuple(request["identity"]):
+            raise Violation("opened publication changed before ownership acknowledgement")
+        channel.require_live([record.pidfd for record in processes.values()] + list(newborn_stops.values()))
+        channel.ensure_idle()
+
+    if policy.file_cleanup_enabled:
+        policy.file_opened = opened_file
+
+    def fulfill_producer():
+        requester = policy.producer_requests[0]
+        state = processes.get(requester)
+        if state is None or not state.producer_ready or channel is None:
+            raise Violation("missing parked producer request")
+        park_invocation()
+        if requester not in processes or pid not in processes:
+            raise Violation("producer context died before request notification")
+        policy.producer_issued += 1
+        sequence = policy.producer_issued
+        if state.native_dispatch_context is None:
+            raise Violation("live producer has no authenticated native dispatch context")
+        if state.native_job_context is None:
+            raise Violation("live producer has no actual native job/expansion context")
+        request = {
+            "kind": "request", "scope": config["producer_scope"], "sequence": sequence,
+            "completed": policy.producer_completed, "frame": state.producer_frame.hex(),
+            "counters": policy.counters(), "reserved": policy.reservations(),
+            "publication": policy.publication_confirmation,
+            "dispatch": state.native_dispatch_context,
+            "job": {"sequence": state.native_dispatch_sequence, **state.native_job_context},
+        }
+        if policy.source_effects is not None:
+            request["source_origin"] = policy.source_effects.producer(requester, state, sequence)
+        raw = channel.exchange(
+            encoded(request),
+            watch=[record.pidfd for record in processes.values()] + list(newborn_stops.values()),
+        )
         reply = parse_json(raw, "producer reply")
+        effect_request = None
+        if isinstance(reply, dict) and reply.get("kind") == "effect-request":
+            if (
+                set(reply) != {"kind", "scope", "sequence", "slot", "owner", "operation", "path", "source", "expected", "limits"}
+                or reply["scope"] != config["producer_scope"]
+                or type(reply["sequence"]) is not int or reply["sequence"] != sequence
+                or type(reply["slot"]) is not int or reply["slot"] != sequence - 1
+                or not isinstance(reply["owner"], str) or not re.fullmatch("[0-9a-f]{64}", reply["owner"])
+            ):
+                raise Violation("malformed or foreign header effect request")
+            effect_request = reply
+            reply = {
+                "kind": "result", "scope": reply["scope"], "sequence": sequence, "slot": sequence - 1,
+                "owner": reply["owner"], "outputs": [], "stdout_sha256": hashlib.sha256(b"").hexdigest(),
+                "limits": reply["limits"], "publication_policy": "replace",
+            }
         required = {
             "kind", "scope", "sequence", "slot", "owner", "outputs", "stdout_sha256", "limits",
             "publication_policy",
         }
         if (
             not isinstance(reply, dict)
-            or set(reply) not in (required, required | {"adopt_sha256"})
+            or set(reply) not in (required, required | {"adopt_sha256"}, required | {"toolchain_result"})
             or reply["kind"] != "result" or reply["scope"] != config["producer_scope"]
             or type(reply["sequence"]) is not int or reply["sequence"] != sequence
             or type(reply["slot"]) is not int or reply["slot"] != sequence - 1
@@ -2161,6 +3319,8 @@ def supervise(config, drop_privileges):
         ):
             raise Violation("malformed, foreign or out-of-order producer reply")
         policy.apply_producer_limits(reply["limits"], ceilings)
+        if policy.journal_receipts is not None and "adopt_sha256" in reply:
+            raise Violation("fixed-directory source journal cannot attribute nested publication")
         request_event, = _read_events(state.producer_frame, expected_mapping_count=0)
         key = f"{sequence - 1:016x}"
         if read_slot(key + ".cmd", 65536) != _event_command(request_event).encode("utf-8"):
@@ -2168,6 +3328,22 @@ def supervise(config, drop_privileges):
         stdout = read_slot(key + ".out", 1024*1024)
         if hashlib.sha256(stdout).hexdigest() != reply["stdout_sha256"]:
             raise Violation("producer stdout differs from its validated result")
+        if "toolchain_result" in reply:
+            outcome = reply["toolchain_result"]
+            if (
+                not isinstance(outcome, dict) or set(outcome) != {"returncode", "stderr_sha256"}
+                or type(outcome["returncode"]) is not int or outcome["returncode"] not in {0, 1}
+                or not isinstance(outcome["stderr_sha256"], str)
+                or not re.fullmatch("[0-9a-f]{64}", outcome["stderr_sha256"])
+                or reply["outputs"] or state.native_job_context.get("kind") != "recipe"
+                or state.native_job_context.get("target") != toolchain_runtime.TARGET
+                or state.native_job_context.get("command_line") != 1
+            ):
+                raise Violation("unbound original toolchain outcome")
+            stderr = read_slot(key + ".err", 1024*1024)
+            if hashlib.sha256(stderr).hexdigest() != outcome["stderr_sha256"]:
+                raise Violation("toolchain stderr differs from its authenticated result")
+            state.toolchain_status = outcome["returncode"]
         try:
             data = read_slot(key + ".adopt", config["file_limit"])
         except FileNotFoundError as failure:
@@ -2182,16 +3358,39 @@ def supervise(config, drop_privileges):
             if records == []:
                 raise Violation("empty nested publication transfer")
             policy.adopt_published(records)
+            if policy.source_effects is not None:
+                policy.source_effects.adoption(sequence, records)
         channel.require_live([record.pidfd for record in processes.values()] + list(newborn_stops.values()))
         channel.ensure_idle()
-        effective = policy.publish(
-            sequence - 1, owner=reply["owner"], outputs=reply["outputs"],
-            policy=reply["publication_policy"],
-        )
-        policy.publication_confirmation = {
-            "slot": sequence - 1, "owner": reply["owner"],
-            "policy": reply["publication_policy"], "outputs": effective,
-        }
+        if policy.directory_installs is not None:
+            directory = effect_request is not None and effect_request["operation"] == "directory"
+            policy.directory_installs.begin(
+                sequence, request["source_origin"],
+                (effect_request["path"],) if directory else reply["outputs"], directory=directory,
+            )
+        journal_barrier("begin", sequence, request.get("source_origin"))
+        if effect_request is not None:
+            try:
+                read_slot(key + ".files", config["file_limit"])
+            except FileNotFoundError:
+                pass
+            else:
+                raise Violation("filesystem effect contains an unrelated file publication")
+            policy.publication_confirmation = policy.apply_header_effect(effect_request, state, sequence - 1)
+        else:
+            effective = policy.publish(
+                sequence - 1, owner=reply["owner"], outputs=reply["outputs"],
+                policy=reply["publication_policy"],
+            )
+            policy.publication_confirmation = {
+                "slot": sequence - 1, "owner": reply["owner"],
+                "policy": reply["publication_policy"], "outputs": effective,
+            }
+        if policy.source_effects is not None:
+            policy.source_effects.publication(sequence, policy.publication_confirmation)
+        journal_barrier("end", sequence, request.get("source_origin"), policy.publication_confirmation)
+        if policy.directory_installs is not None:
+            policy.directory_installs.end()
         policy.producer_completed = sequence
         state.producer_slot = sequence - 1
         state.producer_ready = False
@@ -2200,15 +3399,13 @@ def supervise(config, drop_privileges):
         registers.rax = sequence - 1
         ptrace(SETREGS, requester, 0, ctypes.byref(registers))
         policy.producer_requests.popleft()
-        parking = False
-        for child, record in tuple(processes.items()):
-            if record.parked:
-                resume(child)
+        release_invocation()
 
     try:
         waited, status = os.waitpid(pid, 0)
         if waited != pid or not os.WIFSTOPPED(status):
             raise Violation("sandbox child did not enter traced confinement")
+        policy.pin_private_install_parents()
         for mapping in Path(f"/proc/{pid}/maps").read_text().splitlines():
             if mapping.endswith("[heap]"):
                 processes[pid].break_end = int(mapping.split()[0].split("-")[1], 16)
@@ -2222,7 +3419,21 @@ def supervise(config, drop_privileges):
                 raise Violation("aggregate probe deadline exhausted in syscall supervisor")
             if channel is not None:
                 channel.ensure_idle()
-            if policy.producer_requests and processes[policy.producer_requests[0]].producer_ready:
+            if policy.read_trace is not None and policy.read_trace.pending_barrier is not None:
+                fulfill_read_barrier()
+                continue
+            if policy.producer_requests:
+                requested = processes[policy.producer_requests[0]]
+                parent = processes.get(policy.make_pid)
+                if (
+                    requested.producer_ready and requested.native_job_context is None and parent is not None
+                    and (parent.kernel_call == 61 or parent.kernel_call in {0, 17, 19} and parent.kernel_io == "<pipe>")
+                ):
+                    raise Violation("native read/wait boundary lacks the required job-context hook")
+            if (
+                policy.producer_requests and processes[policy.producer_requests[0]].producer_ready
+                and processes[policy.producer_requests[0]].native_job_context is not None
+            ):
                 fulfill_producer()
                 continue
             stopped, status = os.waitpid(-1, os.WNOHANG | WALL)
@@ -2232,6 +3443,8 @@ def supervise(config, drop_privileges):
             handle_stop(stopped, status)
         if newborn_stops:
             raise Violation("unresolved descendant at completion")
+        if policy.private_install is not None and policy.install_completed != set(policy.private_install.destinations):
+            raise Violation("private install command omitted a declared installation")
     except BaseException as failure:
         primary = failure
         error = str(failure)
@@ -2258,6 +3471,15 @@ def supervise(config, drop_privileges):
                     processes.clear()
         def write_report():
             nonlocal result
+            if error is None and policy.toolchain is not None and policy.toolchain["stdin"]:
+                policy.observe("accessed", toolchain_runtime.INPUT_PREFIX + encoded({
+                    "stage": toolchain_runtime.STAGES[policy.toolchain["stage"]],
+                    "stdin": bytes(policy.toolchain_stdin).decode("utf-8", "strict"), "eof": policy.toolchain_eof,
+                }).decode("ascii"))
+            if error is None and policy.filter_kernel is not None:
+                if policy.kernel_streams:
+                    raise Violation("successful sed runtime retained unclosed kernel inputs")
+                policy.observe("accessed", header_protocol.KERNEL_END + str(policy.kernel_sequence))
             result = {
                 "ok": error is None,
                 "returncode": main_status,
@@ -2278,6 +3500,21 @@ def supervise(config, drop_privileges):
             }
             if config.get("dependency"):
                 result["executed"] = policy.executed
+            if error is None and main_status == 0 and policy.read_trace is not None:
+                result["read_trace"] = policy.read_trace.finish()
+                if policy.source_effects is not None:
+                    result["source_effects"] = policy.source_effects.finish(result["read_trace"])
+                if policy.journal_receipts is not None:
+                    if len(policy.journal_receipts) != 2 * policy.producer_completed:
+                        raise Violation("native source-journal publication transcript is incomplete")
+                    result["source_journal"] = {
+                        "version": 1 if policy.directory_installs is None else 2,
+                        "scope": config["producer_scope"],
+                        "mode": source_journal.MODE if policy.directory_installs is None else source_directories.MODE,
+                        "receipts": policy.journal_receipts, "closed": True,
+                    }
+                    if policy.directory_installs is not None:
+                        result["source_journal"]["directories"] = policy.directory_installs.receipts
             if channel is not None:
                 result["rendezvous"] = {
                     "issued": policy.producer_issued, "completed": policy.producer_completed,
@@ -2301,7 +3538,9 @@ def supervise(config, drop_privileges):
                         error = str(failure)
                     raise
         finish_cleanup([
-            reap_owned, finish_channel, write_report,
+            reap_owned, policy.close_private_install_parents, finish_channel, write_report,
+            *([] if policy.directory_installs is None else [policy.directory_installs.close]),
+            *([] if policy.read_trace is None else [policy.read_trace.close]),
             *([] if channel is None else [channel.close]),
         ], primary=primary)
     return 0 if result["ok"] else 125

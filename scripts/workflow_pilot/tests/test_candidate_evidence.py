@@ -83,6 +83,56 @@ def _classifier_failure_metadata_run(run_id):
 
 
 class CandidateEvidenceTests(unittest.TestCase):
+    def test_latest_full_requires_ownership_even_with_older_green_and_metadata(self):
+        for conclusion in ("failure", "skipped", "cancelled", "timed_out", None):
+            with self.subTest(ownership_result=conclusion):
+                newer = _full_run(2)
+                owned = next(context for context in newer["contexts"] if context["job_id"] == "ownership-tests")
+                if conclusion is None:
+                    newer["contexts"].remove(owned)
+                else:
+                    owned["conclusion"] = conclusion
+                runs = [_full_run(1), newer, _metadata_run(3)]
+                if conclusion in {"failure", "skipped"}:
+                    evidence = candidate_evidence.evaluate_candidate_runs(runs, head_sha=HEAD, base_sha=BASE)
+                    self.assertFalse(evidence.eligible)
+                    self.assertEqual(evidence.run_id, 2)
+                else:
+                    with self.assertRaises(candidate_evidence.CandidateEvidenceError):
+                        candidate_evidence.evaluate_candidate_runs(runs, head_sha=HEAD, base_sha=BASE)
+
+    def test_preflight_requires_ownership_skipped_not_a_full_attestation(self):
+        jobs = {
+            "event-identity": ("completed", "success"),
+            "event-router": ("completed", "success"),
+            candidate_evidence.PREFLIGHT_CLASSIFIER: ("completed", "success"),
+            "host-tests": ("completed", "success"),
+            "build": ("completed", "success"),
+            "ownership-tests": ("completed", "skipped"),
+            "extended-host-tests": ("completed", "skipped"),
+            "legacy": ("completed", "skipped"),
+            "summary": ("completed", "failure"),
+        }
+        self.assertTrue(candidate_evidence.preflight_success(jobs))
+        self.assertEqual(len(jobs), 9)
+        for result in ("success", "failure", "cancelled", None):
+            with self.subTest(ownership_result=result):
+                changed = dict(jobs)
+                if result is None:
+                    del changed["ownership-tests"]
+                else:
+                    changed["ownership-tests"] = ("completed", result)
+                self.assertFalse(candidate_evidence.preflight_success(changed))
+        metadata = _metadata_run(4)
+        next(context for context in metadata["contexts"] if context["job_id"] == "event-classifier")[
+            "name"
+        ] = candidate_evidence.PREFLIGHT_CLASSIFIER
+        next(context for context in metadata["contexts"] if context["job_id"] == "summary")[
+            "conclusion"
+        ] = "failure"
+        self.assertEqual(candidate_evidence.run_mode(metadata), "review-first")
+        self.assertFalse(candidate_evidence.evaluate_candidate_runs([metadata], head_sha=HEAD, base_sha=BASE).eligible)
+
     def test_full_success_is_eligible_and_metadata_only_is_not(self):
         full = _full_run(1)
         metadata = _metadata_run(2)
@@ -122,6 +172,7 @@ class CandidateEvidenceTests(unittest.TestCase):
         self.assertEqual(latest["host-tests"], (11, "success"))
         self.assertEqual(latest["build"], (11, "success"))
         self.assertEqual(latest["extended-host-tests"], (11, "skipped"))
+        self.assertEqual(latest["ownership-tests"], (11, "skipped"))
         self.assertEqual(latest["legacy"], (11, "skipped"))
         self.assertNotIn("metadata-summary", latest)
 
@@ -140,6 +191,7 @@ class CandidateEvidenceTests(unittest.TestCase):
         self.assertEqual(latest["host-tests"], (21, "success"))
         self.assertEqual(latest["build"], (21, "success"))
         self.assertEqual(latest["extended-host-tests"], (21, "skipped"))
+        self.assertEqual(latest["ownership-tests"], (21, "skipped"))
         self.assertEqual(latest["legacy"], (21, "skipped"))
         self.assertNotIn("metadata-summary", latest)
 
