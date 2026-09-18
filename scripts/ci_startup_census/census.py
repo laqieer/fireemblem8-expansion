@@ -532,7 +532,8 @@ def run(harness, candidate, output, event, context):
         raise CensusError("planned identity or context disclosure differs")
     write_record(output / "attempt.json", {"identity": scope, "attempts": 1, "claimed_before_setup": True})
     state = {"watchdog_launched": False, "watchdog_reaped": True, "pidfd_closed": True, "lifetime_closed": True,
-             "fixture_removed": False, "source_unchanged": False, "cleanup_confirmed": False}
+             "fixture_owned": False, "fixture_removed": False, "source_unchanged": False,
+             "cleanup_confirmed": False}
     result = {"identity": scope, "context_differences": list(CONTEXT_DIFFERENCES),
               "first_error": None, "outer_returncode": None, "outer_entry_reached": False,
               "post_unshare_census": {"available": False, "reason": "no actual child census"},
@@ -568,10 +569,12 @@ def run(harness, candidate, output, event, context):
         if uid <= 0 or gid <= 0 or os.geteuid() == 0:
             raise CensusError("caller is not the required ordinary nonzero user")
         fixture_root.mkdir(mode=0o700)
+        state["fixture_owned"] = True
         fixture = fixture_root / "null-mount-unsupported"
         fixture.mkdir(mode=0o700)
         program = fixture_root / "null-mount-unsupported.py"
-        program.write_bytes(read_bounded(Path(__file__), RECORD_BYTES))
+        with program.open("xb") as stream:
+            stream.write(read_bounded(Path(__file__), RECORD_BYTES))
         deadline = time.monotonic() + WATCHDOG_SECONDS
         write_record(fixture / "authority.json", {
             "identity": scope, "candidate": str(candidate), "uid": uid, "gid": gid, "deadline": deadline,
@@ -613,6 +616,8 @@ def run(harness, candidate, output, event, context):
             cleanup_errors.append({"type": type(error).__name__, "message": str(error)[:FACT_BYTES]})
         try:
             if fixture_root.exists():
+                if not state["fixture_owned"]:
+                    raise CensusError("unowned pre-existing fixture retained")
                 shutil.rmtree(fixture_root)
             state["fixture_removed"] = True
         except (CensusError, OSError, RuntimeError) as error:

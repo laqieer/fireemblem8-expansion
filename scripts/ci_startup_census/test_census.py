@@ -486,6 +486,22 @@ class CensusPreparationTests(unittest.TestCase):
         self.assertTrue((self.output / "owned-fixture").exists())
         self.assertEqual((self.output / "stderr").read_bytes(), b"original uid_map denial\n")
 
+    def test_preexisting_fixture_is_not_owned_or_deleted_after_setup_refusal(self):
+        self.prepare()
+        foreign = self.output / "owned-fixture"
+        foreign.mkdir()
+        marker = foreign / "not-created-by-this-attempt"
+        marker.write_bytes(b"preserve the existing object\n")
+        with ExitStack() as stack:
+            _, launch = self.run_seams(stack, lambda *args: self.fail("namespace launch forbidden"))
+            self.assertEqual(census.run(self.harness, self.candidate, self.output, self.event, self.context), 1)
+            launch.assert_not_called()
+        value = json.loads((self.output / "result.json").read_text())
+        self.assertEqual(value["first_error"]["type"], "FileExistsError")
+        self.assertTrue(marker.is_file(), "setup refusal deleted an unowned fixture")
+        self.assertEqual(marker.read_bytes(), b"preserve the existing object\n")
+        self.assertFalse(value["cleanup"]["cleanup_confirmed"])
+
     def test_changed_source_refuses_before_any_census_or_launch(self):
         self.prepare()
         with patch.object(census, "verify_checkout", side_effect=census.CensusError("changed source")), patch.object(

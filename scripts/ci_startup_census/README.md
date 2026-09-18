@@ -69,7 +69,9 @@ window; the child restores the original inherited mask before its original
 file-size limit. The exact argv/deadline is persisted before launch, including
 when a later hard kill prevents a final result.
 Cleanup failures remain failures and preserve uncertainty; they cannot overwrite
-the first mapping error. A hard outer kill or setup failure can leave no final
+the first mapping error. A pre-existing fixture is not acquired or recursively
+removed after setup refusal; its contents remain intact and cleanup uncertainty
+is explicit. A hard outer kill or setup failure can leave no final
 result record: that is incomplete evidence, never success.
 
 ## Context differences and interpretation
