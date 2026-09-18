@@ -1,28 +1,29 @@
-# Prospective issue-180 original-root acceptance 19
+# Prospective issue-180 original-root acceptance 20
 
 **Local preparation only. No execution allocation, creation push or hosted
-qualification for19 is claimed. Never merge this diagnostic branch.** Main must bind
+qualification for20 is claimed. Never merge this diagnostic branch.** Main must bind
 the reviewed exact harness SHA in a separate launch freeze before any owner
 creation push.
 
 Preparation scope:
-[5729175721](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5729175721).
-CURRENT is `61ee1d36db833fdc2a5430db52d82553fbaffba7`; BASE remains
+[5732687277](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5732687277).
+CURRENT is `61856581bc9859f59fdd938edc219fabc07cd6ef`; BASE remains
 `ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`. The reviewed preparation
 `4dcbcb7e462a3d0953fea5b54d29c30954193ea7` is BASE's normal child, followed
 by the reviewed failure-preservation child
 `1a2d177749cec443c05021855e4f006cdae821f1`, then the reviewed18 harness
-`e4c42d0f831806e4ecf1587ef7cbb977a7ff57e8`. This19 preparation is one new
-normal child ofe4: exactly four normal commits above BASE, not a direct
+`e4c42d0f831806e4ecf1587ef7cbb977a7ff57e8` and the reviewed19 routing harness
+`f50cbd175b02aef847e344c84154f6574aa5e457`. This20 preparation is one new
+normal child off50c: exactly five normal commits above BASE, not a direct
 single-commit BASE parent. Its identity guard preserves that exact chain and
 the original allowed diagnostic paths. The lineage helper and its
 `Owner.prepare` caller change only to admit that chain; the caller is not
 claimed wholly identical.
 The reference harness `038d1b9dba400911fa267d73424b8996c603e851` belongs to
-closed16; neither it nor closed17/18 trees or remotes are modified, rerun or reopened.
+closed16; neither it nor closed17/18/19 trees or remotes are modified, rerun or reopened.
 
 The only prospective trigger is an absent-branch first owner creation push of
-`calibration/issue-180-ci-baseline-19`, workflow run1/attempt1 on public
+`calibration/issue-180-ci-baseline-20`, workflow run1/attempt1 on public
 GitHub-hosted Linux. Setup failure consumes that future scope. No dispatch,
 retry, resumed attempt, alternate source lane or automatic full-report call
 is supplied.
@@ -51,8 +52,8 @@ The workload is explicitly `original-root-acceptance`, fixture
 namespace, all declared repository roots/domains, public check/resolve, BASE
 model comparison, standalone verifier or H1. The old85b8 fixture label is
 history, never the executed candidate identity. CURRENT includes the
-independently accepted scoped-source, selective null-mount and bounded
-source-diagnostic retention corrections.
+independently accepted scoped-source, selective null-mount, bounded
+source-diagnostic retention and ordinary-recipe binding-context corrections.
 That source acceptance does not prove root completion or enable public source
 mode. Public adoption, a complete report and resource/H1 acceptance remain
 separate later scopes.
@@ -60,7 +61,7 @@ separate later scopes.
 ## Unchanged independent containment
 
 All seven actual hosted identity/memory/PID/disk/output/deadline/lifetime
-controls must qualify anew before any candidate import. Their historical16/17/18
+controls must qualify anew before any candidate import. Their historical16/17/18/19
 qualification is not reused. Kernel/entry/runtime/volume/lifetime algorithms,
 effective-capacity formulas, swap0/OOM grouping, nonroot/NNP/empty capabilities,
 readonly source/runtime and namespace/control protections are retained.
@@ -76,7 +77,7 @@ metrics/progress limits remain. No shipping limit or SDK repair is introduced.
 
 `policy.validate_report()` is unchanged but cannot accept this root result.
 Root completion uses a distinct closed validator and remains inside bounded
-`result.json`; `report.json` is not in scope19's artifact allowlist. All graph
+`result.json`; `report.json` is not in scope20's artifact allowlist. All graph
 attempt counters remain zero, and the worker's old graph entry explicitly
 refuses instead of performing an accidental second workload.
 
@@ -89,7 +90,7 @@ private base. Uncertain inner source ownership is not credited as clean by
 outer cgroup termination. The supervisor retains diagnostic resources rather
 than erase an unconfirmed root fixture.
 
-Local19 preparation may run only pure/parsed/API and owned benign pipe
+Local20 preparation may run only pure/parsed/API and owned benign pipe
 controls, the smallest existing identity/lineage/policy/result controls and
 actionlint. No candidate, Make/compiler, supervisor phase, root/report or
 privileged setup is run.
@@ -107,14 +108,15 @@ obtained, would still not be a public/full-report resource-sizing point.
 Only an existing failed worker `error` frame may carry `source_refusal`.
 The worker binds the candidate's actual `MakeProbeError` type only after
 post-containment imports and its exact CURRENT/BASE check. Selection requires
-that exact type, one built-in string argument and one of61ee's two namespace
+that exact type, one built-in string argument and one of the selected source's two namespace
 refusal messages. Same-name classes, subclasses, different messages and
 unrelated three-argument formatter callers do not acquire this routing.
 The public CLI, source producer, native observer and `root_stage.py` are
 unchanged.
 
 The new **harness** format is `namespace-refusal-metadata-v1`, bound to
-source61ee. The upstream attachment has no numeric format version; mode and
+source618565, with the unchanged producer shape admitted for61ee. The upstream
+attachment has no numeric format version; mode and
 binding versions are not serialization versions. Each member has exactly
 `format`, `source_revision`, `status`, `metadata`, `unavailable`,
 `omitted_by_contract` and `publication_errors`. `available` requires metadata
@@ -247,7 +249,7 @@ controls did not exercise these combinations and do not prove this fix.
 At that local correction, CURRENT8d03, kernel/entry/runtime/volume/lifetime
 mechanisms, limits, protocol, seven hosted requirements, native/source guards
 and root-only claims remained unchanged. The old-behavior restoration control
-keeps its historical17 output identity; ordinary preparation controls now use19.
+keeps its historical17 output identity; ordinary preparation controls now use20.
 The later authorized hosted17 result is recorded separately below.
 
 ## Closed17 result and the accepted source correction
@@ -291,11 +293,40 @@ Neither is an attribution of closed18. Source61ee adds diagnostic attribution
 with corrected linear pre-admitted retention and secondary-frame cleanup;
 it does not change the original namespace admission decision.
 
-Preparation19 only routes bounded metadata for a separately authorized
-future failure. It does not run19, resolve the original semantic hold, enable
-public source mode, produce a report/sizing point or allocate provider/H1.
-Main must independently accept the exact harness and freeze a separate
-one-shot launch. No automatic retry or larger fallback is supplied.
+Preparation19 routed bounded metadata without changing source admission.
+Its independently accepted later launch and result are recorded below.
+
+## Closed19 result and the accepted recipe-context correction
+
+Closed19 used harness `f50cbd175b02aef847e344c84154f6574aa5e457`, source
+`61ee1d36db833fdc2a5430db52d82553fbaffba7` and
+[run35345735274](https://github.com/laqieer/fireemblem8-expansion/actions/runs/35345735274).
+All seven actual hosted controls qualified. One original root still refused,
+but the closed metadata now retained its pass1 reader and sole unknown-writer
+cause. Exact source and inner/outer cleanup were confirmed. There was no
+completed root, public report or sizing point.
+[Closure5730160827](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5730160827)
+is final; all1-19 remain closed.
+
+The recorded cause at fixture Makefile133-137 maps statically to the original
+modern.mk1554-1558 filter. Staged scanning revisited `$$)` as unsupported `$)`.
+That token-level explanation was not an emitted runtime expression. Subsequent
+actual pure helper/both-consumer preimages and restoration qualified the
+source-context correction under
+[5730756125](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5730756125).
+Source618565 now distinguishes proved ordinary recipe dollar pairs while
+retaining strict active-dollar, staged/reparse/local-binder, snapshot and
+all-pass guards. Original Make recipes and diagnostic producer helpers remain
+unchanged. Independent A/B source-area follow-ups accepted the correction.
+Its one small native include-remake positive was not an original-root replay.
+
+Preparation20 changes only prospective identities, exact five-commit lineage
+and matching controls/history. It does not allocate or run20. The independent
+CI namespace-fixture bootstrap has a separate outcome-custody design hold;
+this harness does not change its shipping budget/lifecycle interfaces or claim
+that bootstrap is qualified. A separate exact review and launch freeze remain
+required. No automatic retry, larger fallback, public adoption, complete report,
+resource sizing or provider/H1 follows.
 
 ## Historical closed16 preparation record (unchanged below)
 

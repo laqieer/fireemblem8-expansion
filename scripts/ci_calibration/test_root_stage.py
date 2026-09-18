@@ -139,7 +139,7 @@ def source_refusal_fixture():
 
 class RootStageControls(unittest.TestCase):
     def setUp(self):
-        parent = ROOT / "build/test-artifacts/root19-benign"
+        parent = ROOT / "build/test-artifacts/root20-benign"
         parent.mkdir(parents=True, exist_ok=True)
         self.directory = tempfile.TemporaryDirectory(dir=parent)
         self.root = Path(self.directory.name)
@@ -174,8 +174,8 @@ class RootStageControls(unittest.TestCase):
                          environment="github-hosted", operating_system="Linux", event_name="push")
         scope = policy.validate_event(event, **arguments)
         self.assertEqual((scope["graph_sha"], scope["base_sha"]),
-                         ("61ee1d36db833fdc2a5430db52d82553fbaffba7", "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"))
-        self.assertEqual(scope["branch"], "calibration/issue-180-ci-baseline-19")
+                         ("61856581bc9859f59fdd938edc219fabc07cd6ef", "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"))
+        self.assertEqual(scope["branch"], "calibration/issue-180-ci-baseline-20")
         self.assertEqual(scope["workload_kind"], "original-root-acceptance")
         self.assertTrue(scope["source_phases"])
         self.assertFalse(scope["production_acceptance"])
@@ -636,7 +636,7 @@ class RootStageControls(unittest.TestCase):
             }
         return value
 
-    def supervisor_failure(self, defect, *, output_prefix="issue180-ci-baseline-19-"):
+    def supervisor_failure(self, defect, *, output_prefix="issue180-ci-baseline-20-"):
         directory = self.root / defect
         directory.mkdir()
         output = directory / (output_prefix + "123")
@@ -751,26 +751,31 @@ class RootStageControls(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 self.supervisor_failure("post-qualified-volume", output_prefix="issue180-ci-baseline-17-")
 
-    def test_harness_identity_requires_the_exact_four_commit_normal_lineage(self):
+    def test_harness_identity_requires_the_exact_five_commit_normal_lineage(self):
         head = "a" * 40
         self.assertEqual(
-            (supervisor.REVIEWED_HARNESS_SHA, supervisor.RETAINED_HARNESS_SHA, supervisor.PREPARATION_SHA, policy.BASE),
-            ("e4c42d0f831806e4ecf1587ef7cbb977a7ff57e8",
+            (supervisor.REVIEWED_HARNESS_SHA, supervisor.ROOT18_HARNESS_SHA,
+             supervisor.RETAINED_HARNESS_SHA, supervisor.PREPARATION_SHA, policy.BASE),
+            ("f50cbd175b02aef847e344c84154f6574aa5e457",
+             "e4c42d0f831806e4ecf1587ef7cbb977a7ff57e8",
              "1a2d177749cec443c05021855e4f006cdae821f1",
              "4dcbcb7e462a3d0953fea5b54d29c30954193ea7",
              "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"),
         )
         expected = [
             f"{head} {supervisor.REVIEWED_HARNESS_SHA}",
-            f"{supervisor.REVIEWED_HARNESS_SHA} {supervisor.RETAINED_HARNESS_SHA}",
+            f"{supervisor.REVIEWED_HARNESS_SHA} {supervisor.ROOT18_HARNESS_SHA}",
+            f"{supervisor.ROOT18_HARNESS_SHA} {supervisor.RETAINED_HARNESS_SHA}",
             f"{supervisor.RETAINED_HARNESS_SHA} {supervisor.PREPARATION_SHA}",
             f"{supervisor.PREPARATION_SHA} {policy.BASE}",
         ]
         supervisor.validate_harness_lineage(expected, head)
         bad = [
             [f"{head} {policy.BASE}"],
-            [f"{head} {supervisor.RETAINED_HARNESS_SHA}", *expected[2:]],
-            [f"{head} {supervisor.PREPARATION_SHA}", expected[3]],
+            [f"{head} {supervisor.ROOT18_HARNESS_SHA}", *expected[2:]],
+            [f"{head} {supervisor.RETAINED_HARNESS_SHA}", *expected[3:]],
+            [f"{head} {supervisor.PREPARATION_SHA}", expected[4]],
+            expected[:4],
             expected[:3],
             [*expected, f"{policy.BASE} {'b' * 40}"],
         ]
@@ -1105,7 +1110,7 @@ class RootStageControls(unittest.TestCase):
         member = self.route_source(self.source_error(), revision="b" * 40)["source_refusal"]
         self.assertEqual(member["status"], "unavailable")
         self.assertEqual(member["unavailable"]["reason"], "unsupported-source-revision")
-        self.assertEqual(member["source_revision"], "61ee1d36db833fdc2a5430db52d82553fbaffba7")
+        self.assertEqual(member["source_revision"], "61856581bc9859f59fdd938edc219fabc07cd6ef")
 
     def assert_selected_formatter_primary(self):
         error = self.source_error()

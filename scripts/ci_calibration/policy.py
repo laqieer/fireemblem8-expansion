@@ -13,10 +13,10 @@ import traceback
 
 
 REPOSITORY = "laqieer/fireemblem8-expansion"
-BRANCH = "calibration/issue-180-ci-baseline-19"
-WORKFLOW = ".github/workflows/issue180-ci-baseline-19.yml"
+BRANCH = "calibration/issue-180-ci-baseline-20"
+WORKFLOW = ".github/workflows/issue180-ci-baseline-20.yml"
 BASE = "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"
-GRAPH = "61ee1d36db833fdc2a5430db52d82553fbaffba7"
+GRAPH = "61856581bc9859f59fdd938edc219fabc07cd6ef"
 WORKLOAD_KIND = "original-root-acceptance"
 FIXTURE_VERSION = "original-root-single-message-disabled-bgm-v1"
 ROOT_TARGET = "expansion-modern-all"
@@ -510,7 +510,7 @@ def error_record(error):
     return {"chain": chain, "frames": frames}
 
 
-SOURCE_REFUSAL_REVISION = "61ee1d36db833fdc2a5430db52d82553fbaffba7"
+SOURCE_REFUSAL_REVISION = "61856581bc9859f59fdd938edc219fabc07cd6ef"
 SOURCE_REFUSAL_FORMAT = "namespace-refusal-metadata-v1"
 SOURCE_REFUSAL_KIND = "source-refusal-attribution-not-a-proof"
 SOURCE_REFUSAL_MESSAGES = (
