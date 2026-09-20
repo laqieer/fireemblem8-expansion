@@ -1,4 +1,4 @@
-name: Issue 180 fixed null bootstrap 1 (preparation hold)
+name: Issue 180 fixed null bootstrap 1 (unqualified preparation)
 
 on:
   push:
@@ -58,7 +58,7 @@ jobs:
     - name: Install the declared native CI dependencies
       run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-dev libpng-dev pkg-config python3-venv
 
-    - name: Ordinary coordinator (fails closed on the documented interface hold)
+    - name: One ordinary coordinator and original-fixture bootstrap
       working-directory: candidate
       run: |
         /usr/bin/timeout --signal=KILL 45s \
@@ -72,8 +72,8 @@ jobs:
         retention-days: 7
         if-no-files-found: error
         path: |
-          ${{ github.workspace }}/issue180-null-bootstrap-1-${{ github.run_id }}/scope.json
-          ${{ github.workspace }}/issue180-null-bootstrap-1-${{ github.run_id }}/launch.json
-          ${{ github.workspace }}/issue180-null-bootstrap-1-${{ github.run_id }}/custody.json
-          ${{ github.workspace }}/issue180-null-bootstrap-1-${{ github.run_id }}/mode.json
-          ${{ github.workspace }}/issue180-null-bootstrap-1-${{ github.run_id }}/cleanup.json
+          ${{ github.workspace }}/issue180-null-bootstrap-1-${{ github.run_id }}-records/scope.json
+          ${{ github.workspace }}/issue180-null-bootstrap-1-${{ github.run_id }}-records/launch.json
+          ${{ github.workspace }}/issue180-null-bootstrap-1-${{ github.run_id }}-records/custody.json
+          ${{ github.workspace }}/issue180-null-bootstrap-1-${{ github.run_id }}-records/mode.json
+          ${{ github.workspace }}/issue180-null-bootstrap-1-${{ github.run_id }}-records/cleanup.json

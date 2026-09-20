@@ -83,6 +83,7 @@ class Inert(unittest.TestCase):
             (b.os, "fork"), (b.os, "waitid"), (b.os, "waitpid"), (b.os, "pidfd_open"),
             (b.os, "setuid"), (b.os, "setgid"), (b.os, "setresuid"), (b.os, "setresgid"),
             (b.os, "setgroups"), (b.os, "kill"), (b.os, "killpg"), (b.os, "_exit"),
+            (b.os, "mkdir"), (b.os, "rmdir"), (b.os, "fchown"), (b.os, "chown"),
             (b.signal, "pidfd_send_signal"), (life, "prctl"), (life, "parent_death"),
             (life, "require_pidfds"), (life, "owned_children"),
             (life, "ordinary_executable"), (budgeting, "ordinary_executable"),
@@ -381,9 +382,10 @@ class Benign(Inert):
             if args[:2] == ("rev-parse", "HEAD"):
                 return sha.encode() + b"\n"
             if args[0] == "rev-list":
-                return (sha + " " + b.BASE + "\n").encode()
+                return ((sha + " " + b.PREPARATION) if args[-1] == sha else
+                        (b.PREPARATION + " " + b.BASE)).encode() + b"\n"
             if "--name-status" in args:
-                return inventory
+                return inventory if args[-2] == b.BASE else b"M\0" + b.PROGRAM.encode() + b"\0"
             return b""
 
         with patch.object(b, "canonical"), patch.object(b, "git", side_effect=replies), \
@@ -399,6 +401,32 @@ class Benign(Inert):
                 with self.assertRaises(b.Refusal):
                     b.verify_checkout(Path("/work/harness"), sha, harness=True)
                 inventory = prior
+
+    def test_ancestry_requires_exact_two_normal_nonempty_commits(self):
+        sha = "b" * 40
+        rows = b"".join(b"A\0" + name.encode() + b"\0" for name in sorted(b.FILES))
+        for fault in (None, "one-commit", "merge", "extra-parent", "wrong-prior", "empty", "foreign-delta"):
+            def git(root, *args, **kwargs):
+                if args[0] == "rev-parse":
+                    return sha.encode()
+                if args[0] == "rev-list":
+                    if args[-1] == sha:
+                        parent = b.BASE if fault == "one-commit" else "c" * 40 if fault == "extra-parent" else b.PREPARATION
+                        return (sha + " " + parent + (" " + b.BASE if fault == "merge" else "")).encode()
+                    return (b.PREPARATION + " " + ("d" * 40 if fault == "wrong-prior" else b.BASE)).encode()
+                if "--name-status" in args:
+                    if args[-2] == b.BASE:
+                        return rows
+                    return b"" if fault == "empty" else b"M\0outside\0" if fault == "foreign-delta" else b"M\0" + b.PROGRAM.encode() + b"\0"
+                return b""
+
+            with self.subTest(fault=fault), patch.object(b, "canonical"), patch.object(b, "git", side_effect=git), \
+                 patch.object(b.os, "lstat", return_value=SimpleNamespace(st_mode=stat.S_IFREG | 0o644)):
+                if fault:
+                    with self.assertRaises(b.Refusal):
+                        b.verify_checkout(Path("/harness"), sha, harness=True)
+                else:
+                    b.verify_checkout(Path("/harness"), sha, harness=True)
 
     def test_environment_is_data_not_an_arbitrary_import(self):
         with patch.object(b, "read_file", return_value=("ENVIRONMENT = " + repr(b.ENVIRONMENT)).encode()):
@@ -967,44 +995,6 @@ class Benign(Inert):
         with self.assertRaises(ValueError):
             life._decode_frame(life._encode_frame(replaced)[4:], "a" * 32, self.binding)
 
-    def test_cleanup_preserves_unretained_children_and_replaced_parents(self):
-        info = SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_dev=3, st_ino=4, st_uid=1001, st_gid=1002)
-        with patch.object(b.os, "lstat", return_value=info), patch.object(b.os, "open", return_value=10), \
-             patch.object(b.os, "fstat", return_value=info), patch.object(b.os, "close"), \
-             patch.object(b.os, "rmdir") as remove:
-            with patch.object(b.os, "listdir", return_value=["volume"]), self.assertRaisesRegex(b.Refusal, b.INTERFACE_HOLD):
-                b.remove_empty_fixture(Path("/owned"), self.binding)
-            remove.assert_not_called()
-            with patch.object(b.os, "listdir", return_value=[]):
-                b.remove_empty_fixture(Path("/owned"), self.binding)
-            remove.assert_called_once_with(Path("/owned"))
-            for name, wrong in (("st_ino", 9), ("st_uid", 0), ("st_gid", 0), ("st_mode", stat.S_IFLNK | 0o777)):
-                with patch.object(info, name, wrong), self.assertRaises(b.Refusal):
-                    b.remove_empty_fixture(Path("/owned"), self.binding)
-            remove.assert_called_once()
-
-    def test_interface_hold_refuses_without_acquiring_budget_or_attempting_launch(self):
-        event, context = self.push()
-        scope = {**b.identity(event, context), "preparation_hold": b.INTERFACE_HOLD}
-        records = {}
-
-        def read(path, *args):
-            return b.json_bytes(event if str(path) == "/work/event" else scope)
-
-        with patch.object(b, "paths", return_value=(Path("/work/harness"), Path("/work/candidate"), Path("/work/output"))), \
-             patch.object(b, "read_file", side_effect=read), patch.object(b, "verify_checkout"), \
-             patch.object(b, "verify_environment"), patch.object(b, "write_record", side_effect=lambda output, name, value: records.__setitem__(name, value)), \
-             patch.object(b, "load_control", side_effect=AssertionError("no new owner under hold")):
-            self.assertEqual(b.coordinate(context), 125)
-        self.assertEqual(set(records), set(b.ARTIFACTS) - {"scope.json"})
-        self.assertFalse(records["launch.json"]["attempted"])
-        self.assertFalse(records["custody.json"]["qualified"])
-        self.assertIsNone(records["mode.json"]["result"])
-        self.assertFalse(records["cleanup.json"]["launch_owners_acquired"])
-        with patch.dict(os.environ, {"ALLOW_BOOTSTRAP": "1"}), self.assertRaises(b.Refusal):
-            b.execution_contract()
-
-
 class Stream:
     def __init__(self, fd, closed, fault=None):
         self.fd, self.on_close, self.fault, self.closed = fd, closed, fault, False
@@ -1172,8 +1162,7 @@ class Capture(Inert):
         self.assertFalse(value["qualified"])
         self.assertTrue(accepted)  # necessary capture checks, not fixture acceptance
         self.assertTrue(all(status == 0 and frozen for _, status, frozen in events))
-        with self.assertRaises(b.Refusal):
-            b.execution_contract()
+        self.assertTrue(value["capture_complete"])
 
     def test_actual_L_normal_observation_survives_main125_then_actual_C_cleanup_failure(self):
         for inner, failed in ((0, False), (7, False), (0, True), (7, True)):
@@ -1229,6 +1218,688 @@ class Capture(Inert):
                 self.assertFalse(semantic["custody_complete"])
         interleaved = [original[index] for index in (2, 0, 3, 1)]
         self.assertTrue(self.run_capture_case(altered=interleaved)[2])
+
+
+class DirectoryNode:
+    def __init__(self, name, device, inode, mount, uid=1001, gid=1002, mode=stat.S_IFDIR | 0o700):
+        self.name, self.device, self.inode, self.mount = name, device, inode, mount
+        self.uid, self.gid, self.mode = uid, gid, mode
+        self.children = {}
+
+    def info(self):
+        return SimpleNamespace(st_dev=self.device, st_ino=self.inode, st_mode=self.mode,
+                               st_uid=self.uid, st_gid=self.gid)
+
+    def identity(self):
+        return b.DirectoryIdentity(self.device, self.inode, self.mode, self.uid, self.gid, self.mount)
+
+
+class DirectoryModel:
+    """Two mount views; an open pre-mount FD continues to name its host object."""
+
+    def __init__(self, workspace):
+        self.workspace = Path(workspace)
+        self.root = DirectoryNode("workspace", 3, 100, 50, mode=stat.S_IFDIR | 0o755)
+        self.actor, self.next_inode = "C", 100
+        self.tables = {
+            role: {0: pipe_value(1, 0), 1: pipe_value(2, 1), 2: pipe_value(3, 1)}
+            for role in ("C", "R")
+        }
+        self.host_fixture = self.overlay = None
+        self.mounts, self.destroyed, self.fault = 0, False, None
+        self.events, self.counts, self.open_events = [], {}, {}
+        self.triggered = False
+
+    def operation(self, label, function):
+        self.counts[label] = self.counts.get(label, 0) + 1
+        serial = self.counts[label]
+        self.events.append(label)
+        match = self.fault is not None and self.fault[:2] == (label, serial)
+        if match and self.fault[2] == "before":
+            self.triggered = True
+            raise self.fault[3]
+        result = function()
+        if match and self.fault[2] == "after":
+            self.triggered = True
+            raise self.fault[3]
+        return result
+
+    def resolve(self, path, directory=None):
+        if type(path) is int:
+            return self.tables[self.actor][path]
+        value = Path(path)
+        if value.is_absolute():
+            parts = value.relative_to(self.workspace).parts
+            node = self.root
+        else:
+            parts = value.parts
+            node = self.tables[self.actor][directory]
+        for part in parts:
+            if part == ".":
+                continue
+            node = node.children[part]
+            if self.actor == "R" and node is self.host_fixture and self.overlay is not None:
+                node = self.overlay
+        return node
+
+    def stat(self, path, *, dir_fd=None, follow_symlinks=False):
+        return self.resolve(path, dir_fd).info()
+
+    def open(self, path, flags, mode=0o777, *, dir_fd=None):
+        node = self.resolve(path, dir_fd)
+        label = "open:" + self.actor + ":" + node.name
+
+        def acquire():
+            if not stat.S_ISDIR(node.mode):
+                raise OSError(errno.ELOOP, "inert nofollow")
+            fd = next(n for n in range(3, 1000) if n not in self.tables[self.actor])
+            self.tables[self.actor][fd] = node
+            self.open_events[(self.actor, fd)] = label
+            return fd
+
+        return self.operation(label, acquire)
+
+    def fstat(self, fd):
+        node = self.tables[self.actor][fd]
+        if isinstance(node, DirectoryNode):
+            return self.operation("fstat:" + self.actor + ":" + node.name, node.info)
+        return SimpleNamespace(st_dev=node[0], st_ino=node[1], st_mode=node[2] | 0o600)
+
+    def listdir(self, fd):
+        node = self.resolve(fd)
+        return self.operation("list:" + self.actor + ":" + node.name, lambda: list(node.children))
+
+    def mkdir(self, name, mode=0o777, *, dir_fd=None):
+        parent = self.resolve(dir_fd)
+        slot = "container" if parent is self.root else str(name)
+
+        def create():
+            if str(name) in parent.children:
+                raise FileExistsError(errno.EEXIST, "inert existing directory")
+            self.next_inode += 1
+            uid, gid = (0, 0) if self.actor == "R" else (1001, 1002)
+            node = DirectoryNode(slot, parent.device, self.next_inode, parent.mount, uid, gid,
+                                 stat.S_IFDIR | mode)
+            parent.children[str(name)] = node
+            if slot == "fixture":
+                self.host_fixture = node
+
+        return self.operation("mkdir:" + self.actor + ":" + slot, create)
+
+    def rmdir(self, name, *, dir_fd=None):
+        parent = self.resolve(dir_fd)
+        node = parent.children[str(name)]
+
+        def remove():
+            if node.children:
+                raise OSError(errno.ENOTEMPTY, "inert nonempty")
+            del parent.children[str(name)]
+
+        return self.operation("rmdir:" + self.actor + ":" + node.name, remove)
+
+    def fchown(self, fd, uid, gid):
+        node = self.resolve(fd)
+
+        def own():
+            if self.actor != "R" or node.device != 90:
+                raise AssertionError("metadata operation on original host backing")
+            node.uid, node.gid = uid, gid
+
+        return self.operation("chown:R:" + node.name, own)
+
+    def close(self, fd):
+        table = self.tables[self.actor]
+        if fd not in table:
+            raise AssertionError("duplicate or uncertain descriptor retry")
+        node = table[fd]
+        label = "close:" + self.actor + ":" + (node.name if isinstance(node, DirectoryNode) else str(fd))
+        return self.operation(label, lambda: table.pop(fd))
+
+    def mount(self, source, target, flags, kind=None, data=None):
+        def install():
+            if (source, Path(target), flags, kind, data) != (
+                "tmpfs", self.workspace / "issue180-null-bootstrap-1-42/fixture",
+                14, "tmpfs", b"size=1048576,mode=0700",
+            ) or self.mounts:
+                raise AssertionError("not the one original-fixture tmpfs")
+            self.mounts += 1
+            self.overlay = DirectoryNode("tmpfs", 90, 1, 900, 0, 0)
+
+        return self.operation("mount:R", install)
+
+    def inventory(self):
+        return {
+            fd: (value.device, value.inode, stat.S_IFMT(value.mode), os.O_RDONLY)
+            if isinstance(value, DirectoryNode) else value
+            for fd, value in self.tables[self.actor].items()
+        }
+
+    def destroy(self):
+        if set(self.tables["R"]) != {0, 1, 2}:
+            raise AssertionError("namespace destruction with a retained R pin")
+        self.overlay, self.destroyed = None, True
+
+    def patches(self):
+        stack = ExitStack()
+        for name in ("open", "close", "fstat", "stat", "listdir", "mkdir", "rmdir", "fchown"):
+            stack.enter_context(patch.object(b.os, name, getattr(self, name)))
+        stack.enter_context(patch.object(b.os, "lstat", side_effect=self.stat))
+        stack.enter_context(patch.object(b, "fd_inventory", side_effect=self.inventory))
+        stack.enter_context(patch.object(b, "mount_id", side_effect=lambda fd: self.resolve(fd).mount))
+        stack.enter_context(patch.object(b, "tmpfs_state", side_effect=lambda fd: (0x01021994, b.FIXTURE_BYTES, 14)))
+        stack.enter_context(patch.object(b, "namespace", return_value=(1, 11)))
+        stack.enter_context(patch.object(b, "mount", side_effect=self.mount))
+        stack.enter_context(patch.object(b, "canonical", side_effect=Path))
+        stack.enter_context(patch.object(Path, "resolve", lambda path, *args, **kwargs: path))
+        return stack
+
+
+class Backing(Inert):
+    def host(self, model):
+        self.report = life._CleanupReport("C", 130.0)
+        b._cleanup_report = self.report
+        host = b.HostDirectories(model.workspace, "issue180-null-bootstrap-1-42",
+                                 1001, 1002, life, self.report, 130.0)
+        host.create()
+        return host
+
+    def root(self, host):
+        original = host.identities["fixture"]
+        binding = life._FixtureBinding("readonly", 1001, 1002, 130.0,
+                                       original.device, original.inode, original.uid)
+        return b.Bootstrap(life, binding, host.fixture, Path("/source"), Path("/harness"))
+
+    def test_distinct_backing_tmpfs_and_volume_leave_original_unchanged(self):
+        model = DirectoryModel(self.harness.parent)
+        with model.patches():
+            baseline = model.inventory()
+            host = self.host(model)
+            original = model.host_fixture.identity()
+            model.actor = "R"
+            root = self.root(host)
+            root.install_volume()
+            mounted = model.overlay.identity()
+            volume = model.overlay.children["volume"].identity()
+            self.assertEqual(len({original.metadata()[:2], mounted.metadata()[:2], volume.metadata()[:2]}), 3)
+            self.assertEqual(root.binding.inode, original.inode)
+            self.assertNotEqual(root.binding.inode, mounted.inode)
+            self.assertEqual(model.host_fixture.identity(), original)
+            self.assertEqual(model.host_fixture.children, {})
+            self.assertLess(model.events.index("close:R:fixture"), model.events.index("open:R:tmpfs"))
+            root.closes(("volume", "tmpfs"))
+            model.destroy()
+            model.actor = "C"
+            host.cleanup(True, baseline)
+            self.assertEqual(host.removed, {"fixture": True, "container": True})
+            self.assertEqual(model.root.children, {})
+            self.assertEqual(model.inventory(), baseline)
+
+    def test_restoring_pre_mount_host_FD_creation_breaks_cleanup_oracle(self):
+        def old_pin(root):
+            descriptor = root.acquire("fixture", lambda: b.os.open(
+                root.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+            ))
+            b.mount("tmpfs", root.parent, 14, "tmpfs", b"size=1048576,mode=0700")
+            b.os.mkdir("volume", 0o700, dir_fd=descriptor)
+            root.close("fixture")
+
+        def oracle():
+            model = DirectoryModel(self.harness.parent)
+            with model.patches():
+                baseline = model.inventory()
+                host = self.host(model)
+                original = model.host_fixture.identity()
+                model.actor = "R"
+                root = self.root(host)
+                root.install_volume()
+                root.closes(tuple(root.fds))
+                model.destroy()
+                model.actor = "C"
+                self.assertEqual(model.host_fixture.identity(), original)
+                self.assertEqual(model.host_fixture.children, {})
+                host.cleanup(True, baseline)
+                self.assertEqual(model.root.children, {})
+
+        oracle()
+        with patch.object(b.Bootstrap, "install_volume", old_pin), self.assertRaises(AssertionError):
+            oracle()
+        oracle()
+        # Explicitly retain the unowned host child rather than only observing
+        # that the positive oracle failed.
+        model = DirectoryModel(self.harness.parent)
+        with model.patches():
+            baseline = model.inventory()
+            host = self.host(model)
+            model.actor = "R"
+            old_pin(self.root(host))
+            model.destroy()
+            model.actor = "C"
+            with self.assertRaises(b.Refusal):
+                host.cleanup(True, baseline)
+            self.assertIn("volume", model.host_fixture.children)
+            self.assertNotIn("rmdir:C:fixture", model.events)
+
+    def test_geometry_failure_boundaries_never_create_a_host_child(self):
+        for label, timing in (
+            ("open:R:fixture", "before"), ("fstat:R:fixture", "before"),
+            ("mount:R", "before"), ("mount:R", "after"),
+            ("close:R:fixture", "before"), ("close:R:fixture", "after"),
+            ("open:R:tmpfs", "before"), ("fstat:R:tmpfs", "before"),
+            ("chown:R:tmpfs", "before"), ("mkdir:R:volume", "before"),
+            ("open:R:volume", "before"), ("chown:R:volume", "after"),
+        ):
+            model = DirectoryModel(self.harness.parent)
+            error = OSError(errno.EIO, "inert geometry")
+            with self.subTest(label=label, timing=timing), model.patches():
+                host = self.host(model)
+                model.actor = "R"
+                root = self.root(host)
+                model.fault = (label, 1, timing, error)
+                with self.assertRaises(OSError) as failure:
+                    root.install_volume()
+                self.assertIs(failure.exception, error)
+                self.assertTrue(model.triggered)
+                self.assertEqual(model.host_fixture.children, {})
+                self.assertEqual(model.host_fixture.identity().metadata(), host.identities["fixture"].metadata())
+
+    def test_wrong_tmpfs_type_size_flags_or_original_identity_refuse_before_writes(self):
+        for fault in ("kind", "size", "flags", "same"):
+            model = DirectoryModel(self.harness.parent)
+            with self.subTest(fault=fault), model.patches():
+                host = self.host(model)
+                model.actor = "R"
+                root = self.root(host)
+                values = {"kind": (1, b.FIXTURE_BYTES, 14), "size": (0x01021994, b.FIXTURE_BYTES + 4096, 14),
+                          "flags": (0x01021994, b.FIXTURE_BYTES, 10), "same": (0x01021994, b.FIXTURE_BYTES, 14)}
+                observed = b.directory_identity
+
+                def same(fd):
+                    return host.identities["fixture"] if model.resolve(fd).name == "tmpfs" else observed(fd)
+
+                with patch.object(b, "tmpfs_state", return_value=values[fault]), \
+                     patch.object(b, "directory_identity", side_effect=same if fault == "same" else observed), \
+                     self.assertRaises(b.Refusal):
+                    root.install_volume()
+                self.assertNotIn("mkdir:R:volume", model.events)
+                self.assertFalse(any(event.startswith("chown:R:") for event in model.events))
+
+    def test_actual_statfs_adapter_reads_typed_size_without_calling_libc(self):
+        calls = []
+
+        def statfs(fd, pointer):
+            calls.append(fd)
+            value = pointer._obj
+            value.kind, value.block_size, value.blocks, value.flags = 0x01021994, 4096, 256, 14
+            return 0
+
+        with patch.object(b, "libc", return_value=SimpleNamespace(fstatfs=statfs)):
+            self.assertEqual(b.tmpfs_state(10), (0x01021994, 1048576, 14))
+        self.assertEqual(calls, [10])
+
+    def test_cleanup_preserves_unretained_children_and_replaced_parents(self):
+        for fault in ("child", "fixture", "container", "owner", "group", "mode", "mount", "live", "fd"):
+            model = DirectoryModel(self.harness.parent)
+            with self.subTest(fault=fault), model.patches():
+                baseline = model.inventory()
+                host = self.host(model)
+                container = model.root.children[host.name]
+                if fault == "child":
+                    model.host_fixture.children["foreign"] = DirectoryNode("foreign", 3, 500, 50)
+                elif fault == "fixture":
+                    container.children["fixture"] = DirectoryNode("fixture", 3, 501, 50)
+                elif fault == "container":
+                    model.root.children[host.name] = DirectoryNode("container", 3, 502, 50)
+                elif fault == "owner":
+                    model.host_fixture.uid = 0
+                elif fault == "group":
+                    model.host_fixture.gid = 0
+                elif fault == "mode":
+                    model.host_fixture.mode = stat.S_IFDIR | 0o777
+                elif fault == "mount":
+                    model.host_fixture.mount = 999
+                elif fault == "fd":
+                    model.tables["C"][99] = (7, 700, stat.S_IFREG, 0)
+                with self.assertRaises(b.Refusal):
+                    host.cleanup(fault != "live", baseline)
+                self.assertNotIn("rmdir:C:fixture", model.events)
+                self.assertNotIn("rmdir:C:container", model.events)
+                self.assertEqual(host.fds, {})
+                self.assertFalse(self.report.value().complete)
+
+    def test_close_and_removal_uncertainty_are_not_retried(self):
+        for label in ("close:C:fixture", "rmdir:C:fixture", "close:C:container", "rmdir:C:container"):
+            for timing in ("before", "after"):
+                model = DirectoryModel(self.harness.parent)
+                with self.subTest(label=label, timing=timing), model.patches():
+                    baseline = model.inventory()
+                    host = self.host(model)
+                    model.fault = (label, 1, timing, OSError(errno.EIO, "inert release"))
+                    with self.assertRaises(OSError):
+                        host.cleanup(True, baseline)
+                    count = model.counts[label]
+                    with self.assertRaises(b.Refusal):
+                        host.cleanup(True, baseline)
+                    self.assertEqual(model.counts[label], count)
+                    self.assertFalse(self.report.value().complete)
+
+
+class CoordinatorControls(Inert):
+    def exercise(self, *, fault=None, outer=0, missing=False, kept_namespace=False, retained_child=False,
+                 source_fault=None, publication_fault=None, admission=False, release_fault=None,
+                 preflight=None, acquisition_interrupt=False, unknown_after=False,
+                 budget_close_fault=None, snapshot_fault=False, expired=None, missing_eof=False):
+        model = DirectoryModel(self.harness.parent)
+        if fault is not None:
+            model.fault = (*fault, OSError(errno.EIO, "inert coordinator boundary"))
+        event, context = self.push()
+        scope = b.identity(event, context)
+        source = self.harness.parent / "candidate"
+        output = self.harness.parent / "issue180-null-bootstrap-1-42-records"
+        original_budget = b.new_budget(budgeting)
+        # c8's dataclass default factory was bound at definition time.
+        original_budget.started = 100.0
+        if admission:
+            original_budget._outcome_entries = 52
+        records, offsets, payload, child_events, check_events, instances = {}, [0, 0], [b""], [], [], []
+        child, baseline = CapturedChild(), model.inventory()
+        original_class = b.Coordinator
+        clock = [100.0]
+
+        def driver(*args):
+            value = original_class(*args)
+            instances.append(value)
+            return value
+
+        def verify(root, sha, **kwargs):
+            name = "harness" if root == self.harness else "selected"
+            when = "after" if kwargs.get("deadline") is not None else "before"
+            check_events.append((name, when))
+            if kwargs.get("deadline") is not None:
+                b.remaining(kwargs["deadline"])
+            if source_fault == (name, when):
+                raise ValueError("inert source check")
+
+        def encode_records(binding, report=None):
+            values = self.records(outer)
+            values[0]["binding"] = binding.wire()
+            values[1]["binding"] = binding.wire()
+            if report is not None:
+                values[1]["cleanup"] = life._cleanup_wire(report.value())
+                values[1]["disposition"], values[1]["status"] = "raise", None
+            return b"".join(life._encode_frame(value) for value in (values[:3] if missing else values))
+
+        def launch(*args, **kwargs):
+            child_events.append("Popen")
+            if acquisition_interrupt:
+                raise KeyboardInterrupt("inert acquisition interruption")
+            if model.fault is not None and model.fault[0] == "Popen":
+                model.operation("Popen", lambda: None)
+            bound = original_budget._outcome._binding
+            directories = instances[0].directories
+            model.actor = "R"
+            root = b.Bootstrap(life, bound, directories.fixture, source, self.harness)
+            try:
+                root.install_volume()
+                root.closes(tuple(root.fds))
+                payload[0] = encode_records(bound)
+                if kept_namespace:
+                    root.report.unsure("ownership")
+                    payload[0] = encode_records(bound, root.report)
+                else:
+                    model.destroy()
+            finally:
+                model.actor = "C"
+            if retained_child:
+                model.host_fixture.children["unowned"] = DirectoryNode("unowned", 3, 600, 50)
+            if unknown_after:
+                model.tables["C"][99] = (7, 701, stat.S_IFREG, 0)
+            if expired == "after-run":
+                clock[0] = 130.0
+            if release_fault:
+                owner = original_budget._outcome
+                original_release = owner.release
+
+                def release():
+                    child_events.append("release")
+                    if release_fault == "before":
+                        raise OSError(errno.EIO, "inert before release")
+                    original_release()
+                    raise OSError(errno.EIO, "inert after release")
+
+                active.enter_context(patch.object(type(owner), "release", side_effect=release))
+            for fd, name in ((10, "stdout"), (11, "stderr"), (12, "stdin")):
+                model.tables["C"][fd] = pipe_value(800 + fd, 0 if name != "stdin" else 1)
+                stream = Stream(fd, lambda fd: model.close(fd))
+                setattr(child, name, stream)
+            return child
+
+        def wait(timeout=None):
+            child_events.append("wait")
+            model.operation("wait", lambda: None)
+            child.returncode = outer
+            return outer
+
+        child.wait = wait
+
+        def read(fd, size):
+            model.operation("read:" + str(fd), lambda: None)
+            index = fd - 10
+            if missing_eof and fd == 11:
+                clock[0] = 130.0
+                return b"x"
+            data = payload[0] if index == 0 else b"opaque-diagnostic"
+            piece = data[offsets[index]:offsets[index] + size]
+            offsets[index] += len(piece)
+            return piece
+
+        def write_record(path, name, value):
+            model.operation("artifact:" + name, lambda: None)
+            if publication_fault == name:
+                raise OSError(errno.EIO, "inert artifact")
+            data = b.json_bytes(value)
+            self.assertLessEqual(len(data), b.RECORD_BYTES)
+            records[name] = b.read_json(data)
+
+        with model.patches(), ExitStack() as active:
+            for module, name, value in (
+                (b, "paths", (self.harness, source, output)),
+                (b, "self_state", self.state()), (b.os, "getuid", 1001), (b.os, "getgid", 1002),
+                (b.os, "getresuid", (1001,) * 3), (b.os, "getresgid", (1002,) * 3),
+                (b, "load_control", (budgeting, life)), (b, "new_budget", original_budget),
+                (budgeting.secrets, "token_hex", "a" * 32),
+            ):
+                active.enter_context(patch.object(module, name, return_value=value))
+            if preflight == "uid":
+                active.enter_context(patch.object(b.os, "getresuid", return_value=(0, 1001, 0)))
+            elif preflight == "fd":
+                model.tables["C"][99] = (7, 702, stat.S_IFDIR, 0)
+            active.enter_context(patch.object(b, "read_file", side_effect=lambda path, *args, **kwargs:
+                                             b.json_bytes(event if str(path) == "/work/event" else scope)))
+            active.enter_context(patch.object(b.time, "monotonic", side_effect=lambda: clock[0]))
+            if expired == "before-launch":
+                original_create = b.HostDirectories.create
+
+                def create(host):
+                    original_create(host)
+                    clock[0] = 130.0
+
+                active.enter_context(patch.object(b.HostDirectories, "create", create))
+            if budget_close_fault:
+                original_close = original_budget.close
+
+                def close(**kwargs):
+                    child_events.append("budget-close")
+                    if budget_close_fault == "before":
+                        raise OSError(errno.EIO, "inert budget-close")
+                    original_close(**kwargs)
+                    raise OSError(errno.EIO, "inert budget-close")
+
+                active.enter_context(patch.object(original_budget, "close", side_effect=close))
+            if snapshot_fault:
+                original_snapshot = b.Coordinator.snapshot
+                seen = []
+
+                def snapshot(coordinator):
+                    if not seen:
+                        seen.append(True)
+                        raise MemoryError("inert snapshot")
+                    return original_snapshot(coordinator)
+
+                active.enter_context(patch.object(b.Coordinator, "snapshot", snapshot))
+            active.enter_context(patch.object(b, "verify_checkout", side_effect=verify))
+            active.enter_context(patch.object(b, "verify_environment"))
+            active.enter_context(patch.object(b, "write_record", side_effect=write_record))
+            active.enter_context(patch.object(b, "Coordinator", side_effect=driver))
+            active.enter_context(patch.object(budgeting, "ordinary_executable"))
+            active.enter_context(patch.object(life, "ordinary_executable"))
+            active.enter_context(patch.object(budgeting.subprocess, "Popen", side_effect=launch))
+            active.enter_context(patch.object(budgeting.selectors, "DefaultSelector", side_effect=Selector))
+            active.enter_context(patch.object(budgeting.os, "set_blocking"))
+            active.enter_context(patch.object(budgeting.os, "read", side_effect=read))
+            result = b.coordinate(context)
+        return SimpleNamespace(
+            result=result, model=model, records=records, events=child_events,
+            checks=check_events, budget=original_budget, coordinator=instances[0] if instances else None,
+            baseline=baseline,
+        )
+
+    def test_connected_C_flow_observes_original_ids_and_closes_exact_resources(self):
+        value = self.exercise()
+        self.assertEqual(value.result, 0)
+        self.assertEqual(set(value.records), set(b.ARTIFACTS[1:]))
+        launch, cleanup = value.records["launch.json"], value.records["cleanup.json"]
+        self.assertEqual(launch["run_admissions"], 1)
+        self.assertEqual(launch["original"]["fixture"][0], 3)
+        self.assertNotEqual(launch["original"]["fixture"][0], 90)
+        self.assertTrue(value.model.destroyed)
+        self.assertEqual(value.model.root.children, {})
+        self.assertEqual(value.model.inventory(), value.baseline)
+        self.assertEqual((value.budget.runs, value.budget.states, value.budget._outcome_entries), (1, 1, 52))
+        self.assertEqual(value.budget.bytes["cache"], 552960)
+        self.assertEqual(value.budget.bytes["sandbox"], 1048576)
+        self.assertTrue(value.budget.closed)
+        self.assertIsNone(value.budget._outcome)
+        self.assertEqual(value.budget.children, {})
+        self.assertEqual(value.checks, [("harness", "before"), ("selected", "before"),
+                                        ("harness", "after"), ("selected", "after")])
+        self.assertTrue(cleanup["checks_complete_before_artifact_publication"])
+        self.assertFalse(cleanup["qualified"])
+        self.assertFalse(cleanup["publication_completion_attested"])
+        self.assertFalse(value.records["custody.json"]["qualified"])
+        self.assertFalse(value.records["mode.json"]["old_operation_separately_exported"])
+
+    def test_acquisition_faults_and_interruptions_never_invent_owned_objects(self):
+        faults = [
+            ("open:C:workspace", 1, "before"), ("fstat:C:workspace", 1, "before"),
+            ("mkdir:C:container", 1, "before"), ("mkdir:C:container", 1, "after"),
+            ("open:C:container", 1, "before"), ("open:C:container", 1, "after"),
+            ("fstat:C:container", 1, "before"), ("list:C:container", 1, "before"),
+            ("mkdir:C:fixture", 1, "before"), ("mkdir:C:fixture", 1, "after"),
+            ("open:C:fixture", 1, "before"), ("open:C:fixture", 1, "after"),
+            ("fstat:C:fixture", 1, "before"), ("list:C:fixture", 1, "before"),
+        ]
+        for fault in faults:
+            with self.subTest(fault=fault):
+                value = self.exercise(fault=fault)
+                self.assertEqual(value.result, 125)
+                self.assertTrue(value.model.triggered)
+                self.assertNotIn("Popen", value.events)
+                cleanup = value.records["cleanup.json"]
+                self.assertEqual(cleanup["coordinator_first_error"], [1, errno.EIO])
+                self.assertFalse(cleanup["checks_complete_before_artifact_publication"])
+                self.assertTrue(cleanup["outcome_released"])
+                self.assertEqual(value.coordinator.directories.fds, {})
+        interrupted = self.exercise(acquisition_interrupt=True)
+        self.assertEqual(interrupted.result, 125)
+        self.assertEqual(interrupted.records["cleanup.json"]["coordinator_first_error"], [5, None])
+        self.assertIsNone(interrupted.records["custody.json"]["outer_returncode"])
+
+    def test_retained_namespace_child_unknown_FD_or_missing_EOF_cannot_claim_cleanup(self):
+        for fault in ({"kept_namespace": True}, {"retained_child": True}, {"unknown_after": True}, {"missing": True}):
+            with self.subTest(fault=fault):
+                value = self.exercise(**fault)
+                self.assertEqual(value.result, 125)
+                self.assertFalse(value.records["cleanup.json"]["checks_complete_before_artifact_publication"])
+                self.assertNotIn("rmdir:C:fixture", value.model.events)
+                self.assertIsNotNone(value.model.host_fixture)
+                self.assertIn("issue180-null-bootstrap-1-42", value.model.root.children)
+                self.assertFalse(value.records["custody.json"]["qualified"])
+
+    def test_first_status_outer_failure_and_cleanup_faults_are_retained(self):
+        for fault in (
+            ("close:C:10", 1, "before"), ("close:C:10", 1, "after"),
+            ("close:C:12", 1, "before"), ("close:C:11", 1, "after"),
+            ("close:C:fixture", 2, "before"), ("rmdir:C:fixture", 1, "after"),
+            ("close:C:container", 2, "after"), ("rmdir:C:container", 1, "before"),
+            ("close:C:workspace", 1, "after"),
+        ):
+            with self.subTest(fault=fault):
+                value = self.exercise(fault=fault)
+                self.assertEqual(value.result, 125)
+                self.assertTrue(value.model.triggered)
+                self.assertEqual(value.records["custody.json"]["outer_returncode"], 0)
+                self.assertFalse(value.records["cleanup.json"]["checks_complete_before_artifact_publication"])
+                self.assertIsNone(value.coordinator.primary)
+                self.assertIsNone(value.budget._outcome)
+        value = self.exercise(outer=125, fault=("close:C:10", 1, "after"))
+        self.assertEqual(value.records["custody.json"]["outer_returncode"], 125)
+        self.assertEqual(value.result, 125)
+        for point in ("before", "after"):
+            value = self.exercise(release_fault=point)
+            self.assertEqual(value.result, 125)
+            self.assertEqual(value.events.count("release"), 1)
+            self.assertEqual(value.records["cleanup.json"]["outcome_released"], point == "after")
+            self.assertFalse(value.records["cleanup.json"]["checks_complete_before_artifact_publication"])
+
+    def test_preflight_admission_and_source_errors_have_no_success_defaults(self):
+        for fault in ({"admission": True}, {"preflight": "uid"}, {"preflight": "fd"},
+                      {"source_fault": ("harness", "before")}, {"source_fault": ("selected", "before")}):
+            with self.subTest(fault=fault):
+                value = self.exercise(**fault)
+                self.assertEqual(value.result, 125)
+                self.assertNotIn("Popen", value.events)
+                self.assertEqual(value.model.mounts, 0)
+                self.assertFalse(value.records["cleanup.json"]["checks_complete_before_artifact_publication"])
+                self.assertIsNone(value.records["custody.json"]["outer_returncode"])
+        for source in ("harness", "selected"):
+            value = self.exercise(source_fault=(source, "after"))
+            self.assertEqual(value.result, 125)
+            self.assertFalse(value.records["cleanup.json"]["source_checks"][source + "_after"])
+            self.assertTrue(value.records["cleanup.json"]["directories"]["removed"]["fixture"])
+            self.assertFalse(value.records["cleanup.json"]["checks_complete_before_artifact_publication"])
+
+    def test_each_artifact_failure_is_a_failing_exit_without_future_close_attestation(self):
+        for name in b.ARTIFACTS[1:]:
+            with self.subTest(name=name):
+                value = self.exercise(publication_fault=name)
+                self.assertEqual(value.result, 125)
+                self.assertNotIn(name, value.records)
+                self.assertEqual(set(value.records), set(b.ARTIFACTS[1:]) - {name})
+                self.assertIsNone(value.budget._outcome)
+                if "cleanup.json" in value.records:
+                    self.assertTrue(value.records["cleanup.json"]["checks_complete_before_artifact_publication"])
+                    self.assertFalse(value.records["cleanup.json"]["publication_completion_attested"])
+
+    def test_deadline_missing_EOF_snapshot_and_budget_finalizer_faults_fail_closed(self):
+        for fault in (
+            {"expired": "before-launch"}, {"expired": "after-run"}, {"missing_eof": True},
+            {"snapshot_fault": True}, {"budget_close_fault": "before"}, {"budget_close_fault": "after"},
+        ):
+            with self.subTest(fault=fault):
+                value = self.exercise(**fault)
+                self.assertEqual(value.result, 125)
+                self.assertFalse(value.records["cleanup.json"]["checks_complete_before_artifact_publication"])
+                self.assertIsNone(value.coordinator.primary)
+                self.assertTrue(value.budget.failed)
+                self.assertTrue(value.records["cleanup.json"]["outcome_released"])
+                if "budget_close_fault" in fault:
+                    self.assertEqual(value.events.count("budget-close"), 1)
+                    self.assertNotIn("rmdir:C:fixture", value.model.events)
+                if "missing_eof" in fault or fault.get("expired") == "before-launch":
+                    self.assertIsNone(value.records["custody.json"]["outer_returncode"])
+                if fault.get("expired") == "before-launch":
+                    self.assertNotIn("Popen", value.events)
+                    self.assertEqual(value.records["launch.json"]["run_admissions"], 0)
 
 
 if __name__ == "__main__":

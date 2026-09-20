@@ -28,6 +28,7 @@ OWNER = "laqieer"
 BRANCH = "diagnostic/issue-180-null-bootstrap-1"
 WORKFLOW = ".github/workflows/issue180-null-bootstrap-1.yml"
 BASE = "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"
+PREPARATION = "20478394860b673b98fb32a4dd292fa0fc02a5d4"
 SOURCE = "c8b365da1be29bc58352cf1edb8b836a2cf18321"
 PROGRAM = "scripts/ci_null_bootstrap/bootstrap.py"
 FILES = frozenset({
@@ -57,7 +58,7 @@ SELECTIVE_CALL = (442, 4096, 0, 4, 0, 0, 32)
 TOKENS = (b"CREATOR_READY\n", b"CREATE\n", b"NS_CREATED\n", b"MAPS_COMPLETE\n", b"GO\n", b"W0_READY\n")
 CAP_KEYS = ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb")
 _cleanup_life = _cleanup_report = None
-INTERFACE_HOLD = "original-private-child-identity-unavailable"
+PLACEMENT = "tmpfs-on-original-fixture"
 
 
 class Refusal(RuntimeError):
@@ -156,12 +157,19 @@ def verify_checkout(root, sha, *, harness=False, deadline=None):
     git(root, "diff", "--quiet", "--no-ext-diff", "--ignore-submodules=none", sha, "--", deadline=deadline)
     if harness:
         parents = git(root, "rev-list", "--parents", "-n", "1", sha, deadline=deadline).split()
-        require(parents == [sha.encode(), BASE.encode()], "normal BASE parent")
+        require(parents == [sha.encode(), PREPARATION.encode()], "normal correction parent")
+        prior = git(root, "rev-list", "--parents", "-n", "1", PREPARATION, deadline=deadline).split()
+        require(prior == [PREPARATION.encode(), BASE.encode()], "normal preparation parent")
         rows = git(root, "diff", "--name-status", "-z", BASE, sha, deadline=deadline).split(b"\0")
         require(rows[-1:] == [b""] and len(rows) == 2 * len(FILES) + 1, "additive inventory")
         actual = list(zip(rows[:-1:2], rows[1:-1:2]))
         require(all(kind == b"A" for kind, _ in actual)
                 and {path.decode("ascii") for _, path in actual} == FILES, "five additive files")
+        changed = git(root, "diff", "--name-status", "-z", PREPARATION, sha, deadline=deadline).split(b"\0")
+        require(len(changed) >= 3 and len(changed) % 2 == 1 and changed[-1] == b"", "nonempty correction")
+        delta = list(zip(changed[:-1:2], changed[1:-1:2]))
+        require(all(kind == b"M" and path.decode("ascii") in FILES for kind, path in delta)
+                and len({path for _, path in delta}) == len(delta), "closed correction paths")
         for name in FILES:
             info = os.lstat(root / name)
             require(stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o644,
@@ -222,9 +230,9 @@ def identity(event, context):
     )
     return {
         "repository": REPOSITORY, "branch": BRANCH, "workflow": WORKFLOW,
-        "base": BASE, "source": SOURCE, "harness": sha, "run_id": run,
+        "base": BASE, "preparation": PREPARATION, "source": SOURCE, "harness": sha, "run_id": run,
         "run_number": 1, "run_attempt": 1, "creation_allocation_consumed": True,
-        "never_merge": True, "qualified": False, "seven_modes": False,
+        "never_merge": True, "qualified": False, "seven_modes": False, "fixture_placement": PLACEMENT,
     }
 
 
@@ -234,7 +242,7 @@ def paths(context):
     require(Path(__file__).resolve() == harness / PROGRAM, "committed program path")
     run = context["GITHUB_RUN_ID"]
     require(re.fullmatch("[1-9][0-9]{0,19}", run) is not None, "run identity")
-    return harness, source, workspace / ("issue180-null-bootstrap-1-" + run)
+    return harness, source, workspace / ("issue180-null-bootstrap-1-" + run + "-records")
 
 
 def write_record(output, name, value):
@@ -336,15 +344,72 @@ def fd_identity(descriptor):
     return value.st_dev, value.st_ino
 
 
+def mount_id(descriptor):
+    data = read_file("/proc/self/fdinfo/" + str(descriptor))
+    ids = [row.split(b":", 1)[1].strip() for row in data.splitlines() if row.startswith(b"mnt_id:")]
+    require(len(ids) == 1 and ids[0].isdigit() and int(ids[0]) > 0, "mount identity")
+    return int(ids[0])
+
+
+@dataclass(frozen=True, slots=True)
+class DirectoryIdentity:
+    device: int
+    inode: int
+    mode: int
+    uid: int
+    gid: int
+    mount: int
+
+    def metadata(self):
+        return self.device, self.inode, self.mode, self.uid, self.gid
+
+    def wire(self):
+        return [*self.metadata(), self.mount]
+
+
+def directory_metadata(info):
+    return info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid
+
+
+def directory_identity(descriptor):
+    info = os.fstat(descriptor)
+    require(stat.S_ISDIR(info.st_mode), "directory type")
+    return DirectoryIdentity(*directory_metadata(info), mount_id(descriptor))
+
+
+def tmpfs_state(descriptor):
+    # Linux native statfs ABI; the selected helper also requires Linux x86-64.
+    class Statfs(ctypes.Structure):
+        _fields_ = [
+            ("kind", ctypes.c_long), ("block_size", ctypes.c_long),
+            ("blocks", ctypes.c_ulong), ("free", ctypes.c_ulong), ("available", ctypes.c_ulong),
+            ("files", ctypes.c_ulong), ("files_free", ctypes.c_ulong),
+            ("fsid", ctypes.c_int * 2), ("name_length", ctypes.c_long),
+            ("fragment_size", ctypes.c_long), ("flags", ctypes.c_long), ("spare", ctypes.c_long * 4),
+        ]
+
+    require(ctypes.sizeof(ctypes.c_long) == 8 and ctypes.sizeof(Statfs) == 120, "native statfs ABI")
+    value = Statfs()
+    checked(libc().fstatfs(descriptor, ctypes.byref(value)))
+    return value.kind, value.block_size * value.blocks, value.flags
+
+
+def verify_tmpfs(descriptor, original):
+    mounted = directory_identity(descriptor)
+    kind, capacity, flags = tmpfs_state(descriptor)
+    require(mounted.metadata()[:2] != original.metadata()[:2] and mounted.mount != original.mount
+            and mounted.mode == stat.S_IFDIR | 0o700 and mounted.uid == mounted.gid == 0
+            and kind == 0x01021994 and capacity == FIXTURE_BYTES and flags & 15 == 14,
+            "distinct bounded tmpfs root")
+    return mounted
+
+
 def mount_state(path):
     descriptor = os.open(path, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC)
     try:
         info = os.fstat(descriptor)
-        data = read_file("/proc/self/fdinfo/" + str(descriptor))
-        ids = [row.split(b":", 1)[1].strip() for row in data.splitlines() if row.startswith(b"mnt_id:")]
-        require(len(ids) == 1 and ids[0].isdigit(), "mount identity")
         return (info.st_dev, info.st_ino, info.st_mode, info.st_rdev,
-                int(ids[0]), os.fstatvfs(descriptor).f_flag)
+                mount_id(descriptor), os.fstatvfs(descriptor).f_flag)
     finally:
         close_temporary(descriptor, sys.exc_info()[1])
 
@@ -614,7 +679,7 @@ class Bootstrap:
     """Closed R/N/W roles; no request dispatcher, callback payload or alternate backend."""
 
     NAMES = frozenset({
-        "fixture", "eof.read", "eof.write", "request.read", "request.write",
+        "fixture", "tmpfs", "volume", "eof.read", "eof.write", "request.read", "request.write",
         "response.read", "response.write", "N.pidfd", "N.proc", "user", "mount",
         "uid_map", "gid_map", "setgroups", "gate.read", "gate.write",
         "worker.read", "worker.write", "W.pidfd", "W.proc",
@@ -687,19 +752,35 @@ class Bootstrap:
         require(actual.keys() == {0, 1, 2, *self.fds.values()}, "unknown inherited descriptor")
         self.closes(tuple(name for name in self.fds if name not in keep))
 
-    def create_fixture(self):
-        self.advance("new", "fixture")
+    def install_volume(self):
         descriptor = self.acquire("fixture", lambda: os.open(
             self.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
         ))
-        info = os.fstat(descriptor)
-        require((info.st_dev, info.st_ino, info.st_uid) ==
+        original = directory_identity(descriptor)
+        require((original.device, original.inode, original.uid) ==
                 (self.binding.device, self.binding.inode, self.binding.owner)
-                and info.st_gid == self.binding.gid and stat.S_IMODE(info.st_mode) == 0o700
+                and original.gid == self.binding.gid and original.mode == stat.S_IFDIR | 0o700
                 and not os.listdir(descriptor), "owned fresh fixture")
+        mount("tmpfs", self.parent, 14, "tmpfs", b"size=1048576,mode=0700")
+        self.close("fixture")
+        descriptor = self.acquire("tmpfs", lambda: os.open(
+            self.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+        ))
+        mounted = verify_tmpfs(descriptor, original)
+        os.fchown(descriptor, self.binding.uid, self.binding.gid)
         os.mkdir("volume", 0o700, dir_fd=descriptor)
-        mount("tmpfs", self.volume, 14, "tmpfs", b"size=1048576,mode=0700")
-        os.chown(self.volume, self.binding.uid, self.binding.gid)
+        volume = self.acquire("volume", lambda: os.open(
+            "volume", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=descriptor,
+        ))
+        child = directory_identity(volume)
+        require(child.device == mounted.device and child.inode != mounted.inode
+                and child.mount == mounted.mount and child.mode == stat.S_IFDIR | 0o700
+                and child.uid == child.gid == 0, "fresh tmpfs volume")
+        os.fchown(volume, self.binding.uid, self.binding.gid)
+
+    def create_fixture(self):
+        self.advance("new", "fixture")
+        self.install_volume()
         for name in ("source", "runtime", "selected", "harness"):
             target = self.volume / name
             target.mkdir(mode=0o700)
@@ -741,7 +822,7 @@ class Bootstrap:
                 "trusted capture pipes")
         self.capture = actual[1][:2]
         os.set_blocking(1, False)
-        self.close("fixture")
+        self.closes(("volume", "tmpfs"))
 
     def fork_role(self, role):
         require(role in ("N", "W") and self.children[role] is None, "one fixed child per role")
@@ -1282,19 +1363,159 @@ def fixed_argv(budgeting, binding, parent, harness):
     ]
 
 
-def remove_empty_fixture(parent, binding):
-    """Never infer a root-created child's identity from a late path lookup."""
-    info = os.lstat(parent)
-    require(stat.S_ISDIR(info.st_mode) and (info.st_dev, info.st_ino, info.st_uid, info.st_gid) ==
-            (binding.device, binding.inode, binding.uid, binding.gid), "retained fixture parent")
-    descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
-    try:
-        opened = os.fstat(descriptor)
-        require((opened.st_dev, opened.st_ino) == (binding.device, binding.inode), "fixture path replacement")
-        require(not os.listdir(descriptor), INTERFACE_HOLD)
-        os.rmdir(parent)
-    finally:
-        close_temporary(descriptor, sys.exc_info()[1])
+class HostDirectories:
+    """C's two originally acquired directories; no recursive or late-adoption cleanup."""
+
+    def __init__(self, workspace, name, uid, gid, life, report, deadline):
+        self.workspace, self.name, self.uid, self.gid = workspace, name, uid, gid
+        self.life, self.report, self.deadline = life, report, deadline
+        self.fds, self.identities = {}, {}
+        self.attempted = {"container": False, "fixture": False}
+        self.created = {"container": None, "fixture": None}
+        self.removal_attempted = {"container": False, "fixture": False}
+        self.removed = {"container": None, "fixture": None}
+        self.mount_namespace = None
+
+    @property
+    def fixture(self):
+        return self.workspace / self.name / "fixture"
+
+    def open(self, slot, name, *, parent=None):
+        require(slot in ("workspace", "container", "fixture", "check") and slot not in self.fds,
+                "C descriptor slot")
+
+        def acquire():
+            descriptor = os.open(
+                name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                dir_fd=None if parent is None else self.fds[parent],
+            )
+            require(integer(descriptor, 3, 0x7FFFFFFF) and descriptor not in self.fds.values(),
+                    "distinct acquired C descriptor")
+            self.fds[slot] = descriptor
+
+        self.life.finish_cleanup([("setup", acquire)], report=self.report)
+        return self.fds[slot]
+
+    def close(self, slot):
+        descriptor = self.fds.pop(slot, None)
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except BaseException:
+                self.report.unsure("ownership")
+                raise
+
+    def create(self):
+        self.mount_namespace = namespace("mnt")
+        descriptor = self.open("workspace", self.workspace)
+        self.identities["workspace"] = directory_identity(descriptor)
+        for slot, name, parent in (("container", self.name, "workspace"), ("fixture", "fixture", "container")):
+            remaining(self.deadline)
+
+            def acquire(slot=slot, name=name, parent=parent):
+                self.attempted[slot] = True
+                os.mkdir(name, 0o700, dir_fd=self.fds[parent])
+                self.created[slot] = True
+                info = os.stat(name, dir_fd=self.fds[parent], follow_symlinks=False)
+                expected = DirectoryIdentity(*directory_metadata(info), self.identities[parent].mount)
+                require(expected.mode == stat.S_IFDIR | 0o700 and expected.uid == self.uid
+                        and expected.gid == self.gid and expected.device == self.identities[parent].device,
+                        "new ordinary-owned directory")
+                descriptor = self.open(slot, name, parent=parent)
+                require(directory_identity(descriptor) == expected and not os.listdir(descriptor),
+                        "new directory acquisition identity")
+                self.identities[slot] = expected
+
+            self.life.finish_cleanup([("setup", acquire)], report=self.report)
+
+    def check_fds(self, baseline):
+        actual = fd_inventory()
+        require(actual.keys() == baseline.keys() | set(self.fds.values())
+                and all(actual[fd] == value for fd, value in baseline.items()), "C unknown or replaced FD")
+        for slot, descriptor in self.fds.items():
+            known = self.identities.get(slot)
+            require(known is not None and actual[descriptor] ==
+                    (known.device, known.inode, stat.S_IFDIR, os.O_RDONLY), "C owned directory FD")
+
+    def check_directory(self, slot, name, parent):
+        require(slot in self.fds and slot in self.identities and parent in self.fds
+                and parent in self.identities, "original cleanup pins unavailable")
+        require(namespace("mnt") == self.mount_namespace, "C mount context changed")
+        require(directory_identity(self.fds["workspace"]) == self.identities["workspace"]
+                and directory_metadata(os.stat(self.workspace, follow_symlinks=False)) ==
+                self.identities["workspace"].metadata(), "workspace ancestry changed")
+        require(directory_identity(self.fds[parent]) == self.identities[parent]
+                and directory_identity(self.fds[slot]) == self.identities[slot], "original directory pin changed")
+        if parent == "container":
+            require(directory_metadata(os.stat(self.name, dir_fd=self.fds["workspace"], follow_symlinks=False)) ==
+                    self.identities["container"].metadata(), "container ancestry replacement")
+        require(directory_metadata(os.stat(name, dir_fd=self.fds[parent], follow_symlinks=False)) ==
+                self.identities[slot].metadata(), "cleanup path replacement")
+        descriptor = self.open("check", name, parent=parent)
+        primary = None
+        try:
+            require(directory_identity(descriptor) == self.identities[slot]
+                    and not os.listdir(descriptor), "original directory not empty or still mounted")
+        except BaseException as error:
+            primary = error
+            raise
+        finally:
+            self.life.finish_cleanup([("cleanup", lambda: self.close("check"))],
+                                     primary=primary, report=self.report)
+
+    def remove(self, slot, name, parent, lifecycle_closed):
+        if not self.attempted[slot]:
+            return
+        require(lifecycle_closed, "lifecycle custody not closed")
+        require(not self.removal_attempted[slot] and self.created[slot] is True,
+                "unconfirmed directory creation/removal")
+        if slot == "container":
+            require(not self.attempted["fixture"] or self.removed["fixture"] is True,
+                    "fixture retained or removal uncertain")
+        self.check_directory(slot, name, parent)
+        self.close(slot)
+        require(directory_metadata(os.stat(name, dir_fd=self.fds[parent], follow_symlinks=False)) ==
+                self.identities[slot].metadata(), "cleanup path changed after pin close")
+        # Withdraw path authority before rmdir; never retry an ambiguous unlink.
+        self.removal_attempted[slot] = True
+        try:
+            os.rmdir(name, dir_fd=self.fds[parent])
+        except BaseException:
+            self.report.unsure("ownership")
+            raise
+        self.removed[slot] = True
+
+    def cleanup(self, lifecycle_closed, baseline):
+        safe = False
+        primary = None
+        try:
+            self.check_fds(baseline)
+            safe = lifecycle_closed
+        except BaseException as error:
+            primary = error
+            self.report.unsure("ownership")
+            self.report.error("ownership", error)
+        actions = [
+            ("ownership", lambda: self.remove("fixture", "fixture", "container", safe)),
+            ("cleanup", lambda: self.close("fixture")),
+            ("ownership", lambda: self.remove("container", self.name, "workspace", safe)),
+            ("cleanup", lambda: self.close("check")),
+            ("cleanup", lambda: self.close("container")),
+            ("cleanup", lambda: self.close("workspace")),
+        ]
+        try:
+            self.life.finish_cleanup(actions, primary=primary, report=self.report)
+        finally:
+            if primary is not None:
+                raise primary
+
+    def value(self):
+        return {
+            "original": {name: value.wire() for name, value in self.identities.items() if name != "workspace"},
+            "creation_attempted": dict(self.attempted), "created": dict(self.created),
+            "removal_attempted": dict(self.removal_attempted), "removed": dict(self.removed),
+            "pins_withdrawn": not self.fds,
+        }
 
 
 def summary(snapshot, life):
@@ -1350,10 +1571,222 @@ def run_capture(budget, owner, binding, parent, harness):
     )
 
 
-def execution_contract():
-    # No environment variable, argument, success-shaped mock record or prefix
-    # can authorize the missing cross-role ownership fact.
-    raise Refusal(INTERFACE_HOLD)
+def new_budget(budgeting):
+    return budgeting.ProbeBudget(budgeting.Limits(
+        seconds=WATCHDOG_SECONDS, runs=1, states=1, pending=1, entries=52,
+        cache_bytes=552960, process_output_bytes=CAPTURE_BYTES, output_bytes=CAPTURE_BYTES,
+        sandbox_bytes=FIXTURE_BYTES,
+    ))
+
+
+def lifecycle_closed(snapshot, budget):
+    if not budget.closed or budget.children:
+        return False
+    if budget.runs == 0:
+        return True
+    if snapshot is None or not (
+        snapshot.capture_available and snapshot.capture_complete and snapshot.custody_complete
+        and snapshot.reaped and snapshot.cleanup.complete
+    ):
+        return False
+    return all(snapshot.frames[index] is not None and snapshot.frames[index].cleanup.complete
+               for index in (1, 3))
+
+
+class Coordinator:
+    """One C owner; acquisition, custody, source checks and empty-directory cleanup."""
+
+    def __init__(self, budgeting, life, scope, harness, source, output, uid, gid, baseline, source_checks):
+        self.budgeting, self.life, self.scope = budgeting, life, scope
+        self.harness, self.source, self.output = harness, source, output
+        self.uid, self.gid, self.baseline = uid, gid, baseline
+        self.budget = self.owner = self.directories = self.primary = None
+        self.stage, self.error_stage = "admission", None
+        self.invoked = self.closed_lifecycle = self.capture_ok = self.fd_restored = False
+        self.owner_released = None
+        require(source_checks == {
+            "harness_before": True, "selected_before": True, "harness_after": None, "selected_after": None,
+        }, "completed source preflight")
+        self.source_checks = dict(source_checks)
+
+    def save_error(self, error, stage):
+        if self.budget is not None:
+            self.budget.failed = True
+        if self.primary is None:
+            self.primary, self.error_stage = error, stage
+        elif error is not self.primary:
+            self.life._forget_error(error)
+
+    def snapshot(self):
+        if self.owner is None or not self.owner._terminal:
+            return None
+        return self.owner.snapshot()
+
+    def close_budget(self):
+        if self.budget is not None:
+            self.budget.close(**({} if self.owner is None else {"report": self.owner._cleanup}))
+
+    def inspect_lifecycle(self):
+        view = self.snapshot()
+        try:
+            self.closed_lifecycle = self.budget is not None and lifecycle_closed(view, self.budget)
+        finally:
+            view = None
+        if not self.closed_lifecycle:
+            self.owner._cleanup.unsure("ownership")
+
+    def source_after(self, name, root, sha, harness=False):
+        if not self.closed_lifecycle:
+            return
+        try:
+            verify_checkout(root, sha, harness=harness, deadline=self.budget.deadline)
+        except BaseException:
+            self.source_checks[name] = False
+            raise
+        self.source_checks[name] = True
+
+    def cleanup_directories(self):
+        if self.directories is not None:
+            self.directories.cleanup(self.closed_lifecycle, self.baseline)
+
+    def check_final_fds(self):
+        self.fd_restored = fd_inventory() == self.baseline
+        require(self.fd_restored, "C final FD inventory")
+
+    def run(self):
+        global _cleanup_life, _cleanup_report
+        view = completed = None
+        report = None
+        handlers = {}
+        try:
+            self.budget = new_budget(self.budgeting)
+            self.owner = self.budget.reserve_outcome(output_limit=CAPTURE_BYTES)
+            report = self.owner._cleanup
+            _cleanup_life, _cleanup_report = self.life, report
+            for signum in self.life.TERMINATING:
+                handlers[signum] = signal.signal(signum, self.life.interrupted)
+            # Prepay bounded after-check/artifact representations before a failure
+            # can close the budget. No late admission, refund or new budget.
+            self.budget.charge("sandbox", FIXTURE_BYTES)
+            self.budget.charge("control", 8 * RECORD_BYTES + ARTIFACT_BYTES)
+            self.stage = "acquisition"
+            name = "issue180-null-bootstrap-1-" + self.scope["run_id"]
+            self.directories = HostDirectories(
+                self.harness.parent, name, self.uid, self.gid, self.life, report, self.budget.deadline,
+            )
+            self.directories.create()
+            self.directories.check_fds(self.baseline)
+            original = self.directories.identities["fixture"]
+            binding = self.life._FixtureBinding(
+                "readonly", self.uid, self.gid, self.budget.deadline,
+                original.device, original.inode, original.uid,
+            )
+            self.stage, self.invoked = "launch", True
+            completed = run_capture(self.budget, self.owner, binding, self.directories.fixture, self.harness)
+            completed = None
+            self.stage = "capture"
+            view = self.snapshot()
+            self.capture_ok = view is not None and capture_complete(view)
+            view = None
+            if not self.capture_ok:
+                self.budget.failed = True
+        except BaseException as error:
+            self.save_error(error, self.stage)
+            if self.budget is not None:
+                self.budget.failed = True
+        finally:
+            view = completed = None
+        if report is not None:
+            actions = [
+                ("leader", self.close_budget), ("ownership", self.inspect_lifecycle),
+                ("ownership", lambda: self.source_after("harness_after", self.harness, self.scope["harness"], True)),
+                ("ownership", lambda: self.source_after("selected_after", self.source, SOURCE)),
+                ("ownership", self.cleanup_directories), ("cleanup", self.check_final_fds),
+            ]
+            try:
+                self.life.finish_cleanup(actions, primary=self.primary, handlers=handlers, report=report)
+            except BaseException as error:
+                self.save_error(error, "cleanup")
+            actions = handlers = None
+        else:
+            # No host fixture or run can precede successful outcome admission.
+            try:
+                self.close_budget()
+            except BaseException as error:
+                self.save_error(error, "cleanup-before-outcome")
+            try:
+                self.check_final_fds()
+            except BaseException as error:
+                self.save_error(error, "cleanup-before-outcome")
+        custody = {"available": False, "qualified": False, "outer_returncode": None}
+        mode = {"available": False, "result": None, "qualified": False,
+                "old_operation_separately_exported": False}
+        try:
+            view = self.snapshot()
+            if view is not None:
+                custody = {"available": True, **summary(view, self.life)}
+                frame = view.frames[0]
+                if frame is not None and frame.result is not None:
+                    mode["available"], mode["result"] = True, worker_wire(frame.result)
+        except BaseException as error:
+            if report is not None:
+                report.error("freeze", error)
+            self.save_error(error, "snapshot")
+        finally:
+            view = None
+            if self.owner is not None:
+                try:
+                    self.owner.release()
+                    self.owner_released = True
+                except BaseException as error:
+                    self.owner_released = self.owner._released
+                    report.unsure("ownership")
+                    report.error("ownership", error)
+                    self.save_error(error, "outcome-release")
+            _cleanup_life = _cleanup_report = None
+        directories = None if self.directories is None else self.directories.value()
+        cleanup = None if report is None else self.life._cleanup_wire(report.value())
+        passed = bool(
+            self.primary is None and self.capture_ok and self.closed_lifecycle and self.fd_restored
+            and self.owner_released is True and report is not None and report.value().complete
+            and all(value is True for value in self.source_checks.values())
+            and directories is not None and directories["pins_withdrawn"]
+            and all(value is True for value in directories["removed"].values())
+        )
+        error_value = None if self.primary is None else self.life._error_value(self.primary)
+        if self.primary is not None:
+            self.life._forget_error(self.primary)
+            self.primary = None
+        records = {
+            "launch.json": {
+                "capture_adapter_invoked": self.invoked,
+                "run_admissions": None if self.budget is None else self.budget.runs,
+                "original": None if directories is None else directories["original"],
+                "uid": self.uid, "gid": self.gid, "source": SOURCE, "harness": self.scope["harness"],
+                "deadline": None if self.budget is None else self.budget.deadline,
+                "watchdog_seconds": WATCHDOG_SECONDS, "wait_ceiling_seconds": WAIT_SECONDS,
+                "outer_ceiling_seconds": OUTER_SECONDS, "qualified": False,
+            },
+            "custody.json": custody,
+            "mode.json": mode,
+            "cleanup.json": {
+                "coordinator_first_error": error_value, "coordinator_error_stage": self.error_stage,
+                "report": cleanup, "directories": directories, "source_checks": self.source_checks,
+                "lifecycle_closed": self.closed_lifecycle, "fd_inventory_restored": self.fd_restored,
+                "outcome_released": self.owner_released,
+                "checks_complete_before_artifact_publication": passed, "qualified": False,
+                "publication_completion_attested": False,
+            },
+        }
+        publication_failed = False
+        for name in ARTIFACTS[1:]:
+            try:
+                write_record(self.output, name, records[name])
+            except BaseException as error:
+                publication_failed = True
+                self.life._forget_error(error)
+        records = mode = custody = directories = cleanup = None
+        return 0 if passed and not publication_failed else 125
 
 
 def plan(context):
@@ -1363,41 +1796,73 @@ def plan(context):
     require(os.getresuid() == (os.getuid(),) * 3 and os.getuid() > 0
             and os.getresgid() == (os.getgid(),) * 3 and os.getgid() > 0, "ordinary coordinator")
     output.mkdir(mode=0o700)
-    write_record(output, "scope.json", {**scope, "preparation_hold": INTERFACE_HOLD})
+    write_record(output, "scope.json", scope)
 
 
 def coordinate(context):
     scope = identity(read_json(read_file(context["GITHUB_EVENT_PATH"], RECORD_BYTES)), context)
     harness, source, output = paths(context)
-    require(read_json(read_file(output / "scope.json", RECORD_BYTES)) ==
-            {**scope, "preparation_hold": INTERFACE_HOLD}, "first-creation scope")
-    verify_checkout(harness, scope["harness"], harness=True)
-    verify_checkout(source, SOURCE)
-    verify_environment(source)
-    # This is a real, preserved frozen-interface contradiction, not a request
-    # to run a setup-only variant. Do not acquire a budget/fixture or sudo.
+    require(read_json(read_file(output / "scope.json", RECORD_BYTES)) == scope, "first-creation scope")
+    canonical(output)
+    checks = {key: None for key in ("harness_before", "selected_before", "harness_after", "selected_after")}
+    stage = "ordinary-identity"
+    error_stage = None
+    error_fact = None
     try:
-        execution_contract()
-    except Refusal:
-        write_record(output, "launch.json", {
-            "attempted": False, "qualified": False, "hold": INTERFACE_HOLD,
-            "source": SOURCE, "harness": scope["harness"],
-            "watchdog_seconds": WATCHDOG_SECONDS, "wait_ceiling_seconds": WAIT_SECONDS,
-            "outer_ceiling_seconds": OUTER_SECONDS,
-        })
-        write_record(output, "custody.json", {
-            "available": False, "qualified": False, "outer_returncode": None,
-            "reason": "no-launch-interface-hold",
-        })
-        write_record(output, "mode.json", {
-            "available": False, "result": None, "qualified": False,
-            "old_operation_separately_exported": False,
-        })
-        write_record(output, "cleanup.json", {
-            "launch_owners_acquired": False, "fixture_created": False,
-            "source_unchanged": True, "runtime_cleanup_qualified": False,
-        })
+        uid, gid = os.getuid(), os.getgid()
+        require(uid > 0 and gid > 0 and os.getresuid() == (uid,) * 3 and os.getresgid() == (gid,) * 3,
+                "ordinary coordinator")
+        initial = self_state()
+        require(initial["uid"] == (uid,) * 4 and initial["gid"] == (gid,) * 4
+                and initial["uid_map"] == initial["gid_map"] == FULL_MAP
+                and all(initial["caps"][index] == 0 for index in (0, 1, 2, 4)), "ordinary full-map coordinator")
+        baseline = fd_inventory()
+        require(set(baseline) == {0, 1, 2}, "initial C descriptors")
+        for key, root, sha, is_harness in (
+            ("harness_before", harness, scope["harness"], True), ("selected_before", source, SOURCE, False),
+        ):
+            stage = key
+            try:
+                verify_checkout(root, sha, harness=is_harness)
+            except BaseException:
+                checks[key] = False
+                raise
+            checks[key] = True
+        stage = "selected-environment"
+        verify_environment(source)
+        stage = "selected-control-import"
+        budgeting, life = load_control(source)
+    except BaseException as error:
+        error_stage = stage
+        error_fact = {
+            "kind": ("os-error" if isinstance(error, OSError) else
+                     "interrupt" if isinstance(error, KeyboardInterrupt) else
+                     "value-error" if isinstance(error, ValueError) else
+                     "refusal" if isinstance(error, Refusal) else "other-error"),
+            "errno": error.errno if isinstance(error, OSError) and integer(error.errno, 0, 4095) else None,
+        }
+        for attribute in ("__traceback__", "__context__", "__cause__"):
+            BaseException.__setattr__(error, attribute, None)
+    if error_stage is not None:
+        records = {
+            "launch.json": {"capture_adapter_invoked": False, "run_admissions": 0, "qualified": False},
+            "custody.json": {"available": False, "qualified": False, "outer_returncode": None},
+            "mode.json": {"available": False, "result": None, "qualified": False,
+                          "old_operation_separately_exported": False},
+            "cleanup.json": {
+                "preflight_refusal_stage": error_stage, "preflight_first_error": error_fact, "source_checks": checks,
+                "launch_owners_acquired": False, "checks_complete_before_artifact_publication": False,
+                "qualified": False, "publication_completion_attested": False,
+            },
+        }
+        for name in ARTIFACTS[1:]:
+            try:
+                write_record(output, name, records[name])
+            except BaseException as error:
+                for attribute in ("__traceback__", "__context__", "__cause__"):
+                    BaseException.__setattr__(error, attribute, None)
         return 125
+    return Coordinator(budgeting, life, scope, harness, source, output, uid, gid, baseline, checks).run()
 
 
 def main():
@@ -1409,8 +1874,6 @@ def main():
     if arguments == ["run"]:
         return coordinate(os.environ)
     if arguments[:1] == ["--reaper"]:
-        execution_contract()
-        # Intentionally unreachable while the exact interface hold exists.
         harness = canonical(Path(__file__).resolve().parents[2])
         source = canonical(harness.parent / "candidate")
         _, life = load_control(source)
