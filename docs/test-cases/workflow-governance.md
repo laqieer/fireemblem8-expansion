@@ -5633,6 +5633,20 @@ local foreach bindings in tab recipes, inline recipes, define-body data and
 escaped-hash assignments: those must retain the actual HIDDEN obligation
 and reject, not disappear under a global comment stripper.
 
+For the public reporter caller, run the source-only routing contract:
+
+```sh
+python3 -B -m unittest scripts.validation_ownership.tests.test_reporter.PublicMakeSourceTests -v
+```
+
+Require explicit per-pass selection for both CURRENT and BASE through the
+same session/budget, unchanged targets/domains/dispatch inputs, rejection of a
+foreign metadata view, and propagation of the original source-proof failure
+without a legacy retry. Restoring the old omitted selection must fail this
+contract. This is API-routing evidence only: the original-source/native
+scenarios and complete public-report acceptance remain mandatory, not replaced
+by a mocked observer or a configuration flag. No public bypass is exposed.
+
 Also exercise the parse-time, not just deferred-recipe, local scope. Define
 `EMPTY :=`, `VALUE = $(and $(EMPTY),$(UNUSED))`,
 `UNUSED = $(eval .POSIX:)`, then
