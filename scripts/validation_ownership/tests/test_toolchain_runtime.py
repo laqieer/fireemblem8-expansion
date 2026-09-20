@@ -2831,11 +2831,13 @@ class ToolchainIntermediateInertTests(unittest.TestCase):
 class _CustodyModel:
     """Actual custody APIs with explicitly synthetic issued launch/native facts."""
 
-    def __init__(self, path="/work/ccL3VdjV.s"):
+    def __init__(self, path="/work/ccL3VdjV.s", *, limits=None, model_clock=None):
         self.model = ToolchainProtocolDataTests().model(path)
         self.session = make_probe.ProbeSession.__new__(make_probe.ProbeSession)
         session = self.session
-        session.budget = ProbeBudget()
+        session.budget = ProbeBudget() if limits is None else ProbeBudget(limits)
+        if model_clock is not None:
+            session.budget.started = model_clock
         session.base, session.tree = Path("/inert/session"), Path("/inert/source")
         session.snapshot = SimpleNamespace(digest="c" * 64)
         session.serial = 0
@@ -3023,8 +3025,8 @@ class _CustodyModel:
         )
         return claimed, result
 
-    def stage(self, number, *, status=0):
-        native = self.native(number, status=status)
+    def stage(self, number, *, status=0, mutate_report=None):
+        native = self.native(number, status=status, mutate_report=mutate_report)
         claimed, result = self.claim(native)
         sealed = self.controller.seal_step_result(native[1], result, native_return=claimed)
         accepted = self.controller.consume_step_result(native[1], sealed)
@@ -3033,8 +3035,11 @@ class _CustodyModel:
         self.grant.stage += 1
         return accepted
 
-    def recipe(self, *, failed=False):
-        stages = [self.stage(index, status=1 if failed and index == 4 else 0) for index in range(5)]
+    def recipe(self, *, failed=False, mutate_report=None):
+        stages = [
+            self.stage(index, status=1 if failed and index == 4 else 0, mutate_report=mutate_report)
+            for index in range(5)
+        ]
         stdout, stderr, status = self.controller._recipe_output(self.grant)
         result = make_probe.ProcessOutput(
             stdout, stderr, (),
@@ -3072,6 +3077,197 @@ class _CustodyModel:
 
 
 class ToolchainCustodyInertTests(unittest.TestCase):
+    def complete_parent(self, model, borrowed):
+        def append(observed):
+            if borrowed is not None and model.context.sequence == 2 and model.grant.stage == 4:
+                observed["accessed"].append(borrowed)
+                self.assertIs(observed["accessed"][-1], borrowed)
+        for slot, path in enumerate(("/work/ccL3VdjV.s", "/work/ccBRFQFs.s")):
+            if slot:
+                model.next_recipe(path, slot + 1)
+            result = model.recipe(mutate_report=append)
+            evidence = model.controller.consume_recipe_result(model.command, result)
+            semantic = {
+                "command": toolchain_runtime._envelope_decode(model.session, evidence.projection),
+                "output_sha256": hashlib.sha256(result.stdout).hexdigest(),
+            }
+            pending = model.session._prepare_toolchain_occurrence(evidence, model.context, slot, semantic)
+            model.session._acknowledge_toolchain_occurrence(model.context.scope, slot, pending, semantic)
+        return result, semantic, model.session.toolchain_receipts(model.context.scope)
+
+    def test_complete_parent_borrowed_metadata_fits_derived_shared_budget(self):
+        borrowed = "/MODEL/unrelated/00/" + "x" * (32768 - len("/MODEL/unrelated/00/"))
+        with patch.object(syscall_guard.time, "monotonic", return_value=1000.0):
+            with _CustodyModel(model_clock=1000.0) as model:
+                try:
+                    result, semantic, receipts = self.complete_parent(model, borrowed)
+                except MakeProbeError as error:
+                    self.fail("complete shared-budget borrowed MODEL refused: " + str(error))
+                required = model.session.budget.bytes["control"]
+                self.assertEqual(len(receipts), 2)
+                limits = model.session.budget.limits
+                self.assertLessEqual(required, limits.control_bytes)
+                expected_output = result.stdout, result.stderr, result.returncode
+            with _CustodyModel(model_clock=1000.0) as model:
+                baseline, baseline_semantic, baseline_receipts = self.complete_parent(model, None)
+                self.assertEqual((baseline.stdout, baseline.stderr, baseline.returncode), expected_output)
+                self.assertEqual(baseline_semantic, semantic)
+                self.assertEqual(baseline_receipts, receipts)
+            for allowance in (required, required - 1):
+                with self.subTest(control=allowance), _CustodyModel(
+                    limits=replace(limits, control_bytes=allowance), model_clock=1000.0,
+                ) as model:
+                    if allowance == required:
+                        result, current_semantic, current_receipts = self.complete_parent(model, borrowed)
+                        self.assertEqual((result.stdout, result.stderr, result.returncode), expected_output)
+                        self.assertEqual(current_semantic, semantic)
+                        self.assertEqual(current_receipts, receipts)
+                        self.assertEqual(model.session.budget.bytes["control"], required)
+                    else:
+                        with self.assertRaisesRegex(MakeProbeError, "control byte budget exhausted"):
+                            self.complete_parent(model, borrowed)
+                        self.assertEqual(len(model.session._toolchain_receipt_archive.get(model.context.scope, ())), 1)
+                        self.assertTrue(model.session.budget.failed)
+                        self.assertFalse(model.session._native_returns)
+
+    def test_selected_record_decoding_is_funded_without_copying_unrelated_observations(self):
+        with _CustodyModel() as model:
+            data = model.model
+            selected = [
+                toolchain_runtime.EXEC_PREFIX + toolchain_runtime.encoded(row).decode("ascii")
+                for row in data["executions"]
+            ]
+            selected.append(toolchain_runtime.INPUT_PREFIX + toolchain_runtime.encoded({
+                "stage": "compile", "stdin": data["profile"]["stdin"], "eof": True,
+            }).decode("ascii"))
+            borrowed = tuple("/MODEL/unrelated/" + str(index) + "x" * 4096 for index in range(16))
+            values = [*selected, *borrowed]
+            charges = []
+            toolchain_runtime._admit_completion_records(values, None, data["limits"], charges.append)
+            required = sum(charges)
+            old_work = []
+            old = 32768 + toolchain_runtime._json_cost(
+                values, node_limit=data["limits"].observation_count * 2 + 1, work=old_work.append,
+            ) + sum(old_work)
+            self.assertLess(required, old)
+            for allowance in (required, required - 1):
+                spent, decoded = [0], []
+                def reserve(size):
+                    spent[0] += size
+                    if spent[0] > allowance:
+                        raise MakeProbeError("MODEL selected admission refused")
+                loads = json.loads
+                def decode(payload, *args, **kwargs):
+                    decoded.append(payload)
+                    self.assertEqual(spent[0], required)
+                    return loads(payload, *args, **kwargs)
+                with patch.object(json, "loads", decode):
+                    if allowance == required:
+                        toolchain_runtime._admit_completion_records(values, None, data["limits"], reserve)
+                        rows = toolchain_runtime.records(
+                            values, data["profile"], [row[0] for row in data["profile"]["images"]],
+                            returncode=0, argv=data["driver"], environment=data["executions"][0]["environment"],
+                        )
+                        self.assertEqual(len(rows), 4)
+                        self.assertEqual(len(decoded), 4)
+                    else:
+                        with self.assertRaisesRegex(MakeProbeError, "MODEL selected admission refused"):
+                            toolchain_runtime._admit_completion_records(values, None, data["limits"], reserve)
+                        self.assertFalse(decoded)
+                self.assertTrue(all(values[len(selected) + index] is item for index, item in enumerate(borrowed)))
+
+    def test_selected_record_workspace_bounds_cover_real_parser_allocations(self):
+        with _CustodyModel() as model:
+            data = model.model
+            data["executions"][0]["environment"]["MODEL_LARGE"] = "x" * 16384
+            values = [
+                toolchain_runtime.EXEC_PREFIX + toolchain_runtime.encoded(row).decode("ascii")
+                for row in data["executions"]
+            ]
+            values.append(toolchain_runtime.INPUT_PREFIX + toolchain_runtime.encoded({
+                "stage": "compile", "stdin": data["profile"]["stdin"], "eof": True,
+            }).decode("ascii"))
+            values.extend(["unrelated borrowed " + "x" * 16384] * 4)
+            funded = [0]
+            def reserve(size):
+                _, peak = tracemalloc.get_traced_memory()
+                if funded[0]:
+                    self.assertLessEqual(peak, funded[0])
+                funded[0] += size
+                tracemalloc.reset_peak()
+            tracemalloc.start()
+            try:
+                toolchain_runtime._admit_completion_records(values, None, data["limits"], reserve)
+                rows = toolchain_runtime.records(
+                    values, data["profile"], [row[0] for row in data["profile"]["images"]],
+                    returncode=0, argv=data["driver"], environment=data["executions"][0]["environment"],
+                )
+                _, peak = tracemalloc.get_traced_memory()
+                self.assertLessEqual(peak, funded[0])
+            finally:
+                tracemalloc.stop()
+            self.assertEqual(rows[0]["environment"]["MODEL_LARGE"], "x" * 16384)
+
+    def test_unselected_report_mutation_remains_bound_before_claim_and_after_claim(self):
+        borrowed = "MODEL-original-unselected-" + "x" * 32768
+        for boundary in ("claim", "seal"):
+            with self.subTest(boundary=boundary), _CustodyModel() as model:
+                native = model.native(4, mutate_report=lambda report: report["accessed"].append(borrowed))
+                self.assertIs(native[-1]["accessed"][-1], borrowed)
+                if boundary == "seal":
+                    claimed, result = model.claim(native)
+                native[-1]["accessed"][-1] = "MODEL-mutated-unselected-" + "x" * 32768
+                with self.assertRaisesRegex(MakeProbeError, "native result values changed"):
+                    if boundary == "claim":
+                        model.claim(native)
+                    else:
+                        model.controller.seal_step_result(native[1], result, native_return=claimed)
+                self.assertFalse(model.controller._step_results)
+                self.assertFalse(model.session._native_returns)
+
+    def test_malformed_selected_and_borrowed_observations_never_issue_a_capability(self):
+        for defect in (
+            "missing", "duplicate", "json", "schema", "foreign", "wrong-type", "surrogate", "oversized",
+            "stdin-missing", "stdin-duplicate", "header-duplicate", "header-json",
+        ):
+            with self.subTest(defect=defect), _CustodyModel() as model:
+                def mutate(report):
+                    if defect.startswith(("stdin-", "header-")):
+                        prefix = (
+                            toolchain_runtime.INPUT_PREFIX if defect.startswith("stdin-")
+                            else toolchain_runtime.arm_headers.PREFIX
+                        )
+                        index = next(i for i, value in enumerate(report["accessed"]) if value.startswith(prefix))
+                        if defect.endswith("missing"):
+                            del report["accessed"][index]
+                        elif defect.endswith("duplicate"):
+                            report["accessed"].append(report["accessed"][index])
+                        else:
+                            report["accessed"][index] = prefix + "[bad"
+                    elif defect == "missing":
+                        report["accessed"].clear()
+                    elif defect == "duplicate":
+                        report["accessed"].append(report["accessed"][0])
+                    elif defect == "json":
+                        report["accessed"][0] = toolchain_runtime.EXEC_PREFIX + "{bad"
+                    elif defect in ("schema", "foreign"):
+                        row = json.loads(report["accessed"][0][len(toolchain_runtime.EXEC_PREFIX):])
+                        if defect == "schema":
+                            del row["identity"]
+                        else:
+                            row["identity"][1] += 1
+                        report["accessed"][0] = toolchain_runtime.EXEC_PREFIX + toolchain_runtime.encoded(row).decode("ascii")
+                    elif defect == "wrong-type":
+                        report["accessed"].append(None)
+                    elif defect == "surrogate":
+                        report["accessed"].append("MODEL-\ud800")
+                    else:
+                        report["accessed"].append("MODEL-" + "x" * 65536)
+                with self.assertRaises(MakeProbeError):
+                    model.native(3 if defect.startswith(("stdin-", "header-")) else 0, mutate_report=mutate)
+                self.assertFalse(model.session._native_returns)
+                self.assertFalse(model.controller._step_results)
+
     def test_actual_alias_row_representation_is_preserved_and_remains_bound(self):
         with _CustodyModel() as model:
             model.runtime_aliases = [["/model/alias", "target", "/model/target"]]

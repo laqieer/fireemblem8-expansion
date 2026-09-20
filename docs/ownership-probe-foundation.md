@@ -345,6 +345,16 @@ The raw-sidecar digest participates only in original-namespace
 authority or the public reporter. No automatic raw publisher is added.
 Admission includes envelope traversal, decoding, encoding, registry and
 archive representations, not just wire byte counts.
+Parent completion preparation distinguishes borrowed observations from decoded
+records. Every original entry still pays strict type/UTF-8/extent and repeated
+scan/prefix work; only selected exec/stdin and applicable ARM-header JSON rows
+fund their actual payload slices, decoded graphs, path-resolution, reference
+arrays and sorting. Header-search validation funds its real maps, tuples,
+path components and traversal. Unrelated strings are not copied or encoded by
+that parser. They are not discarded: complete-report F2b issue/claim/seal
+fingerprints and all subsequent envelopes, bindings and acknowledgement work
+remain independently charged and unchanged. This representation correction
+does not imply that every valid larger completion fits the shared control cap.
 
 The focused procedures are
 [the existing toolchain case](test-cases/workflow-governance.md#typed-intermediate-component-procedure)

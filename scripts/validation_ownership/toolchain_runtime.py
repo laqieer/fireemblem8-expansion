@@ -1320,6 +1320,77 @@ def records(values, profile, executables, *, returncode, argv, environment):
     return tuple([*executions, *inputs])
 
 
+def _admit_completion_records(values, header_search, limits, reserve):
+    if type(limits) is not IntermediateLimits or not callable(reserve):
+        raise MakeProbeError("toolchain completion records lack exact issued admission")
+    reserve(32768)
+    if type(values) not in (list, tuple) or len(values) > limits.observation_count:
+        raise MakeProbeError("toolchain completion observations exceed their issued count")
+    scans = 3 + (header_search is not None)
+    selected = header_rows = header_characters = 0
+    for value in values:
+        if type(value) is not str:
+            raise MakeProbeError("toolchain completion observation is not exact text")
+        reserve(128 * scans + 4 * len(value))
+        _string_bytes(value, "toolchain data text", 65536)
+        prefix = next((item for item in (EXEC_PREFIX, INPUT_PREFIX) if value.startswith(item)), None)
+        if prefix is None and header_search is not None and value.startswith(arm_headers.PREFIX):
+            prefix = arm_headers.PREFIX
+            header_rows += 1
+            header_characters += len(value)
+        if prefix is None:
+            continue
+        selected += 1
+        # The planning slice and parser slice are separate real allocations.
+        reserve(256 + 8 * len(value))
+        payload = value[len(prefix):]
+        nodes = _json_shape(payload, node_limit=limits.file_limit)
+        # Default JSON decoding has no object-pairs graph or encoder here.
+        # Headers/containers/key memo/reference arrays plus decoded text remain.
+        reserve(8192 + 256 * nodes + 4 * len(payload))
+        if prefix == EXEC_PREFIX:
+            # Path.resolve may retain both parsed and resolved component arrays.
+            reserve(3 * len(payload))
+            components = payload.count("/") + payload.count("\\u002f") + payload.count("\\u002F") + 1
+            reserve(256 * components + 8 * len(payload))
+    reserve(
+        8192 + 32 * selected * (1 + selected.bit_length())
+        + header_characters * (1 + header_rows.bit_length()),
+    )
+    if header_search is None:
+        return
+    if type(header_search) is not dict:
+        raise MakeProbeError("toolchain completion header search is not a bounded object")
+    for name, width, count in (
+        ("roots", 2, 5), ("entries", 2, limits.observation_count),
+        ("files", 4, limits.observation_count), ("aliases", 3, 2),
+    ):
+        rows = header_search.get(name)
+        if type(rows) is not list or len(rows) > count:
+            raise MakeProbeError("toolchain completion header search exceeds its issued shape")
+        reserve(1024 + 256 * len(rows))
+        for row in rows:
+            if type(row) is not list or len(row) != width:
+                raise MakeProbeError("toolchain completion header row has an unsupported shape")
+            reserve(128 + 16 * width)
+            for index, value in enumerate(row):
+                if type(value) is str:
+                    reserve(128 + 4 * len(value))
+                    _string_bytes(value, "toolchain header search text", limits.file_limit)
+                    if index == 0 and name in {"roots", "entries"}:
+                        reserve(2048 + 8 * len(value) + 256 * (value.count("/") + 1))
+                elif type(value) not in (int, bool):
+                    raise MakeProbeError("toolchain completion header row has an unsupported scalar")
+    excluded = header_search.get("excluded")
+    if type(excluded) is not list or len(excluded) > 1:
+        raise MakeProbeError("toolchain completion header exclusions exceed their shape")
+    for value in excluded:
+        if type(value) is not str:
+            raise MakeProbeError("toolchain completion header exclusion is not text")
+        reserve(256 + 4 * len(value))
+        _string_bytes(value, "toolchain header exclusion", limits.file_limit)
+
+
 def _envelope_encode(session, value, *, file_limit=None):
     limit = session.budget.limits.file_bytes if file_limit is None else file_limit
     def reserve(size):
@@ -1590,10 +1661,10 @@ class Controller:
             raise MakeProbeError("toolchain native completion changed its consumed launch/report")
         session = self.session
         profile = _envelope_decode(session, facts.profile, file_limit=facts.limits.file_limit)
-        session.budget.charge("control", 32768 + _json_cost(
-            observed["accessed"], node_limit=facts.limits.observation_count * 2 + 1,
-            work=lambda size: session.budget.charge("control", size),
-        ))
+        _admit_completion_records(
+            observed["accessed"], config["dependency"].get("header_search"), facts.limits,
+            lambda size: session.budget.charge("control", size),
+        )
         probes = records(
             observed["accessed"], profile, config["executables"],
             returncode=completed.returncode, argv=config["argv"], environment=config["environment"],

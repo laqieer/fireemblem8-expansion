@@ -10096,6 +10096,34 @@ root/report/resource/H1 certificate. No limit increase/refund/reset or native
 retry is authorized; independent exact review and a new allocation remain
 required before another actual attempt.
 
+The separately allocated direct-emission attempt on
+`bdd627e400d10709d12c65cca488447bdb77230e` is **spent and closed**.
+One Make attempt failed after 6.383 seconds in parent `prepare_native`'s
+full-accessed-list control reservation. Native emission was no longer the
+first failure, but Make/pair/final `assert_clean` acceptance was not obtained.
+The actual request, charged/remaining totals and stage number were not retained.
+
+Before parent admission changes, inventory the complete shared-budget
+prepare/issue/claim/reverification/step/recipe/acknowledgement path, including
+original full-report F2b, all real envelopes and retained references. The
+completion parser scans borrowed observations but decodes only selected record
+prefixes: fund actual scans, strict string bounds, selected decoded graphs,
+path components, containers/reference sorting and optional header-search
+validation before allocation, not an encoder/copy of every unrelated string.
+Keep `records()`'s signature/raw output, complete F2b and every later
+verification/output/context/copy/replay obligation unchanged.
+
+Use two full MODEL recipes on one budget, with a large unrelated borrowed
+observation. Derive the exact shared cost through acknowledgement, require one
+below to refuse before the second archive publication, and reinstate the old
+whole-list preparation charge to recover the failure. Check selected-decoder
+pre-growth admission and that unselected-report mutation still fails F2b at
+claim/seal. Compare output fields/raw envelopes/semantics against the model
+without that observation. Report the exact remaining legitimate-work refusal
+for larger models instead of enlarging the cap or skipping proof.
+MODEL ledgers are not native counters/RSS or a guaranteed fit. No subsequent
+native/root/report/resource/H1 or delivery allocation follows automatically.
+
 The live descriptor control must model the supervisor's actual view:
 `<config.root>/work/cc*.s`, not the tracee's guest `/work/cc*.s`. Require the
 exact host-root spelling with the same object to pass, while foreign/escaped/
