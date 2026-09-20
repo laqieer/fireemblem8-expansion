@@ -1896,6 +1896,19 @@ def write_coordinator_result(value, deadline):
         offset += size
 
 
+def coordinator_success(data, life, mode):
+    value = life._json_read(data, limit=FRAME_BYTES)
+    require(type(value) is dict and value.keys() == {"backend", "availability_status", "result"},
+            "coordinator success fields")
+    backend, status = value["backend"], value["availability_status"]
+    require(type(backend) is str and type(status) is int
+            and (backend, status) in (("ordinary", 0), ("restricted", 1)),
+            "coordinator actual selection")
+    result = life._worker_read(value["result"])
+    validate_mode(result, mode)
+    return result, (backend, status)
+
+
 def coordinator_failure(data, life):
     require(type(data) is bytes and 0 < len(data) <= RECORD_BYTES and data.isascii(),
             "coordinator failure capture")
@@ -1959,6 +1972,7 @@ class Enclosure:
         self.report = life._CleanupReport("C", self.cleanup_deadline)
         self.child = self.pidfd = self.directory_fd = self.selector = self.baseline = None
         self.identity = self.binding = self.primary = self.result = None
+        self.selection = None
         self.status = self.wait_value = self.reap_status = None
         self.reaped = self.capture_complete = self.fd_restored = self.launch_attempted = False
         self.buffers = (bytearray(RECORD_BYTES), bytearray(CAPTURE_BYTES - RECORD_BYTES))
@@ -2179,8 +2193,9 @@ class Enclosure:
                     self.facts["coordinator_failure"] = coordinator_failure(data, self.life)
                 raise Refusal("enclosed coordinator failed")
             require(self.sizes[1] == 0, "unexpected coordinator stderr")
-            self.result = self.life._private_worker_record(bytes(memoryview(self.buffers[0])[:self.sizes[0]]))
-            validate_mode(self.result, self.mode)
+            self.result, self.selection = coordinator_success(
+                bytes(memoryview(self.buffers[0])[:self.sizes[0]]), self.life, self.mode,
+            )
         except BaseException as error:
             self.save_error(error, self.facts["stage"])
         self.buffers = None
@@ -2223,6 +2238,7 @@ class Enclosure:
                 error.retained_enclosure = self
             raise error
         result, self.result = public_result(self.result), None
+        result["backend"], result["availability_status"] = self.selection
         return result
 
 
@@ -2238,12 +2254,17 @@ def main():
     if sys.argv[1:2] == ["--coordinator"]:
         binding, directory, started = coordinator_arguments(sys.argv[1:], life)
         try:
-            result = Coordinator(budgeting, life, binding.mode, directory, started).run()
+            coordinator = Coordinator(budgeting, life, binding.mode, directory, started)
+            result = coordinator.run()
         except FixtureFailure as error:
             facts = error.facts
             life._forget_error(error)
         else:
-            write_coordinator_result(worker_wire(result), started + WAIT_SECONDS)
+            write_coordinator_result({
+                "backend": coordinator.facts["backend"],
+                "availability_status": coordinator.facts["availability_status"],
+                "result": worker_wire(result),
+            }, started + WAIT_SECONDS)
             return 0
         write_coordinator_result(facts, started + WAIT_SECONDS)
         return 125

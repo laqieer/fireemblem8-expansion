@@ -12005,6 +12005,9 @@ class NullMountFixtureInertTests(unittest.TestCase):
             "null_io": io, "fd_closed": True, "local_nonzero_topology": True,
         }
 
+    def success_value(self, mode="readonly", backend="ordinary", availability_status=0):
+        return {"backend": backend, "availability_status": availability_status, "result": self.worker_value(mode)}
+
     def records(self, binding=None, status=0):
         binding = self.binding if binding is None else binding
         clean = self.life._cleanup_wire(self.life._CleanupReport("R", binding.deadline).value())
@@ -12025,7 +12028,8 @@ class NullMountFixtureInertTests(unittest.TestCase):
     def exercise(self, *, mode="readonly", permission=True, probe_status=None, probe_stdout=b"",
                  probe_stderr=None, outer_status=0, inner_status=0, fault=None, preflight=None,
                  missing=False, retained=False, expired=None, fail_selection=False, bad_result=False,
-                 exhausted=None, source_fault=None, release_fault=None, close_fault=None, oversized=False):
+                 exhausted=None, source_fault=None, release_fault=None, close_fault=None, oversized=False,
+                 through_main=False):
         b, life, budgeting = self.b, self.life, self.budgeting
         status = (1 if permission else 0) if probe_status is None else probe_status
         diagnostic = (b.PERMISSION_UNAVAILABLE[0] if permission else b"") if probe_stderr is None else probe_stderr
@@ -12190,14 +12194,32 @@ class NullMountFixtureInertTests(unittest.TestCase):
                     raise cleanup
 
                 active.enter_context(patch.object(budget, "close", side_effect=close))
-            result = failure = None
+            result = failure = main_status = None
+            emitted = []
+            if through_main:
+                local_sys = SimpleNamespace(
+                    flags=SimpleNamespace(isolated=True, no_site=True, optimize=0),
+                    argv=[str(b.PROGRAM), "--coordinator"], modules=sys.modules, exc_info=sys.exc_info,
+                )
+                active.enter_context(patch.object(b, "sys", local_sys))
+                active.enter_context(patch.object(b, "load_control", return_value=(budgeting, life)))
+                active.enter_context(patch.object(b, "coordinator_arguments", return_value=(
+                    replace(self.binding, mode=mode, inode=88), self.directory, 100.0,
+                )))
+                active.enter_context(patch.object(b, "Coordinator", return_value=coordinator))
+                active.enter_context(patch.object(os, "write",
+                                                 side_effect=lambda fd, data: emitted.append(data) or len(data)))
             try:
-                result = b.public_result(coordinator.run())
+                if through_main:
+                    main_status = b.main()
+                else:
+                    result = b.public_result(coordinator.run())
             except b.FixtureFailure as error:
                 failure = error.facts
             self.assertEqual(factory.call_count, 1)
         return SimpleNamespace(result=result, failure=failure, model=model, budget=budget, coordinator=coordinator,
-                               launches=launches, checks=checks, baseline=baseline, executables=executables)
+                               launches=launches, checks=checks, baseline=baseline, executables=executables,
+                               main_status=main_status, emitted=b"".join(emitted))
 
     def test_exact_availability_classifier_has_no_error_fallback(self):
         b = self.b
@@ -13655,7 +13677,7 @@ class NullMountFixtureInertTests(unittest.TestCase):
 
     def enclosure(self, *, status=0, stalled=None, fault=None, payload=None, diagnostics=b"",
                   malformed_pid=False, expired=False, reap_mismatch=False, foreign_wait=False,
-                  load_delay=0, capture_directions=True):
+                  load_delay=0, capture_directions=True, mode="readonly"):
         b, life = self.b, self.life
         model = _NullDirectories(b, "unused")
         model.root.children[self.directory.name] = _NullDirectory("driver", 3, 88, 50, mode=stat.S_IFDIR | 0o755)
@@ -13664,7 +13686,7 @@ class NullMountFixtureInertTests(unittest.TestCase):
             model.fault = (*fault, OSError(errno.EIO, "inert enclosing boundary"))
         current = {"status": None if stalled in ("capture", "default-cleanup", "kill-reap") else status,
                    "killed": False, "offsets": {10: 0, 11: 0}}
-        data = b.json_bytes(self.worker_value()) if payload is None else payload
+        data = b.json_bytes(self.success_value(mode)) if payload is None else payload
         child = OutcomeCustodyTests.Child()
         child.pid = 55
         parents = []
@@ -13795,7 +13817,7 @@ class NullMountFixtureInertTests(unittest.TestCase):
             stack.enter_context(patch.object(signal, "pidfd_send_signal", side_effect=kill))
             stack.enter_context(patch.object(os, "kill", side_effect=kill))
             try:
-                result = b.run_fixture("readonly", self.directory)
+                result = b.run_fixture(mode, self.directory)
             except b.FixtureFailure as error:
                 failure = error
         self.assertEqual(len(parents), 1)
@@ -13807,7 +13829,10 @@ class NullMountFixtureInertTests(unittest.TestCase):
         b = self.b
         value = self.enclosure()
         self.assertIsNone(value.failure)
-        self.assertEqual(value.result, b.public_result(self.life._private_worker_record(b.json_bytes(self.worker_value()))))
+        self.assertEqual(value.result, {
+            **b.public_result(self.life._private_worker_record(b.json_bytes(self.worker_value()))),
+            "backend": "ordinary", "availability_status": 0,
+        })
         self.assertEqual(len(value.launches), 1)
         argv, kwargs = value.launches[0]
         self.assertEqual(argv[:7], ("/usr/bin/python3", "-I", "-S", "-B", str(b.PROGRAM), "--coordinator", "readonly"))
@@ -13983,7 +14008,10 @@ class NullMountFixtureInertTests(unittest.TestCase):
         b, life = self.b, self.life
         binding = replace(self.binding, inode=88)
         observed = []
-        controller = SimpleNamespace(run=lambda: life._private_worker_record(b.json_bytes(self.worker_value())))
+        controller = SimpleNamespace(
+            run=lambda: life._private_worker_record(b.json_bytes(self.worker_value())),
+            facts={"backend": "ordinary", "availability_status": 0},
+        )
         local_sys = SimpleNamespace(flags=SimpleNamespace(isolated=True, no_site=True, optimize=0),
                                     argv=[str(b.PROGRAM), "--coordinator"])
         with patch.object(b, "sys", local_sys), patch.object(b, "load_control", return_value=(self.budgeting, life)), \
@@ -13993,8 +14021,83 @@ class NullMountFixtureInertTests(unittest.TestCase):
             self.assertEqual(b.main(), 0)
             construct.assert_called_once_with(self.budgeting, life, "readonly", self.directory, 100.0)
         self.assertEqual(observed[0][1], 135.0)
-        self.assertEqual(life._private_worker_record(b.json_bytes(observed[0][0])),
+        self.assertEqual(set(observed[0][0]), {"backend", "availability_status", "result"})
+        self.assertEqual((observed[0][0]["backend"], observed[0][0]["availability_status"]), ("ordinary", 0))
+        self.assertEqual(life._private_worker_record(b.json_bytes(observed[0][0]["result"])),
                          life._private_worker_record(b.json_bytes(self.worker_value())))
+
+    def test_actual_main_enclosure_roundtrip_preserves_selection_and_every_mode_field(self):
+        b, life = self.b, self.life
+        for permission in (False, True):
+            for mode in b.MODES:
+                with self.subTest(permission=permission, mode=mode):
+                    produced = self.exercise(permission=permission, mode=mode, through_main=True)
+                    self.assertEqual(produced.main_status, 0)
+                    self.assertIsNone(produced.failure)
+                    envelope = json.loads(produced.emitted)
+                    facts = produced.coordinator.facts
+                    self.assertEqual(envelope, {
+                        "backend": facts["backend"], "availability_status": facts["availability_status"],
+                        "result": self.worker_value(mode),
+                    })
+                    self.assertLessEqual(len(produced.emitted), b.FRAME_BYTES)
+                    received = self.enclosure(mode=mode, payload=produced.emitted)
+                    self.assertIsNone(received.failure)
+                    old_fields = b.public_result(life._private_worker_record(b.json_bytes(envelope["result"])))
+                    self.assertEqual(received.result, {
+                        **old_fields, "backend": facts["backend"], "availability_status": facts["availability_status"],
+                    })
+                    self.assertEqual((produced.budget.runs, produced.budget.states), (2, 2))
+                    self.assertEqual(len(received.launches), 1)
+                    neutral = b.json_bytes(dict(reversed(list(envelope.items()))))
+                    self.assertEqual(self.enclosure(mode=mode, payload=neutral).result, received.result)
+
+    def test_success_selection_requires_closed_exact_types_and_consistent_observations(self):
+        b = self.b
+        original = self.success_value()
+        invalid = [
+            {key: value for key, value in original.items() if key != missing}
+            for missing in original
+        ]
+        invalid += [
+            {**original, "backend": value} for value in (None, False, 0, [], "unknown")
+        ] + [
+            {**original, "availability_status": value} for value in (None, False, 0.0, "0", [], 1, 125)
+        ] + [
+            {**original, "backend": "restricted", "availability_status": value} for value in (0, True, 125)
+        ] + [
+            {**original, "extra": 0}, {**original, "result": self.worker_value("writable")},
+            {**original, "result": {**original["result"], "backend": "ordinary"}},
+            {**original, "result": None}, self.worker_value(), [],
+        ]
+        for value in invalid:
+            with self.subTest(value=value):
+                received = self.enclosure(payload=b.json_bytes(value))
+                self.assertIsNotNone(received.failure)
+                self.assertIsNone(received.result)
+                self.assertEqual(received.parent.status, 0)
+                self.assertEqual(len(received.launches), 1)
+        duplicate = b'{"backend":"ordinary","backend":"restricted","availability_status":1,"result":{}}'
+        self.assertIsNotNone(self.enclosure(payload=duplicate).failure)
+
+    def test_old_success_omission_breaks_selection_evidence_then_restores(self):
+        b = self.b
+        def oracle():
+            produced = self.exercise(through_main=True)
+            received = self.enclosure(payload=produced.emitted)
+            self.assertIsNone(received.failure)
+            self.assertEqual((received.result["backend"], received.result["availability_status"]), ("restricted", 1))
+        oracle()
+        write = b.write_coordinator_result
+        with patch.object(b, "write_coordinator_result", side_effect=lambda value, deadline:
+                          write(value["result"], deadline)):
+            produced = self.exercise(through_main=True)
+            self.assertEqual(produced.main_status, 0)
+            self.assertEqual(json.loads(produced.emitted), self.worker_value())
+            self.assertIsNotNone(self.enclosure(payload=produced.emitted).failure)
+            with self.assertRaises(AssertionError):
+                oracle()
+        oracle()
 
 
 if __name__ == "__main__":

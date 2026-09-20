@@ -1669,8 +1669,18 @@ agreement checks, never uses a recycled PID or adopts unrelated children,
 and retains uncertainty/ownership if a timely reap cannot be proved.
 Capture is admitted before growth: at most 16 KiB semantic stdout and the
 remaining 240 KiB stderr, within the unchanged 256 KiB combined ceiling.
-Stdout is the existing helper mode data or bounded fixture-failure facts,
-not a new R/L receipt or authority. No setup descriptors cross exec.
+Successful C stdout is a closed envelope with exactly `backend`,
+`availability_status` and `result`. The first two fields copy C's actual
+recorded selection; `result` is the unchanged existing mode wire record.
+Enclosure requires exact types/keys and either ordinary/status0 or
+restricted/status1, then validates the mode record against the invocation.
+Missing, contradictory or malformed selection metadata is a failure even
+when C exited zero and the mode data looks valid. The legacy returned mode
+fields remain unchanged, with additive `backend` and `availability_status`
+test metadata retaining those observations. Neither field is inferred from
+the requested mode or final success. The bounded failure wire and R/L custody
+schemas remain unchanged; this is observability, not a new receipt, channel,
+authority or backend override. No setup descriptors cross exec.
 
 Only actual status zero with empty stdout/stderr selects ordinary operation.
 Only actual status one, empty stdout and exactly
@@ -1788,6 +1798,11 @@ integrated head or all seven modes. The existing
 retains the genuine four-method/seven-mode run, old-startup and old-operation
 controls as separate exact-head native requirements. No gameplay, profile,
 save, localization, generated-data, ROM/RAM, build or archival behavior changes.
+The future four-method/seven-mode runner must record and assert the actual
+returned selection for every invocation. A host label, historical census,
+passing method or separate probe cannot supply missing selection evidence.
+Success on one selected backend does not qualify the other; each genuine
+backend allocation remains separately frozen.
 
 Every budget subprocess, including ordinary Git/compiler commands, namespace
 availability probes and capsules, uses a fresh exclusive-reaper watchdog.

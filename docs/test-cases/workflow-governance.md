@@ -9748,6 +9748,18 @@ ordinary probe must never require sudo. Unexpected output/status, API or
 cleanup faults, expiration and a failed mode must fail without another
 availability probe, budget, namespace route or mode launch.
 
+For every invocation in the future four-method/seven-mode runner, record
+and assert the returned `backend` and `availability_status` against the
+separately allocated qualification route. Those additive fields must come
+from C's actual recorded selection through its closed success envelope,
+alongside unchanged mode data; they are not inferred from final success,
+requested mode, host labels, a historical census or a separate probe.
+Ordinary requires actual status0 and restricted requires actual status1.
+Absent, wrong-type, contradictory, unknown-key or wrong-mode envelopes fail.
+Restoring the old mode-only success output must fail this evidence contract.
+One selected backend's success does not qualify the other. No forced-backend
+option, extra availability operation or native allocation is introduced.
+
 Replay the actual retained normal-one, empty-stdout, **66-byte**
 `unshare: write failed /proc/self/uid_map: Operation not permitted\n`
 response, not a different generic denial. It must select restricted operation
