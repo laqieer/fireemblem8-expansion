@@ -5853,6 +5853,66 @@ No budget, CI job/command count, case ID, source-phase permission or allocation1
 changes. Actual ARM/sed is exercised by the following separate controls;
 complete per-pass source authority is not inferred from component success.
 
+Run the pure HeaderV3/shared-return controls without native setup:
+
+```sh
+python3 -B -m unittest \
+  scripts.validation_ownership.tests.test_header_pipeline.HeaderReceiptInertTests -v
+```
+
+They use the real parser, authenticator, guard reservation/commit methods,
+immutable views, private fingerprint and `ProbeSession` issue/claim/retire
+methods under inert dependencies. Require valid complete, conditional-short,
+repeated-occurrence and report-array-permuted transcripts. Omission,
+insertion, resequencing, payload/count/digest repair with the original tag,
+foreign completion fields, decimal terminals and malformed rows must reject.
+The retained version-1 parser must reproduce the original repaired-count
+omission acceptance as the restoration negative.
+
+Require exact fingerprint vectors for every scalar/container tag, Unicode
+surrogates, signed zero, list/tuple equivalence, dictionary-order neutrality,
+aliases, cycles, unsupported subclasses, integer/float domains and cumulative
+work exhaustion. Exercise exact owner/object/thread/job/view/epoch binding,
+copy/replay/purpose/mutation failures, original result values after claim,
+retirement, pre-growth row and terminal boundaries, retained failed charges,
+single-count transfer, and key-reference release. Immutable runtime rows must
+retain ordinary JSON/index/equality behavior, return themselves from
+copy/deepcopy, reject every ordinary mutator/reinitialization, and contain only
+the existing eight semantic keys. These controls are protocol and custody
+evidence only; they do not qualify a native sed/libselinux execution.
+
+The [HR1-HR5 correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5737364905)
+uses that same inert selector and case ID. Keep all ordinary/native routes
+separate and unchanged. From a clean checkout:
+
+1. Fingerprint a 10,000-element array and a disordered 10,000-key dictionary.
+   Observe allocation growth between actual admissions: arrays retain only
+   ancestor/index frames, while dictionaries pre-admit key references and
+   sorting scratch separately. Require unchanged F2b vectors, alias work and
+   dictionary-order neutrality. Python allocation tracing is not RSS evidence.
+2. Deny calculation capacity, including for an escape-heavy Unicode scope.
+   Require zero encoder calls before refusal. Reject subclassed, non-ASCII
+   and oversized wire values before slicing/copying/decoding; deny decode
+   capacity before constructing a large terminal payload slice. Observe
+   actual calculation/decode allocations under their representation grants.
+3. Inject failures before and after attempted/accessed insertion and at
+   reservation retirement, for rows and terminals. Retain spent authority
+   through every attempted publication; allow conservative overcount, never
+   refund. A later row's encoding/hash failure cannot sign an earlier prefix.
+4. Replace issued stdout and stderr independently with distinct equal bytes.
+   Both claims reject; unchanged claims retain the original byte references
+   through subsequent completed/report mutations.
+5. Exercise the actual supervisor control flow with process, signal, resource
+   and filesystem effects replaced by inert boundaries. Early errors and
+   nonzero statuses release the verifier before report construction; success
+   signs before release. Signing/publication faults still clean up.
+
+Retain actual-helper pre-fix failures and restore the affected helper in each
+targeted control to recover rejection failures. Restore the correction and
+require green results without changing limits, formats or selectors. These
+controls launch no candidate, compiler, SDK, sed or native supervisor process;
+the separate native qualification remains an independently allocated step.
+
 For the actual ARM/SDK/sed header pipeline, run:
 
 ```sh
