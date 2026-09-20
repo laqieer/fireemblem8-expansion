@@ -6488,219 +6488,8 @@ print(json.dumps({"submount_levels":3,"source_flags_unchanged":True,
         self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
 
     def null_mount_kernel_control(self, mode):
-        self.assertNotEqual(os.getuid(), 0, "null-mount fixture requires an ordinary invoking user")
-        fixture = self.directory / ("null-mount-" + mode)
-        fixture.mkdir()
-        program = self.directory / ("null-mount-" + mode + ".py")
-        program.write_text(r'''
-import ctypes,errno,json,os,stat,subprocess,sys
-from pathlib import Path
-from types import SimpleNamespace
-sys.path.insert(0,sys.argv[1])
-import sandbox_exec as setup
-LIBC=ctypes.CDLL(None,use_errno=True)
-mode,stage,fixture=sys.argv[2],sys.argv[3],Path(sys.argv[4])
-uid,gid=int(sys.argv[5]),int(sys.argv[6])
-def flags():
-    return {key:value.strip() for key,value in
-            (line.split(":",1) for line in Path("/proc/self/status").read_text().splitlines())}
-def drop():
-    for capability in range(64):
-        if LIBC.prctl(24,capability,0,0,0) and ctypes.get_errno()!=errno.EINVAL:
-            raise OSError(ctypes.get_errno(),"bounding capability drop")
-    if LIBC.prctl(47,4,0,0,0): raise OSError(ctypes.get_errno(),"ambient drop")
-    class Header(ctypes.Structure):
-        _fields_=[("version",ctypes.c_uint32),("pid",ctypes.c_int)]
-    class Data(ctypes.Structure):
-        _fields_=[("effective",ctypes.c_uint32),("permitted",ctypes.c_uint32),("inheritable",ctypes.c_uint32)]
-    header,data=Header(0x20080522,0),(Data*2)()
-    if LIBC.capset(ctypes.byref(header),ctypes.byref(data)): raise OSError(ctypes.get_errno(),"capability drop")
-    if LIBC.prctl(38,1,0,0,0): raise OSError(ctypes.get_errno(),"NNP")
-    value=flags()
-    assert value["NoNewPrivs"]=="1"
-    assert all(int(value[name],16)==0 for name in ("CapInh","CapPrm","CapEff","CapBnd","CapAmb"))
-    return {name:value[name] for name in ("CapInh","CapPrm","CapEff","CapBnd","CapAmb","NoNewPrivs")}
-def mount_state(path):
-    descriptor=os.open(path,os.O_PATH|os.O_NOFOLLOW|os.O_CLOEXEC)
-    try:
-        info=os.fstat(descriptor)
-        with open("/proc/self/fdinfo/"+str(descriptor),"rb") as source: data=source.read(4097)
-        assert len(data)<=4096
-        mount_id=int(next(line.split(b":",1)[1] for line in data.splitlines() if line.startswith(b"mnt_id:")))
-        return {"identity":[info.st_dev,info.st_ino,info.st_mode,info.st_rdev],
-                "mount_id":mount_id,"flags":os.fstatvfs(descriptor).f_flag}
-    finally: os.close(descriptor)
-def attrs(path,value):
-    setup.recursive_attributes(path,value)
-def bind_device(source,target,readonly):
-    setup.mount(source,target,setup.MS_BIND|setup.MS_REC)
-    attrs(target,setup.MS_NOSUID|setup.MS_NOEXEC|(setup.MS_RDONLY if readonly else 0))
-if stage=="outer":
-    assert os.getuid()==os.geteuid()==uid>0 and os.getgid()==gid>0
-    assert Path("/proc/self/uid_map").read_text().split()==[str(uid),str(uid),"1"]
-    assert Path("/proc/self/gid_map").read_text().split()==[str(gid),str(gid),"1"]
-    outer_user=os.stat("/proc/self/ns/user").st_ino
-    work=fixture/"volume";work.mkdir()
-    if LIBC.mount(b"tmpfs",os.fsencode(work),b"tmpfs",14,b"size=1048576,mode=0700"):
-        raise OSError(ctypes.get_errno(),"private bounded tmpfs")
-    for name in ("null","zero"):
-        (work/name).touch()
-        bind_device(Path("/dev")/name,work/name,mode!="writable")
-    for name in ("source","runtime"):
-        (work/name).mkdir();(work/name/"canary").write_bytes(name.encode())
-        setup.bind(work/name,work/name)
-    worker=drop()
-    assert os.getuid()==uid and os.getgid()==gid
-    child=subprocess.run(["/usr/bin/unshare","--user","--map-root-user","--mount","--fork",
-                          "--kill-child","--propagation","private","/usr/bin/python3","-I","-S","-B",
-                          __file__,sys.argv[1],mode,"inner",str(work),str(uid),str(gid),str(outer_user)],
-                         check=False)
-    assert child.returncode==0,child.returncode
-    raise SystemExit(0)
-assert os.getuid()==os.geteuid()==os.getgid()==0
-assert Path("/proc/self/uid_map").read_text().split()==["0",str(uid),"1"]
-assert Path("/proc/self/gid_map").read_text().split()==["0",str(gid),"1"]
-assert os.stat("/proc/self/ns/user").st_ino!=int(sys.argv[7])
-assert flags()["NoNewPrivs"]=="1"
-root=fixture/"root"
-for name in ("dev","repo","usr"): (root/name).mkdir(parents=True)
-for name in ("null","zero"): (root/"dev"/name).touch()
-setup.bind(root,root,executable=True)
-setup.bind(fixture/"source",root/"repo")
-setup.bind(fixture/"runtime",root/"usr",executable=True)
-setup.bind(fixture/("zero" if mode=="wrong-device" else "null"),root/"dev/null",writable=True)
-setup.bind(fixture/"zero",root/"dev/zero",writable=True)
-target=root/"dev/null"
-before=mount_state(target)
-descriptors=set(os.listdir("/proc/self/fd"))
-calls=[]
-original_ctypes=setup.ctypes
-class Library:
-    def syscall(self,*args):
-        value=ctypes.cast(args[4],ctypes.POINTER(setup.MountAttributes)).contents
-        if mode=="old":
-            request=setup.MS_REMOUNT|setup.MS_BIND|setup.MS_NOSUID|setup.MS_NOEXEC
-            calls.append(["legacy-remount",request])
-            return LIBC.mount(None,os.fsencode(target),None,request,None)
-        calls.append([args[0].value,args[3].value,value.attr_set,value.attr_clr,
-                      value.propagation,value.userns_fd,args[5].value])
-        if mode in {"unsupported","locked"}:
-            ctypes.set_errno(errno.ENOSYS if mode=="unsupported" else errno.EPERM)
-            return -1
-        if mode=="substituted":
-            if LIBC.mount(os.fsencode(fixture/"null"),os.fsencode(target),None,setup.MS_BIND|setup.MS_REC,None):
-                raise OSError(ctypes.get_errno(),"owned replacement mount")
-            descriptor=os.open(target,os.O_PATH|os.O_NOFOLLOW|os.O_CLOEXEC)
-            try:
-                restriction=setup.MountAttributes(attr_set=14)
-                if LIBC.syscall(ctypes.c_long(442),ctypes.c_int(descriptor),ctypes.c_char_p(b""),
-                                ctypes.c_uint(4096),ctypes.byref(restriction),ctypes.c_size_t(32)):
-                    raise OSError(ctypes.get_errno(),"replacement restriction")
-            finally: os.close(descriptor)
-        return LIBC.syscall(*args)
-    def mount(self,*args):
-        raise AssertionError("selective helper attempted a remount fallback")
-members=dict(vars(ctypes));members["CDLL"]=lambda *args,**kwargs:Library()
-setup.ctypes=SimpleNamespace(**members)
-failure=None
-try:
-    try:
-        setup._enable_toolchain_null(root)
-    except (OSError,RuntimeError) as error:
-        failure={"type":type(error).__name__,"message":str(error),"errno":getattr(error,"errno",None)}
-finally:
-    setup.ctypes=original_ctypes
-assert set(os.listdir("/proc/self/fd"))==descriptors
-after=mount_state(target)
-if mode in {"readonly","writable"}:
-    assert failure is None,failure
-    assert calls==[[442,4096,0,4,0,0,32]],calls
-    assert before["identity"]==after["identity"] and before["mount_id"]==after["mount_id"]
-    assert after["flags"]==before["flags"]&~os.ST_NODEV
-    assert bool(after["flags"]&os.ST_RDONLY)==(mode=="readonly")
-elif mode=="wrong-device":
-    assert failure is not None and not calls
-    assert before==after
-elif mode=="substituted":
-    assert failure is not None and failure["type"]=="RuntimeError"
-    assert calls==[[442,4096,0,4,0,0,32]]
-    assert before["identity"]==after["identity"] and before["mount_id"]!=after["mount_id"]
-    assert after["flags"]&os.ST_NODEV
-else:
-    assert failure is not None and failure["errno"]==(errno.ENOSYS if mode=="unsupported" else errno.EPERM)
-    assert before==after
-    assert calls==([["legacy-remount",4138]] if mode=="old" else [[442,4096,0,4,0,0,32]])
-worker=drop()
-denied={}
-for name in ("repo","usr"):
-    try: fd=os.open(root/name/"canary",os.O_WRONLY|os.O_CLOEXEC)
-    except OSError as error:
-        assert error.errno in (errno.EROFS,errno.EPERM,errno.EACCES)
-        denied[name]=error.errno
-    else:
-        os.close(fd);raise AssertionError("readonly regular fixture became writable")
-try: fd=os.open(root/"dev/zero",os.O_RDONLY|os.O_CLOEXEC)
-except OSError as error:
-    assert error.errno in (errno.EPERM,errno.EACCES)
-    denied["other-device"]=error.errno
-else:
-    os.close(fd);raise AssertionError("other device escaped nodev")
-io=False
-if failure is None:
-    fd=os.open(target,os.O_RDWR|os.O_NOFOLLOW|os.O_CLOEXEC)
-    try: assert os.read(fd,1)==b"" and os.write(fd,b"x")==1
-    finally: os.close(fd)
-    io=True
-assert set(os.listdir("/proc/self/fd"))==descriptors
-print(json.dumps({"mode":mode,"before":before,"after":after,"failure":failure,"calls":calls,
-                  "post_drop":worker,"denied":denied,"null_io":io,"fd_closed":True,
-                  "local_nonzero_topology":True}),flush=True)
-''')
-        stdout, stderr = self.directory / (mode + ".stdout"), self.directory / (mode + ".stderr")
-        before = set(os.listdir("/proc/self/fd"))
-        reader, writer = os.pipe2(os.O_CLOEXEC)
-        child = None
-        def limits():
-            resource.setrlimit(resource.RLIMIT_FSIZE, (256 * 1024, 256 * 1024))
-        try:
-            with stdout.open("wb") as output, stderr.open("wb") as errors:
-                child = subprocess.Popen([
-                    "/usr/bin/python3", "-I", "-S", "-B", str(TRUSTED_ROOT / "lifecycle.py"),
-                    str(time.monotonic() + 30), "--",
-                    "/usr/bin/unshare", "--user", "--map-current-user", "--keep-caps", "--mount",
-                    "--fork", "--kill-child", "--propagation", "private",
-                    "/usr/bin/python3", "-I", "-S", "-B", str(program), str(TRUSTED_ROOT), mode,
-                    "outer", str(fixture), str(os.getuid()), str(os.getgid()),
-                ], stdin=reader, stdout=output, stderr=errors, env=ENVIRONMENT,
-                   close_fds=True, start_new_session=True, preexec_fn=limits)
-                os.close(reader)
-                reader = -1
-                child.wait(timeout=35)
-            self.assertEqual(child.returncode, 0, stderr.read_text())
-            self.assertLessEqual(stdout.stat().st_size, 256 * 1024)
-            self.assertLessEqual(stderr.stat().st_size, 256 * 1024)
-            result = json.loads(stdout.read_text())
-            self.assertEqual(result["mode"], mode)
-            self.assertTrue(result["fd_closed"])
-            self.assertTrue(result["local_nonzero_topology"])
-            self.assertEqual(result["post_drop"]["NoNewPrivs"], "1")
-            self.assertTrue(all(int(result["post_drop"][name], 16) == 0
-                                for name in ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb")))
-            self.assertEqual(set(result["denied"]), {"repo", "usr", "other-device"})
-            return result
-        finally:
-            if reader >= 0:
-                os.close(reader)
-            os.close(writer)
-            if child is not None and child.poll() is None:
-                descriptor = os.pidfd_open(child.pid)
-                try:
-                    signal.pidfd_send_signal(descriptor, signal.SIGTERM)
-                    child.wait(timeout=5)
-                finally:
-                    os.close(descriptor)
-            self.assertFalse(Path(f"/proc/self/task/{os.getpid()}/children").read_text().strip())
-            self.assertEqual(set(os.listdir("/proc/self/fd")), before)
+        from scripts.validation_ownership.tests.null_mount_fixture import run_fixture
+        return run_fixture(mode, self.directory)
 
     def test_toolchain_null_mount_preserves_readonly_and_writable_parents(self):
         for mode in ("readonly", "writable"):
@@ -11953,6 +11742,1689 @@ class OutcomeCustodyTests(unittest.TestCase):
             )), patch.object(life, "run") as run, patch("builtins.print"):
                 self.assertEqual(life.main(), 125)
                 run.assert_not_called()
+
+
+class _NullDirectory:
+    def __init__(self, name, device, inode, mount, uid=1001, gid=1002, mode=stat.S_IFDIR | 0o700):
+        self.name, self.device, self.inode, self.mount = name, device, inode, mount
+        self.uid, self.gid, self.mode, self.children = uid, gid, mode, {}
+
+    def info(self):
+        return SimpleNamespace(st_dev=self.device, st_ino=self.inode, st_mode=self.mode,
+                               st_uid=self.uid, st_gid=self.gid)
+
+
+class _NullDirectories:
+    """Inert two-view filesystem; an old directory pin never follows an overmount."""
+
+    def __init__(self, fixture, name, *, ordinary=False):
+        self.fixture, self.name, self.workspace = fixture, name, fixture.WORKSPACE
+        self.root = _NullDirectory("workspace", 3, 100, 50, mode=stat.S_IFDIR | 0o755)
+        self.actor, self.next_inode = "C", 100
+        self.setup_ids = (1001, 1002) if ordinary else (0, 0)
+        self.tables = {role: {
+            0: (8, 1, stat.S_IFIFO, 0), 1: (8, 2, stat.S_IFIFO, 1), 2: (8, 3, stat.S_IFIFO, 1),
+        } for role in ("C", "R")}
+        self.host_fixture = self.overlay = None
+        self.events, self.counts, self.fault = [], {}, None
+        self.destroyed = self.triggered = False
+
+    def operation(self, label, function):
+        self.counts[label] = self.counts.get(label, 0) + 1
+        self.events.append(label)
+        match = self.fault is not None and self.fault[:2] == (label, self.counts[label])
+        if match and self.fault[2] == "before":
+            self.triggered = True
+            raise self.fault[3]
+        result = function()
+        if match and self.fault[2] == "after":
+            self.triggered = True
+            raise self.fault[3]
+        return result
+
+    def resolve(self, path, directory=None):
+        if type(path) is int:
+            return self.tables[self.actor][path]
+        value = Path(path)
+        if value.is_absolute():
+            parts, node = value.relative_to(self.workspace).parts, self.root
+        else:
+            parts, node = value.parts, self.tables[self.actor][directory]
+        for part in parts:
+            node = node.children[part]
+            if self.actor == "R" and node is self.host_fixture and self.overlay is not None:
+                node = self.overlay
+        return node
+
+    def stat(self, path, *, dir_fd=None, follow_symlinks=False):
+        return self.resolve(path, dir_fd).info()
+
+    def open(self, path, flags, mode=0o777, *, dir_fd=None):
+        node = self.resolve(path, dir_fd)
+
+        def acquire():
+            if not stat.S_ISDIR(node.mode):
+                raise OSError(errno.ELOOP, "inert nofollow")
+            fd = next(n for n in range(3, 1000) if n not in self.tables[self.actor])
+            self.tables[self.actor][fd] = node
+            return fd
+
+        return self.operation("open:" + self.actor + ":" + node.name, acquire)
+
+    def fstat(self, fd):
+        node = self.tables[self.actor][fd]
+        if isinstance(node, _NullDirectory):
+            return self.operation("fstat:" + self.actor + ":" + node.name, node.info)
+        return SimpleNamespace(st_dev=node[0], st_ino=node[1], st_mode=node[2] | 0o600)
+
+    def listdir(self, fd):
+        node = self.resolve(fd)
+        return self.operation("list:" + self.actor + ":" + node.name, lambda: list(node.children))
+
+    def mkdir(self, name, mode=0o777, *, dir_fd=None):
+        parent = self.resolve(dir_fd)
+        slot = "container" if parent is self.root else str(name)
+
+        def create():
+            if str(name) in parent.children:
+                raise FileExistsError(errno.EEXIST, "inert existing directory")
+            self.next_inode += 1
+            uid, gid = self.setup_ids if self.actor == "R" else (1001, 1002)
+            node = _NullDirectory(slot, parent.device, self.next_inode, parent.mount, uid, gid,
+                                  stat.S_IFDIR | mode)
+            parent.children[str(name)] = node
+            if slot == "fixture":
+                self.host_fixture = node
+
+        return self.operation("mkdir:" + self.actor + ":" + slot, create)
+
+    def rmdir(self, name, *, dir_fd=None):
+        parent = self.resolve(dir_fd)
+        node = parent.children[str(name)]
+
+        def remove():
+            if node.children:
+                raise OSError(errno.ENOTEMPTY, "inert nonempty")
+            del parent.children[str(name)]
+
+        return self.operation("rmdir:" + self.actor + ":" + node.name, remove)
+
+    def fchown(self, fd, uid, gid):
+        node = self.resolve(fd)
+
+        def own():
+            if self.actor != "R" or node.device != 90:
+                raise AssertionError("metadata operation on original host backing")
+            node.uid, node.gid = uid, gid
+
+        return self.operation("chown:R:" + node.name, own)
+
+    def close(self, fd):
+        node = self.tables[self.actor][fd]
+        name = node.name if isinstance(node, _NullDirectory) else str(fd)
+        return self.operation("close:" + self.actor + ":" + name, lambda: self.tables[self.actor].pop(fd))
+
+    def mount(self, source, target, flags, kind=None, data=None):
+        def install():
+            if (source, Path(target), flags, kind, data) != (
+                "tmpfs", self.workspace / self.name / "fixture",
+                14, "tmpfs", b"size=1048576,mode=0700",
+            ) or self.overlay is not None:
+                raise AssertionError("not the one original-fixture tmpfs")
+            self.overlay = _NullDirectory("tmpfs", 90, 1, 900, *self.setup_ids)
+
+        return self.operation("mount:R", install)
+
+    def inventory(self, *, ordinary_entry=False):
+        return {
+            fd: (value.device, value.inode, stat.S_IFMT(value.mode), os.O_RDONLY)
+            if isinstance(value, _NullDirectory) else value
+            for fd, value in self.tables[self.actor].items()
+        }
+
+    def destroy(self):
+        if set(self.tables["R"]) != {0, 1, 2}:
+            raise AssertionError("namespace destruction with a retained R pin")
+        self.overlay, self.destroyed = None, True
+
+    def patches(self):
+        b, stack = self.fixture, ExitStack()
+        for name in ("open", "close", "fstat", "stat", "listdir", "mkdir", "rmdir", "fchown"):
+            stack.enter_context(patch.object(os, name, getattr(self, name)))
+        stack.enter_context(patch.object(os, "lstat", side_effect=self.stat))
+        stack.enter_context(patch.object(b, "fd_inventory", side_effect=self.inventory))
+        stack.enter_context(patch.object(b, "mount_id", side_effect=lambda fd: self.resolve(fd).mount))
+        stack.enter_context(patch.object(b, "tmpfs_state", return_value=(0x01021994, b.FIXTURE_BYTES, 14)))
+        stack.enter_context(patch.object(b, "namespace", return_value=(1, 11)))
+        stack.enter_context(patch.object(b, "mount", side_effect=self.mount))
+        stack.enter_context(patch.object(b, "canonical", side_effect=Path))
+        stack.enter_context(patch.object(Path, "resolve", lambda path, *args, **kwargs: path))
+        return stack
+
+
+class NullMountFixtureInertTests(unittest.TestCase):
+    """Actual fixture/control APIs with every external-effect boundary replaced."""
+
+    def setUp(self):
+        import builtins
+        import io
+        import linecache
+        from scripts.validation_ownership import budget as budgeting, lifecycle as life, sandbox_exec
+        from scripts.validation_ownership.tests import null_mount_fixture as b
+        self.b, self.budgeting, self.life, self.subject = b, budgeting, life, sandbox_exec
+        self.stack = ExitStack()
+        self.addCleanup(self.stack.close)
+        self.forbidden = []
+        self.addCleanup(lambda: self.assertEqual(self.forbidden, [], "unmodeled external effects"))
+        self.stack.enter_context(patch.object(linecache, "getline", return_value=""))
+        self.stack.enter_context(patch.object(linecache, "checkcache"))
+
+        def trap(name):
+            def forbidden(*args, **kwargs):
+                self.forbidden.append(name)
+                raise AssertionError("forbidden inert effect: " + name)
+            return forbidden
+
+        for module, names in (
+            (os, ("fork", "forkpty", "waitid", "waitpid", "pidfd_open", "kill", "killpg", "_exit",
+                  "setuid", "seteuid", "setgid", "setegid", "setresuid", "setresgid", "setgroups",
+                  "getuid", "getgid", "getresuid", "getresgid", "getpid", "getppid",
+                  "open", "fdopen", "close", "read", "write", "pipe", "pipe2", "dup", "dup2", "fstat",
+                  "fstatvfs", "stat", "lstat", "listdir", "scandir", "readlink", "lseek", "set_blocking",
+                  "fpathconf", "mkdir", "rmdir", "unlink", "remove", "rename", "replace", "link", "symlink",
+                  "chdir", "fchdir", "chroot", "chown", "fchown", "chmod", "fchmod", "utime", "system",
+                  "execv", "execve", "posix_spawn", "posix_spawnp")),
+            (subprocess, ("Popen", "run", "call", "check_call", "check_output")),
+            (b.fcntl, ("fcntl", "ioctl")), (b.select, ("select", "poll", "epoll")),
+            (selectors, ("DefaultSelector",)), (builtins, ("open",)), (io, ("open",)),
+            (resource, ("setrlimit",)), (signal, ("pidfd_send_signal", "raise_signal")),
+            (ctypes, ("CDLL",)), (b, ("libc", "load_subject", "load_control")),
+            (life, ("prctl", "parent_death", "require_pidfds", "owned_children", "ordinary_executable")),
+            (budgeting, ("ordinary_executable",)),
+            (Path, ("open", "mkdir", "rmdir", "unlink", "write_text", "write_bytes", "touch")),
+        ):
+            for name in names:
+                self.stack.enter_context(patch.object(module, name, side_effect=trap(name)))
+        for name, value in (
+            ("pthread_sigmask", set()), ("signal", signal.SIG_DFL),
+            ("sigpending", set()), ("sigtimedwait", None),
+        ):
+            self.stack.enter_context(patch.object(signal, name, return_value=value))
+        self.stack.enter_context(patch.object(time, "monotonic", return_value=100.0))
+        self.stack.enter_context(patch.object(secrets, "token_hex", return_value="a" * 32))
+        self.stack.enter_context(patch.object(b, "_cleanup_life", life))
+        self.report = life._CleanupReport("R", 130.0)
+        self.stack.enter_context(patch.object(b, "_cleanup_report", self.report))
+        self.binding = life._FixtureBinding("readonly", 1001, 1002, 130.0, 3, 4, 1001)
+        self.outer = {"user": (1, 10), "mount": (1, 11), "label": b"unconfined",
+                      "ordinary": False, "groups": ()}
+        self.target = b.Target((1, 20), (1, 21), (3, 8, stat.S_IFDIR | 0o755, 0, 29, 0))
+        self.directory = b.WORKSPACE / ("b" * 24)
+
+    def state(self, *, entered=False, ordinary=False, setup=False):
+        uid_map = ((1001, 1001, 1),) if ordinary else self.b.FULL_MAP
+        gid_map = ((1002, 1002, 1),) if ordinary else self.b.FULL_MAP
+        local = (1 << 41) - 1
+        return {
+            "uid": (0,) * 4 if entered else (1001,) * 4,
+            "gid": (0,) * 4 if entered else (1002,) * 4, "groups": (),
+            "caps": (0, local, local, local, 0) if setup else (0,) * 5,
+            "nnp": 1, "uid_map": ((0, 1001, 1),) if entered else uid_map,
+            "gid_map": ((0, 1002, 1),) if entered else gid_map,
+            "user": self.target.user if entered else self.outer["user"],
+            "mount": self.target.mount if entered else self.outer["mount"],
+            "label": self.outer["label"], "parent": 1, "pids": (77,),
+        }
+
+    def supervisor(self, *, ordinary=False, mode="readonly"):
+        root = self.b.Bootstrap(
+            self.life, replace(self.binding, mode=mode),
+            self.b.WORKSPACE / ("b" * 24 + "-null-" + mode) / "fixture", ordinary=ordinary,
+        )
+        root.outer, root.target = {**self.outer, "ordinary": ordinary}, self.target
+        return root
+
+    def worker_value(self, mode="readonly"):
+        before = [3, 4, stat.S_IFCHR | 0o666, os.makedev(1, 3), 7, 4096 | (14 if mode == "writable" else 15)]
+        after, failure, calls, io = list(before), None, [list(self.b.SELECTIVE_CALL)], False
+        if mode in ("readonly", "writable"):
+            after[5] &= ~os.ST_NODEV
+            io = True
+        elif mode == "wrong-device":
+            before[3] = after[3] = os.makedev(1, 5)
+            failure, calls = [4, None], []
+        elif mode == "substituted":
+            failure, after[4] = [4, None], 8
+        else:
+            failure = [1, errno.ENOSYS if mode == "unsupported" else errno.EPERM]
+            if mode == "old":
+                calls = [["legacy-remount", 0x102A]]
+        return {
+            "mode": mode, "before": before, "after": after, "failure": failure, "calls": calls,
+            "caps": [0, 0, 0, 0, 0, 1], "denied": [errno.EROFS, errno.EROFS, errno.EACCES],
+            "null_io": io, "fd_closed": True, "local_nonzero_topology": True,
+        }
+
+    def records(self, binding=None, status=0):
+        binding = self.binding if binding is None else binding
+        clean = self.life._cleanup_wire(self.life._CleanupReport("R", binding.deadline).value())
+        return [
+            {"v": 1, "role": "R", "phase": "before", "binding": binding.wire(), "pid": 77,
+             "kind": "normal-exit", "stage": "worker", "status": status, "error": None,
+             "result": self.worker_value(binding.mode), "setup_status": 0},
+            {"v": 1, "role": "R", "phase": "after", "binding": binding.wire(), "pid": 77,
+             "before": "before", "cleanup": clean, "disposition": "return", "status": status},
+            {"v": 1, "role": "L", "phase": "before", "token": "a" * 32, "pid": 55,
+             "kind": "normal-exit", "stage": "wait", "status": status, "error": None,
+             "wait": [55, 0, int(signal.SIGCHLD), os.CLD_EXITED if status >= 0 else os.CLD_KILLED,
+                      status if status >= 0 else -status]},
+            {"v": 1, "role": "L", "phase": "after", "token": "a" * 32, "pid": 55,
+             "before": "before", "cleanup": clean, "disposition": "return", "status": status},
+        ]
+
+    def exercise(self, *, mode="readonly", permission=True, probe_status=None, probe_stdout=b"",
+                 probe_stderr=None, outer_status=0, inner_status=0, fault=None, preflight=None,
+                 missing=False, retained=False, expired=None, fail_selection=False, bad_result=False,
+                 exhausted=None, source_fault=None, release_fault=None, close_fault=None, oversized=False):
+        b, life, budgeting = self.b, self.life, self.budgeting
+        status = (1 if permission else 0) if probe_status is None else probe_status
+        diagnostic = (b.PERMISSION_UNAVAILABLE[0] if permission else b"") if probe_stderr is None else probe_stderr
+        model = _NullDirectories(b, "b" * 24 + "-null-" + mode, ordinary=not permission)
+        if fault is not None:
+            model.fault = (*fault, OSError(errno.EIO, "inert boundary"))
+        budget = b.new_budget(budgeting)
+        budget.started = 100.0
+        if exhausted == "custody":
+            budget._outcome_entries = 52
+        elif exhausted == "runs":
+            budget.limits = replace(budget.limits, runs=1)
+        elif exhausted == "states":
+            budget.limits = replace(budget.limits, states=1)
+        launches, checks, clock, instances, executables = [], [], [100.0], [], []
+        baseline = model.inventory()
+        earlier = ValueError("inert acquisition")
+        cleanup = OSError(errno.EIO, "inert cleanup")
+
+        class Stream:
+            def __init__(self, fd):
+                self.fd, self.closed = fd, False
+
+            def fileno(self):
+                return self.fd
+
+            def close(self):
+                if not self.closed:
+                    model.close(self.fd)
+                    self.closed = True
+
+        def launch(argv, **kwargs):
+            index = len(launches)
+            launches.append((tuple(argv), kwargs))
+            if fail_selection and index == 0:
+                raise earlier
+            model.operation("Popen:" + str(index), lambda: None)
+            child = OutcomeCustodyTests.Child()
+            child.pid = 55
+            mode_status = outer_status
+            payload = probe_stdout
+            errors = diagnostic
+            if index == 1:
+                coordinator = instances[0]
+                restricted = coordinator.backend == "restricted"
+                if not restricted and permission:
+                    mode_status, payload, errors = 1, b"", b.PERMISSION_UNAVAILABLE[0]
+                else:
+                    binding = budget._outcome._binding if restricted else life._FixtureBinding(
+                        mode, 1001, 1002, budget.deadline,
+                        coordinator.directories.identities["fixture"].device,
+                        coordinator.directories.identities["fixture"].inode, 1001,
+                    )
+                    model.actor = "R"
+                    root = b.Bootstrap(life, binding, coordinator.directories.fixture, ordinary=not restricted)
+                    try:
+                        root.install_volume()
+                        root.closes(tuple(root.fds))
+                        if not retained:
+                            model.destroy()
+                    finally:
+                        model.actor = "C"
+                    if restricted:
+                        records = self.records(binding, inner_status)
+                        if retained:
+                            report = life._CleanupReport("R", budget.deadline)
+                            report.unsure("ownership")
+                            records[1]["cleanup"] = life._cleanup_wire(report.value())
+                            records[1]["disposition"], records[1]["status"] = "raise", None
+                        if bad_result:
+                            records[0]["result"]["after"][5] ^= 1
+                        payload = b"".join(life._encode_frame(value) for value in (records[:3] if missing else records))
+                    else:
+                        payload = b.json_bytes(self.worker_value(mode))
+                        if bad_result:
+                            payload = b'{"mode":"readonly"}'
+                    if oversized:
+                        payload = b"x" * (b.CAPTURE_BYTES + 1)
+                    errors = b""
+            child.stdout, child.stderr, child.stdin = Stream(10), Stream(11), Stream(12)
+            for fd in (10, 11, 12):
+                model.tables["C"][fd] = (8, 800 + fd, stat.S_IFIFO, 1 if fd == 12 else 0)
+            offsets = {10: 0, 11: 0}
+
+            def read(fd, count):
+                model.operation("read:" + str(index), lambda: None)
+                source = payload if fd == 10 else errors
+                chunk = source[offsets[fd]:offsets[fd] + count]
+                offsets[fd] += len(chunk)
+                return chunk
+
+            def wait(timeout=None):
+                model.operation("wait:" + str(index), lambda: None)
+                child.returncode = status if index == 0 else mode_status
+                if expired == ("selection" if index == 0 else "mode"):
+                    clock[0] = 130.0
+                else:
+                    clock[0] = 107.0 if index == 0 else 118.0
+                return child.returncode
+
+            child.wait, child.poll = wait, lambda: child.returncode
+            active.enter_context(patch.object(os, "read", side_effect=read))
+            return child
+
+        def check_source(deadline, expected=None):
+            b.remaining(deadline)
+            checks.append("after" if expected is not None else "before")
+            if source_fault == checks[-1]:
+                raise earlier
+            return b"c" * 40 + b"\n"
+
+        def executable(path):
+            executables.append(path)
+            if preflight == "executable":
+                raise ValueError("inert mutable executable")
+
+        with model.patches(), ExitStack() as active:
+            for module, name, value in (
+                (b, "fixture_name", model.name),
+                (b, "self_state", self.state()), (os, "getuid", 1001), (os, "getgid", 1002),
+                (os, "getresuid", (1001,) * 3), (os, "getresgid", (1002,) * 3),
+            ):
+                active.enter_context(patch.object(module, name, return_value=value))
+            factory = active.enter_context(patch.object(b, "new_budget", side_effect=[budget]))
+            if preflight == "root":
+                active.enter_context(patch.object(os, "getresuid", return_value=(0, 1001, 0)))
+            elif preflight == "caps":
+                active.enter_context(patch.object(b, "self_state", return_value={**self.state(), "caps": (0, 1, 1, 0, 0)}))
+            elif preflight == "map":
+                active.enter_context(patch.object(b, "self_state", return_value=self.state(ordinary=True)))
+            elif preflight == "fd":
+                model.tables["C"][99] = (7, 700, stat.S_IFDIR, 0)
+            active.enter_context(patch.object(time, "monotonic", side_effect=lambda: clock[0]))
+            active.enter_context(patch.object(b, "verify_environment"))
+            active.enter_context(patch.object(b, "source_revision", side_effect=check_source))
+            active.enter_context(patch.object(life, "ordinary_executable", side_effect=executable))
+            active.enter_context(patch.object(budgeting, "ordinary_executable"))
+            active.enter_context(patch.object(subprocess, "Popen", side_effect=launch))
+            active.enter_context(patch.object(selectors, "DefaultSelector",
+                                               side_effect=lambda: OutcomeCustodyTests.Selector(lambda: None)))
+            active.enter_context(patch.object(os, "set_blocking"))
+            coordinator = b.Coordinator(budgeting, life, mode, self.directory)
+            instances.append(coordinator)
+            if release_fault is not None:
+                original_release = budgeting._RunOutcome.release
+
+                def release(owner):
+                    model.operation("release", lambda: None)
+                    if release_fault == "before":
+                        raise cleanup
+                    original_release(owner)
+                    raise cleanup
+
+                active.enter_context(patch.object(budgeting._RunOutcome, "release", release))
+            if close_fault is not None:
+                original_close = budget.close
+
+                def close(**kwargs):
+                    model.operation("budget-close", lambda: None)
+                    if close_fault == "before":
+                        raise cleanup
+                    original_close(**kwargs)
+                    raise cleanup
+
+                active.enter_context(patch.object(budget, "close", side_effect=close))
+            result = failure = None
+            try:
+                result = coordinator.run()
+            except b.FixtureFailure as error:
+                failure = error.facts
+            self.assertEqual(factory.call_count, 1)
+        return SimpleNamespace(result=result, failure=failure, model=model, budget=budget, coordinator=coordinator,
+                               launches=launches, checks=checks, baseline=baseline, executables=executables)
+
+    def test_exact_availability_classifier_has_no_error_fallback(self):
+        b = self.b
+        def result(status=0, stdout=b"", stderr=b""):
+            return subprocess.CompletedProcess(list(b.AVAILABILITY), status, stdout, stderr)
+        self.assertEqual(b.classify_availability(result()), "ordinary")
+        for diagnostic in b.PERMISSION_UNAVAILABLE:
+            self.assertEqual(b.classify_availability(result(1, stderr=diagnostic)), "restricted")
+        for value in (
+            result(125, stderr=b.PERMISSION_UNAVAILABLE[0]), result(-9), result(2),
+            result(True), result(1), result(0, stderr=b.PERMISSION_UNAVAILABLE[0]),
+            result(1, b"unexpected", b.PERMISSION_UNAVAILABLE[0]),
+            result(1, stderr=b.PERMISSION_UNAVAILABLE[0] + b"\n"),
+            result(1, stderr=b"unshare: write failed /proc/self/uid_map: Operation not permitted\n"),
+            result(1, stderr=b.PERMISSION_UNAVAILABLE[0].decode()), result(0, "text"),
+            SimpleNamespace(returncode=0, stdout=b"", stderr=b""),
+            subprocess.CompletedProcess(["/usr/bin/true"], 0, b"", b""),
+        ):
+            with self.subTest(value=value), self.assertRaises(b.Refusal):
+                b.classify_availability(value)
+
+    def test_actual_budget_both_backends_and_all_seven_public_results(self):
+        b = self.b
+        for permission in (False, True):
+            for mode in b.MODES:
+                with self.subTest(permission=permission, mode=mode):
+                    value = self.exercise(permission=permission, mode=mode)
+                    self.assertIsNone(value.failure, value.failure)
+                    self.assertEqual(value.result, b.public_result(self.life._private_worker_record(b.json_bytes(self.worker_value(mode)))))
+                    self.assertEqual((value.budget.runs, value.budget.states, value.budget.deadline), (2, 2, 130.0))
+                    self.assertEqual(len(value.launches), 2)
+                    self.assertEqual(value.launches[0][0][-len(b.AVAILABILITY):], b.AVAILABILITY)
+                    mode_argv, kwargs = value.launches[1]
+                    self.assertEqual(mode_argv[0] == "/usr/bin/sudo", permission)
+                    self.assertEqual("--outcome-v1" in mode_argv, permission)
+                    self.assertEqual(kwargs["pass_fds"], ())
+                    self.assertEqual(kwargs["env"], ENVIRONMENT)
+                    self.assertEqual(value.executables, ["/usr/bin/unshare", "/usr/bin/true", "/usr/bin/python3"])
+                    self.assertNotIn("SUDO_UID", kwargs["env"])
+                    if permission:
+                        self.assertEqual(value.budget._outcome_entries, 52)
+                        self.assertEqual(value.budget.bytes["cache"], 552960)
+                        self.assertEqual(mode_argv[mode_argv.index("--", 7) + 1:][:len(NAMESPACE_LAUNCHER)],
+                                         NAMESPACE_LAUNCHER)
+                    else:
+                        self.assertEqual(value.budget._outcome_entries, 0)
+                        self.assertIsNone(value.coordinator.facts["observations"])
+                        self.assertEqual(mode_argv[mode_argv.index("--") + 1:][:len(b.ORDINARY_PREFIX)],
+                                         b.ORDINARY_PREFIX)
+                    self.assertEqual(value.budget.bytes["sandbox"], b.FIXTURE_BYTES)
+                    self.assertLessEqual(value.budget.bytes["output"], b.CAPTURE_BYTES)
+                    self.assertTrue(value.budget.closed)
+                    self.assertIsNone(value.budget._outcome)
+                    self.assertEqual(value.budget.children, {})
+                    self.assertEqual(value.checks, ["before", "after"])
+                    self.assertEqual(value.model.root.children, {})
+                    self.assertEqual(value.model.inventory(), value.baseline)
+                    self.assertTrue(value.model.destroyed)
+
+    def test_selection_errors_expiry_and_admission_never_launch_a_mode(self):
+        cases = (
+            {"probe_status": 125}, {"probe_status": 2}, {"probe_stdout": b"unknown"},
+            {"probe_stderr": b"unknown"}, {"fail_selection": True}, {"expired": "selection"},
+            {"fault": ("close:C:10", 1, "after")},
+            {"exhausted": "custody"}, {"exhausted": "runs"}, {"exhausted": "states"},
+        )
+        for case in cases:
+            with self.subTest(case=case):
+                value = self.exercise(**case)
+                self.assertIsNotNone(value.failure)
+                self.assertLessEqual(len(value.launches), 1)
+                self.assertIsNone(value.result)
+                self.assertNotIn("mount:R", value.model.events)
+                self.assertEqual(value.budget.deadline, 130.0)
+                self.assertTrue(value.budget.failed)
+        value = self.exercise(probe_status=125)
+        self.assertEqual(value.failure["availability_status"], 125)
+        self.assertIsNone(self.exercise(fail_selection=True).failure["availability_status"])
+
+    def test_failed_modes_are_not_retried_and_none_errors_do_not_invent_custody(self):
+        for permission in (False, True):
+            for case in (
+                {"outer_status": 125}, {"outer_status": 7}, {"outer_status": -9},
+                {"bad_result": True}, {"expired": "mode"},
+                {"oversized": True},
+                {"fault": ("read:1", 1, "before")}, {"fault": ("close:C:10", 2, "after")},
+            ):
+                with self.subTest(permission=permission, case=case):
+                    value = self.exercise(permission=permission, **case)
+                    self.assertIsNotNone(value.failure)
+                    self.assertEqual(len(value.launches), 2)
+                    self.assertEqual(value.budget.runs, 2)
+                    self.assertIsNone(value.result)
+                    if not permission:
+                        self.assertIsNone(value.failure["observations"])
+                        if "fault" in case or "expired" in case:
+                            self.assertIsNone(value.failure["outer_status"])
+                    elif "outer_status" in case:
+                        self.assertEqual(value.failure["outer_status"], case["outer_status"])
+
+    def test_old_startup_routing_restores_policy_failure_then_restores_success(self):
+        def oracle():
+            value = self.exercise()
+            self.assertIsNone(value.failure)
+            self.assertTrue(value.result["null_io"])
+        oracle()
+        with patch.object(self.b, "classify_availability", return_value="ordinary"):
+            value = self.exercise()
+            self.assertIsNotNone(value.failure)
+            self.assertEqual(value.failure["outer_status"], 1)
+            self.assertNotIn("mount:R", value.model.events)
+            with self.assertRaises(AssertionError):
+                oracle()
+        oracle()
+
+    def test_coordinator_identity_and_full_map_are_backend_constraints(self):
+        for case in ({"preflight": "root"}, {"preflight": "caps"}, {"preflight": "fd"}, {"preflight": "executable"},
+                     {"preflight": "map"}, {"source_fault": "before"}):
+            with self.subTest(case=case):
+                value = self.exercise(**case)
+                self.assertIsNotNone(value.failure)
+                self.assertLessEqual(len(value.launches), 1)
+        self.assertIsNone(self.exercise(permission=False, preflight="map").failure)
+
+    def test_missing_custody_and_every_cleanup_failure_stay_failures(self):
+        for case in (
+            {"missing": True}, {"retained": True}, {"source_fault": "after"},
+            {"release_fault": "before"}, {"release_fault": "after"},
+            {"close_fault": "before"}, {"close_fault": "after"},
+            {"fault": ("close:C:fixture", 2, "before")}, {"fault": ("rmdir:C:fixture", 1, "after")},
+            {"fault": ("close:C:container", 2, "after")}, {"fault": ("rmdir:C:container", 1, "before")},
+            {"fault": ("close:C:workspace", 1, "after")},
+        ):
+            with self.subTest(case=case):
+                value = self.exercise(**case)
+                self.assertIsNotNone(value.failure)
+                self.assertIsNone(value.result)
+                self.assertEqual(value.failure["outer_status"], 0)
+                self.assertIsNone(value.coordinator.primary)
+                if "missing" in case or "retained" in case or "close_fault" in case:
+                    self.assertNotIn("rmdir:C:fixture", value.model.events)
+                if "release_fault" in case:
+                    self.assertEqual(value.model.counts["release"], 1)
+                if "fault" in case:
+                    self.assertTrue(value.model.triggered, value.failure)
+
+    def test_acquisition_errors_do_not_adopt_unconfirmed_host_objects(self):
+        for label in (
+            "open:C:workspace", "fstat:C:workspace", "mkdir:C:container", "open:C:container",
+            "fstat:C:container", "list:C:container", "mkdir:C:fixture", "open:C:fixture",
+            "fstat:C:fixture", "list:C:fixture",
+        ):
+            for when in ("before", "after"):
+                with self.subTest(label=label, when=when):
+                    value = self.exercise(fault=(label, 1, when))
+                    self.assertIsNotNone(value.failure)
+                    self.assertTrue(value.model.triggered)
+                    self.assertEqual(len(value.launches), 1)
+                    self.assertEqual(value.failure["first_error"], (1, errno.EIO))
+                    self.assertIsNone(value.budget._outcome)
+                    self.assertEqual(value.coordinator.directories.fds, {})
+
+    def test_raw_normal_status_and_first_error_survive_later_cleanup(self):
+        value = self.exercise(outer_status=125, inner_status=7, fault=("close:C:10", 2, "after"))
+        self.assertEqual(value.failure["outer_status"], 125)
+        self.assertEqual(value.failure["observations"][0]["status"], 7)
+        self.assertEqual(value.failure["first_error"], (1, errno.EIO))
+        value = self.exercise(fault=("read:1", 1, "before"), close_fault="after")
+        self.assertIsNone(value.failure["outer_status"])
+        self.assertEqual(value.failure["first_error"], (1, errno.EIO))
+        self.assertEqual(value.failure["capture_error"], (1, errno.EIO))
+        value = self.exercise(retained=True)
+        self.assertFalse(value.failure["observations"][1]["cleanup"]["uncertain"] == 0)
+        self.assertEqual(value.failure["observations"][1]["disposition"], "raise")
+
+    def test_closed_arguments_sudo_ids_deadline_and_original_fixture_identity(self):
+        b = self.b
+        parent = self.directory.parent / (self.directory.name + "-null-readonly") / "fixture"
+        arguments = ["--reaper", "readonly", "1001", "1002", "130.0", str(parent), "3", "4", "1001"]
+        info = SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_dev=3, st_ino=4, st_uid=1001, st_gid=1002)
+        context = {"SUDO_UID": "1001", "SUDO_GID": "1002"}
+        with patch.object(b, "canonical", side_effect=Path), patch.object(os, "lstat", return_value=info):
+            self.assertEqual(b.role_arguments(arguments, self.life, context), (self.binding, parent, False))
+            ordinary = ["--ordinary", *arguments[1:]]
+            self.assertEqual(b.role_arguments(ordinary, self.life, {}), (self.binding, parent, True))
+            for index, wrong in (
+                (0, "--command"), (1, "unknown"), (2, "0"), (3, "1001"), (4, "131.0"),
+                (4, "100.0"), (4, "nan"), (5, "/foreign/fixture"), (7, "8"), (8, "0"),
+            ):
+                changed = list(arguments)
+                changed[index] = wrong
+                with self.subTest(index=index, wrong=wrong), self.assertRaises((b.Refusal, ValueError, TimeoutError)):
+                    b.role_arguments(changed, self.life, context)
+            for args in (arguments + ["--fd", "7"], arguments + ["--source", "/foreign"], arguments[:-1]):
+                with self.assertRaises(b.Refusal):
+                    b.role_arguments(args, self.life, context)
+            with self.assertRaises(b.Refusal):
+                b.role_arguments(arguments, self.life, {})
+            with self.assertRaises(b.Refusal):
+                b.role_arguments(ordinary, self.life, context)
+            self.assertEqual(b.fixture_name(self.directory, "readonly"), self.directory.name + "-null-readonly")
+            for path in (self.directory / "nested", b.WORKSPACE / "preexisting", Path("/tmp") / self.directory.name):
+                with self.assertRaises(b.Refusal):
+                    b.fixture_name(path, "readonly")
+
+    def test_preentry_and_target_require_actual_ids_maps_caps_nnp_and_lower_owners(self):
+        b = self.b
+        for ordinary in (False, True):
+            outer = {**self.outer, "ordinary": ordinary}
+            before = self.state(ordinary=ordinary)
+            b.validate_preentry(before, self.binding, outer)
+            for key, wrong in [
+                ("uid", (0,) * 4), ("uid", (1001, 1001, 0, 1001)), ("gid", (1001,) * 4),
+                ("groups", (1002,)), ("nnp", 0), ("user", (1, 99)), ("mount", (1, 99)),
+                ("uid_map", ((0, 1001, 1),)), ("gid_map", ((0, 1002, 1),)), ("label", b"changed"),
+            ] + [("caps", tuple(1 if index == bit else 0 for index in range(5))) for bit in range(5)]:
+                with self.subTest(ordinary=ordinary, key=key), self.assertRaises(b.Refusal):
+                    b.validate_preentry({**before, key: wrong}, self.binding, outer)
+            entered = self.state(entered=True)
+            b.validate_target(entered, self.binding, outer, self.target)
+            for key, wrong in (
+                ("user", outer["user"]), ("mount", outer["mount"]), ("nnp", 0),
+                ("uid_map", ((0, 0, 1),)), ("gid_map", ((0, 1001, 1),)), ("uid", (1001,) * 4),
+                ("groups", (1002,)), ("label", b"borrowed-profile"),
+            ):
+                with self.subTest(ordinary=ordinary, key=key), self.assertRaises(b.Refusal):
+                    b.validate_target({**entered, key: wrong}, self.binding, outer, self.target)
+        b.validate_local_setup(self.state(entered=True, setup=True))
+        for caps in ((0,) * 5, (1, 1 << 21, 1 << 21, 1 << 21, 0), (0, 1 << 21, 1 << 21, 1 << 21, 0)):
+            with self.assertRaises(b.Refusal):
+                b.validate_local_setup({**self.state(entered=True), "caps": caps})
+
+    def test_actual_entry_scan_counts_only_one_transient_and_preserves_stdio(self):
+        b = self.b
+        for count, entry in ((19, True), (20, True), (21, True), (20, False)):
+            live = {fd: (8, 1000 + fd, stat.S_IFIFO, 1 if fd in (1, 2) else fd % 3) for fd in range(count)}
+            stdio, closed = {fd: live[fd] for fd in (0, 1, 2)}, []
+            def fstat(fd):
+                if fd not in live:
+                    raise OSError(errno.EBADF, "closed scan iterator")
+                value = live[fd]
+                return SimpleNamespace(st_dev=value[0], st_ino=value[1], st_mode=value[2] | 0o600)
+            def close(fd):
+                self.assertGreater(fd, 2)
+                self.assertNotIn(fd, closed)
+                closed.append(fd)
+                del live[fd]
+            with self.subTest(count=count, entry=entry), \
+                 patch.object(os, "listdir", side_effect=lambda path: [*(str(fd) for fd in live), "999"]), \
+                 patch.object(os, "fstat", side_effect=fstat), \
+                 patch.object(b.fcntl, "fcntl", side_effect=lambda fd, command: live[fd][3]), \
+                 patch.object(os, "close", side_effect=close):
+                if entry and count <= 20:
+                    actual = b.fd_inventory(ordinary_entry=True)
+                    self.assertEqual(len(actual), count)
+                    self.assertEqual(b.withdraw_entry_fifos(actual, self.report), stdio)
+                    self.assertEqual(len(closed), count - 3)
+                else:
+                    with self.assertRaises(b.Refusal):
+                        b.fd_inventory(ordinary_entry=entry)
+                    self.assertEqual(closed, [])
+        with patch.object(os, "listdir", return_value=["0", "1", "2", "998", "999"]), \
+             patch.object(os, "fstat", side_effect=lambda fd: (
+                 SimpleNamespace(st_dev=8, st_ino=fd + 1000, st_mode=stat.S_IFIFO) if fd < 3
+                 else (_ for _ in ()).throw(OSError(errno.EBADF, "closed iterator"))
+             )), patch.object(b.fcntl, "fcntl", return_value=0):
+            with self.assertRaisesRegex(b.Refusal, "entry descriptor scan changed"):
+                b.fd_inventory(ordinary_entry=True)
+
+    def test_entry_disposal_rejects_foreign_handles_and_continues_after_first_error(self):
+        b = self.b
+        stdio = {fd: (8, 1000 + fd, stat.S_IFIFO, 0 if fd == 0 else 1) for fd in (0, 1, 2)}
+        for kind in (stat.S_IFDIR, stat.S_IFREG, stat.S_IFCHR, stat.S_IFSOCK):
+            with self.subTest(kind=kind), self.assertRaises(b.Refusal):
+                b.withdraw_entry_fifos({**stdio, 10: (8, 1010, kind, 0)}, self.report)
+        for when in ("identity", "before", "after"):
+            live = {**stdio, 10: (8, 1010, stat.S_IFIFO, 0), 11: (8, 1011, stat.S_IFIFO, 1)}
+            attempted = []
+            first = OSError(errno.EIO, "first")
+            def close(fd):
+                attempted.append(fd)
+                if fd == 10 and when == "before":
+                    raise first
+                del live[fd]
+                if fd == 10:
+                    raise first
+            def fstat(fd):
+                value = live[fd]
+                return SimpleNamespace(st_dev=value[0], st_ino=value[1] + (fd == 10 and when == "identity"),
+                                       st_mode=value[2])
+            with self.subTest(when=when), patch.object(os, "close", side_effect=close), \
+                 patch.object(os, "fstat", side_effect=fstat), \
+                 patch.object(b.fcntl, "fcntl", side_effect=lambda fd, command: live[fd][3]):
+                with self.assertRaises((b.Refusal, OSError)) as caught:
+                    b.withdraw_entry_fifos(dict(live), self.report)
+                if when != "identity":
+                    self.assertIs(caught.exception, first)
+            self.assertEqual(attempted, [11] if when == "identity" else [10, 11])
+            self.assertEqual({fd: live[fd] for fd in (0, 1, 2)}, stdio)
+
+    def test_worker_fds_reject_directions_devices_ancestors_and_writer_aliases(self):
+        b = self.b
+        expected = {0: (8, 1, stat.S_IFIFO, 0), 1: (8, 2, stat.S_IFIFO, 1), 2: (8, 3, stat.S_IFIFO, 1)}
+        b.validate_fds(expected, expected, (8, 4))
+        for altered in (
+            {**expected, 9: (8, 4, stat.S_IFIFO, 1)}, {**expected, 9: expected[1]},
+            {**expected, 9: (8, 12, stat.S_IFDIR, 0)}, {**expected, 0: (8, 13, stat.S_IFCHR, 0)},
+            {**expected, 0: (8, 1, stat.S_IFIFO, 1)}, {**expected, 1: expected[2]},
+        ):
+            with self.subTest(altered=altered), self.assertRaises(b.Refusal):
+                b.validate_fds(altered, expected, (8, 4))
+        with self.assertRaises(b.Refusal):
+            b.validate_fds(expected, expected, expected[1][:2])
+
+    def test_owned_child_waits_do_not_signal_or_invent_observations_after_reap(self):
+        b = self.b
+        child = b.Child(77, 10, 11, 123)
+        status = ("Uid:\t0 1001 0 1001\nGid:\t0 1002 0 1002\nGroups:\nNoNewPrivs:\t1\n"
+                  "NSpid:\t77\nPPid:\t1\nCapInh:\t0\nCapPrm:\t200000\nCapEff:\t200000\n"
+                  "CapBnd:\tffffffff\nCapAmb:\t0\n").encode()
+        with patch.object(b, "proc_start", return_value=123), \
+             patch.object(b.select, "select", return_value=([], [], [])), \
+             patch.object(os, "waitid", return_value=None), \
+             patch.object(b, "read_file", side_effect=lambda path, *a, **k: b"Pid:\t77\n" if "fdinfo" in str(path) else status):
+            b.live_child(child)
+            for mutation in (
+                patch.object(child, "reaped", True), patch.object(child, "start", 124),
+                patch.object(child, "pidfd", None), patch.object(os, "waitid", return_value=object()),
+                patch.object(b.select, "select", return_value=([10], [], [])),
+                patch.object(b, "read_file", return_value=b"Pid:\t78\n"),
+            ):
+                with mutation, self.assertRaises(b.Refusal):
+                    b.live_child(child)
+        for actual in (0, 7, -9, 125):
+            child = b.Child(77, 10)
+            observed = SimpleNamespace(si_pid=77, si_uid=0, si_signo=int(signal.SIGCHLD),
+                                       si_code=os.CLD_EXITED if actual >= 0 else os.CLD_KILLED,
+                                       si_status=actual if actual >= 0 else -actual)
+            with patch.object(os, "waitid", return_value=observed):
+                self.assertEqual(b.observe(child, 130.0, self.life), actual)
+        child = b.Child(77, 10)
+        with patch.object(os, "waitid", return_value=None), patch.object(os, "waitpid", return_value=(77, 7 << 8)), \
+             patch.object(signal, "pidfd_send_signal") as send:
+            b.stop_child(child, 130.0)
+            b.stop_child(child, 130.0)
+            self.assertTrue(child.reaped)
+            self.assertIsNone(child.observed)
+            send.assert_called_once_with(10, signal.SIGKILL)
+            with self.assertRaises(b.Refusal):
+                b.observe(child, 130.0, self.life)
+
+    def test_namespace_type_parent_owner_and_lower_mount_owner_are_checked(self):
+        b = self.b
+        for fault in (None, "type", "owner", "parent", "mount-owner", "same-user", "same-mount"):
+            root, child = self.supervisor(), b.Child(77, 8, 9, 123)
+            identities = {20: self.target.user, 21: self.target.mount, 30: self.outer["user"], 31: self.target.user}
+            if fault in ("parent", "mount-owner"):
+                identities[30 if fault == "parent" else 31] = (1, 90)
+            if fault in ("same-user", "same-mount"):
+                identities[20 if fault == "same-user" else 21] = self.outer["user" if fault == "same-user" else "mount"]
+            def ioctl(fd, op, *args):
+                if op == b.NS_GET_NSTYPE:
+                    return 0 if fault == "type" else b.NEWUSER if fd == 20 else b.NEWNS
+                if op == b.NS_GET_OWNER_UID:
+                    args[0][:] = struct.pack("=I", 0 if fault == "owner" else 1001)
+                    return 0
+                return 30 if op == b.NS_GET_PARENT else 31
+            with self.subTest(fault=fault), patch.object(b, "live_child"), \
+                 patch.object(os, "open", side_effect=[20, 21]), patch.object(os, "close"), \
+                 patch.object(b, "fd_identity", side_effect=lambda fd: identities[fd]), \
+                 patch.object(b.fcntl, "ioctl", side_effect=ioctl), \
+                 patch.object(b, "mount_state", return_value=self.target.root):
+                if fault:
+                    with self.assertRaises(b.Refusal):
+                        root.pin_target(child)
+                else:
+                    root.pin_target(child)
+                    self.assertEqual(root.target, self.target)
+
+    def test_exact_map_writes_and_readbacks_close_every_owned_map_handle(self):
+        b = self.b
+        for ordinary in (False, True):
+            for fault in (None, "present", "partial", "readback", "close", "wrong-parent-setgroups"):
+                root, child = self.supervisor(ordinary=ordinary), b.Child(77, 8, 9, 123)
+                initial = b"deny" if ordinary else b"allow"
+                contents = {20: b"foreign" if fault == "wrong-parent-setgroups" else initial,
+                            21: b"0 0 1\n" if fault == "present" else b"", 22: b""}
+                writes, closes = [], []
+                def write(fd, data):
+                    writes.append((fd, data))
+                    contents[fd] = b"0 0 1\n" if fault == "readback" and fd == 22 else data
+                    return len(data) - (fault == "partial" and fd == 21)
+                def close(fd):
+                    closes.append(fd)
+                    if fault == "close" and fd == 20:
+                        raise OSError(errno.EIO, "inert close")
+                with self.subTest(ordinary=ordinary, fault=fault), patch.object(b, "live_child"), \
+                     patch.object(root, "pin_target_recheck"), patch.object(os, "open", side_effect=[20, 21, 22]), \
+                     patch.object(os, "read", side_effect=lambda fd, count: contents[fd]), \
+                     patch.object(os, "write", side_effect=write), patch.object(os, "lseek"), \
+                     patch.object(os, "close", side_effect=close):
+                    if fault:
+                        with self.assertRaises((b.Refusal, OSError)):
+                            root.map_creator(child)
+                    else:
+                        root.map_creator(child)
+                        self.assertEqual(writes, [(20, b"deny"), (21, b"0 1001 1\n"), (22, b"0 1002 1\n")])
+                self.assertEqual(closes, [20, 21, 22])
+                self.assertEqual(root.fds, {})
+                if fault in ("present", "wrong-parent-setgroups"):
+                    self.assertEqual(writes, [])
+                if fault == "close":
+                    self.assertFalse(root.report.value().complete)
+
+    def worker_run(self, *, ordinary=False, pre=None, post=None, fd_fault=None, root_fault=False, close_fault=None):
+        b = self.b
+        root = self.supervisor(ordinary=ordinary)
+        root.capture = (8, 40)
+        root.fds = {"user": 10, "mount": 11, "gate.read": 12, "gate.write": 13, "worker.read": 14, "worker.write": 15}
+        table = {
+            0: (8, 30, stat.S_IFIFO, 0), 1: (8, 40, stat.S_IFIFO, 1), 2: (8, 50, stat.S_IFIFO, 1),
+            10: (1, 20, stat.S_IFREG, 0), 11: (1, 21, stat.S_IFREG, 0),
+            12: (8, 60, stat.S_IFIFO, 0), 13: (8, 60, stat.S_IFIFO, 1),
+            14: (8, 70, stat.S_IFIFO, 0), 15: (8, 70, stat.S_IFIFO, 1),
+        }
+        root.expected_worker = {0: table[0], 1: table[15], 2: table[2], **{fd: table[fd] for fd in (10, 11, 12)}}
+        if fd_fault == "alias":
+            table[16] = table[1]
+        elif fd_fault == "ancestor":
+            table[16] = (1, 8, stat.S_IFDIR, 0)
+        elif fd_fault == "device":
+            table[0] = (1, 8, stat.S_IFCHR, 0)
+        events, writes = [], []
+        def close(fd):
+            events.append(("close", fd))
+            if close_fault == (fd, "before"):
+                raise OSError(errno.EIO, "inert before-close")
+            table.pop(fd)
+            if close_fault == (fd, "after"):
+                raise OSError(errno.EIO, "inert after-close")
+        def mount_state(path):
+            if str(path) in ("/", "."):
+                return (3, 99, stat.S_IFDIR, 0, 99, 0) if root_fault else self.target.root
+            return (3, 5, stat.S_IFDIR, 0, 30, 15)
+        native = SimpleNamespace(setns=lambda fd, kind: events.append(("setns", fd, kind)) or 0)
+        with ExitStack() as stack:
+            stack.enter_context(patch.dict(os.environ, dict(os.environ), clear=True))
+            for name in ("setresgid", "setresuid", "setgroups", "chdir"):
+                stack.enter_context(patch.object(os, name, side_effect=lambda *args, name=name: events.append((name, *args))))
+            stack.enter_context(patch.object(os, "dup2", side_effect=lambda source, target, **kw: table.__setitem__(target, table[source])))
+            stack.enter_context(patch.object(os, "close", side_effect=close))
+            stack.enter_context(patch.object(os, "write", side_effect=lambda fd, data: writes.append(data) or len(data)))
+            stack.enter_context(patch.object(b, "fd_inventory", side_effect=lambda: dict(table)))
+            stack.enter_context(patch.object(b, "self_state", side_effect=[
+                pre or self.state(ordinary=ordinary), post or self.state(entered=True, setup=True),
+            ]))
+            stack.enter_context(patch.object(b, "mount_state", side_effect=mount_state))
+            stack.enter_context(patch.object(b, "libc", return_value=native))
+            for name in ("bounding", "capset", "prctl", "parent_guard", "send_token", "receive_token"):
+                stack.enter_context(patch.object(b, name, side_effect=lambda *args, name=name: events.append((name, *args))))
+            subject = stack.enter_context(patch.object(b, "mechanism", return_value=self.worker_value()))
+            failure = None
+            try:
+                root.worker()
+            except (b.Refusal, OSError) as error:
+                failure = type(error)
+                self.life._forget_error(error)
+            return failure, subject.call_count, events, writes
+
+    def test_both_worker_paths_enter_user_then_mount_and_delay_the_subject(self):
+        for ordinary in (False, True):
+            failure, imports, events, writes = self.worker_run(ordinary=ordinary)
+            self.assertIsNone(failure)
+            self.assertEqual(imports, 1)
+            self.assertEqual([event for event in events if event[0] == "setns"],
+                             [("setns", 10, self.b.NEWUSER), ("setns", 11, self.b.NEWNS)])
+            self.assertIn(("setresuid", 1001, 1001, 1001), events)
+            self.assertIn(("setresgid", 1002, 1002, 1002), events)
+            self.assertEqual(("setgroups", []) in events, not ordinary)
+            self.assertEqual(self.life._private_worker_record(writes[0]),
+                             self.life._private_worker_record(self.b.json_bytes(self.worker_value())))
+
+    def test_worker_authority_rootcwd_and_fd_faults_stop_before_the_subject(self):
+        for ordinary in (False, True):
+            before = self.state(ordinary=ordinary)
+            for fault in (
+                {"pre": {**before, "uid": (0,) * 4}}, {"pre": {**before, "caps": (0, 1, 1, 0, 0)}},
+                {"pre": {**before, "nnp": 0}}, {"pre": {**before, "gid_map": ((0, 1002, 1),)}},
+                {"post": {**self.state(entered=True, setup=True), "user": self.outer["user"]}},
+                {"post": self.state(entered=True)}, {"root_fault": True},
+                {"fd_fault": "alias"}, {"fd_fault": "ancestor"}, {"fd_fault": "device"},
+                {"close_fault": (10, "before")}, {"close_fault": (10, "after")},
+            ):
+                with self.subTest(ordinary=ordinary, fault=fault):
+                    failed, imports, _, writes = self.worker_run(ordinary=ordinary, **fault)
+                    self.assertIsNotNone(failed)
+                    self.assertEqual((imports, writes), (0, []))
+
+    def test_restored_missing_worker_guard_breaks_the_authority_oracle(self):
+        def oracle():
+            failed, imports, _, _ = self.worker_run(pre={**self.state(), "uid": (0,) * 4})
+            self.assertIsNotNone(failed)
+            self.assertEqual(imports, 0)
+        oracle()
+        with patch.object(self.b, "validate_preentry"), self.assertRaises(AssertionError):
+            oracle()
+        oracle()
+
+    def test_actual_R_custody_latches_status_before_remaining_cleanup(self):
+        b, life = self.b, self.life
+        for status, bad_bytes, close_fault in ((7, False, True), (0, True, False), (0, False, False)):
+            root, child = self.supervisor(), b.Child(77, 9)
+            root.fds, root.children["W"], root.stage, root.setup_status = {"worker.read": 8, "W.pidfd": 9}, child, "worker", 0
+            data = b.json_bytes(self.records()[0] if bad_bytes else self.worker_value())
+            source, frames, latches, closed = iter([data, b""]), [], [], []
+            def close(fd):
+                latches.append(root.observation)
+                closed.append(fd)
+                if close_fault and fd == 8:
+                    raise OSError(errno.EIO, "inert cleanup")
+            def stop(child, deadline):
+                latches.append(root.observation)
+                child.reaped = True
+            wait = SimpleNamespace(si_pid=77, si_uid=0, si_signo=int(signal.SIGCHLD),
+                                   si_code=os.CLD_EXITED, si_status=status)
+            with self.subTest(status=status, bad=bad_bytes), patch.object(b, "root_context", return_value=root.outer), \
+                 patch.object(root, "create_fixture"), patch.object(root, "setup_creator", return_value=True), \
+                 patch.object(root, "setup_worker", return_value=child), \
+                 patch.object(b.select, "select", return_value=([8], [], [])), \
+                 patch.object(os, "read", side_effect=lambda *args: next(source)), \
+                 patch.object(os, "waitid", return_value=wait), patch.object(b, "stop_child", side_effect=stop), \
+                 patch.object(os, "write", side_effect=lambda fd, data: frames.append(data) or len(data)), \
+                 patch.object(os, "close", side_effect=close):
+                self.assertEqual(root.run(), status if status else 125 if bad_bytes else 0)
+            before = life._decode_frame(frames[0][4:], "a" * 32, self.binding)
+            after = life._decode_frame(frames[1][4:], "a" * 32, self.binding, before)
+            self.assertEqual(before.status, status)
+            self.assertEqual(closed, [8, 9])
+            self.assertTrue(all(item == ("worker", 77, status) for item in latches))
+            self.assertEqual(after.cleanup.complete, not close_fault and not bad_bytes)
+            if bad_bytes:
+                self.assertIsNone(before.result)
+                self.assertEqual(after.disposition, "raise")
+
+    def test_R_first_setup_error_survives_cleanup_without_a_fabricated_wait(self):
+        b, life = self.b, self.life
+        root, child = self.supervisor(), b.Child(77, 9)
+        root.children["N"], root.fds = child, {"N.pidfd": 9, "response.read": 8}
+        primary, frames, closed = ValueError("first setup"), [], []
+        def stop(child, deadline):
+            child.reaped = True
+            raise OSError(errno.EIO, "secondary cleanup")
+        with patch.object(b, "root_context", side_effect=primary), patch.object(b, "stop_child", side_effect=stop), \
+             patch.object(os, "close", side_effect=lambda fd: closed.append(fd)), \
+             patch.object(os, "write", side_effect=lambda fd, data: frames.append(data) or len(data)):
+            self.assertEqual(root.run(), 125)
+        before = life._decode_frame(frames[0][4:], "a" * 32, self.binding)
+        self.assertEqual((before.kind, before.status, before.error), ("exception", None, (2, None)))
+        self.assertEqual(closed, [9, 8])
+        self.assertIsNone(primary.__traceback__)
+
+    def test_tokens_publication_deadline_short_writes_and_partial_eof_are_terminal(self):
+        b = self.b
+        with patch.object(b.select, "select", return_value=([10], [], [])), \
+             patch.object(os, "read", return_value=b"GO\n"), patch.object(os, "write", return_value=3):
+            b.send_token(11, b"GO\n", 130.0)
+            b.receive_token(10, b"GO\n", 130.0)
+            with patch.object(os, "read", return_value=b"G"), self.assertRaises(b.Refusal):
+                b.receive_token(10, b"GO\n", 130.0)
+            with self.assertRaises(b.Refusal):
+                b.receive_eof(10, 130.0)
+            with patch.object(os, "read", return_value=b""):
+                b.receive_eof(10, 130.0)
+            with self.assertRaises(b.Refusal):
+                b.send_token(11, b"COMMAND\n", 130.0)
+            with patch.object(os, "write", return_value=1), self.assertRaises(b.Refusal):
+                b.send_token(11, b"GO\n", 130.0)
+        root = self.supervisor()
+        with patch.object(os, "write", return_value=1), self.assertRaises(b.Refusal):
+            root.publish(self.records()[0])
+        self.assertEqual(root.publications, 1)
+        with self.assertRaises(b.Refusal):
+            root.publish(self.records()[0])
+        with patch.object(time, "monotonic", return_value=130), self.assertRaises(TimeoutError):
+            self.supervisor().publish(self.records()[0])
+
+    def test_ambiguous_close_withdraws_authority_once_and_finishes_other_closes(self):
+        for before in (False, True):
+            root = self.supervisor()
+            root.fds = {"user": 10, "mount": 11}
+            primary, attempted, released = ValueError("first"), [], []
+            def close(fd):
+                attempted.append(fd)
+                if fd == 10 and before:
+                    raise OSError(errno.EIO, "before")
+                released.append(fd)
+                if fd == 10:
+                    raise OSError(errno.EIO, "after")
+            with patch.object(os, "close", side_effect=close):
+                root.closes(("user", "mount"), primary=primary)
+                root.closes(("user", "mount"), primary=primary)
+            self.assertEqual(attempted, [10, 11])
+            self.assertEqual(released, [11] if before else [10, 11])
+            self.assertFalse(root.report.value().complete)
+            self.assertEqual(root.fds, {})
+            self.assertFalse(hasattr(primary, "cleanup_errors"))
+
+    def mechanism_run(self, mode, *, old_success=False, pre=None, final=None, fallback=False):
+        import io
+        b, subject, life = self.b, self.subject, self.life
+        volume, root = Path("/owned/volume"), Path("/owned/volume/root")
+        source = [3, 4, stat.S_IFCHR | 0o666, os.makedev(1, 3), 1, 4096]
+        current = [list(self.worker_value(mode)["before"])]
+        fds, calls, operations, error_number = {}, [], [], [0]
+        stdio = {0: (8, 30, stat.S_IFIFO, 0), 1: (8, 70, stat.S_IFIFO, 1), 2: (8, 50, stat.S_IFIFO, 1)}
+        placeholders = []
+
+        def open_file(path, flags, *args, **kwargs):
+            path = str(path)
+            if flags & os.O_CREAT:
+                self.assertIn(path, (str(root / "dev/null"), str(root / "dev/zero")))
+                value = [3, 90 + len(placeholders), stat.S_IFREG | 0o600, 0, 2, 0]
+                placeholders.append(path)
+            elif path == "/dev/null":
+                value = source
+            elif path == str(root / "dev/null"):
+                value = current[0]
+            else:
+                raise AssertionError("unmodeled subject path " + path)
+            descriptor = next(fd for fd in range(10, 30) if fd not in fds)
+            fds[descriptor] = value
+            return descriptor
+
+        def fstat(fd):
+            value = fds[fd]
+            return SimpleNamespace(st_dev=value[0], st_ino=value[1], st_mode=value[2],
+                                   st_rdev=value[3], st_uid=0, st_gid=0)
+
+        def info(path, mode="rb"):
+            prefix = "/proc/self/fdinfo/"
+            self.assertTrue(str(path).startswith(prefix))
+            descriptor = int(str(path)[len(prefix):])
+            return io.BytesIO(("mnt_id:\t%d\n" % fds[descriptor][4]).encode())
+
+        def syscall(*args):
+            attributes = args[4]._obj
+            operation = (args[0].value, args[3].value, attributes.attr_set, attributes.attr_clr,
+                         attributes.propagation, attributes.userns_fd, args[5].value)
+            calls.append(operation)
+            self.assertIn(operation, (b.SELECTIVE_CALL, (442, 4096, 14, 0, 0, 0, 32)))
+            value = fds[args[1].value]
+            value[5] = (value[5] | attributes.attr_set) & ~attributes.attr_clr
+            return 0
+
+        def mount(source_path, target_path, kind, flags, data):
+            self.assertEqual(target_path, os.fsencode(root / "dev/null"))
+            if flags == b.OLD_REMOUNT:
+                self.assertIsNone(source_path)
+                operations.append("old")
+                error_number[0] = errno.EPERM
+                return 0 if old_success else -1
+            self.assertEqual((source_path, flags), (os.fsencode(volume / "null"), b.MS_BIND | b.MS_REC))
+            operations.append("substitute")
+            current[0] = [*current[0][:4], current[0][4] + 1, current[0][5] & ~os.ST_NODEV]
+            return 0
+
+        native = SimpleNamespace(syscall=syscall, mount=mount)
+        original_ctypes = subject.ctypes
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(b, "libc", return_value=native))
+            imported = stack.enter_context(patch.object(b, "load_subject", return_value=subject))
+            stack.enter_context(patch.object(subject, "bind", side_effect=lambda *a, **k: operations.append("bind")))
+            stack.enter_context(patch.object(b, "self_state", side_effect=[
+                pre or self.state(entered=True, setup=True), final or self.state(entered=True),
+            ]))
+            stack.enter_context(patch.object(b, "fd_inventory", side_effect=lambda: {
+                **stdio, **{fd: (value[0], value[1], stat.S_IFMT(value[2]), os.O_RDONLY) for fd, value in fds.items()},
+            }))
+            stack.enter_context(patch.object(Path, "mkdir"))
+            stack.enter_context(patch.object(os, "open", side_effect=open_file))
+            stack.enter_context(patch.object(os, "close", side_effect=lambda fd: fds.pop(fd)))
+            stack.enter_context(patch.object(os, "fstat", side_effect=fstat))
+            stack.enter_context(patch.object(os, "fstatvfs", side_effect=lambda fd: SimpleNamespace(f_flag=fds[fd][5])))
+            stack.enter_context(patch("builtins.open", side_effect=info))
+            stack.enter_context(patch.object(ctypes, "get_errno", side_effect=lambda: error_number[0]))
+            stack.enter_context(patch.object(ctypes, "set_errno", side_effect=lambda n: error_number.__setitem__(0, n)))
+            stack.enter_context(patch.object(b, "mount_state", side_effect=lambda path: tuple(current[0])))
+            for name in ("bounding", "capset", "prctl"):
+                stack.enter_context(patch.object(b, name, side_effect=lambda *a, name=name: operations.append(name)))
+            stack.enter_context(patch.object(b, "readonly_denial", side_effect=lambda path: operations.append("readonly-io") or errno.EROFS))
+            stack.enter_context(patch.object(b, "device_denial", side_effect=lambda path: operations.append("other-io") or errno.EACCES))
+            stack.enter_context(patch.object(b, "null_io", side_effect=lambda path: operations.append("null-io")))
+            if fallback:
+                def wrong_helper(root):
+                    subject.ctypes.CDLL(None).mount(None, None, None, 0, None)
+                stack.enter_context(patch.object(subject, "_enable_toolchain_null", side_effect=wrong_helper))
+            result = failure = None
+            try:
+                result = b.mechanism(volume, replace(self.binding, mode=mode), self.outer, self.target, life)
+            except b.Refusal as error:
+                failure = str(error)
+                life._forget_error(error)
+        self.assertIs(subject.ctypes, original_ctypes)
+        self.assertEqual(fds, {})
+        return SimpleNamespace(result=result, failure=failure, calls=calls, operations=operations,
+                               imports=imported.call_count)
+
+    def test_actual_subject_and_adapter_execute_all_seven_inert_mode_branches(self):
+        b = self.b
+        for mode in b.MODES:
+            with self.subTest(mode=mode):
+                value = self.mechanism_run(mode)
+                self.assertIsNone(value.failure)
+                self.assertEqual(self.life._private_worker_record(b.json_bytes(value.result)),
+                                 self.life._private_worker_record(b.json_bytes(self.worker_value(mode))))
+                self.assertEqual(value.imports, 1)
+                self.assertEqual(value.calls, (
+                    [b.SELECTIVE_CALL] if mode in ("readonly", "writable")
+                    else [(442, 4096, 14, 0, 0, 0, 32), b.SELECTIVE_CALL] if mode == "substituted"
+                    else []
+                ))
+                self.assertEqual("null-io" in value.operations, mode in ("readonly", "writable"))
+                self.assertEqual("old" in value.operations, mode in ("readonly", "old"))
+                self.assertIn("readonly-io", value.operations)
+                self.assertIn("other-io", value.operations)
+                if mode == "substituted":
+                    self.assertIn("substitute", value.operations)
+
+    def test_old_operation_and_delayed_import_controls_are_real_branches_not_mode_defaults(self):
+        for mode in ("readonly", "old"):
+            value = self.mechanism_run(mode, old_success=True)
+            self.assertIsNotNone(value.failure)
+            self.assertIsNone(value.result)
+        value = self.mechanism_run("readonly", pre={**self.state(entered=True, setup=True), "user": self.outer["user"]})
+        self.assertIsNotNone(value.failure)
+        self.assertEqual(value.imports, 0)
+        self.assertEqual(value.operations, [])
+        value = self.mechanism_run("readonly", final={**self.state(entered=True), "caps": (0, 1, 1, 0, 0)})
+        self.assertIsNotNone(value.failure)
+        self.assertNotIn("null-io", value.operations)
+        for mode in self.b.MODES:
+            value = self.mechanism_run(mode, fallback=True)
+            self.assertIsNotNone(value.failure)
+
+    def test_restoring_only_legacy_operation_and_restoring_old_gate_are_detected(self):
+        def oracle():
+            value = self.mechanism_run("readonly")
+            self.assertIsNone(value.failure)
+            self.assertTrue(value.result["null_io"])
+        oracle()
+        original = self.b.helper_transition
+        with patch.object(self.b, "helper_transition", side_effect=lambda setup, root, volume, mode, life:
+                          original(setup, root, volume, "old", life)), self.assertRaises(AssertionError):
+            oracle()
+        oracle()
+        def old_gate_oracle():
+            value = self.mechanism_run("readonly", old_success=True)
+            self.assertIsNotNone(value.failure)
+            self.assertIsNone(value.result)
+        old_gate_oracle()
+        with patch.object(self.b, "old_negative"), self.assertRaises(AssertionError):
+            old_gate_oracle()
+        old_gate_oracle()
+
+    def test_mode_codec_rejects_unobserved_facts_and_accepts_neutral_json_order(self):
+        b, life = self.b, self.life
+        for mode in b.MODES:
+            value = self.worker_value(mode)
+            expected = life._private_worker_record(b.json_bytes(value))
+            b.validate_mode(expected, mode)
+            self.assertEqual(life._private_worker_record(b.json_bytes(dict(reversed(list(value.items()))))), expected)
+            for name, wrong in (
+                ("caps", [0, 1, 0, 0, 0, 1]), ("denied", [errno.EACCES, errno.EROFS, errno.EACCES]),
+                ("fd_closed", False), ("local_nonzero_topology", False), ("null_io", not value["null_io"]),
+                ("mode", "arbitrary"),
+            ):
+                with self.subTest(mode=mode, name=name), self.assertRaises((b.Refusal, ValueError)):
+                    b.validate_mode(life._private_worker_record(b.json_bytes({**value, name: wrong})), mode)
+            altered = {**value, "failure": None if value["failure"] is not None else [1, errno.EPERM]}
+            with self.assertRaises(b.Refusal):
+                b.validate_mode(life._private_worker_record(b.json_bytes(altered)), mode)
+            for bit in (1, 2, 8, 4096):
+                altered = {**value, "after": [*value["after"][:5], value["after"][5] ^ bit]}
+                with self.subTest(mode=mode, changed_flag=bit), self.assertRaises(b.Refusal):
+                    b.validate_mode(life._private_worker_record(b.json_bytes(altered)), mode)
+        record = self.records()[0]
+        for field in ("fixture_child", "backing_identity"):
+            with self.assertRaises(ValueError):
+                life._decode_frame(life._encode_frame({**record, field: [3, 9, 0, 0]})[4:], "a" * 32, self.binding)
+
+    def test_real_denial_and_null_io_functions_require_observed_results_and_close(self):
+        b = self.b
+        info = SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_uid=0, st_gid=0)
+        for error in (errno.EROFS, errno.EACCES, errno.EPERM):
+            with patch.object(os, "stat", return_value=info), \
+                 patch.object(os, "open", side_effect=OSError(error, "inert denial")):
+                if error == errno.EROFS:
+                    self.assertEqual(b.readonly_denial(Path("/owned/canary")), errno.EROFS)
+                else:
+                    with self.assertRaises(b.Refusal):
+                        b.readonly_denial(Path("/owned/canary"))
+                if error in (errno.EACCES, errno.EPERM):
+                    self.assertEqual(b.device_denial(Path("/owned/zero")), error)
+                else:
+                    with self.assertRaises(b.Refusal):
+                        b.device_denial(Path("/owned/zero"))
+        for read, written in ((b"", 1), (b"x", 1), (b"", 0)):
+            with patch.object(os, "open", return_value=10), patch.object(os, "read", return_value=read), \
+                 patch.object(os, "write", return_value=written), patch.object(os, "close") as close:
+                if read == b"" and written == 1:
+                    b.null_io(Path("/owned/null"))
+                else:
+                    with self.assertRaises(b.Refusal):
+                        b.null_io(Path("/owned/null"))
+                close.assert_called_once_with(10)
+
+    def host(self, model):
+        report = self.life._CleanupReport("C", 130.0)
+        host = self.b.HostDirectories(model.name, 1001, 1002, self.life, report, 130.0)
+        host.create()
+        return host
+
+    def backing_root(self, host, *, ordinary=False):
+        original = host.identities["fixture"]
+        binding = self.life._FixtureBinding("readonly", 1001, 1002, 130.0,
+                                           original.device, original.inode, original.uid)
+        return self.b.Bootstrap(self.life, binding, host.fixture, ordinary=ordinary)
+
+    def test_both_backends_keep_host_tmpfs_and_volume_as_distinct_owned_objects(self):
+        for ordinary in (False, True):
+            model = _NullDirectories(self.b, "b" * 24 + "-null-readonly", ordinary=ordinary)
+            with self.subTest(ordinary=ordinary), model.patches():
+                baseline = model.inventory()
+                host = self.host(model)
+                original = host.identities["fixture"]
+                model.actor = "R"
+                root = self.backing_root(host, ordinary=ordinary)
+                root.install_volume()
+                mounted = self.b.directory_identity(root.fds["tmpfs"])
+                volume = self.b.directory_identity(root.fds["volume"])
+                self.assertEqual(len({original.metadata()[:2], mounted.metadata()[:2], volume.metadata()[:2]}), 3)
+                self.assertEqual(root.binding.inode, original.inode)
+                self.assertEqual(self.b.directory_metadata(model.host_fixture.info()), original.metadata())
+                self.assertEqual(model.host_fixture.children, {})
+                root.closes(tuple(root.fds))
+                model.destroy()
+                model.actor = "C"
+                host.cleanup(True, baseline)
+                self.assertEqual(host.removed, {"fixture": True, "container": True})
+                self.assertEqual(model.root.children, {})
+                self.assertEqual(model.inventory(), baseline)
+
+    def test_pre_mount_host_pin_restoration_creates_a_child_that_cleanup_must_retain(self):
+        b = self.b
+        def old_pin(root):
+            descriptor = root.acquire("fixture", lambda: os.open(
+                root.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+            ))
+            b.mount("tmpfs", root.parent, 14, "tmpfs", b"size=1048576,mode=0700")
+            os.mkdir("volume", 0o700, dir_fd=descriptor)
+            root.close("fixture")
+        def oracle():
+            model = _NullDirectories(b, "b" * 24 + "-null-readonly")
+            with model.patches():
+                baseline = model.inventory()
+                host = self.host(model)
+                model.actor = "R"
+                root = self.backing_root(host)
+                root.install_volume()
+                root.closes(tuple(root.fds))
+                model.destroy()
+                model.actor = "C"
+                self.assertEqual(model.host_fixture.children, {})
+                host.cleanup(True, baseline)
+                self.assertEqual(model.root.children, {})
+        oracle()
+        with patch.object(b.Bootstrap, "install_volume", old_pin), self.assertRaises(AssertionError):
+            oracle()
+        oracle()
+        model = _NullDirectories(b, "b" * 24 + "-null-readonly")
+        with model.patches():
+            baseline = model.inventory()
+            host = self.host(model)
+            model.actor = "R"
+            old_pin(self.backing_root(host))
+            model.destroy()
+            model.actor = "C"
+            with self.assertRaises(b.Refusal):
+                host.cleanup(True, baseline)
+            self.assertIn("volume", model.host_fixture.children)
+            self.assertNotIn("rmdir:C:fixture", model.events)
+
+    def test_each_backing_transition_failure_stops_before_a_host_write(self):
+        for label, when in (
+            ("open:R:fixture", "before"), ("fstat:R:fixture", "before"),
+            ("mount:R", "before"), ("mount:R", "after"),
+            ("close:R:fixture", "before"), ("close:R:fixture", "after"),
+            ("open:R:tmpfs", "before"), ("fstat:R:tmpfs", "before"),
+            ("chown:R:tmpfs", "before"), ("mkdir:R:volume", "before"),
+            ("open:R:volume", "before"), ("chown:R:volume", "after"),
+        ):
+            model = _NullDirectories(self.b, "b" * 24 + "-null-readonly")
+            with self.subTest(label=label, when=when), model.patches():
+                host = self.host(model)
+                model.actor = "R"
+                root = self.backing_root(host)
+                error = OSError(errno.EIO, "inert geometry")
+                model.fault = (label, 1, when, error)
+                with self.assertRaises(OSError) as caught:
+                    root.install_volume()
+                self.assertIs(caught.exception, error)
+                self.assertTrue(model.triggered)
+                self.assertEqual(model.host_fixture.children, {})
+                self.assertEqual(self.b.directory_metadata(model.host_fixture.info()), host.identities["fixture"].metadata())
+
+    def test_tmpfs_type_size_flags_and_original_pin_are_not_interchangeable(self):
+        b = self.b
+        for observation in ((1, b.FIXTURE_BYTES, 14), (0x01021994, b.FIXTURE_BYTES + 4096, 14),
+                            (0x01021994, b.FIXTURE_BYTES, 10)):
+            model = _NullDirectories(b, "b" * 24 + "-null-readonly")
+            with self.subTest(observation=observation), model.patches():
+                host = self.host(model)
+                model.actor = "R"
+                with patch.object(b, "tmpfs_state", return_value=observation), self.assertRaises(b.Refusal):
+                    self.backing_root(host).install_volume()
+                self.assertNotIn("mkdir:R:volume", model.events)
+                self.assertFalse(any(event.startswith("chown:R:") for event in model.events))
+        calls = []
+        def statfs(fd, pointer):
+            calls.append(fd)
+            value = pointer._obj
+            value.kind, value.block_size, value.blocks, value.flags = 0x01021994, 4096, 256, 14
+            return 0
+        with patch.object(b, "libc", return_value=SimpleNamespace(fstatfs=statfs)):
+            self.assertEqual(b.tmpfs_state(10), (0x01021994, 1048576, 14))
+        self.assertEqual(calls, [10])
+
+    def test_cleanup_never_removes_foreign_replaced_nonempty_or_live_backing(self):
+        b = self.b
+        for fault in ("child", "fixture", "container", "owner", "group", "mode", "mount", "live", "fd"):
+            model = _NullDirectories(b, "b" * 24 + "-null-readonly")
+            with self.subTest(fault=fault), model.patches():
+                baseline = model.inventory()
+                host = self.host(model)
+                if fault == "child":
+                    model.host_fixture.children["foreign"] = _NullDirectory("foreign", 3, 500, 50)
+                elif fault == "fixture":
+                    model.root.children[host.name].children["fixture"] = _NullDirectory("fixture", 3, 501, 50)
+                elif fault == "container":
+                    model.root.children[host.name] = _NullDirectory("container", 3, 502, 50)
+                elif fault in ("owner", "group", "mode", "mount"):
+                    attribute, value = {"owner": ("uid", 0), "group": ("gid", 0),
+                                        "mode": ("mode", stat.S_IFDIR | 0o777), "mount": ("mount", 999)}[fault]
+                    setattr(model.host_fixture, attribute, value)
+                elif fault == "fd":
+                    model.tables["C"][99] = (7, 700, stat.S_IFREG, 0)
+                with self.assertRaises(b.Refusal):
+                    host.cleanup(fault != "live", baseline)
+                self.assertNotIn("rmdir:C:fixture", model.events)
+                self.assertNotIn("rmdir:C:container", model.events)
+                self.assertEqual(host.fds, {})
+                self.assertFalse(host.report.value().complete)
+
+    def test_ambiguous_directory_close_and_removal_are_never_retried(self):
+        for label in ("close:C:fixture", "rmdir:C:fixture", "close:C:container", "rmdir:C:container"):
+            for when in ("before", "after"):
+                model = _NullDirectories(self.b, "b" * 24 + "-null-readonly")
+                with self.subTest(label=label, when=when), model.patches():
+                    baseline = model.inventory()
+                    host = self.host(model)
+                    model.fault = (label, 1, when, OSError(errno.EIO, "inert release"))
+                    with self.assertRaises(OSError):
+                        host.cleanup(True, baseline)
+                    count = model.counts[label]
+                    with self.assertRaises(self.b.Refusal):
+                        host.cleanup(True, baseline)
+                    self.assertEqual(model.counts[label], count)
+                    self.assertFalse(host.report.value().complete)
+
+    def test_private_root_context_keeps_backend_maps_and_proves_mount_owner(self):
+        b = self.b
+        def status(pid, parent):
+            return (
+                "Uid:\t0 0 0 0\nGid:\t0 0 0 0\nGroups:\nNoNewPrivs:\t0\n"
+                f"NSpid:\t{pid}\nPPid:\t{parent}\n"
+                "CapInh:\t0\nCapPrm:\tffffffff\nCapEff:\tffffffff\nCapBnd:\tffffffff\nCapAmb:\t0\n"
+            ).encode()
+        for ordinary in (False, True):
+            for fault in (None, "ids", "same-mount", "proc", "maps", "owner", "death", "caps"):
+                uid, gid = (1001, 1002) if ordinary else (0, 0)
+                value = {**self.state(ordinary=ordinary, setup=True), "uid": (uid,) * 4,
+                         "gid": (gid,) * 4, "parent": 0, "pids": (1,)}
+                if fault == "maps":
+                    value["uid_map"] = ((0, 1001, 1),)
+                if fault == "caps":
+                    value["caps"] = (0,) * 5
+                host = status("888 1", 777)
+                identities = {21: (1, 10), 22: (1, 90), 23: (1, 91), 24: (1, 92),
+                              26: (1, 99) if fault == "owner" else (1, 10)}
+                current = {"user": (1, 10), "mnt": (1, 90) if fault == "same-mount" else (1, 11),
+                           "pid": (1, 12), "net": (1, 13)}
+                with self.subTest(ordinary=ordinary, fault=fault), \
+                     patch.object(os, "getpid", return_value=1), \
+                     patch.object(os, "getresuid", return_value=(uid + 1,) * 3 if fault == "ids" else (uid,) * 3), \
+                     patch.object(os, "getresgid", return_value=(gid,) * 3), patch.object(os, "setgroups") as groups, \
+                     patch.object(os, "open", side_effect=[21, 22, 23, 24, 25]), patch.object(os, "close"), \
+                     patch.object(b, "read_file", side_effect=[host, status(777, 555)]), \
+                     patch.object(b, "fd_identity", side_effect=lambda fd: identities[fd]), \
+                     patch.object(b, "namespace", side_effect=lambda name: current[name]), \
+                     patch.object(b, "mount") as mount, patch.object(b, "self_state", return_value=value), \
+                     patch.object(os, "readlink", return_value="888" if fault == "proc" else "1"), \
+                     patch.object(b, "death_signal", return_value=0 if fault == "death" else signal.SIGKILL), \
+                     patch.object(b.fcntl, "ioctl", side_effect=lambda fd, op: b.NEWNS if op == b.NS_GET_NSTYPE else 26):
+                    if fault:
+                        with self.assertRaises(b.Refusal):
+                            b.root_context(self.binding, ordinary)
+                    else:
+                        actual = b.root_context(self.binding, ordinary)
+                        self.assertEqual(actual["ordinary"], ordinary)
+                        self.assertEqual(actual["uid_map"], ((1001, 1001, 1),) if ordinary else b.FULL_MAP)
+                        mount.assert_called_once_with("proc", "/proc", 14, "proc")
+                        self.assertEqual(groups.call_count, 0 if ordinary else 1)
+
+    def test_creator_drops_setup_authority_and_normalizes_all_saved_ids(self):
+        b = self.b
+        for ordinary in (False, True):
+            for fault in (None, "missing-cap", "dumpable", "label", "map"):
+                root = self.supervisor(ordinary=ordinary)
+                root.fds = {"request.read": 10, "request.write": 11, "response.read": 12, "response.write": 13}
+                table = {fd: (8, 100 + fd, stat.S_IFIFO, 0) for fd in (0, 1, 2, 10, 11, 12, 13)}
+                uid, gid = root.setup_ids
+                first = {**self.state(ordinary=ordinary), "uid": (uid, 1001, uid, 1001),
+                         "gid": (gid, 1002, gid, 1002),
+                         "caps": (0, 0 if fault == "missing-cap" else 1 << b.CAP_SYS_ADMIN, 0, 0xFFFFFFFF, 0)}
+                ready = {**first, "caps": (0, 1 << b.CAP_SYS_ADMIN, 1 << b.CAP_SYS_ADMIN, 0xFFFFFFFF, 0)}
+                created = {**self.state(entered=True), "label": b"foreign" if fault == "label" else b"unconfined"}
+                values, events = iter([first, ready, created, self.state(entered=True)]), []
+                content = {"/proc/self/uid_map": b"0 0 1\n" if fault == "map" else b"0 1001 1\n",
+                           "/proc/self/gid_map": b"0 1002 1\n", "/proc/self/setgroups": b"deny\n"}
+                native = SimpleNamespace(unshare=lambda flags: events.append(("unshare", flags)) or 0)
+                with self.subTest(ordinary=ordinary, fault=fault), ExitStack() as stack:
+                    stack.enter_context(patch.object(b, "fd_inventory", side_effect=lambda: dict(table)))
+                    stack.enter_context(patch.object(os, "close", side_effect=lambda fd: table.pop(fd)))
+                    stack.enter_context(patch.object(b, "self_state", side_effect=lambda: next(values)))
+                    stack.enter_context(patch.object(b, "read_file", side_effect=lambda path: content[path]))
+                    stack.enter_context(patch.object(b, "libc", return_value=native))
+                    stack.enter_context(patch.object(b, "prctl", side_effect=lambda option, *args:
+                                                     1 if option == 3 and fault == "dumpable" else 0))
+                    for name in ("setgroups", "setresgid", "setresuid"):
+                        stack.enter_context(patch.object(os, name, side_effect=lambda *args, name=name: events.append((name, *args))))
+                    for name in ("capset", "bounding", "parent_guard", "send_token", "receive_token"):
+                        stack.enter_context(patch.object(b, name, side_effect=lambda *args, name=name: events.append((name, *args))))
+                    if fault:
+                        with self.assertRaises(b.Refusal):
+                            root.creator()
+                        self.assertNotIn(("setresuid", 0, 0, 0), events)
+                    else:
+                        root.creator()
+                        self.assertEqual([row for row in events if row[0] == "unshare"], [("unshare", b.NEWUSER | b.NEWNS)])
+                        self.assertIn(("setresuid", -1, 1001, -1), events)
+                        self.assertIn(("setresgid", -1, 1002, -1), events)
+                        self.assertIn(("setresuid", 0, 0, 0), events)
+                        self.assertIn(("setresgid", 0, 0, 0), events)
+                        self.assertEqual([row for row in events if row[0] == "capset"],
+                                         [("capset", 1 << b.CAP_SYS_ADMIN), ("capset", 0)])
+                        self.assertEqual(root.fds, {})
+                    if fault in ("missing-cap", "dumpable"):
+                        self.assertFalse(any(row[0] == "unshare" for row in events))
+
+    def test_worker_release_requires_remote_fd_proof_closed_pins_and_retired_caps(self):
+        b = self.b
+        for ordinary in (False, True):
+            for fault in (None, "alias", "close", "retained-cap"):
+                root = self.supervisor(ordinary=ordinary)
+                root.state, root.fds = "mapped", {"user": 10, "mount": 11}
+                table = {0: (8, 30, stat.S_IFIFO, 0), 1: (8, 40, stat.S_IFIFO, 1), 2: (8, 50, stat.S_IFIFO, 1),
+                         10: (1, 20, stat.S_IFREG, 0), 11: (1, 21, stat.S_IFREG, 0)}
+                root.capture = table[1][:2]
+                pipes, events = iter([(12, 13), (14, 15)]), []
+                def pipe(flags):
+                    left, right = next(pipes)
+                    table[left], table[right] = (8, left + 100, stat.S_IFIFO, 0), (8, left + 100, stat.S_IFIFO, 1)
+                    return left, right
+                def fork(role):
+                    child = root.children["W"] = b.Child(77, 16, 17, 123)
+                    root.fds.update({"W.pidfd": 16, "W.proc": 17})
+                    table[16], table[17] = (1, 888, stat.S_IFREG, 0), (1, 999, stat.S_IFDIR, 0)
+                    return child
+                def close(fd):
+                    events.append(("close", fd))
+                    table.pop(fd)
+                    if fd == 10 and fault == "close":
+                        raise OSError(errno.EIO, "inert close")
+                def remote(directory):
+                    expected = dict(root.expected_worker)
+                    if fault == "alias":
+                        expected[19] = (8, 40, stat.S_IFIFO, 1)
+                    return expected
+                caps = (0, 1 << b.CAP_KILL, 1 << b.CAP_KILL, 1 << b.CAP_KILL, 0)
+                if fault == "retained-cap":
+                    caps = (0, (1 << b.CAP_KILL) | (1 << b.CAP_SYS_ADMIN), 1 << b.CAP_KILL, 1 << b.CAP_KILL, 0)
+                uid, gid = root.setup_ids
+                retired = {**self.state(ordinary=ordinary), "uid": (uid,) * 4, "gid": (gid,) * 4,
+                           "caps": caps, "pids": (1,), "parent": 0}
+                with self.subTest(ordinary=ordinary, fault=fault), ExitStack() as stack:
+                    stack.enter_context(patch.object(os, "pipe2", side_effect=pipe))
+                    stack.enter_context(patch.object(root, "fork_role", side_effect=fork))
+                    stack.enter_context(patch.object(os, "close", side_effect=close))
+                    stack.enter_context(patch.object(b, "fd_inventory", side_effect=lambda: dict(table)))
+                    stack.enter_context(patch.object(b, "remote_fds", side_effect=remote))
+                    stack.enter_context(patch.object(b, "live_child"))
+                    stack.enter_context(patch.object(b, "self_state", return_value=retired))
+                    stack.enter_context(patch.object(os, "getpid", return_value=1))
+                    stack.enter_context(patch.object(b, "death_signal", return_value=signal.SIGKILL))
+                    stack.enter_context(patch.object(b, "receive_token"))
+                    for name in ("bounding", "capset", "prctl", "send_token"):
+                        stack.enter_context(patch.object(b, name, side_effect=lambda *args, name=name: events.append((name, *args))))
+                    if fault:
+                        with self.assertRaises((b.Refusal, OSError)):
+                            root.setup_worker()
+                        self.assertFalse(any(row[0] == "send_token" for row in events))
+                    else:
+                        root.setup_worker()
+                        self.assertEqual(root.state, "released")
+                        self.assertEqual(root.fds, {"W.pidfd": 16, "worker.read": 14})
+                        self.assertIn(("capset", 1 << b.CAP_KILL), events)
+                        self.assertIn(("send_token", 13, b"GO\n", 130.0), events)
+
+    def test_ordinary_inherited_groups_are_not_fabricated_as_empty(self):
+        outer = {**self.outer, "ordinary": True, "groups": (1002, 12345)}
+        before = {**self.state(ordinary=True), "groups": outer["groups"]}
+        self.b.validate_preentry(before, self.binding, outer)
+        # Only G is mapped; the kernel's unmapped-GID display is not a sysctl guess.
+        entered = {**self.state(entered=True), "groups": (0, 98765)}
+        self.b.validate_target(entered, self.binding, outer, self.target)
+        with self.assertRaises(self.b.Refusal):
+            self.b.validate_target({**entered, "groups": ()}, self.binding, outer, self.target)
+        with self.assertRaises(self.b.Refusal):
+            self.b.validate_preentry({**before, "groups": ()}, self.binding, outer)
+
+    def test_existing_outcome_api_refuses_an_ordinary_prefix_before_launch(self):
+        b = self.b
+        original = b.fixed_argv
+        with patch.object(b, "fixed_argv", side_effect=lambda budgeting, binding, parent, backend:
+                          original(budgeting, binding, parent, "ordinary")):
+            value = self.exercise()
+        self.assertIsNotNone(value.failure)
+        self.assertEqual(len(value.launches), 1)
+        self.assertEqual((value.budget.runs, value.budget.states, value.budget._outcome_entries), (1, 2, 52))
+        self.assertEqual(value.budget.bytes["cache"], 552960)
+        self.assertIsNone(value.failure["outer_status"])
+        self.assertIsNone(value.failure["observations"])
+        self.assertNotIn("mount:R", value.model.events)
+
+    def test_old_raw_entry_count_restores_the_twenty_live_handle_refusal(self):
+        b = self.b
+        original = b.fd_inventory
+        def old_inventory(*, ordinary_entry=False):
+            b.require(len(os.listdir("/proc/self/fd")) <= 20, "descriptor bound")
+            return original(ordinary_entry=ordinary_entry)
+        def fstat(fd):
+            if fd == 999:
+                raise OSError(errno.EBADF, "closed scan iterator")
+            return SimpleNamespace(st_dev=8, st_ino=1000 + fd, st_mode=stat.S_IFIFO)
+        with patch.object(os, "listdir", return_value=[*(str(fd) for fd in range(20)), "999"]), \
+             patch.object(os, "fstat", side_effect=fstat), patch.object(b.fcntl, "fcntl", return_value=0), \
+             patch.object(os, "close") as close:
+            self.assertEqual(len(b.fd_inventory(ordinary_entry=True)), 20)
+            with patch.object(b, "fd_inventory", old_inventory), self.assertRaises(b.Refusal):
+                b.fd_inventory(ordinary_entry=True)
+            self.assertEqual(len(b.fd_inventory(ordinary_entry=True)), 20)
+            close.assert_not_called()
+
+    def test_private_fixture_setup_seals_sources_and_uses_mode_correct_device_flags(self):
+        b = self.b
+        for mode in b.MODES:
+            root = self.supervisor(mode=mode)
+            bindings, owners, closes = [], [], []
+            descriptors = iter((20, 21, 22, 23))
+            flags = 10 if mode == "writable" else 11
+            def state(path):
+                name = Path(path).name
+                minor = 3 if name == "null" else 5
+                return (3, minor, stat.S_IFCHR | 0o666, os.makedev(1, minor), 7,
+                        4096 | (0 if Path(path).parent == Path("/dev") else flags))
+            table = {0: (8, 30, stat.S_IFIFO, 0), 1: (8, 40, stat.S_IFIFO, 1), 2: (8, 50, stat.S_IFIFO, 1)}
+            with self.subTest(mode=mode), patch.object(root, "install_volume"), \
+                 patch.object(Path, "mkdir"), patch.object(os, "chown", side_effect=lambda *args: owners.append(args)), \
+                 patch.object(os, "open", side_effect=lambda *a, **k: next(descriptors)), patch.object(os, "fchown"), \
+                 patch.object(os, "write", side_effect=lambda fd, data: len(data)), \
+                 patch.object(os, "close", side_effect=lambda fd: closes.append(fd)), \
+                 patch.object(b, "bind", side_effect=lambda *args: bindings.append(args)), \
+                 patch.object(b, "mount_state", side_effect=state), \
+                 patch.object(os, "pipe2", return_value=(30, 31)), patch.object(os, "dup2"), \
+                 patch.object(b, "fd_inventory", return_value=table), patch.object(os, "fpathconf", return_value=4096), \
+                 patch.object(os, "set_blocking"):
+                root.create_fixture()
+            self.assertEqual(root.state, "fixture")
+            self.assertEqual(root.fds, {})
+            self.assertEqual(root.capture, (8, 40))
+            self.assertEqual(bindings, [
+                (root.volume / "source", root.volume / "source", 15),
+                (root.volume / "runtime", root.volume / "runtime", 15),
+                (Path("/dev/null"), root.volume / "null", flags),
+                (Path("/dev/zero"), root.volume / "zero", flags),
+                (b.SOURCE, root.volume / "selected", 15),
+            ])
+            self.assertEqual({path for path, _, _ in owners},
+                             {root.volume / name for name in ("source", "runtime", "selected")})
+            self.assertEqual(set(closes), {20, 21, 22, 23, 30, 31})
+
+    def test_bound_parent_death_and_state_machine_reject_stale_or_late_transitions(self):
+        b = self.b
+        with patch.object(b, "prctl") as prctl, patch.object(os, "getppid", return_value=1):
+            b.parent_guard()
+            prctl.assert_called_once_with(1, signal.SIGKILL)
+            with patch.object(os, "getppid", return_value=2), self.assertRaises(b.Refusal):
+                b.parent_guard()
+        root = self.supervisor()
+        for old, new in (("new", "fixture"), ("fixture", "creator"), ("creator", "mapped"),
+                         ("mapped", "blocked"), ("blocked", "retired"), ("retired", "released")):
+            root.advance(old, new)
+        with self.assertRaises(b.Refusal):
+            root.advance("mapped", "blocked")
+        with patch.object(time, "monotonic", return_value=130), self.assertRaises(TimeoutError):
+            root.advance("released", "released")
 
 
 if __name__ == "__main__":

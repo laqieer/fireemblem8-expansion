@@ -9543,21 +9543,38 @@ with a benign command. Default release/AAPCS and focused debug/APCS-GNU
 inputs are supported.
 
 The setup-only null-mount controls below additionally require Linux x86-64
-with `mount_setattr`, a nonzero invoking UID/GID, and unprivileged user/mount
-namespaces with util-linux `--map-current-user --keep-caps`. They do not run
+with `mount_setattr`, actual independent nonzero invoking UID/GID, a clean
+committed source tree, and util-linux `--map-current-user --keep-caps`.
+Successful ordinary namespace hosts need no sudo. A restricted host must
+instead have full initial maps and the existing noninteractive privileged
+`NAMESPACE_LAUNCHER` route; the fixture validates that context only after the
+fixed availability command actually reports namespace permission unavailable.
+It does not guess from sysctls, choose another backend after a failed mode,
+or treat watchdog 125/exception/cleanup failure as availability evidence.
+The [closed selection and role contract](../ownership-probe-foundation.md#test-only-null-mount-compatibility-fixture)
+defines the supported exact C-locale result shapes. These controls do not run
 Make, a compiler, a native supervisor, a root report or SDK discovery. Their
-private fixture is bounded to 1 MiB, output to 256 KiB and the independent
-watchdog to 30 seconds. Run them fail-fast; no sudo, new device nodes, host
-mount changes or permission fallback is part of this regression.
+private fixture is bounded to 1 MiB, selected-mode combined output to 256 KiB,
+and the shared selection-plus-mode deadline to 30 seconds. Exactly two
+fixture-only run/state admissions cover those two operations; no refund or
+deadline reset is permitted. Restricted custody remains 52 entries/552,960
+bytes; wait/enclosing ceilings remain 35/45 seconds. Run them fail-fast;
+no new device nodes, host mount/policy changes or production permission
+fallback is part of this regression.
 
 The separate [O1–O6 custody prerequisite](#bounded-outcome-custody-prerequisite-o1o6)
 only preserves bounded observations across the existing C/L cleanup boundaries.
-It implements neither the restricted backend nor trusted R/N/W code. Its mock
-and owned-pipe evidence does not qualify creation/entry policy, the old-remount
-control, actual selective helper I/O/denials, or any of these seven modes.
+The API itself supplies neither a restricted backend nor trusted R/N/W code.
+The test-only fixed helper now composes those prerequisites, without importing
+the Foundation module while privileged. Mock and owned-pipe evidence does not
+qualify creation/entry policy, the old-remount control, actual selective helper
+I/O/denials, or any of these seven modes.
 Keep startup failures (including actual outer 125 and missing custody) failing.
-The future restricted bootstrap still requires its own technical freeze,
-representative host mechanism proof and every original effect/denial/cleanup.
+The closed hosted readonly representative establishes one historical mechanism,
+not integrated-head qualification. Independent exact-head review and a separate
+bounded native allocation must cover all four methods/seven modes and both
+old-startup/old-operation negative controls. No such execution follows from an
+inert test pass.
 
 ### Actions
 
@@ -9622,10 +9639,15 @@ representative host mechanism proof and every original effect/denial/cleanup.
    Failed fixture drafts are diagnostic development records, not preserved
    production-defect evidence or successful validation.
 
-7. Run the separate setup-only command under **Automation**. In a private
-   outer user/mount namespace, keep the invoking nonzero self-mapped IDs for
-   setup, then drop all five capability sets and set NNP before the inner
-   root mapping. Bind existing null/zero devices; do not create devices.
+7. After the separate exact-head native freeze, run the setup-only command
+   under **Automation**. Observe the one actual availability result before
+   selecting a backend. Ordinary hosts retain the extra nonzero self mapping;
+   restricted hosts use the validated full-map parent and the genuine
+   nonzero U/G owner-entry protocol. Both use private R/N/W roles, exact maps
+   and lower mount ownership, a cap-zero/NNP owner-entry barrier, and no
+   setup/ancestor/device/enclosing-writer handle at subject import. R must
+   retire setup authority and reap the creator before releasing the worker.
+   Bind existing null/zero devices; do not create devices.
    Compare inherited readonly and ordinary writable parent cases using the
    actual production helper. Require the same null object and mount ID,
    exactly `flags_after = flags_before & ~NODEV`, and no change to readonly,
@@ -9641,7 +9663,9 @@ compiler, input and SDK observations support the result; a failed required
 check cannot become an ownership certificate even when Make ignores its exit.
 The setup-only null exception preserves the inherited mount restrictions and
 the exact device/mount through a single nonrecursive attribute transition.
-No descriptor, process or private mount/fixture remains after the controls.
+No descriptor, process or private mount/fixture remains after successful
+controls. Failed/uncertain ownership is an explicit failing result and retains
+unproved host objects rather than recursively deleting them.
 
 ### Negative control
 
@@ -9704,9 +9728,39 @@ that fixture without clearing readonly. A wrong device must fail before the
 attribute call. A same-null replacement mount at the syscall boundary must
 not receive the transition: its mount ID changes, it remains nodev-protected,
 and the helper reports substitution. Controlled `ENOSYS` and locked-attribute
-`EPERM` return unchanged state and no remount fallback. Unissued launch/config
+`EPERM` are explicit syscall fault controls, returning unchanged state and no
+remount fallback; they are not measurements of actual kernel incompatibility.
+Unissued launch/config
 controls and the original root-setup cold-import/recursive-attribute refusal
 remain required. These controls neither repair nor rerun SDK/resource work.
+
+#### Restricted-host fixture startup regression
+
+The [fixture freeze](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5748974906)
+keeps this case and all four public selectors. Restoring the old unconditional
+ordinary startup on the restricted host must again fail before the helper;
+restoring the new selection must reach the restricted worker. A normal zero
+ordinary probe must never require sudo. Unexpected output/status, API or
+cleanup faults, expiration and a failed mode must fail without another
+availability probe, budget, namespace route or mode launch.
+
+For the restricted worker, retain actual C-owned backing identities, the
+tmpfs-over-original placement, old-pin withdrawal and mounted-root proof.
+Check all R/N/W proc/pidfd, map writer/readback, namespace owner, saved-ID,
+capability, NNP, death, source/root/cwd and descriptor barriers before subject
+execution. Restoring creation through the old pre-mount host pin must leave
+a child that the cleanup oracle refuses to delete. Restoring an authority or
+writer-barrier omission must break its adversarial inert control before any
+native qualification is considered.
+
+Inspect real source/runtime EROFS rather than a DAC-masked denial, other-device
+denial, null EOF/tiny write, full flags and identity, all five final zero
+capability sets/NNP1, and owned cleanup. Preserve observed normal statuses and
+first errors separately from later cleanup. Ordinary default-API observation
+loss stays unavailable, not reconstructed. Unsupported/locked fault branches,
+historical readonly assertions and modeled records cannot be relabeled as
+seven real kernel outcomes. Original source before/after checks cover the
+helper and subject in the same checkout; no source snapshot ledger is added.
 
 ### Interactions and save compatibility
 
@@ -9735,6 +9789,21 @@ python3 -m unittest -f \
   scripts.validation_ownership.tests.test_foundation.FoundationTests.test_root_setup_rejects_unsupported_recursive_attributes_before_supervision -v
 ```
 
+Inspected pure/inert fixture controls only, without discovering the native
+Foundation class or launching even the availability probe:
+
+```sh
+python3 -B -m unittest \
+  scripts.validation_ownership.tests.test_foundation.NullMountFixtureInertTests -v
+```
+
+This class traps process, native/foreign-call, signal, credential, capability,
+namespace, mount/map/setns and unowned filesystem boundaries. Its models run
+the actual budget/lifecycle APIs and subject logic, including all seven mode
+branches, monotonic admission, bounded capture/custody, failures/cleanup and
+old-routing/old-operation restorations. It produces inert regression evidence,
+not a namespace-policy or kernel-compatibility certificate.
+
 The runtime file belongs to the existing trusted verifier inventory and
 ownership rule; this regression belongs to the single existing native suite,
 not duplicated graph discovery. The case uses the existing tester registry.
@@ -9759,10 +9828,12 @@ devices remain denied. The existing budgets charge all work, and original
 private roots, children, waiters and capability registries are cleaned on
 both success and failure.
 
-The setup-only tests use their own unprivileged namespace/watchdog and exact
-owned temporary fixture. After workers exit, namespace teardown removes only
-their private mounts; descriptors and the fixture are closed/removed by their
-independent owner. Never unmount, remove or change a host/global or another
+The setup-only tests use their selected fixed namespace/watchdog backend and
+exact owned temporary fixture. After workers exit, namespace teardown removes
+only their private mounts; descriptors and the proved empty original fixture
+are closed/removed by their independent owner. Retained, replaced or uncertain
+objects are not handed to generic recursive teardown. Never unmount, remove
+or change a host/global or another
 worktree path. A setup, identity, restriction or cleanup failure is a failure,
 not a skipped native proof. No source acceptance, diagnostic18 or new H1
 allocation follows from these local controls.

@@ -1493,7 +1493,7 @@ observes a waitable leader with `WNOWAIT`, but subsequent cleanup can make its
 actual `main()` return **125**, not that leader's status. Preserving an existing
 exception alone does not preserve either normal observation.
 
-This is a narrow, opt-in host API prerequisite. It does **not** implement the
+This is a narrow, opt-in host API prerequisite. The API alone does **not** implement the
 restricted namespace bootstrap, a privileged witness, a trusted R/W writer
 barrier, backend selection, or a new command permission. It does not repair or
 qualify the seven restricted-host null-mount modes. No gameplay/configuration
@@ -1626,8 +1626,114 @@ maps the actual-API positives, paired failures, independent shipping-L/C
 restorations, allocation/lifetime controls and default regressions. No new
 platform/setup permission follows from that evidence. Dependencies are the
 existing budget, lifecycle and owned capture pipes; no gameplay-feature,
-profile, save or localization conflicts. Future fixed R/N/W code still needs
-its own freeze, restricted-host setup proof and all seven real modes.
+profile, save or localization conflicts. Its use by the fixed test fixture
+below does not widen the API or turn an intact snapshot into qualification.
+
+### Test-only null-mount compatibility fixture
+
+The [fixture integration freeze](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5748974906)
+addresses a **confirmed CI startup bug**, not a public namespace permission
+change or an optional feature. The old inline fixture always attempted its
+ordinary outer user mapping; restricted Ubuntu CI refused before any null
+operation. The four existing `FoundationTests` methods and their seven modes
+now share `tests/null_mount_fixture.py`. This small, fixed entry point avoids
+importing the Foundation module, graph consumers, SDK tools or the subject
+while the restricted setup role has host authority. Before the worker barrier,
+only standard-library and existing budget/lifecycle control-plane code loads.
+
+One bare `ProbeBudget`, not a `ProbeSession`, owns the original **30-second**
+deadline. The fixture admits exactly **two runs and two states**: one fixed
+availability operation, then one mode. Neither operation is refunded.
+The availability command is the original immutable
+`unshare --user --map-current-user --keep-caps --mount --fork --kill-child
+--propagation private /usr/bin/true` under the sealed C-locale environment.
+Its bounded control output spends the existing control category, leaving the
+selected mode's **256 KiB combined capture** and restricted **52-entry,
+552,960-byte custody reservation** unchanged. The private tmpfs stays **1 MiB**;
+the 35-second wait and 45-second enclosing ceilings do not extend the common
+deadline, including checks, handshakes, publication and cleanup.
+
+Only actual status zero with empty stdout/stderr selects ordinary operation.
+Only actual status one, empty stdout and exactly
+`unshare: unshare failed: Operation not permitted\n` or
+`unshare: unshare failed: Permission denied\n` selects restricted operation.
+These are finite command results, not invented syscall errno observations.
+Malformed output, other statuses, watchdog 125, an API exception, failed
+cleanup or an expired deadline fails. A failed mode is **never** retried on
+the other backend.
+
+The ordinary route preserves its extra `U -> U` / `G -> G` single-ID outer
+namespace and does not use sudo. Inside that outer namespace it uses the
+same fixed private mount/net/PID1 enclosure for the R/N/W ownership protocol.
+Its actual self maps, inherited supplementary membership and subsequent
+`0 -> U` / `0 -> G` mappings are checked; it does not pretend that util-linux's
+already-denied `setgroups` can clear inherited groups. The restricted route
+instead requires actual independent nonzero caller U/G and full initial
+maps, and enters only through the exact existing privileged
+`NAMESPACE_LAUNCHER`. Sudo's caller metadata must match the original C-owned
+fixture identity. Only this restricted route opts into `RunOutcome`.
+Ordinary `outcome=None` API errors remain failures; lost normal observations
+and unavailable four-record custody are not reconstructed.
+
+C owns a fresh 0700 container and empty fixture, pinned by original
+device/inode/type/owner/group/mount identity. They are siblings of the
+Foundation method's temporary directory so its generic recursive teardown
+cannot delete retained, unproved fixture objects. R verifies the empty
+original fixture in its private mount namespace, overmounts it with the
+single bounded tmpfs, withdraws the **old host pin**, then separately proves
+the new mounted root before creating `volume` or changing ownership.
+Only fresh tmpfs objects are chowned, never original backing or device
+inodes. The helper and subject share one checkout; read-only source bindings
+and before/after Git-tree checks cover both without a source-hash ledger.
+
+R owns the creator N and worker W through exclusive waitable children,
+pidfds and pinned proc directories. The PID-aligned proc view, namespace
+types, parent/owner relations, lower mount owner, exact map writer/readback,
+saved IDs, capabilities, NNP and death protection remain checked. N exits and
+is reaped before W's release. R closes setup/namespace/map handles, proves
+W's actual private result-pipe descriptors, and retires to CAP_KILL-only
+reaping before GO. W drops to the actual nonzero owner, cap-zero/NNP1,
+enters user then mount namespace, refreshes root/cwd, closes namespace
+handles and rejects ancestor/device/enclosing-writer aliases **before**
+importing `sandbox_exec`. Original stdin is replaced only in R by an owned
+EOF pipe; C's exact original stdio remains unchanged. C's narrowly bounded
+entry scan may withdraw verified extra ordinary FIFOs, not arbitrary handles.
+
+Both backends execute the same seven mode branches:
+`readonly` and `writable` measure the actual selective operation; `wrong-device`
+and `substituted` measure identity refusal; `unsupported` and `locked` are
+explicit **ENOSYS/EPERM syscall fault controls**, not kernel-policy claims;
+`old` executes the real `0x102a` restoration. The readonly positive also
+requires the actual old-operation EPERM/unchanged-state prerequisite before
+the selective call; that prerequisite is not a separately serialized call.
+Successful null I/O requires unchanged object/mount identity and exactly the
+NODEV-bit removal. Canary ownership rules out DAC masking of source/runtime
+EROFS; the other device remains denied. Final capabilities are all zero,
+NNP is one, and all temporary I/O handles must close. Fixture refusals,
+including an attempted remount fallback, cannot masquerade as expected
+subject failures. Public results retain observed error tag/errno, not a
+class name or message inferred from the requested mode.
+
+Normal nonzero status and first errors survive later restricted cleanup
+where the existing API actually observed them. Uncertainty always fails.
+All remaining owned closes/reaps are attempted without retrying an ambiguous
+descriptor or removal. Only after closed lifecycle custody does C remove
+its original, unchanged, empty directories; replacements, children or
+unproved ownership are retained. No privileged cleanup command, recursive
+deletion, alternate transport, frame/schema change or new limit is added.
+
+`NullMountFixtureInertTests` exercises selection, both backends, actual
+control APIs and the actual subject with modeled effect boundaries, seven
+mode representations, ownership/cleanup failures and paired restorations.
+It is separately selectable without discovering `FoundationTests`.
+This is **not kernel qualification**. The
+[closed hosted readonly representative](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5748930827)
+proved that restricted mechanism on one retained Ubuntu image, not this
+integrated head or all seven modes. The existing
+[modern-toolchain case](test-cases/workflow-governance.md#tc-workflow-ownership-modern-toolchain-001-execute-the-original-modern-toolchain-prerequisite)
+retains the genuine four-method/seven-mode run, old-startup and old-operation
+controls as separate exact-head native requirements. No gameplay, profile,
+save, localization, generated-data, ROM/RAM, build or archival behavior changes.
 
 Every budget subprocess, including ordinary Git/compiler commands, namespace
 availability probes and capsules, uses a fresh exclusive-reaper watchdog.
