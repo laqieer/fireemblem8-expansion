@@ -35,6 +35,7 @@ PREPARATION = "20478394860b673b98fb32a4dd292fa0fc02a5d4"
 RECOVERY = "3302f790e944e81be4ea0777682f5282e560fd9c"
 FIRST_BOOTSTRAP = "496ed2ac184c48d6bdd6ec3f651183e67df9045b"
 SECOND_BOOTSTRAP = "9d61413261cb813fd1be5e48080ac876eaf3eb85"
+THIRD_PREPARATION = "dbb3ea4c9e2d6d7396fa118c7f57b1c58c592849"
 SOURCE = "c8b365da1be29bc58352cf1edb8b836a2cf18321"
 PROGRAM = "scripts/ci_null_bootstrap/bootstrap.py"
 FILES = frozenset({
@@ -77,6 +78,8 @@ PREFLIGHT_REFUSALS = {
     "descriptor name": "fd-name",
     "fixed file bound": "proc-file-bound",
     "entry FIFO identity changed": "entry-fifo-identity",
+    "entry descriptor scan changed": "entry-fd-scan",
+    "descriptor inventory mode": "fd-inventory-mode",
 }
 
 
@@ -175,7 +178,7 @@ def verify_checkout(root, sha, *, harness=False, deadline=None):
     require(git(root, "rev-parse", "HEAD", deadline=deadline).strip() == sha.encode(), "selected revision")
     git(root, "diff", "--quiet", "--no-ext-diff", "--ignore-submodules=none", sha, "--", deadline=deadline)
     if harness:
-        chain = (sha, SECOND_BOOTSTRAP, FIRST_BOOTSTRAP, RECOVERY, PREPARATION, BASE)
+        chain = (sha, THIRD_PREPARATION, SECOND_BOOTSTRAP, FIRST_BOOTSTRAP, RECOVERY, PREPARATION, BASE)
         for child, parent in zip(chain, chain[1:]):
             parents = git(root, "rev-list", "--parents", "-n", "1", child, deadline=deadline).split()
             require(parents == [child.encode(), parent.encode()], "exact normal preparation lineage")
@@ -184,7 +187,8 @@ def verify_checkout(root, sha, *, harness=False, deadline=None):
         actual = list(zip(rows[:-1:2], rows[1:-1:2]))
         require(all(kind == b"A" for kind, _ in actual)
                 and {path.decode("ascii") for _, path in actual} == FILES, "closed additive files")
-        changed = git(root, "diff", "--name-status", "-z", SECOND_BOOTSTRAP, sha, deadline=deadline).split(b"\0")
+        changed = git(root, "diff", "--name-status", "-z", SECOND_BOOTSTRAP,
+                      THIRD_PREPARATION, deadline=deadline).split(b"\0")
         require(len(changed) >= 3 and len(changed) % 2 == 1 and changed[-1] == b"", "nonempty correction")
         delta = list(zip(changed[:-1:2], changed[1:-1:2]))
         allowed = {
@@ -194,6 +198,13 @@ def verify_checkout(root, sha, *, harness=False, deadline=None):
         require((b"A", WORKFLOW.encode()) in delta
                 and all(kind == allowed.get(path.decode("ascii")) for kind, path in delta)
                 and len({path for _, path in delta}) == len(delta), "closed correction paths")
+        changed = git(root, "diff", "--name-status", "-z", THIRD_PREPARATION, sha,
+                      deadline=deadline).split(b"\0")
+        require(len(changed) >= 3 and len(changed) % 2 == 1 and changed[-1] == b"",
+                "nonempty inventory correction")
+        delta = list(zip(changed[:-1:2], changed[1:-1:2]))
+        require(all(kind == b"M" and allowed.get(path.decode("ascii")) == b"M" for kind, path in delta)
+                and len({path for _, path in delta}) == len(delta), "closed inventory correction paths")
         for name in FILES:
             info = os.lstat(root / name)
             require(stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o644,
@@ -256,6 +267,7 @@ def identity(event, context):
         "repository": REPOSITORY, "branch": BRANCH, "workflow": WORKFLOW,
         "base": BASE, "preparation": PREPARATION, "recovery": RECOVERY,
         "first_bootstrap": FIRST_BOOTSTRAP, "second_bootstrap": SECOND_BOOTSTRAP,
+        "third_preparation": THIRD_PREPARATION,
         "source": SOURCE, "harness": sha, "run_id": run,
         "run_number": 1, "run_attempt": 1, "creation_allocation_consumed": True,
         "never_merge": True, "qualified": False, "seven_modes": False, "fixture_placement": PLACEMENT,
@@ -481,10 +493,12 @@ def validate_local_setup(value):
             and effective & needed == needed, "descendant-local setup capabilities")
 
 
-def fd_inventory():
+def fd_inventory(*, ordinary_entry=False):
+    require(type(ordinary_entry) is bool, "descriptor inventory mode")
     result = {}
     names = os.listdir("/proc/self/fd")
-    require(len(names) <= 20, "descriptor bound")
+    require(len(names) <= (21 if ordinary_entry else 20), "descriptor bound")
+    disappeared = 0
     for name in names:
         require(name.isdecimal(), "descriptor name")
         descriptor = int(name)
@@ -494,11 +508,16 @@ def fd_inventory():
             # The already-closed directory iterator is the sole disappearing FD.
             if error.errno != errno.EBADF:
                 raise
+            if ordinary_entry:
+                disappeared += 1
+                require(disappeared <= 1, "entry descriptor scan changed")
             continue
         result[descriptor] = (
             info.st_dev, info.st_ino, stat.S_IFMT(info.st_mode),
             fcntl.fcntl(descriptor, fcntl.F_GETFL) & os.O_ACCMODE,
         )
+    if ordinary_entry:
+        require(len(result) <= 20, "descriptor bound")
     return result
 
 
@@ -1911,7 +1930,7 @@ def coordinate(context):
                 and initial["uid_map"] == initial["gid_map"] == FULL_MAP
                 and all(initial["caps"][index] == 0 for index in (0, 1, 2, 4)), "ordinary full-map coordinator")
         stage = "ordinary-fd-read"
-        baseline = fd_inventory()
+        baseline = fd_inventory(ordinary_entry=True)
         observed["fds"] = [[fd, value[2], value[3]] for fd, value in sorted(baseline.items())]
         stage = "ordinary-fd-check"
         baseline = withdraw_entry_fifos(baseline, entry_fifo_cleanup)

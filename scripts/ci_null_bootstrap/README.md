@@ -14,15 +14,19 @@ The preflight-evidence continuation is frozen in
 <https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5748482765>.
 The ordinary entry-FIFO correction is frozen in
 <https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5748602432>.
-The branch has exactly five normal commits above
+The live-count scan correction is frozen in
+<https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5748780280>.
+The branch has exactly six normal commits above
 `ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`: held preparation
 `20478394860b673b98fb32a4dd292fa0fc02a5d4`, interrupted recovery
 `3302f790e944e81be4ea0777682f5282e560fd9c`, first reviewed bootstrap
 `496ed2ac184c48d6bdd6ec3f651183e67df9045b`, attributed second bootstrap
-`9d61413261cb813fd1be5e48080ac876eaf3eb85`, then this correction.
+`9d61413261cb813fd1be5e48080ac876eaf3eb85`, first local FIFO preparation
+`dbb3ea4c9e2d6d7396fa118c7f57b1c58c592849`, then this inventory correction.
 Each must be the sole direct parent of the next. The original five additive
 regular files plus bootstrap2/3 workflows are the full inventory.
-The correction cannot modify either closed workflow. Its separately selected source is
+The final correction modifies only the three existing diagnostic source/test/
+documentation files and cannot change any workflow. Its separately selected source is
 `c8b365da1be29bc58352cf1edb8b836a2cf18321`. The original ordinary startup census
 is closed, not repeated. This preparation does not adopt a FoundationTests
 backend, qualify seven modes, fix current CI, or allocate ROOT21, census2,
@@ -59,6 +63,11 @@ allowing it across the stdio-only barrier. All three original stdio handles
 must exist and every extra descriptor must first be a FIFO with an ordinary
 access mode, under the existing20-descriptor bound. A directory, regular file,
 device, socket or malformed identity refuses before any close.
+The ordinary-entry reader separately accounts for its one closed directory
+iterator: at most21 scanned names, at most one disappearance and at most20
+live handles. Default R/N/W and other readers keep the prior20-name bound.
+The actual reader, not only a whole-reader mock, exercises19/20/21 live
+handles, the default-mode refusal and excess-disappearance controls.
 
 The finite disposal list and report storage are owned before action. Each
 handle's original device/inode/type/access is revalidated; its numeric

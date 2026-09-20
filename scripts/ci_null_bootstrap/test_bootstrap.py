@@ -382,14 +382,18 @@ class Benign(Inert):
             if args[:2] == ("rev-parse", "HEAD"):
                 return sha.encode() + b"\n"
             if args[0] == "rev-list":
-                parents = {sha: b.SECOND_BOOTSTRAP, b.SECOND_BOOTSTRAP: b.FIRST_BOOTSTRAP,
+                parents = {sha: b.THIRD_PREPARATION, b.THIRD_PREPARATION: b.SECOND_BOOTSTRAP,
+                           b.SECOND_BOOTSTRAP: b.FIRST_BOOTSTRAP,
                            b.FIRST_BOOTSTRAP: b.RECOVERY,
                            b.RECOVERY: b.PREPARATION, b.PREPARATION: b.BASE}
                 return (args[-1] + " " + parents[args[-1]]).encode() + b"\n"
             if "--name-status" in args:
-                return inventory if args[-2] == b.BASE else (
-                    b"A\0" + b.WORKFLOW.encode() + b"\0M\0" + b.PROGRAM.encode() + b"\0"
-                )
+                if args[-2] == b.BASE:
+                    return inventory
+                if args[-2] == b.SECOND_BOOTSTRAP:
+                    return b"A\0" + b.WORKFLOW.encode() + b"\0M\0" + b.PROGRAM.encode() + b"\0"
+                self.assertEqual(args[-2], b.THIRD_PREPARATION)
+                return b"M\0" + b.PROGRAM.encode() + b"\0"
             return b""
 
         with patch.object(b, "canonical"), patch.object(b, "git", side_effect=replies), \
@@ -406,27 +410,33 @@ class Benign(Inert):
                     b.verify_checkout(Path("/work/harness"), sha, harness=True)
                 inventory = prior
 
-    def test_ancestry_requires_exact_five_normal_nonempty_commits(self):
+    def test_ancestry_requires_exact_six_normal_nonempty_commits(self):
         sha = "b" * 40
         rows = b"".join(b"A\0" + name.encode() + b"\0" for name in sorted(b.FILES))
         faults = (
-            None, "one-commit", "two-commits", "three-commits", "four-commits", "extra-parent", "wrong-second", "wrong-first",
+            None, "one-commit", "two-commits", "three-commits", "four-commits", "five-commits",
+            "extra-parent", "wrong-third", "wrong-second", "wrong-first",
             "wrong-recovery", "wrong-preparation", "merge-head", "merge-first", "merge-recovery",
             "merge-preparation", "merge-second", "empty", "foreign-delta", "closed-workflow",
-            "closed-second-workflow", "missing-new-workflow",
+            "closed-second-workflow", "missing-new-workflow", "merge-third",
+            "empty-inventory-correction", "inventory-workflow-change",
         )
         for fault in faults:
             def git(root, *args, **kwargs):
                 if args[0] == "rev-parse":
                     return sha.encode()
                 if args[0] == "rev-list":
-                    parents = {sha: b.SECOND_BOOTSTRAP, b.SECOND_BOOTSTRAP: b.FIRST_BOOTSTRAP,
+                    parents = {sha: b.THIRD_PREPARATION, b.THIRD_PREPARATION: b.SECOND_BOOTSTRAP,
+                               b.SECOND_BOOTSTRAP: b.FIRST_BOOTSTRAP,
                                b.FIRST_BOOTSTRAP: b.RECOVERY,
                                b.RECOVERY: b.PREPARATION, b.PREPARATION: b.BASE}
-                    if fault in ("one-commit", "two-commits", "three-commits", "four-commits", "extra-parent"):
+                    if fault in ("one-commit", "two-commits", "three-commits", "four-commits", "five-commits", "extra-parent"):
                         parents[sha] = {"one-commit": b.BASE, "two-commits": b.PREPARATION,
                                         "three-commits": b.RECOVERY, "four-commits": b.FIRST_BOOTSTRAP,
+                                        "five-commits": b.SECOND_BOOTSTRAP,
                                         "extra-parent": "c" * 40}[fault]
+                    elif fault == "wrong-third":
+                        parents[b.THIRD_PREPARATION] = b.BASE
                     elif fault == "wrong-second":
                         parents[b.SECOND_BOOTSTRAP] = b.BASE
                     elif fault == "wrong-first":
@@ -435,7 +445,8 @@ class Benign(Inert):
                         parents[b.RECOVERY] = b.BASE
                     elif fault == "wrong-preparation":
                         parents[b.PREPARATION] = "d" * 40
-                    merges = {"merge-head": sha, "merge-second": b.SECOND_BOOTSTRAP,
+                    merges = {"merge-head": sha, "merge-third": b.THIRD_PREPARATION,
+                              "merge-second": b.SECOND_BOOTSTRAP,
                               "merge-first": b.FIRST_BOOTSTRAP, "merge-recovery": b.RECOVERY,
                               "merge-preparation": b.PREPARATION}
                     child = args[-1]
@@ -444,6 +455,11 @@ class Benign(Inert):
                 if "--name-status" in args:
                     if args[-2] == b.BASE:
                         return rows
+                    if args[-2] == b.THIRD_PREPARATION:
+                        if fault == "empty-inventory-correction":
+                            return b""
+                        name = b.WORKFLOW if fault == "inventory-workflow-change" else b.PROGRAM
+                        return b"M\0" + name.encode() + b"\0"
                     self.assertEqual(args[-2], b.SECOND_BOOTSTRAP)
                     delta = b"A\0" + b.WORKFLOW.encode() + b"\0M\0" + b.PROGRAM.encode() + b"\0"
                     if fault == "empty":
@@ -530,6 +546,60 @@ class Benign(Inert):
                 b.validate_fds(altered, expected, (8, 4))
         with self.assertRaises(b.Refusal):
             b.validate_fds(expected, expected, expected[1][:2])
+
+    def test_actual_entry_inventory_counts_live_handles_without_weakening_role_bound(self):
+        for count, ordinary in ((19, True), (20, True), (21, True), (20, False)):
+            live = {fd: pipe_value(1000 + fd, 1 if fd in (1, 2) else fd % 3)
+                    for fd in range(count)}
+            live[0] = pipe_value(1000, 0)
+            stdio = {fd: live[fd] for fd in (0, 1, 2)}
+            closed = []
+
+            def fstat(fd):
+                if fd not in live:
+                    raise OSError(errno.EBADF, "closed modeled directory iterator")
+                value = live[fd]
+                return SimpleNamespace(st_dev=value[0], st_ino=value[1], st_mode=value[2] | 0o600)
+
+            def close(fd):
+                self.assertGreater(fd, 2)
+                self.assertNotIn(fd, closed)
+                closed.append(fd)
+                del live[fd]
+
+            with self.subTest(count=count, ordinary_entry=ordinary), \
+                 patch.object(b.os, "listdir", side_effect=lambda path: [*(str(fd) for fd in live), "999"]), \
+                 patch.object(b.os, "fstat", side_effect=fstat), \
+                 patch.object(b.fcntl, "fcntl", side_effect=lambda fd, command: live[fd][3]), \
+                 patch.object(b.os, "close", side_effect=close):
+                failure = None
+                try:
+                    observed = b.fd_inventory(ordinary_entry=ordinary)
+                except b.Refusal as error:
+                    failure = str(error)
+                if ordinary and count <= 20:
+                    self.assertIsNone(failure)
+                    self.assertEqual(len(observed), count)
+                    report = {"complete": False, "phase": "validation", "descriptors": []}
+                    self.assertEqual(b.withdraw_entry_fifos(observed, report), stdio)
+                    self.assertEqual(len(closed), count - 3)
+                    self.assertTrue(report["complete"])
+                else:
+                    self.assertEqual(failure, "descriptor bound")
+                    self.assertEqual(closed, [])
+
+        def disappeared(fd):
+            if fd > 2:
+                raise OSError(errno.EBADF, "gone")
+            return SimpleNamespace(st_dev=8, st_ino=1000 + fd, st_mode=stat.S_IFIFO)
+
+        with patch.object(b.os, "listdir", return_value=["0", "1", "2", "998", "999"]), \
+             patch.object(b.os, "fstat", side_effect=disappeared), \
+             patch.object(b.fcntl, "fcntl", return_value=os.O_RDONLY), \
+             patch.object(b.os, "close") as close:
+            with self.assertRaisesRegex(b.Refusal, "entry descriptor scan changed"):
+                b.fd_inventory(ordinary_entry=True)
+            close.assert_not_called()
 
     def test_live_child_rejects_exit_recycle_proc_or_pidfd_disagreement(self):
         child = b.Child(77, 10, 11, 123)
@@ -1407,7 +1477,7 @@ class DirectoryModel:
 
         return self.operation("mount:R", install)
 
-    def inventory(self):
+    def inventory(self, *, ordinary_entry=False):
         return {
             fd: (value.device, value.inode, stat.S_IFMT(value.mode), os.O_RDONLY)
             if isinstance(value, DirectoryNode) else value
