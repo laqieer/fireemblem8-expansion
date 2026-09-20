@@ -1443,6 +1443,160 @@ class _IntermediateModel:
 
 
 class ToolchainIntermediateInertTests(unittest.TestCase):
+    def test_actual_unsupported_entry_has_bounded_authenticated_attribution(self):
+        for role in ("driver", "writer", "reader"):
+            with self.subTest(role=role), _IntermediateModel() as model:
+                if role == "driver":
+                    actor = model.actor(1)
+                    model.open_actor(actor, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+                elif role == "writer":
+                    model.created()
+                    actor = model.actor(2)
+                    model.open_actor(actor, os.O_WRONLY | os.O_TRUNC, 0)
+                else:
+                    model.sealed()
+                    actor = model.actor(3)
+                    model.open_actor(actor, os.O_RDONLY, 0)
+                phase = model.tracker.phase
+                before = model.policy.observation_bytes
+                with self.assertRaises(syscall_guard.Violation) as refused:
+                    model.syscall(actor, 72, 7, 2, 1)
+                self.assertEqual(
+                    str(refused.exception),
+                    "toolchain intermediate used an unsupported I/O or mutation form "
+                    f"[syscall=72 role={role} phase={phase} owned=yes op=fcntl command=2 flags=0x1]",
+                )
+                self.assertEqual(model.policy.observation_bytes - before, 4096)
+                self.assertEqual(model.tracker.phase, phase)
+                self.assertFalse(model.policy.accessed)
+                self.assertLessEqual(len(str(refused.exception)), 256)
+
+    def test_related_terminal_families_report_only_closed_discriminators(self):
+        cases = (
+            (72, 4, os.O_APPEND | os.O_NONBLOCK, "fcntl command=4 flags=0xc00"),
+            (72, 5, 0x1234567812345678, "fcntl command=5 flags=not-recorded"),
+            (72, 6, 0x2345678923456789, "fcntl command=6 flags=not-recorded"),
+            (72, 1031, 0x1234567812345678, "fcntl command=1031 flags=not-recorded"),
+            (74, 0x1234567812345678, 0, "other"),
+            (75, 0, 0x1234567812345678, "other"),
+            (73, 0x1234567812345678, 0, "other"),
+            (16, 0x5401, 0x1234567812345678, "other"),
+        )
+        for number, b, c, operation in cases:
+            with self.subTest(number=number, operation=operation), _IntermediateModel() as model:
+                model.created()
+                writer = model.actor(2)
+                model.open_actor(writer, os.O_WRONLY | os.O_TRUNC, 0)
+                with self.assertRaises(syscall_guard.Violation) as refused:
+                    model.syscall(writer, number, 7, b, c)
+                message = str(refused.exception)
+                self.assertIn(f"syscall={number} role=writer phase=writer-open owned=yes op={operation}", message)
+                self.assertNotIn(str(0x1234567812345678), message)
+                self.assertNotIn("/work/", message)
+                self.assertLessEqual(len(message.encode("ascii")), 256)
+                self.assertEqual(model.trace_fds[writer[0], 7][0], 0)
+
+    def test_path_operation_reports_no_owned_descriptor_without_exposing_pointer(self):
+        with _IntermediateModel() as model:
+            driver = model.actor(1)
+            with self.assertRaises(syscall_guard.Violation) as refused:
+                model.syscall(driver, 85, 0x1234567812345678, 0o600)
+            self.assertIn("syscall=85 role=driver phase=armed owned=no op=other", str(refused.exception))
+            self.assertNotIn(str(0x1234567812345678), str(refused.exception))
+            self.assertFalse(model.exists)
+
+    def test_unknown_flags_and_phase_never_format_arbitrary_values(self):
+        class ForeignPhase(str):
+            def __str__(self):
+                raise AssertionError("untrusted phase stringified")
+            def __format__(self, spec):
+                raise AssertionError("untrusted phase formatted")
+        for command, flags in ((2, 3), (2, (1 << 64) - 1), (4, 1 << 63)):
+            with self.subTest(command=command), _IntermediateModel() as model:
+                model.created()
+                writer = model.actor(2)
+                model.open_actor(writer, os.O_WRONLY | os.O_TRUNC, 0)
+                model.tracker.phase = ForeignPhase("/private/path secret environment content")
+                with self.assertRaises(syscall_guard.Violation) as refused:
+                    model.syscall(writer, 72, 7, command, flags)
+                message = str(refused.exception)
+                self.assertIn("phase=unknown", message)
+                self.assertIn(f"command={command} flags=unknown", message)
+                self.assertNotIn("private", message)
+                self.assertNotIn(str(flags), message)
+        with _IntermediateModel() as model:
+            error = model.tracker._unsupported_operation(
+                (1 << 64) - 1, 0, None, SimpleNamespace(rsi=object(), rdx=object()),
+            )
+            self.assertIn("syscall=18446744073709551615 role=unknown", str(error))
+            self.assertLessEqual(len(str(error)), 256)
+            error = model.tracker._unsupported_operation(
+                72, 2, True, SimpleNamespace(rsi=1 << 100, rdx=object()),
+            )
+            self.assertIn("op=fcntl command=unknown", str(error))
+
+    def test_attribution_admission_and_allocation_failure_preserve_original_refusal(self):
+        for failure in (syscall_guard.Violation("inert diagnostic admission"), MemoryError("inert diagnostic allocation")):
+            with self.subTest(failure=type(failure).__name__), _IntermediateModel() as model:
+                model.created()
+                writer = model.actor(2)
+                model.open_actor(writer, os.O_WRONLY | os.O_TRUNC, 0)
+                with patch.object(model.tracker, "reserve", side_effect=failure) as reserve:
+                    with self.assertRaises(syscall_guard.Violation) as refused:
+                        model.syscall(writer, 72, 7, 2, 1)
+                reserve.assert_called_once_with(4096)
+                self.assertEqual(str(refused.exception), "toolchain intermediate used an unsupported I/O or mutation form")
+                self.assertIs(refused.exception.__cause__, failure)
+                self.assertEqual(model.tracker.phase, "writer-open")
+                self.assertFalse(model.policy.accessed)
+                model.tracker.close()
+                self.assertFalse(model.handles)
+        with _IntermediateModel() as model:
+            model.created()
+            writer = model.actor(2)
+            model.open_actor(writer, os.O_WRONLY | os.O_TRUNC, 0)
+            before = model.policy.observation_bytes
+            model.policy.config["observation_limit"] = before
+            with self.assertRaises(syscall_guard.Violation) as refused:
+                model.syscall(writer, 72, 7, 2, 1)
+            self.assertEqual(str(refused.exception), "toolchain intermediate used an unsupported I/O or mutation form")
+            self.assertIsInstance(refused.exception.__cause__, syscall_guard.Violation)
+            self.assertEqual(model.policy.observation_bytes, before + 4096)
+
+    def test_diagnostic_workspace_and_wire_bounds_ignore_unbounded_phase_text(self):
+        with _IntermediateModel() as model:
+            model.tracker.phase = "private-path-environment-content" * 4096
+            registers = SimpleNamespace(rsi=4, rdx=os.O_APPEND | os.O_NONBLOCK)
+            tracemalloc.start()
+            try:
+                error = model.tracker._unsupported_operation(72, 3, True, registers)
+                _, peak = tracemalloc.get_traced_memory()
+            finally:
+                tracemalloc.stop()
+            self.assertLessEqual(peak, 4096)
+            self.assertLessEqual(len(str(error).encode("ascii")), 256)
+            self.assertIn("phase=unknown", str(error))
+            self.assertNotIn("private", str(error))
+
+    def test_earlier_refusals_and_accepted_operations_do_not_enter_attribution(self):
+        with _IntermediateModel() as model:
+            model.created()
+            writer = model.actor(2)
+            model.open_actor(writer, os.O_WRONLY | os.O_TRUNC, 0)
+            with patch.object(model.tracker, "_unsupported_operation", side_effect=AssertionError("attribution reached")):
+                with self.assertRaisesRegex(syscall_guard.Violation, "^toolchain intermediate used an unsupported I/O or descriptor alias$"):
+                    model.syscall(writer, 8, 7, 0, 0)
+                with self.assertRaisesRegex(syscall_guard.Violation, "^unknown fcntl operation$"):
+                    model.syscall(writer, 72, 7, 9999, 0)
+                model.syscall(writer, 72, 7, 1, 0)
+                model.syscall(writer, 72, 7, 3, 0)
+        with _IntermediateModel() as model, patch.object(
+            model.tracker, "_unsupported_operation", side_effect=AssertionError("attribution reached"),
+        ):
+            proof = json.loads(model.finish()[len(toolchain_runtime.INTERMEDIATE_PREFIX):])
+            self.assertTrue(proof["complete"])
+            self.assertEqual(proof["writer"]["completed"]["sha256"], hashlib.sha256(model.expected).hexdigest())
+
     def test_tracker_admission_refuses_before_allocating_the_unarmed_state(self):
         with _IntermediateModel() as model:
             model.policy.config["observation_limit"] = model.policy.observation_bytes

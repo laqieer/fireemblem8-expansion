@@ -9932,6 +9932,33 @@ change is introduced.
 
 #### Namespace and mutation-causality corrections
 
+The first separately allocated component attempt on
+`a8e71c107de8f6eefacb29b81e6a130018a3a152` is **spent and closed**: one
+confined Make was attempted, and the selected method failed after 7.325 seconds
+with `toolchain intermediate used an unsupported I/O or mutation form`.
+Make did not return; no complete checker pair, content equality or native
+acceptance was established. The syscall, actor, phase and operands were not
+retained. Do not infer seek, fcntl or another operation from that message.
+Context teardown reported no secondary error, but the final `assert_clean`
+was not reached and is not accepted evidence.
+
+At this same terminal refusal point, a bounded error suffix now reports the
+actual syscall number, authenticated driver/writer/reader role, closed tracker
+phase and owned-slot status. Only known fcntl commands and bounded SETFD/SETFL
+flag bits are retained; pointer-bearing or other arguments are not recorded.
+Unknown forms use finite categories. No paths, PIDs, arbitrary registers,
+buffers, environment or content enter the diagnostic. Its at-most-256-byte
+ASCII message has a 4 KiB pre-growth workspace reservation; failed admission
+or diagnostic allocation retains the original refusal as the primary error
+and does not refund consumed accounting. Earlier independent denials,
+including the existing seek/alias guard, remain unchanged. This is attribution,
+not permission or compiler-profile expansion.
+
+Source/inert review cannot retrospectively attribute that first run. A future
+discriminator run requires independent exact-head review and a **new separate
+bounded allocation**. Do not rerun the native selector, enforcement matrix,
+root/report/resource or H1 automatically.
+
 The live descriptor control must model the supervisor's actual view:
 `<config.root>/work/cc*.s`, not the tracee's guest `/work/cc*.s`. Require the
 exact host-root spelling with the same object to pass, while foreign/escaped/

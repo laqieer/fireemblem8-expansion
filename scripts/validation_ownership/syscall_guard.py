@@ -605,6 +605,46 @@ class _ToolchainIntermediate:
         })
         state.toolchain_pending = None
 
+    def _unsupported_operation(self, number, sequence, owned, registers):
+        message = "toolchain intermediate used an unsupported I/O or mutation form"
+        try:
+            self.reserve(4096)
+            number = number if type(number) is int and 0 <= number < 1 << 64 else "unknown"
+            role = (
+                ("driver", "writer", "reader")[sequence - 1]
+                if type(sequence) is int and 1 <= sequence <= 3 else "unknown"
+            )
+            phase = self.phase if type(self.phase) is str and self.phase in (
+                "unarmed", "armed", "created", "creator-closed", "writer-exec",
+                "opening", "writer-open", "writing", "closing", "writer-closed",
+                "writer-exited", "sealed", "reader-exec", "reader-open", "reading",
+                "reader-closed", "reader-exited", "unlinking", "retired",
+                "finalizing", "complete", "emitting", "emitted", "failed", "closed",
+            ) else "unknown"
+            slot = "yes" if owned is True else "no" if owned is False else "unknown"
+            operation = "other"
+            if number == 72:
+                command = registers.rsi
+                if type(command) is not int or command not in (0, 1, 2, 3, 4, 5, 6, 7, 1030, 1031, 1032):
+                    operation = "fcntl command=unknown"
+                else:
+                    flags = "not-recorded"
+                    if command in (2, 4):
+                        bits = registers.rdx
+                        mask = 1 if command == 2 else (
+                            os.O_APPEND | os.O_NONBLOCK | os.O_ASYNC | os.O_DIRECT | os.O_NOATIME
+                        )
+                        flags = (
+                            f"0x{bits:x}" if type(bits) is int and 0 <= bits <= mask and not bits & ~mask
+                            else "unknown"
+                        )
+                    operation = f"fcntl command={command} flags={flags}"
+            return Violation(
+                f"{message} [syscall={number} role={role} phase={phase} owned={slot} op={operation}]"
+            )
+        except (Violation, MemoryError) as error:
+            raise Violation(message) from error
+
     def enter(self, pid, state, r):
         n, descriptor = r.orig_rax, r.rdi
         touched = state.toolchain_pending
@@ -726,7 +766,7 @@ class _ToolchainIntermediate:
         elif n in {4, 5, 6, 21, 262, 269, 332, 439} or n == 72 and r.rsi in {1, 3}:
             state.toolchain_pending = None
         else:
-            raise Violation("toolchain intermediate used an unsupported I/O or mutation form")
+            raise self._unsupported_operation(n, sequence, owned, r)
 
     def leave(self, pid, state, r):
         pending, state.toolchain_pending = state.toolchain_pending, None
