@@ -1182,7 +1182,7 @@ class ToolchainProtocolDataTests(unittest.TestCase):
 class _IntermediateModel:
     """Synthetic stopped processes and effects; never opens a real descriptor."""
 
-    def __init__(self, body=b"model assembly\n"):
+    def __init__(self, body=b"model assembly\n", *, observation_limit=16 * 1024 * 1024):
         self.model = ToolchainProtocolDataTests().model()
         self.body = b""
         self.expected = body
@@ -1203,7 +1203,7 @@ class _IntermediateModel:
             "argv": self.model["driver"], "toolchain_runtime": self.model["launch"],
             "executables": [row["path"] for row in self.model["executions"]],
             "file_limit": max(4096, len(body)), "write_limit": max(4096, len(body)),
-            "observation_limit": 16 * 1024 * 1024,
+            "observation_limit": observation_limit,
         }
         self.policy.toolchain = self.model["profile"]
         self.policy.mode = "compile"
@@ -1508,7 +1508,7 @@ class _IntermediateModel:
         self.exit_actor(reader)
         return self.driver
 
-    def finish(self, *, writer_request=None):
+    def complete(self, *, writer_request=None):
         self.consumed(writer_request=writer_request)
         def unlink():
             self.exists = False
@@ -1516,12 +1516,240 @@ class _IntermediateModel:
             self.ctime += 1
         self.syscall(self.driver, 87, 0x2000, kernel=unlink)
         self.exit_actor(self.driver)
+
+    def finish(self, *, writer_request=None):
+        self.complete(writer_request=writer_request)
         self.tracker.emit(0)
         value, = self.policy.accessed
         return value
 
 
 class ToolchainIntermediateInertTests(unittest.TestCase):
+    def producer(self, model, reserve):
+        return toolchain_runtime.encode_intermediate_record(
+            model["receipt"], profile=model["profile"], launch=model["launch"],
+            executions=model["executions"], returncode=0, limits=model["limits"], reserve=reserve,
+        )
+
+    def test_producer_emission_fits_derived_admission_without_wire_roundtrip(self):
+        with _IntermediateModel() as model:
+            model.complete()
+            setup = model.policy.observation_bytes
+            charges = []
+            expected = toolchain_runtime.encode_intermediate_record(
+                model.tracker.record, profile=model.policy.toolchain,
+                launch=model.policy.config["toolchain_runtime"], executions=model.tracker.executions,
+                returncode=0, limits=model.tracker.limits, reserve=charges.append,
+            )
+            publication = len(expected) + 128
+            required = setup + sum(charges) + publication
+            payload_size = len(expected) - len(toolchain_runtime.INTERMEDIATE_PREFIX)
+            nodes = toolchain_runtime._json_shape(expected[len(toolchain_runtime.INTERMEDIATE_PREFIX):])
+            old_decode_boundary = (
+                setup + 4 * toolchain_runtime.INTERMEDIATE_RECORD_LIMIT
+                + syscall_guard._TOOLCHAIN_TRACKER_STORAGE + 4 * len(expected) + 4096
+                + payload_size + 4096 + 4 * payload_size + 1024 * nodes + 8192 - 1
+            )
+            self.assertLess(required, old_decode_boundary)
+        for allowance in (required, old_decode_boundary, required - 1):
+            with self.subTest(admitted=allowance), _IntermediateModel(observation_limit=allowance) as model:
+                model.complete()
+                self.assertEqual(model.policy.observation_bytes, setup)
+                if allowance >= required:
+                    try:
+                        with patch.object(toolchain_runtime.json, "loads", side_effect=AssertionError("producer decoded a duplicate graph")):
+                            model.tracker.emit(0)
+                    except syscall_guard.Violation as error:
+                        self.fail("cost-derived exact emission admission refused: " + str(error))
+                    self.assertEqual(model.policy.accessed, {expected})
+                    self.assertEqual(model.policy.observation_bytes, required)
+                    self.assertEqual(model.tracker.phase, "emitted")
+                else:
+                    with self.assertRaises(syscall_guard.Violation):
+                        model.tracker.emit(0)
+                    self.assertFalse(model.policy.accessed)
+                    self.assertEqual(model.tracker.phase, "emitting")
+                    self.assertGreater(model.policy.observation_bytes, allowance)
+                self.assertFalse(model.handles)
+
+    def test_producer_workspace_intervals_are_admitted_before_encoder_allocations(self):
+        case = ToolchainProtocolDataTests()
+        case.setUp()
+        model = case.model()
+        funded, peaks = [0], []
+        def reserve(size):
+            current, peak = tracemalloc.get_traced_memory()
+            if funded[0]:
+                peaks.append((peak, funded[0]))
+                self.assertLessEqual(peak, funded[0])
+            funded[0] += size
+            tracemalloc.reset_peak()
+        tracemalloc.start()
+        try:
+            wire = self.producer(model, reserve)
+            current, peak = tracemalloc.get_traced_memory()
+            self.assertLessEqual(peak, funded[0])
+        finally:
+            tracemalloc.stop()
+        self.assertTrue(peaks)
+        self.assertTrue(wire.isascii())
+        self.assertGreater(funded[0], len(wire))
+
+    def test_producer_plans_wire_nodes_and_real_workspace_before_record_encoding(self):
+        case = ToolchainProtocolDataTests()
+        case.setUp()
+        model = case.model()
+        model["receipt"]["scope"] = model["launch"]["scope"] = "MODEL-\u4e2d-\U00010000/root"
+        plan_charges = []
+        wire_size, workspace = toolchain_runtime._intermediate_encoding_plan(model["receipt"], plan_charges.append)
+        nodes = toolchain_runtime._json_shape(toolchain_runtime.encoded(model["receipt"]).decode("ascii"))
+        self.assertEqual(workspace, 8192 + 1024 * nodes + 4 * wire_size)
+        required = 8192 + sum(plan_charges) + workspace + toolchain_runtime._json_cost(model["executions"])
+        for allowance in (required, required - 1):
+            charged, encoded_records = [0], []
+            def reserve(size):
+                charged[0] += size
+                if charged[0] > allowance:
+                    raise MakeProbeError("MODEL admission exhausted")
+            original = toolchain_runtime.encoded
+            def encode(value):
+                if value is model["receipt"]:
+                    self.assertEqual(charged[0], required)
+                    encoded_records.append(True)
+                return original(value)
+            with patch.object(toolchain_runtime, "encoded", encode):
+                if allowance == required:
+                    wire = self.producer(model, reserve)
+                    self.assertEqual(len(wire), wire_size)
+                    self.assertTrue(wire.isascii())
+                    self.assertEqual(encoded_records, [True])
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "MODEL admission exhausted"):
+                        self.producer(model, reserve)
+                    self.assertFalse(encoded_records)
+        self.assertGreater(charged[0], allowance)
+
+    def test_producer_and_hostile_parser_share_all_receipt_rejections(self):
+        case = ToolchainProtocolDataTests()
+        case.setUp()
+        for defect in (
+            "schema", "role", "scope", "binding", "actor", "object", "actual-mode", "flags",
+            "request", "content", "close", "order", "retirement", "complete", "limit",
+        ):
+            model = case.model()
+            record = model["receipt"]
+            if defect == "schema":
+                record["extra"] = 0
+            elif defect == "role":
+                record["writer"]["operand"]["argv_index"] += 1
+            elif defect == "scope":
+                record["scope"] += "-foreign"
+            elif defect == "binding":
+                record["binding"] = "0" * 64
+            elif defect == "actor":
+                record["actors"][1]["exec_record_sha256"] = "0" * 64
+            elif defect == "object":
+                record["writer"]["open"]["identity"][1] += 1
+            elif defect == "actual-mode":
+                record["writer"]["open"]["identity"][2] = stat.S_IFREG | 0o666
+            elif defect == "flags":
+                record["writer"]["open"]["flags"] |= os.O_APPEND
+            elif defect == "request":
+                record["writer"]["open"]["requested_mode"] = 0o644
+            elif defect == "content":
+                record["writer"]["completed"]["sha256"] = "0" * 64
+            elif defect == "close":
+                record["reader"]["completed"]["close_result"] = -1
+            elif defect == "order":
+                record["writer"]["exit"]["order"] = record["writer"]["completed"]["order"]
+            elif defect == "retirement":
+                record["retirement"]["after_identity"][6] = 1
+            elif defect == "complete":
+                record["complete"] = False
+            else:
+                model["limits"] = replace(model["limits"], write_limit=0)
+            with self.subTest(defect=defect, consumer="producer"), self.assertRaises(MakeProbeError):
+                self.producer(model, case.reserve)
+            with self.subTest(defect=defect, consumer="hostile-wire"), self.assertRaises(MakeProbeError):
+                case.parse(model, reserve=case.reserve)
+
+    def test_producer_bounds_and_validation_refuse_before_output_or_publication(self):
+        case = ToolchainProtocolDataTests()
+        case.setUp()
+        for defect in ("nodes", "depth", "wire", "scalar", "subclass", "cycle", "observation"):
+            model = case.model()
+            if defect == "nodes":
+                model["receipt"]["extra"] = [0] * toolchain_runtime.INTERMEDIATE_NODE_LIMIT
+            elif defect == "depth":
+                nested = 0
+                for _ in range(toolchain_runtime.INTERMEDIATE_DEPTH_LIMIT + 1):
+                    nested = [nested]
+                model["receipt"]["extra"] = nested
+            elif defect == "wire":
+                model["receipt"]["path"] = "x" * toolchain_runtime.INTERMEDIATE_RECORD_LIMIT
+            elif defect == "scalar":
+                model["receipt"]["creation"]["fd"] = 1 << 64
+            elif defect == "subclass":
+                class Foreign(dict):
+                    pass
+                model["receipt"] = Foreign(model["receipt"])
+            elif defect == "cycle":
+                model["receipt"]["extra"] = model["receipt"]
+            else:
+                model["limits"] = replace(model["limits"], observation_limit=1)
+            with patch.object(toolchain_runtime, "encoded", side_effect=AssertionError("unadmitted encoder")):
+                with self.subTest(defect=defect), self.assertRaises(MakeProbeError):
+                    self.producer(model, case.reserve)
+        with _IntermediateModel() as model:
+            model.complete()
+            model.tracker.record["retirement"]["path_absent"] = False
+            with self.assertRaises(syscall_guard.Violation):
+                model.tracker.emit(0)
+            self.assertFalse(model.policy.accessed)
+            self.assertEqual(model.tracker.phase, "emitting")
+            with self.assertRaises(syscall_guard.Violation):
+                model.tracker.emit(0)
+            model.tracker.close()
+            self.assertFalse(model.handles)
+        with _IntermediateModel() as model:
+            model.complete()
+            model.policy.config["observation_count"] = sum(
+                len(values) for values in model.policy.observation_attempts.values()
+            )
+            with self.assertRaisesRegex(syscall_guard.Violation, "aggregate filesystem-observation budget"):
+                model.tracker.emit(0)
+            self.assertFalse(model.policy.accessed)
+            self.assertEqual(model.tracker.phase, "emitting")
+
+    def test_producer_exact_wire_semantics_and_cumulative_verification_remain_bound(self):
+        case = ToolchainProtocolDataTests()
+        case.setUp()
+        model = case.model()
+        charges = []
+        wire = self.producer(model, charges.append)
+        canonical = case.parse(model, reserve=case.reserve)
+        self.assertEqual(wire, toolchain_runtime.INTERMEDIATE_PREFIX + canonical.decode("ascii"))
+        projected = toolchain_runtime.project_compile_identity(
+            case.probes(model), canonical, model["roles"], reserve=case.reserve,
+        )
+        reordered = copy.deepcopy(model)
+        reordered["receipt"] = dict(reversed(list(reordered["receipt"].items())))
+        self.assertEqual(self.producer(reordered, case.reserve), wire)
+        self.assertEqual(toolchain_runtime.project_compile_identity(
+            case.probes(model), wire[len(toolchain_runtime.INTERMEDIATE_PREFIX):].encode("ascii"),
+            model["roles"], reserve=case.reserve,
+        ), projected)
+        allowance = 2 * sum(charges) - 1
+        charged = [0]
+        def reserve(size):
+            charged[0] += size
+            if charged[0] > allowance:
+                raise MakeProbeError("MODEL cumulative admission exhausted")
+        self.assertEqual(self.producer(model, reserve), wire)
+        with self.assertRaisesRegex(MakeProbeError, "MODEL cumulative admission exhausted"):
+            self.producer(model, reserve)
+        self.assertGreater(charged[0], allowance)
+
     def test_non_fd_scalar_collisions_do_not_acquire_intermediate_ownership(self):
         for descriptor in (0, 7):
             with self.subTest(MODEL_fd=descriptor), _IntermediateModel() as model:

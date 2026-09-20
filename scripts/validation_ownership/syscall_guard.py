@@ -1012,11 +1012,9 @@ class _ToolchainIntermediate:
             return
         self.phase_is("complete")
         self.phase = "emitting"
-        self.reserve(4 * toolchain_runtime.INTERMEDIATE_RECORD_LIMIT + _TOOLCHAIN_TRACKER_STORAGE)
-        wire = toolchain_runtime.INTERMEDIATE_PREFIX + encoded(self.record).decode("ascii")
         try:
-            toolchain_runtime.intermediate_record(
-                [wire], profile=self.profile, launch=self.policy.config["toolchain_runtime"],
+            wire = toolchain_runtime.encode_intermediate_record(
+                self.record, profile=self.profile, launch=self.policy.config["toolchain_runtime"],
                 executions=self.executions, returncode=0, limits=self.limits, reserve=self.reserve,
             )
         except toolchain_runtime.MakeProbeError as error:

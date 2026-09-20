@@ -10069,6 +10069,33 @@ collision failures. These models cannot identify the unretained real mmap
 arguments. Independent review and a new bounded allocation remain required;
 there is no automatic next native/root/report/resource/H1 or delivery action.
 
+The separately allocated ABI-corrected attempt on
+`d0899f4b328ca4335a849748b0455ddd27fbe29d` is **spent and closed**.
+One Make attempt failed after 6.318 seconds with no supervisor result:
+`write_report -> tracker.emit -> intermediate_record -> _decode_intermediate`
+exhausted aggregate metadata-observation admission. Source control flow
+requires zero status and complete tracker phase before this emission path;
+that is not an accepted receipt, returned Make/checker pair, content equality
+or final `assert_clean`. Exact native charged totals/issued bounds were not
+retained. Do not invent a calibrated deficit or full-root fit.
+
+The corrected producer uses the common typed launch/roles/schema/object/
+content/order/retirement/issued-limit validator directly on its admitted
+record, then performs one bounded encoding. It does not reparse a duplicate
+full graph. The parent hostile-wire parser retains every strict check.
+In source/inert controls, derive admission thresholds from the actual complete
+MODEL record and each separately charged traversal, validation, encoding and
+publication representation. Require exact new-path admission to pass, one
+below and cumulative exhaustion to refuse before the relevant growth or
+publication, and reinstating the original producer to fail the derived
+boundary. Apply the same schema/identity/content/retirement adversaries to
+producer and parser. Exact raw wire and semantic output, neutral ordering,
+count/byte publication and failure cleanup remain required.
+MODEL cost comparisons are not native RSS, the unretained native limit, or a
+root/report/resource/H1 certificate. No limit increase/refund/reset or native
+retry is authorized; independent exact review and a new allocation remain
+required before another actual attempt.
+
 The live descriptor control must model the supervisor's actual view:
 `<config.root>/work/cc*.s`, not the tracee's guest `/work/cc*.s`. Require the
 exact host-root spelling with the same object to pass, while foreign/escaped/

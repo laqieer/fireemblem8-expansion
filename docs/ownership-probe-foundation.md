@@ -295,6 +295,19 @@ short read, failed verification or failed publication. Cleanup attempts each
 remaining owned handle once, does not retry an uncertain raw descriptor, and
 never unlinks to manufacture successful retirement.
 
+Native receipt emission validates its already-admitted builtin record directly,
+using the same launch, operand-role and typed receipt validator as the hostile
+wire parser. A bounded pre-encoding walk counts JSON nodes/depth and exact
+escaped ASCII extent without constructing the wire. Fixed traversal scratch,
+per-node/text work, container/key-sort/validator workspace and overlapping
+encoder text/bytes/prefix/publication representations are admitted before
+growth. The producer encodes once; it does not decode another graph just to
+validate its own record. The parent still performs the complete strict
+ASCII/duplicate-key/shape/canonical/type/bound wire parse and the common typed
+validation. Repeated work remains charged, and count/byte publication and
+failure cleanup remain unchanged. This removes duplicate representation work,
+not a quota or validation requirement.
+
 The **one ProbeSession native-return registry** issues and claims the closed
 `toolchain-step-v2` purpose. It binds original immutable stdout/stderr
 references and status, the full private F2b report fingerprint, the consumed

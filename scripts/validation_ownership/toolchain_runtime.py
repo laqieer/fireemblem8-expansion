@@ -710,21 +710,7 @@ def _receipt_data(record, roles, *, profile=None, launch=None, executions=None, 
     }
 
 
-def intermediate_record(
-    values, *, profile, launch, executions, returncode, limits, reserve,
-):
-    if type(limits) is not IntermediateLimits or not callable(reserve):
-        raise MakeProbeError("toolchain intermediate parser lacks exact issued admission")
-    if type(values) not in (list, tuple) or len(values) > limits.observation_count:
-        raise MakeProbeError("toolchain intermediate observations exceed their actual issued count")
-    selected = None
-    for value in values:
-        if type(value) is not str:
-            raise MakeProbeError("toolchain intermediate observation is not text")
-        if value.startswith(INTERMEDIATE_PREFIX):
-            if selected is not None:
-                raise MakeProbeError("successful compile stage has repeated toolchain intermediate receipts")
-            selected = value
+def _intermediate_context(profile, launch, executions, returncode):
     if (
         type(profile) is not dict or len(profile) != 7
         or set(profile) != {"version", "stage", "stdin", "inputs", "driver_identity", "images", "workspace"}
@@ -745,7 +731,115 @@ def intermediate_record(
     _sha256(launch["binding"], "launch binding")
     if type(executions) not in (list, tuple):
         raise MakeProbeError("toolchain intermediate parser lacks its execution sequence")
-    if profile["stage"] != 4 or returncode:
+    return profile["stage"] == 4 and returncode == 0
+
+
+def _validate_intermediate_record(row, profile, launch, executions, limits, reserve):
+    if len(executions) != 3:
+        raise MakeProbeError("toolchain intermediate parser lacks its complete execution sequence")
+    reserve(_json_cost(executions))
+    driver = _execution_row(executions[0])
+    roles = compile_operand_roles(executions, profile, driver["argv"], complete=True)
+    _receipt_data(
+        row, roles, profile=profile, launch=launch, executions=tuple(executions), limits=limits,
+    )
+
+
+def _intermediate_encoding_plan(record, reserve):
+    reserve(16384)
+    nodes = size = 0
+
+    def visit(value, depth):
+        nonlocal nodes, size
+        reserve(128 + (4 * len(value) if type(value) is str else 0))
+        nodes += 1
+        if nodes > INTERMEDIATE_NODE_LIMIT:
+            raise MakeProbeError("toolchain intermediate record exceeds its node bound")
+        if type(value) in (dict, list):
+            if depth >= INTERMEDIATE_DEPTH_LIMIT:
+                raise MakeProbeError("toolchain intermediate record exceeds its nesting bound")
+            size += 2 + max(0, len(value) - 1)
+            if type(value) is dict:
+                size += len(value)
+                for key, item in value.items():
+                    if type(key) is not str:
+                        raise MakeProbeError("toolchain intermediate record has a non-text key")
+                    visit(key, depth + 1)
+                    visit(item, depth + 1)
+            else:
+                for item in value:
+                    visit(item, depth + 1)
+        elif type(value) is str:
+            size += 2
+            for character in value:
+                code = ord(character)
+                if 0xD800 <= code <= 0xDFFF:
+                    raise MakeProbeError("toolchain intermediate record is not strict UTF-8")
+                size += (
+                    2 if character in '"\\\b\f\n\r\t'
+                    else 6 if code < 32 or 127 <= code <= 0xFFFF
+                    else 12 if code > 0xFFFF else 1
+                )
+                if size + len(INTERMEDIATE_PREFIX) > INTERMEDIATE_RECORD_LIMIT:
+                    raise MakeProbeError("toolchain intermediate record exceeds its wire bound")
+        elif type(value) is bool or value is None:
+            size += 4 if value is None or value else 5
+        elif type(value) is int:
+            if not -(1 << 63) <= value < 1 << 64:
+                raise MakeProbeError("toolchain intermediate record integer exceeds its bounded domain")
+            size += 1 if value < 0 else 0
+            number = abs(value)
+            size += 1
+            while number >= 10:
+                number //= 10
+                size += 1
+        else:
+            raise MakeProbeError("toolchain intermediate record has an unsupported scalar or container")
+        if size + len(INTERMEDIATE_PREFIX) > INTERMEDIATE_RECORD_LIMIT:
+            raise MakeProbeError("toolchain intermediate record exceeds its wire bound")
+
+    visit(record, 0)
+    wire_size = size + len(INTERMEDIATE_PREFIX)
+    # Encoder/key-sort/container/validation scratch plus overlapping ASCII
+    # JSON text, bytes, prefixed text and observation encoding; no decoded graph.
+    return wire_size, 8192 + 1024 * nodes + 4 * wire_size
+
+
+def encode_intermediate_record(
+    record, *, profile, launch, executions, returncode, limits, reserve,
+):
+    if type(limits) is not IntermediateLimits or not callable(reserve):
+        raise MakeProbeError("toolchain intermediate producer lacks exact issued admission")
+    reserve(8192)
+    if limits.observation_count < 1 or not _intermediate_context(profile, launch, executions, returncode):
+        raise MakeProbeError("toolchain intermediate producer lacks its successful compile context")
+    wire_size, workspace = _intermediate_encoding_plan(record, reserve)
+    if wire_size > limits.observation_limit:
+        raise MakeProbeError("toolchain intermediate receipt exceeds its actual observation-byte remainder")
+    reserve(workspace)
+    _validate_intermediate_record(record, profile, launch, executions, limits, reserve)
+    canonical = encoded(record)
+    if not canonical.isascii() or len(canonical) + len(INTERMEDIATE_PREFIX) != wire_size:
+        raise MakeProbeError("toolchain intermediate encoder differs from its admitted ASCII extent")
+    return INTERMEDIATE_PREFIX + canonical.decode("ascii")
+
+
+def intermediate_record(
+    values, *, profile, launch, executions, returncode, limits, reserve,
+):
+    if type(limits) is not IntermediateLimits or not callable(reserve):
+        raise MakeProbeError("toolchain intermediate parser lacks exact issued admission")
+    if type(values) not in (list, tuple) or len(values) > limits.observation_count:
+        raise MakeProbeError("toolchain intermediate observations exceed their actual issued count")
+    selected = None
+    for value in values:
+        if type(value) is not str:
+            raise MakeProbeError("toolchain intermediate observation is not text")
+        if value.startswith(INTERMEDIATE_PREFIX):
+            if selected is not None:
+                raise MakeProbeError("successful compile stage has repeated toolchain intermediate receipts")
+            selected = value
+    if not _intermediate_context(profile, launch, executions, returncode):
         if selected is not None:
             raise MakeProbeError("toolchain intermediate receipt exists for an unsuccessful or foreign stage")
         return None
@@ -762,14 +856,7 @@ def intermediate_record(
     row, canonical = _decode_intermediate(value[len(INTERMEDIATE_PREFIX):], reserve)
     if len(canonical) + len(INTERMEDIATE_PREFIX) > limits.observation_limit:
         raise MakeProbeError("toolchain intermediate canonical receipt exceeds its actual observation bound")
-    if len(executions) != 3:
-        raise MakeProbeError("toolchain intermediate parser lacks its complete execution sequence")
-    reserve(_json_cost(executions))
-    driver = _execution_row(executions[0])
-    roles = compile_operand_roles(executions, profile, driver["argv"], complete=True)
-    _receipt_data(
-        row, roles, profile=profile, launch=launch, executions=tuple(executions), limits=limits,
-    )
+    _validate_intermediate_record(row, profile, launch, executions, limits, reserve)
     reserve(len(canonical) + 64)
     return canonical
 
