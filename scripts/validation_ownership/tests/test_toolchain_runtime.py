@@ -1271,6 +1271,97 @@ class _IntermediateModel:
 
 
 class ToolchainIntermediateInertTests(unittest.TestCase):
+    def test_tracker_admission_refuses_before_allocating_the_unarmed_state(self):
+        with _IntermediateModel() as model:
+            model.policy.config["observation_limit"] = model.policy.observation_bytes
+            with patch.object(syscall_guard, "_ToolchainIntermediate") as allocate:
+                with self.assertRaises(syscall_guard.Violation):
+                    model.policy.reserve_toolchain_intermediate()
+                allocate.assert_not_called()
+            self.assertFalse(model.handles)
+
+    def test_each_pin_and_fdinfo_failure_retains_only_owned_cleanup_obligations(self):
+        failures = (
+            "workspace-open", "workspace-identity", "file-open", "file-identity",
+            "fdinfo-open", "fdinfo-read", "fdinfo-flags", "fdinfo-close", "pread",
+        )
+        for defect in failures:
+            with self.subTest(defect=defect), _IntermediateModel() as model:
+                if defect.startswith("fdinfo") or defect == "pread":
+                    model.created()
+                    writer = model.actor(2)
+                elif defect.startswith("file"):
+                    model.driver = model.actor(1)
+                events = []
+                original_open, original_fstat = model.open, model.fstat
+                original_read, original_close, original_pread = model.read, model.close, model.pread
+                def opening(path, flags, **kwargs):
+                    selected = (
+                        defect == "workspace-open" and str(path).endswith("/work")
+                        or defect == "file-open" and kwargs.get("dir_fd") is not None
+                        or defect == "fdinfo-open" and "/fdinfo/" in str(path)
+                    )
+                    if selected:
+                        events.append("open")
+                        raise OSError("inert acquisition failure")
+                    return original_open(path, flags, **kwargs)
+                def identity(descriptor):
+                    info = original_fstat(descriptor)
+                    kind = model.handles[descriptor][0]
+                    if (defect, kind) in {("workspace-identity", "workspace"), ("file-identity", "file")}:
+                        events.append("identity")
+                        info.st_ino += 1
+                    return info
+                def reading(descriptor, count):
+                    if defect == "fdinfo-read":
+                        events.append("read")
+                        raise OSError("inert fdinfo failure")
+                    if defect == "fdinfo-flags":
+                        events.append("flags")
+                        return b"pos:\t0\nflags:\t2000\n"
+                    return original_read(descriptor, count)
+                def closing(descriptor):
+                    if defect == "fdinfo-close" and model.handles.get(descriptor, (None,))[0] == "fdinfo":
+                        events.append(("uncertain-close", descriptor))
+                        raise OSError("inert uncertain fdinfo close")
+                    return original_close(descriptor)
+                def content(descriptor, count, offset):
+                    if defect == "pread":
+                        events.append("pread")
+                        raise OSError("inert pinned read failure")
+                    return original_pread(descriptor, count, offset)
+                with (
+                    patch.object(syscall_guard.os, "open", opening),
+                    patch.object(syscall_guard.os, "fstat", identity),
+                    patch.object(syscall_guard.os, "read", reading),
+                    patch.object(syscall_guard.os, "close", closing),
+                    patch.object(syscall_guard.os, "pread", content),
+                    self.assertRaises((OSError, syscall_guard.Violation)),
+                ):
+                    if defect.startswith("workspace"):
+                        model.actor(1)
+                    elif defect.startswith("file"):
+                        model.open_actor(model.driver, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+                    else:
+                        model.open_actor(writer, os.O_WRONLY | os.O_TRUNC, 0)
+                        if defect == "pread":
+                            model.write(writer)
+                            model.close_actor(writer)
+                            model.exit_actor(writer)
+                self.assertTrue(events)
+                self.assertLessEqual(model.peak, 3)
+                with self.assertRaises(syscall_guard.Violation):
+                    model.tracker.emit(0)
+                uncertain = [event[1] for event in events if type(event) is tuple]
+                before_cleanup = list(model.closed)
+                model.tracker.close()
+                self.assertEqual((model.tracker.workspace_fd, model.tracker.file_fd, model.tracker.fdinfo_fd), (-1, -1, -1))
+                self.assertTrue(all(
+                    model.closed.count(descriptor) == before_cleanup.count(descriptor)
+                    for descriptor in uncertain
+                ))
+                self.assertFalse(model.policy.accessed)
+
     def test_actual_policy_hooks_complete_one_pinned_object_with_peak_three(self):
         with _IntermediateModel() as model:
             value = model.finish()
