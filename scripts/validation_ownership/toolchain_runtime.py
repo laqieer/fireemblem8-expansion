@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 import hashlib
 import json
 import math
@@ -10,6 +10,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
+from threading import get_ident
 import weakref
 
 if __package__:
@@ -42,6 +43,7 @@ INTERMEDIATE_DEPTH_LIMIT = 10
 INTERMEDIATE_PATH_LIMIT = 4096
 COMPILE_ARG_LIMIT = 128
 COMPILE_ARG_BYTES_LIMIT = 65536
+NATIVE_PURPOSE = "toolchain-step-v2"
 LAUNCH_FIELDS = (
     "root", "mode", "argv", "environment", "code", "sources", "enumerations",
     "executables", "mounts", "dependency",
@@ -328,7 +330,7 @@ def compile_operand_roles(executions, profile, parent_argv, *, complete):
     )
 
 
-def _json_shape(value):
+def _json_shape(value, *, node_limit=INTERMEDIATE_NODE_LIMIT):
     depth = nodes = index = 0
     while index < len(value):
         character = value[index]
@@ -363,7 +365,7 @@ def _json_shape(value):
                 index += 1
         else:
             index += 1
-        if nodes > INTERMEDIATE_NODE_LIMIT:
+        if nodes > node_limit:
             raise MakeProbeError("toolchain intermediate record exceeds its node bound")
     if depth:
         raise MakeProbeError("toolchain intermediate record has incomplete container nesting")
@@ -402,13 +404,15 @@ def _decode_intermediate(payload, reserve):
     return row, canonical
 
 
-def _json_cost(value, state=None, depth=0):
+def _json_cost(value, state=None, depth=0, *, node_limit=4096, work=None):
+    if work is not None:
+        work(128 + (4 * len(value) if type(value) is str else 0))
     if state is None:
         state = [0, 8192]
     if depth > INTERMEDIATE_DEPTH_LIMIT:
         raise MakeProbeError("toolchain data exceeds its bounded nesting")
     state[0] += 1
-    if state[0] > 4096:
+    if state[0] > node_limit:
         raise MakeProbeError("toolchain data exceeds its bounded node count")
     state[1] += 1024
     if value is None or type(value) is bool:
@@ -427,14 +431,16 @@ def _json_cost(value, state=None, depth=0):
     elif type(value) in (list, tuple):
         state[1] += 64 * len(value)
         for item in value:
-            _json_cost(item, state, depth + 1)
+            _json_cost(item, state, depth + 1, node_limit=node_limit, work=work)
     elif type(value) is dict:
         state[1] += 128 * len(value)
         for key, item in value.items():
             if type(key) is not str:
                 raise MakeProbeError("toolchain data has a non-text dictionary key")
+            if work is not None:
+                work(128 + 4 * len(key))
             state[1] += 24 * _string_bytes(key, "toolchain data key", 65536) + 128
-            _json_cost(item, state, depth + 1)
+            _json_cost(item, state, depth + 1, node_limit=node_limit, work=work)
     else:
         raise MakeProbeError("toolchain data has an unsupported value")
     return state[1]
@@ -1096,7 +1102,7 @@ def validate_launch(config):
         return None
     if (
         not isinstance(profile, dict) or set(profile) != {"version", "stage", "stdin", "inputs", "driver_identity", "images", "workspace"}
-        or type(profile["version"]) is not int or profile["version"] != 1
+        or type(profile["version"]) is not int or profile["version"] != 2
         or type(profile["stage"]) is not int or profile["stage"] not in range(5)
         or profile["stdin"] != INPUTS[profile["stage"]]
         or not isinstance(profile["inputs"], list)
@@ -1107,7 +1113,7 @@ def validate_launch(config):
         or config["mode"] != "compile" or config.get("header_runtime") is not None
         or config.get("private_install") is not None or config.get("producer_endpoint") is not None
         or not isinstance(grant, dict) or set(grant) != {"version", "scope", "binding"}
-        or type(grant["version"]) is not int or grant["version"] != 1
+        or type(grant["version"]) is not int or grant["version"] != 2
         or grant["scope"] != launch_scope(config["root"]) or grant["binding"] != launch_binding(config)
         or config["executables"] != dependency["executables"]
         or not config["argv"] or not config["executables"] or config["argv"][0] != config["executables"][0]
@@ -1227,6 +1233,101 @@ def records(values, profile, executables, *, returncode, argv, environment):
     return tuple([*executions, *inputs])
 
 
+def _envelope_encode(session, value, *, file_limit=None):
+    limit = session.budget.limits.file_bytes if file_limit is None else file_limit
+    def reserve(size):
+        session.budget.remaining()
+        session.budget.charge("control", size)
+    reserve(32768)
+    reserve(_json_cost(value, node_limit=limit, work=reserve))
+    data = encoded(value)
+    if len(data) > limit:
+        raise MakeProbeError("toolchain evidence envelope exceeds its issued file bound")
+    session.budget.charge("cache", len(data) + 64)
+    return data
+
+
+def _envelope_decode(session, data, *, file_limit=None):
+    limit = session.budget.limits.file_bytes if file_limit is None else file_limit
+    if type(data) is not bytes or not data or len(data) > limit or not data.isascii():
+        raise MakeProbeError("toolchain evidence is not bounded immutable ASCII JSON")
+    session.budget.remaining()
+    session.budget.charge("control", 4 * len(data) + 8192)
+    payload = data.decode("ascii")
+    nodes = _json_shape(payload, node_limit=limit)
+    session.budget.charge("control", 4 * len(data) + 1024 * nodes + 8192)
+    try:
+        return json.loads(payload)
+    except (ValueError, RecursionError) as error:
+        raise MakeProbeError("toolchain evidence is malformed JSON") from error
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class _LaunchFacts:
+    token: object
+    scope: str
+    binding: str
+    report: Path
+    profile: bytes
+    limits: IntermediateLimits
+    snapshot: object
+    tree: Path
+    epoch: int
+    thread: int
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class _AcceptedToolchainCompletion:
+    step: object
+    launch: _LaunchFacts
+    probes: bytes
+    runtime_sources: tuple
+    intermediate: bytes | None
+    roles: CompileRoles | None
+
+
+@dataclass(frozen=True, eq=False)
+class _StepResult:
+    step: object
+    result: object
+    binding: bytes
+    envelope: bytes
+    native: object
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class _ValidatedStage:
+    result: object
+    binding: bytes
+    envelope: bytes
+    native: object
+
+
+@dataclass(frozen=True, eq=False)
+class _RecipeResult:
+    command: object
+    result: object
+    parent: object
+    snapshot: object
+    tree: Path
+    epoch: int
+    thread: int
+    binding: bytes
+    evidence: object
+    stdout: bytes
+    stderr: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class RecipeEvidence:
+    stages: tuple[bytes, ...]
+    result: bytes
+    command_binding: bytes
+    source_snapshot: str
+    namespace_epoch: int
+    projection: bytes | None
+
+
 @dataclass(eq=False)
 class _RecipeGrant:
     command: object
@@ -1238,6 +1339,8 @@ class _RecipeGrant:
     assembler: str | None = None
     sdk: tuple | None = None
     driver_identity: tuple | None = None
+    assembler_spelling: str | None = None
+    accepted_stages: list = field(default_factory=list)
 
 
 @dataclass(eq=False)
@@ -1248,6 +1351,9 @@ class _Step:
     stage: int
     launched: bool = False
     dependency: bytes | None = None
+    facts: _LaunchFacts | None = None
+    phase: str = "issued"
+    native_claim: object | None = None
 
 
 class _Launch:
@@ -1256,12 +1362,15 @@ class _Launch:
 
 class Controller:
     def __init__(self, session):
+        session.budget.charge("cache", 1024)
         self.session = session
         self.commands = {}
         self.steps = {}
         self.launches = {}
         self.issued = weakref.WeakSet()
         self.active = None
+        self._step_results = {}
+        self._recipe_results = {}
 
     def close(self):
         self.commands.clear()
@@ -1269,6 +1378,22 @@ class Controller:
         self.launches.clear()
         self.issued.clear()
         self.active = None
+        self._step_results.clear()
+        self._recipe_results.clear()
+
+    def has_results(self):
+        return bool(self._step_results or self._recipe_results or any(
+            step.native_claim is not None for step in self.steps.values()
+        ))
+
+    def expire_results(self):
+        for registry in (self._step_results, self._recipe_results):
+            for capability in registry.values():
+                self.issued.discard(capability)
+            registry.clear()
+        for step in self.steps.values():
+            step.native_claim = None
+            step.phase = "expired"
 
     def bind(self, command):
         tool = command.runtime_tool
@@ -1306,6 +1431,7 @@ class Controller:
             (compiler.path, *recipe.arguments(0)), code=headers, runtime_tool=compiler,
         ))
         key = id(command)
+        session.budget.charge("cache", 512)
         grant = _RecipeGrant(
             weakref.ref(command, lambda ref: self.commands.pop(key, None)),
             recipe, context, self.bind(command), tuple(session.source_owners(headers)),
@@ -1343,6 +1469,374 @@ class Controller:
         ):
             raise MakeProbeError("toolchain substep is unissued, changed or outside its actual parent")
         return step
+
+    def completion_context(self, owner):
+        session = self.session
+        session.budget.remaining()
+        session.budget.charge("control", 1024)
+        selected = [step for step in self.steps.values() if step.facts is not None and step.facts.token is owner]
+        if len(selected) != 1:
+            raise MakeProbeError("toolchain completion lacks one consumed launch")
+        step = selected[0]
+        facts = step.facts
+        session.budget.charge("control", 8 * len(step.binding) + 8192)
+        if (
+            type(owner) is not _Launch or type(step) is not _Step or step not in self.issued
+            or not step.launched or step.phase not in {"launched", "native-returned"}
+            or step.parent is not self.active or step.stage != step.parent.stage
+            or self.require(step.parent.command()) is not step.parent
+            or step.binding != self.bind(step.command)
+            or facts.snapshot is not session.snapshot or facts.tree != session.tree
+            or facts.epoch != session._namespace_epoch or facts.thread != get_ident()
+        ):
+            raise MakeProbeError("toolchain completion outlived its original step/job/view")
+        return step.command, step.parent.context, step
+
+    def prepare_native(self, owner, completed, observed, config):
+        _, _, step = self.completion_context(owner)
+        facts = step.facts
+        if (
+            step.phase != "launched" or Path(config["report"]) != facts.report
+            or launch_binding(config) != facts.binding
+            or completed.returncode != observed["returncode"]
+        ):
+            raise MakeProbeError("toolchain native completion changed its consumed launch/report")
+        session = self.session
+        profile = _envelope_decode(session, facts.profile, file_limit=facts.limits.file_limit)
+        session.budget.charge("control", 32768 + _json_cost(
+            observed["accessed"], node_limit=facts.limits.observation_count * 2 + 1,
+            work=lambda size: session.budget.charge("control", size),
+        ))
+        probes = records(
+            observed["accessed"], profile, config["executables"],
+            returncode=completed.returncode, argv=config["argv"], environment=config["environment"],
+        )
+        executions = tuple(row for row in probes if "sequence" in row)
+        intermediate = intermediate_record(
+            observed["accessed"], profile=profile, launch=config["toolchain_runtime"],
+            executions=executions, returncode=completed.returncode, limits=facts.limits,
+            reserve=lambda size: session.budget.charge("control", size),
+        )
+        roles = None if intermediate is None else compile_operand_roles(
+            executions, profile, config["argv"], complete=True,
+        )
+        runtime_sources = ()
+        if "header_search" in config["dependency"]:
+            try:
+                runtime_sources = arm_headers.records(
+                    observed["accessed"], config["dependency"]["header_search"], config["executables"][:2],
+                    count_limit=facts.limits.observation_count, file_limit=facts.limits.file_limit,
+                )
+            except ChannelError as error:
+                raise MakeProbeError(str(error)) from error
+        session.budget.charge("control", 1024 + 64 * len(runtime_sources))
+        return _AcceptedToolchainCompletion(
+            step, facts, _envelope_encode(session, probes, file_limit=facts.limits.file_limit),
+            runtime_sources, intermediate, roles,
+        )
+
+    def native_issued(self, owner, payload):
+        _, _, step = self.completion_context(owner)
+        if (
+            type(payload) is not _AcceptedToolchainCompletion
+            or payload.step is not step or payload.launch is not step.facts
+            or step.phase != "launched" or step.native_claim is not None
+        ):
+            raise MakeProbeError("toolchain native payload is not its consumed step")
+        step.phase = "native-returned"
+
+    def native_claimed(self, owner, claimed):
+        _, _, step = self.completion_context(owner)
+        if (
+            step.phase != "native-returned" or step.native_claim is not None
+            or claimed.payload.step is not step or claimed.payload.launch is not step.facts
+        ):
+            raise MakeProbeError("toolchain native claim is copied or repeated")
+        step.native_claim = claimed
+
+    def _result_value(self, result):
+        from .make_probe import ProcessOutput
+
+        if (
+            type(result) is not ProcessOutput or type(result.stdout) is not bytes
+            or type(result.stderr) is not bytes or type(result.returncode) is not int
+            or result.artifact is not None or type(result.generated) is not tuple or result.generated
+            or any(type(getattr(result, name)) is not tuple for name in (
+                "consumed", "code_consumed", "metadata", "input_identities", "executed",
+                "runtime_receipt", "runtime_sources", "runtime_probes",
+            ))
+            or type(result.toolchain_receipts) is not tuple
+            or len(result.toolchain_receipts) > 5
+            or any(type(value) is not bytes for value in result.toolchain_receipts)
+        ):
+            raise MakeProbeError("toolchain result has a foreign shape or exported artifact")
+        self.session.budget.charge(
+            "control", 8192 + len(result.stdout) + len(result.stderr)
+            + sum(len(value) + 256 for value in result.toolchain_receipts),
+        )
+        return {
+            "returncode": result.returncode,
+            "stdout_sha256": hashlib.sha256(result.stdout).hexdigest(),
+            "stderr_sha256": hashlib.sha256(result.stderr).hexdigest(),
+            "consumed": result.consumed, "code_consumed": result.code_consumed,
+            "metadata": result.metadata, "input_identities": result.input_identities,
+            "executed": result.executed, "runtime_receipt": result.runtime_receipt,
+            "runtime_sources": result.runtime_sources, "runtime_probes": result.runtime_probes,
+            "receipts": [(len(value), hashlib.sha256(value).hexdigest()) for value in result.toolchain_receipts],
+        }
+
+    def _result_binding(self, result):
+        return self.session._native_fingerprint(self._result_value(result))
+
+    def seal_step_result(self, step, result, *, native_return):
+        session = self.session
+        self._result_value(result)
+        if (
+            type(step) is not _Step or step not in self.issued
+            or self.steps.get(id(step.command)) is not step or type(step.facts) is not _LaunchFacts
+            or self.completion_context(step.facts.token)[2] is not step
+        ):
+            raise MakeProbeError("toolchain result requires its identity-issued original step")
+        if step.native_claim is not native_return or step.phase != "native-returned" or self._step_results:
+            raise MakeProbeError("toolchain step result lacks its original native claim")
+        original = native_return.original
+        session._verify_native_return(
+            original, NATIVE_PURPOSE, step.facts.token, original.completed, original.observed,
+        )
+        payload = native_return.payload
+        probes = _envelope_decode(session, payload.probes, file_limit=step.facts.limits.file_limit)
+        dependency = _envelope_decode(session, step.dependency)
+        inputs = tuple(session.source_owners(set(result.consumed) | set(result.code_consumed)))
+        if (
+            result.toolchain_receipts or result.returncode != native_return.returncode
+            or result.stdout is not native_return.stdout or result.stderr is not native_return.stderr
+            or result.consumed != native_return.consumed or result.code_consumed != native_return.code_consumed
+            or result.metadata != native_return.metadata or result.executed != native_return.executed
+            or result.input_identities != inputs
+            or session._native_fingerprint(result.runtime_receipt) != session._native_fingerprint(dependency["runtime_aliases"])
+            or result.runtime_sources != payload.runtime_sources
+            or result.runtime_probes != tuple(probes)
+        ):
+            raise MakeProbeError("toolchain result differs from ORIGINAL accepted native facts")
+        step.phase = "sealing"
+        session.budget.charge("control", 16384)
+        profile = _envelope_decode(session, step.facts.profile)
+        result_data = self._result_value(result)
+        envelope = _envelope_encode(session, {
+            "version": 1, "kind": "toolchain-stage", "stage": STAGES[step.stage],
+            "launch_scope": step.facts.scope, "launch_binding": step.facts.binding,
+            "source_snapshot": session.snapshot.digest, "namespace_epoch": step.facts.epoch,
+            "workspace": profile["workspace"], "images": profile["images"],
+            "admission": {name: getattr(step.facts.limits, name) for name in (
+                "file_limit", "observation_count", "observation_limit", "write_limit",
+                "creation_limit", "process_limit", "memory_limit", "syscall_limit", "deadline",
+            )},
+            "executions": [row for row in probes if "sequence" in row],
+            "stdin": [row for row in probes if "stdin" in row],
+            "intermediate": None if payload.intermediate is None else _envelope_decode(session, payload.intermediate),
+            "result": {name: result_data[name] for name in (
+                "returncode", "stdout_sha256", "stderr_sha256", "consumed", "code_consumed",
+                "input_identities", "executed", "runtime_receipt", "runtime_sources",
+            )},
+        }, file_limit=step.facts.limits.file_limit)
+        session.budget.charge("cache", 4096)
+        sealed = replace(result, toolchain_receipts=(envelope,))
+        key = id(sealed)
+        accepted_native = replace(native_return, original=None)
+        capability = _StepResult(
+            step, weakref.ref(sealed, lambda reference: self._step_results.pop(key, None)),
+            self._result_binding(sealed), envelope, accepted_native,
+        )
+        self._step_results[key] = capability
+        self.issued.add(capability)
+        step.native_claim = None
+        step.phase = "sealed"
+        return sealed
+
+    def consume_step_result(self, step, result):
+        capability = self._step_results.pop(id(result), None)
+        if (
+            type(capability) is not _StepResult or capability not in self.issued
+            or capability.result() is not result or capability.step is not step
+            or type(step) is not _Step or step not in self.issued
+            or self.steps.get(id(step.command)) is not step
+            or step.phase != "sealed" or step.parent is not self.active
+            or self.require(step.parent.command()) is not step.parent
+            or step.stage != step.parent.stage
+        ):
+            raise MakeProbeError("toolchain stage is unissued, copied, stale or replayed")
+        self.issued.discard(capability)
+        if (
+            capability.binding != self._result_binding(result)
+            or result.stdout is not capability.native.stdout or result.stderr is not capability.native.stderr
+            or result.toolchain_receipts != (capability.envelope,)
+        ):
+            raise MakeProbeError("toolchain stage changed after native sealing")
+        self.session.budget.charge("cache", 2048)
+        accepted = _ValidatedStage(result, capability.binding, capability.envelope, capability.native)
+        step.parent.accepted_stages.append(accepted)
+        step.phase = "consumed"
+        return accepted
+
+    def retire_step(self, step):
+        for key, capability in tuple(self._step_results.items()):
+            if capability.step is step:
+                self._step_results.pop(key)
+                self.issued.discard(capability)
+        step.native_claim = None
+
+    def _recipe_output(self, grant):
+        stages = grant.accepted_stages
+        self.session.budget.charge(
+            "control", 16384 + 4 * sum(
+                len(stage.native.stdout) + len(stage.native.stderr) for stage in stages
+            ) + 24 * len(grant.recipe.compiler) + 24 * len(grant.assembler_spelling or ""),
+        )
+        stdout, stderr = bytearray(), bytearray()
+        status = 0
+        for index, stage in enumerate(stages):
+            native = stage.native
+            if index < 3:
+                value = native.stdout.rstrip(b"\n")
+                if native.returncode:
+                    status = 1
+                    stderr.extend((
+                        "error: failed to run modern compiler: " + grant.recipe.compiler + "\n",
+                        "error: could not query modern compiler target: " + grant.recipe.compiler + "\n",
+                        "error: could not resolve the assembler used by modern GCC\n",
+                    )[index].encode())
+                elif index == 0:
+                    stdout.extend(b"Modern compiler: " + value.split(b"\n")[0] + b"\n")
+                elif index == 1:
+                    if value != b"arm-none-eabi":
+                        stderr.extend(b"error: modern compiler targets '" + value + b"'; expected 'arm-none-eabi'\n")
+                        status = 1
+                    else:
+                        stdout.extend(b"Modern target: " + value + b"\n")
+                else:
+                    if type(grant.assembler_spelling) is not str or grant.assembler is None:
+                        raise MakeProbeError("toolchain recipe lost its accepted assembler resolution")
+                    stdout.extend(b"Modern assembler: " + grant.assembler_spelling.encode() + b"\n")
+            else:
+                stdout.extend(native.stdout)
+                stderr.extend(native.stderr)
+                if native.returncode:
+                    status = 1
+                    stderr.extend((SYNTAX_FAILURE if index == 3 else COMPILE_FAILURE).encode())
+            if status:
+                if index != len(stages) - 1:
+                    raise MakeProbeError("toolchain recipe executed after its first failed stage")
+                break
+        if not status:
+            if len(stages) != 5:
+                raise MakeProbeError("toolchain recipe ended before its actual final stage")
+            stdout.extend((
+                "Modern flags: ARM7TDMI Thumb/interwork; config=%s; ABI=%s\n"
+                % (grant.recipe.config, grant.recipe.abi)
+            ).encode())
+        return bytes(stdout), bytes(stderr), status
+
+    def seal_recipe_result(self, grant, command, result):
+        session = self.session
+        self._result_value(result)
+        if (
+            self.active is not grant or self.require(command) is not grant
+            or not grant.accepted_stages or len(grant.accepted_stages) != grant.stage
+            or self._recipe_results
+        ):
+            raise MakeProbeError("toolchain recipe lacks its actual consumed stage sequence")
+        stages = grant.accepted_stages
+        for index, stage in enumerate(stages):
+            if stage.binding != self._result_binding(stage.result) or stage.native.payload.step.stage != index:
+                raise MakeProbeError("toolchain recipe stage changed after consumption")
+        if (result.stdout, result.stderr, result.returncode) != self._recipe_output(grant):
+            raise MakeProbeError("toolchain aggregate output differs from ORIGINAL accepted native facts")
+        session.budget.charge(
+            "control", 32768 + 128 * sum(
+                sum(len(getattr(stage.result, name)) for name in (
+                    "consumed", "code_consumed", "input_identities", "executed",
+                    "runtime_receipt", "runtime_sources", "runtime_probes",
+                )) for stage in stages
+            ),
+        )
+        expected = {
+            "consumed": (),
+            "code_consumed": tuple(sorted({name for stage in stages for name in stage.result.code_consumed})),
+            "input_identities": tuple(sorted({row for stage in stages for row in stage.result.input_identities})),
+            "executed": tuple(name for stage in stages for name in stage.result.executed),
+            "runtime_receipt": tuple(sorted({tuple(row) for stage in stages for row in stage.result.runtime_receipt})),
+            "runtime_sources": tuple(sorted({row for stage in stages for row in stage.result.runtime_sources})),
+            "runtime_probes": tuple(row for stage in stages for row in stage.result.runtime_probes),
+        }
+        if any(getattr(result, name) != value for name, value in expected.items()) or result.metadata:
+            raise MakeProbeError("toolchain aggregate differs from its exact accepted stages")
+        if not result.returncode and (len(stages) != 5 or any(stage.result.returncode for stage in stages)):
+            raise MakeProbeError("successful toolchain recipe omitted a successful stage")
+        session.budget.charge("control", 8192)
+        result_data = self._result_value(result)
+        del result_data["receipts"]
+        raw_result = _envelope_encode(session, result_data)
+        projection = None
+        if not result.returncode:
+            payload = stages[-1].native.payload
+            if payload.intermediate is None or payload.roles is None:
+                raise MakeProbeError("successful toolchain recipe has no complete intermediate proof")
+            compile_probes = tuple(row for row in result.runtime_probes if row.get("stage") == "compile")
+            projected = project_compile_identity(
+                compile_probes, payload.intermediate, payload.roles,
+                reserve=lambda size: session.budget.charge("control", size),
+            )
+            session.budget.charge("control", 1024 + 16 * len(result.runtime_probes))
+            compile_rows = iter(projected["runtime_probes"])
+            projected["runtime_probes"] = [
+                next(compile_rows) if row.get("stage") == "compile" else row
+                for row in result.runtime_probes
+            ]
+            projection = _envelope_encode(session, projected)
+        session.budget.charge("cache", 4096 + 128 * len(stages))
+        sealed = replace(result, toolchain_receipts=tuple(stage.envelope for stage in stages))
+        evidence = RecipeEvidence(
+            sealed.toolchain_receipts, raw_result, grant.binding,
+            session.snapshot.digest, session._namespace_epoch, projection,
+        )
+        key = id(sealed)
+        capability = _RecipeResult(
+            command, weakref.ref(sealed, lambda reference: self._recipe_results.pop(key, None)), grant,
+            session.snapshot, session.tree, session._namespace_epoch, get_ident(),
+            self._result_binding(sealed), evidence, sealed.stdout, sealed.stderr,
+        )
+        self._recipe_results[key] = capability
+        self.issued.add(capability)
+        return sealed
+
+    def consume_recipe_result(self, command, result):
+        session = self.session
+        capability = self._recipe_results.pop(id(result), None)
+        if type(capability) is not _RecipeResult or capability.result() is not result or capability.command is not command:
+            raise MakeProbeError("toolchain recipe result is unissued, copied or replayed")
+        session.budget.charge(
+            "control", 32768 + 8 * len(capability.parent.binding) + 256 * len(command.code),
+        )
+        if (
+            type(capability) is not _RecipeResult or capability not in self.issued
+            or capability.result() is not result or capability.command is not command
+            or capability.thread != get_ident() or capability.snapshot is not session.snapshot
+            or capability.tree != session.tree or capability.epoch != session._namespace_epoch
+            or capability.parent.context is not session._require_live_dispatch()
+            or not session._command_dispatches
+            or session._command_dispatches[-1] != (command, capability.parent.context)
+            or capability.parent.binding != self.bind(command)
+            or tuple(session.source_owners(command.code)) != capability.parent.inputs
+        ):
+            raise MakeProbeError("toolchain recipe result is copied, replayed or outside its live context")
+        self.issued.discard(capability)
+        if (
+            capability.binding != self._result_binding(result)
+            or result.stdout is not capability.stdout or result.stderr is not capability.stderr
+        ):
+            raise MakeProbeError("toolchain aggregate changed after sealing")
+        session.budget.charge("cache", 1024)
+        return capability.evidence
 
     def driver_identity(self, tool):
         from .make_probe import _trusted_runtime_path
@@ -1395,7 +1889,7 @@ class Controller:
         binding = launch_binding(config)
         validate_launch({
             **config, "file_limit": session.budget.limits.file_bytes,
-            "toolchain_runtime": {"version": 1, "scope": launch_scope(root), "binding": binding},
+            "toolchain_runtime": {"version": 2, "scope": launch_scope(root), "binding": binding},
         })
         self.launches[id(token)] = token, command, step, binding
         self.issued.add(token)
@@ -1412,8 +1906,22 @@ class Controller:
         output, = [Path(item["source"]) for item in config["mounts"] if item["target"] == "/work"]
         verify_workspace(output, config["dependency"]["toolchain_probe"]["workspace"])
         self.session.budget.charge("control", len(encoded(config["dependency"]["toolchain_probe"]["workspace"])))
+        limits = IntermediateLimits(**{name: config[name] for name in (
+            "file_limit", "observation_count", "observation_limit", "write_limit",
+            "creation_limit", "process_limit", "memory_limit", "syscall_limit", "deadline",
+        )})
+        report = self.session.base / f"report-{self.session.serial}.json"
+        if Path(config["report"]) != report:
+            raise MakeProbeError("toolchain consumed launch has a foreign owned report path")
+        self.session.budget.charge("cache", 2048)
+        step.facts = _LaunchFacts(
+            token, launch_scope(config["root"]), binding, report,
+            _envelope_encode(self.session, config["dependency"]["toolchain_probe"], file_limit=limits.file_limit),
+            limits, self.session.snapshot, self.session.tree, self.session._namespace_epoch, get_ident(),
+        )
         step.launched = True
-        return {"version": 1, "scope": launch_scope(config["root"]), "binding": binding}
+        step.phase = "launched"
+        return {"version": 2, "scope": step.facts.scope, "binding": binding}
 
     def execute(self, command):
         from .make_probe import Command, ProcessOutput
@@ -1434,12 +1942,15 @@ class Controller:
                     (command.runtime_tool.path, *grant.recipe.arguments(stage)),
                     code=command.code if stage == 3 else (), runtime_tool=command.runtime_tool,
                 )
+                self.session.budget.charge("cache", 2048)
                 step = _Step(subcommand, grant, self.bind(subcommand), stage)
                 self.steps[id(subcommand)] = step
                 self.issued.add(step)
                 try:
                     result = self.session._command(subcommand)
+                    self.consume_step_result(step, result)
                 finally:
+                    self.retire_step(step)
                     self.steps.pop(id(subcommand), None)
                     self.issued.discard(step)
                 results.append(result)
@@ -1464,6 +1975,7 @@ class Controller:
                         stdout.extend(b"Modern target: " + value + b"\n")
                     else:
                         spelling, grant.assembler = assembler_path(value.decode("utf-8", "strict"))
+                        grant.assembler_spelling = spelling
                         stdout.extend(b"Modern assembler: " + spelling.encode() + b"\n")
                 else:
                     stdout.extend(result.stdout)
@@ -1480,7 +1992,7 @@ class Controller:
             self.session._verify_runtime_tool(command.runtime_tool)
             if self.driver_identity(command.runtime_tool) != grant.driver_identity:
                 raise MakeProbeError("toolchain driver changed during its actual original recipe")
-            return ProcessOutput(
+            result = ProcessOutput(
                 bytes(stdout), bytes(stderr), (), tuple(sorted({name for item in results for name in item.code_consumed})),
                 input_identities=tuple(sorted({row for item in results for row in item.input_identities})),
                 executed=tuple(name for item in results for name in item.executed),
@@ -1489,6 +2001,7 @@ class Controller:
                 runtime_probes=tuple(row for item in results for row in item.runtime_probes),
                 returncode=status,
             )
+            return self.seal_recipe_result(grant, command, result)
         finally:
             self.active = None
             self.commands.pop(id(command), None)

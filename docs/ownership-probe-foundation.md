@@ -233,14 +233,102 @@ lexicographically sorted exact string keys. Lists and tuples have the same
 value encoding; aliases are revisited, while cycles, subclasses, bool-as-int,
 nonfinite values and out-of-domain integers reject. Every issue and claim pays
 its own traversal, sorting, hash and retained-reference work from existing
-budgets. No whole-report JSON encoding, new limit, opaque report capability or
-toolchain placeholder is introduced.
+budgets. No whole-report JSON encoding, new limit or opaque report capability
+is introduced. Its closed purpose dispatch covers authenticated header
+completion and the typed toolchain completion described below.
 Traversal retains ancestor/index frames and selects one child at a time,
 not a width-sized collection of pending actions. Dictionary key references
 and sorting scratch receive separate pre-growth admission. The exact private
 fingerprint format, including repeated alias work and Unicode code points,
 is unchanged. Claim also requires the originally issued immutable stdout
 and stderr references: replacing either with distinct equal bytes rejects.
+
+### Typed private compiler intermediate and raw evidence
+
+The original five-stage GCC checker uses a version-2 launch and validator
+together; the execution route rejects version 1 rather than accepting a
+successful compile without proof. `records()` still returns the original
+execution and stdin rows. Stage four alone owns a closed intermediate tracker.
+A successful compile requires one version-1 `toolchain-intermediate:` record;
+other stages and failed compile results cannot carry a successful record.
+
+The tracker binds the actual owned process, pidfd, fresh birth and verified
+exec, not just numeric PIDs or filenames. It follows successful exclusive
+driver creation, creator close, the cc1 output open/write/close/zero-exit,
+completed-file sealing, assembler input open/sequential returned bytes/close/
+zero-exit, and the driver's successful unlink/absence/nlink-zero/zero-exit.
+Mode, object identity, offsets, extent, content and ordering must agree.
+Only grammar-derived operands identify the roles. A mention of the complete
+intermediate path in any other argument or execution environment rejects;
+child `-isystem`, when present, must equal the parent's admitted selection.
+Unsupported vector, positioned, seek, descriptor-alias or mutation forms
+refuse. The existing path-family gate remains permission, not creation proof.
+
+There are **three peak mechanism-owned descriptors**: a directory pin, one
+readable file pin, and at most one transient bounded fdinfo reader. The latter
+is closed before another mechanism acquisition. Content checks use `pread`
+chunks of at most 64 KiB on the original pin. Returned reader bytes are hashed
+at their stopped addresses using aligned eight-byte peeks, one word and one
+selected slice at a time; no whole reader buffer is copied. Requested work,
+aligned peeks, fixed word/hash/ctypes workspace, chunk allocations and
+verification repetitions are cumulatively admitted under the original limits
+and deadline. Tracker/record construction and emitted wire have separate
+pre-growth reservations. This neither enlarges shipping limits nor refunds a
+short read, failed verification or failed publication. Cleanup attempts each
+remaining owned handle once, does not retry an uncertain raw descriptor, and
+never unlinks to manufacture successful retirement.
+
+The **one ProbeSession native-return registry** issues and claims the closed
+`toolchain-step-v2` purpose. It binds original immutable stdout/stderr
+references and status, the full private F2b report fingerprint, the consumed
+launch, owner thread, job, source snapshot/tree and namespace epoch. Step
+sealing rechecks those original facts, not a subsequently modified completion
+object. Identity-issued, one-use step and recipe capabilities are separate
+from the shared native-return registry. They cannot be copied, reconstructed
+from JSON, reused after consumption or carried into a different view.
+Mutable native-report references are released after step sealing; accepted
+primitive/immutable facts, not another full report graph, remain.
+
+`ProcessOutput.toolchain_receipts` is an appended default-empty tuple of
+canonical stage-envelope bytes. Its `runtime_probes` remains raw. Only a
+consumed successful recipe may create the semantic copy containing the
+versioned, content-bound role summary and **exactly two** typed operand
+references. All other arguments/order, environment, executable/stat/SDK/source
+identity, stdin, status/output, publication and header-kernel facts retain
+their existing meaning. Varying actual assembly contents still changes
+identity. Cache exclusions and exact semantic comparison are unchanged.
+
+Each new successful publication acknowledgement archives one canonical raw
+recipe occurrence, including the actual producer slot/job and the digest of
+its complete acknowledged semantic record. A repeated acknowledgement does
+not append another occurrence. `MakeObservation.toolchain_receipts` preserves
+the current Make's ordered occurrences even when exact semantic deduplication
+collapses equal checker records. While the session is active,
+`session.toolchain_receipts(scope)` returns the immutable data for an
+acknowledged scope; omitting the scope returns all retained occurrences.
+Unknown scopes and inactive sessions reject. View expiry invalidates result
+capabilities, not historical archive data; session cleanup clears the archive.
+External byte copies remain inert evidence, never execution authority.
+
+The raw-sidecar digest participates only in original-namespace
+**execution/source binding**, not in `semantics`, `semantic_digest`, producer
+authority or the public reporter. No automatic raw publisher is added.
+Admission includes envelope traversal, decoding, encoding, registry and
+archive representations, not just wire byte counts.
+
+The focused procedures are
+[the existing toolchain case](test-cases/workflow-governance.md#typed-intermediate-component-procedure)
+and [the gate case](test-cases/workflow-governance.md#typed-toolchain-sidecar-and-comparator-boundary).
+Pure/inert checks establish data, state and custody behavior only. The
+one-Make/two-checker qualifier and native fault/restoration methods are
+prepared for **separate explicit execution allocation**. Actual compiler
+options, creation modes, syscall/close/offset behavior, physical cleanup and
+resource affordability remain unqualified until that evidence exists.
+Unsupported real forms must fail rather than widening this contract.
+This component is not a full original-root/report/resource/H1 result and does
+not repair the separately unretained SDK-admission failure. There is no
+gameplay flag or ROM/RAM, save, localization, generated-game-data, archival,
+bootstrap, header-protocol, Make/source-interpretation or SDK policy change.
 
 An opt-in original read trace uses the actual GNU4.3 entry/return ABI and four
 x86-64 hardware execution-breakpoint slots. The runtime ELF, decoded control

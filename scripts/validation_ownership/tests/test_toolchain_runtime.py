@@ -2,25 +2,31 @@
 
 import ast
 import copy
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 import hashlib
 import inspect
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import stat
 import textwrap
 import tracemalloc
 import subprocess
+import threading
+import time
+from types import SimpleNamespace
 import unittest
+import weakref
 from unittest.mock import patch
 
 from scripts.bash_parser import normalize_bash_script_commands, tokenize_bash_command
 from scripts.validation_ownership import toolchain_runtime
+from scripts.validation_ownership import make_probe, syscall_guard
 from scripts.validation_ownership.authority import ENVIRONMENT
-from scripts.validation_ownership.budget import MakeProbeError
+from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
 from scripts.validation_ownership.graph_commands import MakeCommands, ROOT_RUNTIME_FILES
 from scripts.validation_ownership.make_probe import Command
 from scripts.validation_ownership.tests import test_foundation as foundation
@@ -1000,6 +1006,950 @@ class ToolchainProtocolDataTests(unittest.TestCase):
                 toolchain_runtime.project_compile_identity(raw, receipt, value, reserve=self.reserve)
 
 
+class _IntermediateModel:
+    """Synthetic stopped processes and effects; never opens a real descriptor."""
+
+    def __init__(self, body=b"model assembly\n"):
+        self.model = ToolchainProtocolDataTests().model()
+        self.body = b""
+        self.expected = body
+        self.exists = False
+        self.mode = stat.S_IFREG | 0o600
+        self.device, self.inode, self.mtime, self.ctime, self.links = 21, 22, 1000, 1000, 1
+        self.handles, self.trace_fds, self.process_handles = {}, {}, set()
+        self.peak = 0
+        self.closed, self.peeks, self.preads = [], [], []
+        self.memory = b""
+        self.policy = syscall_guard.Policy.__new__(syscall_guard.Policy)
+        self.policy.config = {
+            **{name: getattr(self.model["limits"], name) for name in (
+                "file_limit", "observation_count", "observation_limit", "write_limit",
+                "creation_limit", "process_limit", "memory_limit", "syscall_limit", "deadline",
+            )},
+            "root": "/inert/command-root-1", "mode": "compile",
+            "argv": self.model["driver"], "toolchain_runtime": self.model["launch"],
+            "executables": [row["path"] for row in self.model["executions"]],
+            "file_limit": max(4096, len(body)), "write_limit": max(4096, len(body)),
+            "observation_limit": 16 * 1024 * 1024,
+        }
+        self.policy.toolchain = self.model["profile"]
+        self.policy.mode = "compile"
+        self.policy.processes = {}
+        self.policy.calls = self.policy.written = self.policy.created = 0
+        self.policy.observation_bytes = 0
+        self.policy.observation_attempts = {name: set() for name in ("consumed", "code_consumed", "accessed")}
+        self.policy.accessed = set()
+        self.policy.toolchain_temporaries = {}
+        self.policy.kernel_streams = {}
+        self.policy.filter_kernel = self.policy.read_trace = self.policy.private_install = None
+        self.policy.metadata = []
+        self.policy.metadata_seen = set()
+        self.policy.observer = lambda *args: False
+        self.policy.path = self.path
+        self.stack = ExitStack()
+
+    def __enter__(self):
+        replacements = (
+            (syscall_guard.time, "monotonic", lambda: 100.0),
+            (syscall_guard.os, "open", self.open),
+            (syscall_guard.os, "close", self.close),
+            (syscall_guard.os, "stat", self.stat),
+            (syscall_guard.os, "fstat", self.fstat),
+            (syscall_guard.os, "read", self.read),
+            (syscall_guard.os, "pread", self.pread),
+            (syscall_guard.os, "readlink", self.readlink),
+            (syscall_guard, "ptrace", self.ptrace),
+            (syscall_guard, "memory", self.forbidden),
+            (syscall_guard.signal, "pthread_sigmask", lambda *args: set()),
+            (syscall_guard.signal, "sigpending", lambda: set()),
+            (Path, "stat", lambda path, **kwargs: self.stat(str(path), **kwargs)),
+            (Path, "lstat", lambda path: self.stat(str(path), follow_symlinks=False)),
+            (toolchain_runtime, "verify_workspace", self.verify_workspace),
+        )
+        for owner, name, value in replacements:
+            self.stack.enter_context(patch.object(owner, name, value))
+        self.tracker = self.policy.reserve_toolchain_intermediate()
+        self.policy.toolchain_intermediate = self.tracker
+        return self
+
+    def __exit__(self, kind, value, traceback):
+        try:
+            self.tracker.close()
+        finally:
+            self.stack.close()
+
+    @staticmethod
+    def forbidden(*args, **kwargs):
+        raise AssertionError("whole-buffer or unexpected effect escaped the inert model")
+
+    def info(self):
+        return SimpleNamespace(
+            st_dev=self.device, st_ino=self.inode, st_mode=self.mode, st_size=len(self.body),
+            st_mtime_ns=self.mtime, st_ctime_ns=self.ctime, st_nlink=self.links,
+        )
+
+    def directory(self):
+        dev, ino, mode = self.model["profile"]["workspace"]
+        return SimpleNamespace(st_dev=dev, st_ino=ino, st_mode=mode)
+
+    def path(self, pid, state, pointer, dirfd=-100, **kwargs):
+        path = self.model["roles"].output.value
+        state.path_context = path, dirfd, None
+        return path
+
+    def verify_workspace(self, path, expected):
+        assert str(path) == "/inert/command-root-1/work"
+        assert not self.exists
+        assert list(expected) == self.model["profile"]["workspace"]
+
+    def open(self, path, flags, *, dir_fd=None):
+        path = str(path)
+        if path == "/inert/command-root-1/work":
+            value = ("workspace", None)
+        elif path == Path(self.model["roles"].output.value).name:
+            assert self.exists and self.handles[dir_fd][0] == "workspace"
+            value = ("file", None)
+        elif path.startswith("/proc/") and "/fdinfo/" in path:
+            _, _, pid, _, descriptor = path.split("/")
+            assert (int(pid), int(descriptor)) in self.trace_fds
+            value = ("fdinfo", (int(pid), int(descriptor)))
+        else:
+            self.forbidden()
+        descriptor = next(number for number in range(10, 30) if number not in self.handles)
+        self.handles[descriptor] = value
+        self.peak = max(self.peak, len(self.handles))
+        return descriptor
+
+    def close(self, descriptor):
+        if descriptor in self.process_handles:
+            self.process_handles.remove(descriptor)
+        else:
+            assert descriptor in self.handles
+            del self.handles[descriptor]
+        self.closed.append(descriptor)
+
+    def stat(self, path, *, dir_fd=None, follow_symlinks=True):
+        path = str(path)
+        if path == "/inert/command-root-1/work":
+            return self.directory()
+        if path.startswith("/proc/") and "/fd/" in path:
+            _, _, pid, _, descriptor = path.split("/")
+            assert (int(pid), int(descriptor)) in self.trace_fds
+            return self.info()
+        if (
+            path == "/inert/command-root-1" + self.model["roles"].output.value
+            or path == Path(self.model["roles"].output.value).name
+            and self.handles[dir_fd][0] == "workspace"
+        ):
+            if not self.exists:
+                raise FileNotFoundError(path)
+            return self.info()
+        self.forbidden()
+
+    def fstat(self, descriptor):
+        kind, _ = self.handles[descriptor]
+        return self.directory() if kind == "workspace" else self.info()
+
+    def readlink(self, path):
+        _, _, pid, _, descriptor = str(path).split("/")
+        assert (int(pid), int(descriptor)) in self.trace_fds
+        return self.model["roles"].output.value
+
+    def read(self, descriptor, count):
+        kind, owner = self.handles[descriptor]
+        assert kind == "fdinfo" and count == 4097
+        position, flags = self.trace_fds[owner]
+        return f"pos:\t{position}\nflags:\t{flags:o}\n".encode()
+
+    def pread(self, descriptor, count, offset):
+        assert self.handles[descriptor][0] == "file"
+        assert 0 < count <= 65536
+        self.preads.append((count, offset))
+        return self.body[offset:offset + count]
+
+    def ptrace(self, request, pid, address):
+        assert request == syscall_guard.PEEKDATA
+        assert address % 8 == 0
+        self.peeks.append(address)
+        offset = address - 0x1000
+        assert 0 <= offset < len(self.memory)
+        return int.from_bytes(self.memory[offset:offset + 8].ljust(8, b"\0"), "little")
+
+    def actor(self, sequence):
+        row = copy.deepcopy(self.model["executions"][sequence - 1])
+        pid = 400 + sequence
+        state = syscall_guard.Process("compiler", pidfd=700 + sequence)
+        self.process_handles.add(state.pidfd)
+        self.policy.processes[pid] = state
+        self.tracker.birth(pid, state)
+        state.toolchain_exec = row["argv"], row["environment"]
+        self.tracker.exec_entry(pid, state)
+        self.tracker.executed(pid, state, row, toolchain_runtime.encoded(row))
+        state.toolchain_exec = None
+        state.dependency_image = row["path"]
+        return pid, state
+
+    def syscall(self, actor, number, a, b=0, c=0, d=0, *, result=0, kernel=None):
+        pid, state = actor
+        registers = syscall_guard.Registers()
+        registers.orig_rax = number
+        registers.rdi, registers.rsi, registers.rdx, registers.r10 = a, b, c, d
+        state.kernel_call = number
+        self.policy.entry(pid, state, registers)
+        if kernel is not None:
+            kernel()
+        registers.rax = result & ((1 << 64) - 1)
+        self.policy.leave(pid, state, registers)
+
+    def open_actor(self, actor, flags, mode):
+        pid, _ = actor
+        def kernel():
+            if not self.exists:
+                self.exists = True
+            self.trace_fds[pid, 7] = [0, flags]
+        self.syscall(actor, 2, 0x2000, flags, mode, result=7, kernel=kernel)
+
+    def close_actor(self, actor):
+        self.syscall(actor, 3, 7, kernel=lambda: self.trace_fds.pop((actor[0], 7)))
+
+    def exit_actor(self, actor, status=0):
+        pid, state = actor
+        self.tracker.exited(pid, state, status)
+        del self.policy.processes[pid]
+        state.close()
+
+    def write(self, actor):
+        def kernel():
+            self.body = self.expected
+            self.mtime += 1
+            self.ctime += 1
+            self.trace_fds[actor[0], 7][0] = len(self.body)
+        self.syscall(actor, 1, 7, 0x1003, len(self.expected), result=len(self.expected), kernel=kernel)
+
+    def read_actor(self, actor, data=None):
+        data = self.body if data is None else data
+        self.memory = b"xxx" + data + b"\0" * 8
+        def kernel():
+            self.trace_fds[actor[0], 7][0] += len(data)
+        self.syscall(actor, 0, 7, 0x1003, len(data), result=len(data), kernel=kernel)
+
+    def created(self):
+        self.driver = self.actor(1)
+        self.open_actor(self.driver, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+        self.close_actor(self.driver)
+        return self.driver
+
+    def sealed(self):
+        self.created()
+        writer = self.actor(2)
+        self.open_actor(writer, os.O_WRONLY | os.O_TRUNC, 0)
+        self.write(writer)
+        self.close_actor(writer)
+        self.exit_actor(writer)
+        return self.driver
+
+    def consumed(self):
+        self.sealed()
+        reader = self.actor(3)
+        self.open_actor(reader, os.O_RDONLY, 0)
+        self.read_actor(reader)
+        self.close_actor(reader)
+        self.exit_actor(reader)
+        return self.driver
+
+    def finish(self):
+        self.consumed()
+        def unlink():
+            self.exists = False
+            self.links = 0
+            self.ctime += 1
+        self.syscall(self.driver, 87, 0x2000, kernel=unlink)
+        self.exit_actor(self.driver)
+        self.tracker.emit(0)
+        value, = self.policy.accessed
+        return value
+
+
+class ToolchainIntermediateInertTests(unittest.TestCase):
+    def test_actual_policy_hooks_complete_one_pinned_object_with_peak_three(self):
+        with _IntermediateModel() as model:
+            value = model.finish()
+            receipt = json.loads(value[len(toolchain_runtime.INTERMEDIATE_PREFIX):])
+            self.assertEqual(receipt["writer"]["completed"]["sha256"], hashlib.sha256(model.expected).hexdigest())
+            self.assertEqual(receipt["reader"]["completed"]["read_bytes"], len(model.expected))
+            self.assertEqual(receipt["retirement"]["after_identity"][6], 0)
+            self.assertEqual([row["birth_sequence"] for row in receipt["actors"]], [1, 2, 3])
+            self.assertTrue(receipt["complete"])
+            self.assertEqual(model.peak, 3)
+            self.assertFalse(model.handles)
+            self.assertEqual(len(model.preads), 2)
+            self.assertTrue(model.peeks)
+            self.assertTrue(all(address % 8 == 0 for address in model.peeks))
+            self.assertFalse(model.policy.processes)
+
+    def test_owned_actor_identity_and_inherited_descriptor_aliases_refuse(self):
+        with _IntermediateModel() as model:
+            driver = model.actor(1)
+            state = copy.copy(driver[1])
+            model.policy.processes[driver[0]] = state
+            with self.assertRaises(syscall_guard.Violation):
+                model.tracker.actor(driver[0], state)
+        with _IntermediateModel() as model:
+            driver = model.actor(1)
+            model.open_actor(driver, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+            registers = syscall_guard.Registers()
+            registers.orig_rax = 57
+            with self.assertRaises(syscall_guard.Violation):
+                model.tracker.enter(driver[0], driver[1], registers)
+            self.assertIsNone(driver[1].clone().toolchain_birth_sequence)
+            self.assertIsNone(driver[1].clone().toolchain_exec_sequence)
+
+    def test_creation_object_identity_mode_and_link_failures_do_not_complete(self):
+        for field, value in (("inode", 99), ("mode", stat.S_IFREG | 0o644), ("links", 2)):
+            with self.subTest(field=field), _IntermediateModel() as model:
+                model.created()
+                setattr(model, field, value)
+                with self.assertRaises(syscall_guard.Violation):
+                    model.tracker.object_identity()
+                with self.assertRaises(syscall_guard.Violation):
+                    model.tracker.emit(0)
+        with _IntermediateModel() as model:
+            driver = model.actor(1)
+            with self.assertRaises(syscall_guard.Violation):
+                model.syscall(driver, 2, 0x2000, os.O_RDWR | os.O_CREAT, 0o600, result=7)
+            self.assertFalse(model.exists)
+
+    def test_reader_content_offset_and_terminal_barriers_are_independent(self):
+        for defect in ("content", "offset", "partial", "reader-before-writer-exit"):
+            with self.subTest(defect=defect), _IntermediateModel() as model:
+                if defect == "reader-before-writer-exit":
+                    model.created()
+                    writer = model.actor(2)
+                    model.open_actor(writer, os.O_WRONLY | os.O_TRUNC, 0)
+                    model.write(writer)
+                    model.close_actor(writer)
+                    with self.assertRaises(syscall_guard.Violation):
+                        model.actor(3)
+                    continue
+                model.sealed()
+                reader = model.actor(3)
+                model.open_actor(reader, os.O_RDONLY, 0)
+                if defect == "offset":
+                    model.trace_fds[reader[0], 7][0] = 1
+                    with self.assertRaises(syscall_guard.Violation):
+                        model.read_actor(reader)
+                else:
+                    data = b"x" * len(model.body) if defect == "content" else model.body[:-1]
+                    model.read_actor(reader, data)
+                    with self.assertRaises(syscall_guard.Violation):
+                        model.close_actor(reader)
+
+    def test_stopped_memory_hash_uses_returned_words_and_preadmission(self):
+        with _IntermediateModel() as model:
+            model.memory = b"abc" + b"payload" + b"\0" * 8
+            digest = hashlib.sha256()
+            before = model.policy.observation_bytes
+            count = syscall_guard._toolchain_memory_digest(model.tracker, 401, 0x1003, 64, 7, digest)
+            self.assertEqual(count, 7)
+            self.assertEqual(digest.digest(), hashlib.sha256(b"payload").digest())
+            self.assertEqual(len(model.peeks), 2)
+            self.assertGreaterEqual(model.policy.observation_bytes - before, 64 + 72)
+            model.peeks.clear()
+            syscall_guard._toolchain_memory_digest(model.tracker, 401, 0x1003, 64, 0, digest)
+            self.assertFalse(model.peeks)
+            model.policy.config["observation_limit"] = model.policy.observation_bytes
+            with self.assertRaises(syscall_guard.Violation):
+                syscall_guard._toolchain_memory_digest(model.tracker, 401, 0x1003, 64, 7, digest)
+            self.assertFalse(model.peeks)
+
+    def test_stopped_memory_workspace_stays_fixed_at_the_maximum_request(self):
+        data = b"A" * syscall_guard.SYSCALL_MEMORY_LIMIT
+        expected = hashlib.sha256(data).digest()
+        with _IntermediateModel(data) as model:
+            digest = hashlib.sha256()
+            word = int.from_bytes(b"A" * 8, "little")
+            with patch.object(syscall_guard, "ptrace", new=lambda *args: word):
+                tracemalloc.start()
+                try:
+                    returned = syscall_guard._toolchain_memory_digest(
+                        model.tracker, 401, 0x1000, len(data), len(data), digest,
+                    )
+                    _, peak = tracemalloc.get_traced_memory()
+                finally:
+                    tracemalloc.stop()
+            self.assertEqual(returned, len(data))
+            self.assertEqual(digest.digest(), expected)
+            self.assertLessEqual(peak, syscall_guard._TOOLCHAIN_WORD_SCRATCH)
+
+    def test_unsupported_io_refuses_before_vector_capture_or_descriptor_change(self):
+        for number, a, b, c in (
+            (17, 7, 0x1003, 4), (19, 7, 0x1003, 1),
+            (18, 7, 0x1003, 4), (20, 7, 0x1003, 1),
+            (8, 7, 0, 0), (32, 7, 0, 0), (33, 0, 7, 0),
+            (72, 7, 2, 0), (16, 7, 0x5401, 0),
+        ):
+            with self.subTest(number=number), _IntermediateModel() as model:
+                model.sealed()
+                reader = model.actor(3)
+                model.open_actor(reader, os.O_RDONLY, 0)
+                with self.assertRaises(syscall_guard.Violation):
+                    model.syscall(reader, number, a, b, c)
+                self.assertEqual(model.trace_fds[reader[0], 7][0], 0)
+
+    def test_readonly_pin_hash_is_chunked_and_detects_changed_content(self):
+        with _IntermediateModel(b"a" * (65536 + 7)) as model:
+            model.sealed()
+            self.assertEqual(model.preads, [(65536, 0), (7, 65536)])
+            model.body = b"b" * len(model.body)
+            reader = model.actor(3)
+            model.open_actor(reader, os.O_RDONLY, 0)
+            for data in (model.body[:65536], model.body[65536:]):
+                model.read_actor(reader, data)
+            with self.assertRaises(syscall_guard.Violation):
+                model.close_actor(reader)
+
+    def test_missing_failed_or_false_retirement_never_emits_a_success_receipt(self):
+        for defect in ("missing", "failed", "still-present", "still-linked"):
+            with self.subTest(defect=defect), _IntermediateModel() as model:
+                model.consumed()
+                if defect == "missing":
+                    with self.assertRaises(syscall_guard.Violation):
+                        model.exit_actor(model.driver)
+                elif defect == "failed":
+                    model.syscall(model.driver, 87, 0x2000, result=-1)
+                    with self.assertRaises(syscall_guard.Violation):
+                        model.exit_actor(model.driver)
+                else:
+                    def unlink():
+                        model.exists = defect == "still-present"
+                        model.links = 1 if defect == "still-linked" else 0
+                        model.ctime += 1
+                    with self.assertRaises(syscall_guard.Violation):
+                        model.syscall(model.driver, 87, 0x2000, kernel=unlink)
+                with self.assertRaises(syscall_guard.Violation):
+                    model.tracker.emit(0)
+                self.assertFalse(model.policy.accessed)
+
+    def test_cleanup_attempts_all_owned_pins_once_without_retry_or_unlink(self):
+        with _IntermediateModel() as model:
+            model.created()
+            file_fd, workspace_fd = model.tracker.file_fd, model.tracker.workspace_fd
+            attempts = []
+            original = model.close
+            def failing(descriptor):
+                attempts.append(descriptor)
+                if descriptor == file_fd:
+                    raise OSError("uncertain close")
+                original(descriptor)
+            with patch.object(syscall_guard.os, "close", failing), self.assertRaises(OSError):
+                model.tracker.close()
+            self.assertEqual(attempts, [file_fd, workspace_fd])
+            model.tracker.close()
+            self.assertEqual(attempts, [file_fd, workspace_fd])
+            self.assertTrue(model.exists)
+            self.assertEqual((model.tracker.file_fd, model.tracker.workspace_fd), (-1, -1))
+
+
+class _CustodyModel:
+    """Actual custody APIs with explicitly synthetic issued launch/native facts."""
+
+    def __init__(self, path="/work/ccL3VdjV.s"):
+        self.model = ToolchainProtocolDataTests().model(path)
+        self.session = make_probe.ProbeSession.__new__(make_probe.ProbeSession)
+        session = self.session
+        session.budget = ProbeBudget()
+        session.base, session.tree = Path("/inert/session"), Path("/inert/source")
+        session.snapshot = SimpleNamespace(digest="c" * 64)
+        session.serial = 0
+        session.owner_thread = threading.get_ident()
+        session._namespace_epoch = 1
+        session._namespace_issued, session._namespace_tokens = {}, {}
+        session._native_issue_owner, session._native_returns = None, {}
+        session._native_context_commands = {}
+        session._toolchain_receipt_archive = {}
+        session._toolchain = toolchain_runtime.Controller(session)
+        self.controller = session._toolchain
+        self.tool = make_probe.RuntimeTool(self.model["driver"][0], self.model["driver"][0], 0o755, "d" * 64)
+        self.command = make_probe.Command((self.tool.path, "--version"), code=("include/global.h",), runtime_tool=self.tool)
+        session.source_owners = lambda paths: [
+            (path, "100644", "c" * 64) for path in sorted(paths)
+        ]
+        self.context = make_probe._LiveDispatch(
+            "session/make-root-1", 1, ("/bin/sh", "-c", "model checker"), "/repo",
+            tuple(sorted(ENVIRONMENT.items())), False,
+            ("recipe", toolchain_runtime.TARGET, 1), session.snapshot, session.tree, 1,
+        )
+        session._live_dispatches = [self.context]
+        session._issued_dispatches = weakref.WeakSet((self.context,))
+        session._command_dispatches = [(self.command, self.context)]
+        recipe = toolchain_runtime.Recipe(
+            "arm-none-eabi-gcc", (),
+            (*self.model["driver"][1:6], "-std=gnu11", "-fsyntax-only", "-x", "c", "-"),
+            tuple(self.model["driver"][1:]), "release", "aapcs", ("include",),
+            ("/usr/include/newlib",),
+        )
+        self.grant = toolchain_runtime._RecipeGrant(
+            weakref.ref(self.command), recipe, self.context, self.controller.bind(self.command),
+            tuple(session.source_owners(self.command.code)),
+        )
+        self.grant.driver_identity = tuple(self.model["profile"]["driver_identity"])
+        self.controller.commands[id(self.command)] = self.grant
+        self.controller.issued.add(self.grant)
+        self.controller.active = self.grant
+        roots = toolchain_runtime.arm_headers.sdk_roots(self.model["profile"]["images"][1][0], True, ())
+        self.sdk_row = ["/usr/include/newlib/stdint.h", 0o444, 1, "e" * 64]
+        self.sdk = {
+            "version": 1, "roots": [[root, root == "/usr/include/newlib"] for root in roots],
+            "entries": [["/usr/include/newlib", "directory"], [self.sdk_row[0], "file"]],
+            "files": [self.sdk_row], "excluded": [], "aliases": [],
+        }
+        self.grant.sdk = Path("/inert/sdk"), self.sdk
+        self.grant.assembler = self.model["profile"]["images"][2][0]
+        self.grant.assembler_spelling = "/usr/bin/arm-none-eabi-as"
+        self.runtime_aliases = []
+        self.stack = ExitStack()
+
+    def __enter__(self):
+        self.stack.enter_context(patch.object(
+            self.controller, "driver_identity", return_value=self.grant.driver_identity,
+        ))
+        self.stack.enter_context(patch.object(toolchain_runtime, "verify_workspace", return_value=None))
+        aliases = {
+            row["argv"][0]: row["path"] for row in self.model["executions"]
+        }
+        self.stack.enter_context(patch.object(
+            Path, "resolve", lambda path, **kwargs: Path(aliases[str(path)]),
+        ))
+        return self
+
+    def __exit__(self, kind, value, traceback):
+        self.controller.close()
+        self.session._native_returns.clear()
+        self.stack.close()
+
+    def launch(self, stage=4, *, command=None):
+        session, controller = self.session, self.controller
+        if command is None:
+            self.grant.stage = stage
+        profile = copy.deepcopy(self.model["profile"])
+        profile["stage"], profile["stdin"] = stage, toolchain_runtime.INPUTS[stage]
+        profile["images"] = profile["images"][:1 if stage < 3 else 2 if stage == 3 else 3]
+        profile["inputs"] = [["include/global.h", 0o644, 1, "c" * 64]] if stage == 3 else []
+        argv = tuple(self.model["driver"]) if stage >= 3 else (self.tool.path, toolchain_runtime.QUERIES[stage])
+        if stage == 3:
+            argv = (
+                self.tool.path, "-isystem", "/usr/include/newlib", "-mcpu=arm7tdmi",
+                "-mthumb", "-mthumb-interwork", "-std=gnu11", "-fsyntax-only", "-x", "c", "-",
+            )
+        if command is None:
+            command = make_probe.Command(
+                argv, code=("include/global.h",) if stage == 3 else (), runtime_tool=self.tool,
+            )
+            step = toolchain_runtime._Step(command, self.grant, controller.bind(command), stage)
+            controller.steps[id(command)] = step
+            controller.issued.add(step)
+        else:
+            step = controller.steps[id(command)]
+            argv = command.argv
+        dependency = {
+            "executables": [row[0] for row in profile["images"]],
+            "runtime_aliases": self.runtime_aliases, "toolchain_probe": profile,
+        }
+        if stage >= 3:
+            dependency["header_search"] = self.sdk
+        step.dependency = toolchain_runtime.encoded(dependency)
+        output = session.base / f"command-{session.serial + 1}" / "output"
+        mounts = [
+            session._mount(session.tree, "/repo"),
+            session._mount(Path("/usr"), "/usr", executable=True),
+        ]
+        if stage >= 3:
+            mounts.extend(
+                session._mount(Path("/inert/sdk") / str(index), root)
+                for index, (root, present) in enumerate(self.sdk["roots"]) if present
+            )
+        mounts.extend((
+            session._mount(output, "/work", writable=True),
+            session._mount(Path("/dev/null"), "/dev/null", writable=True),
+        ))
+        config = {
+            "root": str(session.base / f"command-root-{session.serial + 1}"),
+            "mode": "compile", "argv": list(argv), "environment": session._command_environment(self.command),
+            "mounts": mounts, "code": list(command.code), "sources": [], "enumerations": [],
+            "executables": dependency["executables"], "dependency": dependency,
+        }
+        token = controller.launch(command, config)
+        session.serial += 1
+        config.update({
+            **{name: getattr(self.model["limits"], name) for name in (
+                "file_limit", "observation_count", "observation_limit", "write_limit",
+                "creation_limit", "process_limit", "memory_limit", "syscall_limit",
+            )},
+            "file_limit": 1024 * 1024, "observation_limit": 1024 * 1024,
+            "deadline": session.budget.deadline,
+            "report": str(session.base / f"report-{session.serial}.json"),
+        })
+        config["toolchain_runtime"] = controller.consume_launch(token, config)
+        return command, step, token, config
+
+    def native(self, stage=4, *, command=None, status=0):
+        command, step, token, config = self.launch(stage, command=command)
+        rows = copy.deepcopy(self.model["executions"][:len(config["executables"])])
+        for row in rows:
+            row["stage"] = toolchain_runtime.STAGES[stage]
+            row["environment"] = dict(config["environment"])
+        rows[0]["argv"] = list(command.argv)
+        if stage == 3:
+            rows[1]["argv"] = [rows[1]["path"], "-fsyntax-only", "-"]
+        accessed = [toolchain_runtime.EXEC_PREFIX + toolchain_runtime.encoded(row).decode("ascii") for row in rows]
+        if stage >= 3:
+            accessed.append(toolchain_runtime.INPUT_PREFIX + toolchain_runtime.encoded({
+                "stage": toolchain_runtime.STAGES[stage], "stdin": toolchain_runtime.INPUTS[stage], "eof": True,
+            }).decode("ascii"))
+            accessed.append(toolchain_runtime.arm_headers.PREFIX + toolchain_runtime.encoded(self.sdk_row).decode("ascii"))
+        if stage == 4 and status == 0:
+            receipt = copy.deepcopy(self.model["receipt"])
+            receipt["scope"], receipt["binding"] = step.facts.scope, step.facts.binding
+            for row, actor in zip(rows, receipt["actors"]):
+                actor["exec_record_sha256"] = hashlib.sha256(toolchain_runtime.encoded(row)).hexdigest()
+            accessed.append(toolchain_runtime.INTERMEDIATE_PREFIX + toolchain_runtime.encoded(receipt).decode("ascii"))
+        outputs = (b"model GCC\n", b"arm-none-eabi\n", b"/usr/bin/arm-none-eabi-as\n", b"", b"")
+        completed = subprocess.CompletedProcess(
+            tuple(command.argv), status, outputs[stage], b"inert compiler failure\n" if status else b"",
+        )
+        observed = {
+            "ok": True, "returncode": status, "accessed": accessed, "metadata": (),
+            "consumed": [], "code_consumed": list(command.code), "executed": list(config["executables"]),
+        }
+        payload = self.controller.prepare_native(token, completed, observed, config)
+        self.session._native_issue_owner = token
+        self.session._issue_native_return(toolchain_runtime.NATIVE_PURPOSE, token, completed, observed, payload)
+        return command, step, token, config, completed, observed
+
+    def claim(self, native):
+        command, step, token, config, completed, observed = native
+        claimed = self.session._claim_native_return(
+            toolchain_runtime.NATIVE_PURPOSE, token, completed, observed,
+        )
+        probes = tuple(toolchain_runtime._envelope_decode(self.session, claimed.payload.probes))
+        result = make_probe.ProcessOutput(
+            claimed.stdout, claimed.stderr, claimed.consumed, claimed.code_consumed,
+            metadata=claimed.metadata,
+            input_identities=tuple(self.session.source_owners(claimed.code_consumed)),
+            executed=claimed.executed, runtime_receipt=tuple(config["dependency"]["runtime_aliases"]),
+            runtime_sources=claimed.payload.runtime_sources,
+            runtime_probes=probes, returncode=claimed.returncode,
+        )
+        return claimed, result
+
+    def stage(self, number, *, status=0):
+        native = self.native(number, status=status)
+        claimed, result = self.claim(native)
+        sealed = self.controller.seal_step_result(native[1], result, native_return=claimed)
+        accepted = self.controller.consume_step_result(native[1], sealed)
+        self.controller.steps.pop(id(native[0]))
+        self.controller.issued.discard(native[1])
+        self.grant.stage += 1
+        return accepted
+
+    def recipe(self, *, failed=False):
+        stages = [self.stage(index, status=1 if failed and index == 4 else 0) for index in range(5)]
+        stdout, stderr, status = self.controller._recipe_output(self.grant)
+        result = make_probe.ProcessOutput(
+            stdout, stderr, (),
+            tuple(sorted({name for stage in stages for name in stage.result.code_consumed})),
+            input_identities=tuple(sorted({row for stage in stages for row in stage.result.input_identities})),
+            executed=tuple(name for stage in stages for name in stage.result.executed),
+            runtime_sources=tuple(sorted({row for stage in stages for row in stage.result.runtime_sources})),
+            runtime_probes=tuple(row for stage in stages for row in stage.result.runtime_probes),
+            returncode=status,
+        )
+        sealed = self.controller.seal_recipe_result(self.grant, self.command, result)
+        self.controller.active = None
+        self.controller.commands.pop(id(self.command))
+        self.controller.issued.discard(self.grant)
+        return sealed
+
+    def next_recipe(self, path, sequence):
+        previous = self.grant
+        self.model = ToolchainProtocolDataTests().model(path)
+        self.command = replace(self.command)
+        self.context = replace(self.context, sequence=sequence)
+        self.session._live_dispatches[:] = [self.context]
+        self.session._issued_dispatches.add(self.context)
+        self.session._command_dispatches[:] = [(self.command, self.context)]
+        self.grant = toolchain_runtime._RecipeGrant(
+            weakref.ref(self.command), previous.recipe, self.context,
+            self.controller.bind(self.command), previous.inputs,
+        )
+        self.grant.driver_identity = previous.driver_identity
+        self.grant.sdk = previous.sdk
+        self.grant.assembler, self.grant.assembler_spelling = previous.assembler, previous.assembler_spelling
+        self.controller.commands[id(self.command)] = self.grant
+        self.controller.issued.add(self.grant)
+        self.controller.active = self.grant
+
+
+class ToolchainCustodyInertTests(unittest.TestCase):
+    def test_actual_alias_row_representation_is_preserved_and_remains_bound(self):
+        with _CustodyModel() as model:
+            model.runtime_aliases = [["/model/alias", "target", "/model/target"]]
+            native = model.native()
+            claimed, result = model.claim(native)
+            sealed = model.controller.seal_step_result(native[1], result, native_return=claimed)
+            self.assertIs(type(sealed.runtime_receipt[0]), list)
+            self.assertEqual(sealed.runtime_receipt, tuple(model.runtime_aliases))
+            sealed.runtime_receipt[0][1] = "changed"
+            with self.assertRaises(MakeProbeError):
+                model.controller.consume_step_result(native[1], sealed)
+
+    def test_failed_compile_retains_original_status_and_raw_evidence_without_projection(self):
+        with _CustodyModel() as model:
+            result = model.recipe(failed=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stderr, b"inert compiler failure\n" + toolchain_runtime.COMPILE_FAILURE.encode())
+            evidence = model.controller.consume_recipe_result(model.command, result)
+            self.assertIsNone(evidence.projection)
+            stage = json.loads(result.toolchain_receipts[-1])
+            self.assertIsNone(stage["intermediate"])
+            self.assertEqual(stage["result"]["returncode"], 1)
+
+    def test_execute_consumes_real_step_capabilities_before_issuing_a_recipe(self):
+        with _CustodyModel() as model:
+            model.controller.active = None
+            model.grant.stage = 0
+            def command(subcommand):
+                stage = model.controller.steps[id(subcommand)].stage
+                native = model.native(stage, command=subcommand)
+                claimed, result = model.claim(native)
+                return model.controller.seal_step_result(native[1], result, native_return=claimed)
+            with patch.object(model.session, "_command", command), patch.object(
+                model.session, "_verify_runtime_tool", return_value=None,
+            ), patch.object(
+                toolchain_runtime, "assembler_path",
+                return_value=(model.grant.assembler_spelling, model.grant.assembler),
+            ):
+                result = model.controller.execute(model.command)
+            self.assertEqual(len(result.toolchain_receipts), 5)
+            self.assertFalse(model.controller.steps)
+            self.assertFalse(model.controller._step_results)
+            evidence = model.controller.consume_recipe_result(model.command, result)
+            self.assertIsNotNone(evidence.projection)
+
+    def test_execute_refuses_shaped_unissued_stage_results(self):
+        with _CustodyModel() as model:
+            model.controller.active = None
+            model.grant.stage = 0
+            outputs = (b"model GCC\n", b"arm-none-eabi\n", b"/usr/bin/arm-none-eabi-as\n", b"", b"")
+            def unissued(subcommand):
+                stage = model.controller.steps[id(subcommand)].stage
+                return make_probe.ProcessOutput(outputs[stage], b"", (), ())
+            with patch.object(model.session, "_command", unissued), patch.object(
+                model.session, "_verify_runtime_tool", return_value=None,
+            ), patch.object(
+                toolchain_runtime, "assembler_path",
+                return_value=(model.grant.assembler_spelling, model.grant.assembler),
+            ), self.assertRaises(MakeProbeError):
+                model.controller.execute(model.command)
+            self.assertFalse(model.controller._recipe_results)
+
+    def test_version_two_launch_and_consumed_identity_are_atomic(self):
+        with _CustodyModel() as model:
+            _, _, token, config = model.launch()
+            self.assertEqual(toolchain_runtime.validate_launch(config)["version"], 2)
+            changed = copy.deepcopy(config)
+            changed["dependency"]["toolchain_probe"]["version"] = 1
+            changed["toolchain_runtime"]["version"] = 1
+            with self.assertRaises(toolchain_runtime.ChannelError):
+                toolchain_runtime.validate_launch(changed)
+            with self.assertRaises(MakeProbeError):
+                model.controller.consume_launch(token, config)
+
+    def test_original_native_facts_seal_one_immutable_stage_and_refuse_copy_replay(self):
+        with _CustodyModel() as model:
+            native = model.native()
+            claimed, result = model.claim(native)
+            self.assertFalse(model.session._native_returns)
+            with self.assertRaises(MakeProbeError):
+                model.controller.seal_step_result(copy.copy(native[1]), result, native_return=claimed)
+            sealed = model.controller.seal_step_result(native[1], result, native_return=claimed)
+            self.assertIs(sealed.stdout, claimed.stdout)
+            self.assertIs(sealed.stderr, claimed.stderr)
+            self.assertIs(type(sealed.toolchain_receipts[0]), bytes)
+            with self.assertRaises(MakeProbeError):
+                model.controller.consume_step_result(native[1], replace(sealed))
+            accepted = model.controller.consume_step_result(native[1], sealed)
+            self.assertIsNone(accepted.native.original)
+            with self.assertRaises(MakeProbeError):
+                model.controller.consume_step_result(native[1], sealed)
+
+    def test_native_value_mutations_before_claim_and_between_claim_seal_refuse(self):
+        for phase in ("before-claim", "before-seal"):
+            for field in ("stdout", "stderr", "status", "report", "equal-stdout"):
+                with self.subTest(phase=phase, field=field), _CustodyModel() as model:
+                    native = model.native(0 if field == "equal-stdout" else 4)
+                    completed, observed = native[-2:]
+                    if phase == "before-seal":
+                        claimed, result = model.claim(native)
+                    if field == "stdout":
+                        completed.stdout = b"changed"
+                    elif field == "stderr":
+                        completed.stderr = b"changed"
+                    elif field == "status":
+                        completed.returncode = 1
+                    elif field == "report":
+                        observed["accessed"].append("changed")
+                    else:
+                        replacement = bytes(bytearray(completed.stdout))
+                        self.assertEqual(replacement, completed.stdout)
+                        self.assertIsNot(replacement, completed.stdout)
+                        completed.stdout = replacement
+                    with self.assertRaises(MakeProbeError):
+                        if phase == "before-claim":
+                            model.claim(native)
+                        else:
+                            model.controller.seal_step_result(native[1], result, native_return=claimed)
+
+    def test_recipe_capability_projects_only_two_roles_and_survives_removed_registration(self):
+        with _CustodyModel() as model:
+            result = model.recipe()
+            raw = copy.deepcopy(result.runtime_probes)
+            self.assertEqual(len(result.toolchain_receipts), 5)
+            evidence = model.controller.consume_recipe_result(model.command, result)
+            projection = toolchain_runtime._envelope_decode(model.session, evidence.projection)
+            replacements = [
+                (row["sequence"], index)
+                for row in projection["runtime_probes"] if row.get("stage") == "compile" and "argv" in row
+                for index, value in enumerate(row["argv"]) if type(value) is dict
+            ]
+            self.assertEqual(replacements, [(2, 20), (3, 7)])
+            self.assertEqual(result.runtime_probes, raw)
+            self.assertFalse(model.controller.commands)
+            with self.assertRaises(MakeProbeError):
+                model.controller.consume_recipe_result(model.command, result)
+
+    def test_recipe_copies_mutations_and_view_expiry_cannot_acquire_projection(self):
+        for defect in ("copy", "output", "environment", "epoch", "expired"):
+            with self.subTest(defect=defect), _CustodyModel() as model:
+                result = model.recipe()
+                if defect == "copy":
+                    result = replace(result)
+                elif defect == "output":
+                    object.__setattr__(result, "stdout", b"changed")
+                elif defect == "environment":
+                    result.runtime_probes[0]["environment"]["LANG"] = "changed"
+                elif defect == "epoch":
+                    model.session._namespace_epoch += 1
+                else:
+                    model.session._expire_namespaces()
+                with self.assertRaises(MakeProbeError):
+                    model.controller.consume_recipe_result(model.command, result)
+
+    def test_acknowledged_occurrences_remain_distinct_and_bind_execution_not_semantics(self):
+        values = []
+        for path in ("/work/ccL3VdjV.s", "/work/ccBRFQFs.s"):
+            with _CustodyModel(path) as model:
+                result = model.recipe()
+                evidence = model.controller.consume_recipe_result(model.command, result)
+                projection = toolchain_runtime._envelope_decode(model.session, evidence.projection)
+                record = {"command": projection, "output_sha256": hashlib.sha256(result.stdout).hexdigest()}
+                pending = model.session._prepare_toolchain_occurrence(evidence, model.context, 0, record)
+                model.session._acknowledge_toolchain_occurrence(model.context.scope, 0, pending, record)
+                receipts = model.session.toolchain_receipts(model.context.scope)
+                with self.assertRaises(MakeProbeError):
+                    model.session._acknowledge_toolchain_occurrence(model.context.scope, 0, pending, record)
+                self.assertEqual(model.session.toolchain_receipts(model.context.scope), receipts)
+                semantic = {
+                    "domains": {}, "assignments": [], "published_sources": [], "dynamic_commands": [record],
+                }
+                observation = make_probe.MakeObservation(
+                    "target", semantic, "execution", "semantic", b"", b"", (),
+                    toolchain_receipts=receipts,
+                )
+                original = model.session._namespace_observation_context(observation)
+                changed = replace(observation, toolchain_receipts=(b"[]",))
+                self.assertEqual(changed.semantics, observation.semantics)
+                self.assertEqual(changed.semantic_digest, observation.semantic_digest)
+                self.assertNotEqual(model.session._namespace_observation_context(changed), original)
+                model.session._expire_namespaces()
+                self.assertEqual(model.session.toolchain_receipts(model.context.scope), receipts)
+                values.append((record, receipts))
+        self.assertEqual(values[0][0], values[1][0])
+        self.assertNotEqual(values[0][1], values[1][1])
+
+    def test_actual_acknowledgement_branch_retains_two_occurrences_and_ignores_repeats(self):
+        with _CustodyModel() as model:
+            receipts, confirmations = {}, []
+            for slot, path in enumerate(("/work/ccL3VdjV.s", "/work/ccBRFQFs.s")):
+                if slot:
+                    model.next_recipe(path, slot + 1)
+                result = model.recipe()
+                evidence = model.controller.consume_recipe_result(model.command, result)
+                record = {
+                    "command": toolchain_runtime._envelope_decode(model.session, evidence.projection),
+                    "output_sha256": hashlib.sha256(result.stdout).hexdigest(),
+                }
+                pending = model.session._prepare_toolchain_occurrence(evidence, model.context, slot, record)
+                owner = str(slot + 1) * 64
+                receipts[slot] = ("model checker", record, result, owner, "replace", {}, pending)
+                confirmations.append({"slot": slot, "owner": owner, "policy": "replace", "outputs": []})
+            module = ast.parse(Path(make_probe.__file__).read_text())
+            session_class, = [
+                node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "ProbeSession"
+            ]
+            actual_ack, = [
+                node for node in ast.walk(session_class)
+                if isinstance(node, ast.FunctionDef) and node.name == "acknowledge"
+            ]
+            wrapper = ast.parse(
+                "def replay(self, receipts, confirmations, dispatch_scope):\n"
+                "    confirmed = 0\n"
+                "    last_confirmation = None\n"
+                "    command_results = {}\n"
+                "    header_steps = {}\n"
+                "    receipt_directories = {0: (), 1: ()}\n"
+                "    generated_paths, generated_directories = set(), set()\n"
+                "    file_owner = None\n"
+            )
+            wrapper.body[0].body.append(actual_ack)
+            wrapper.body[0].body.extend(ast.parse(
+                "for number, confirmation in enumerate(confirmations, 1):\n"
+                "    acknowledge(number, confirmation)\n"
+                "    acknowledge(number, confirmation)\n"
+                "return confirmed, command_results\n"
+            ).body)
+            ast.fix_missing_locations(wrapper)
+            namespace = dict(make_probe.__dict__)
+            exec(compile(wrapper, "<actual-inert-acknowledgement>", "exec"), namespace)
+            original = model.session._acknowledge_toolchain_occurrence
+            with patch.object(model.session, "_acknowledge_toolchain_occurrence", wraps=original) as append:
+                count, records = namespace["replay"](
+                    model.session, receipts, confirmations, model.context.scope,
+                )
+                self.assertEqual(append.call_count, 2)
+            self.assertEqual(count, 2)
+            self.assertEqual(len(records), 1)
+            archived = model.session.toolchain_receipts(model.context.scope)
+            self.assertEqual(len(archived), 2)
+            self.assertEqual([json.loads(value)["producer_slot"] for value in archived], [0, 1])
+            self.assertNotEqual(archived[0], archived[1])
+
+    def test_admission_failure_never_publishes_native_or_step_capability(self):
+        with _CustodyModel() as model:
+            native = model.native()
+            claimed, result = model.claim(native)
+            before = dict(model.session.budget.bytes)
+            with patch.object(model.session.budget, "charge", side_effect=MakeProbeError("admission refused")):
+                with self.assertRaises(MakeProbeError):
+                    model.controller.seal_step_result(native[1], result, native_return=claimed)
+            self.assertFalse(model.controller._step_results)
+            self.assertFalse(model.session._native_returns)
+            self.assertEqual(model.session.budget.bytes, before)
+            model.controller.retire_step(native[1])
+            with self.assertRaises(MakeProbeError):
+                model.controller.seal_step_result(native[1], result, native_return=claimed)
+
+
 class ModernToolchainTests(unittest.TestCase):
     def setUp(self):
         self.fixture = foundation.FoundationTests()
@@ -1056,6 +2006,10 @@ class ModernToolchainTests(unittest.TestCase):
         self.assertIsNone(session._toolchain.active)
         self.assertFalse(session._header_launches)
         self.assertFalse(session._issued_header_launches)
+        self.assertFalse(session._native_returns)
+        self.assertFalse(session._toolchain._step_results)
+        self.assertFalse(session._toolchain._recipe_results)
+        self.assertFalse(session._toolchain_receipt_archive)
 
     def ordinary(self):
         return subprocess.run(
@@ -1092,6 +2046,229 @@ class ModernToolchainTests(unittest.TestCase):
             )
         self.results = tuple(results)
         return observed, results[0]
+
+    def test_one_make_two_checker_typed_intermediate_component(self):
+        with self.session() as session:
+            observed, _ = self.capture(session)
+            self.assertEqual(len(self.results), 2)
+            self.assertEqual(len(observed.toolchain_receipts), 2)
+            raw = [json.loads(value) for value in observed.toolchain_receipts]
+            self.assertTrue(all(
+                type(value) is bytes for value in observed.toolchain_receipts
+            ))
+            scope, = {record["make_scope"] for record in raw}
+            self.assertEqual(session.toolchain_receipts(scope), observed.toolchain_receipts)
+            dispatches = [
+                row for row in observed.semantics["native_dispatches"]
+                if row["job"]["target"] == toolchain_runtime.TARGET
+            ]
+            self.assertEqual(
+                [record["native_dispatch_sequence"] for record in raw],
+                [row["sequence"] for row in dispatches],
+            )
+            self.assertLess(raw[0]["producer_slot"], raw[1]["producer_slot"])
+            bindings, contents = [], []
+            for record, result in zip(raw, self.results):
+                self.assertEqual(record["version"], 1)
+                self.assertEqual(record["kind"], "toolchain-recipe")
+                stages = record["stages"]
+                self.assertEqual([stage["stage"] for stage in stages], list(toolchain_runtime.STAGES))
+                self.assertEqual(
+                    tuple(toolchain_runtime.encoded(stage) for stage in stages),
+                    result.toolchain_receipts,
+                )
+                stage = stages[-1]
+                proof = stage["intermediate"]
+                profile = {
+                    "version": 2, "stage": 4, "stdin": toolchain_runtime.COMPILE_INPUT,
+                    "inputs": [], "driver_identity": stage["images"][0][1:],
+                    "images": stage["images"], "workspace": stage["workspace"],
+                }
+                rows = stage["executions"]
+                roles = toolchain_runtime.compile_operand_roles(
+                    rows, profile, rows[0]["argv"], complete=True,
+                )
+                self.assertEqual(proof["path"], roles.output.value)
+                self.assertEqual(proof["path"], roles.input.value)
+                toolchain_runtime.intermediate_record(
+                    [toolchain_runtime.INTERMEDIATE_PREFIX + toolchain_runtime.encoded(proof).decode("ascii")],
+                    profile=profile,
+                    launch={"version": 2, "scope": stage["launch_scope"], "binding": stage["launch_binding"]},
+                    executions=rows, returncode=0,
+                    limits=toolchain_runtime.IntermediateLimits(**stage["admission"]),
+                    reserve=lambda size: session.budget.charge("control", size),
+                )
+                bindings.append((stage["launch_scope"], stage["launch_binding"], tuple(stage["workspace"])))
+                contents.append((proof["writer"]["completed"]["extent"], proof["writer"]["completed"]["sha256"]))
+                self.assertTrue(proof["complete"])
+                self.assertTrue(proof["retirement"]["path_absent"])
+                self.assertEqual(proof["retirement"]["after_identity"][6], 0)
+            self.assertNotEqual(bindings[0], bindings[1])
+            self.assertNotEqual(observed.toolchain_receipts[0], observed.toolchain_receipts[1])
+            self.assertEqual(contents[0], contents[1], "actual assembly differs; do not normalize its digest")
+            semantic = [
+                row for row in observed.semantics["dynamic_commands"] if row["command"].get("toolchain_check")
+            ]
+            self.assertEqual(len(semantic), 1)
+            self.assertEqual(
+                {record["semantic_record_sha256"] for record in raw},
+                {hashlib.sha256(toolchain_runtime.encoded(semantic[0])).hexdigest()},
+            )
+            refs = [
+                value
+                for row in semantic[0]["command"]["runtime_probes"] if "argv" in row
+                for value in row["argv"] if type(value) is dict
+            ]
+            self.assertEqual(refs, [{
+                "kind": "toolchain-intermediate-ref", "version": 1, "role": "stage4-assembly",
+            }] * 2)
+        self.assert_clean(session)
+
+    @staticmethod
+    def intermediate_fault(tree, kind, *, remove=False):
+        tracker, = [
+            node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "_ToolchainIntermediate"
+        ]
+        method = {
+            "actor": "actor", "object": "object_identity", "reader": "leave", "retirement": "leave",
+            "creation-status": "leave", "writer-barrier": "exited",
+        }[kind]
+        owner, = [node for node in tracker.body if isinstance(node, ast.FunctionDef) and node.name == method]
+        messages = {
+            "actor": "toolchain operation has a foreign process/exec/birth owner",
+            "object": "toolchain object changed identity, mode, link or extent",
+            "reader": "toolchain reader did not consume exactly the sealed content",
+            "retirement": "toolchain unlink did not retire the exact pinned object",
+            "creation-status": "toolchain transition is outside its closed completion order",
+            "writer-barrier": "toolchain transition is outside its closed completion order",
+        }
+        if remove:
+            guarded_owner = owner
+            if kind == "writer-barrier":
+                guarded_owner, = [
+                    node for node in tracker.body if isinstance(node, ast.FunctionDef) and node.name == "phase_is"
+                ]
+            guards = [
+                node for node in ast.walk(guarded_owner) if isinstance(node, ast.If)
+                and any(
+                    isinstance(statement, ast.Raise) and isinstance(statement.exc, ast.Call)
+                    and statement.exc.args and isinstance(statement.exc.args[0], ast.Constant)
+                    and statement.exc.args[0].value == messages[kind]
+                    for statement in node.body
+                )
+            ]
+            if kind == "creation-status":
+                guards = [
+                    node for node in owner.body if isinstance(node, ast.If)
+                    and ast.dump(node.test) == ast.dump(ast.parse("result < 0", mode="eval").body)
+                ]
+            guard, = guards
+            guard.test = ast.Constant(False)
+        if kind == "actor":
+            owner.body[1:1] = ast.parse(
+                "if self.path is not None and type(sequence) is int and 1 <= sequence <= len(self.actors):\n"
+                "    self.actors[sequence - 1] = (pid, state.clone(), state.pidfd, state.toolchain_birth_sequence)\n"
+            ).body
+        elif kind == "object":
+            index, = [
+                index for index, node in enumerate(owner.body)
+                if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id == "identity"
+            ]
+            owner.body[index + 1:index + 1] = ast.parse(
+                "if not absent:\n    identity = (*identity[:6], 2)\n"
+            ).body
+        elif kind == "reader":
+            digest, = [
+                node for node in tree.body
+                if isinstance(node, ast.FunctionDef) and node.name == "_toolchain_memory_digest"
+            ]
+            digest.body[-1:-1] = ast.parse('digest.update(b"fault")').body
+        elif kind == "retirement":
+            assignments = [
+                (node, index) for node in ast.walk(owner) if isinstance(node, ast.If)
+                for index, item in enumerate(node.body)
+                if isinstance(item, ast.Assign) and isinstance(item.targets[0], ast.Name)
+                and item.targets[0].id == "after"
+            ]
+            parent, index = assignments[0]
+            parent.body[index + 1:index + 1] = ast.parse("after = (*after[:6], 1)").body
+        elif kind == "creation-status":
+            index, = [
+                index for index, node in enumerate(owner.body) if isinstance(node, ast.Assign)
+                and isinstance(node.targets[0], ast.Name) and node.targets[0].id == "result"
+            ]
+            owner.body[index + 1:index + 1] = ast.parse(
+                'if pending[0] == "open" and pending[1] == 1:\n    result = -1\n'
+            ).body
+        else:
+            index, = [
+                index for index, node in enumerate(owner.body) if isinstance(node, ast.Assign)
+                and isinstance(node.targets[0], ast.Name) and node.targets[0].id == "sequence"
+            ]
+            owner.body[index + 1:index + 1] = ast.parse(
+                'if sequence == 2:\n    self.phase = "writer-open"\n'
+            ).body
+        ast.fix_missing_locations(tree)
+        return messages[kind]
+
+    def assert_native_intermediate_fault(self, kind, *, remove=False):
+        message = {}
+        def mutate(tree):
+            message["expected"] = self.intermediate_fault(tree, kind, remove=remove)
+        with self.native_runtime({"syscall_guard.py": mutate}):
+            with self.session() as session:
+                with self.assertRaisesRegex(MakeProbeError, re.escape(message["expected"])):
+                    self.make(session)
+            self.assert_clean(session)
+
+    def test_native_intermediate_actor_fault_reaches_its_owned_stop_guard(self):
+        self.assert_native_intermediate_fault("actor")
+
+    def test_native_intermediate_creation_status_fault_cannot_complete(self):
+        self.assert_native_intermediate_fault("creation-status")
+
+    def test_native_intermediate_writer_terminal_barrier_cannot_be_skipped(self):
+        self.assert_native_intermediate_fault("writer-barrier")
+
+    def test_native_intermediate_object_fault_reaches_its_pin_guard(self):
+        self.assert_native_intermediate_fault("object")
+
+    def test_native_intermediate_returned_content_fault_reaches_its_reader_guard(self):
+        self.assert_native_intermediate_fault("reader")
+
+    def test_native_intermediate_unlink_fault_reaches_its_retirement_guard(self):
+        self.assert_native_intermediate_fault("retirement")
+
+    def test_native_intermediate_guard_removal_and_restoration(self):
+        for kind in ("creation-status", "actor", "object", "reader", "writer-barrier", "retirement"):
+            with self.subTest(kind=kind), self.assertRaises(AssertionError):
+                self.assert_native_intermediate_fault(kind, remove=True)
+            self.assert_native_intermediate_fault(kind)
+
+    def test_native_copied_step_result_is_not_completion_authority(self):
+        with self.session() as session:
+            original = session._command
+            def copied(command, **options):
+                result = original(command, **options)
+                return replace(result) if id(command) in session._toolchain.steps else result
+            with patch.object(session, "_command", copied), self.assertRaisesRegex(
+                MakeProbeError, "toolchain stage is unissued, copied, stale or replayed",
+            ):
+                self.make(session)
+        self.assert_clean(session)
+
+    def test_native_changed_non_role_result_cannot_reach_semantic_projection(self):
+        with self.session() as session:
+            original = session._toolchain.consume_recipe_result
+            def changed(command, result):
+                result.runtime_probes[0]["environment"]["LANG"] = "changed-after-sealing"
+                return original(command, result)
+            with patch.object(session._toolchain, "consume_recipe_result", changed), self.assertRaisesRegex(
+                MakeProbeError, "toolchain aggregate changed after sealing",
+            ):
+                self.make(session)
+        self.assert_clean(session)
 
     def test_original_recipe_executes_real_driver_frontend_assembler_and_immutable_inputs(self):
         expected = self.ordinary()

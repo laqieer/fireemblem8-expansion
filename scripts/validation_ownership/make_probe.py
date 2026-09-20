@@ -160,6 +160,7 @@ class _ClaimedNativeReturn:
     metadata: tuple
     executed: tuple
     payload: object
+    original: _NativeReturn | None = None
 
 
 _NATIVE_FINGERPRINT_DOMAIN = b"fe8-native-completion-value-v2\0"
@@ -388,6 +389,7 @@ class ProcessOutput:
     runtime_sources: tuple[tuple[str, int, int, str], ...] = ()
     runtime_probes: tuple[dict, ...] = ()
     returncode: int = 0
+    toolchain_receipts: tuple[bytes, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -414,6 +416,7 @@ class MakeObservation:
     source_phases: dict | None = None
     source_effects: dict | None = None
     source_journal: dict | None = None
+    toolchain_receipts: tuple[bytes, ...] = ()
 
 
 class _NamespaceUnavailable(MakeProbeError):
@@ -942,6 +945,7 @@ class ProbeSession:
         self._native_issue_owner = None
         self._native_returns = {}
         self._toolchain = toolchain_runtime.Controller(self)
+        self._toolchain_receipt_archive = {}
         self._read_epoch_abi = None
         self._source_phase_records = {}
         self._source_pass_archives = {}
@@ -960,6 +964,7 @@ class ProbeSession:
         self._namespace_epoch += 1
         self._namespace_issued.clear()
         self._namespace_tokens.clear()
+        self._toolchain.expire_results()
 
     def _namespace_directory(self, name):
         flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME
@@ -1100,14 +1105,91 @@ class ProbeSession:
         self._namespace_frames.pop()
         capture.closed = True
 
-    @staticmethod
-    def _namespace_observation_context(observation):
+    def _namespace_observation_context(self, observation):
         domains = observation.semantics["domains"]
+        receipt_digest = None
+        if observation.toolchain_receipts:
+            receipt_digest = self._toolchain_sidecar_digest(observation.toolchain_receipts)
         return encoded((
             observation.target, observation.execution_digest, observation.semantic_digest,
             observation.semantics["assignments"], domains.get("MAKEFILE_LIST"), domains.get("MAKE_RESTARTS"),
-            observation.semantics["published_sources"], observation.events,
+            observation.semantics["published_sources"], observation.events, receipt_digest,
         ))
+
+    def _toolchain_sidecar_digest(self, receipts):
+        if (
+            type(receipts) is not tuple or len(receipts) > self.budget.limits.entries
+            or any(type(value) is not bytes or len(value) > self.budget.limits.file_bytes for value in receipts)
+        ):
+            raise MakeProbeError("toolchain sidecar is not bounded immutable evidence")
+        self.budget.charge("control", 1024 + sum(len(value) + 128 for value in receipts))
+        digest = hashlib.sha256(b"fe8-toolchain-occurrence-sidecar-v1\0")
+        for value in receipts:
+            self.budget.remaining()
+            digest.update(struct.pack(">Q", len(value)))
+            digest.update(value)
+        return digest.hexdigest()
+
+    def toolchain_receipts(self, scope=None):
+        if self.base is None or self.snapshot is None:
+            raise MakeProbeError("toolchain receipt archive requires an active session")
+        if scope is not None and (type(scope) is not str or not scope):
+            raise MakeProbeError("toolchain receipt scope is not text")
+        self.budget.remaining()
+        if scope is not None:
+            if scope not in self._toolchain_receipt_archive:
+                raise MakeProbeError("toolchain receipt scope was not acknowledged")
+            values = self._toolchain_receipt_archive[scope]
+            self.budget.charge("cache", 128 + 16 * len(values))
+            return tuple(value for _, value in values)
+        count = sum(len(values) for values in self._toolchain_receipt_archive.values())
+        self.budget.charge("cache", 128 + count * 16)
+        return tuple(value for values in self._toolchain_receipt_archive.values() for _, value in values)
+
+    def _prepare_toolchain_occurrence(self, evidence, context, slot, semantic_record):
+        if (
+            type(evidence) is not toolchain_runtime.RecipeEvidence
+            or context is not self._require_live_dispatch()
+            or type(slot) is not int or not 0 <= slot < self.budget.limits.entries
+        ):
+            raise MakeProbeError("toolchain occurrence lacks its consumed recipe/job")
+        self.budget.charge("control", 8192 + 4 * len(evidence.command_binding))
+        semantic = toolchain_runtime._envelope_encode(self, semantic_record)
+        raw = toolchain_runtime._envelope_encode(self, {
+            "version": 1, "kind": "toolchain-recipe", "make_scope": context.scope,
+            "producer_slot": slot, "native_dispatch_sequence": context.sequence,
+            "native_job": {
+                "kind": context.job[0], "target": context.job[1], "command_line": context.job[2],
+                "cwd": context.cwd, "arguments": context.arguments, "environment": context.environment,
+                "rebuilding_makefiles": context.rebuilding,
+            },
+            "source_snapshot": evidence.source_snapshot,
+            "namespace_epoch": evidence.namespace_epoch,
+            "command_binding": evidence.command_binding.decode("ascii"),
+            "stages": [toolchain_runtime._envelope_decode(self, stage) for stage in evidence.stages],
+            "result": toolchain_runtime._envelope_decode(self, evidence.result),
+            "semantic_record_sha256": hashlib.sha256(semantic).hexdigest(),
+        })
+        return context, slot, semantic, raw
+
+    def _acknowledge_toolchain_occurrence(self, scope, slot, pending, semantic_record):
+        context, expected_slot, semantic, raw = pending
+        if (
+            get_ident() != self.owner_thread or context.scope != scope or expected_slot != slot
+            or context.snapshot is not self.snapshot or context.tree != self.tree
+            or context.epoch != self._namespace_epoch
+            or toolchain_runtime._envelope_encode(self, semantic_record) != semantic
+        ):
+            raise MakeProbeError("toolchain acknowledgement changed its original occurrence")
+        previous = self._toolchain_receipt_archive.get(scope, ())
+        if previous:
+            if slot <= previous[-1][0]:
+                raise MakeProbeError("toolchain occurrence was acknowledged twice or out of order")
+        count = sum(len(values) for values in self._toolchain_receipt_archive.values())
+        if count >= self.budget.limits.entries or count >= self.budget.limits.observation_count:
+            raise MakeProbeError("toolchain occurrence archive exceeds its existing count bounds")
+        self.budget.charge("cache", 1024 + len(raw) + 16 * (len(previous) + 1))
+        self._toolchain_receipt_archive[scope] = (*previous, (slot, raw))
 
     def _seal_namespace(self, capture, observation):
         self.budget.remaining()
@@ -1434,6 +1516,7 @@ class ProbeSession:
                 if not owner.closed and not owner.retained
             ])
         def clear_state():
+            outstanding_toolchain_results = self._toolchain.has_results()
             self._expire_namespaces()
             self._namespace_images.clear()
             self._namespace_frames.clear()
@@ -1473,6 +1556,7 @@ class ProbeSession:
             self._native_issue_owner = None
             self._native_returns.clear()
             self._toolchain.close()
+            self._toolchain_receipt_archive.clear()
             self._read_epoch_abi = None
             finish_cleanup([journal.close for journal in tuple(self._source_journal_instances)])
             self._source_journal_instances.clear()
@@ -1494,6 +1578,8 @@ class ProbeSession:
             self._views.clear()
             if outstanding_native_returns:
                 raise MakeProbeError("probe session retained an unclaimed native result")
+            if outstanding_toolchain_results:
+                raise MakeProbeError("probe session retained an unconsumed toolchain result")
             self._file_owners = {path: owner for path, owner in self._file_owners.items() if owner.retained}
         def remove_base():
             if self.base is not None:
@@ -2028,7 +2114,8 @@ class ProbeSession:
             and bool({"header_search", "filter_kernel"} & set(dependency))
         )
         header_verifier = None
-        native_owner = None
+        native_owner = toolchain_launch if needs_toolchain else None
+        native_purpose = toolchain_runtime.NATIVE_PURPOSE if needs_toolchain else header_protocol.FILTER_PURPOSE
         if needs_header or header_runtime is not None:
             record = self._header_launches.pop(id(header_runtime), None)
             if (
@@ -2628,18 +2715,26 @@ class ProbeSession:
                     )
                 except ChannelError as error:
                     raise MakeProbeError(str(error)) from error
+            elif needs_toolchain:
+                native_payload = self._toolchain.prepare_native(toolchain_launch, result, observed, config)
             sandbox_result = result, observed
         if native_payload is not None:
             if self._native_issue_owner is not None:
                 raise MakeProbeError("native result issuance owner is already active")
             self._native_issue_owner = native_owner
+            issued = False
             try:
                 self._issue_native_return(
-                    header_protocol.FILTER_PURPOSE, native_owner,
+                    native_purpose, native_owner,
                     sandbox_result[0], sandbox_result[1], native_payload,
                 )
+                issued = True
             finally:
                 self._native_issue_owner = None
+                if not issued:
+                    self._retire_native_return(
+                        native_purpose, native_owner, sandbox_result[0], sandbox_result[1],
+                    )
         return sandbox_result
 
     @staticmethod
@@ -2764,7 +2859,11 @@ class ProbeSession:
             node_limit=self.budget.limits.file_bytes,
         )
 
-    def _native_return_context(self):
+    def _native_return_context(self, purpose=header_protocol.FILTER_PURPOSE, owner=None):
+        if purpose == toolchain_runtime.NATIVE_PURPOSE:
+            return self._toolchain.completion_context(owner)
+        if purpose != header_protocol.FILTER_PURPOSE:
+            raise MakeProbeError("native result has a foreign purpose")
         live = self._require_live_dispatch()
         if not self._command_dispatches:
             raise MakeProbeError("native result lacks its consumed command")
@@ -2777,22 +2876,28 @@ class ProbeSession:
         return command, live, step
 
     def _issue_native_return(self, purpose, owner, completed, observed, payload):
-        if purpose != header_protocol.FILTER_PURPOSE:
+        if purpose == header_protocol.FILTER_PURPOSE:
+            owner_type, payload_type = _HeaderRuntimeLaunch, header_protocol._AcceptedHeaderTranscript
+        elif purpose == toolchain_runtime.NATIVE_PURPOSE:
+            owner_type, payload_type = toolchain_runtime._Launch, toolchain_runtime._AcceptedToolchainCompletion
+        else:
             raise MakeProbeError("native result purpose is not implemented")
         if (
-            type(owner) is not _HeaderRuntimeLaunch
+            type(owner) is not owner_type
             or self._native_issue_owner is not owner
             or type(completed) is not subprocess.CompletedProcess
             or type(observed) is not dict
-            or type(payload) is not header_protocol._AcceptedHeaderTranscript
+            or type(payload) is not payload_type
         ):
             raise MakeProbeError("native result issuance has a foreign owner or payload")
         self._native_issue_owner = None
-        command, live, step = self._native_return_context()
+        command, live, step = self._native_return_context(purpose, owner)
         if (
             type(completed.returncode) is not int
             or not -(signal.NSIG - 1) <= completed.returncode <= 255
             or type(completed.stdout) is not bytes or type(completed.stderr) is not bytes
+            or type(observed.get("returncode")) is not int
+            or observed["returncode"] != completed.returncode
         ):
             raise MakeProbeError("native result has unsupported process values")
         key = id(owner)
@@ -2815,19 +2920,21 @@ class ProbeSession:
         code_consumed = tuple(observed["code_consumed"])
         metadata = tuple(observed["metadata"])
         executed = tuple(observed.get("executed", ()))
-        self._native_returns[key] = _NativeReturn(
+        record = _NativeReturn(
             purpose, self, get_ident(), owner, command, live, step,
             self.snapshot, self.tree, self._namespace_epoch,
             completed, observed, completed.returncode, completed.stdout, completed.stderr,
             stdout_sha256, stderr_sha256, report_sha256,
             consumed, code_consumed, metadata, executed, payload,
         )
+        if purpose == toolchain_runtime.NATIVE_PURPOSE:
+            self._toolchain.native_issued(owner, payload)
+        self._native_returns[key] = record
 
-    def _claim_native_return(self, purpose, owner, completed, observed):
-        record = self._native_returns.pop(id(owner), None)
-        if record is None:
-            raise MakeProbeError("native result is missing, foreign or already claimed")
-        command, live, step = self._native_return_context()
+    def _verify_native_return(self, record, purpose, owner, completed, observed):
+        if type(record) is not _NativeReturn or record.purpose != purpose or record.owner is not owner:
+            raise MakeProbeError("native result has a foreign purpose or owner")
+        command, live, step = self._native_return_context(purpose, owner)
         if (
             type(record) is not _NativeReturn or record.purpose != purpose
             or record.session is not self or record.thread != get_ident()
@@ -2848,11 +2955,20 @@ class ProbeSession:
             or self._native_fingerprint(observed) != record.report_sha256
         ):
             raise MakeProbeError("native result values changed after issuance")
-        return _ClaimedNativeReturn(
+
+    def _claim_native_return(self, purpose, owner, completed, observed):
+        record = self._native_returns.pop(id(owner), None)
+        if record is None:
+            raise MakeProbeError("native result is missing, foreign or already claimed")
+        self._verify_native_return(record, purpose, owner, completed, observed)
+        claimed = _ClaimedNativeReturn(
             record.returncode, record.stdout, record.stderr,
             record.consumed, record.code_consumed, record.metadata, record.executed,
-            record.payload,
+            record.payload, record if purpose == toolchain_runtime.NATIVE_PURPOSE else None,
         )
+        if purpose == toolchain_runtime.NATIVE_PURPOSE:
+            self._toolchain.native_claimed(owner, claimed)
+        return claimed
 
     def _retire_native_return(self, purpose, owner, completed, observed):
         record = self._native_returns.get(id(owner))
@@ -3639,7 +3755,7 @@ class ProbeSession:
                     "include_dirs": ["/repo" if path == "." else "/repo/" + path for path in include_dirs],
                     "metadata_descendants": [],
                     "toolchain_probe": {
-                        "version": 1, "stage": toolchain_step.stage,
+                        "version": 2, "stage": toolchain_step.stage,
                         "stdin": toolchain_runtime.INPUTS[toolchain_step.stage],
                         "driver_identity": list(toolchain_step.parent.driver_identity),
                         "images": [[path, *self._toolchain.image_identity(path)] for path in compiler],
@@ -3765,12 +3881,19 @@ class ProbeSession:
                     native_result = self._claim_native_return(
                         header_protocol.FILTER_PURPOSE, header_launch, completed, observed,
                     )
+                elif toolchain_step is not None:
+                    native_result = self._claim_native_return(
+                        toolchain_runtime.NATIVE_PURPOSE, toolchain_launch, completed, observed,
+                    )
             finally:
                 if header_launch is not None:
                     self._retire_native_return(
                         header_protocol.FILTER_PURPOSE, header_launch, completed, observed,
                     )
                 if toolchain_launch is not None:
+                    self._retire_native_return(
+                        toolchain_runtime.NATIVE_PURPOSE, toolchain_launch, completed, observed,
+                    )
                     self._toolchain.launches.pop(id(toolchain_launch), None)
                     self._toolchain.issued.discard(toolchain_launch)
                 if header_launch is not None:
@@ -3817,7 +3940,9 @@ class ProbeSession:
                     )
                 except ChannelError as error:
                     raise MakeProbeError(str(error)) from error
-            if sdk is not None:
+            if toolchain_step is not None:
+                runtime_sources = native_result.payload.runtime_sources
+            elif sdk is not None:
                 try:
                     runtime_sources = arm_headers.records(
                         observed["accessed"], sdk, compiler[:2] if toolchain_step is not None else compiler,
@@ -3826,13 +3951,12 @@ class ProbeSession:
                 except ChannelError as error:
                     raise MakeProbeError(str(error)) from error
             if toolchain_step is not None:
-                runtime_probes += toolchain_runtime.records(
-                    observed["accessed"], dependency["toolchain_probe"], compiler,
-                    returncode=returncode, argv=argv, environment=environment,
-                )
-                if toolchain_step.stage == 3 and not completed.returncode and "include/global.h" not in observed["code_consumed"]:
+                runtime_probes += tuple(toolchain_runtime._envelope_decode(
+                    self, native_result.payload.probes, file_limit=toolchain_step.facts.limits.file_limit,
+                ))
+                if toolchain_step.stage == 3 and not returncode and "include/global.h" not in code_consumed:
                     raise MakeProbeError("toolchain syntax result omitted actual global.h consumption")
-                if toolchain_step.stage == 3 and not completed.returncode and not runtime_sources:
+                if toolchain_step.stage == 3 and not returncode and not runtime_sources:
                     raise MakeProbeError("toolchain syntax result omitted actual C SDK consumption")
                 if toolchain_step.stage == 4 and any(output.iterdir()):
                     raise MakeProbeError("toolchain compiler left a private temporary behind")
@@ -3886,6 +4010,11 @@ class ProbeSession:
                 self.budget.charge("cache", len(encoded(result.runtime_probes)))
             if not outputs and toolchain_step is None:
                 self.cache.setdefault(key, []).append(result)
+            if toolchain_step is not None:
+                result = self._toolchain.seal_step_result(
+                    toolchain_step, result, native_return=native_result,
+                )
+                native_result = completed = observed = None
             return result
 
     def _compiler_runtime_profile(self, compiler, search_arguments=(), *, search=True):
@@ -4355,7 +4484,7 @@ class ProbeSession:
                 confirmed += 1
                 last_confirmation = confirmation
                 return
-            _, record, produced, producer, policy, previous = pending
+            _, record, produced, producer, policy, previous, toolchain_occurrence = pending
             if (
                 "kind" in confirmation
                 or confirmation["slot"] != confirmed or confirmation["owner"] != producer
@@ -4400,6 +4529,10 @@ class ProbeSession:
             semantic_record = dict(record)
             if effective:
                 semantic_record["generated_outputs"] = effective
+            if toolchain_occurrence is not None:
+                self._acknowledge_toolchain_occurrence(
+                    dispatch_scope, confirmed, toolchain_occurrence, semantic_record,
+                )
             command_results.setdefault(hashlib.sha256(encoded(semantic_record)).hexdigest(), semantic_record)
             confirmed = completed
             last_confirmation = confirmation
@@ -4497,6 +4630,9 @@ class ProbeSession:
                 try:
                     environment = self._command_environment(registration)
                     result = self.command(registration)
+                    toolchain_evidence = (
+                        self._toolchain.consume_recipe_result(registration, result) if toolchain_recipe else None
+                    )
                 finally:
                     self._command_dispatches.pop()
                 inputs = result.consumed
@@ -4529,6 +4665,10 @@ class ProbeSession:
                     identity["runtime_inputs"] = [list(item) for item in result.runtime_sources]
                 if result.runtime_probes:
                     identity["runtime_probes"] = list(result.runtime_probes)
+                if toolchain_evidence is not None and toolchain_evidence.projection is not None:
+                    projection = toolchain_runtime._envelope_decode(self, toolchain_evidence.projection)
+                    identity["runtime_probes"] = projection["runtime_probes"]
+                    identity["toolchain_semantics"] = projection["toolchain_semantics"]
                 if registration.stdout_transform is not None:
                     identity["stdout_transform"] = registration.stdout_transform
                 record = {
@@ -4539,6 +4679,10 @@ class ProbeSession:
                         (item.path, f"{stat.S_IFREG | item.mode:06o}", hashlib.sha256(item.data).hexdigest())
                         for item in result.generated
                     ]
+                toolchain_occurrence = (
+                    self._prepare_toolchain_occurrence(toolchain_evidence, dispatch_context, sequence - 1, record)
+                    if toolchain_evidence is not None else None
+                )
                 producer = hashlib.sha256(encoded([
                     registration.argv, sorted(set(registration.code)), inputs,
                     sorted(set(registration.directories)), outputs,
@@ -4568,7 +4712,7 @@ class ProbeSession:
                     self.budget.charge("mapping", len(frame))
                     (mapping_path / (key + ".files")).write_bytes(frame)
                 receipts[sequence - 1] = (
-                    command, record, result, producer, registration.publication_policy, previous,
+                    command, record, result, producer, registration.publication_policy, previous, toolchain_occurrence,
                 )
                 self.budget.charge("cache", len(encoded(sorted(new_directories))))
                 receipt_directories[sequence - 1] = tuple(sorted(new_directories))
@@ -4814,6 +4958,7 @@ class ProbeSession:
                 phases,
                 observed.get("source_effects"),
                 None if journal is None else journal.payload,
+                self.toolchain_receipts(dispatch_scope) if dispatch_scope in self._toolchain_receipt_archive else (),
             )
             if namespace_capture is not None:
                 namespace_capture.native_complete = True

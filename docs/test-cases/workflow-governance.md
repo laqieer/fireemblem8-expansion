@@ -3805,6 +3805,38 @@ expiry. A valid past Delete must still satisfy every proof and strict UTC
 timestamp rule. The old history-time comparison admits the expired controls;
 neither sleeping nor changing the machine clock is needed.
 
+### Typed toolchain sidecar and comparator boundary
+
+This is part of **TC-WORKFLOW-GATE-OWNERSHIP-001**, not another case or
+permission. Follow the [typed intermediate component procedure](#typed-intermediate-component-procedure)
+for **TC-WORKFLOW-OWNERSHIP-MODERN-TOOLCHAIN-001** before interpreting native
+toolchain equality. The existing class/module routing covers the added tests.
+
+For source-only evidence, run only the named inert classes below with the
+review environment's process/foreign/OS/filesystem-effect traps. Inspect
+imports and fixtures first; do not substitute the whole native-bearing module.
+Require the two original temporary-name models to produce equal complete
+semantic role forms while their raw occurrences remain different. Changing a
+non-role argument/order/environment, executable/stat/SDK/source input,
+stdin/status/output or completed assembly digest must remain meaningful.
+Only two parsed role slots may change; raw `ProcessOutput.runtime_probes`
+must not change.
+
+Exercise original shared-return object/byte-reference binding, same-object
+mutation, copied/forged/replayed/stale step and recipe values, cumulative
+admission refusal, and cleanup. Confirm one raw archive entry per newly
+acknowledged occurrence, no entry for a missing acknowledgement and no second
+entry for a repeated acknowledgement. Replacing a returned raw sidecar must
+change original-namespace execution binding without changing semantic
+identity. Historical archive data may survive a view switch but must not
+revive any result capability; session cleanup removes owned archive references.
+
+No change to `_stable_native_context`, `_semantic`, native dispatches,
+producer hashing, Make/source interpretation, SDK/budget/bootstrap policy or
+public raw reporting is permitted. A component's one returned Make does not
+establish equality between two returned pages or the affordability of an
+original root, full report, resource census or H1. Those remain separate gates.
+
 ### Bounded outcome custody prerequisite (O1–O6)
 
 This subsection belongs to **TC-WORKFLOW-GATE-OWNERSHIP-001**, under the
@@ -9767,6 +9799,98 @@ and the helper reports substitution. Controlled `ENOSYS` and locked-attribute
 `EPERM` return unchanged state and no remount fallback. Unissued launch/config
 controls and the original root-setup cold-import/recursive-attribute refusal
 remain required. These controls neither repair nor rerun SDK/resource work.
+
+### Typed intermediate component procedure
+
+This extension retains **TC-WORKFLOW-OWNERSHIP-MODERN-TOOLCHAIN-001** and its
+existing ownership selectors. The confirmed bounded preimage contains two
+complete checker records in the **first returned Make**, differing only at
+the paired cc1 output and assembler input names. The second Make failed SDK
+admission; its exact row/bound and root20's exact operand difference were not
+retained. Do not invent either or rerun that spent pair as an automatic step.
+
+1. On the exact candidate, first run the inspected pure/inert selectors:
+
+   ```sh
+   python3 -B -m unittest \
+     scripts.validation_ownership.tests.test_toolchain_runtime.ToolchainProtocolDataTests \
+     scripts.validation_ownership.tests.test_toolchain_runtime.ToolchainIntermediateInertTests \
+     scripts.validation_ownership.tests.test_toolchain_runtime.ToolchainCustodyInertTests \
+     scripts.validation_ownership.tests.test_header_pipeline.HeaderReceiptInertTests -v
+   ```
+
+   Use inert native/foreign/process/namespace/privilege/file-effect boundaries
+   during implementation/review. These controls invoke actual parser,
+   state-machine, syscall-hook, shared-return, controller, archive and binding
+   APIs with explicitly synthetic effects. They are not native receipts, SDK
+   discovery, memory/RSS sizing or execution permission. Preserve the original
+   bad-model acceptances, the corrected refusals, targeted enforcement
+   removal/restoration and semantics-preserving neutral controls.
+
+2. **Only after a separate native allocation**, use the existing small
+   `ModernToolchainTests` fixture and select exactly:
+
+   ```sh
+   python3 -B -m unittest \
+     scripts.validation_ownership.tests.test_toolchain_runtime.ModernToolchainTests.test_one_make_two_checker_typed_intermediate_component -v
+   ```
+
+   This method makes **one** direct Make observation with two internal original
+   checker invocations. It does not run the ordinary Make oracle, a second
+   page, another source variant, `run_probe`, a root/census or H1. Disclose the
+   fixture's preexisting `src/query.c`, copied genuine headers, initially absent
+   generated header parents, no text producer and empty final target. That
+   source/graph is deliberately smaller than the ordinary repository root.
+
+3. Require two genuinely acknowledged raw recipe envelopes in producer order,
+   bound to the actual two native jobs and five stage envelopes each. Require
+   version-2 consumed launches and exactly one complete version-1 compile
+   receipt. Inspect real creator/writer/reader process/birth/exec identities,
+   exclusive creation, regular `0600` identity/link count, actual write-close-
+   exit/sealed hash, returned sequential read/hash/offset-close-exit, successful
+   unlink/path absence/nlink zero and driver exit. The original empty output
+   directory check and all ownership cleanup remain required.
+
+4. Require distinct raw namespace/launch bindings and raw occurrences. Do not
+   force random filenames or use randomness as the only control. If names
+   differ, retain their exact grammar-derived operand differences. Require
+   equal actual completed assembly extent/digest before expecting one exact
+   deduplicated semantic checker record. A real content difference is a stop,
+   not a fingerprint to normalize. All other meaningful command fields and
+   native dispatch records must remain intact.
+
+5. Allocate native enforcement controls separately, one selected method at a
+   time: `test_native_intermediate_creation_status_fault_cannot_complete`,
+   `test_native_intermediate_actor_fault_reaches_its_owned_stop_guard`,
+   `test_native_intermediate_object_fault_reaches_its_pin_guard`,
+   `test_native_intermediate_returned_content_fault_reaches_its_reader_guard`,
+   `test_native_intermediate_writer_terminal_barrier_cannot_be_skipped`,
+   `test_native_intermediate_unlink_fault_reaches_its_retirement_guard`,
+   `test_native_copied_step_result_is_not_completion_authority`, and
+   `test_native_changed_non_role_result_cannot_reach_semantic_projection`.
+   Each uses the existing fixture/runtime mutation mechanism and one attempted
+   Make. Stop-derived fault injection is labelled as such; it does not
+   manufacture a real adversarial kernel observation.
+
+   The separately selected
+   `test_native_intermediate_guard_removal_and_restoration` makes twelve
+   attempted observations: six fault-plus-removal arms and six restored arms.
+   It is not covered by the one-Make positive allocation. A restored arm must
+   reach its named new guard; an earlier SDK, setup or independent permission
+   failure is not evidence for that guard. Removing a guard must fail the
+   corresponding regression even if another later independent gate still
+   prevents final success. Retain all diagnostics and do not silently widen
+   flags, modes, I/O forms, paths, compiler profiles or limits on a failed arm.
+
+Actual compiler/syscall compatibility remains unknown until the exact native
+qualifier runs. In particular, the closed explicit-close/sequential-I/O,
+creation/writer mode and existing option-arity requirements are not inferred
+from the model. The three mechanism-owned FD peak and cumulative native/
+parent allocation and work costs need genuine qualification; pure traces are
+not RSS or a full-root capacity certificate. Header's separately owned native
+procedure, bootstrap, source-phase integration and final delivery gates remain
+independent. No ROM/save/configuration/localization or gameplay compatibility
+change is introduced.
 
 ### Interactions and save compatibility
 
