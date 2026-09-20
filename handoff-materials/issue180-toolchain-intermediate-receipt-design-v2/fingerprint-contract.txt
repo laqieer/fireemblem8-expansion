@@ -1,0 +1,77 @@
+Exact private native-completion value fingerprint V2
+===================================================
+
+READ-ONLY closure of a0ad's remaining F2b format finding. This is a private
+issuance/claim fingerprint, not the public native report or semantic encoding,
+and is not claimed byte-identical to authority.encoded().
+No code, imports, tests or native work were performed for this specification.
+
+Digest: SHA-256 of the following deterministic byte stream.
+Prefix: the exact ASCII bytes "fe8-native-completion-value-v2" followed by one
+NUL byte. Exactly one root value follows. No whitespace or separator is added.
+All lengths/counts are unsigned64 big-endian. Their actual source extents and
+all workspaces must satisfy the previously specified bounds before processing.
+
+Value encoding:
+
+| Exact Python type | Tag | Payload |
+| --- | --- | --- |
+| NoneType | 00 | Empty |
+| bool False | 01 | Empty |
+| bool True | 02 | Empty |
+| int | 03 | One sign byte, then exactly8 magnitude bytes, big-endian |
+| float | 04 | Exactly8 IEEE-754 binary64 bytes, big-endian |
+| str | 05 | Code-point count U64, then each code point as U32 big-endian |
+| list or tuple | 06 | Element count U64, then recursively encoded elements in order |
+| dict | 07 | Pair count U64, then tagged string key and encoded value for each pair |
+
+Tags in the table are single-byte hexadecimal values, not ASCII digit pairs.
+
+Integer sign is00 for zero/nonnegative and01 for negative. Magnitude is abs(n)
+and must be less than2^64. Zero has sign00/eight zero bytes. The fixed-width
+format permits no variable-length/minimality ambiguity; no truncation, decimal
+conversion, unsigned wrapping or negative-zero integer exists. Any genuinely
+admitted source scalar outside this domain must be identified before coding
+and receive an explicit contract decision, not silently coerced.
+
+Floats must be exact builtin float and finite. Preserve IEEE signed zero:
+positive0.0 and negative0.0 have different payloads. NaN and infinities reject.
+Integer1, float1.0 and boolTrue remain distinct, as they are in canonical JSON.
+There is no decimal formatting or locale-dependent conversion.
+
+Strings bind exact Python code points in order, including unpaired surrogate
+code points if an already-valid parsed source contains them. Do not UTF-8
+encode, normalize Unicode, combine surrogate pairs, decode paths or replace
+characters. Each ord value is0..0x10ffff, encoded as four bytes. A supplementary
+character and two literal surrogate code points are distinct Python strings
+and therefore distinct fingerprints. Hash fixed-size chunks; never build a
+whole UTF-32 copy.
+
+List and tuple deliberately share tag06 and value semantics, matching the
+existing canonical JSON treatment and the actual tuple metadata created by
+transport decoding. Their element order and nested types remain significant.
+Other sequence/mapping subclasses, bytes-like objects, sets, generators,
+custom iterables, repr/conversion objects and arbitrary classes reject.
+
+Dictionary keys must be exact builtin str. Sort by Python string lexicographic
+code-point order, matching existing sort_keys semantics; do not sort by encoded
+UTF-32 length, locale, case-folded or normalized spelling. Emit each key with
+its normal05 tag/length/payload before its value. Duplicate source JSON keys
+are rejected at the existing parser; no overwrite/merge rule is introduced.
+Dictionary insertion order alone does not change the fingerprint.
+
+Reject cyclic containers using the bounded active-ancestor stack. Repeated
+acyclic aliases encode by value at each occurrence and each occurrence incurs
+the existing traversal/count/work admission; alias reuse cannot evade bounds.
+Reject unsupported types, scalar domains, depth, nodes or extents before any
+untrusted-size allocation/sort/read/encoding. Sorting holds only admitted key
+references. Pre-admit each traversal and verification's bounded scratch, stack,
+live ancestor sort workspace, scalar and hash work; do not borrow receipt
+storage or treat the deterministic bytes as a memory-cost estimate.
+
+Prospective controls: exact byte-stream vectors for every tag, signed integer
+edges/overflow, +/-0.0 and finite float edges, Unicode/surrogate distinctions,
+list/tuple equivalence, dictionary order neutrality, nested value/order changes,
+unsupported types/cycles, pre-admission and repeated-verification exhaustion.
+These vectors are a named private security-binding format contract, not source
+text identity evidence. No vectors or implementation were executed here.

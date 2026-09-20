@@ -1,0 +1,215 @@
+Issue #180: shared native completion and HeaderV3 implementation freeze
+=====================================================================
+
+Main decision after a0ad turn1, source c8b365da1be29bc58352cf1edb8b836a2cf18321.
+This record adopts the remaining concrete static recommendations. It is not
+source implementation, runtime evidence, or an execution allocation.
+
+Read together with:
+- issue180-header-receipt-v3-design/contract.txt and control-plan.json;
+- issue180-toolchain-intermediate-receipt-design/design.md;
+- issue180-toolchain-intermediate-receipt-design-v2/amendment.txt;
+- issue180-toolchain-intermediate-receipt-design-v2/fingerprint-contract.txt.
+
+Independent static disposition
+------------------------------
+
+a0ad turn1 closes F2b: the exact private fingerprint format is deterministic;
+the relevant validated successful header/toolchain source scalars fit the
+specified integer domain. This is source review, not execution. Exact builtin
+int checks exclude bool; out-of-domain values still reject before hashing.
+Earlier conditional F1/F2a/F3 closure remains attributed to turn0.
+
+HeaderV3 is statically coherent after adopting the shared seam, compatible row
+representation and terminal reservation below. No vendor-library schedule or
+native compatibility was qualified. The hosted finding remains open until its
+code, regression and required genuine execution are complete.
+
+One shared native-return seam
+-----------------------------
+
+ProbeSession in make_probe.py owns exactly one private issuance registry and:
+
+  _issue_native_return(purpose, owner, completed, observed, payload)
+  _claim_native_return(purpose, owner, completed, observed)
+  _retire_native_return(...)
+
+The final closed purposes are header-filter-completion-v2 and
+toolchain-step-v2. Header implementation comes first. It must not add an
+unimplemented permissive toolchain route, placeholder payload acceptance or a
+second registry; subsequent GCC work extends the same closed type dispatch.
+
+Every issued record binds exact session/thread/owner and completed/observed
+identities, the live source snapshot/tree/epoch and consumed launch/command/job,
+exact builtin-int return status, exact builtin-bytes stdout/stderr lengths and
+SHA-256 digests, the admitted F2b private full-report fingerprint, and a sealed
+purpose-specific typed payload. All binding/storage work is pre-admitted.
+No callback/serializer/plugin parameter or caller-supplied validator exists.
+
+_sandbox_run validates generic report/status/accounting and the purpose-specific
+receipt before issuing. Its return remains exactly (completed, observed); JSON
+has no new marker, capability or top-level key. Issuance followed by an internal
+failure retires there. Claim recomputes all common bindings and removes the
+entry before exposing a one-use claimed value. Wrong purpose/owner/context,
+copy, replay, missing issuance and same-object mutation reject.
+
+Header claim exposes the already accepted transcript, never reparses the raw
+header rows, and captures immutable output-byte references from the accepted
+completion before subsequent result work. Other native result values consumed
+after claim cannot silently replace their issuance-time binding. GCC's later
+step/result sealing compares final output to the original binding, not the
+then-current mutable CompletedProcess.
+
+_command finally retires every unclaimed entry, including failures between
+return and claim or after issuance. ProbeSession cleanup releases references
+and rejects any unexpected outstanding result rather than treating it as
+successful completion. Header keys live only in their separate launch/verifier
+lifetime and never enter this registry.
+
+The GCC step/recipe capability chains remain purpose-specific, as specified in
+V1/V2, but no longer own a competing native-return registry. Source/compiler/
+namespace/file permissions and ordinary non-filter behavior do not change.
+
+Header data and JSON compatibility
+---------------------------------
+
+The authoritative accepted transcript is a slots-based immutable tuple of
+primitive-valued rows. From each accepted row, construct one private dict
+subclass with exactly the current eight keys/primitive values and no per-object
+attribute dictionary. It must reject ordinary item assignment/deletion, clear,
+pop/popitem, setdefault, update, in-place union and reinitialization.
+__copy__ and __deepcopy__ return the same immutable view (memoizing the latter).
+Indexing, get, iteration, equality and ordinary json.dumps retain the existing
+JSON object shape. No MappingProxyType/generic Mapping/frozen-dataclass object
+is inserted directly into runtime_probes.
+
+The tuple/views are immutable through their ordinary API, like the project's
+frozen dataclasses. This is not protection from hostile trusted Python using
+unbound dict base-class mutators, object.__setattr__, ctypes or monkeypatching
+the observer. Do not describe that broader guarantee. Neither a view nor a
+mutable copy/union is a native capability; only the live claimed transcript is
+authority. Arbitrary raw report mutation cannot change the authoritative rows.
+
+Accepted-copy, view-construction, encoding and retained-result storage are
+charged before allocation using the existing budget. Do not justify Python
+heap/encoder scratch merely by canonical wire length. The implementation must
+enumerate its bounded new workspace separately, including existing encoder
+temporaries, views, slot values, sort references and verification repetitions.
+Preserve the final semantic shape and meaningful sequence-distinct actual rows;
+no key/tag/scope/binding/count/manifest entropy enters semantic or cache identity.
+
+Exact header wire-size bounds
+----------------------------
+
+Let E(v) be the current authority.encoded canonical JSON byte length, not the
+private F2b encoding. Let N be the exact issued observation_count, F the exact
+issued file_limit, S the issued scope, and B the issued 64-hex binding.
+Require exact bounded builtin scalar types before size calculation. N < 2
+cannot support a successful filter transcript plus terminal and rejects before
+tracee execution. Let C = N - 1. This is the maximum header row count after
+reserving the one terminal slot; other real observations may reduce it further.
+
+R is len(KERNEL_PREFIX) plus the maximum E(row) over the following CLOSED row
+shapes, all with sequence=C and the exact existing eight keys:
+
+1. For each actual statfs profile path, use its declared presence. A present
+   path has result=0, a 240-character lower-hex data string, and null
+   bytes/sha256/eof. An absent path has result=-ENOENT and all four null.
+   Hex contents do not change the wire length; size templates are not observed
+   receipts and grant no evidence.
+2. For each READ_PATHS member, operation=stream, result=0, data=null, bytes=F,
+   sha256=64 lowercase hex characters and eof=false (the longer boolean).
+3. For each ABSENT_PATHS member, operation=absent, result=-ENOENT and all four
+   payload members null.
+
+T is len(KERNEL_END) plus E of the exact seven-field completion:
+version=2, scope=S, binding=B, status=0, count=C, manifest_sha256=64 lower-hex
+characters, tag=64 lower-hex characters.
+
+These are exact schema-shape maxima at the admitted scalar domains, not a
+claim that one real libselinux run reaches every possible maximum or path.
+Constants/templates are small and fixed; size calculations themselves need
+pre-admitted bounded scratch. In particular, S uses exact canonical JSON string
+length (including escaping), not len(S) or an assumed ASCII scope. Computing
+that length may stream code points without allocating an unbounded encoding.
+Neither N/F/S nor a row is accepted merely because its maximum was computed.
+
+The MAC-body bound follows the same closed E calculation on
+["header-kernel-completion-v2", completion_without_tag]; manifest hashing
+holds one hash state and one current already-admitted row encoding, never a
+second ordered row list or concatenated manifest. Parent nested decodes reject
+strings larger than R or T before encoding/decoding them.
+
+Private reservation and commit
+------------------------------
+
+Before execution reserve one terminal observation count, T+128 logical
+observation bytes, and the separately enumerated private slot/scratch overhead.
+All other observations see that count and byte authority as already spent.
+The reservation has exact session/policy identity and one pending/committed
+state. It cannot be copied, consumed twice or lent to another observation.
+
+On successful status/closed streams/positive count/existing first-statfs
+evidence, construct and authenticate the actual terminal under that reservation.
+Require actual ASCII wire bytes <= T before retaining it. A single private
+commit converts the pending slot to that actual accessed value. It retains the
+full conservative byte charge, consumes no second observation count and
+refunds nothing. No call through ordinary observe may charge the terminal
+again. The public report remains a sorted string list with ordinary aggregate
+integer accounting; private reservation objects never serialize.
+
+This is a logical atomic transfer in the single trusted supervisor, not a
+claim of exception-free Python set mutation. Every insertion/encoding/hash/
+transfer failure makes the run fail and prevents successful completion.
+Partial failure retains conservative consumed accounting and cannot sign a
+prefix or recover by dropping/refunding the pending slot. A failed native
+status must not receive a successful signed terminal. Cleanup releases
+references, not charged authority.
+
+Before each kernel row dictionary/encoding allocation, reserve its one count,
+R+128 logical bytes and new bounded construction scratch. Commit exactly once
+to the observed row and hash it only under that reservation. Each actual
+occurrence has a distinct sequence; never deduplicate operation/path pairs.
+Accounting may transfer a pending count to its real string, but cannot charge
+twice, refund on failure, or silently fall back to post-allocation admission.
+Use a private header-only reservation/commit path, not a generic new framework.
+
+Implementation unit and evidence boundary
+-----------------------------------------
+
+First coherent unit: HeaderV3 authentication, this shared native-return
+primitive and exact F2b format, existing test_header_pipeline.py controls, and
+the directly coupled ownership docs/tester-facing existing case.
+Keep source work in header_runtime.py, syscall_guard.py and make_probe.py;
+do not introduce a general module, second registry, new workflow or limit.
+Budget/lifecycle/mask code, Make/source interpretation, SDK/compiler profiles,
+GCC intermediate hooks and the separate namespace-bootstrap work are excluded.
+
+Required pure/inert preimage, restoration and positive/adversarial controls:
+- existing count-only omission/renumbering repaired-count acceptance;
+- authenticated complete actual transcript, valid conditional short transcript,
+  valid observed repeated path, and transport-array permutation;
+- omission/insertion/resequence/payload/count/digest repair with unchanged tag,
+  foreign key/scope/binding/status, decimal terminal, open streams and malformed
+  shapes; no test may give the attacker the signing key and claim unforgeability;
+- issue/claim/retire exact identity, thread/job/view/epoch, immutable issuance
+  values, pre-claim and claim/result mutations, missing/copy/replay/purpose
+  mismatch and every preparse/finally failure;
+- exact fingerprint vectors/domains, key-order neutrality, tuple/list equality,
+  Unicode/surrogates, signed zero, alias/cycle/depth/work/storage exhaustion;
+- row and terminal boundary admission before allocation, no double charge or
+  refund, independent transient/retained accounting, failed transfer and key
+  reference release (not zeroization);
+- JSON/deepcopy compatibility, every ordinary mutation refusal and unchanged
+  semantic shape with no authentication entropy.
+
+Use the actual APIs under common inert dependencies, not an imitation algorithm
+or source-spelling assertions. Restore the actual parent defect to demonstrate
+the regression when meaningful. Pure signing fixtures model the trusted guard;
+they are not native receipts or a library qualification.
+
+No actual Make/compiler/SDK/sed/namespace/privileged/process/remote execution
+is allocated by this file. A separately frozen smallest genuine header case is
+required after the local source is ready; it is not a full root, historical
+paired rerun, ROOT21, resource calibration or H1. The eventual GCC component
+gets its own implementation/qualifier scope while reusing this one seam.

@@ -1,0 +1,130 @@
+## Local preparation amendment: keep the backing child inside the private tmpfs
+
+**Confirmed preparation hold, not a kernel failure.** Local nondelivery
+`20478394860b673b98fb32a4dd292fa0fc02a5d4` correctly refused to invent the
+original R-created host backing-child identity. The closed c8 custody frames
+carry the original C-owned parent only. Namespace teardown cannot unlink the
+additional host directory. This hold is preserved in the first commit and
+its four actual serializer controls; no failure is reclassified as success.
+
+Main chooses a smaller ownership correction instead of expanding shipping
+frames or adding another transport: **mount the single private 1MiB tmpfs on
+the originally C-created, identity-bound fixture directory; create R's fixed
+`volume` child only inside that tmpfs.** All R-created fixture children then
+disappear with the owned namespaces. The only host backing directories are
+created, identity-retained and cleaned by C itself.
+
+This explicitly changes the old S1 placement rule. It does not pretend that
+mounting on the originally bound directory was permitted by the old wording,
+or that its mounted tmpfs inode equals the original host inode.
+It preserves the child path `fixture/volume`, the lower-owner transition and
+every mechanism/authority check. No user decision or source API expansion is
+needed for this local diagnostic correction.
+
+### Exact local scope
+
+Prepare a normal child of204783 on the existing unpublished
+`diagnostic/issue-180-null-bootstrap-1` branch, still never merged.
+Selected immutable subject/control source stays
+`c8b365da1be29bc58352cf1edb8b836a2cf18321`; delivered BASE stays
+`ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`.
+Only the same five additive diagnostic paths may change. No source budget,
+lifecycle, frames, RunOutcome, helper, Foundation tests, Build workflow,
+registry, header/GCC code or closed diagnostic is modified.
+
+The final harness has exactly two normal commits above BASE: this correction
+above204783 aboveBASE. Update the exact ancestry/security contract and benign
+tests accordingly; do not amend/reset/rebase/cherry-pick, loosen ancestry to
+arbitrary ancestors, or create an empty identity-only commit.
+The branch is still absent remotely and no launch has been allocated.
+
+### Original host identity versus mounted identity
+
+1. C creates only its fixed fresh run container and empty0700 fixture child,
+   captures their original nofollow device/inode/type/owner/group identities
+   as local ownership facts, and binds the fixture's original identity through
+   the unchanged c8 API. No already-existing or substituted object is adopted.
+   Any C-held cleanup pins are CLOEXEC and never forwarded through sudo.
+2. R opens and verifies that exact original empty fixture using the existing
+   binding, actual caller U/G, closed path and remaining original deadline.
+   It may overmount that directory ONLY in its verified private M0 with the
+   one existing1MiB tmpfs, flags14, mode0700. It must prove the new mount is the
+   expected distinct tmpfs/size/restriction context before any fixture write.
+3. A pre-mount directory FD still refers to the OLD HOST backing object after
+   overmount. It must not be used for mkdir/chown/write below the mount!
+   Close/withdraw that pin under the existing owner rules; open and verify the
+   new mounted root separately. Only then create `volume` and the fixed
+   canaries/placeholders/directories within the new tmpfs.
+4. Only the fresh tmpfs root/children may be chowned to U/G. Never change
+   metadata on the original backing directory or an existing device inode.
+   Keep the original selected/harness readonly binds, original null/zero
+   identity, outer null RO/NOSUID/NOEXEC without NODEV, and regular canary
+   restrictions. No second tmpfs, bind shortcut, host-child creation, unmount
+   command or cleanup privilege is added.
+5. Before GO, all original and mounted setup/ancestor/device handles are
+   closed as before. R retires to the same CAP_KILL-only reaper; W has the same
+   cap-zero owner-entry and subject-import barrier. U0/M0 -> U1/M1 owner-change,
+   actual maps/caps/NNP/root-cwd/FD checks and all original denials are intact.
+6. After the actual owned process/namespace lifecycle is closed, C sees its
+   ORIGINAL host fixture directory, which must still have its captured
+   identity/ownership/mode and be empty. C removes only that checked original
+   directory and its own checked empty run container, using nofollow/pinned
+   ancestry as applicable. A replacement, retained child, mount, owner,
+   uncertainty or failed close makes cleanup fail and retains the unproved
+   object; never recursively delete or infer identity from a late lookup.
+
+The c8 frame binding continues to mean the original host fixture identity.
+It is not replaced by a tmpfs/volume inode. R-local mounted identities are
+checked as separate runtime facts; no unrelated frame field carries them.
+All namespace pins/children must be gone before final C success. Readiness
+requires both truthful lifecycle custody and actual owned cleanup, not just
+an empty host directory observed while a private mount is still live.
+
+### Finish the formerly held coordinator
+
+Connect the concrete existing C fixture/acquisition/run_capture/retention/
+cleanup path only after this ownership correction is implemented. Preserve
+the one original30-second budget/deadline,35-second wait and45-second enclosing
+ceiling,1MiB fixture,256KiB combined capture,52-entry/552960-byte custody
+reservation and all existing admission. No new budget, deadline reset, refund,
+resource increase, producer channel, callback, setup FD forwarding or API.
+
+Keep no override/fallback route for failed setup, old-remount unexpected
+success, map/setns/LSM denial, failed selective operation or cleanup. All
+outer125/errors, missing EOF, partial frames and uncertain owners stay failing;
+snapshots remain qualified=false. Preserve first-cause precedence and attempt
+remaining owned cleanup on each failure without a success-shaped catch.
+
+Exactly the existing five bounded artifact names/allowlists remain. Record
+actual observations separately from assertions and qualification. Before/
+after selected/harness source checks and fixture cleanup must reflect work
+actually performed; no `source_unchanged:true` default after an unchecked run.
+The old operation's code assertion is still distinct from separately exported
+selective-call data. No raw streams, key/token, environment/source/ROM/SDK dump.
+
+### Focused inert controls and remaining launch gate
+
+Local work is still PURE/PARSED/FULLY INERT actual-API control flow and owned
+ordinary pipes plus installed actionlint. No actual fork/child payload,
+namespace/mount/setns/map/ID/capability/sudo/helper/privileged/CI execution.
+Trap effectful boundaries in every separately imported c8 module too.
+
+Preserve the original four schema rejection controls as compatibility facts.
+Add preimage/restoration coverage: restoring creation through the pre-mount
+host pin must leave an unowned host child and fail the new cleanup oracle;
+corrected post-mount creation leaves the original parent unchanged and empty
+after modeled namespace teardown. An original parent, a mounted tmpfs root
+and a volume child must have distinct model identities. Mere same path/name/
+UID/mode cannot substitute. Replacements/retained namespace/children/unknown
+FDs, each acquisition/mount/close/cleanup interruption and exhausted admission
+must fail before a false launch or completion claim. Meaning-preserving names/
+JSON order still pass. Do not use text assertions or mock successful cleanup
+as evidence of kernel behavior.
+
+Run the smallest relevant existing benign family including original custody/
+role/restoration preservation and new full coordinator inert composition.
+Commit normally and return exact head/parent/full and incremental inventories,
+actual commands/results and retained failures. Main then independently reviews
+the exact runnable preparation and separately freezes ONE actual restricted-CI
+launch. No push, run, allocation, backend adoption, seven-mode success,
+ROOT21/census2/resource sizing/H1 or overall completion follows now.

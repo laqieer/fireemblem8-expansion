@@ -1,0 +1,50 @@
+{
+  "status": "preserved-frozen-interface-hold-not-a-kernel-observation",
+  "hold": "original-private-child-identity-unavailable",
+  "source": "c8b365da1be29bc58352cf1edb8b836a2cf18321",
+  "authoritative_scope": "https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5736286567",
+  "necessary_contract": [
+    "C binds its originally owned fresh fixture parent.",
+    "R creates an exclusive fresh private child and mounts its 1MiB tmpfs there.",
+    "R closes every setup/ancestor handle before GO and retires setup capability.",
+    "Namespace teardown releases mounts, not a new privileged unmount operation.",
+    "C deletes only originally owned objects; replaced or foreign paths must be retained."
+  ],
+  "gap": "The private child's host-filesystem backing directory is a different object from C's pre-bound parent. The frozen protocol does not retain its original identity in C. A late same-owner/mode/name stat cannot distinguish that object from a replacement, while mount namespace destruction does not unlink the backing directory.",
+  "existing_interface": {
+    "binding": "lifecycle._FixtureBinding(mode, uid, gid, deadline, device, inode, owner) binds the original parent.",
+    "R_before": "Fixed _decode_frame fields: identity binding, owned child pid, kind/stage/status/error, result, setup_status.",
+    "R_after": "Fixed before reference, cleanup, disposition, status; no filesystem object identity slot.",
+    "worker": "Six-element null mount states, at most one operation, caps/denials/IO/FD/topology semantic data; no backing-object field.",
+    "C_run": "Outcome mode forbids producer_channel/producer_handler and input_data, forwards no setup FDs, and has no admitted observation callback."
+  },
+  "benign_actual_API_evidence": {
+    "command": "python3 -B ../.copilot/session-state/3df36741-371b-49d8-ab09-a70c1ff3bec0/files/issue180-null-bootstrap-preparation-evidence/interface-check.py",
+    "execution": 3476,
+    "tests": 4,
+    "seconds": 0.001,
+    "result": "PASS",
+    "positive": "Existing c8 R-before and original parent binding decode normally.",
+    "negative": [
+      "Adding fixture_child or backing_identity to an R frame rejects with outcome fields.",
+      "Substituting the child's inode for the original parent rejects with outcome fixture mismatch.",
+      "Adding an eighth child-identity argument to _FixtureBinding rejects with TypeError."
+    ],
+    "operations": "Only actual c8 serialization/type checks, with process/prctl/signal helpers trapped; no payload/watchdog/syscall namespace or helper execution."
+  },
+  "preparation_disposition": {
+    "execution_contract": "Unconditional finite refusal; no environment or argument override.",
+    "coordinator": "Preserves the scope allocation, verifies source, emits bounded no-launch/unavailable records and returns125 without a budget, fixture or sudo acquisition.",
+    "reaper_entry": "Same independent unconditional refusal before any root-role operation.",
+    "safe_cleanup": "The implemented pure/mock-tested guard may remove only an empty original parent. Any child is retained because its original identity is unavailable.",
+    "implemented_but_not_connected": "Fixed R/N/W role functions and the actual c8 run_capture adapter are prepared and mocked. Final live C fixture/launch/cleanup orchestration is not connected under the hold."
+  },
+  "not_done": [
+    "No c8 API or frame-schema edit.",
+    "No overloaded mode/binding field or fabricated child inode.",
+    "No new receipt file, transport, broker, privileged unmount or cleanup command.",
+    "No actual namespace, helper, privileged workload, push, workflow, merge or overall completion.",
+    "No revised technical contract or execution allocation inferred from this finding."
+  ],
+  "next_owner": "Main independently reviews the exact preparation and this contract contradiction. Any changed ownership contract and actual one-shot launch require a separate explicit freeze."
+}

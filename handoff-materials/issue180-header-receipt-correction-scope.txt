@@ -1,0 +1,81 @@
+## Pre-edit correction: five exact HeaderV3 implementation findings
+
+Independent195e0ba1 reviewed local
+`453797b8d74b6da2ce96bb812dd0f0bbfeaa1c98` againstc8. Its11 inert methods
+pass, but five Medium/high-confidence gaps block code acceptance and any
+native qualifier. This is not a CI/native failure or a new design-format gap.
+The exact fingerprint format and intended HeaderV3 contract stay unchanged.
+
+### Frozen fixes
+
+HR1: fingerprint traversal allocates every pending child action at once.
+An actual `[None] * 10000` control admitted240168 bytes, then allocated725099
+additional traced bytes before the next reserve call. Replace this O(width)
+pending-action structure with ancestor/index frames scheduling one child at
+a time. Dictionary sorted key-reference storage and sorting workspace still
+need full pre-growth admission; do not materialize per-key pending actions.
+Preserve every exact F2b tag/value/ordering/domain/cycle/alias rule and each
+verification's cumulative work. Allocation tracing is not RSS.
+
+HR2: R/T calculators encode templates before calculation-workspace admission;
+authentication slices row/terminal payloads before decode-copy admission.
+Actual zero-capacity Policy.reserve_header_completion made six encoded()
+calls before rejecting. Pre-admit the complete calculation workspace,
+including any variable scope-escaping extent, BEFORE calculators/encoders.
+Validate exact full-string type/ASCII/extent and reserve actual payload-slice/
+bytes/decode/container capacity before constructing copies. No guessed larger
+Limits, whole-report buffering, after-growth-only charge or wire/heap conflation.
+
+HR3: private observation reservation is deleted before fallible publication.
+Actual attempted-set.add MemoryError left no reservation and count0. Retain
+the spent marker until all fallible replacement/publication steps finish;
+partial failure may overcount conservatively but must never refund a count
+or bytes or produce a successfully accepted completion. Include the necessary
+temporary overlap in pre-admission. Cover first add, accessed add and final
+transfer/retirement faults, not only earlier encoding failure.
+
+HR4: post-issuance equal-byte field replacement currently passes claim.
+The claimed record already owns the original immutable byte references.
+Require completed.stdout/stderr to remain those exact references, in addition
+to existing exact type/length/digest/completed/report/context checks. The pure
+reviewer replaced stdout with bytes(bytearray(original)); value equality held
+but identity changed and claim accepted. This adopts the frozen strict
+preclaim replacement rule without adding identity entropy to semantics.
+Retain the original accepted bytes through subsequent result work; cover both
+stdout and stderr equal-value replacement as well as existing content mutations.
+
+HR5: earlier supervisor errors and nonzero native status skip header_completion,
+so the key-bearing launch survives until after write_report. Release that
+owned verifier reference BEFORE any failed-path report construction/publication.
+Successful signing still happens before release, and unconditional cleanup
+remains for later failures. Exercise actual production control-flow ordering
+under fully inert effects, not only a direct header_completion(1) call that
+production skips. No zeroization or literal-erasure claim is introduced.
+
+### Exact source and evidence boundaries
+
+Normal child of453797, same authorized runtime/test/doc paths only. No
+budget/lifecycle/mask, source/Make interpretation, GCC protocol/controller,
+SDK/compiler profile, namespace, workflow, flag, schema/semantic shape or
+shipping resource-limit change. Update coupled human/docs claims only where
+necessary; preserve all existing cases/selectors and the ordinary routes.
+These fixes must restore the already frozen contract, not silently weaken it.
+
+Preserve actual-helper preimages for each finding before edits. Use selected
+inert HeaderReceiptInertTests plus focused allocation/transfer/failed-publication
+controls and targeted restoration under the SAME inert seams. Measure or
+observe work between admissions, not only final cumulative totals. A repaired
+array traversal must not merely hide a whole-width pending collection behind
+another name; ASCII rejection must precede copies; every failed transfer keeps
+spent authority. No source-spelling-only proxies or broad exception catches.
+
+No Make/compiler/SDK/sed/candidate child, native supervisor, fork/signal/prctl/
+namespace/mount/identity/capability/sudo/helper/workflow execution. No actual
+header case or root/resource/H1 allocation follows. Other independent owners
+remain untouched.
+
+Commit locally normally with the Copilot trailer; no amend/rebase/cherry-pick
+or push. Return exact head/parent/delta/full inventories, actual scripts/
+commands/results/timings and original failure/restoration evidence. Main
+routes the exact revised checkpoint to195e0ba1, then separately freezes the
+smallest genuine runtime qualification only after code acceptance.

@@ -1,0 +1,119 @@
+## Frozen local preparation: fixed restricted-host null bootstrap
+
+The ordinary-CI census is closed5730240399; its fresh first UID-map denial is
+not a helper failure. The fixed privileged-creation/nonroot-owner-entry design
+at F/issue180-startup1-concrete-bootstrap-design is statically feasible.
+The required bounded outcome custody is now implemented and independently
+accepted through sourcec8b365da1be29bc58352cf1edb8b836a2cf18321, including the
+mask-precedence correction. This grants LOCAL PREPARATION only, not a real
+namespace/privileged operation or a restricted-host success claim.
+
+### One nondelivery preparation
+
+Main's implementation owner prepares a fresh diagnostic branch from delivered
+BASEec1dc8553419c8833a687fd8d4a6521a4e29ff7a, selecting immutablec8b365 separately.
+Prospective branch: diagnostic/issue-180-null-bootstrap-1.
+Prospective workflow: .github/workflows/issue180-null-bootstrap-1.yml.
+Never merge this branch. No existing source, test, Build workflow or closed
+diagnostic tree is modified. Expected additive workflow, fixed program,
+package initializer, benign controls and truthful README only.
+
+Prepare owner/public/created-push/run1/attempt1 identities, pinned checkout/
+upload actions, contents:read, no credential persistence, same declared
+restricted Ubuntu/native-CI relevant setup. Future launch is one fixed
+readonly mechanism control, not all seven modes, a root/report or another
+ordinary census. The exact harness/source/BASE/absent-branch launch freeze is
+SEPARATE and mandatory after independent review.
+
+### Fixed privilege and namespace roles
+
+Follow the accepted original closed role/state/map/FD sequence plus the
+implemented custody API, not a blanket sudo test/helper wrapper:
+
+1. Ordinary C binds actual nonzero U/G, exact selected source and its own
+   fresh bounded fixture. Use exact existing NAMESPACE_LAUNCHER, ProbeBudget/
+   lifecycle ownership and the single original deadline; no full Make session.
+2. Fixed trusted R setup runs only inside private PID/net/M0 under existing
+   full-map U0. Proc/PID view must agree. Seal fixed outer readonly/nosuid/noexec
+   null WITHOUT inherited NODEV, fresh source/runtime canaries and owned
+   storage. Never mknod or chown an existing device/inode.
+3. Owned creator N temporarily retains only the approved initial-namespace
+   setup authority: effective U/G and CAP_SYS_ADMIN E/P, I/A0, NNP1/dumpable0,
+   real/saved root only while trusted. Create exactly one descendant U1/M1.
+   R's pidfd/proc/typed namespace pins prove live child, parent U0, owner U,
+   mount owner U1 and exact deny/0->U/G map readback. Reap N before handoff.
+4. Close every retired setup/proc/map/ancestor handle. Fork blocked W0;
+   R closes target handles and retires to fixed CAP_KILL-only E/P/bounding,
+   I/A0/NNP1 reaper before GO. Only owned waitable/pidfd targets may be signaled.
+5. W sets all IDs U/G, empty groups, all five caps0/NNP1 in U0, enters bound
+   USER then MOUNT, verifies target/maps/root/cwd and closes every setup,
+   ancestor and device handle before subject import. Only U1-local authority
+   is regained; no host-root helper execution.
+
+Only immutable selected budget/lifecycle control-plane code may be used by
+C/L/R for the accepted ownership/framing/reporting seam. The actual subject
+sandbox_exec/helper is imported only after W's verified entry/FD boundary.
+Do not import arbitrary candidate modules or introduce root command dispatch.
+Readonly source/harness bindings and before/after exact source checks remain.
+
+Restricted U0/full-map topology replaces the local fixture's extra outer
+single map only with explicit owner-change/map/capability checks. Never delete
+assertions to get a pass, borrow root19's AppArmor profile, change host policy/
+sysctls, use profile hopping, add a mapping helper or try another route on denial.
+Creation and entry can each be rejected by the installed LSM; both must fail
+honestly, without fallback.
+
+### Fixed future mechanism and existing custody
+
+After successful real setup in a separately allocated future run, one
+predetermined readonly context must first exercise old0x102a: actual EPERM,
+identity/full flags unchanged. Only then may the actual unchanged selective
+helper clear local NODEV and no other bit. Final cap-zero/NNP state must prove
+tiny null EOF/write and original readonly/other-device denials. Wrong setup,
+unexpected old-operation success or any failed check stops, no variant/retry.
+No compile, Make, SDK, text producer, source evaluator or native supervisor.
+
+Reuse implemented concrete RunOutcome/CleanupReport and existing four-record
+R/L custody. No API or frame-schema change, arbitrary new channel/receipt file
+or generic broker. Report actual observed data separately from completion;
+outer125, cleanup exceptions, missing custody/EOF or retained owners always
+fail. A snapshot stays qualified=false. Trusted R constructs its own result
+from actual owned observations; W has only its private W->R result pipe and
+cannot inherit/recover the enclosing capture writer. A token/prefix is not
+authentication by itself.
+
+Never fabricate topology values or overload unrelated fields to fit the
+schema. If the existing accepted shape cannot carry a necessary witness fact,
+identify the exact interface gap before changing any shipping API. Evidence
+must distinguish actual runtime assertions from separately serialized values;
+an unretained intermediate is not invented in the final record.
+
+Keep original30s watchdog/35s wait/45s enclosing ceilings,1MiB fixture,
+<=256KiB combined capture and all existing B/F/E/entry/cache/deadline/owner
+admissions. Actual bytes count; no fresh budget/reopen/refund or larger limit.
+Prepare only an explicit bounded allowlist of scope/launch/custody/mode/
+cleanup JSON records, no source/ROM/SDK/env/raw-stream dump or public report.
+
+### Benign preparation and delivery hold
+
+Run only pure/parsed/fully mocked actual-API and owned-pipe preparation
+controls plus actionlint. No real fork/child workload, syscall namespace/map/
+setns/mount, capability/ID change, sudo, helper or workflow execution locally.
+Negative controls must cover foreign identity/maps/caps/NNP, wrong owner/
+namespace/root-cwd, leaked ancestor/device/capture writer, wrong live child,
+partial setup/handshake, early/missing status and interrupted/failed cleanup.
+All fault paths preserve first cause and attempt remaining owned cleanup.
+Meaning-preserving naming/order changes stay green; restoring invalid ownership
+or false qualification must break behavioral/parsed controls.
+
+Commit normally with the Copilot trailer and return clean exact head/parent,
+full inventory, role/FD/state protocol, commands/results, retained failures,
+source/runtime preservation and unsupported limits. Main owns independent
+exact code review and a SEPARATE one-shot actual restricted-CI qualification
+freeze. No push, dispatch, test backend adoption or runtime allocation now.
+
+Even a later successful representative mechanism is not all seven modes or
+current CI repair. Integrating the shared Foundation fixture/ordinary backend
+requires its own coherent code/tests/docs change and genuine restricted-host
+four-method/seven-mode acceptance. Header/GCC receipt work stays separate.
+No ROOT21, second census, H1/provider or full resource-sizing allocation.

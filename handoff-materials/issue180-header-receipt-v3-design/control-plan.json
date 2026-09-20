@@ -1,0 +1,296 @@
+{
+  "case_id": "TC-WORKFLOW-GATE-OWNERSHIP-001",
+  "phase": "prospective design controls only; no control executed",
+  "prerequisites_before_any_control": [
+    "independent V3 design review completed",
+    "shared private NativeResult issue/claim/retire API frozen with the separate GCC stage-4 design",
+    "exact row and terminal maximum-size formulas frozen",
+    "deeply immutable JSON-encodable header mapping type frozen",
+    "future implementation separately authorized"
+  ],
+  "pure_protocol_controls": [
+    {
+      "name": "retained-actual-transcript-positive",
+      "input": "the retained valid actual header rows, in their real sequence, with a completion signed by a test-issued launch verifier",
+      "expected": "accepted; every exact row is preserved as a deeply immutable semantic mapping"
+    },
+    {
+      "name": "short-transcript-protocol-positive",
+      "input": "a structurally valid actual transcript containing the unchanged minimum first statfs row and a valid launch-specific completion",
+      "expected": "accepted only as a protocol fact about actual observations; no libselinux branch, vendor or native compatibility claim"
+    },
+    {
+      "name": "repeated-actual-identity-positive",
+      "input": "two or more valid actual rows with the same operation/path, distinct contiguous sequences, exact payloads and a valid launch-specific completion",
+      "expected": "accepted; occurrence identity is sequence plus exact row content, not unique operation/path"
+    },
+    {
+      "name": "transport-array-permutation-positive",
+      "input": "permute the accessed array while preserving every row, sequence and completion byte-for-byte",
+      "expected": "accepted because row sequence, not report array order, defines the transcript"
+    },
+    {
+      "name": "omit-each-real-row-coherent-public-repair",
+      "input": "for each retained real row, remove it, renumber survivors, recompute count and manifest digest, leave the original bound completion tag unchanged",
+      "expected": "every mutation rejects; structural validation may reject first, otherwise HMAC verification rejects"
+    },
+    {
+      "name": "mutate-each-real-row-coherent-public-repair",
+      "input": "change each valid row field or payload in turn, preserve a structurally valid row where possible, recompute manifest digest and count, leave the original tag unchanged",
+      "expected": "malformed payloads reject structurally; otherwise the unchanged tag rejects"
+    },
+    {
+      "name": "duplicate-each-real-occurrence",
+      "input": "insert a duplicate operation/path occurrence under a new sequence, renumber as needed, recompute public count and digest, leave the original tag unchanged",
+      "expected": "reject on HMAC; the rejection is not an operation/path uniqueness rule"
+    },
+    {
+      "name": "sequence-order-swap",
+      "input": "swap the sequence numbers of two valid rows, preserve contiguous numbering, recompute count and digest, leave the original tag unchanged",
+      "expected": "reject because actual ordered contents changed"
+    },
+    {
+      "name": "gap-and-renumber-controls",
+      "input": "create a sequence gap, duplicate sequence, zero sequence, over-limit sequence, or a coherent survivor renumbering after omission",
+      "expected": "shape failures reject before authority; coherent renumbering with otherwise valid shape rejects on HMAC"
+    },
+    {
+      "name": "count-and-digest-coherent-repair",
+      "input": "alter rows and repair both public count and manifest digest without the native key",
+      "expected": "reject on the unchanged launch tag"
+    },
+    {
+      "name": "cross-launch-and-replay",
+      "input": "copy an otherwise valid rows/completion set to another fresh launch, then attempt a second claim after success and after failure",
+      "expected": "cross-launch verification and every replay reject"
+    },
+    {
+      "name": "completion-shape",
+      "input": "decimal V1 terminal, missing/repeated terminal, wrong field set/types/version/status/scope/binding, uppercase or wrong-length digest/tag, zero/over-limit count",
+      "expected": "reject"
+    },
+    {
+      "name": "existing-row-payload-preservation",
+      "input": "malformed statfs length/hex/readonly flag/result, stream result/extent/hash/EOF, absent path/result/payload, foreign operation/path, missing profile",
+      "expected": "continue to reject under the unchanged payload/profile contract"
+    },
+    {
+      "name": "unchanged-minimum-evidence",
+      "input": "validly signed transcript with no actual statfs /sys/fs/selinux row",
+      "expected": "reject; no other permitted operation is made mandatory"
+    },
+    {
+      "name": "actual-negative-row-retention",
+      "input": "a transcript containing the real absent /etc/selinux/config row, then omit or alter that row and repair public count/digest without the key",
+      "expected": "original accepts; omission/alteration rejects on HMAC or payload validation"
+    },
+    {
+      "name": "stream-facts-remain-meaningful",
+      "input": "actual stream rows with valid count/hash/EOF, then independently mutate each field with coherent manifest repair and unchanged tag",
+      "expected": "original accepts; mutations reject; no raw-byte predicate or branch inference is introduced"
+    }
+  ],
+  "lifecycle_and_custody_controls": [
+    {
+      "name": "verifier-consumed-on-all-sandbox-paths",
+      "paths": [
+        "setup/config failure",
+        "launcher failure",
+        "missing report",
+        "top-level schema failure",
+        "observation/accounting failure",
+        "supervisor ok false",
+        "outer status failure",
+        "native nonzero status",
+        "dependency execution mismatch",
+        "completion parse failure",
+        "HMAC failure",
+        "successful authentication",
+        "caller exception after return"
+      ],
+      "expected": "the exact launch cannot be retried or replayed; key/config references are released and the config path is promptly unlinked"
+    },
+    {
+      "name": "strict-success-before-authentication",
+      "input": "instrument the authenticator call boundary across malformed, failed and successful reports",
+      "expected": "authentication and NativeResult issuance occur only after all generic report/accounting/execution/status checks succeed"
+    },
+    {
+      "name": "forged-sandbox-return",
+      "input": "_command receives completed/observed objects not registered by the exact successful _sandbox_run",
+      "expected": "NativeResult claim rejects; no ProcessOutput/cache/semantic/output"
+    },
+    {
+      "name": "same-object-post-issuance-mutation",
+      "input": "mutate returncode, stdout, stderr or observed report content on the same objects after NativeResult issuance and before claim",
+      "expected": "claim fingerprint comparison rejects and retires the record"
+    },
+    {
+      "name": "wrong-purpose-and-second-claim",
+      "input": "claim a header result as the GCC purpose or claim the same exact result twice",
+      "expected": "reject; one common registry remains purpose-sealed and one-use"
+    },
+    {
+      "name": "immutable-accepted-row",
+      "input": "attempt ordinary mapping, list or nested-value mutation after authentication and after ProcessOutput construction",
+      "expected": "mutation is impossible/rejected; values are primitive and no mutable raw report object is retained"
+    },
+    {
+      "name": "raw-report-mutation-after-claim",
+      "input": "mutate or discard observed['accessed'] after the immutable transcript is claimed",
+      "expected": "accepted immutable rows and semantic projection remain unchanged; raw report has no authority"
+    },
+    {
+      "name": "no-authority-reparse",
+      "input": "replace the post-_sandbox_run raw header parser result while leaving no valid NativeResult claim",
+      "expected": "reject; parser success, raw rows and completion strings cannot create ProcessOutput authority"
+    },
+    {
+      "name": "failure-has-no-output-or-cache",
+      "input": "valid native stdout followed by any completion/authentication/claim/custody failure",
+      "expected": "no output publication, ProcessOutput, runtime_probes, generated result, cache entry or semantic dynamic-command record"
+    },
+    {
+      "name": "secret-and-entropy-nonpublication",
+      "input": "successful and failed config/report/error/ProcessOutput/cache/semantic/generated structures",
+      "expected": "receipt key is absent everywhere after trusted config use; tag/scope/binding/digest/count do not enter ProcessOutput/cache/semantics"
+    },
+    {
+      "name": "cleanup-without-zeroization-claim",
+      "input": "inspect all success/failure ownership paths and documentation wording",
+      "expected": "prompt config unlink and reference removal are enforced; no assertion promises CPython/fork/HMAC memory zeroization"
+    }
+  ],
+  "cardinality_and_storage_controls": [
+    {
+      "name": "completion-capacity-reserved",
+      "input": "consume observation count/bytes up to the boundary before and during filter execution",
+      "expected": "the terminal reservation is made before execution; capacity exhaustion fails closed without a signed prefix"
+    },
+    {
+      "name": "row-preallocation-admission",
+      "input": "exercise count and byte boundaries for every legal row kind",
+      "expected": "count and fixed worst-case row storage are checked before per-row dictionary/string allocation; actual encoding never exceeds the admitted maximum"
+    },
+    {
+      "name": "no-private-row-list",
+      "input": "source/AST structural check of Policy filter state",
+      "expected": "only sequence, incremental hash state, row-present state and key lifecycle state exist; no ordered row list or duplicate private transcript"
+    },
+    {
+      "name": "incremental-manifest-equivalence",
+      "input": "valid transcripts of one row, retained rows and repeated rows",
+      "expected": "guard incremental digest equals SHA-256 of the existing canonical encoded ordered list exactly"
+    },
+    {
+      "name": "fault-between-hash-and-publication",
+      "input": "inject encoding, hash, observation charge and publication faults around one row",
+      "expected": "run fails and emits no accepted signed completion; no prefix is promoted"
+    },
+    {
+      "name": "report-and-nested-decode-bounds",
+      "input": "maximum and oversized report files, row strings, terminal strings, counts and accepted-copy sizes",
+      "expected": "existing file/control/count limits reject before unbounded nested decode or accepted-copy retention"
+    },
+    {
+      "name": "semantic-cache-precharge",
+      "input": "exhaust cache/control capacity immediately before immutable ProcessOutput projection",
+      "expected": "charge failure occurs before projection/ProcessOutput/cache retention"
+    },
+    {
+      "name": "legitimate-many-repeats-within-existing-limits",
+      "input": "more than five valid repeated actual occurrences, all within existing count/byte/deadline limits and correctly signed",
+      "expected": "accepted; no hidden five-row cap or uniqueness rule"
+    },
+    {
+      "name": "repeat-beyond-existing-limit",
+      "input": "valid occurrences exceeding existing observation, report, file, syscall or deadline authority",
+      "expected": "reject without increasing any limit"
+    }
+  ],
+  "schema_and_edge_controls": [
+    "Filter launch V2 has exactly version, scope, binding and receipt_key; header-search V1 remains exactly unchanged.",
+    "Filter profile remains version 1 with exact current statfs/read/absent paths and presence booleans.",
+    "Completion V2 has exactly version, scope, binding, status, count, manifest_sha256 and tag.",
+    "Supervisor report top-level keys remain unchanged and closed.",
+    "No opaque Python capability or marker is serialized into the report or _sandbox_run return tuple.",
+    "_sandbox_run authenticates before issuing one purpose-sealed NativeResult.",
+    "_command claims the exact registered completed/observed objects before runtime_probes, cache, semantics or output publication.",
+    "ProcessOutput header rows are deeply immutable and retain the exact existing eight-key semantic JSON shape.",
+    "No key, tag, scope entropy, binding, digest or completion count enters semantic/cache identity.",
+    "Default non-filter and header-search V1 paths remain unchanged.",
+    "No new graph owner, tester case, module, profile path, permission, namespace mode, dependency or resource limit is introduced."
+  ],
+  "mutation_and_restoration_controls": [
+    {
+      "name": "restore-count-only-filter-v1",
+      "mutation": "replace signed completion authentication with the old decimal count and post-_sandbox_run raw records parser",
+      "expected_failure": "the omit-each-row coherent-repair control becomes accepted, so the regression suite fails"
+    },
+    {
+      "name": "remove-hmac-check",
+      "mutation": "accept public count and manifest digest without constant-time tag verification",
+      "expected_failure": "coherent omission/insertion/sequence-order controls become accepted"
+    },
+    {
+      "name": "restore-v2-identity-uniqueness",
+      "mutation": "reject repeated operation/path identities",
+      "expected_failure": "the repeated-actual-identity positive fails"
+    },
+    {
+      "name": "restore-v2-schedule-or-predicate",
+      "mutation": "require a predicted schedule, magic condition or proc-filesystems substring condition",
+      "expected_failure": "short/repeated protocol positives or static surface controls expose unauthorized branch inference"
+    },
+    {
+      "name": "move-auth-back-to-command",
+      "mutation": "return mutable report objects before authentication and reparse them in _command",
+      "expected_failure": "forged-return, same-object mutation or no-authority-reparse controls fail"
+    },
+    {
+      "name": "make-accepted-rows-mutable",
+      "mutation": "store tuple-of-dicts from the raw parser as authority",
+      "expected_failure": "immutable accepted-row and raw-report mutation controls fail"
+    },
+    {
+      "name": "add-private-ordered-list",
+      "mutation": "retain a second guard-side ordered row list for completion",
+      "expected_failure": "the no-private-row-list structural control fails"
+    },
+    {
+      "name": "parallel-native-result-gateway",
+      "mutation": "implement a header-only capability registry separate from the GCC-shared registry",
+      "expected_failure": "shared-hook structural controls fail"
+    }
+  ],
+  "explicit_test_key_limit": {
+    "rule": "Negative report-mutation controls never receive the native key; they retain the original tag while coherently repairing public fields.",
+    "reason": "A test that gives malicious trusted observer code the key and lets it sign forged data tests an out-of-scope compromised signer, not this report-boundary contract.",
+    "permitted_test_key_use": [
+      "construct valid protocol positives",
+      "construct cross-launch key mismatch",
+      "verify exact canonical MAC vectors",
+      "prove repeated actual occurrences are accepted when genuinely signed"
+    ]
+  },
+  "future_native_control_after_separate_freeze": {
+    "existing_case": "scripts.validation_ownership.tests.test_header_pipeline.ArmHeaderPipelineTests.test_actual_kernel_receipts_reject_omission_and_forgery",
+    "scope": "the smallest existing real header case only",
+    "required_evidence": "the actually observed transcript is authenticated, each real-row mutation without the key rejects, and output/cache/semantics remain absent on failure",
+    "not_authorized_now": true,
+    "qualification_limit": "It may qualify only the exact runtime/profile actually executed. It cannot establish early-return, statvfs aggregation, vendor-version or all-libselinux behavior."
+  },
+  "not_run": [
+    "source or test edits",
+    "prototype or import",
+    "candidate generation",
+    "sed or Make",
+    "native supervisor",
+    "compiler or SDK",
+    "kernel or namespace",
+    "privileged execution",
+    "remote API or CI",
+    "Root21, census2 or H1 execution",
+    "push or repository delivery"
+  ]
+}

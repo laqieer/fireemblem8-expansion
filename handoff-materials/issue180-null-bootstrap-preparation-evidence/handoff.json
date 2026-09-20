@@ -1,0 +1,177 @@
+{
+  "status": "normal-local-preparation-commit-with-explicit-frozen-interface-hold",
+  "issue": 180,
+  "scope": "https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5736286567",
+  "head": "20478394860b673b98fb32a4dd292fa0fc02a5d4",
+  "parent": "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a",
+  "branch": "diagnostic/issue-180-null-bootstrap-1",
+  "selected_source": "c8b365da1be29bc58352cf1edb8b836a2cf18321",
+  "worktree": "/home/laqieer/.copilot/session-state/3df36741-371b-49d8-ab09-a70c1ff3bec0/files/issue180-null-bootstrap-preparation-worktree",
+  "evidence_directory": "/home/laqieer/.copilot/session-state/3df36741-371b-49d8-ab09-a70c1ff3bec0/files/issue180-null-bootstrap-preparation-evidence",
+  "normal_commit": true,
+  "clean_after_commit": true,
+  "commit_execution": 3490,
+  "final_verification_execution": 3492,
+  "final_verification": "Exact HEAD/direct BASE parent/clean worktree, full BASE...HEAD name-status/numstat/shortstat, parsed evidence totals and unchanged selected/original checkout states all passed.",
+  "coauthor": "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>",
+  "never_merge": true,
+  "push_dispatch_merge_or_overall_completion": false,
+  "runtime_qualified": false,
+  "launch_ready": false,
+  "classification": "Accepted nondelivery preparation for the already confirmed ordinary uid_map startup restriction. A concrete frozen ownership/custody contradiction is preserved, not repaired by expanding c8.",
+  "review_size": {
+    "immediate_base": "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a",
+    "full_base": "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a",
+    "files": 5,
+    "additions": 2978,
+    "deletions": 0,
+    "changed_lines": 2978,
+    "file_list": "changed-files.txt",
+    "full_numstat": "full.numstat",
+    "mode": "All five files are additive regular100644; no existing path changes.",
+    "paths": [
+      ".github/workflows/issue180-null-bootstrap-1.yml",
+      "scripts/ci_null_bootstrap/README.md",
+      "scripts/ci_null_bootstrap/__init__.py",
+      "scripts/ci_null_bootstrap/bootstrap.py",
+      "scripts/ci_null_bootstrap/test_bootstrap.py"
+    ]
+  },
+  "exact_hold": {
+    "name": "original-private-child-identity-unavailable",
+    "evidence": "interface-contradiction.json",
+    "pure_actual_api_program": "interface-check.py",
+    "detail": "C has the original parent binding; R exclusively creates a different backing child. After R must close setup/ancestor handles and retire, namespace teardown does not unlink that host directory. C has no original child identity with which to distinguish a replacement. c8 rejects an extra child field and a substituted parent inode. A late stat is not original identity custody.",
+    "scope_boundary": "No extra receipt/channel/frame/API, privileged unmount, fabricated object identity or unrelated-field overload was added.",
+    "behavior": "Coordinator and independent reaper entry unconditionally refuse; no environment or command-line override. Under the hold, coordinator records unavailable/no-launch and returns125 without reserving a budget, creating a fixture, invoking sudo or launching R.",
+    "not_connected": "Final live C fixture-creation/launch/cleanup orchestration. The c8 run_capture adapter and R/N/W functions are implemented and tested with inert boundaries, not claimed as an end-to-end runnable witness.",
+    "next_owner": "Main independently reviews the exact code and this contradiction, then separately freezes any changed ownership contract and actual one-shot launch. No execution follows from this handoff."
+  },
+  "prepared_code": {
+    "identity": "Public owner first-created push/run1/attempt1, exact BASE single parent/five additive paths, exact source/environment, fixed ordinary executable/prefix and closed reaper arguments.",
+    "C_adapter": "Concrete c8 outcome binding, single fixed30-second ProbeBudget, exact NAMESPACE_LAUNCHER and run(privileged=True,outcome=owner), no forwarded setup FD/producer/input.",
+    "R": "Full-map U0/private M0/P0/net and PID-aligned proc; actual M0 owner check; fresh1MiB volume, fresh chowned canaries/placeholders, existing1:3/1:5 device binds without mknod or device metadata changes.",
+    "N": "Temporary real/saved0, effective independent U/G, only initial CAP_SYS_ADMIN E/P, I/A0, dumpable0/NNP1, one NEWUSER|NEWNS, exact parent-written deny/maps and normalization before reaping.",
+    "pins_maps": "Owned unreaped child/pidfd/proc/start binding, typed UF/MF, parent U0/owner U/mount owner U1; empty maps, full writes and exact readback; no numeric PID authority after release.",
+    "W0_R_retirement": "Private FD1 and fixed W0_READY on the already required result pipe; R itself inspects live W0 FDs, closes namespace/proc handles, verifies CAP_KILL-only E/P/bounding/I-A0/NNP1/PID1 death protection, then releases GO.",
+    "W": "All IDs U/G, no groups, all five caps0/NNP1 in U0; USER-before-MOUNT setns, actual target/map/root-cwd/local-capability checks and setup/ancestor/device/capture-writer alias exclusion before subject import.",
+    "mechanism": "Actual old0x102a EPERM plus unchanged state gate, then one forwarded unchanged selective-helper operation, only local NODEV removed, final caps0/NNP before null EOF/tiny write and readonly/other-device denials.",
+    "custody": "Actual existing c8 concrete CleanupReport/RunOutcome/four frames. R constructs its own stage/wait envelope, never forwards W envelopes. Original status precedes cleanup; outer125, prior errors and unavailable/partial capture remain failures.",
+    "artifacts": "Only scope/launch/custody/mode/cleanup JSON, <=16KiB each and <=64KiB aggregate. No raw streams/frames/environment/source/SDK/ROM/report.",
+    "limits": "30/35/45 ceilings,1MiB fixture,<=256KiB capture, original F/E/52 entries/552960-byte outcome cache and no refund/reset/reopen. W0_READY counts within the prepaid private F buffer."
+  },
+  "role_state_fd_protocol": {
+    "states": ["new", "fixture", "creator", "mapped", "blocked", "retired", "released"],
+    "tokens": ["CREATOR_READY", "CREATE", "NS_CREATED", "MAPS_COMPLETE", "W0_READY", "GO"],
+    "C_L": "Only existing budget/lifecycle capture/lifetime owners; no setup descriptors across sudo.",
+    "N": "Fixed request/response endpoints and trusted stdio; no subject import. Gone before W.",
+    "R_after_N": "Only UF/MF namespace pins after observed/reaped N and all N/proc/map closes.",
+    "W0": "Pipe stdio, UF/MF and one GO reader; private result writer replaces enclosing FD1 before READY.",
+    "R_after_GO": "Owned W pidfd and result reader plus stdio, no setup/namespace/ancestor/device handles.",
+    "W_preentry": "Pipe stdio plus UF/MF only.",
+    "W_import": "EOF-reader0/private-result-writer1/distinct-diagnostic-writer2 only.",
+    "failure": "Withdraw raw FD authority before close, never retry uncertain integers, preserve first cause, attempt remaining owned cleanup and retain uncertain/unreaped owners."
+  },
+  "asserted_not_separately_exported": [
+    "All R/N/W intermediate namespace inode/parent/owner, credential, map, label and root-cwd gates are code conditions; c8 does not serialize all intermediate snapshots.",
+    "N actually checks its own dumpable0 before READY. R reads the live child's credentials/caps/namespaces/label but cannot invent a missing proc/status dumpability field.",
+    "Old-remount errno and unchanged-state gate are checked in W; the existing single calls slot retains the selective operation, not a second old-operation record.",
+    "The original new backing-child identity is not available to C. No value is inferred or fabricated to fill that gap."
+  ],
+  "actually_exportable_in_existing_schema": [
+    "Mode, actual U/G/deadline/original-parent dev/inode/owner binding.",
+    "R owned N/W normal status or prior finite error, setup_status and validated mode data.",
+    "Six-element null mount before/after identity/mount-ID/full-flags tuples, selective call, final caps/NNP, denied errnos, null_io/fd_closed/topology semantic slots.",
+    "L owned normal waitid tuple/status or prior finite error.",
+    "C actual normal outer status or earlier finite error and capture/EOF/API-return/reap availability.",
+    "Per-role concrete cumulative bounded cleanup data; qualified always false."
+  ],
+  "evidence": {
+    "interface": {
+      "execution": 3476,
+      "command": "python3 -B ../.copilot/session-state/3df36741-371b-49d8-ab09-a70c1ff3bec0/files/issue180-null-bootstrap-preparation-evidence/interface-check.py",
+      "result": "4 pure actual-c8 serializer/type tests PASS in0.001s."
+    },
+    "final_tests": {
+      "execution": 3487,
+      "command": "ISSUE180_SELECTED_SOURCE=/home/laqieer/.copilot/session-state/3b24c12d-8000-4372-8d56-2221d61ec1c6/files/issue-180 python3 -B -m unittest scripts.ci_null_bootstrap.test_bootstrap -v",
+      "cwd": "issue180-null-bootstrap-preparation-worktree",
+      "result": "36 methods PASS in0.402s, including negative matrices and both restoration oracles.",
+      "log": "final-tests.log",
+      "actual_api": "Real prepared role control flow, c8 ProbeBudget.run/outcome snapshots/reports/encoder/decoder/lifecycle.run/main/cleanup, with mocked effectful boundaries.",
+      "positive_pipe": "Only owned ordinary nonblocking pipes for fixed token/partial/EOF controls.",
+      "composition": "Actual inert L7 plus its completion-close error returns main125; actual inert C captures125 then raises its own stream cleanup error; inner7 and outer125 remain separately retained.",
+      "restorations": "Removing only the actual preentry guard or only the old-operation gate in memory breaks the respective behavioral oracle; corrected implementation passes again.",
+      "neutral": "Local-variable rename, JSON-key reordering and permitted global R/L frame interleaving remain green.",
+      "safety": "No real fork, Popen payload/watchdog, prctl, credential/capability change, signal, mount/unshare/setns, sudo, helper import/execution or namespace workload. All module-local effectful helpers, including separately loaded c8 ones, were trapped or mocked."
+    },
+    "actionlint": {
+      "executions": [3481, 3488],
+      "command": "actionlint .github/workflows/issue180-null-bootstrap-1.yml",
+      "version": "1.7.7",
+      "result": "PASS, zero diagnostics.",
+      "logs": ["actionlint-first.log", "actionlint-final.log"]
+    },
+    "structure_and_inventory": {
+      "executions": [3477, 3488, 3489, 3490],
+      "results": [
+        "All three new Python files parse as AST without execution.",
+        "Parsed workflow permission/action/ref/owner/run/allowlist controls pass.",
+        "Staged and committed diff-check pass.",
+        "Exact normal parent is BASE; five additive100644 files; clean worktree after commit."
+      ]
+    }
+  },
+  "retained_fixture_failures": [
+    {
+      "execution": 3479,
+      "log": "first-tests.log",
+      "result": "29 methods attempted;13 errors in Capture subcases before its execution path.",
+      "cause": "The inert fixture incorrectly supplied started to ProbeBudget.__init__, whose existing field is init=False.",
+      "correction": "Construct existing API normally and set the test-only inert clock origin on the instance. No production/API change."
+    },
+    {
+      "execution": 3480,
+      "log": "capture-corrected.log",
+      "result": "Three Capture methods;7 assertion failures, zero errors.",
+      "cause": "SimpleNamespace was an unhashable fake Popen owner; the real c8 child-ownership dictionary correctly rejected it.",
+      "correction": "Use a normal hashable inert child object and re-raise unexpected fixture exceptions rather than turn them into a finite expected label."
+    },
+    {
+      "execution": 3483,
+      "log": "capture-hashable.log",
+      "result": "Three corrected actual-c8 Capture methods PASS in0.047s."
+    },
+    {
+      "execution": 3485,
+      "log": "roles-expanded.log",
+      "result": "35 expanded methods PASS in0.318s before the final added full-map/M0-owner control."
+    }
+  ],
+  "preservation": {
+    "original_checkout": "/home/laqieer/fireemblem8-expansion stayed at6b3ded061df8406997113f4c01759f18627aac56 with only its same unrelated untracked report.20260904.122431.1491.0.001.json.",
+    "worktree_placement": "Initial git -C worktree add resolved under the original checkout; immediately moved the newly created worktree to F. Original status returned exactly to its prior unrelated report. No original file edit.",
+    "selected_source": "Main's separate source worktree reported exactc8 and clean before and after controls; git diff--quiet againstc8 for scripts/validation_ownership passed. Tests used -B and did not edit selected files.",
+    "runtime_source_preservation": "No workload ran, so there is no real after-workload preservation witness. Readonly role bindings are code preparation only.",
+    "prior_artifacts": "Original scope/design/D1/independent-review and prior diagnostic artifacts were read, not modified.",
+    "production": "No shipping source, tests, docs, Build workflow, registry, backend or closed harness changed."
+  },
+  "tools": {
+    "python": "3.12.3",
+    "yaml": "Existing PyYAML6.0.1",
+    "actionlint": "Existing1.7.7",
+    "debugger": "Existing arm-none-eabi-gdb found; not executed.",
+    "packages_installed": 0,
+    "GitHub": "Only read-only authoritative issue/comment metadata; no workflow/CI query, watch, dispatch, review request, push, merge or closure.",
+    "commit_hooks": "No configured alternate hooks path and no active default hook files; normal commit was not a hidden test/workload runner."
+  },
+  "remaining_limits": [
+    "The live coordinator is deliberately incomplete under the named ownership-custody hold. This is not ready for an actual one-shot launch.",
+    "Mocked role/API controls are not proof of kernel maps/caps/mount/setns semantics, installed LSM admission, trusted-writer exclusion under a real hostile process, or physical cleanup.",
+    "No whole-process RSS or final resource-sizing qualification; no limit was increased.",
+    "No independent exact-code acceptance yet; that is Main's next task, not a claimed result.",
+    "Any later readonly representative success would still not qualify all four Foundation methods/seven modes or repair CI.",
+    "No root19 profile borrowing/change, ROOT21, second census, H1/provider, compiler/Make/SDK/native/source-evaluator workload or provenance/header investigation.",
+    "No PR/delivery/master CI/remote-completion/all-issues gate was run or claimed; this branch is local and never to be merged."
+  ]
+}

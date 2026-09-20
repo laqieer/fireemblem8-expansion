@@ -1,0 +1,72 @@
+{
+  "record_kind": "Main transcription of already-delivered static review",
+  "reviewer": "a0adfcab-d108-46af-a5f4-7fae16b52385",
+  "consumed_turn": 1,
+  "previous_turn": "Turn0 conditionally closed F1, F2a and F3; F2b exact format remained open.",
+  "scope": [
+    "Main exact private fingerprint-contract.txt",
+    "necessary shared HeaderV3/GCC native-return seam",
+    "header immutable JSON representation and terminal admission"
+  ],
+  "format_verdict": {
+    "finding": "F2b",
+    "result": "closed statically",
+    "reason": "Domain, tags, widths, endian/scalar/Unicode/container/key ordering and rejection rules are deterministic.",
+    "actual_source_domain_review": "No relevant successful header/toolchain integer requires magnitude >= 2**64; bounded counters/extents, U32/U64 metadata and signed64 results fit.",
+    "implementation_requirement": "Reject bool where exact int is required and reject out-of-domain integers before hashing."
+  },
+  "required_shared_seam": {
+    "owner": "ProbeSession in make_probe.py",
+    "methods": [
+      "_issue_native_return(purpose, owner, completed, observed, payload)",
+      "_claim_native_return(purpose, owner, completed, observed)",
+      "_retire_native_return(...)"
+    ],
+    "purposes": [
+      "header-filter-completion-v2",
+      "toolchain-step-v2"
+    ],
+    "bindings": [
+      "exact session/thread/owner/completed/observed identities",
+      "exact builtin-int return status",
+      "stdout/stderr lengths and SHA-256",
+      "private F2b full-report value fingerprint",
+      "sealed purpose and typed payload"
+    ],
+    "issuance": "Static purpose dispatch after all generic and purpose validation, preserving public tuple/report shape.",
+    "claim": "Recompute bindings and remove record before returning one-use claimed value.",
+    "cleanup": "Unclaimed in _command finally; issuance-plus-internal-failure in _sandbox_run; no outstanding result on session cleanup.",
+    "header": "Consume accepted transcript without reparsing raw observed rows; key released separately.",
+    "gcc": "Pass claimed payload to step/recipe sealing and compare final output to original issuance bindings."
+  },
+  "representation_finding": {
+    "incompatible": [
+      "MappingProxyType",
+      "generic Mapping",
+      "frozen dataclass directly in runtime_probes"
+    ],
+    "source_consumers": [
+      "authority.encoded ordinary json.dumps",
+      "produce list(result.runtime_probes) in semantics",
+      "graph_probe semantic deepcopy"
+    ],
+    "recommendation": "Private eight-key primitive-valued dict subclass refusing ordinary mutators, deletion and __ior__; copy/deepcopy return self.",
+    "main_adoption_boundary": "Slots rows remain authority; view ordinary-API immutability does not claim protection from malicious trusted Python base-class mutators."
+  },
+  "reservation_condition": {
+    "required": "Reserve one terminal count and maximum bytes before execution; convert private slot to actual terminal within bound; retain conservative charge without a second count or refund.",
+    "remaining_at_review": "Exact row/terminal maxima and concrete view/reservation adoption before code.",
+    "main_resolution": "Adopted in contract.txt and public pre-edit scope5736862019 before delegation.",
+    "header_v3_disposition": "H1-H4 and shared security boundary statically coherent subject to those adopted details."
+  },
+  "not_performed_by_reviewer": [
+    "edits",
+    "imports",
+    "tests",
+    "native or Make or SDK execution",
+    "kernel or namespace or privileged operations",
+    "bootstrap work",
+    "remote activity"
+  ],
+  "acceptance_boundary": "Design review only, not implementation, genuine runtime qualification, hosted-finding closure, graph/resource/H1 acceptance or delivery."
+}

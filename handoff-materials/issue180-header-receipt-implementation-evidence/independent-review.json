@@ -1,0 +1,78 @@
+{
+  "record_kind": "Main transcription of delivered exact read-only review",
+  "reviewer": "195e0ba1-7bc0-451b-bb6c-16d1305fd830",
+  "turn": 0,
+  "head": "453797b8d74b6da2ce96bb812dd0f0bbfeaa1c98",
+  "parent": "c8b365da1be29bc58352cf1edb8b836a2cf18321",
+  "verdict": "five Medium high-confidence findings; not accepted",
+  "findings": [
+    {
+      "id": "HR1",
+      "severity": "Medium",
+      "confidence": "High",
+      "path": "scripts/validation_ownership/make_probe.py",
+      "lines": "232-263",
+      "issue": "Whole-width pending traversal tuples allocated before adequate admission",
+      "actual": "Fingerprint([None]*10000): container reserve240168, additional traced allocation725099 before next reserve call, wall0.20s.",
+      "required": "Ancestor/index traversal, one child at a time; sorted-key reference/scratch storage separately pre-admitted.",
+      "boundary": "Python allocation trace, not RSS."
+    },
+    {
+      "id": "HR2",
+      "severity": "Medium",
+      "confidence": "High",
+      "path": "scripts/validation_ownership/header_runtime.py",
+      "lines": "176-211,301-333; syscall_guard.py523-531",
+      "issue": "Limit calculations and payload copies precede admission",
+      "actual": "Policy.reserve_header_completion with observation_limit0 calls actual encoded six times before Violation; wall0.23s.",
+      "required": "Pre-admit calculation workspace; exact string/ASCII/bounds and decode/slice capacity before copies."
+    },
+    {
+      "id": "HR3",
+      "severity": "Medium",
+      "confidence": "High",
+      "path": "scripts/validation_ownership/syscall_guard.py",
+      "lines": "570-578",
+      "issue": "Fallible reservation transfer refunds the observation count",
+      "actual": "attempted-set.add MemoryError: reservation_retained False, attempt_count0, published empty set; wall0.11s.",
+      "required": "Retain spent marker through all fallible publication; failure may overcount but cannot refund."
+    },
+    {
+      "id": "HR4",
+      "severity": "Medium",
+      "confidence": "High",
+      "path": "scripts/validation_ownership/make_probe.py",
+      "lines": "2825-2846",
+      "issue": "Equal-byte stdout replacement accepted despite strict preclaim replacement contract",
+      "actual": "Replace issued completed.stdout with bytes(bytearray(original)): distinct identity, equal value, claim ACCEPTED b'original'; wall0.50s.",
+      "required": "Check original stdout/stderr reference identities in addition to value/context binding."
+    },
+    {
+      "id": "HR5",
+      "severity": "Medium",
+      "confidence": "High",
+      "path": "scripts/validation_ownership/syscall_guard.py",
+      "lines": "3589-3590,3648-3650",
+      "issue": "Failed filter paths retain key-bearing launch during public report publication",
+      "evidence": "Static actual production order: failed/nonzero paths skip header_completion, then write_report precedes header_runtime=None. Existing direct header_completion(1) control is not this production path.",
+      "required": "Retire verifier before failed report construction, preserving successful sign-before-release and unconditional later cleanup."
+    }
+  ],
+  "independent_evidence": {
+    "source": "exact clean453797 normal c8 child; absolute target worktree used",
+    "selected_command": "python3 -B -m unittest scripts.validation_ownership.tests.test_header_pipeline.HeaderReceiptInertTests -v",
+    "tests": 11,
+    "seconds": 0.027,
+    "wall_seconds": 0.43,
+    "result": "passed but misses the five findings",
+    "registry": "99 cases,51 features,one specific new inert selector;0.03s",
+    "final_status_check_seconds": 0.03
+  },
+  "not_performed": [
+    "Make/compiler/SDK/candidate/native-supervisor/fork/signal/namespace/mount/privilege/helper execution",
+    "workflow or remote queries",
+    "GCC/bootstrap or broad suite",
+    "code edits, native qualification, push or delivery"
+  ],
+  "remaining_runtime": "Separate exact-commit actual signed transcript plus omission/forgery rejection without publication; no particular method or allocation authorized."
+}

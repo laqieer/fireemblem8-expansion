@@ -1,0 +1,593 @@
+Issue #180 header-kernel receipt design revision V3
+===================================================
+
+Status and classification
+-------------------------
+
+This is one concrete, read-only, implementable design. It authorizes no source
+or test change and grants no shipping behavior. The hosted finding remains
+**Confirmed**: the current decimal completion count is repairable after receipt
+omission, renumbering, or duplicate operation/path insertion.
+
+This document replaces the retired 005854 designer's V2 proposal for future
+implementation planning. It preserves the V2 artifacts and all earlier triage
+as historical evidence. "V3" is the design-revision number. Because no
+authenticated protocol was implemented, the prospective on-wire filter launch
+and completion remain version 2 rather than skipping directly from shipping
+version 1 to version 3.
+
+Source basis and limits
+-----------------------
+
+The source basis is commit `86af296222a4ae0615db517fbe9c8c64dd0aba9b`
+in the retained issue-180 prerequisite worktree. The relevant
+`header_runtime.py`, `syscall_guard.py`, and `make_probe.py` surfaces are also
+unchanged at stated current Main
+`c8b365da1be29bc58352cf1edb8b836a2cf18321`.
+
+Current source facts:
+
+* `header_runtime.validate_filter` defines a version-1 closed allowlist and
+  path-presence profile for two statfs paths, two readable proc paths, and one
+  absent configuration path.
+* `syscall_guard.Policy.kernel_record` emits one eight-field row for each
+  operation it observes and `write_report` emits only the decimal
+  `kernel_sequence` as the terminal.
+* `header_runtime.records` validates row payloads and contiguous sequence/count,
+  but requires only the first statfs identity. It therefore accepts omission of
+  the other actual rows and accepts repeated operation/path identities under new
+  sequence numbers.
+* `_sandbox_run` consumes the issued `_HeaderRuntimeLaunch`, creates the trusted
+  config, validates the closed supervisor report, and returns mutable
+  `(completed, observed)` objects. `_command` reparses `observed["accessed"]`
+  afterward and stores the resulting tuple of mutable dictionaries as
+  `ProcessOutput.runtime_probes`.
+* Command semantics and cache charging later consume `runtime_probes`.
+
+Authoritative SELinuxProject 3.5 and 3.7 `libselinux/src/init.c` source also
+shows why V2's predicted schedules are not a sound compatibility contract:
+`verify_selinuxmnt` performs `statfs`, then on SELinux magic performs
+`statvfs`, and returns success only after the latter succeeds. It may revisit a
+mount path, and `selinuxfs_exists` uses `getline` plus line-local C-string
+`strstr`. Those upstream sources are control-flow references, not proof of the
+retained vendor binary or every admitted libc implementation.
+
+References:
+
+* `https://github.com/SELinuxProject/selinux/blob/3.5/libselinux/src/init.c`
+* `https://github.com/SELinuxProject/selinux/blob/3.7/libselinux/src/init.c`
+
+The earlier source-history fact remains preserved: commit
+`97a7bdab0ee42d7199ca8eb0d209ae1a99c5e94b` introduced the current closed
+profile and count-only terminal together. V3 adds no replacement Git identity
+ledger.
+
+This design consequently authenticates only the exact actual transcript emitted
+by the existing trusted observation hooks. It does not infer libselinux
+branches, parse proc-file content, predict absent operations, synthesize reads,
+or claim native compatibility for an unqualified early-return path.
+
+Security objective
+------------------
+
+For a successful issued filter launch, the parent accepts semantic/cache
+kernel-input evidence only when:
+
+1. the existing trusted guard completed successfully with all streams closed;
+2. every actual row emitted by `kernel_record`, including every repeated
+   operation/path occurrence, survives with its exact sequence and exact
+   existing payload fields;
+3. the rows form the exact complete ordered manifest authenticated by a fresh
+   launch-private HMAC key;
+4. the authenticated result belongs to the exact issued launch, command,
+   workspace, source, executable, environment, mount profile, and filter
+   profile;
+5. the exact successful supervisor result is claimed once through the shared
+   private native-completion lifecycle before cache or semantic use; and
+6. no raw report, parser result, count, digest, tag, scope, token, or mutable
+   dictionary is independently usable as completion authority.
+
+The HMAC closes the report-mutation gap. It does not make candidate execution
+more powerful and does not prove what libselinux could have read. A valid short
+or conditional transcript proves only what the trusted guard actually observed.
+
+Scope and non-goals
+-------------------
+
+In scope:
+
+* filter header-runtime launch grant version 2;
+* one fresh 32-byte key per issued filter launch;
+* incremental hashing of every already-admitted actual row;
+* a signed version-2 JSON completion in the existing
+  `header-kernel-end:` accessed channel;
+* authentication inside `_sandbox_run` after strict successful report/status
+  validation;
+* one shared, narrow, purpose-specific private native-result issuance/claim
+  boundary;
+* deeply immutable accepted header rows through cache/semantic consumption;
+* focused prospective controls in the existing header test module and
+  `TC-WORKFLOW-GATE-OWNERSHIP-001`.
+
+Out of scope:
+
+* the independently accepted Main mask/outcome-custody budget/lifecycle
+  correction and all of its code;
+* the private unfinished GCC stage-4 receipt design or implementation;
+* a generic kernel-audit system, callback framework, native-return framework,
+  or second completion gateway;
+* any predicted libselinux schedule, SELINUX_MAGIC branch assertion, statvfs
+  aggregation rule, proc-filesystems predicate, line parser, substring matcher,
+  or vendor-version claim;
+* operation/path uniqueness;
+* fabricated rows for operations that did not occur;
+* a five-row maximum or a mandatory five-operation profile;
+* a new path, permission, mount, executable, source, namespace mode, syscall,
+  dependency, package, job, command, resource limit, or host support promise;
+* a feature flag, gameplay/ROM/save/ABI/localization/generated-data change;
+* cryptographic memory zeroization claims;
+* protection from malicious trusted observer code that possesses the key and
+  deliberately signs forged data.
+
+Version and compatibility contract
+----------------------------------
+
+The exact prospective version surfaces are:
+
+* `filter_kernel` remains schema version 1, with the current exact paths,
+  presence booleans, permissions, and mounts.
+* ARM `header_search` retains the exact existing three-field header-runtime
+  launch grant version 1.
+* A launch carrying `filter_kernel` uses the four-field header-runtime grant
+  version 2:
+
+  ```
+  {
+    "version": 2,
+    "scope": "<existing launch_scope(root)>",
+    "binding": "<existing launch_binding(config), 64 lowercase hex>",
+    "receipt_key": "<fresh 32 bytes, 64 lowercase hex>"
+  }
+  ```
+
+* The existing eight row fields and their meanings do not change:
+  `sequence`, `operation`, `path`, `result`, `data`, `bytes`, `sha256`, and
+  `eof`.
+* A filter launch accepts exactly one version-2 signed completion. The old
+  decimal version-1 terminal is rejected on the new filter route. There is no
+  count-only compatibility fallback.
+* Non-filter commands and header-search version 1 are unaffected.
+* Existing valid filter rows retain their semantic JSON object shape. Completion
+  keying material and completion metadata never enter semantic or cache
+  identity.
+* No persistent cache or data migration exists. Process caches are local to the
+  run. Rollback is a normal revert of the future dedicated implementation.
+
+Issued key and verifier lifecycle
+---------------------------------
+
+`make_probe._header_runtime_launch` extends the private issued record for a
+filter launch with:
+
+* the exact existing token, command, header step, binding, and scope;
+* a cryptographically random 32-byte HMAC key; and
+* a private one-use state.
+
+Header-search launches receive no key and remain version 1.
+
+When `_sandbox_run` consumes the exact token, it removes the launch from the
+issued maps immediately, marks the verifier used before any child execution,
+and keeps the key only in the local filter-run verifier. Any setup failure,
+missing report, malformed report, failed status, authentication failure,
+caller failure, success, replay, or copied token therefore spends the launch.
+`header_runtime.records` or any other parser does not own or consume this
+lifecycle.
+
+The key is encoded only in the trusted launch JSON. It is not placed in argv,
+environment, mounts, report fields, errors, `ProcessOutput`, runtime probes,
+semantic identity, cache identity, or generated output. Existing sandbox facts
+remain the confidentiality basis: the trusted config resides in the private
+0700 session scratch outside the candidate chroot; guest descriptors are
+closed; proc/ptrace/process-memory access is denied; the config is not mounted
+or exported; and privileged fallback drops identities/capabilities.
+
+Cleanup is explicit on every path:
+
+* the parent unlinks the launch config promptly after the launcher/supervisor
+  returns, before report parsing;
+* the parent removes `receipt_key` from the in-memory config and releases the
+  local verifier/key in an unconditional `_sandbox_run` `finally`;
+* `header_runtime.validate_launch` gives `Policy` a private decoded filter
+  launch record and removes the raw key string from `Policy.config`;
+* after creating a completion, or on any failure, `Policy` releases its private
+  key/reference and removes any remaining key-bearing launch member before
+  report publication completes.
+
+CPython immutable strings/bytes, JSON decoder storage, HMAC internals, forked
+address spaces, and allocator copies do not provide literal zeroization.
+Implementation and documentation must say "prompt unlink and reference
+release", never "cryptographic zeroization" or "memory erasure".
+
+Exact actual-row admission and hashing
+--------------------------------------
+
+V3 intentionally removes V2's private ordered row-list copy. `Policy` keeps:
+
+* `kernel_sequence`;
+* one SHA-256 state initialized with the single byte `[`; and
+* whether at least one row has already been hashed.
+
+For each operation already admitted by the unchanged syscall/path/source/
+executable rules, `kernel_record` performs this order:
+
+1. Before a per-row dictionary, JSON string, retained observation, or accepted
+   copy is allocated, check the existing observation-count capacity with one
+   completion slot reserved and check the existing observation-byte/control
+   capacity against the exact fixed maximum canonical size for the closed
+   eight-field row schema and longest allowed path/payload.
+2. Enforce the existing operation-specific bounds first: fixed 120-byte statfs
+   data, stream byte count at most `file_limit`, 64-hex stream hash, exact EOF
+   boolean, and exact absent result.
+3. Allocate the next sequence only after those admissions.
+4. Canonically encode the row with the existing
+   `json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=True)`
+   `encoded` function and require the actual encoded length not to exceed the
+   pre-admitted maximum.
+5. Feed a comma before every row after the first, then the exact canonical row
+   bytes, into the manifest SHA-256 state.
+6. Publish the existing `header-kernel:` plus canonical row string through the
+   existing bounded `accessed` observation channel.
+
+If encoding, hashing, charging, or publication fails after any partial local
+state change, the run fails and no authenticated completion is emitted. There
+is no recovery that signs a prefix.
+
+The completion observation's exact maximum size/count is reserved before
+tracee execution. It consumes existing observation/control authority; no limit
+is increased. Other observations see the reduced remaining capacity. At
+successful completion the reservation is converted to the one real terminal
+observation. If it cannot be converted exactly, the run fails without a
+completion.
+
+Every legitimate repeated operation/path occurrence gets a distinct sequence,
+is encoded and hashed independently, and appears independently in the report.
+There is no arbitrary five-row bound. The maximum is derived only from the
+existing observation count, report/file/control byte limits, syscall limit,
+aggregate deadline, per-stream file limit, and the reserved terminal capacity.
+
+Canonical manifest and completion
+---------------------------------
+
+The manifest bytes are exactly the bytes that the existing ordered-list
+encoding would produce:
+
+```
+b"[" + b",".join(encoded(row) for row in rows_in_sequence_order) + b"]"
+```
+
+The guard computes that value incrementally. At completion it copies the hash
+state, feeds `]`, and takes the SHA-256 hex digest. It does not allocate a
+second list or concatenate the manifest.
+
+A signed completion is emitted only when:
+
+* the trusted supervisor has no error;
+* the actual native main status is exactly zero;
+* no kernel stream remains open;
+* at least one row exists; and
+* the unchanged minimum evidence is present: an actual `statfs` row for
+  `/sys/fs/selinux`.
+
+The minimum does not make any other permitted path mandatory. Every actual
+negative-config row remains mandatory in the authenticated manifest if it
+occurred and retains its exact `-ENOENT` validation; no absent row is
+synthesized when it did not occur.
+
+The exact completion object is:
+
+```
+{
+  "version": 2,
+  "scope": "<issued scope>",
+  "binding": "<issued binding>",
+  "status": 0,
+  "count": <positive integer>,
+  "manifest_sha256": "<64 lowercase hex>",
+  "tag": "<64 lowercase hex>"
+}
+```
+
+The MAC body is the same object without `tag`. The tag is:
+
+```
+HMAC-SHA256(
+  receipt_key,
+  encoded(["header-kernel-completion-v2", body_without_tag])
+).hexdigest()
+```
+
+The final accessed value is:
+
+```
+header-kernel-end:<canonical encoded completion object>
+```
+
+The tag binds the exact launch, successful status, exact occurrence count, and
+exact ordered contents of every row. A report mutator may remove, alter,
+duplicate, reorder by changing sequence fields, renumber, and coherently repair
+the public count and manifest digest, but cannot preserve an accepted tag
+without the launch key. Copying a completion from another launch fails under
+the fresh key; replay has no live one-use verifier.
+
+Transport-array order is not authoritative because `accessed` is currently a
+set and the report sorts it. The row `sequence` values define actual order.
+Merely permuting the report array while leaving rows and sequences unchanged
+must not change acceptance.
+
+Parent authentication
+---------------------
+
+The filter receipt is authenticated inside `_sandbox_run`, not later in
+`_command`. Authentication occurs only after all of these existing checks have
+succeeded:
+
+* the report file exists and is within the existing file/control bound;
+* strict top-level report keys are exactly valid;
+* collection uniqueness, observation count/bytes, metadata, events, resource
+  settlement, rendezvous, and dependency execution are valid;
+* the outer supervisor result is successful;
+* `observed["ok"]` is true;
+* the actual/report native return status has passed the existing filter command
+  success rule; and
+* any applicable generic report protocol checks have passed.
+
+The native report's top-level keys remain closed and unchanged. The completion
+is an existing `accessed` string, not a new report key or opaque Python marker.
+
+The header authenticator then:
+
+1. validates the unchanged version-1 filter profile;
+2. accepts exactly one signed version-2 terminal and rejects decimal V1,
+   missing, repeated, malformed, oversized, or foreign terminals;
+3. bounds each prefixed string before per-row JSON decode;
+4. validates every existing row field and payload rule;
+5. rejects duplicate sequence numbers and requires exactly `1..count`;
+6. intentionally allows repeated operation/path identities under distinct
+   actual sequences;
+7. incrementally recomputes the canonical ordered-list digest in sequence
+   order, using only the one accepted immutable row copy;
+8. checks completion count, digest, scope, binding, and status against the exact
+   issued verifier and successful result;
+9. verifies the tag with constant-time comparison; and
+10. returns a private deeply immutable `_AcceptedHeaderTranscript`.
+
+The accepted transcript contains a tuple of frozen, slots-based row values
+whose members are only primitive immutable values. It contains no key, tag,
+scope entropy, raw terminal, raw row string, or reparsable authority blob.
+Before each accepted row copy is allocated, its exact canonical size is charged
+to existing control capacity. The report file bound limits the first JSON
+decode; row count/length limits and accepted-copy charges bound subsequent
+decode and custody. No second ordered dictionary list is retained.
+
+Shared private native-completion lifecycle
+------------------------------------------
+
+Before either header or GCC receipt implementation, Main must freeze one joint
+decision: `_sandbox_run` and `_command` share one private `_NativeResult`
+issuance/claim registry with sealed purpose-specific variants.
+
+The required common boundary is:
+
+* `_sandbox_run` keeps its public/internal return shape exactly
+  `(completed, observed)`.
+* Only after strict report and successful status validation, `_sandbox_run`
+  registers one private `_NativeResult` against the exact object identities of
+  those `completed` and `observed` objects.
+* The common record freezes issuance-time return code, SHA-256 fingerprints of
+  stdout and stderr, a canonical strict-report binding, and one sealed
+  purpose-specific payload.
+* `_command` immediately claims the exact record by object identity and
+  expected purpose. Claim compares all issuance fingerprints, removes the
+  registry entry before returning the payload, and can succeed once.
+* A forged `_sandbox_run` return, a copied object, a second claim, or mutation
+  of the same `completed`/`observed` objects after issuance rejects.
+* The owning `_command` path retires any unclaimed record in `finally`; session
+  cleanup also refuses/leaks no outstanding record.
+* The opaque `_NativeResult` object is never inserted into the JSON report,
+  `(completed, observed)` tuple, `ProcessOutput`, cache, or semantic identity.
+
+The header purpose variant is exactly
+`header-filter-completion-v2` and carries only
+`_AcceptedHeaderTranscript`. The GCC purpose variant may carry its separately
+designed completed/observed operands and raw-probe sidecars, but the header
+design neither reads nor prescribes that private payload. There is one
+registry, one issue/claim/retire implementation, and sealed variants; there are
+not two maps, two gateways, a generic callback list, or a generic
+native-return framework.
+
+This is the exact coordination decision Main must resolve with the independent
+GCC designer before implementation: confirm the common object-identity and
+fingerprint fields, one-return-shape registry ownership, purpose tags, and
+unconditional retirement API. Header-specific HMAC generation, row parsing,
+and transcript types remain in `header_runtime.py`.
+
+`_command`, cache, and semantic custody
+---------------------------------------
+
+For a filter command, `_command` must not call the ordinary raw
+`header_runtime.records(observed["accessed"], ...)` path. It instead:
+
+1. claims the exact `header-filter-completion-v2` native result immediately
+   after `_sandbox_run` returns;
+2. rejects if the claim is absent, forged, reused, purpose-mismatched, or its
+   completed/report fingerprints changed;
+3. projects each accepted frozen row once into a private immutable mapping
+   with the exact existing eight JSON keys and primitive values;
+4. precharges the exact existing cache/semantic encoded size before allocating
+   those mappings or `ProcessOutput`;
+5. stores the immutable mappings as the header filter's
+   `ProcessOutput.runtime_probes`; and
+6. retires the claimed native result and accepted sidecar after ownership has
+   transferred.
+
+The immutable mapping must be JSON-encodable as the same object shape used
+today while rejecting all ordinary mutation methods. Because every value is a
+primitive immutable value, the tuple is deeply immutable. A mutable raw report
+dictionary is never stored in `ProcessOutput`.
+
+Existing callers continue to read mapping keys and serialize
+`runtime_probes`. Command semantics still include the meaningful actual rows,
+including sequence-distinct repeats. Existing cache charging and semantic
+identity consume those immutable mappings. No completion count, digest, tag,
+key, binding, scope, launch entropy, or private capability enters cache or
+semantics. Output publication occurs only after the claim and immutable
+custody succeed.
+
+Any failure before this point yields no `ProcessOutput`, output file,
+generated result, cache entry, dynamic-command semantic record, or accepted
+runtime probe.
+
+Why repeated actual identities are accepted
+-------------------------------------------
+
+V2 proposed rejecting repeated `(operation, path)` identities and supported
+only predicted schedules. That is intentionally corrected.
+
+An actual libc/libselinux implementation may legitimately perform more than
+one qualifying syscall for the same path, including statfs/statvfs-related
+verification or retry behavior. Operation/path uniqueness therefore confuses a
+logical branch model with an occurrence transcript. V3 records occurrences:
+each trusted hook event has a new sequence and exact payload, and the complete
+sequence is MAC-bound.
+
+This is stronger for the actual-transcript contract:
+
+* a legitimate repeat is preserved rather than aggregated or rejected;
+* a report mutator's inserted repeat changes count and manifest and fails the
+  unchanged tag;
+* an omitted repeat changes count and manifest and fails the tag; and
+* no unqualified aggregation rule hides which syscalls occurred.
+
+A transcript deliberately forged and re-signed by malicious trusted observer
+code with the real key remains outside this boundary. Tests must not claim
+otherwise by giving a mutator the test key and calling its accepted output a
+forgery failure.
+
+Closures of V2 review gaps H1-H4
+--------------------------------
+
+**H1 -- upstream statfs/statvfs and repeated paths (closed):**
+
+V3 deletes `first-mount`, `second-mount`, `no-selinuxfs`, and `full-scan`
+schedules, all SELINUX_MAGIC condition fields, and all claims that one statfs
+proves an early positive. It neither models nor aggregates statvfs. Every actual
+repeated operation/path occurrence is retained and authenticated. Native
+compatibility claims require a separate exact-runtime qualification; upstream
+source is not substituted for it.
+
+**H2 -- getline/strstr line, chunk, final-partial-line, and NUL semantics
+(closed):**
+
+V3 deletes the proc-filesystems predicate and all substring state. There is no
+cross-read tail, line parser, NUL interpretation, or predicate boolean to get
+wrong. Existing stream receipts continue to authenticate actual byte count,
+SHA-256, and EOF exactly; raw bytes remain unpublished.
+
+**H3 -- verifier lifecycle, strict success, immutable custody, and shared
+return hook (closed):**
+
+The launch/verifier is consumed before execution and released in an
+unconditional `_sandbox_run` `finally`, including schema/accounting/supervisor/
+status failures before parsing. Authentication occurs only after strict
+successful report/status validation. The accepted transcript is deeply
+immutable, raw authority is not reparsed, and one shared purpose-specific
+`_NativeResult` registry binds exact completed/observed objects plus immutable
+issuance fingerprints without changing the return tuple. Same-object mutation
+and forged return controls are explicit.
+
+**H4 -- unbounded private row list and late admission (closed):**
+
+The guard has no row list. It uses one incremental SHA-256 state and the
+already-bounded public observation string for each actual row. Completion
+capacity is reserved before execution. Per-row count and worst-case storage are
+admitted before allocation, then actual encoding is checked before hashing and
+publication. Parent report bytes, row decode, immutable accepted copies,
+semantic projection, and cache storage each have explicit existing-limit
+admission. No five-row assumption and no limit increase are introduced.
+
+Trust boundary and residual assumptions
+---------------------------------------
+
+The design relies on:
+
+* the exact source/tree/command/header-step launch binding and existing
+  one-use `_HeaderRuntimeLaunch` admission;
+* the trusted supervisor and `syscall_guard` implementation honestly routing
+  every relevant admitted operation through `kernel_record`;
+* existing executable, libc-origin, instruction mapping, path, mount,
+  readonly, source, and success checks;
+* OS randomness and standard HMAC-SHA256/SHA-256 behavior;
+* current sandbox confidentiality controls preventing candidate access to the
+  trusted config/key; and
+* the parent process and shared private native-result registry remaining
+  trusted.
+
+The HMAC protects the supervisor report boundary from omission, insertion,
+reordering-by-sequence, coherent public-field repair, cross-launch copy, and
+replay. It does not independently prove observation-hook coverage or source
+binding, and it does not defend against trusted observer code that omits data
+before hashing and signs the omission. Hook coverage and exact trusted source
+binding remain explicit trust assumptions.
+
+Resource, profile, and rollback surfaces
+----------------------------------------
+
+No limits increase. The 32-byte key, HMAC/SHA-256 states, terminal reservation,
+bounded canonical row temporary, accepted immutable copy, and native-result
+record are charged to existing control/cache/observation authority. No new
+tracee address-space allocation contract is introduced.
+
+The profile remains an allowlist/presence declaration. It does not become a
+mandatory operation schedule. The valid retained current transcript remains a
+future native candidate, but its qualification is not performed here.
+
+Default/non-filter behavior and header-search V1 remain unchanged. The
+count-only filter V1 terminal is rejected only on the new filter V2 route.
+Normal revert restores the prior source and tests. There is no persisted
+migration, save change, ROM change, generated artifact conversion, or
+compensating cleanup.
+
+Prospective implementation ownership
+------------------------------------
+
+After the shared-hook decision and a separate implementation freeze, the
+expected narrow owned files remain:
+
+* `scripts/validation_ownership/header_runtime.py`
+* `scripts/validation_ownership/syscall_guard.py`
+* `scripts/validation_ownership/make_probe.py`
+* `scripts/validation_ownership/tests/test_header_pipeline.py`
+* `docs/validation-ownership.md`
+* `docs/ownership-probe-foundation.md`
+* `docs/test-cases/workflow-governance.md`
+
+No new module or tester case is proposed. The existing owner is
+`TC-WORKFLOW-GATE-OWNERSHIP-001`.
+
+Acceptance boundary for future implementation
+---------------------------------------------
+
+Implementation is not authorized by this design. Before implementation, Main
+must:
+
+1. obtain independent review of this V3 contract;
+2. freeze the shared `_NativeResult` issue/claim/retire decision with the
+   separate GCC stage-4 design without reading or duplicating its unfinished
+   private files;
+3. freeze the exact fixed row/terminal maximum-size calculations and immutable
+   mapping representation;
+4. freeze prospective controls from `control-plan.json`; and
+5. separately authorize the minimal existing real header case.
+
+No vendor branch, early return, statvfs behavior, syscall aggregation, or
+native compatibility may be claimed from pure data or static documentation.

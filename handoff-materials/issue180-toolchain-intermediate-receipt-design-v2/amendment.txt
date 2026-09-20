@@ -1,0 +1,209 @@
+Stage-4 intermediate design V2: explicit F1/F2/F3 closure
+=======================================================
+
+READ-ONLY design amendment by Main. V1 design and all evidence are unchanged.
+Replacement0ef2 returned only an intention, without files or an actionable
+handoff; no technical work is credited to it. Main did not rerun or allocate
+candidate, native, compiler, SDK, kernel, Make or root work.
+
+This document supersedes only the three identified V1 contracts. Everything
+else in ../issue180-toolchain-intermediate-receipt-design/design.md remains:
+actual stage-4 creator/writer/reader/content/retirement proof, closed argv role
+grammar, per-stage/recipe one-use capabilities, raw immutable sidecars, exactly
+two semantic operand references, versioned launch/receipt, unchanged meaningful
+inputs/status/output and no SDK/sed/stat-identity normalization.
+
+F1: freeze actual completion values at native issuance
+----------------------------------------------------
+
+Controller.note_native_return executes only after the existing successful
+trusted report/status/accounting checks and BEFORE any caller can obtain the
+returned completion/report pair.
+
+The exact _NativeResult stores an immutable, admitted binding of:
+
+- controller/session/thread, consumed launch identity, expected report path,
+  source snapshot/tree/epoch, active step/grant/live job and completion phase;
+- exact completed/observed object identities, retained only until sealing;
+- exact builtin-int returncode, excluding bool, checked against the validated
+  native status and existing allowed status domain;
+- exact builtin-bytes stdout and stderr lengths and SHA-256 digests, computed
+  from those bytes at issuance, not computed later from a mutable completion;
+- the immutable report value fingerprint specified below.
+
+Existing issued argv/config binding remains authoritative; completed.args is
+not an alternate command authority. If it is consumed anywhere in the new path,
+its exact admitted argv must also be frozen and compared, rather than borrowed
+from a subsequently mutable attribute.
+
+All charges and private record storage precede publication/registry insertion.
+No token is registered on partial validation, hash or admission failure.
+claim_native_return checks exact object identities AND recomputes all consumed
+value bindings against the frozen issuance tuple. seal_step_result validates
+the final ProcessOutput against that original tuple/accepted report, never the
+current completed object as an independent oracle. Same-object replacement of
+stdout, stderr or returncode therefore fails even when observed and report
+contents remain unchanged. Copies, stale/replayed/foreign results remain refused.
+
+Only the original values are facts; a later matching value cannot manufacture
+a missing native issuance. Exact builtin types prevent hashing user-defined
+buffer/conversion callbacks. Raw references and token entries are cleared on
+claim/consume/expiry/failure, without deleting exported inert data or refunding.
+
+F2a: streaming content capture, not full memory() copies
+------------------------------------------------------
+
+Do NOT use syscall_guard.memory(pid,address,n) to allocate a whole new reader
+buffer for this receipt. V1's volume formula did not fund its bytearray growth,
+slice and immutable copy.
+
+Add one private, stage-4-only stopped-memory digest operation in syscall_guard,
+using the SAME existing PEEKDATA authority and checked request address/extent.
+It walks the existing eight-byte machine-word alignment, holds at most one
+word and one <=8-byte selected slice at a time, and feeds only the actual
+returned-byte interval into the streaming reader digest. It returns a digest/
+count, never a payload buffer or generator that can outlive the stopped actor.
+No new tracee path/syscall/permission or generic memory-read API is granted.
+
+Before the first peek, admit the requested extent, the rounded aligned peek
+volume and the operation's fixed scratch/storage through existing issued
+observation/control/file/deadline bounds. Requested bytes remain cumulatively
+charged even if the kernel returned less. Check actual return0..requested and
+the existing syscall-memory bound before capture. Stop/error does not refund
+or resume a partially credited receipt. Hash only returned bytes, while retaining
+the separate requested/returned counters and actual sequential offset proof.
+
+Completed-file validation uses the already-pinned readable file descriptor
+with bounded pread chunks, not read-all. Each chunk allocation is admitted
+before pread; update/release it before the next chunk. Do not retain a list of
+chunks or both full writer/reader bodies. Revalidate pinned identities, extent,
+mode/link count and required barriers as V1 specifies. No mmap/vector/seek/fork/
+dup shape is admitted merely because streaming can hash it.
+
+The fixed scratch model must explicitly enumerate the word/int/bytes-slice/
+digest/iteration and ctypes temporary representations on the supported runtime.
+Use bounded object-header assumptions checked before operation, not a wire-byte
+claim or an allocation of the untrusted-size buffer to discover its own cost.
+This is a bounded constant workspace plus admitted pread chunk, not an
+unexplained payload-sized multiplier. Implementation evidence must establish
+the actual conservative workspace/peak and reject before operations if the
+caller cannot fund it.
+
+Content observation volume remains at least the V1 completed extent checks
+and each requested reader interval, with aligned peeks explicitly included.
+It is separate from peak/retained storage admission; neither substitutes for
+the other. Both are cumulative per launch/session and keep original deadlines.
+
+F2b: private streaming value fingerprint for the full report
+----------------------------------------------------------
+
+Do NOT add encoded(observed) of the entire report merely to make an issuance
+digest, and do not fund that larger object from the small intermediate receipt.
+The existing public encoded() and native report wire format remain unchanged.
+
+V2 uses a PRIVATE domain-separated structural fingerprint for native completion
+binding. It is NOT the semantic digest, original report bytes, or an assertion
+that its hash equals V1's proposed JSON hash. Freeze this exact private version:
+
+- Start with an unambiguous native-completion-value-v2 domain.
+- Emit a distinct type tag and fixed-endian length/value for each supported
+  exact builtin JSON value. None/bool/int/finite-float/string/array/object have
+  distinct tags; no arbitrary repr, __str__, iterable or conversion callback.
+- Integers use the already validated report scalar domain, with bounded sign/
+  magnitude encoding. A genuinely supported wider scalar needs an explicit
+  bounded rule before implementation; never truncate or coerce it.
+- Strings bind their exact Python Unicode code-point sequence and length,
+  emitted in fixed-size code-point chunks. This preserves escaped/unescaped
+  representations of the same parsed value without allocating a full ASCII
+  JSON string/bytes pair. No Unicode normalization or path rewriting.
+- Arrays bind length and ordered children. Objects bind length and keys in
+  the same deterministic string-key order as canonical JSON, then exact values.
+  Only string keys are accepted. Existing JSON-array tuple/list representation,
+  if both are actually used by validated source, must be explicitly mapped to
+  the same array value rule, not guessed; inspect the real producer types.
+- Reject nonfinite/unsupported values, cycles, excessive depth, nodes, strings
+  or scalar extents BEFORE following/allocating the next representation.
+
+The fingerprint walker has a bounded ancestor stack and never copies the
+whole report or creates a second frozen report graph. Sorting only builtin
+dictionary key REFERENCES is permitted after pre-admitting key-list capacity,
+Timsort workspace and ancestor-held lists. Charge/check aggregate live and
+cumulative entries, not only each individual dictionary. Key strings are
+borrowed, not duplicated. Bound every key comparison/string chunk and check
+the original deadline during traversal.
+
+At issuance and EVERY later digest verification, admit the traversal/sort/
+scalar/chunk/digest workspaces and cumulative processing before those operations.
+Use actual existing report/file/observation bounds, independently of receipt
+65536/512/depth10 bounds. No cache/refund/reopen shortcut when repeated checks
+would not fit. Stdout/stderr digesting uses exact already-admitted immutable
+bytes without another payload copy; its bounded hash/record overhead and
+repeated processing still need admission.
+
+The canonical intermediate receipt remains the existing separately bounded
+JSON design. Its own encoder/parser/container/transient costs are pre-admitted
+and cannot be charged to the full-report fingerprint reservation by assumption.
+All raw/archive/aggregate-result copies retain explicit ownership and charges.
+
+F3: explicitly three peak mechanism-owned descriptors
+----------------------------------------------------
+
+V2 CHANGES the V1 proposal from two total additional mechanism descriptors to
+THREE peak, not "two retained" under the old name. This is a proposed derived
+implementation envelope, not a changed shipping Limits value or runtime grant.
+Main and independent review must accept it before code.
+
+Fixed ledger:
+
+1. Workspace pin only: one.
+2. After actual successful exclusive creation, acquire one readable regular-file
+   pin directly, with no extra retained O_PATH intermediate pin: workspace+file
+   =two. Verify actual identity/mode/link count against the stopped actor.
+3. A SINGLE transient fdinfo reader may coexist with those two: peakthree.
+   It reads only the bound live actor/descriptor's bounded offset/flags record.
+   Close and withdraw that transient before any other descriptor acquisition.
+4. Completed-content hashing uses pread on the existing file pin, not a reopen.
+   Identity/absence checks use fstat/stat/readlink with the pinned workspace;
+   they do not add an uncounted directory enumeration/reader.
+5. After retirement/final validation, close file pin then workspace according
+   to the existing all-close owner. On failure attempt remaining owned closes,
+   but do not retry an uncertain raw FD or unlink a file to fabricate retirement.
+
+The temporary fdinfo reader is included even if promptly closed. Existing
+supervisor stdio/selector/process pidfds are not mislabeled as these three new
+mechanism descriptors; they remain covered by their original owners/limits.
+No borrowing a released/recycled Process descriptor or keeping a fourth
+temporary pin. If an operation truly needs an additional overlap, stop for
+explicit redesign instead of claiming this ledger was met.
+
+Read-only pins do not authorize new candidate accesses. Existing caller/OS
+descriptor availability is still enforced; inability to acquire an owned pin
+fails before proof, not an alternate route or skipped check.
+
+Prospective controls and remaining gate
+--------------------------------------
+
+Add same-object stdout/stderr/status/type mutation before claim and between
+claim/seal, with original immutable bindings retained; copied/foreign/replayed
+token negatives remain. Failed admission/hash must publish no capability.
+
+For capture/fingerprint, use allocation-spy and boundary controls to prove
+rejection BEFORE an untrusted-size memory/encoding/key-list/read operation.
+Large/deep/cyclic/unsupported report values and repeated digest checks cannot
+escape aggregate accounting. Key-order-only refactoring preserves the private
+fingerprint; ordered args/values and every real source/result field still differ.
+Record peak simultaneous temporary storage separately from content work volume.
+
+FD controls must observe the actual maximum three and cover every acquisition,
+identity, offset-read and before/after-release failure; no fourth descriptor
+or substituted process/file, no fake retirement. Preserve all V1 actor/content/
+role/retirement, result custody, semantic/cache/report/version and restoration
+requirements. Native I/O/compiler forms remain unqualified, not inferred from
+the read-only design.
+
+No tests, native runs, implementation, SDK repair, kernel hash normalization,
+namespace bootstrap, ROOT21/census2/H1 or new measurement allocation occurred.
+Independent static follow-up and a separate pre-edit/qualification freeze are
+still required. The header-completion V3 design shares _sandbox_run boundaries;
+Main must coordinate one purpose-tagged completion lifecycle before either code
+integration, without merging their unrelated receipt semantics.

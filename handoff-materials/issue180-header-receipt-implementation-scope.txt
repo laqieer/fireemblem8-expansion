@@ -1,0 +1,123 @@
+## Pre-edit scope: authenticated actual header completion and one shared native-return seam
+
+**Confirmed bug; local implementation only.** Source is the pushed
+`c8b365da1be29bc58352cf1edb8b836a2cf18321`, PR #186, immediate base/master
+`ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`. This is a normal child checkpoint
+of the same indivisible issue #180, not another independent issue or a new PR.
+
+The count-only header completion accepts omission/resequencing with a repaired
+public count. Actual pure parser controls and Copilot review5251759482 establish
+that gap; acknowledgment5735525155 stays open. Requiring all five allowed paths
+would incorrectly predict conditional library behavior.
+
+The chosen correction authenticates the exact ACTUAL ordered occurrence
+transcript, including legitimate repeats, under a fresh launch-private HMAC
+key. It does not predict libselinux schedules or synthesize missing reads.
+Read-only HeaderV3 replaces V2's rejected schedule/substring/uniqueness model.
+Independent a0ad's follow-up closed the exact private-fingerprint format gap
+and found the shared boundary statically coherent subject to the now-adopted
+representation and reservation details below. That is not code or runtime
+acceptance.
+
+### Frozen implementation and ownership
+
+One implementation owner works locally from c8 in a fresh worktree and commits
+normally, without pushing. Main remains the only pusher/delivery coordinator.
+Expected paths: `header_runtime.py`, `syscall_guard.py`, `make_probe.py`,
+`tests/test_header_pipeline.py`, and the directly coupled
+`docs/validation-ownership.md`, `docs/ownership-probe-foundation.md`,
+`docs/test-cases/workflow-governance.md`; add only the exact existing-case
+automation selector in `docs/test-cases/registry.json` if the inert controls
+need a separate class. All code paths are under `scripts/validation_ownership/`.
+No general module or competing registry is introduced.
+
+ProbeSession owns one private native-return issue/claim/retire registry. The
+closed final purposes are `header-filter-completion-v2` and
+`toolchain-step-v2`; this checkpoint implements only the former and does not
+accept a placeholder toolchain payload. Future GCC work extends the SAME seam.
+Bind exact session/thread/owner, source view/epoch, consumed launch/command/job,
+completed/report identities, original status/stdout/stderr and the exact
+private full-report value fingerprint. Claim rechecks and consumes once.
+Missing/copy/replay/foreign/mutated returns fail. Unclaimed and partial
+issuance retire on all exits. The public `(completed, observed)` tuple and
+closed native JSON shape remain unchanged; no opaque JSON capability appears.
+
+The fingerprint is private SHA-256 over domain
+`fe8-native-completion-value-v2` plus NUL and exact tagged values: U64BE counts,
+sign plus eight-byte integer magnitude, finite IEEE binary64, exact U32BE
+code points including surrogates, list/tuple array equivalence and
+Python-lexicographically sorted exact string dictionary keys. Unsupported
+types, cycles, out-of-domain integers, depth/work/storage exhaustion reject.
+No whole-report JSON copy or semantic normalization is substituted.
+
+Header filter launch/completion become version2; the filter profile and ARM
+header-search launch remain version1. The eight row keys stay unchanged.
+Completion fields are exactly version/scope/binding/status/count/manifest_sha256/
+tag, with status0. HMAC-SHA256 binds the canonical domain/body and incremental
+canonical ordered-row manifest. Parent authentication follows generic
+report/status/accounting checks. No raw rows are reparsed after claim.
+Keys are promptly unlinked/released on all paths, never claimed zeroized.
+
+Accepted rows remain immutable slots-based authority. Their semantic views use
+one private primitive-valued dict subclass, refusing ordinary mutators and
+reinitialization, with copy/deepcopy returning itself. This preserves existing
+json.dumps/indexing/deepcopy shape. It is ordinary-API immutability, not a claim
+against hostile trusted Python deliberately invoking unbound base mutators;
+neither view nor copied data is a native capability.
+
+### Reservation and resource contract
+
+Limits do not change. With exact issued observation count N, reserve one
+terminal count before execution; N<2 rejects and maximum row count C=N-1.
+R is the header-row prefix plus the maximum canonical JSON length over the
+closed actual-profile statfs shapes, stream shapes with bytes=file_limit and
+eof=false, and absent-path shapes, all with sequence=C.
+T is the terminal prefix plus the canonical seven-field completion length at
+count=C, the exact JSON-escaped issued scope, binding and fixed-size hex fields.
+These are schema-shape maxima, not predictions of actual operations.
+
+Reserve T+128 logical observation bytes plus bounded private slot/scratch
+overhead before execution. Commit the successful actual terminal into that
+private slot once, within T, retaining the conservative charge with no second
+count or refund. Private slots never serialize. Each row similarly receives
+count/R+128 and construction admission BEFORE dictionary/encoding allocation.
+Any partial transfer failure fails closed and cannot sign a prefix.
+No second ordered-row list or concatenated manifest is retained.
+
+Wire length is not Python heap evidence: separately account new
+capture/fingerprint/row/decoder/view/sort/hash workspace, retained storage and
+every verification's cumulative work before growth under existing bounds.
+Do not reopen/refund/reset a budget, add guessed quotas, or normalize genuine
+input/environment/tool/status/output/publication/kernel differences.
+
+### Cases, compatibility, validation and rollback
+
+Use the existing `TC-WORKFLOW-GATE-OWNERSHIP-001`; preserve its human procedure
+and all prior selectors, adding the exact new inert class mapping if needed.
+Before editing production code, retain the actual count-only omission preimage.
+Exercise genuine APIs with fully inert dependencies: authenticated positives,
+conditional short/repeated paths, array-order neutrality; omission/insertion/
+resequence/payload/count/digest repairs with an unchanged tag; foreign/replayed
+launches, mutations, preparse/finally failures; exact fingerprint vectors and
+resource boundaries; JSON/deepcopy compatibility; and restoration of the parent
+defect. Tests must not give an attacker the signing key and then claim
+unforgeability. No source-spelling-only proxy evidence.
+
+Dependencies: accepted c8 custody/source behavior and current header launch
+authority. Shared-contract dependent: future GCC intermediate receipts.
+Conflict: concurrent edits to the three shared runtime files; one owner only.
+Separate namespace-bootstrap work uses its own diagnostic branch and immutable
+c8 source; no merge or fixture/backend adoption is bundled.
+No ROM/RAM/gameplay/save/ABI/generated-data/localization/profile/archival change.
+Non-filter commands, header-search version1, raw GCC observations, source
+interpretation, existing native permissions and shipping limits stay intact.
+No feature flag, blanket all-path rule, host policy mutation or fallback.
+Rollback is a normal revert of the dedicated future checkpoint.
+
+This scope authorizes focused PURE/INERT local code controls and a local commit
+only. It does **not** authorize actual Make/compiler/SDK/sed/process/namespace/
+privileged execution or a workflow push/run. The smallest genuine header
+qualification will receive a separate exact scope after code is ready.
+No ROOT21, repeated closed pair/census, full graph/report calibration or H1
+allocation follows. The hosted finding, exact candidate CI and overall
+delivery remain open until their own evidence is complete.

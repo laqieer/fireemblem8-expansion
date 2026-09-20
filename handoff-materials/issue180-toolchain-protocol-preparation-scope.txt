@@ -1,0 +1,104 @@
+## Local-only preparation: closed GCC intermediate data protocol
+
+Source: `c8b365da1be29bc58352cf1edb8b836a2cf18321`, issue #180 / PR #186.
+This is unpublished local preparation for the accepted stage-4 correction,
+not a separately deliverable feature, new PR, native proof or permission.
+Main remains sole pusher and delivery coordinator.
+
+The spent component experiment establishes two complete original checker
+semantic records differing only in their corresponding private cc1 assembly
+output and assembler input operands. It does not recover root20's missing
+record difference or make the failed second Make observation successful.
+The correction requires actual creator/writer/reader/content/retirement proof,
+not a basename/index/prefix filter. That execution proof is still unimplemented.
+
+The reviewed design is the typed stage-4 V1 contract with Main's V2 F1/F2/F3
+amendment and exact fingerprint follow-up. Independent93198 identified the
+three initial gaps; a0ad conditionally closed F1/F2a/F3 and then closed F2b.
+The final native-return gateway is the ONE ProbeSession-owned purpose-specific
+seam currently being implemented with HeaderV3; GCC must reuse it later.
+No competing Controller native-return registry will be prepared here.
+
+### Disjoint two-file ownership
+
+A fresh normal-child local branch/worktree from c8 may change ONLY:
+
+- `scripts/validation_ownership/toolchain_runtime.py`
+- `scripts/validation_ownership/tests/test_toolchain_runtime.py`
+
+Prepare the pure closed argument-role parser, strict intermediate wire/data
+validator and data-only semantic projection described in design sections4/5/8.
+These helpers are dormant until the later fully coupled native/controller
+integration. Their existence or a successful pure parse is never issuance
+authority. Preserve current version1 production launch routing, records(),
+Controller behavior, cache behavior and all existing native callers exactly.
+Do not switch launch versions or wire the projection to produce() now.
+
+Header owner59bbf06f owns make_probe.py/syscall_guard.py/header_runtime.py and
+their coupled tests/docs. Do not edit or inspect its uncommitted implementation.
+Native state hooks, stage/recipe capabilities, raw ProcessOutput/MakeObservation
+sidecars, archive/capture, the live semantic gateway and source-context binding
+are later integration work. They are not replaced by this pure preparation.
+
+### Fixed data contract
+
+Roles come from the exact reviewed bounded option-arity grammars on
+authenticated-meaning raw execution data: cc1's unique -o output and the
+assembler's sole positional input with its -o /dev/null. Numeric argv indexes
+are parser outputs, never constants. Preserve actual option/value order and
+deliberately supported repeated options. Unknown arity, response file, duplicate
+output, extra positional input, unsupported form or any non-role use of the
+intermediate path rejects; do not broaden on a failed control.
+
+The prospective toolchain launch is version2; its successful stage4 record is
+the exact version1 `toolchain-intermediate:` schema already reviewed. Bind
+scope/binding/stage/role/path/workspace and three actual exec-record digests;
+validate every closed creation, writer, reader, content, ordering and retirement
+field against the provided typed execution and issued-bound inputs. All raw
+integer positions exclude bool. Exact limits remain 64KiB/512 nodes/depth10,
+4096-byte path, fd<128, existing issued observation/file/syscall/deadline bounds,
+U64 identities/counters and signed64 syscall results as specified. Parsing and
+projection storage/work is pre-admitted; these protocol bounds do not authorize
+a native run or change any shipping Limits.
+
+Pure projection may replace exactly the two parsed role operands in a separate
+semantic value and add the specified versioned mode/extent/content/completed
+dataflow summary. Raw inputs are unchanged. Every other argument, ordering,
+environment, executable/stat identity, repository/SDK input, stdin/status/
+stdout/stderr/publication or header-kernel fact remains meaningful. A change
+to assembly contents must still change semantic identity. A parser result or
+projected dictionary is data, never a reusable native grant.
+
+The prospective native mechanism retains Main V2's THREE peak mechanism FDs
+and streaming capture/fingerprint rules, not V1's superseded two-FD claim.
+No implementation of those hooks or their resource grants is part of this
+two-file preparation.
+
+### Pure evidence and integration boundary
+
+Only trusted development tooling and pure/inert actual-helper controls are
+authorized. Use retained records as explicitly labelled data fixtures, not
+fresh native evidence. Cover closed grammar/shape/type/bounds/order/content/
+role negatives, raw immutability, only-two-operand projection, meaningful-field
+inequality, exact repeated-option behavior and pre-growth admission; use
+behavioral assertions and targeted enforcement restoration, not source-text
+spelling. Do not run the whole native-bearing toolchain test class/module.
+No compiler/Make/SDK/sed/candidate child/namespace/privileged/helper/workflow
+execution, no closed experiment rerun and no ROOT21/H1 allocation.
+
+Commit the two-file preparation locally with the Copilot trailer; do not push.
+Record exact head/parent/paths/commands/preimages/restorations/remaining holds
+and a complete API handoff for later integration. This local-only commit is
+not a publication-ready checkpoint and must not be remotely delivered alone.
+The eventual coupled implementation must ship docs/human procedures and exact
+automation for `TC-WORKFLOW-OWNERSHIP-MODERN-TOOLCHAIN-001` and
+`TC-WORKFLOW-GATE-OWNERSHIP-001`, live ownership/custody/native evidence and
+normal independent review before Main publishes.
+
+Dependencies: reviewed stage-4 data design and later HeaderV3 shared seam.
+Conflicts: ownership of the two paths stays with this author until handoff;
+no overlap with current header/bootstrap owners. No ROM/RAM/save/ABI/profile/
+generated-data/localization/archival change, host-policy change, new flag,
+new public protocol/registry, numeric-limit increase or source snapshot ledger.
+Rollback is discard of the unpublished branch, or a normal revert after later
+integration; no reset/rebase/amend/cherry-pick is authorized.

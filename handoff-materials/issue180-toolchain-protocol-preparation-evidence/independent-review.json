@@ -1,0 +1,57 @@
+{
+  "record_kind": "Main transcription of delivered read-only review",
+  "reviewer": "1fb62bc2-e903-41b8-bc46-d25a825782dc",
+  "turn": 0,
+  "head": "bfc9a4ba53c369db5ac4a6834ee14830e1eaae78",
+  "parent": "c8b365da1be29bc58352cf1edb8b836a2cf18321",
+  "verdict": "two Medium high-confidence findings; not accepted",
+  "findings": [
+    {
+      "id": "P1",
+      "severity": "Medium",
+      "confidence": "High",
+      "path": "scripts/validation_ownership/toolchain_runtime.py",
+      "lines": "103-104,672-673,703-707,756",
+      "title": "Omittable admission and non-ASCII allocation before its true extent is admitted",
+      "actual": [
+        "default_intermediate bytes",
+        "default_projection ['runtime_probes', 'toolchain_semantics']",
+        "For INTERMEDIATE_PREFIX plus 60000 supplementary Unicode characters: first_charge64119, charge_count1, traced_peak241236, then MakeProbeError."
+      ],
+      "expected": "Mandatory explicit admission; exact ASCII/wire check before slicing and representation-aware reservation before allocation.",
+      "measurement_boundary": "Pure Python traced allocation, not native execution or RSS."
+    },
+    {
+      "id": "P2",
+      "severity": "Medium",
+      "confidence": "High",
+      "path": "scripts/validation_ownership/toolchain_runtime.py",
+      "lines": "481,710,786-789",
+      "title": "Malformed data indexed or iterated before shape validation",
+      "actual": [
+        "empty-executions: IndexError tuple index out of range",
+        "workspace-none: TypeError NoneType is not iterable",
+        "projection-argv-int: TypeError int is not iterable"
+      ],
+      "expected": "Controlled MakeProbeError after complete relevant shape/type validation and before dereference/iteration."
+    }
+  ],
+  "independent_evidence": {
+    "scope": "exact two authorized additive paths +764 and +480, clean bfc9 normal c8 child",
+    "diff_check": "passed",
+    "selected_class": "scripts.validation_ownership.tests.test_toolchain_runtime.ToolchainProtocolDataTests",
+    "tests": 15,
+    "seconds": 0.070,
+    "result": "passed",
+    "initial_attempt": "Wrong unrelated cwd produced ModuleNotFoundError; corrected exact worktree run passed.",
+    "preservation": "All diff hunks are additions; author AST and prior retained-data/restoration reports were read, not independently re-executed."
+  },
+  "not_performed": [
+    "native/compiler/Make/SDK/sed/child/privileged operations",
+    "HeaderV3 gateway review",
+    "live native result/capability/object proof",
+    "documentation publication or genuine qualifier",
+    "source edit, push or delivery"
+  ],
+  "boundary": "Dormant data preparation remains non-deliverable alone. Full live integration, docs and separately frozen runtime qualification remain."
+}

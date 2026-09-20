@@ -1,0 +1,143 @@
+{
+  "status": "local-pure-data-preparation-complete-not-deliverable-alone",
+  "issue": 180,
+  "published_pre_edit_scope": {
+    "comment": "https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5736944894",
+    "created_at": "2026-09-18T22:28:10Z",
+    "read_first": "../issue180-toolchain-protocol-preparation-scope.txt"
+  },
+  "source": "c8b365da1be29bc58352cf1edb8b836a2cf18321",
+  "commit": "bfc9a4ba53c369db5ac4a6834ee14830e1eaae78",
+  "parent": "c8b365da1be29bc58352cf1edb8b836a2cf18321",
+  "branch": "agent/issue180-toolchain-protocol",
+  "worktree": "/home/laqieer/.copilot/session-state/3df36741-371b-49d8-ab09-a70c1ff3bec0/files/issue180-toolchain-protocol-preparation",
+  "worktree_clean_after_commit": true,
+  "pushed": false,
+  "published": false,
+  "changed_paths": [
+    {
+      "path": "scripts/validation_ownership/toolchain_runtime.py",
+      "additions": 764,
+      "deletions": 0
+    },
+    {
+      "path": "scripts/validation_ownership/tests/test_toolchain_runtime.py",
+      "additions": 480,
+      "deletions": 0
+    }
+  ],
+  "implementation": {
+    "classification": "dormant framework protocol data preparation",
+    "authority": "none; every API is pure data and issues no launch, execution, syscall, capability or grant",
+    "types": [
+      "ArgOperand",
+      "CompileRoles",
+      "IntermediateLimits"
+    ],
+    "apis": [
+      {
+        "name": "compile_operand_roles",
+        "signature": "compile_operand_roles(executions, profile, parent_argv, *, complete)",
+        "result": "frozen CompileRoles with grammar-derived creator/writer/reader sequences and exact ArgOperand indexes/values",
+        "boundary": "prospective version-2 compile execution data only; bounded closed cc1/assembler option arities"
+      },
+      {
+        "name": "intermediate_record",
+        "signature": "intermediate_record(values, *, profile, launch, executions, returncode, limits, reserve=_no_reserve)",
+        "result": "canonical immutable JSON payload bytes without the toolchain-intermediate: prefix, or None only for a record-free foreign/failed stage",
+        "boundary": "exact successful version-1 toolchain-intermediate schema under prospective version-2 launch data"
+      },
+      {
+        "name": "project_compile_identity",
+        "signature": "project_compile_identity(raw_probes, raw_intermediate, roles, *, reserve=_no_reserve)",
+        "result": "a separate semantic dictionary containing copied runtime_probes and version-1 toolchain_semantics",
+        "boundary": "replaces only the parsed cc1 output and assembler input values; raw inputs remain unchanged"
+      }
+    ],
+    "reserve_contract": "The caller supplies reserve(size). Calls precede receipt slicing/decoding/container construction/canonical encoding, execution-record encoding, projection decoding and copied semantic storage. The callback remains responsible for the live issued budget/deadline.",
+    "receipt_controls": [
+      "duplicate JSON fields and every schema extra/missing field reject",
+      "all integer domains exclude bool; identities/counters are U64, results signed64, fds below 128",
+      "64 KiB wire, 512-node, depth-10, 4096-byte path and actual issued observation/file/write/process/creation/syscall bounds",
+      "three actor rows bind exact canonical raw exec-record SHA-256 values",
+      "creation, creator close, writer open/close/exit/seal, reader open/close/exit, unlink and driver exit are strictly ordered",
+      "one regular 0600 object progresses through exact writer extent/digest and full reader extent/digest",
+      "retirement preserves object fields through mtime, changes actual ctime, reaches link count zero and proves path absence"
+    ],
+    "projection_controls": [
+      "the two role indexes are parser outputs, not indexes 20 and 7",
+      "typed role references are inserted only at the writer output and reader input",
+      "assembly extent and SHA-256 remain semantic and are never normalized",
+      "all other argv/order/environment/executable identity/stdin/runtime data is copied unchanged",
+      "outer status/output/publication/header-kernel facts remain caller-owned and unequal when changed",
+      "dictionary insertion order alone is semantically neutral"
+    ],
+    "unchanged": [
+      "current version-1 production launch issuer and validator",
+      "records() signature and raw behavior",
+      "Controller, _RecipeGrant, _Step, _Launch and execution behavior",
+      "make_probe.py, syscall_guard.py, header_runtime.py and all other paths",
+      "cache, registry, sidecar, source-context and publication behavior"
+    ]
+  },
+  "preimage": {
+    "kind": "retained-data-only",
+    "sources": [
+      "../issue180-command-provenance-pair-evidence/handoff.json",
+      "../issue180-command-provenance-pair-evidence/retained-current-analysis.json",
+      "../issue180-command-provenance-pair-evidence/report.md",
+      "../issue180-command-provenance-pair-evidence/private/substep-0005.json",
+      "../issue180-command-provenance-pair-evidence/private/substep-0010.json",
+      "../issue180-root20-command-provenance-triage/retained-field-differences.json"
+    ],
+    "fact": "Two complete first-returned-Make checker records differ only at the corresponding cc1 output and assembler input strings /work/ccL3VdjV.s and /work/ccBRFQFs.s.",
+    "not_claimed": [
+      "a returned second MakeObservation",
+      "a root20 exact operand comparison",
+      "a second sed observation",
+      "fresh native execution or compiler qualification"
+    ],
+    "privacy": "Private retained files were read only by their explicit indexed paths. No private environment, source, SDK content or real file/process identity was copied into tracked tests; fixtures are labelled model data and use synthetic identities."
+  },
+  "validation": {
+    "selected_test_class": "scripts.validation_ownership.tests.test_toolchain_runtime.ToolchainProtocolDataTests",
+    "final_command": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts.validation_ownership.tests.test_toolchain_runtime.ToolchainProtocolDataTests -v",
+    "final_result": "15 tests passed in 0.059s",
+    "native_bearing_module_or_class_run": false,
+    "native_calls": 0,
+    "candidate_make_compiler_sdk_sed_child_namespace_or_privileged_calls": 0,
+    "syntax_result": "both changed Python files compiled with builtin compile()",
+    "diff_result": "git diff --check passed; exactly the two authorized paths changed",
+    "ast_noninterference": "AST dumps for every preexisting toolchain_runtime top-level API/class and ModernToolchainTests were identical to the parent",
+    "initial_iteration": "The first 14-test run had one test-harness placement error: the oversized-path model rejected during setup rather than inside its assertion. The assertion was moved to cover setup; no production contract was broadened.",
+    "restoration": [
+      "Each content/order/retirement model mutation rejected, and restoring the exact field recovered the baseline canonical receipt.",
+      "Temporarily removing only _retirement_progression admitted the targeted foreign-object retirement model; restoration rejected it again.",
+      "The retained name-only raw records remained unequal; only separately validated role projection made their pure semantic values equal.",
+      "Shifted supported options moved the parsed indexes away from 20/7 while retaining the exact roles."
+    ]
+  },
+  "unimplemented_required_integration": [
+    "HeaderV3's one ProbeSession-owned _issue_native_return/_claim_native_return/_retire_native_return seam and closed toolchain-step-v2 purpose",
+    "prospective version-2 production launch issuer/validator activation",
+    "actual syscall_guard stage-4 creator/writer/reader/content/retirement tracker",
+    "V2 streaming stopped-memory digest and completed-file pread hashing",
+    "V2 exact private full-report fingerprint and peak-three mechanism-FD proof",
+    "identity-issued native, step and recipe capability custody and one-use replay rejection",
+    "ProcessOutput and MakeObservation immutable receipt sidecars",
+    "stage/recipe envelopes, acknowledged occurrence archive and namespace execution-sidecar binding",
+    "issuer-gated make_probe.produce integration of project_compile_identity",
+    "actual raw report/status/stdout/stderr/source/tree/epoch/job binding",
+    "coupled ownership documentation and tester mappings for TC-WORKFLOW-OWNERSHIP-MODERN-TOOLCHAIN-001 and TC-WORKFLOW-GATE-OWNERSHIP-001",
+    "separately authorized genuine one-Make/two-checker native qualification and native enforcement mutations",
+    "independent review of the complete integrated source",
+    "candidate CI, push, PR update, merge, post-merge CI and remote-completion-check"
+  ],
+  "remaining_separate_holds": [
+    "The failed second Make's exact SDK row/file_limit predicate is unretained and was not rerun.",
+    "Historical root20 exact operands remain unavailable.",
+    "No second sed or complete cross-observation comparison exists.",
+    "Actual compiler syscall/option compatibility and assembly content equality remain unqualified."
+  ],
+  "delivery_boundary": "This commit cannot be pushed or delivered alone. Main must normally merge it with the shared HeaderV3 seam, native/capability integration, docs/tester mapping and separately frozen qualification. It makes no issue-180 completion claim."
+}

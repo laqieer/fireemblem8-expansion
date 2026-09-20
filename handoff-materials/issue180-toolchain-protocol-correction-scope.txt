@@ -1,0 +1,48 @@
+## Pre-edit correction: pure intermediate admission and malformed-data refusals
+
+Independent1fb62bc2 reviewed local
+`bfc9a4ba53c369db5ac4a6834ee14830e1eaae78` againstc8 and found two
+Medium/high-confidence defects. This local two-file preparation remains
+unpublished and non-deliverable alone. No native experiment was performed.
+
+1. Both intermediate_record and project_compile_identity succeed without a
+   reservation callback. The former also slices a non-ASCII payload before
+   checking ASCII: a60,000-character supplementary-Unicode input caused a
+   roughly240KiB slice after the first64,119-byte charge. The reported
+   tracemalloc peak241,236 is Python allocation evidence, not RSS.
+2. Empty executions, workspace=None and a projection argv integer escape as
+   IndexError/TypeError instead of controlled MakeProbeError refusals because
+   shape checks occur after indexing/conversion/iteration.
+
+### Frozen fix
+
+Modify only the same `toolchain_runtime.py` and `test_toolchain_runtime.py`,
+normal child ofbfc9. Make `reserve` mandatory on both helpers; model tests
+must explicitly supply their admitted pure recorder/budget. Check exact
+complete prefixed-string type, ASCII and wire bounds BEFORE payload slicing
+or encoding. Then reserve a conservative representation-aware bound before
+slice/bytes/decode/container/encoder work; a wire character count is not a
+Python heap bound. Keep the existing separate node/depth/issued-bound checks
+and per-verification cumulative admission.
+
+Validate every consumed execution/profile/projection container and field
+shape before indexing, conversion or iteration. Reject malformed forms with
+the established MakeProbeError, not broad exception swallowing or a default
+empty/success value. Cover the three observed cases and their related wrong
+type/missing/nested shapes. No grammar, wire version, semantic projection,
+existing production routing/Controller/native API, permission or numeric
+limit expansion is authorized.
+
+Retain independent findings and add actual-helper preimages before the
+correction, corrected positive/negative tests and targeted restoration.
+Assert reservation omission refuses, non-ASCII rejects before payload-copy
+allocation, and malformed shapes follow the controlled protocol error path.
+Do not claim model parsing/projection as native authority.
+
+Only pure/inert selected ToolchainProtocolDataTests and trusted development
+tooling; no native-bearing class/module, Make/compiler/SDK/sed/child/namespace/
+privileged/helper/workflow operation. Commit normally with the Copilot
+trailer, no amend/rebase/cherry-pick/push. Main routes the exact follow-up to
+the independent reviewer and retains the full native integration/docs/
+qualification/publication hold. Existing HeaderV3/bootstrap owners are
+independent and must not be touched.

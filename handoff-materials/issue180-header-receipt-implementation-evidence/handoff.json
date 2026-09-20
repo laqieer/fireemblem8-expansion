@@ -1,0 +1,58 @@
+{
+  "status": "local implementation consumed; evidence-only retrospective supplement",
+  "head": "453797b8d74b6da2ce96bb812dd0f0bbfeaa1c98",
+  "parent": "c8b365da1be29bc58352cf1edb8b836a2cf18321",
+  "branch": "agent/issue180-header-receipt-v2",
+  "worktree": "/home/laqieer/.copilot/session-state/3df36741-371b-49d8-ab09-a70c1ff3bec0/files/issue180-header-receipt-implementation",
+  "source_unchanged": true,
+  "source_edit_in_this_turn": false,
+  "test_or_command_rerun_in_this_turn": false,
+  "push_performed": false,
+  "delta": {
+    "files": 8,
+    "insertions": 1401,
+    "deletions": 76
+  },
+  "evidence": {
+    "summary": "summary.txt",
+    "preimage_command": "retrospectively transcribed exactly from the earlier submitted shell command",
+    "preimage_output": [
+      "complete_count 2",
+      "omitted_repaired_count 1"
+    ],
+    "restoration_command": "retrospectively transcribed exactly from the untouched c8 coordinator-worktree shell command",
+    "restoration_output": "restored_c8_omission_accepted 1",
+    "initial_selected_test_failure": {
+      "tests": 11,
+      "elapsed_seconds": 0.042,
+      "result": "FAILED (errors=10)",
+      "cause": "NameError: name 'subprocess' is not defined",
+      "persistent_log": null,
+      "retention": "complete tool output existed in the session transcript; no standalone log file was created"
+    },
+    "final_selected_test": {
+      "tests": 11,
+      "elapsed_seconds": 0.023,
+      "result": "OK",
+      "persistent_log": null
+    },
+    "final_targeted_restoration": {
+      "tests": 1,
+      "elapsed_seconds": 0.001,
+      "result": "OK",
+      "persistent_log": null
+    },
+    "known_tool_identity": "/home/laqieer/.local/bin/arm-none-eabi-gdb",
+    "unretained": [
+      "python3 executable path and version",
+      "Git and shell versions",
+      "preimage and restoration elapsed times",
+      "persistent original logs for selected tests and validation commands"
+    ]
+  },
+  "native_qualification": {
+    "allocated": false,
+    "selected_test": null,
+    "clarification": "The earlier test_actual_kernel_receipts_reject_omission_and_forgery suggestion is unallocated and is not a smallest-positive freeze; Main selects and freezes positive/adversarial native evidence after independent review."
+  }
+}

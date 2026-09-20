@@ -1,0 +1,216 @@
+Issue #180 HeaderV3/shared native-return implementation evidence
+================================================================
+
+Scope and source
+----------------
+
+Read in full before editing:
+- issue180-header-receipt-implementation-scope.txt
+- issue180-shared-receipt-freeze/contract.txt
+- issue180-header-receipt-v3-design/contract.txt
+- issue180-header-receipt-v3-design/control-plan.json
+- issue180-header-receipt-v3-design/handoff.json
+- issue180-toolchain-intermediate-receipt-design-v2/amendment.txt
+- issue180-toolchain-intermediate-receipt-design-v2/fingerprint-contract.txt
+
+Source commit: c8b365da1be29bc58352cf1edb8b836a2cf18321
+Local commit: 453797b8d74b6da2ce96bb812dd0f0bbfeaa1c98
+Parent: c8b365da1be29bc58352cf1edb8b836a2cf18321
+Branch: agent/issue180-header-receipt-v2
+Worktree: /home/laqieer/.copilot/session-state/3df36741-371b-49d8-ab09-a70c1ff3bec0/files/issue180-header-receipt-implementation
+Push performed: no
+
+Pre-edit negative control
+-------------------------
+
+Retrospective transcription of the exact command submitted before production
+edits (this evidence file did not exist then):
+
+  cd /home/laqieer/.copilot/session-state/3df36741-371b-49d8-ab09-a70c1ff3bec0/files/issue180-header-receipt-implementation && PYTHONPATH=. python3 - <<'PY'
+  import errno, json
+  from scripts.validation_ownership import header_runtime
+  profile={"version":1,"statfs":[["/sys/fs/selinux",False],["/selinux",False]],"reads":list(header_runtime.READ_PATHS),"absent":list(header_runtime.ABSENT_PATHS)}
+  rows=[
+   {"sequence":1,"operation":"statfs","path":"/sys/fs/selinux","result":-errno.ENOENT,"data":None,"bytes":None,"sha256":None,"eof":None},
+   {"sequence":2,"operation":"absent","path":"/etc/selinux/config","result":-errno.ENOENT,"data":None,"bytes":None,"sha256":None,"eof":None},
+  ]
+  original=[header_runtime.KERNEL_PREFIX+json.dumps(row) for row in rows]+[header_runtime.KERNEL_END+"2"]
+  omitted=[header_runtime.KERNEL_PREFIX+json.dumps(rows[0]),header_runtime.KERNEL_END+"1"]
+  print("complete_count",len(header_runtime.records(original,profile,count_limit=8,file_limit=64)))
+  print("omitted_repaired_count",len(header_runtime.records(omitted,profile,count_limit=8,file_limit=64)))
+  PY
+
+Exact emitted output:
+
+  complete_count 2
+  omitted_repaired_count 1
+
+The shipping count-only parser therefore accepted the repaired omission.
+The command runtime reported exit code 0. No standalone log file, Python
+executable path, Python version, or elapsed time was retained for this command;
+those facts are explicitly unretained and were not reconstructed by rerunning.
+
+Implemented behavior
+--------------------
+
+- Filter launch/completion version 2 with a fresh private 32-byte HMAC key.
+- Exact incremental ordered-occurrence manifest; repeats remain meaningful.
+- Exact R/T bounds, reserved terminal slot, pre-growth row admission, one-use
+  reservation transfer, conservative retained charges and no prefix signing.
+- Parent authentication after generic report/accounting/status success.
+- Slots-based accepted rows and immutable JSON-compatible eight-key views.
+- One ProbeSession-owned purpose-sealed native-return issue/claim/retire map,
+  binding the consumed launch owner, command, live job, source view/epoch,
+  exact object identities, original status/stdout/stderr, selected immutable
+  report values and the streaming F2b full-report fingerprint.
+- Exact F2b tags, U64BE lengths, signed eight-byte integer magnitudes, finite
+  IEEE binary64 floats, U32BE Python code points, list/tuple equivalence,
+  lexicographic exact-string dictionary ordering, and bounded cycle/work/
+  storage rejection.
+- Prompt config unlink and key/reference release; no zeroization claim.
+- No toolchain-step-v2 payload route, new module, new case, limit, namespace,
+  workflow, source/Make interpretation, SDK/compiler profile, ROM or save
+  change.
+
+Changed paths and numeric diff
+------------------------------
+
+  23   0 docs/ownership-probe-foundation.md
+   4   0 docs/test-cases/registry.json
+  28   0 docs/test-cases/workflow-governance.md
+  20   2 docs/validation-ownership.md
+ 316  39 scripts/validation_ownership/header_runtime.py
+ 362  26 scripts/validation_ownership/make_probe.py
+ 115   6 scripts/validation_ownership/syscall_guard.py
+ 533   3 scripts/validation_ownership/tests/test_header_pipeline.py
+
+Total: 8 files changed, 1401 insertions, 76 deletions.
+Registry remains 99 cases and 51 features; one exact inert selector was added
+to TC-WORKFLOW-GATE-OWNERSHIP-001 and all previous selectors remain.
+
+Commands and results
+--------------------
+
+1. `command -v arm-none-eabi-gdb || command -v gdb-multiarch`
+   PASS: `/home/laqieer/.local/bin/arm-none-eabi-gdb`.
+2. `git worktree add -b agent/issue180-header-receipt-v2 <worktree> c8b365...`
+   PASS: new normal child worktree at the immutable requested source.
+3. `python3 -m py_compile` on the four changed Python files.
+   PASS before and after the final implementation.
+4. Initial exact selected-test command:
+
+     cd /home/laqieer/.copilot/session-state/3df36741-371b-49d8-ab09-a70c1ff3bec0/files/issue180-header-receipt-implementation && python3 -B -m unittest scripts.validation_ownership.tests.test_header_pipeline.HeaderReceiptInertTests -v
+
+   Exact summary: `Ran 11 tests in 0.042s`; `FAILED (errors=10)`; command exit
+   code 1. The first eight tests passed. The two shared-native-return methods
+   produced ten errors total: one error in
+   `test_shared_native_return_is_context_bound_one_use_and_freezes_values`,
+   eight subtest errors (`status`, `stdout`, `stderr`, `report`, `copy`,
+   `purpose`, `context`, `thread`) plus the method-level cleanup error in
+   `test_shared_native_return_rejects_mutation_copy_purpose_context_and_retires`.
+   Every traceback ended at `_issue_native_return` with:
+
+     NameError: name 'subprocess' is not defined. Did you forget to import 'subprocess'
+
+   The final unchanged-tag test passed after those errors. The missing import
+   was corrected; no failing result was treated as acceptance evidence.
+   The complete terminal output was returned by the command tool but no
+   persistent original log path was created; the full original log is
+   therefore unretained beyond the session transcript.
+5. Corrected exact selected-test command, run repeatedly while refining the
+   same implementation:
+
+     cd /home/laqieer/.copilot/session-state/3df36741-371b-49d8-ab09-a70c1ff3bec0/files/issue180-header-receipt-implementation && python3 -B -m unittest scripts.validation_ownership.tests.test_header_pipeline.HeaderReceiptInertTests -v
+
+   Retrospectively transcribed exact summaries, in execution order:
+
+   - `Ran 11 tests in 0.014s` — `OK`, exit 0.
+   - `Ran 11 tests in 0.019s` — `OK`, exit 0.
+   - `Ran 11 tests in 0.017s` — `OK`, exit 0.
+   - `Ran 11 tests in 0.015s` — `OK`, exit 0.
+   - As the first command in a combined validation shell:
+     `Ran 11 tests in 0.017s` — `OK`.
+   - `Ran 11 tests in 0.024s` — `OK`, exit 0.
+   - Final post-commit combined validation:
+     `Ran 11 tests in 0.023s` — `OK`.
+
+   These cover authenticated complete/short/repeated/permuted transcripts,
+   unchanged-tag mutations, launch/key lifecycle, reservation
+   boundaries/faults, immutable views, exact F2b vectors/domains/work, and
+   native-return identity/mutation/copy/replay/purpose/context/retirement.
+   No individual persistent log files were created for these runs; their
+   original complete outputs are unretained beyond the session transcript.
+6. `python3 scripts/check_docs.py --check`
+   PASS: 126 Markdown files checked, 0 findings.
+7. Registry parse/count control.
+   PASS: 99 cases, 51 features, exactly one HeaderReceiptInertTests selector.
+8. `git diff --check`
+   PASS before commit and for `HEAD^..HEAD`.
+9. Targeted restoration against the untouched c8 coordinator worktree.
+   Retrospective transcription of the exact submitted command:
+
+     cd /home/laqieer/.copilot/session-state/3b24c12d-8000-4372-8d56-2221d61ec1c6/files/issue-180 && PYTHONPATH=. python3 -B - <<'PY'
+     import errno, json
+     from scripts.validation_ownership import header_runtime
+     profile={"version":1,"statfs":[["/sys/fs/selinux",False],["/selinux",False]],"reads":list(header_runtime.READ_PATHS),"absent":list(header_runtime.ABSENT_PATHS)}
+     row={"sequence":1,"operation":"statfs","path":"/sys/fs/selinux","result":-errno.ENOENT,"data":None,"bytes":None,"sha256":None,"eof":None}
+     wire=[header_runtime.KERNEL_PREFIX+json.dumps(row),header_runtime.KERNEL_END+"1"]
+     print('restored_c8_omission_accepted',len(header_runtime.records(wire,profile,count_limit=8,file_limit=64)))
+     PY
+
+   Exact emitted output: `restored_c8_omission_accepted 1`; exit code 0.
+   No log path or elapsed time was retained.
+10. Targeted corrected restoration command:
+
+      cd /home/laqieer/.copilot/session-state/3df36741-371b-49d8-ab09-a70c1ff3bec0/files/issue180-header-receipt-implementation && python3 -B -m unittest scripts.validation_ownership.tests.test_header_pipeline.HeaderReceiptInertTests.test_old_count_only_omission_preimage_is_the_restoration_negative -v
+
+    It was first run alone: `Ran 1 test in 0.001s`; `OK`; exit 0. It was then
+    repeated within final combined validation: `Ran 1 test in 0.001s`; `OK`.
+    The real old parser accepts the repaired omission while HeaderV3 rejects
+    the same repaired transcript with its unchanged tag. No persistent
+    original log was created.
+11. Final post-commit combined pure-validation command:
+
+      cd /home/laqieer/.copilot/session-state/3df36741-371b-49d8-ab09-a70c1ff3bec0/files/issue180-header-receipt-implementation && python3 -B -m unittest scripts.validation_ownership.tests.test_header_pipeline.HeaderReceiptInertTests -v && python3 -B -m unittest scripts.validation_ownership.tests.test_header_pipeline.HeaderReceiptInertTests.test_old_count_only_omission_preimage_is_the_restoration_negative -v && python3 scripts/check_docs.py --check && python3 -m py_compile scripts/validation_ownership/header_runtime.py scripts/validation_ownership/syscall_guard.py scripts/validation_ownership/make_probe.py scripts/validation_ownership/tests/test_header_pipeline.py && git diff --check HEAD^ HEAD
+
+    Exact selected-test summaries: `Ran 11 tests in 0.023s`, `OK`; then
+    `Ran 1 test in 0.001s`, `OK`. Documentation output:
+    `check_docs: OK -- 126 Markdown file(s) checked, 0 findings.` The
+    compilation and diff checks emitted no output. Entire shell exited 0.
+    No persistent original log path was created.
+12. Local commit command with the required Copilot co-author trailer.
+    PASS: 453797b8d74b6da2ce96bb812dd0f0bbfeaa1c98.
+
+Qualification boundary
+----------------------
+
+No Make, compiler, SDK, sed, candidate subprocess, native supervisor, fork,
+namespace, mount, setns, identity/capability, sysctl, sudo, helper, ROM,
+remote workflow, ROOT21, closed-pair/census, report/resource experiment, H1,
+graph oracle or terminal fallback was run or inferred.
+
+No native test is selected or allocated by this evidence. In particular,
+`ArmHeaderPipelineTests.test_actual_kernel_receipts_reject_omission_and_forgery`
+was only an implementation-owner suggestion in the earlier summary; it is
+unallocated, runs multiple negative Make subcases, and is not a frozen
+smallest-positive qualification. Main will select and freeze the smallest
+actual positive and adversarial evidence only after independent review.
+Independent code review, qualification scope, owner push, candidate
+Build/Copilot review, merge, exact-master Build, issue closure and remote
+completion remain Main's responsibility.
+
+Available tool identities and evidence-retention limits
+-------------------------------------------------------
+
+- ARM debugger availability command returned the exact path
+  `/home/laqieer/.local/bin/arm-none-eabi-gdb`.
+- An earlier attempted issue-read shell used `python`, which the shell reported
+  as unavailable: `/bin/bash: line 1: python: command not found`. Subsequent
+  work used `python3`.
+- The exact `python3`, Git, shell and unittest version identities were not
+  separately captured. They are unretained; this supplement does not infer
+  them or rerun commands to recover them.
+- No selected-test, preimage, restoration, compiler, documentation or diff
+  command wrote a persistent log. Existing original logs are therefore
+  unretained; only exact output returned in the session transcript is
+  retrospectively transcribed above.

@@ -1,0 +1,67 @@
+## Code-only preparation: one genuine coherent-forgery regression
+
+This supplements HeaderV3 scopes5736862019/5737364905. It allocates **NO
+native execution**. The current correction owner59bb may prepare one narrowly
+coupled native test definition and its human procedure while fixing the five
+independent findings. Same authorized paths, no new module/case/profile/limit.
+
+The existing four-negative runtime method removes all rows or supplies
+malformed counts/types/extents. Those do not isolate the repaired-count/
+manifest forgery that the HMAC must reject. Running all four is not the
+smallest positive-plus-coherent-forgery qualification.
+
+Add one dedicated method to the existing ArmHeaderPipelineTests class:
+`test_actual_kernel_completion_rejects_repaired_forgery`.
+It will use exactly ONE existing confined Make on the existing small header
+fixture, when separately authorized later. It performs no ordinary-Make
+control and no loop of native executions.
+
+Through the existing bounded budget.read_bytes report-interception pattern,
+take the ACTUAL returned filter report, require its version2/status0 terminal
+and a nonempty contiguous actual row transcript, and append one duplicate of
+an actual row under the next sequence. Legitimate sequence-distinct repeats
+are allowed, so this cannot be rejected by a forbidden per-path uniqueness
+rule. Repair the public count and canonical ordered-row manifest digest, but
+leave the real tag/scope/binding/status and all existing row payloads unchanged.
+Repair only necessary public observation count/byte accounting conservatively
+within the unchanged issued bounds so the intended refusal is not an earlier
+malformed-accounting failure. No signer/key/config inspection, secret retention,
+invented kernel event, row-path prediction or mandatory all-five assumption.
+
+This is a deliberate transport-data forgery, not an actual extra kernel access.
+Keep originals and mutated data separately in test-local bounded memory.
+Do not print or persist raw reports, environments, streams, tags or keys.
+The test must establish that exactly one real filter report was intercepted,
+that the real authentication failure propagated through _sandbox_run, no
+filter native-result capability/output/cache/semantic observation was issued,
+and owned cleanup completes. Earlier legitimate pipeline steps are not
+misrepresented as never executed or never having published their own data.
+
+Reuse the existing pure mutation helpers where their contracts fit; otherwise
+add one small test-only transformation, exercised purely with model data.
+It must accept a legitimate one-row transcript as input and not assume a
+particular conditional library schedule. Confirm the forged public shape and
+manifest are internally consistent, tag is unchanged, and removing the
+authentication enforcement would expose the intended negative. Pure model
+controls are not genuine runtime results.
+
+Keep `test_actual_arm_sdk_and_sed_keep_five_original_dispatches` as the
+prospective positive. It contains ONE ordinary Make plus ONE confined Make;
+do not silently remove its existing supplementary control. The prospective
+minimal allocation after exact code review is these TWO selectors, in that
+order and stop-on-first-failure, in one runner invocation: three total Make
+calls across two independent fixture/session lifetimes if all stages run.
+That is a future component qualification, not a full graph/cross-page run or
+resource sizing point. No method invocation is authorized now.
+
+Document both exact selectors/positive and forged-negative outcomes under
+existing TC-WORKFLOW-GATE-OWNERSHIP-001. Reuse its existing class mapping; add
+only a necessary exact selector if the current registry does not already cover
+the class. Preserve the99 cases/51 features and all prior automation.
+
+Local controls remain PURE/INERT only; do not run ArmHeaderPipelineTests,
+ordinary(), session(), Make/compiler/SDK/sed/child/namespace/privileged/helper
+operations. Commit normally locally with the correction or as its normal
+child, no amend/rebase/cherry-pick/push. Return the exact final head and
+separately labelled pure-case evidence for independent review. Main alone
+freezes actual execution on the accepted head; no retry/ROOT21/H1 is inferred.

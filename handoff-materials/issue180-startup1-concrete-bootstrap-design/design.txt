@@ -1,0 +1,447 @@
+FIXED TEST-ONLY DESIGN: PRIVILEGED CREATION, ORDINARY OWNER ENTRY
+=============================================================
+
+Design only. No code, prototype, fork, namespace, privilege operation, test,
+witness, package, remote query, commit or push was performed for this design.
+Main must freeze preparation and execution separately. This is one protocol,
+not a list of interchangeable fallback mechanisms.
+
+Decision and topology
+--------------------
+Use the existing privileged native launcher ONLY to create and own one
+fixed descendant user/mount namespace. The actual test worker never creates
+a user namespace while cap-zero: it enters the already-created descendant
+whose kernel-recorded owner is its ordinary effective UID.
+
+The restricted backend has:
+  U0 = the ordinary caller's existing user namespace (initial on target CI);
+  M0 = a private mount namespace owned by U0;
+  U1 = one direct child user namespace, owner UID U in U0;
+  M1 = a copied mount namespace owned by U1, hence less privileged than M0.
+
+Mappings are U1 UID0 -> U in U0, and GID0 -> G in U0. U and G are independently
+captured actual nonzero caller IDs, never literals1001/999 and never assumed
+equal. The worker immediately before entry is U/G in U0, all five capability
+sets0 and NNP1. After userns entry it is UID/GID0 inside U1 with U1-local setup
+capabilities; it has no U0 capabilities. After helper setup it clears the
+five sets again and performs the original bounded I/O/denials.
+
+The old extra outer U->U/G->G namespace remains in the ordinary backend
+where it genuinely works. It is not retained in the restricted backend.
+This is a justified replacement of a fixture-only equality, not deletion
+of a safety assertion; exact replacement checks are specified below.
+
+Why this is production-representative
+------------------------------------
+The recorded root19 identity control shows outer UID999/GID987, U0 inode
+4026531837, full initial UID mapping, five capability sets0 and NNP1; its
+nested mapping is UID0->999/GID0->987 with another owner userns. The relevant
+entry.py/kernel.py namespace/drop code is unchanged from the retained harness.
+
+That control used profile "vo-ci180-35345735274 (unconfined)", with an explicit
+userns rule. It is NOT evidence that bare-unconfined cap-zero creation works
+under the CI restriction. This design does not load, enter or borrow that
+profile.
+
+Linux copy_mnt_ns locks inherited restrictions when the OLD and NEW mount
+namespaces have DIFFERENT owner user namespaces. It does so even if trusted
+setup had CAP_SYS_ADMIN when it created the descendant. It does not test for
+an extra single-ID outer mapping. Thus U0/M0 -> U1/M1 preserves the relevant
+kernel mechanism, provided the actual helper executes in U1/M1 after the
+specified drop/entry boundary.
+
+Closed authority and arguments
+------------------------------
+Ordinary coordinator C retains the existing shared four-method/seven-mode
+interface. Allowed modes remain readonly, writable, wrong-device,
+substituted, unsupported, locked, old.
+
+One fixed privileged entry accepts only:
+  mode; captured U; captured G; original absolute deadline;
+  canonical owned fixture-parent path and its pinned dev/inode/owner identity.
+The selected immutable trusted-source path is fixed by the test, not an
+arbitrary executable or import argument.
+
+It accepts no caller-supplied PID, namespace FD, mapping range, namespace
+flags, mount source, capability set, profile name, command, Python fragment,
+retry count or limit. Unknown fields, UID/GID0, wrong ownership, a symlink,
+pre-existing private child, expired/extended deadline or wrong mode rejects.
+All root writes/mount targets are fixed descendants of a freshly created
+owned fixture child. No chown or inode modification is applied to a bound
+host device.
+
+No FD crosses sudo. Entry is through EXACT NAMESPACE_LAUNCHER using
+ProbeBudget.run(..., privileged=True): the existing sudo-n / isolated Python
+lifecycle / private mount+net+PID / fork+kill-child / private-propagation path.
+No full ProbeSession/Make/compiler session is constructed merely for selection.
+The selected environment, immutable-system-executable checks, caller-owned
+lifetime pipe, sole reaper and absolute deadline are reused unchanged.
+The closed coordinator environment contains no SUDO_UID/SUDO_GID inputs.
+R cross-checks U/G against sudo's own caller-ID metadata and the pinned
+fixture owner; missing or mismatched metadata rejects. Caller-provided
+numbers or path ownership alone are not the binding. Only these allowlisted
+numeric fields are read, never an environment dump.
+
+The bootstrap imports only fixed trusted setup/standard-library code. It
+does NOT import sandbox_exec/the actual candidate helper or execute candidate
+commands while it has host setup authority. The existing small fixture-local
+mount/drop primitives can be retained as trusted bootstrap code; do not solve
+this by importing the subject module early.
+
+Roles
+-----
+C: ordinary test coordinator, real/effective/saved U/G.
+L: existing qualified privileged lifecycle watchdog, unchanged.
+R: fixed bootstrap/reaper, PID1 of the private PID namespace P0. Initially
+   root in U0; after setup it retains only CAP_KILL for its owned worker.
+N: one creator child of R. It temporarily has effective UID U / GID G and
+   only CAP_SYS_ADMIN effective/permitted in U0. It creates U1/M1, is mapped,
+   then exits and is reaped BEFORE the actual worker's cap-zero boundary.
+W0/W: one worker child of R. W0 is a fixed trusted identity-drop preamble;
+   W begins only after all real/effective/saved IDs are U/G, all five caps0
+   and NNP1. Only W, after bound namespace entry and FD closure, imports and
+   invokes the actual helper.
+
+No general broker/listener/service is created. R creates exactly N and then
+W0; there is no fork-per-request, arbitrary peer or extra execution route.
+
+Protocol states, in exact order
+------------------------------
+S0. C admission and backend selection
+
+Capture U/G and the current userns identity in the ordinary coordinator.
+Preserve the ordinary backend when its fixed namespace availability probe
+actually succeeds. Use ProbeBudget directly, not ProbeSession._tools.
+The probe is the original closed self-map/keep-caps/mount/private prefix
+with the ordinary immutable /usr/bin/true payload, under the same deadline.
+
+Only a genuine recorded namespace-permission-unavailable outcome can select
+the fixed privileged backend, just as the native route distinguishes namespace
+availability. Malformed output, watchdog125, interruption, stale identity or
+other setup errors fail. Selection is before a mode executes; a failed mode
+is never retried on another backend. A failed restricted setup also fails,
+never skips. No sysctl-based guess or another census is required for selection.
+
+For the restricted backend require the existing caller userns/full-identity-map
+context intended for the hosted route. Capture identities, do not hardcode a
+namespace inode. This backend does not silently accept a different remapped
+container topology.
+
+S1. R owns M0/P0 and installs the fixed outer fixture
+
+Enter only via the exact privileged NAMESPACE_LAUNCHER. R verifies it remains
+in U0 and owns a distinct private mount/PID/net context. Mount a private proc
+view for P0 using the already established private M0: /proc/self PID and
+getpid must agree. A host proc view combined with P0-relative child PIDs is
+not admissible.
+
+R pins/revalidates the ordinary caller's fixture parent and creates one
+fresh private child exclusively. Mount only the existing1MiB tmpfs there.
+Create/chown fresh regular placeholders, source/runtime canaries and their
+directories to U/G BEFORE readonly sealing/device binding. That ensures a
+missing-readonly mutation cannot be hidden by root-owned DAC permissions.
+
+Bind the identity-verified existing /dev/null and /dev/zero. No device nodes
+are created and no metadata of those existing device inodes is changed.
+The OUTER null bind adds nosuid/noexec and, except writable mode, readonly;
+it must not acquire NODEV before the owner transition. Regular source/runtime
+binds retain their original readonly/nosuid/nodev restrictions.
+
+Replace the lifecycle payload's inherited /dev/null stdin with an owned
+EOF-only pipe at FD0. FDs1/2 remain the bounded capture pipes. This removes
+preopened device authority rather than using FD0 as a null-I/O fallback.
+
+All of this occurs in M0, never the host mount namespace. All sources/targets
+and mode decisions are fixed. R holds no open device FD beyond temporary
+identity/setup checks; those are closed before any worker fork.
+
+S2. Create N with genuine U ownership but explicit setup authority
+
+R creates two private CLOEXEC control pipes, forks N once, and immediately
+pins the owned unreaped child with a pidfd and a proc-directory handle.
+N closes all unrelated inherited setup handles. It executes no command and
+imports no candidate code.
+
+In N, while still a trusted setup role:
+  1. Clear supplementary groups while privileged.
+  2. Set effective GID to G, then effective UID to U, retaining real/saved
+     root IDs temporarily. This is NOT the actual nonroot worker boundary.
+  3. Set dumpable0. Set permitted/effective caps to ONLY CAP_SYS_ADMIN;
+     inheritable and ambient sets are0; never add a capability absent from
+     the inherited permitted set. Set NNP1.
+  4. Re-arm parent-death SIGKILL after the credential change and require the
+     same live R parent. P0's PID1-death rule also protects this window.
+  5. Send CREATOR_READY; wait for the one CREATE token.
+
+Changing only EUID0->U clears effective caps but retains permitted caps
+because real/saved IDs have not both lost0. capset then enables the already
+permitted CAP_SYS_ADMIN and discards the rest. This avoids KEEPCAPS/ambient
+tricks, file capabilities, saved permissions in the actual worker, or a
+different mapping. Retained setup privilege is explicit and short-lived.
+Real/saved root plus dumpable0 also prevents describing this stage as an
+ordinary same-UID process.
+
+R checks the live N: userns U0, effective IDs U/G, permitted/effective exactly
+CAP_SYS_ADMIN, inheritable/ambient0, NNP1, dumpable0 and expected unchanged
+LSM label. Only then does R send CREATE.
+
+N performs ONE unshare(CLONE_NEWUSER | CLONE_NEWNS). Kernel ownership is
+recorded from N's effective UID U (and effective GID G), not from R's UID0.
+N's parent-namespace capabilities cease at that transition; any new full
+capabilities are scoped to U1. M1 is cloned from M0 and is owned by U1.
+N re-arms parent-death protection as needed, sends NS_CREATED and blocks.
+It does NOT write its own maps.
+
+The explicit initial-userns CAP_SYS_ADMIN is the documented privileged
+creation path, not a profile change. If the installed LSM rejects it or
+transitions N to the restricted default profile, the protocol fails here.
+There is no capability expansion or policy-hopping variant.
+
+S3. R binds target namespace handles and writes only the exact maps
+
+N remains alive, blocked and unreaped. Numeric PID is never the authority by
+itself. R uses its pidfd plus pinned proc directory and the fixed proc leaf
+names. No caller-supplied PID/path is accepted.
+
+Open target user and mount namespace FDs (UF/MF), CLOEXEC:
+  NS_GET_NSTYPE(UF) == CLONE_NEWUSER;
+  NS_GET_PARENT(UF) identifies U0, and NS_GET_OWNER_UID(UF) == U;
+  UF differs from U0;
+  NS_GET_NSTYPE(MF) == CLONE_NEWNS;
+  NS_GET_USERNS(MF) identifies UF; MF differs from M0.
+Any temporary returned parent/owner FD is closed immediately after checking.
+Record the target namespace's root-mount identity as bounded metadata, then
+close any temporary root/path handle; it is NOT delegated to W.
+
+R opens only N's uid_map, gid_map and setgroups files through the owned proc
+binding. Its opener credentials remain privileged in the DIRECT parent U0.
+Require the maps are empty. Write setgroups "deny" and exactly:
+  uid_map: 0 U 1
+  gid_map: 0 G 1
+Each is one bounded complete write with readback; partial writes or existing
+maps are fatal, not retried. The mapping does not include parent UID0, so
+the CAP_SETFCAP parent-root special case is not its authority.
+
+R's parent CAP_SETUID/CAP_SETGID and target CAP_SYS_ADMIN/DAC/ptrace authority
+make the map writer explicit. No newuidmap/newgidmap or subordinate ranges.
+Dumpability remains a checked fact, not a global sysctl change.
+
+After both readbacks and namespace/owner checks pass, send MAPS_COMPLETE.
+N verifies its exact self maps, normalizes its real/effective/saved IDs to
+namespace0/0 (therefore underlying U/G, not host root), clears capability
+sets/NNP as the fixed teardown requires, and exits0. R observes status before
+fallible cleanup, reaps N, closes its pidfd/proc/map/control handles.
+
+UF/MF are active namespace pins, not merely numeric inode records. They keep
+U1/M1 alive after N exits. No privileged creator remains to run the helper.
+
+S4. Fork W0, retire R setup authority, then establish the cap-zero worker
+
+R forks W0 once. W0 initially waits on one private GO gate; it cannot import
+or execute the subject. R pins W0 with its owned pidfd, closes its copies of
+UF/MF and all other setup/ancestor/device handles, and retires setup rights:
+only CAP_KILL remains effective/permitted/bounding; inheritable/ambient0,
+NNP1, no executable/command dispatch. R's sole remaining operations are
+bounded gate/result transport, wait, pidfd signal and close.
+
+R remains PID1 with unchanged root IDs, preserving the existing --kill-child
+parent-death chain. Check that contract after retirement; fail instead of
+assuming it. Dropping R itself to a nonroot PID1 was deliberately rejected:
+credential changes clear PDEATHSIG and would complicate abrupt-watchdog death.
+The unchanged outer lifecycle is still the privileged sole-owner fallback.
+
+W's FD1 is a private bounded result pipe read by R; it is standard output,
+not an extra authority handle. R forwards one validated result to C's
+existing capture pipe. W's FD2 remains the bounded diagnostic pipe.
+
+R sends one GO and closes the gate writer. W0 closes the gate reader and
+every setup handle except UF/MF and standard capture/EOF pipes. It follows
+the already qualified identity-drop sequence: clear bounding/ambient,
+setgroups([]), setresgid(G,G,G), setresuid(U,U,U), clear effective/permitted/
+inheritable, set NNP1, and re-arm parent-death SIGKILL. Require parent R still
+exists. This is now W, not a privileged setup role.
+
+Before entry, W must actually show:
+  all real/effective/saved IDs U/G; no supplemental groups;
+  all five capability sets0; NNP1;
+  U0 and M0, full initial maps for this restricted backend;
+  only FDs0/1/2, UF and MF. FD0 is an EOF pipe, not a device.
+Restore exactly the selected sanitized ENVIRONMENT in W; discard sudo-added
+environment fields after their setup-only identity check.
+
+S5. Nonroot owner entry, then removal of all delegated handles
+
+W is single-threaded, was forked without CLONE_FS, and does not share a
+filesystem state object. No exec occurs between drop and the two entries.
+
+First setns(UF, CLONE_NEWUSER). Linux's parent-owner rule grants a caller in
+U0 with effective UID U capabilities IN its owned child U1, even though its
+effective capabilities in U0 are0. This satisfies userns_install's target
+CAP_SYS_ADMIN check. It does not grant a capability in U0.
+
+Then setns(MF, CLONE_NEWNS). Having entered U1, W has U1-local CAP_SYS_ADMIN
+and CAP_SYS_CHROOT; M1 is owned by U1. Those are mntns_install's required
+capabilities. Order is mandatory. No PID/net namespace entry is requested.
+
+In the available Linux6.17 source mntns_install updates BOTH pwd and root
+to the target namespace root. W performs a fresh chdir("/") and verifies
+fresh root/cwd mount identity against the sealed target metadata. This
+prevents an old M0 cwd/root reference from defeating the readonly test.
+No ancestor/root directory FD is delegated as a shortcut.
+
+Close UF and MF, and re-arm/check parent-death SIGKILL after the credential
+transition. Require the expected U1/M1 identities, exact0->U/G maps, NNP1,
+UID/GID0 as seen IN U1, and no setup/ancestor/device handle. Close/check
+temporary verification FDs as well. A close error is a failed/uncertain
+transition; no import occurs afterward.
+
+Only NOW insert the immutable subject path and import sandbox_exec / invoke
+the actual helper. No fresh exec is necessary. The worker has namespace-local
+setup authority, not host authority. Execute the unchanged inner bind/helper
+logic and then the existing final cap-zero/NNP drop before I/O/denial checks.
+
+FD protocol and ownership table
+-------------------------------
+Numbers are assigned by the kernel; the names below are role-bound handles,
+never caller-chosen numeric authority.
+
+Phase/role             Allowed nonstandard handles
+C / existing budget    existing lifecycle-writer/capture/selector ownership
+L / existing watchdog  existing lifetime-reader/leader-pidfd/selector ownership
+R before N             owned fixture pin; fixed control-pipe endpoints
+N before CREATE        only its fixed request/response endpoints
+R while N blocked      owned N pidfd + pinned proc directory; map FDs;
+                       UF/MF; temporary owner/parent/root-identity FDs
+R after N reaped       UF/MF only (all N/proc/map/temporary ancestor pins closed)
+W0 waiting             UF/MF + one GO reader; stdio pipes
+R after retiring       owned W pidfd + W-result reader + GO writer until sent;
+                       no namespace, map, ancestor or device handle
+W pre-entry            UF/MF only, plus EOF/result/diagnostic stdio pipes
+W before import        NO nonstandard FD, NO device FD; only stdio pipes
+
+Every created endpoint is registered before unmasking termination signals.
+Use finish_cleanup for all closes/reaps; closing an uncertain descriptor is
+not treated as permission to reuse its integer after ownership is released.
+No namespace descriptor is sent over a public socket or accepted from a
+caller. Fork inheritance is the only UF/MF transfer, and R drops its copies
+before releasing W0. Unexpected descriptors at either worker barrier reject.
+The result pipe carries data only: no response can request another command,
+PID, mapping, namespace, capability or mount operation.
+
+R's post-GO CAP_KILL is exclusively for the still-owned W pidfd. It cannot
+reconfigure M0/M1 because CAP_SYS_ADMIN and all setup capabilities are gone.
+The unchanged external lifecycle retains its already-qualified cleanup
+authority; it imports no candidate subject and accepts no new interface.
+
+S6. Required mode outcomes and teardown
+
+Keep all four methods/seven modes, including normal writable parent, exact
+device/mount pinning, wrong/replaced device, source/runtime/other-device
+denials, unsupported/locked-operation refusal and old-remount restoration.
+
+The outer null inherited into M1 must be readonly/nosuid/noexec but not
+NODEV-locked. Only the inner generic bind adds local NODEV. The actual helper
+clears only that local bit. Restored0x102a must fail on the inherited readonly
+lock after successful entry. Root setup is not permitted to perform either
+the old or selective operation on behalf of W.
+
+W reports only its actual fixed-mode result and exits. R publishes an
+observed status before fallible FD cleanup; all secondary cleanup errors
+remain bounded and cannot replace the first cause or grant clean success.
+Use the existing finish_cleanup/owned pidfd/waitable rules. R never signals
+a recycled numeric PID and never changes namespace/mount policy after GO.
+
+On any interrupted or failed stage: stop before the next token, close all
+owned pipe ends/FDs, terminate and reap only still-owned N/W, and exit R.
+The existing outer lifecycle kills/reaps the private group and descendants.
+PID1 death destroys P0 members. Namespace teardown, not a new privileged
+unmount command, releases M0/M1 mounts. C removes only its own remaining
+host fixture objects after the guarded launch is terminal; foreign objects
+and uncertainty are retained, not deleted or converted into success.
+
+All waits consume the original single deadline. Retain30s watchdog,35s
+coordinator wait,45s outer ceiling,256KiB streams and1MiB fixture. No retry,
+alternate creator, profile mutation, timeout increase, root/Make/compiler
+session or new public/shipping API is part of this protocol.
+
+LSM boundary: creation is not entry, but entry is still mediated
+-------------------------------------------------------------
+The available Linux source calls security_create_user_ns for CREATION.
+userns_install enters an existing namespace via target capability checks;
+it does not call that creation hook. NNP is not unset by entry.
+Mount entry also performs capability checks. Those capability checks remain
+LSM-mediated: this is not a claim that setns bypasses all policy.
+
+The chosen creator has the explicitly authorized initial CAP_SYS_ADMIN at
+creation, so it uses the documented privileged userns path while assigning
+genuine owner U. W keeps the unchanged unconfined subject label and never
+requests userns creation. No aa-exec/change_profile or host-policy mutation.
+
+If the installed Ubuntu LSM denies this privileged creation, changes the
+label, denies owner-based entry or otherwise violates a checked condition,
+this ONE backend is unavailable and must fail. There is no policy-hopping
+alternative under this design. Exact Azure SAUCE/audit details remain
+unobserved, so static feasibility is not a claim of runtime compatibility.
+
+Assertion replacement, not assertion deletion
+---------------------------------------------
+Ordinary backend:
+  retain its existing extra outer single U->U/G->G map equalities.
+Restricted backend:
+  replace those equalities with exact existing/full initial-map context,
+  unchanged U0, private M0 owned by U0, actual nonzero U/G and zero-cap/NNP
+  worker barrier. No hardcoded namespace inode is permitted.
+Both backends:
+  require exact child0->U/G maps, different/lower mount-owner namespace,
+  NNP, actual helper effects, final cap-zero I/O and complete owned cleanup.
+The common inner subject import is delayed until its FD barrier on BOTH
+backends. Replace inherited /dev/null stdin with the EOF pipe there as well;
+retaining the ordinary namespace construction does not exempt it from the
+no-preopened-device rule.
+
+These replacement facts match the production-representative initial-userns
+outer topology and the kernel owner-change criterion. Passing solely by
+removing the old equality is explicitly forbidden.
+
+Fixture-only implementation scope, if Main freezes it
+----------------------------------------------------
+The shared test_foundation.py fixture/bootstrap, its directly coupled benign
+protocol/real mechanism controls, and the existing foundation/case procedure.
+Keep TC-WORKFLOW-OWNERSHIP-MODERN-TOOLCHAIN-001 and existing discovery/owners;
+update the existing automation record only if selectors genuinely change.
+No sandbox_exec helper, native policy/wire, source parser/binder, Build
+workflow, diagnostic344e, profile/sysctl or shipping limit changes.
+
+Use ProbeBudget.run and exact NAMESPACE_LAUNCHER/lifecycle ownership directly.
+Reuse the fixed drop semantics already qualified by kernel.drop_identity
+and the original fixture-local drop, but do not create a runtime dependency
+on the disposable root harness or import candidate helper code while root.
+No generic namespace broker or arbitrary command API.
+
+Qualification before integration or a platform-fix claim
+-------------------------------------------------------
+First, benign parsed/API controls for the closed argument/token/FD protocol,
+every stage failure, wrong owner/map/namespace/FD, retained capability/NNP0,
+root worker, close/reap failures and first-cause retention.
+
+Then a separately frozen REPRESENTATIVE setup-only proof of THIS design.
+One predetermined readonly fixture can check the old transition first:
+it must fail EPERM with identical device/mount/flags. Only then run the real
+selective helper and bounded post-drop I/O. Unexpected old success, setup
+failure or changed state stops, without another route or variant.
+Record R/N/W credential and namespace boundaries, map-writer identity,
+AppArmor labels, parent/owner relations, FD inventories, observed operations
+and full cleanup. No ordinary census repeat is needed.
+
+A rootless extra-userns simulation or a permissive local policy is not this
+restricted-host admission proof. It can establish limited mechanics only.
+Before integration/claiming compatibility, the actual restricted CI platform
+must run all four methods/seven effects and original positive/denial/cleanup
+controls through this bootstrap. Restoring the old ordinary startup must
+recover the policy failure, and restoring only0x102a AFTER valid setup must
+recover the real readonly rejection. Wrong-owner/root-retention mutations
+must fail the setup guards, never pass by privilege masking.
+
+Main has allocated none of that work here. Current artifacts/source344e/048c
+remain unchanged. Root19 source-parser/binder logic was not investigated;
+only its namespace/identity/profile context was read.
