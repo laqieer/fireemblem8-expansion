@@ -1409,13 +1409,17 @@ class _IntermediateModel:
         registers.rax = result & ((1 << 64) - 1)
         self.policy.leave(pid, state, registers)
 
-    def open_actor(self, actor, flags, mode):
+    def open_actor(self, actor, flags, mode, *, number=2):
         pid, _ = actor
         def kernel():
             if not self.exists:
                 self.exists = True
             self.trace_fds[pid, 7] = [0, flags]
-        self.syscall(actor, 2, 0x2000, flags, mode, result=7, kernel=kernel)
+        if number == 2:
+            self.syscall(actor, number, 0x2000, flags, mode, result=7, kernel=kernel)
+        else:
+            assert number == 257
+            self.syscall(actor, number, -100, 0x2000, flags, mode, result=7, kernel=kernel)
 
     def close_actor(self, actor):
         self.syscall(actor, 3, 7, kernel=lambda: self.trace_fds.pop((actor[0], 7)))
@@ -1479,6 +1483,129 @@ class _IntermediateModel:
 
 
 class ToolchainIntermediateInertTests(unittest.TestCase):
+    def test_writer_mode_refusal_reports_only_validated_bounded_fields(self):
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC | os.O_NOFOLLOW
+        for number, form in ((2, "open"), (257, "openat")):
+            for mode in (0, 0o666, 0o777):
+                with self.subTest(number=number, MODEL_mode=mode), _IntermediateModel() as model:
+                    model.created()
+                    writer = model.actor(2)
+                    before = copy.deepcopy(model.tracker.record)
+                    with self.assertRaises(syscall_guard.Violation) as refused:
+                        model.open_actor(writer, flags, mode, number=number)
+                    self.assertEqual(
+                        str(refused.exception),
+                        "toolchain writer changed its requested mode "
+                        f"[syscall={number} form={form} role=writer phase=writer-exec "
+                        f"flags=0x{flags:x} create=yes mode=0o{mode:03o}]",
+                    )
+                    self.assertLessEqual(len(str(refused.exception).encode("ascii")), 256)
+                    self.assertEqual(model.tracker.record, before)
+                    self.assertEqual(model.tracker.phase, "writer-exec")
+                    self.assertIsNone(model.tracker.descriptors[1])
+                    self.assertNotIn((writer[0], 7), model.trace_fds)
+
+    def test_writer_mode_unused_out_of_domain_and_unknown_values_do_not_escape(self):
+        for create, mode, label in (
+            (False, 0o666, "unused"), (False, 1 << 63, "unused"),
+            (True, 0o4000, "out-of-domain"), (True, (1 << 64) - 1, "out-of-domain"),
+        ):
+            with self.subTest(create=create, MODEL_mode=mode), _IntermediateModel() as model:
+                model.created()
+                writer = model.actor(2)
+                flags = os.O_WRONLY | os.O_TRUNC | (os.O_CREAT if create else 0)
+                with self.assertRaises(syscall_guard.Violation) as refused:
+                    model.open_actor(writer, flags, mode)
+                message = str(refused.exception)
+                self.assertIn(f"create={'yes' if create else 'no'} mode={label}", message)
+                self.assertNotIn(str(mode), message)
+                self.assertNotIn(oct(mode), message)
+                self.assertNotIn("/work/", message)
+                self.assertLessEqual(len(message), 256)
+        class OpaqueMode:
+            def __str__(self):
+                raise AssertionError("mode stringification escaped")
+            def __repr__(self):
+                raise AssertionError("mode repr escaped")
+            def __format__(self, spec):
+                raise AssertionError("mode formatting escaped")
+        with _IntermediateModel() as model:
+            model.created()
+            pid, state = model.actor(2)
+            path = model.model["roles"].output.value
+            state.path_context = path, -100, None
+            model.tracker.note_path(state, path)
+            registers = SimpleNamespace(
+                orig_rax=2, rdi=0x2000, rsi=os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                rdx=OpaqueMode(), r10=0,
+            )
+            with self.assertRaises(syscall_guard.Violation) as refused:
+                model.tracker.enter(pid, state, registers)
+            self.assertIn("create=yes mode=unknown", str(refused.exception))
+
+    def test_writer_mode_diagnostic_admission_failure_preserves_first_refusal(self):
+        for failure in (syscall_guard.Violation("MODEL diagnostic admission"), MemoryError("MODEL allocation")):
+            with self.subTest(failure=type(failure).__name__), _IntermediateModel() as model:
+                model.created()
+                writer = model.actor(2)
+                with patch.object(model.tracker, "reserve", side_effect=failure) as reserve:
+                    with self.assertRaises(syscall_guard.Violation) as refused:
+                        model.open_actor(writer, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o666)
+                reserve.assert_called_once_with(4096)
+                self.assertEqual(str(refused.exception), "toolchain writer changed its requested mode")
+                self.assertIs(refused.exception.__cause__, failure)
+                self.assertEqual(model.tracker.phase, "writer-exec")
+                self.assertIsNone(model.tracker.descriptors[1])
+                model.tracker.close()
+                self.assertFalse(model.handles)
+                self.assertTrue(model.exists)
+        with _IntermediateModel() as model:
+            model.created()
+            writer = model.actor(2)
+            before = model.policy.observation_bytes
+            model.policy.config["observation_limit"] = before
+            with self.assertRaises(syscall_guard.Violation) as refused:
+                model.open_actor(writer, os.O_WRONLY | os.O_CREAT, 0o666)
+            self.assertEqual(str(refused.exception), "toolchain writer changed its requested mode")
+            self.assertEqual(model.policy.observation_bytes, before + 4096)
+
+    def test_writer_mode_diagnostic_does_not_replace_actor_path_phase_or_flag_guards(self):
+        for defect in ("actor", "path", "alias", "phase", "flags"):
+            with self.subTest(defect=defect), _IntermediateModel() as model:
+                model.created()
+                writer = model.actor(2)
+                flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+                if defect == "actor":
+                    model.policy.processes[writer[0]] = copy.copy(writer[1])
+                elif defect == "phase":
+                    model.tracker.phase = "reader-exec"
+                elif defect == "flags":
+                    flags |= os.O_APPEND
+                path = (
+                    "/work/ccFOREGN.s" if defect == "path"
+                    else "/work/./ccL3VdjV.s" if defect == "alias"
+                    else model.model["roles"].output.value
+                )
+                with model.readlink_paths(path), self.assertRaises(syscall_guard.Violation) as refused:
+                    model.open_actor(writer, flags, 0o666)
+                self.assertNotIn("toolchain writer changed its requested mode", str(refused.exception))
+                self.assertNotIn("create=", str(refused.exception))
+                self.assertNotIn((writer[0], 7), model.trace_fds)
+
+    def test_writer_mode_accepted_forms_remain_exact_for_open_and_openat(self):
+        for number in (2, 257):
+            for create, mode in ((False, 0), (True, 0o600)):
+                with self.subTest(number=number, create=create), _IntermediateModel() as model:
+                    model.created()
+                    writer = model.actor(2)
+                    flags = os.O_WRONLY | os.O_TRUNC | (os.O_CREAT if create else 0)
+                    model.open_actor(writer, flags, mode, number=number)
+                    self.assertEqual(model.tracker.phase, "writer-open")
+                    opened = model.tracker.record["writer"]["open"]
+                    self.assertEqual((opened["flags"], opened["requested_mode"]), (flags, mode))
+                    self.assertEqual(opened["syscall"], "open" if number == 2 else "openat")
+                    self.assertEqual(model.tracker.descriptors[1], 7)
+
     def test_readlink_metadata_models_preserve_state_and_complete_both_forms(self):
         for number in (89, 267):
             for result in (-errno.EINVAL, -errno.EIO):

@@ -713,7 +713,26 @@ class _ToolchainIntermediate:
                         os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC | os.O_NOFOLLOW | getattr(os, "O_LARGEFILE", 0),
                     )
                     if mode != (0o600 if flags & os.O_CREAT else 0):
-                        raise Violation("toolchain writer changed its requested mode")
+                        message = "toolchain writer changed its requested mode"
+                        try:
+                            self.reserve(4096)
+                            form = "open" if n == 2 else "openat"
+                            meaningful = bool(flags & os.O_CREAT)
+                            if not meaningful:
+                                mode_label = "unused"
+                            elif type(mode) is not int:
+                                mode_label = "unknown"
+                            elif 0 <= mode <= 0o777:
+                                mode_label = f"0o{mode:03o}"
+                            else:
+                                mode_label = "out-of-domain"
+                            failure = Violation(
+                                f"{message} [syscall={n} form={form} role=writer phase=writer-exec "
+                                f"flags=0x{flags:x} create={'yes' if meaningful else 'no'} mode={mode_label}]"
+                            )
+                        except (Violation, MemoryError) as error:
+                            raise Violation(message) from error
+                        raise failure
                 else:
                     self.phase_is("reader-exec")
                     toolchain_runtime._flags(

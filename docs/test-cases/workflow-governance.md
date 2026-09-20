@@ -9989,6 +9989,28 @@ mutation, seek, vector, mapping, descriptor-alias and all other unsupported
 forms remain denied. Independent exact review and another separately frozen
 native allocation are required before any third Make attempt.
 
+The next separately frozen attempt on
+`39ee7cf5972920106b1900803ebd2130d992153e` is **spent and closed**.
+One Make attempt failed after 6.500 seconds at
+`toolchain writer changed its requested mode`, before Make returned.
+Readlink is no longer the first refusal, but the actual writer flags and mode
+were not retained. Do not call `0666`, an unused argument, or any other value
+an observation. No checker pair, final `assert_clean` or component acceptance
+was obtained; context teardown reported no secondary error.
+
+At that unchanged writer-mode refusal, a bounded error suffix now names the
+actual open/openat form, authenticated writer/fixed phase, already validated
+flag bits and whether `O_CREAT` makes the mode meaningful. Exact mode values
+are shown only in the ordinary `0000`-`0777` permission domain; unused,
+unknown and out-of-domain values use fixed labels, never raw registers or
+pointers. No path, PID, environment, content, SDK value or key is emitted.
+Formatting receives a 4 KiB pre-growth reservation; diagnostic admission or
+allocation failure preserves the original primary refusal and does not refund
+accounting. The mode/flag predicates and accepted forms are unchanged.
+Inert `0600`/`0666`/unused-argument examples are MODEL controls only.
+Independent review and a new separate allocation are required before another
+native discriminator; this diagnostic is not a compatibility allowance.
+
 The live descriptor control must model the supervisor's actual view:
 `<config.root>/work/cc*.s`, not the tracee's guest `/work/cc*.s`. Require the
 exact host-root spelling with the same object to pass, while foreign/escaped/
