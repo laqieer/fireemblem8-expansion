@@ -646,7 +646,15 @@ class _ToolchainIntermediate:
             raise Violation(message) from error
 
     def enter(self, pid, state, r):
-        n, descriptor = r.orig_rax, r.rdi
+        n = r.orig_rax
+        # Path/dirfd operations are bound by note_path, not by scalar equality.
+        if n in {0, 1, 3, 5, 8, 16, 17, 18, 19, 20, 32, 33, 72, 73, 74, 75,
+                 77, 78, 81, 91, 93, 138, 217, 232, 233, 281, 292}:
+            descriptor = r.rdi
+        elif n == 9 and not r.r10 & MAP_ANONYMOUS:
+            descriptor = signed(r.r8)
+        else:
+            descriptor = None
         touched = state.toolchain_pending
         if n == 59:
             self.exec_entry(pid, state)
@@ -662,9 +670,9 @@ class _ToolchainIntermediate:
         slot = state.toolchain_exec_sequence
         if slot is not None:
             self.actor(pid, state)
-        owned = slot is not None and self.descriptors[slot - 1] == descriptor
+        owned = descriptor is not None and slot is not None and self.descriptors[slot - 1] == descriptor
         if n in {32, 33, 292} and (
-            owned or self.path is not None and state.fds.get(r.rsi) == self.path
+            owned or n in {33, 292} and self.path is not None and state.fds.get(r.rsi) == self.path
         ):
             raise Violation("toolchain intermediate descriptor alias is unsupported")
         if n == 3 and owned:

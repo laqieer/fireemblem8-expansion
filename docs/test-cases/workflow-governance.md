@@ -10039,6 +10039,36 @@ unobserved kernel outcome. Independent exact review and a new separate native
 allocation remain required; no automatic next Make/root/report/resource/H1
 or delivery action is granted.
 
+The next separately allocated attempt on
+`6f2f22e21f49c9427795304ef46d6733bcdff64b` is **spent and closed**.
+One Make attempt failed after 6.221 seconds with
+`[syscall=9 role=writer phase=writer-open owned=yes op=other]`.
+This identifies mmap and the old tracker classification, **not** an actual
+intermediate-backed mapping. Its hint/FD/flags were not retained. The unchanged
+general policy had already accepted the request before the tracker and rejects
+mutable `/work` backing independently. Do not infer anonymous versus immutable
+runtime-file backing, a returned mapping, a completed pair or `assert_clean`.
+
+Tracker ownership now uses syscall ABI descriptor operands, never numeric
+coincidence with an address, size, PID, flag or ignored argument. Scalar
+first-FD operations retain their existing guards; file-backed mmap uses `r8`,
+while anonymous mmap ignores that argument. `dup2`/`dup3` destinations remain
+protected, but `dup`'s ignored second register is not a destination. Path-based
+and `*at` operations still use the existing resolved path/context; an ignored
+dirfd on an absolute nonprivate path does not acquire intermediate ownership.
+No mapping, alias or other syscall permission is added.
+
+Use actual inert entry/leave controls with owned FD zero and nonzero: MODEL
+anonymous/immutable-runtime mappings and address/size/scalar requests with
+collisions must retain general resource accounting and leave private proof
+state unchanged. Genuine intermediate/alias mappings must refuse at the
+existing generic guard before the MODEL kernel callback. Real read/write/
+close/stat/fcntl, alias/stale/foreign and dup-destination controls remain
+required. Restoring the old indiscriminate `rdi` comparison must recover the
+collision failures. These models cannot identify the unretained real mmap
+arguments. Independent review and a new bounded allocation remain required;
+there is no automatic next native/root/report/resource/H1 or delivery action.
+
 The live descriptor control must model the supervisor's actual view:
 `<config.root>/work/cc*.s`, not the tracee's guest `/work/cc*.s`. Require the
 exact host-root spelling with the same object to pass, while foreign/escaped/

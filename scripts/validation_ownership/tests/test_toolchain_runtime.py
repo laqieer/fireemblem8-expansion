@@ -1397,11 +1397,12 @@ class _IntermediateModel:
         state.dependency_image = row["path"]
         return pid, state
 
-    def syscall(self, actor, number, a, b=0, c=0, d=0, *, result=0, kernel=None):
+    def syscall(self, actor, number, a, b=0, c=0, d=0, e=0, f=0, *, result=0, kernel=None):
         pid, state = actor
         registers = syscall_guard.Registers()
         registers.orig_rax = number
         registers.rdi, registers.rsi, registers.rdx, registers.r10 = a, b, c, d
+        registers.r8, registers.r9 = e, f
         state.kernel_call = number
         self.policy.entry(pid, state, registers)
         if kernel is not None:
@@ -1409,21 +1410,21 @@ class _IntermediateModel:
         registers.rax = result & ((1 << 64) - 1)
         self.policy.leave(pid, state, registers)
 
-    def open_actor(self, actor, flags, mode, *, number=2):
+    def open_actor(self, actor, flags, mode, *, number=2, descriptor=7):
         pid, _ = actor
         def kernel():
             if not self.exists:
                 assert actor[1].toolchain_exec_sequence == 1, "MODEL writer must not create or repair an object"
                 self.exists = True
-            self.trace_fds[pid, 7] = [0, flags]
+            self.trace_fds[pid, descriptor] = [0, flags]
         if number == 2:
-            self.syscall(actor, number, 0x2000, flags, mode, result=7, kernel=kernel)
+            self.syscall(actor, number, 0x2000, flags, mode, result=descriptor, kernel=kernel)
         else:
             assert number == 257
-            self.syscall(actor, number, -100, 0x2000, flags, mode, result=7, kernel=kernel)
+            self.syscall(actor, number, -100, 0x2000, flags, mode, result=descriptor, kernel=kernel)
 
-    def close_actor(self, actor):
-        self.syscall(actor, 3, 7, kernel=lambda: self.trace_fds.pop((actor[0], 7)))
+    def close_actor(self, actor, *, descriptor=7):
+        self.syscall(actor, 3, descriptor, kernel=lambda: self.trace_fds.pop((actor[0], descriptor)))
 
     def exit_actor(self, actor, status=0):
         pid, state = actor
@@ -1431,20 +1432,56 @@ class _IntermediateModel:
         del self.policy.processes[pid]
         state.close()
 
-    def write(self, actor):
+    def write(self, actor, *, descriptor=7):
         def kernel():
             self.body = self.expected
             self.mtime += 1
             self.ctime += 1
-            self.trace_fds[actor[0], 7][0] = len(self.body)
-        self.syscall(actor, 1, 7, 0x1003, len(self.expected), result=len(self.expected), kernel=kernel)
+            self.trace_fds[actor[0], descriptor][0] = len(self.body)
+        self.syscall(actor, 1, descriptor, 0x1003, len(self.expected), result=len(self.expected), kernel=kernel)
 
-    def read_actor(self, actor, data=None):
+    def read_actor(self, actor, data=None, *, descriptor=7):
         data = self.body if data is None else data
         self.memory = b"xxx" + data + b"\0" * 8
         def kernel():
-            self.trace_fds[actor[0], 7][0] += len(data)
-        self.syscall(actor, 0, 7, 0x1003, len(data), result=len(data), kernel=kernel)
+            self.trace_fds[actor[0], descriptor][0] += len(data)
+        self.syscall(actor, 0, descriptor, 0x1003, len(data), result=len(data), kernel=kernel)
+
+    def writer(self, descriptor):
+        self.created()
+        writer = self.actor(2)
+        if descriptor == 0:
+            self.syscall(writer, 3, 0)
+        self.open_actor(writer, os.O_WRONLY | os.O_TRUNC, 0, descriptor=descriptor)
+        return writer
+
+    @contextmanager
+    def memory_effects(self):
+        runtime = "/usr/lib/model-immutable.so"
+        self.policy.config["dependency"] = {"executables": self.policy.config["executables"]}
+        self.policy.toolchain_inputs = {}
+        self.policy.header_roots = {}
+        self.policy.dependency_files = {runtime}
+        self.policy.memory_peak = 0
+        for pid, state in self.policy.processes.items():
+            state.memory_group, state.memory_limit = pid, 4096
+            state.break_end = 4096
+        original_lstat = Path.lstat
+        def lstat(path):
+            if str(path) == self.policy.config["root"] + runtime:
+                return SimpleNamespace(st_mode=stat.S_IFREG | 0o444)
+            return original_lstat(path)
+        grants = []
+        def limit(pid, resource, values):
+            assert pid in self.policy.processes and resource == syscall_guard.resource.RLIMIT_AS
+            grants.append((pid, values))
+            return 0, 0
+        with (
+            patch.object(self.policy, "virtual_memory", return_value=4096),
+            patch.object(syscall_guard.resource, "prlimit", limit),
+            patch.object(Path, "lstat", lstat),
+        ):
+            yield runtime, grants
 
     def created(self):
         self.driver = self.actor(1)
@@ -1485,6 +1522,198 @@ class _IntermediateModel:
 
 
 class ToolchainIntermediateInertTests(unittest.TestCase):
+    def test_non_fd_scalar_collisions_do_not_acquire_intermediate_ownership(self):
+        for descriptor in (0, 7):
+            with self.subTest(MODEL_fd=descriptor), _IntermediateModel() as model:
+                writer = model.writer(descriptor)
+                before = copy.deepcopy(model.tracker.record)
+                slots = tuple(model.tracker.descriptors)
+                with model.memory_effects() as (_, grants):
+                    for number, arguments, result in (
+                        (9, (descriptor, 4096, syscall_guard.PROT_READ | syscall_guard.PROT_WRITE,
+                             syscall_guard.MAP_PRIVATE | syscall_guard.MAP_ANONYMOUS, descriptor), 0x40000),
+                        (10, (descriptor, 4096, syscall_guard.PROT_READ, descriptor, descriptor), 0),
+                        (11, (descriptor, 4096, descriptor), 0),
+                        (12, (descriptor, descriptor, descriptor), 4096),
+                        (25, (descriptor, 4096, 8192, 1, descriptor), 0x40000),
+                        (28, (descriptor, 4096, 0), 0),
+                        (7, (descriptor, 0, 0), 0),
+                        (23, (descriptor, 0, 0, 0), -errno.EINVAL),
+                        (39, (descriptor, descriptor, descriptor), writer[0]),
+                        (61, (descriptor, 0, 1), -errno.ECHILD),
+                        (95, (descriptor,), 0),
+                    ):
+                        with self.subTest(syscall=number):
+                            reached = []
+                            try:
+                                model.syscall(
+                                    writer, number, *arguments, result=result,
+                                    kernel=lambda: reached.append("MODEL"),
+                                )
+                            except syscall_guard.Violation as error:
+                                self.fail("non-FD scalar became private ownership: " + str(error))
+                            self.assertEqual(reached, ["MODEL"])
+                            self.assertEqual(model.tracker.record, before)
+                            self.assertEqual(tuple(model.tracker.descriptors), slots)
+                            self.assertEqual(model.tracker.phase, "writer-open")
+                            self.assertFalse(model.tracker.failed)
+                            self.assertIsNone(writer[1].toolchain_pending)
+                    self.assertTrue(grants)
+                    self.assertLessEqual(model.policy.memory_peak, model.policy.config["memory_limit"])
+
+    def test_mmap_uses_its_actual_fd_and_keeps_generic_mutable_backing_denial(self):
+        for descriptor in (0, 7):
+            with self.subTest(MODEL_fd=descriptor), _IntermediateModel() as model:
+                writer = model.writer(descriptor)
+                with model.memory_effects() as (runtime, grants):
+                    writer[1].fds[11] = runtime
+                    before = copy.deepcopy(model.tracker.record)
+                    reached = []
+                    model.syscall(
+                        writer, 9, descriptor, 4096, syscall_guard.PROT_READ,
+                        syscall_guard.MAP_PRIVATE, 11, result=0x40000, kernel=lambda: reached.append("MODEL"),
+                    )
+                    self.assertEqual(reached, ["MODEL"])
+                    self.assertIn(runtime, model.policy.accessed)
+                    self.assertEqual(model.tracker.record, before)
+                    reached.clear()
+                    with self.assertRaisesRegex(syscall_guard.Violation, "aggregate address-space budget"):
+                        model.syscall(
+                            writer, 9, 0, model.policy.config["memory_limit"], syscall_guard.PROT_READ,
+                            syscall_guard.MAP_PRIVATE | syscall_guard.MAP_ANONYMOUS,
+                            descriptor, kernel=lambda: reached.append("MODEL"),
+                        )
+                    self.assertFalse(reached)
+                    self.assertTrue(grants)
+            for aliased in (False, True):
+                with self.subTest(MODEL_fd=descriptor, alias=aliased), _IntermediateModel() as model:
+                    writer = model.writer(descriptor)
+                    backing = 12 if aliased else descriptor
+                    writer[1].fds[backing] = model.model["roles"].output.value
+                    reached = []
+                    with model.memory_effects(), self.assertRaisesRegex(
+                        syscall_guard.Violation, "^mutable backing-file mappings/argument races are forbidden$",
+                    ):
+                        model.syscall(
+                            writer, 9, 0x40000, 4096, syscall_guard.PROT_READ,
+                            syscall_guard.MAP_PRIVATE, backing, result=0x50000,
+                            kernel=lambda: reached.append("MODEL"),
+                        )
+                    self.assertFalse(reached)
+                    self.assertEqual(model.tracker.phase, "writer-open")
+
+    def test_dup_ignored_argument_is_not_a_destination_but_real_destinations_stay_denied(self):
+        for descriptor in (0, 7):
+            with self.subTest(MODEL_fd=descriptor), _IntermediateModel() as model:
+                writer = model.writer(descriptor)
+                with model.memory_effects() as (runtime, _):
+                    writer[1].fds[11] = runtime
+                    reached = []
+                    model.syscall(
+                        writer, 32, 11, descriptor, descriptor, result=12,
+                        kernel=lambda: reached.append("MODEL"),
+                    )
+                    self.assertEqual(reached, ["MODEL"])
+                    self.assertEqual(writer[1].fds[12], runtime)
+                    model.syscall(writer, 72, 11, 3, descriptor)
+                    for number, source, destination in (
+                        (32, descriptor, 13), (33, descriptor, 13), (292, descriptor, 13),
+                        (33, 11, descriptor), (292, 11, descriptor),
+                    ):
+                        reached.clear()
+                        with self.assertRaises(syscall_guard.Violation):
+                            model.syscall(
+                                writer, number, source, destination, 0, result=13,
+                                kernel=lambda: reached.append("MODEL"),
+                            )
+                        self.assertFalse(reached)
+                        self.assertEqual(writer[1].fds[descriptor], model.model["roles"].output.value)
+
+    def test_absolute_path_operations_ignore_dirfd_numbers_without_losing_path_authority(self):
+        for descriptor in (0, 7):
+            with self.subTest(MODEL_fd=descriptor), _IntermediateModel() as model:
+                writer = model.writer(descriptor)
+                before = copy.deepcopy(model.tracker.record)
+                with model.memory_effects() as (runtime, _), model.readlink_paths(runtime):
+                    reached = []
+                    for number, c, d, result in (
+                        (257, os.O_RDONLY, 0, 12),
+                        (262, 0x3000, 0, 0),
+                        (267, 0x3000, 64, -errno.EINVAL),
+                    ):
+                        model.syscall(
+                            writer, number, descriptor, 0x2000, c, d, result=result,
+                            kernel=lambda: reached.append("MODEL"),
+                        )
+                    self.assertEqual(reached, ["MODEL"] * 3)
+                    self.assertEqual(writer[1].fds[12], runtime)
+                    self.assertEqual(model.tracker.record, before)
+                    self.assertEqual(model.tracker.descriptors[1], descriptor)
+                with model.readlink_paths("relative-name"), self.assertRaises(syscall_guard.Violation):
+                    model.syscall(writer, 257, descriptor, 0x2000, os.O_RDONLY)
+
+    def test_real_zero_and_nonzero_fds_keep_io_metadata_close_and_receipt_binding(self):
+        for descriptor in (0, 7):
+            with self.subTest(MODEL_fd=descriptor), _IntermediateModel() as model:
+                writer = model.writer(descriptor)
+                model.syscall(writer, 5, descriptor, 0x3000)
+                model.syscall(writer, 72, descriptor, 1, 0)
+                model.syscall(writer, 72, descriptor, 3, 0)
+                model.write(writer, descriptor=descriptor)
+                model.close_actor(writer, descriptor=descriptor)
+                model.exit_actor(writer)
+                reader = model.actor(3)
+                if descriptor == 0:
+                    model.syscall(reader, 3, 0)
+                model.open_actor(reader, os.O_RDONLY, 0, descriptor=descriptor)
+                model.read_actor(reader, descriptor=descriptor)
+                model.close_actor(reader, descriptor=descriptor)
+                model.exit_actor(reader)
+                def unlink():
+                    model.exists, model.links = False, 0
+                    model.ctime += 1
+                model.syscall(model.driver, 87, 0x2000, kernel=unlink)
+                model.exit_actor(model.driver)
+                model.tracker.emit(0)
+                wire, = model.policy.accessed
+                proof = json.loads(wire[len(toolchain_runtime.INTERMEDIATE_PREFIX):])
+                self.assertEqual(proof["writer"]["open"]["fd"], descriptor)
+                self.assertEqual(proof["reader"]["open"]["fd"], descriptor)
+                self.assertTrue(proof["complete"])
+                self.assertFalse(model.handles)
+
+    def test_true_private_fd_mutations_aliases_and_foreign_actors_still_refuse(self):
+        for descriptor in (0, 7):
+            for number, b, c in ((8, 0, 0), (17, 0x1003, 4), (19, 0x1003, 1),
+                                 (18, 0x1003, 4), (20, 0x1003, 1), (72, 2, 1), (72, 4, 0)):
+                with self.subTest(MODEL_fd=descriptor, syscall=number), _IntermediateModel() as model:
+                    writer = model.writer(descriptor)
+                    reached = []
+                    with self.assertRaises(syscall_guard.Violation):
+                        model.syscall(writer, number, descriptor, b, c, kernel=lambda: reached.append("MODEL"))
+                    self.assertFalse(reached)
+            with _IntermediateModel() as model:
+                writer = model.writer(descriptor)
+                writer[1].fds[12] = model.model["roles"].output.value
+                with self.assertRaises(syscall_guard.Violation):
+                    model.syscall(writer, 0, 12, 0x1003, 4)
+            with _IntermediateModel() as model:
+                writer = model.writer(descriptor)
+                model.policy.processes[writer[0]] = copy.copy(writer[1])
+                with self.assertRaisesRegex(syscall_guard.Violation, "foreign process/exec/birth"):
+                    model.syscall(writer, 39, descriptor)
+            with _IntermediateModel() as model:
+                model.sealed()
+                reader = model.actor(3)
+                if descriptor == 0:
+                    model.syscall(reader, 3, 0)
+                model.open_actor(reader, os.O_RDONLY, 0, descriptor=descriptor)
+                with model.memory_effects() as (runtime, _):
+                    reader[1].fds[descriptor] = runtime
+                    with patch.object(syscall_guard.os, "readlink", return_value=model.policy.config["root"] + runtime):
+                        with self.assertRaisesRegex(syscall_guard.Violation, "descriptor no longer names"):
+                            model.syscall(reader, 0, descriptor, 0x1003, 4)
+
     def test_existing_writer_requested_modes_keep_same_actual_0600_object(self):
         flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
         for number in (2, 257):
