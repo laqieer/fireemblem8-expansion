@@ -9558,7 +9558,11 @@ private fixture is bounded to 1 MiB, selected-mode combined output to 256 KiB,
 and the shared selection-plus-mode deadline to 30 seconds. Exactly two
 fixture-only run/state admissions cover those two operations; no refund or
 deadline reset is permitted. Restricted custody remains 52 entries/552,960
-bytes; wait/enclosing ceilings remain 35/45 seconds. Run them fail-fast;
+bytes. A separate fixed ordinary driver-to-C process inherits the original
+start/deadline; it is not a third budget operation. Normal capture/wait stops
+at original start+35 seconds and owned cleanup waits at start+45, even if
+the unchanged default budget cleanup stalls inside C. Both outer capture
+streams together remain capped at 256 KiB. Run them fail-fast;
 no new device nodes, host mount/policy changes or production permission
 fallback is part of this regression.
 
@@ -9744,6 +9748,39 @@ ordinary probe must never require sudo. Unexpected output/status, API or
 cleanup faults, expiration and a failed mode must fail without another
 availability probe, budget, namespace route or mode launch.
 
+Replay the actual retained normal-one, empty-stdout, **66-byte**
+`unshare: write failed /proc/self/uid_map: Operation not permitted\n`
+response, not a different generic denial. It must select restricted operation
+through the actual budget/coordinator API. Restoring the rejected selector
+must again refuse that exact response before a mode launches. Extra output,
+changed bytes, status125, exceptions and failed cleanup remain fatal.
+
+Exercise the ordinary map-writer permission boundary with modeled actual
+0644 proc-file ownership and namespace U/G mappings. Before N sets dumpable1,
+require all its R/E/S/FS IDs to be nonzero U/G, its ordinary self-map to omit
+ID zero, and its setup capabilities to be namespace-local SYS_ADMIN-only
+E/P with zero I/A and NNP1. N retains dumpable1 only through fixed namespace
+creation and map readback, then restores/checks dumpable0 before normalization
+and retirement. Restricted N retains its nondumpable real/saved-root
+creation/mapping contract. R checks the live child and its own bound writer
+identity plus actual map inode mode/owner; no peer or arbitrary target is
+admitted. Restoring ordinary dumpable0 must produce the original modeled DAC
+denial for global-root-owned, unmapped map files. Wrong IDs/caps/maps, stale
+children, partial writes and failed dumpability restoration must refuse.
+This Linux-source-based model is not a new kernel or LSM observation.
+
+Exercise the public fixed outer owner with a controllable inert clock and
+effect boundaries. Include actual default budget cleanup attempting
+`wait(None)` inside the modeled C, stalled capture and wait, early/nonzero
+normal status, partial/oversize output, and acquisition/close/kill/reap faults.
+Require normal wait/capture at start+35 and every outer cleanup wait no later
+than start+45; child startup must consume the original 30-second budget, not
+reset it. An unconfirmed reap retains uncertainty and the owned process
+handle, without recursively deleting C's sibling backing. Restoring an
+unbounded outer wait must break these measured bounds; restoring the bounded
+owner must pass. No new R/L receipt, privileged cleanup or proxy success is
+accepted as evidence.
+
 For the restricted worker, retain actual C-owned backing identities, the
 tmpfs-over-original placement, old-pin withdrawal and mounted-root proof.
 Check all R/N/W proc/pidfd, map writer/readback, namespace owner, saved-ID,
@@ -9801,7 +9838,9 @@ This class traps process, native/foreign-call, signal, credential, capability,
 namespace, mount/map/setns and unowned filesystem boundaries. Its models run
 the actual budget/lifecycle APIs and subject logic, including all seven mode
 branches, monotonic admission, bounded capture/custody, failures/cleanup and
-old-routing/old-operation restorations. It produces inert regression evidence,
+old-routing/old-operation restorations. It also replays the retained census
+response, exercises the permission-aware dumpability/map-owner model and
+measures the fixed outer owner's stalled-C wait/cleanup bounds. It produces inert regression evidence,
 not a namespace-policy or kernel-compatibility certificate.
 
 The runtime file belongs to the existing trusted verifier inventory and

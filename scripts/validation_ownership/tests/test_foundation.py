@@ -12032,8 +12032,7 @@ class NullMountFixtureInertTests(unittest.TestCase):
         model = _NullDirectories(b, "b" * 24 + "-null-" + mode, ordinary=not permission)
         if fault is not None:
             model.fault = (*fault, OSError(errno.EIO, "inert boundary"))
-        budget = b.new_budget(budgeting)
-        budget.started = 100.0
+        budget = b.new_budget(budgeting, 100.0)
         if exhausted == "custody":
             budget._outcome_entries = 52
         elif exhausted == "runs":
@@ -12167,7 +12166,7 @@ class NullMountFixtureInertTests(unittest.TestCase):
             active.enter_context(patch.object(selectors, "DefaultSelector",
                                                side_effect=lambda: OutcomeCustodyTests.Selector(lambda: None)))
             active.enter_context(patch.object(os, "set_blocking"))
-            coordinator = b.Coordinator(budgeting, life, mode, self.directory)
+            coordinator = b.Coordinator(budgeting, life, mode, self.directory, 100.0)
             instances.append(coordinator)
             if release_fault is not None:
                 original_release = budgeting._RunOutcome.release
@@ -12193,7 +12192,7 @@ class NullMountFixtureInertTests(unittest.TestCase):
                 active.enter_context(patch.object(budget, "close", side_effect=close))
             result = failure = None
             try:
-                result = coordinator.run()
+                result = b.public_result(coordinator.run())
             except b.FixtureFailure as error:
                 failure = error.facts
             self.assertEqual(factory.call_count, 1)
@@ -12212,7 +12211,7 @@ class NullMountFixtureInertTests(unittest.TestCase):
             result(True), result(1), result(0, stderr=b.PERMISSION_UNAVAILABLE[0]),
             result(1, b"unexpected", b.PERMISSION_UNAVAILABLE[0]),
             result(1, stderr=b.PERMISSION_UNAVAILABLE[0] + b"\n"),
-            result(1, stderr=b"unshare: write failed /proc/self/uid_map: Operation not permitted\n"),
+            result(1, stderr=b"unshare: write failed /proc/self/gid_map: Operation not permitted\n"),
             result(1, stderr=b.PERMISSION_UNAVAILABLE[0].decode()), result(0, "text"),
             SimpleNamespace(returncode=0, stdout=b"", stderr=b""),
             subprocess.CompletedProcess(["/usr/bin/true"], 0, b"", b""),
@@ -12595,8 +12594,13 @@ class NullMountFixtureInertTests(unittest.TestCase):
                     closes.append(fd)
                     if fault == "close" and fd == 20:
                         raise OSError(errno.EIO, "inert close")
+                uid, gid = root.setup_ids
+                writer = {**self.state(ordinary=ordinary, setup=True), "uid": (uid,) * 4, "gid": (gid,) * 4}
                 with self.subTest(ordinary=ordinary, fault=fault), patch.object(b, "live_child"), \
                      patch.object(root, "pin_target_recheck"), patch.object(os, "open", side_effect=[20, 21, 22]), \
+                     patch.object(b, "self_state", return_value=writer), \
+                     patch.object(os, "fstat", return_value=SimpleNamespace(
+                         st_mode=stat.S_IFREG | 0o644, st_uid=uid, st_gid=gid)), \
                      patch.object(os, "read", side_effect=lambda fd, count: contents[fd]), \
                      patch.object(os, "write", side_effect=write), patch.object(os, "lseek"), \
                      patch.object(os, "close", side_effect=close):
@@ -13239,14 +13243,18 @@ class NullMountFixtureInertTests(unittest.TestCase):
                 content = {"/proc/self/uid_map": b"0 0 1\n" if fault == "map" else b"0 1001 1\n",
                            "/proc/self/gid_map": b"0 1002 1\n", "/proc/self/setgroups": b"deny\n"}
                 native = SimpleNamespace(unshare=lambda flags: events.append(("unshare", flags)) or 0)
+                dumpable = [2]
+                def prctl(option, *args):
+                    if option == 4:
+                        dumpable[0] = args[0]
+                    return (1 if fault == "dumpable" else dumpable[0]) if option == 3 else 0
                 with self.subTest(ordinary=ordinary, fault=fault), ExitStack() as stack:
                     stack.enter_context(patch.object(b, "fd_inventory", side_effect=lambda: dict(table)))
                     stack.enter_context(patch.object(os, "close", side_effect=lambda fd: table.pop(fd)))
                     stack.enter_context(patch.object(b, "self_state", side_effect=lambda: next(values)))
                     stack.enter_context(patch.object(b, "read_file", side_effect=lambda path: content[path]))
                     stack.enter_context(patch.object(b, "libc", return_value=native))
-                    stack.enter_context(patch.object(b, "prctl", side_effect=lambda option, *args:
-                                                     1 if option == 3 and fault == "dumpable" else 0))
+                    stack.enter_context(patch.object(b, "prctl", side_effect=prctl))
                     for name in ("setgroups", "setresgid", "setresuid"):
                         stack.enter_context(patch.object(os, name, side_effect=lambda *args, name=name: events.append((name, *args))))
                     for name in ("capset", "bounding", "parent_guard", "send_token", "receive_token"):
@@ -13425,6 +13433,568 @@ class NullMountFixtureInertTests(unittest.TestCase):
             root.advance("mapped", "blocked")
         with patch.object(time, "monotonic", return_value=130), self.assertRaises(TimeoutError):
             root.advance("released", "released")
+
+    def test_retained_census_response_selects_restricted_and_old_whitelist_refuses(self):
+        b = self.b
+        retained = b"unshare: write failed /proc/self/uid_map: Operation not permitted\n"
+        self.assertEqual(len(retained), 66)
+        def oracle():
+            value = self.exercise(probe_status=1, probe_stdout=b"", probe_stderr=retained)
+            self.assertIsNone(value.failure)
+            self.assertEqual(value.coordinator.backend, "restricted")
+            self.assertEqual((value.budget.runs, value.budget.states), (2, 2))
+            return value
+        oracle()
+        with patch.object(b, "PERMISSION_UNAVAILABLE", b.PERMISSION_UNAVAILABLE[1:]):
+            old = self.exercise(probe_status=1, probe_stdout=b"", probe_stderr=retained)
+            self.assertEqual((old.failure["first_error_stage"], old.failure["availability_status"]), ("selection", 1))
+            self.assertEqual(len(old.launches), 1)
+            with self.assertRaises(AssertionError):
+                oracle()
+        oracle()
+        for change in (
+            {"probe_status": 125}, {"probe_stdout": b"x"}, {"probe_stderr": retained + b"\n"},
+            {"probe_stderr": retained[:-1]}, {"fault": ("close:C:10", 1, "after")},
+        ):
+            values = {"probe_status": 1, "probe_stdout": b"", "probe_stderr": retained, **change}
+            with self.subTest(change=change):
+                value = self.exercise(**values)
+                self.assertIsNotNone(value.failure)
+                self.assertEqual(len(value.launches), 1)
+
+    def mapped_creator(self, *, ordinary=True, fault=None, restore_old_dump=False):
+        b = self.b
+        creator, writer = self.supervisor(ordinary=ordinary), self.supervisor(ordinary=ordinary)
+        creator.fds = {"request.read": 10, "response.write": 13}
+        writer.target = self.target
+        child = b.Child(77, 18, 19, 123)
+        model = {"actor": "N", "dumpable": 2, "created": False, "normalized": False,
+                 "nnp": 0, "caps": (0, (1 << 41) - 1, (1 << 41) - 1, (1 << 41) - 1, 0)}
+        uid, gid = creator.setup_ids
+        model["uid"], model["gid"] = (uid,) * 4, (gid,) * 4
+        contents = {"uid_map": b"", "gid_map": b"", "setgroups": b"deny" if ordinary else b"allow"}
+        handles, events, opened, closed = {}, [], [], []
+        inode_owner_observations = []
+        tables = {"N": {0: (8, 1, stat.S_IFIFO, 0), 1: (8, 2, stat.S_IFIFO, 1),
+                         2: (8, 3, stat.S_IFIFO, 1), 10: (8, 4, stat.S_IFIFO, 0),
+                         13: (8, 5, stat.S_IFIFO, 1)}}
+
+        def state():
+            if model["actor"] == "R":
+                value = {**self.state(ordinary=ordinary, setup=True), "uid": (uid,) * 4, "gid": (gid,) * 4}
+                if fault == "wrong-writer":
+                    value["uid"] = (1003,) * 4
+                return value
+            value = {**self.state(ordinary=ordinary), "uid": model["uid"], "gid": model["gid"],
+                     "caps": model["caps"], "nnp": model["nnp"]}
+            if model["created"]:
+                value.update(user=self.target.user, mount=self.target.mount,
+                             uid_map=tuple(tuple(map(int, row.split())) for row in contents["uid_map"].splitlines()),
+                             gid_map=tuple(tuple(map(int, row.split())) for row in contents["gid_map"].splitlines()))
+            if fault == "root" and not model["created"]:
+                value["uid"] = (0, 1001, 0, 1001)
+            elif fault == "host-map" and not model["created"]:
+                value["uid_map"] = b.FULL_MAP
+            elif fault == "foreign-namespace" and not model["created"]:
+                value["user"] = (1, 999)
+            elif fault == "retained-cap" and model["nnp"] and not model["created"]:
+                value["caps"] = (0, (1 << 21) | 1, (1 << 21) | 1, (1 << 41) - 1, 0)
+            return value
+
+        def prctl(option, *args):
+            if option == 4:
+                wanted = args[0]
+                events.append(("dumpable", wanted))
+                if model["created"] and wanted == 0 and fault == "restore":
+                    raise OSError(errno.EPERM, "inert dumpability restoration")
+                if model["created"] and wanted == 0 and fault == "restore-noop":
+                    return 0
+                model["dumpable"] = wanted
+            elif option == 3:
+                if fault == "restricted-dumpable" and not ordinary and model["nnp"]:
+                    return 1
+                return model["dumpable"]
+            elif option == 38:
+                model["nnp"] = args[0]
+            return 0
+
+        def setid(kind, real, effective, saved):
+            if (real, effective, saved) == (-1, 1001 if kind == "uid" else 1002, -1):
+                old = model[kind]
+                model[kind] = (old[0], effective, old[2], effective)
+                model["dumpable"] = 2
+            else:
+                events.append(("normalize", kind))
+                model[kind] = (real, effective, saved, effective)
+                model["normalized"] = True
+
+        def capset(mask):
+            model["caps"] = (0, mask, mask, model["caps"][3], 0)
+        def bounding(mask):
+            model["caps"] = (*model["caps"][:3], mask, 0)
+        def unshare(flags):
+            self.assertEqual(flags, b.NEWUSER | b.NEWNS)
+            model["created"] = True
+            model["caps"] = (0, (1 << 41) - 1, (1 << 41) - 1, (1 << 41) - 1, 0)
+            return 0
+
+        def owner():
+            # Linux v6.17 task_dump_owner: dumpable 1 uses effective IDs;
+            # otherwise namespace ID zero, with GLOBAL_ROOT fallback when absent.
+            return (1001, 1002) if model["dumpable"] == 1 else (0, 0)
+        def open_map(name, flags, *, dir_fd=None):
+            self.assertEqual((flags & os.O_ACCMODE, dir_fd), (os.O_RDWR, child.proc))
+            inode_uid, inode_gid = owner()
+            inode_owner_observations.append((name, inode_uid, inode_gid, 0o644))
+            mapped = not ordinary or (inode_uid == 1001 and inode_gid == 1002)
+            fsuid = uid
+            writable = fsuid == inode_uid or mapped  # R has only namespace-scoped DAC authority.
+            if not writable:
+                raise PermissionError(errno.EACCES, "unmapped root-owned proc inode")
+            fd = 20 + len(opened)
+            handles[fd] = name
+            opened.append(name)
+            return fd
+        def fstat(fd):
+            inode_uid, inode_gid = owner()
+            return SimpleNamespace(st_mode=stat.S_IFREG | 0o644, st_uid=inode_uid, st_gid=inode_gid)
+        def write(fd, data):
+            name = handles[fd]
+            events.append(("write", name, data))
+            if fault == "partial" and name == "uid_map":
+                return len(data) - 1
+            contents[name] = data
+            return len(data)
+        def close(fd):
+            closed.append(fd)
+            if model["actor"] == "N":
+                tables["N"].pop(fd)
+            else:
+                handles.pop(fd)
+        def receive(fd, token, deadline):
+            if token == b"MAPS_COMPLETE\n":
+                model["actor"] = "R"
+                try:
+                    writer.map_creator(child)
+                finally:
+                    model["actor"] = "N"
+        def live(child):
+            if fault == "stale":
+                raise b.Refusal("stale modeled child")
+        failure = None
+        with ExitStack() as stack:
+            if restore_old_dump:
+                def nondumpable():
+                    b.prctl(4, 0)
+                    b.require(b.prctl(3) == 0, "creator mapping dumpability")
+                    return 0
+                stack.enter_context(patch.object(creator, "mapping_dumpability", side_effect=nondumpable))
+            stack.enter_context(patch.object(b, "self_state", side_effect=state))
+            stack.enter_context(patch.object(b, "fd_inventory", side_effect=lambda: dict(tables["N"])))
+            stack.enter_context(patch.object(b, "prctl", side_effect=prctl))
+            stack.enter_context(patch.object(b, "capset", side_effect=capset))
+            stack.enter_context(patch.object(b, "bounding", side_effect=bounding))
+            stack.enter_context(patch.object(b, "parent_guard"))
+            stack.enter_context(patch.object(b, "libc", return_value=SimpleNamespace(unshare=unshare)))
+            stack.enter_context(patch.object(os, "setgroups"))
+            stack.enter_context(patch.object(os, "setresuid", side_effect=lambda *a: setid("uid", *a)))
+            stack.enter_context(patch.object(os, "setresgid", side_effect=lambda *a: setid("gid", *a)))
+            stack.enter_context(patch.object(b, "send_token", side_effect=lambda fd, token, deadline: events.append(("send", token))))
+            stack.enter_context(patch.object(b, "receive_token", side_effect=receive))
+            stack.enter_context(patch.object(b, "live_child", side_effect=live))
+            stack.enter_context(patch.object(writer, "pin_target_recheck"))
+            stack.enter_context(patch.object(b, "read_file", side_effect=lambda path: contents[Path(path).name]))
+            stack.enter_context(patch.object(os, "open", side_effect=open_map))
+            stack.enter_context(patch.object(os, "fstat", side_effect=fstat))
+            stack.enter_context(patch.object(os, "read", side_effect=lambda fd, size: contents[handles[fd]]))
+            stack.enter_context(patch.object(os, "write", side_effect=write))
+            stack.enter_context(patch.object(os, "lseek"))
+            stack.enter_context(patch.object(os, "close", side_effect=close))
+            try:
+                creator.creator()
+            except (b.Refusal, OSError) as error:
+                failure = (type(error), getattr(error, "errno", None))
+                self.life._forget_error(error)
+        return SimpleNamespace(failure=failure, model=model, events=events, opened=opened,
+                               owners=inode_owner_observations, contents=contents, writer=writer, handles=handles)
+
+    def test_permission_aware_creator_map_owner_and_dumpability_contract(self):
+        for ordinary in (False, True):
+            value = self.mapped_creator(ordinary=ordinary)
+            self.assertIsNone(value.failure)
+            self.assertEqual(value.opened, ["setgroups", "uid_map", "gid_map"])
+            self.assertEqual(value.contents, {"setgroups": b"deny", "uid_map": b"0 1001 1\n", "gid_map": b"0 1002 1\n"})
+            self.assertEqual(value.model["dumpable"], 0)
+            self.assertEqual(value.writer.fds, {})
+            self.assertEqual(value.handles, {})
+            expected_owner = (1001, 1002) if ordinary else (0, 0)
+            self.assertTrue(all(row[1:3] == expected_owner for row in value.owners))
+            self.assertEqual(("dumpable", 1) in value.events, ordinary)
+            self.assertLess(value.events.index(("dumpable", 0), 1),
+                            value.events.index(("normalize", "gid")))
+        old = self.mapped_creator(restore_old_dump=True)
+        self.assertEqual(old.failure, (PermissionError, errno.EACCES))
+        self.assertEqual(old.owners, [("setgroups", 0, 0, 0o644)])
+        self.assertFalse(any(row[0] == "normalize" for row in old.events))
+        self.assertIsNone(self.mapped_creator().failure)
+
+    def test_dumpable_mapping_window_rejects_authority_peer_and_restoration_faults(self):
+        for fault in ("root", "host-map", "foreign-namespace", "retained-cap", "wrong-writer",
+                      "restore", "restore-noop", "stale", "partial"):
+            with self.subTest(fault=fault):
+                value = self.mapped_creator(fault=fault)
+                self.assertIsNotNone(value.failure)
+                self.assertFalse(any(row[0] == "normalize" for row in value.events))
+                if fault in ("root", "host-map", "foreign-namespace", "retained-cap"):
+                    self.assertNotIn(("dumpable", 1), value.events)
+                    self.assertEqual(value.opened, [])
+                if fault in ("stale", "wrong-writer"):
+                    self.assertEqual(value.opened, [])
+                self.assertEqual(value.writer.fds, {})
+        self.assertIsNotNone(self.mapped_creator(ordinary=False, fault="restricted-dumpable").failure)
+
+    def enclosure(self, *, status=0, stalled=None, fault=None, payload=None, diagnostics=b"",
+                  malformed_pid=False, expired=False, reap_mismatch=False, foreign_wait=False,
+                  load_delay=0, capture_directions=True):
+        b, life = self.b, self.life
+        model = _NullDirectories(b, "unused")
+        model.root.children[self.directory.name] = _NullDirectory("driver", 3, 88, 50, mode=stat.S_IFDIR | 0o755)
+        clock, calls, wait_calls, signals, launches, inner_waits = [100.0], [], [], [], [], []
+        if fault is not None:
+            model.fault = (*fault, OSError(errno.EIO, "inert enclosing boundary"))
+        current = {"status": None if stalled in ("capture", "default-cleanup", "kill-reap") else status,
+                   "killed": False, "offsets": {10: 0, 11: 0}}
+        data = b.json_bytes(self.worker_value()) if payload is None else payload
+        child = OutcomeCustodyTests.Child()
+        child.pid = 55
+        parents = []
+        enclosure_type = b.Enclosure
+
+        class Stream:
+            def __init__(self, fd):
+                self.fd, self.closed = fd, False
+            def fileno(self):
+                return self.fd
+            def close(self):
+                if not self.closed:
+                    model.close(self.fd)
+                    self.closed = True
+
+        class Selector(OutcomeCustodyTests.Selector):
+            def __init__(self):
+                super().__init__(lambda: model.operation("selector-close", lambda: None))
+            def select(self, timeout=None):
+                if timeout is None:
+                    raise AssertionError("unbounded enclosure select")
+                calls.append(("select", clock[0], timeout))
+                if stalled in ("capture", "default-cleanup", "kill-reap"):
+                    clock[0] += timeout
+                    return []
+                clock[0] += min(0.001, timeout)
+                return super().select(timeout)
+
+        def launch(argv, **kwargs):
+            launches.append((tuple(argv), kwargs))
+            model.operation("Popen", lambda: None)
+            child.stdout, child.stderr, child.stdin = Stream(10), Stream(11), Stream(12)
+            for fd, access in ((10, 0), (11, 0), (12, 1)):
+                model.tables["C"][fd] = (8, 900 + fd, stat.S_IFIFO, access if capture_directions else 1)
+            if stalled == "default-cleanup":
+                class BlockedDefaultCleanup(Exception):
+                    pass
+                inner = OutcomeCustodyTests.Child()
+                inner.stdin = None
+                def inner_wait(timeout=None):
+                    inner_waits.append(timeout)
+                    raise BlockedDefaultCleanup()
+                inner.wait = inner_wait
+                try:
+                    self.budgeting.ProbeBudget._terminate(inner)
+                except BlockedDefaultCleanup:
+                    pass
+            if expired:
+                clock[0] = 130.0
+            return child
+
+        def pidfd(pid):
+            self.assertEqual(pid, 55)
+            def acquire():
+                model.tables["C"][20] = (9, 55, stat.S_IFREG, 0)
+                return 20
+            return model.operation("pidfd", acquire)
+
+        def waitid(*args):
+            self.assertEqual(args, (os.P_PID, 55, os.WEXITED | os.WNOHANG | os.WNOWAIT))
+            model.operation("waitid", lambda: None)
+            if foreign_wait:
+                raise ChildProcessError(errno.ECHILD, "unowned child")
+            value = current["status"]
+            if value is None:
+                return None
+            return SimpleNamespace(si_pid=55, si_uid=1001, si_signo=int(signal.SIGCHLD),
+                                   si_code=os.CLD_EXITED if value >= 0 else os.CLD_KILLED,
+                                   si_status=value if value >= 0 else -value)
+
+        def wait(timeout=None):
+            wait_calls.append((clock[0], timeout))
+            if timeout is None:
+                clock[0] += 100
+                raise AssertionError("unbounded wait restoration")
+            self.assertGreaterEqual(timeout, 0)
+            model.operation("wait", lambda: None)
+            if stalled == "wait" and not current["killed"] or stalled == "kill-reap" or current["status"] is None:
+                clock[0] += timeout
+                raise subprocess.TimeoutExpired("fixed coordinator", timeout)
+            child.returncode = 7 if reap_mismatch else current["status"]
+            return child.returncode
+
+        def kill(target, signum):
+            self.assertIn(target, (20, 55))
+            self.assertEqual(signum, signal.SIGKILL)
+            signals.append((clock[0], target, signum))
+            model.operation("kill", lambda: None)
+            current["killed"] = True
+            if stalled != "kill-reap":
+                current["status"] = -9 if current["status"] is None else current["status"]
+
+        def read(fd, count):
+            model.operation("read", lambda: None)
+            raw = data if fd == 10 else diagnostics
+            offset = current["offsets"][fd]
+            current["offsets"][fd] += min(count, len(raw) - offset)
+            return raw[offset:offset + count]
+
+        child.wait = wait
+        result = failure = None
+        def owner(*args):
+            value = enclosure_type(*args)
+            parents.append(value)
+            return value
+        def control():
+            clock[0] += load_delay
+            return self.budgeting, life
+        with model.patches(), ExitStack() as stack:
+            stack.enter_context(patch.object(b, "Enclosure", side_effect=owner))
+            stack.enter_context(patch.object(b, "load_control", side_effect=control))
+            for module, name, value in (
+                (os, "getuid", 1001), (os, "getgid", 1002), (os, "getresuid", (1001,) * 3),
+                (os, "getresgid", (1002,) * 3), (os, "getpid", 44),
+                (b, "self_state", self.state()),
+            ):
+                stack.enter_context(patch.object(module, name, return_value=value))
+            stack.enter_context(patch.object(time, "monotonic", side_effect=lambda: clock[0]))
+            stack.enter_context(patch.object(life, "ordinary_executable"))
+            stack.enter_context(patch.object(subprocess, "Popen", side_effect=launch))
+            stack.enter_context(patch.object(os, "pidfd_open", side_effect=pidfd))
+            stack.enter_context(patch.object(b, "read_file", return_value=b"Pid:\t999\n" if malformed_pid else b"Pid:\t55\n"))
+            stack.enter_context(patch.object(b.fcntl, "fcntl", side_effect=lambda fd, command: model.inventory()[fd][3]))
+            stack.enter_context(patch.object(selectors, "DefaultSelector", side_effect=Selector))
+            stack.enter_context(patch.object(os, "set_blocking"))
+            stack.enter_context(patch.object(os, "waitid", side_effect=waitid))
+            stack.enter_context(patch.object(os, "read", side_effect=read))
+            stack.enter_context(patch.object(signal, "pidfd_send_signal", side_effect=kill))
+            stack.enter_context(patch.object(os, "kill", side_effect=kill))
+            try:
+                result = b.run_fixture("readonly", self.directory)
+            except b.FixtureFailure as error:
+                failure = error
+        self.assertEqual(len(parents), 1)
+        parent = parents[0]
+        return SimpleNamespace(result=result, failure=failure, parent=parent, model=model, elapsed=clock[0] - 100,
+                               waits=wait_calls, selects=calls, signals=signals, launches=launches, inner_waits=inner_waits)
+
+    def test_enclosure_is_one_fixed_ordinary_child_with_original_deadline_and_capture(self):
+        b = self.b
+        value = self.enclosure()
+        self.assertIsNone(value.failure)
+        self.assertEqual(value.result, b.public_result(self.life._private_worker_record(b.json_bytes(self.worker_value()))))
+        self.assertEqual(len(value.launches), 1)
+        argv, kwargs = value.launches[0]
+        self.assertEqual(argv[:7], ("/usr/bin/python3", "-I", "-S", "-B", str(b.PROGRAM), "--coordinator", "readonly"))
+        self.assertEqual(argv[7:11], ("1001", "1002", "100.0", "130.0"))
+        self.assertEqual(kwargs["env"], ENVIRONMENT)
+        self.assertEqual(kwargs["pass_fds"], ())
+        self.assertTrue(kwargs["close_fds"])
+        self.assertNotIn("/usr/bin/sudo", argv)
+        self.assertTrue(value.parent.reaped)
+        self.assertEqual(value.parent.status, 0)
+        self.assertTrue(all(timeout is not None and at + timeout <= 135.0 for at, timeout in value.waits))
+        self.assertLessEqual(value.elapsed, 35)
+        self.assertIsNone(value.parent.buffers)
+        self.assertIsNone(value.parent.pidfd)
+
+    def test_enclosure_bounds_stalled_capture_wait_and_actual_default_cleanup(self):
+        for stalled in ("capture", "wait", "default-cleanup", "kill-reap"):
+            with self.subTest(stalled=stalled):
+                value = self.enclosure(stalled=stalled)
+                self.assertIsNotNone(value.failure)
+                self.assertLessEqual(value.elapsed, 45)
+                self.assertEqual(len(value.launches), 1)
+                self.assertTrue(value.signals)
+                self.assertTrue(all(timeout is not None and at + timeout <= 145.0 for at, timeout in value.waits))
+                if stalled == "default-cleanup":
+                    self.assertEqual(value.inner_waits, [None])
+                if stalled == "kill-reap":
+                    self.assertEqual(value.elapsed, 45)
+                    self.assertFalse(value.parent.reaped)
+                    self.assertIsNone(value.parent.status)
+                    self.assertIs(value.failure.retained_enclosure, value.parent)
+                    self.assertIsNotNone(value.parent.pidfd)
+                else:
+                    self.assertTrue(value.parent.reaped)
+                self.assertFalse(any(row.startswith("rmdir:") for row in value.model.events))
+
+    def test_enclosure_failure_retains_normal_status_and_first_cause_without_retry(self):
+        for case in (
+            {"status": 7, "payload": b""}, {"status": 125, "payload": b""},
+            {"payload": b'{"mode":'}, {"payload": b"x" * (self.b.RECORD_BYTES + 1)},
+            {"diagnostics": b"x" * (self.b.CAPTURE_BYTES - self.b.RECORD_BYTES + 1)},
+            {"malformed_pid": True}, {"foreign_wait": True}, {"reap_mismatch": True},
+            {"capture_directions": False},
+        ):
+            with self.subTest(case=case):
+                value = self.enclosure(**case)
+                self.assertIsNotNone(value.failure)
+                self.assertIsNone(value.result)
+                self.assertEqual(len(value.launches), 1)
+                self.assertLessEqual(value.elapsed, 45)
+                if "status" in case:
+                    self.assertEqual(value.failure.facts["status"], case["status"])
+        value = self.enclosure(status=7, payload=b"", fault=("close:C:10", 1, "after"))
+        self.assertEqual(value.failure.facts["status"], 7)
+        self.assertEqual(value.failure.facts["first_error_stage"], "capture")
+        self.assertFalse(value.parent.report.value().complete)
+
+    def test_enclosure_acquisition_close_kill_and_reap_faults_are_bounded_and_owned(self):
+        for label, when in (
+            ("Popen", "before"), ("pidfd", "before"), ("pidfd", "after"),
+            ("selector-close", "before"), ("close:C:12", "before"), ("close:C:12", "after"),
+            ("close:C:10", "before"), ("close:C:11", "after"), ("close:C:20", "after"),
+            ("close:C:driver", "before"), ("wait", "before"),
+        ):
+            with self.subTest(label=label, when=when):
+                value = self.enclosure(fault=(label, 1, when))
+                self.assertIsNotNone(value.failure)
+                self.assertTrue(value.model.triggered)
+                self.assertLessEqual(value.elapsed, 45)
+                self.assertEqual(len(value.launches), 1)
+                self.assertTrue(all(timeout is not None and at + timeout <= 145 for at, timeout in value.waits))
+        value = self.enclosure(stalled="capture", fault=("kill", 1, "before"))
+        self.assertIsNotNone(value.failure)
+        self.assertEqual(value.failure.facts["first_error_stage"], "capture")
+        self.assertFalse(value.parent.report.value().complete)
+        self.assertTrue(all(timeout is not None and at + timeout <= 145 for at, timeout in value.waits))
+
+    def test_unbounded_reap_restoration_breaks_measured_outer_deadline_oracle(self):
+        def oracle():
+            value = self.enclosure(stalled="kill-reap")
+            self.assertLessEqual(value.elapsed, 45)
+            self.assertTrue(all(timeout is not None for _, timeout in value.waits))
+            self.assertFalse(value.parent.reaped)
+        oracle()
+        def unbounded(parent, deadline):
+            parent.child.wait()
+        with patch.object(self.b.Enclosure, "reap", unbounded), self.assertRaises(AssertionError):
+            oracle()
+        oracle()
+
+    def test_coordinator_inherits_the_earlier_budget_instead_of_resetting_start(self):
+        b = self.b
+        with patch.object(time, "monotonic", return_value=112.0):
+            budget = b.new_budget(self.budgeting, 100.0)
+            self.assertEqual((budget.started, budget.deadline, budget.remaining()), (100.0, 130.0, 18.0))
+            self.assertEqual((budget.limits.runs, budget.limits.states), (2, 2))
+        for start in (113.0, 82.0, float("nan")):
+            with patch.object(time, "monotonic", return_value=112.0), self.assertRaises(b.Refusal):
+                b.new_budget(self.budgeting, start)
+        value = self.enclosure(load_delay=12)
+        self.assertIsNone(value.failure)
+        self.assertEqual((value.parent.started, value.parent.deadline, value.parent.wait_deadline,
+                          value.parent.cleanup_deadline), (100.0, 130.0, 135.0, 145.0))
+        self.assertEqual(value.launches[0][0][9:11], ("100.0", "130.0"))
+        value = self.enclosure(load_delay=30)
+        self.assertIsNotNone(value.failure)
+        self.assertEqual(value.launches, [])
+
+    def test_coordinator_role_is_closed_to_the_original_identity_start_and_stdio(self):
+        b, life = self.b, self.life
+        arguments = ["--coordinator", "readonly", "1001", "1002", "100.0", "130.0",
+                     str(self.directory), "3", "88", "1001"]
+        info = SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_dev=3, st_ino=88, st_uid=1001, st_gid=1002)
+        stdio = {0: (8, 1, stat.S_IFIFO, 0), 1: (8, 2, stat.S_IFIFO, 1), 2: (8, 3, stat.S_IFIFO, 1)}
+        with patch.object(b, "canonical", side_effect=Path), patch.object(Path, "cwd", return_value=b.SOURCE), \
+             patch.object(os, "getresuid", return_value=(1001,) * 3), patch.object(os, "getresgid", return_value=(1002,) * 3), \
+             patch.object(os, "lstat", return_value=info), patch.object(b, "fd_inventory", return_value=stdio), \
+             patch.object(b, "death_signal", return_value=signal.SIGKILL), patch.dict(os.environ, ENVIRONMENT, clear=True):
+            binding, directory, started = b.coordinator_arguments(arguments, life)
+            self.assertEqual((binding.uid, binding.gid, binding.deadline, binding.inode), (1001, 1002, 130, 88))
+            self.assertEqual((directory, started), (self.directory, 100.0))
+            for index, wrong in ((0, "--command"), (1, "unlisted"), (2, "0"), (3, "1001"),
+                                 (4, "101"), (4, "nan"), (5, "131"), (6, "/foreign"), (8, "89")):
+                changed = list(arguments)
+                changed[index] = wrong
+                with self.subTest(index=index, wrong=wrong), self.assertRaises((b.Refusal, ValueError)):
+                    b.coordinator_arguments(changed, life)
+            for suffix in (["--pid", "55"], ["--fd", "9"], ["--timeout", "60"], ["--source", "/foreign"]):
+                with self.assertRaises(b.Refusal):
+                    b.coordinator_arguments(arguments + suffix, life)
+            for fault in (
+                patch.object(b, "death_signal", return_value=0),
+                patch.object(os, "getresuid", return_value=(0, 1001, 0)),
+                patch.object(b, "fd_inventory", return_value={**stdio, 9: (8, 4, stat.S_IFDIR, 0)}),
+                patch.object(b, "fd_inventory", return_value={**stdio, 2: stdio[1]}),
+                patch.dict(os.environ, {"SUDO_UID": "1001"}),
+            ):
+                with fault, self.assertRaises(b.Refusal):
+                    b.coordinator_arguments(arguments, life)
+
+    def test_coordinator_semantic_success_and_failure_use_the_existing_data_contracts(self):
+        b, life = self.b, self.life
+        actual = self.exercise(outer_status=7)
+        failure = b.json_bytes(actual.failure)
+        value = self.enclosure(status=125, payload=failure)
+        self.assertEqual(value.failure.facts["status"], 125)
+        self.assertEqual(value.failure.facts["coordinator_failure"]["outer_status"], 7)
+        self.assertEqual(value.failure.facts["coordinator_failure"]["first_error"],
+                         list(actual.failure["first_error"]))
+        neutral = b.json_bytes(dict(reversed(list(actual.failure.items()))))
+        self.assertEqual(b.coordinator_failure(failure, life), b.coordinator_failure(neutral, life))
+        for data in (
+            failure[:-1], b'{"first_error":null,"first_error":null}',
+            b.json_bytes({**actual.failure, "extra": True}),
+            b.json_bytes({**actual.failure, "availability_status": True}),
+            b.json_bytes({**actual.failure, "first_error": [1, 999999]}),
+        ):
+            with self.subTest(data=data[:60]), self.assertRaises((b.Refusal, ValueError)):
+                b.coordinator_failure(data, life)
+        sent = []
+        data = self.worker_value()
+        with patch.object(os, "set_blocking"), patch.object(os, "write",
+                side_effect=lambda fd, chunk: sent.append(chunk[:7]) or min(7, len(chunk))):
+            b.write_coordinator_result(data, 135.0)
+        self.assertEqual(b"".join(sent), b.json_bytes(data))
+        with patch.object(os, "set_blocking"), patch.object(os, "write", return_value=0), self.assertRaises(b.Refusal):
+            b.write_coordinator_result(data, 135.0)
+        with patch.object(os, "set_blocking"), patch.object(time, "monotonic", return_value=135), \
+             self.assertRaises(TimeoutError):
+            b.write_coordinator_result(data, 135.0)
+
+    def test_coordinator_main_preserves_the_original_start_and_reports_without_new_frames(self):
+        b, life = self.b, self.life
+        binding = replace(self.binding, inode=88)
+        observed = []
+        controller = SimpleNamespace(run=lambda: life._private_worker_record(b.json_bytes(self.worker_value())))
+        local_sys = SimpleNamespace(flags=SimpleNamespace(isolated=True, no_site=True, optimize=0),
+                                    argv=[str(b.PROGRAM), "--coordinator"])
+        with patch.object(b, "sys", local_sys), patch.object(b, "load_control", return_value=(self.budgeting, life)), \
+             patch.object(b, "coordinator_arguments", return_value=(binding, self.directory, 100.0)), \
+             patch.object(b, "Coordinator", return_value=controller) as construct, \
+             patch.object(b, "write_coordinator_result", side_effect=lambda value, deadline: observed.append((value, deadline))):
+            self.assertEqual(b.main(), 0)
+            construct.assert_called_once_with(self.budgeting, life, "readonly", self.directory, 100.0)
+        self.assertEqual(observed[0][1], 135.0)
+        self.assertEqual(life._private_worker_record(b.json_bytes(observed[0][0])),
+                         life._private_worker_record(b.json_bytes(self.worker_value())))
 
 
 if __name__ == "__main__":

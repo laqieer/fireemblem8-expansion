@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import select
+import selectors
 import signal
 import stat
 import struct
@@ -33,6 +34,7 @@ ORDINARY_PREFIX = (
 )
 AVAILABILITY = (*ORDINARY_PREFIX, "/usr/bin/true")
 PERMISSION_UNAVAILABLE = (
+    b"unshare: write failed /proc/self/uid_map: Operation not permitted\n",
     b"unshare: unshare failed: Operation not permitted\n",
     b"unshare: unshare failed: Permission denied\n",
 )
@@ -810,54 +812,90 @@ class Bootstrap:
             os.setgroups([])
         os.setresgid(-1, self.binding.gid, -1)
         os.setresuid(-1, self.binding.uid, -1)
+        # Credential changes can reset dumpability to fs.suid_dumpable.
         prctl(4, 0)
+        require(prctl(3) == 0, "creator identity-change nondumpability")
         require(self_state()["caps"][1] & (1 << CAP_SYS_ADMIN), "creator inherited authority")
         capset(1 << CAP_SYS_ADMIN)
         prctl(47, 4)
         prctl(38, 1)
         parent_guard()
         value = self_state()
-        uid, gid = self.setup_ids
-        require(value["uid"] == (uid, self.binding.uid, uid, self.binding.uid)
-                and value["gid"] == (gid, self.binding.gid, gid, self.binding.gid)
-                and value["groups"] == self.outer["groups"]
-                and value["caps"][:3] == (0, 1 << CAP_SYS_ADMIN, 1 << CAP_SYS_ADMIN)
-                and value["caps"][4] == 0 and value["nnp"] == 1
-                and value["user"] == self.outer["user"] and value["mount"] == self.outer["mount"]
-                and value["label"] == self.outer["label"] and prctl(3) == 0, "creator boundary")
+        self.validate_creator(value)
+        dumpable = self.mapping_dumpability()
         send_token(self.fds["response.write"], b"CREATOR_READY\n", self.deadline)
         receive_token(self.fds["request.read"], b"CREATE\n", self.deadline)
         checked(libc().unshare(NEWUSER | NEWNS))
         parent_guard()
         require(self_state()["label"] == self.outer["label"], "creator unchanged LSM label")
+        require(prctl(3) == dumpable, "created namespace dumpability")
         send_token(self.fds["response.write"], b"NS_CREATED\n", self.deadline)
         receive_token(self.fds["request.read"], b"MAPS_COMPLETE\n", self.deadline)
         require(maps(read_file("/proc/self/uid_map")) == ((0, self.binding.uid, 1),)
                 and maps(read_file("/proc/self/gid_map")) == ((0, self.binding.gid, 1),)
                 and read_file("/proc/self/setgroups").strip() == b"deny", "creator map readback")
+        prctl(4, 0)
+        require(prctl(3) == 0, "creator dumpability restoration")
         os.setresgid(0, 0, 0)
         os.setresuid(0, 0, 0)
         bounding(0)
         capset(0)
         prctl(38, 1)
         parent_guard()
+        require(prctl(3) == 0, "retired creator nondumpability")
         value = self_state()
         groups = value["groups"] if self.ordinary else ()
         require(not self.ordinary or len(groups) == len(self.outer["groups"]), "mapped creator groups")
         validate_credentials(value, 0, 0, (0,) * 5, groups=groups)
         self.closes(("request.read", "response.write"))
 
+    def mapping_dumpability(self):
+        # Only the proved nonzero, self-mapped ordinary N may expose owner-
+        # writable proc maps; nondumpable files otherwise have unmapped root IDs.
+        value = int(self.ordinary)
+        prctl(4, value)
+        require(prctl(3) == value, "creator mapping dumpability")
+        return value
+
+    def validate_creator(self, value):
+        uid, gid = self.setup_ids
+        uid_map = ((self.binding.uid, self.binding.uid, 1),) if self.ordinary else FULL_MAP
+        gid_map = ((self.binding.gid, self.binding.gid, 1),) if self.ordinary else FULL_MAP
+        require(value["uid"] == (uid, self.binding.uid, uid, self.binding.uid)
+                and value["gid"] == (gid, self.binding.gid, gid, self.binding.gid)
+                and value["groups"] == self.outer["groups"]
+                and value["caps"][:3] == (0, 1 << CAP_SYS_ADMIN, 1 << CAP_SYS_ADMIN)
+                and value["caps"][4] == 0 and value["nnp"] == 1
+                and value["uid_map"] == uid_map and value["gid_map"] == gid_map
+                and value["user"] == self.outer["user"] and value["mount"] == self.outer["mount"]
+                and value["label"] == self.outer["label"], "creator boundary")
+        require(not self.ordinary or (
+            self.binding.uid > 0 and self.binding.gid > 0 and self.outer["ordinary"] is True
+            and value["uid"] == (self.binding.uid,) * 4 and value["gid"] == (self.binding.gid,) * 4
+        ), "ordinary creator has no host-root identity")
+
     def verify_creator(self, child):
         values = live_child(child)
+        self.validate_creator({
+            "uid": values["Uid"], "gid": values["Gid"], "groups": values["Groups"],
+            "caps": tuple(values[key][0] for key in CAP_KEYS), "nnp": values["NoNewPrivs"][0],
+            "user": namespace("user", directory=child.proc), "mount": namespace("mnt", directory=child.proc),
+            "uid_map": maps(read_file("uid_map", directory=child.proc)),
+            "gid_map": maps(read_file("gid_map", directory=child.proc)),
+            "label": read_file("attr/current", directory=child.proc).strip(),
+        })
+
+    def validate_map_writer(self):
+        value = self_state()
         uid, gid = self.setup_ids
-        require(values["Uid"] == (uid, self.binding.uid, uid, self.binding.uid)
-                and values["Gid"] == (gid, self.binding.gid, gid, self.binding.gid)
-                and values["Groups"] == self.outer["groups"] and values["NoNewPrivs"] == (1,)
-                and tuple(values[key][0] for key in CAP_KEYS[:3]) == (0, 1 << CAP_SYS_ADMIN, 1 << CAP_SYS_ADMIN)
-                and values["CapAmb"] == (0,) and namespace("user", directory=child.proc) == self.outer["user"]
-                and namespace("mnt", directory=child.proc) == self.outer["mount"]
-                and read_file("attr/current", directory=child.proc).strip() == self.outer["label"],
-                "live creator credentials")
+        uid_map = ((uid, uid, 1),) if self.ordinary else FULL_MAP
+        gid_map = ((gid, gid, 1),) if self.ordinary else FULL_MAP
+        needed = sum(1 << bit for bit in (CAP_SYS_ADMIN, CAP_SETUID, CAP_SETGID))
+        require(value["uid"] == (uid,) * 4 and value["gid"] == (gid,) * 4
+                and value["uid_map"] == uid_map and value["gid_map"] == gid_map
+                and value["user"] == self.outer["user"] and value["mount"] == self.outer["mount"]
+                and value["label"] == self.outer["label"] and value["caps"][2] & needed == needed,
+                "bound parent map writer")
 
     def namespace_relation(self, descriptor, operation, expected):
         temporary = fcntl.ioctl(descriptor, operation)
@@ -886,11 +924,16 @@ class Bootstrap:
         names = ("setgroups", "uid_map", "gid_map")
         primary = None
         try:
+            self.validate_map_writer()
             live_child(child)
             for name in names:
-                self.acquire(name, lambda name=name: os.open(
+                descriptor = self.acquire(name, lambda name=name: os.open(
                     name, os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=child.proc,
                 ))
+                info = os.fstat(descriptor)
+                uid, gid = self.setup_ids
+                require(info.st_mode == stat.S_IFREG | 0o644 and info.st_uid == uid and info.st_gid == gid,
+                        "creator proc-map ownership")
             initial_groups = b"deny" if self.ordinary else b"allow"
             require(os.read(self.fds["uid_map"], 128) == b"" and os.read(self.fds["gid_map"], 128) == b""
                     and os.read(self.fds["setgroups"], 128).strip() == initial_groups, "fresh map presence")
@@ -1548,12 +1591,17 @@ def classify_availability(result):
     raise Refusal("unexpected availability result")
 
 
-def new_budget(budgeting):
-    return budgeting.ProbeBudget(budgeting.Limits(
+def new_budget(budgeting, started):
+    require(type(started) in (int, float) and math.isfinite(started)
+            and started <= time.monotonic() < started + WATCHDOG_SECONDS, "original coordinator start")
+    budget = budgeting.ProbeBudget(budgeting.Limits(
         seconds=WATCHDOG_SECONDS, runs=2, states=2, pending=1, entries=52,
         cache_bytes=552960, process_output_bytes=CAPTURE_BYTES, output_bytes=CAPTURE_BYTES,
         sandbox_bytes=FIXTURE_BYTES,
     ))
+    budget.started = started
+    budget.remaining()
+    return budget
 
 
 def run_capture(budget, owner, binding, parent):
@@ -1599,9 +1647,9 @@ def lifecycle_closed(snapshot, budget):
 
 
 class Coordinator:
-    def __init__(self, budgeting, life, mode, directory):
+    def __init__(self, budgeting, life, mode, directory, started):
         self.budgeting, self.life, self.mode, self.directory = budgeting, life, mode, directory
-        self.budget = new_budget(budgeting)
+        self.budget = new_budget(budgeting, started)
         self.report = life._CleanupReport("C", self.budget.deadline)
         self.owner = self.directories = self.primary = self.backend = self.baseline = None
         self.revision = self.result = None
@@ -1798,18 +1846,407 @@ class Coordinator:
         if not passed:
             self.result = None
             raise FixtureFailure(self.facts)
+        result, self.result = self.result, None
+        return result
+
+
+def coordinator_arguments(arguments, life):
+    require(len(arguments) == 10 and arguments[0] == "--coordinator" and arguments[1] in MODES,
+            "fixed coordinator arguments")
+    require(all(re.fullmatch("[1-9][0-9]{0,19}", arguments[index]) for index in (2, 3, 8, 9))
+            and re.fullmatch("[0-9]{1,20}", arguments[7]) is not None, "coordinator numeric arguments")
+    started, deadline = float(arguments[4]), float(arguments[5])
+    require(math.isfinite(started) and math.isfinite(deadline) and deadline == started + WATCHDOG_SECONDS
+            and started <= time.monotonic() < deadline, "inherited coordinator deadline")
+    directory = canonical(arguments[6])
+    fixture_name(directory, arguments[1])
+    binding = life._FixtureBinding(
+        arguments[1], int(arguments[2]), int(arguments[3]), deadline,
+        int(arguments[7]), int(arguments[8]), int(arguments[9]),
+    )
+    require(os.getresuid() == (binding.uid,) * 3 and os.getresgid() == (binding.gid,) * 3
+            and dict(os.environ) == ENVIRONMENT and canonical(Path.cwd()) == SOURCE,
+            "ordinary coordinator origin")
+    info = os.lstat(directory)
+    require(stat.S_ISDIR(info.st_mode)
+            and (info.st_dev, info.st_ino, info.st_uid, info.st_gid) ==
+            (binding.device, binding.inode, binding.uid, binding.gid), "coordinator original directory")
+    actual = fd_inventory()
+    require(set(actual) == {0, 1, 2} and all(value[2] == stat.S_IFIFO for value in actual.values())
+            and tuple(actual[fd][3] for fd in (0, 1, 2)) == (os.O_RDONLY, os.O_WRONLY, os.O_WRONLY)
+            and len({value[:2] for value in actual.values()}) == 3
+            and death_signal() == signal.SIGKILL, "coordinator stdio/death binding")
+    return binding, directory, started
+
+
+def write_coordinator_result(value, deadline):
+    data = json_bytes(value)
+    require(len(data) <= RECORD_BYTES, "coordinator semantic output bound")
+    os.set_blocking(1, False)
+    offset = 0
+    while offset < len(data):
+        wait = remaining(deadline)
+        try:
+            size = os.write(1, data[offset:offset + FRAME_BYTES])
+        except BlockingIOError:
+            select.select([], [1], [], wait)
+            continue
+        require(type(size) is int and 0 < size <= min(FRAME_BYTES, len(data) - offset),
+                "coordinator semantic write")
+        offset += size
+
+
+def coordinator_failure(data, life):
+    require(type(data) is bytes and 0 < len(data) <= RECORD_BYTES and data.isascii(),
+            "coordinator failure capture")
+    value = json.loads(data, object_pairs_hook=life._pairs, parse_constant=life._constant,
+                       parse_float=life._finite_float)
+    required = {
+        "backend", "stage", "first_error", "first_error_stage", "availability_status",
+        "outer_status", "observations", "cleanup", "runs", "states", "lifecycle_closed",
+    }
+    require(type(value) is dict and required <= value.keys()
+            and value.keys() <= required | {"capture_error", "custody_complete"},
+            "coordinator failure fields")
+    stages = {
+        "admission", "caller", "caller-state", "entry-descriptors", "environment", "source-before",
+        "system-executables", "selection", "acquisition", "launch", "capture",
+        "cleanup", "snapshot", "outcome-release",
+    }
+    require(value["backend"] in (None, "ordinary", "restricted") and value["stage"] in stages
+            and value["first_error_stage"] in stages | {None}
+            and all(value[key] is None or life._status(value[key])
+                    for key in ("availability_status", "outer_status"))
+            and all(integer(value[key], 0, 3) for key in ("runs", "states"))
+            and type(value["lifecycle_closed"]) is bool, "coordinator failure values")
+    life._error_read(value["first_error"])
+    life._cleanup_read(value["cleanup"])
+    if "capture_error" in value:
+        life._error_read(value["capture_error"])
+    if "custody_complete" in value:
+        require(type(value["custody_complete"]) is bool, "coordinator custody flag")
+    observations = value["observations"]
+    require(observations is None or type(observations) is list and len(observations) == 4,
+            "coordinator observations")
+    if observations is not None:
+        for slot, row in enumerate(observations):
+            if row is None:
+                continue
+            require(type(row) is dict and row.keys() == {
+                "role", "phase", "kind", "stage", "status", "error", "setup_status", "disposition", "cleanup",
+            }, "coordinator observation fields")
+            require((row["role"], row["phase"]) ==
+                    (("R" if slot < 2 else "L"), ("after" if slot % 2 else "before"))
+                    and row["kind"] in (None, "normal-exit", "exception", "unavailable")
+                    and row["stage"] in (*life._STAGES, None)
+                    and row["disposition"] in (None, "return", "raise")
+                    and all(row[key] is None or life._status(row[key]) for key in ("status", "setup_status")),
+                    "coordinator observation values")
+            life._error_read(row["error"])
+            if row["cleanup"] is not None:
+                life._cleanup_read(row["cleanup"])
+    return value
+
+
+class Enclosure:
+    """The test driver's one fixed ordinary C child, not another budget run."""
+
+    def __init__(self, life, mode, directory, started):
+        require(type(started) in (int, float) and math.isfinite(started), "enclosure start")
+        self.life, self.mode, self.directory, self.started = life, mode, directory, started
+        self.deadline = started + WATCHDOG_SECONDS
+        self.wait_deadline, self.cleanup_deadline = started + WAIT_SECONDS, started + OUTER_SECONDS
+        self.report = life._CleanupReport("C", self.cleanup_deadline)
+        self.child = self.pidfd = self.directory_fd = self.selector = self.baseline = None
+        self.identity = self.binding = self.primary = self.result = None
+        self.status = self.wait_value = self.reap_status = None
+        self.reaped = self.capture_complete = self.fd_restored = self.launch_attempted = False
+        self.buffers = (bytearray(RECORD_BYTES), bytearray(CAPTURE_BYTES - RECORD_BYTES))
+        self.sizes = [0, 0]
+        self.facts = {"stage": "setup", "first_error": None, "first_error_stage": None,
+                      "status": None, "wait": None, "reap_status": None, "coordinator_failure": None}
+
+    def save_error(self, error, stage):
+        if self.primary is None:
+            self.primary = error
+            self.facts["first_error"], self.facts["first_error_stage"] = self.life._error_value(error), stage
+        elif error is not self.primary:
+            self.life._forget_error(error)
+
+    def close_fd(self, name):
+        descriptor = getattr(self, name)
+        setattr(self, name, None)
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except BaseException:
+                self.report.unsure("ownership")
+                raise
+
+    def prepare(self):
+        uid, gid = os.getuid(), os.getgid()
+        require(uid > 0 and gid > 0 and os.getresuid() == (uid,) * 3
+                and os.getresgid() == (gid,) * 3, "ordinary enclosure owner")
+        fixture_name(self.directory, self.mode)
+        value = self_state()
+        require(value["uid"] == (uid,) * 4 and value["gid"] == (gid,) * 4
+                and all(value["caps"][index] == 0 for index in (0, 1, 2, 4)),
+                "enclosure has no setup authority")
+        self.baseline = withdraw_entry_fifos(fd_inventory(ordinary_entry=True), self.report)
+        self.life.ordinary_executable("/usr/bin/python3")
+        require(canonical(PROGRAM) == Path(__file__).resolve(), "enclosure fixed source")
+
+        def pin():
+            self.directory_fd = os.open(
+                self.directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+            )
+
+        self.life.finish_cleanup([("setup", pin)], report=self.report)
+        self.identity = directory_identity(self.directory_fd)
+        require(self.identity.uid == uid and self.identity.gid == gid, "enclosure owned directory")
+        self.binding = self.life._FixtureBinding(
+            self.mode, uid, gid, self.deadline, self.identity.device, self.identity.inode, uid,
+        )
+        remaining(self.deadline)
+
+    def arguments(self):
+        require(self.binding is not None, "enclosure bound launch")
+        value = self.binding
+        return [
+            "/usr/bin/python3", "-I", "-S", "-B", str(PROGRAM), "--coordinator", self.mode,
+            str(value.uid), str(value.gid), str(self.started), str(self.deadline), str(self.directory),
+            str(value.device), str(value.inode), str(value.owner),
+        ]
+
+    def launch(self):
+        require(not self.launch_attempted and self.child is None, "one enclosed coordinator")
+        remaining(self.deadline)
+        parent = os.getpid()
+        mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+
+        def acquire():
+            self.launch_attempted = True
+            self.child = subprocess.Popen(
+                self.arguments(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                env=dict(ENVIRONMENT), cwd=SOURCE, close_fds=True, pass_fds=(), start_new_session=True,
+                preexec_fn=lambda: self.life.parent_death(parent, mask),
+            )
+            require(integer(self.child.pid, 1, 0x7FFFFFFF), "owned coordinator PID")
+            self.pidfd = os.pidfd_open(self.child.pid)
+
+        self.life.finish_cleanup([("setup", acquire)], report=self.report)
+        info = read_file("/proc/self/fdinfo/" + str(self.pidfd))
+        pids = [line.split(b":", 1)[1].strip() for line in info.splitlines() if line.startswith(b"Pid:")]
+        require(pids == [str(self.child.pid).encode()], "enclosure pidfd binding")
+        identities = []
+        for name, access in (("stdin", os.O_WRONLY), ("stdout", os.O_RDONLY), ("stderr", os.O_RDONLY)):
+            descriptor = getattr(self.child, name).fileno()
+            info = os.fstat(descriptor)
+            require(stat.S_ISFIFO(info.st_mode)
+                    and fcntl.fcntl(descriptor, fcntl.F_GETFL) & os.O_ACCMODE == access,
+                    "enclosure capture direction")
+            identities.append((info.st_dev, info.st_ino))
+        require(len(set(identities)) == 3, "enclosure distinct capture pipes")
+
+    def collect(self):
+        self.selector = selectors.DefaultSelector()
+        for index, stream in enumerate((self.child.stdout, self.child.stderr)):
+            os.set_blocking(stream.fileno(), False)
+            self.selector.register(stream, selectors.EVENT_READ, index)
+        self.selector.register(self.pidfd, selectors.EVENT_READ, 2)
+        eof = 0
+        while eof != 3 or self.status is None:
+            remaining(self.wait_deadline)
+            if self.status is None:
+                observed = self.waitable()
+                if observed is not None:
+                    self.wait_value, self.status = self.life._wait_value(self.child.pid, observed)
+                    self.selector.unregister(self.pidfd)
+            if eof == 3 and self.status is not None:
+                break
+            for key, _ in self.selector.select(remaining(self.wait_deadline)):
+                if key.data == 2:
+                    continue
+                index = key.data
+                available = len(self.buffers[index]) - self.sizes[index]
+                try:
+                    chunk = os.read(key.fd, min(FRAME_BYTES, available + 1))
+                except BlockingIOError:
+                    continue
+                remaining(self.wait_deadline)
+                if not chunk:
+                    self.selector.unregister(key.fileobj)
+                    eof |= 1 << index
+                    continue
+                require(len(chunk) <= available, "enclosure capture overflow")
+                end = self.sizes[index] + len(chunk)
+                self.buffers[index][self.sizes[index]:end] = chunk
+                self.sizes[index] = end
+        self.capture_complete = True
+        self.reap(self.wait_deadline)
+        remaining(self.wait_deadline)
+
+    def waitable(self):
+        try:
+            observed = os.waitid(os.P_PID, self.child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            if observed is not None:
+                self.life._wait_value(self.child.pid, observed)
+            return observed
+        except BaseException:
+            self.report.unsure("ownership")
+            raise
+
+    def reap(self, deadline):
+        require(self.child is not None, "owned coordinator reap")
+        observed = self.waitable()
+        try:
+            result = self.child.wait(timeout=max(0, deadline - time.monotonic()))
+            require(self.life._status(result) and self.child.returncode == result, "coordinator reap agreement")
+            require(observed is None or self.life._wait_value(self.child.pid, observed)[1] == result,
+                    "coordinator kernel reap agreement")
+            require(self.status is None or result == self.status, "coordinator first wait agreement")
+            self.reap_status, self.reaped = result, True
+        except BaseException:
+            if observed is not None and self.life._status(self.child.returncode) and (
+                self.life._wait_value(self.child.pid, observed)[1] == self.child.returncode
+            ):
+                self.reaped, self.reap_status = True, self.child.returncode
+            else:
+                self.report.unsure("leader")
+            raise
+
+    def stop(self):
+        if self.child is None or self.reaped:
+            return
+        # A still-waitable child pins the numeric identity even if pidfd
+        # acquisition failed. No poll, group kill, or foreign-child adoption.
+        def signal_child():
+            self.waitable()
+            try:
+                if self.pidfd is None:
+                    os.kill(self.child.pid, signal.SIGKILL)
+                else:
+                    signal.pidfd_send_signal(self.pidfd, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+        self.life.finish_cleanup([
+            ("leader", signal_child), ("wait", lambda: self.reap(self.cleanup_deadline)),
+        ], report=self.report)
+
+    def close_pidfd(self):
+        if self.child is not None and not self.reaped:
+            self.report.unsure("ownership")
+            return
+        self.close_fd("pidfd")
+
+    def close_selector(self):
+        selector, self.selector = self.selector, None
+        if selector is not None:
+            try:
+                selector.close()
+            except BaseException:
+                self.report.unsure("selector")
+                raise
+
+    def check_directory(self):
+        if self.identity is not None:
+            require(directory_identity(self.directory_fd) == self.identity
+                    and directory_metadata(os.lstat(self.directory)) == self.identity.metadata(),
+                    "enclosure directory changed")
+
+    def check_fds(self):
+        if self.baseline is not None:
+            self.fd_restored = fd_inventory() == self.baseline
+            require(self.fd_restored, "enclosure final descriptors")
+
+    def run(self):
+        global _cleanup_life, _cleanup_report
+        previous = _cleanup_life, _cleanup_report
+        _cleanup_life, _cleanup_report = self.life, self.report
+        handlers = {}
+        try:
+            for signum in self.life.TERMINATING:
+                handlers[signum] = signal.signal(signum, self.life.interrupted)
+            self.prepare()
+            self.facts["stage"] = "launch"
+            self.launch()
+            self.facts["stage"] = "capture"
+            self.collect()
+            if self.status != 0:
+                data = bytes(memoryview(self.buffers[0])[:self.sizes[0]])
+                if data:
+                    self.facts["coordinator_failure"] = coordinator_failure(data, self.life)
+                raise Refusal("enclosed coordinator failed")
+            require(self.sizes[1] == 0, "unexpected coordinator stderr")
+            self.result = self.life._private_worker_record(bytes(memoryview(self.buffers[0])[:self.sizes[0]]))
+            validate_mode(self.result, self.mode)
+        except BaseException as error:
+            self.save_error(error, self.facts["stage"])
+        self.buffers = None
+        actions = [("selector", self.close_selector)]
+        if self.child is not None:
+            actions.extend([
+                ("lifetime", lambda: self.life._close_stream(self.child, "stdin", self.report)),
+                ("leader", self.stop),
+                ("stdout", lambda: self.life._close_stream(self.child, "stdout", self.report)),
+                ("stderr", lambda: self.life._close_stream(self.child, "stderr", self.report)),
+            ])
+        actions.extend([
+            ("pidfd", self.close_pidfd), ("ownership", self.check_directory),
+            ("cleanup", lambda: self.close_fd("directory_fd")), ("cleanup", self.check_fds),
+        ])
+        try:
+            self.life.finish_cleanup(actions, primary=self.primary, handlers=handlers, report=self.report)
+        except BaseException as error:
+            self.save_error(error, "cleanup")
+        finally:
+            _cleanup_life, _cleanup_report = previous
+        if self.launch_attempted and (self.child is None or not self.reaped):
+            self.report.unsure("ownership")
+        if time.monotonic() > self.cleanup_deadline:
+            self.report.unsure("wait")
+        self.facts.update({
+            "status": self.status, "wait": self.wait_value, "reap_status": self.reap_status,
+            "reaped": self.reaped, "capture_complete": self.capture_complete,
+            "cleanup": self.life._cleanup_wire(self.report.value()), "fd_restored": self.fd_restored,
+        })
+        if self.primary is not None:
+            self.life._forget_error(self.primary)
+            self.primary = None
+        if self.result is None or self.facts["first_error"] is not None or not (
+            self.reaped and self.capture_complete and self.fd_restored and self.report.value().complete
+        ):
+            self.result = None
+            error = FixtureFailure(self.facts)
+            if self.launch_attempted and not self.reaped:
+                error.retained_enclosure = self
+            raise error
         result, self.result = public_result(self.result), None
         return result
 
 
 def run_fixture(mode, directory):
-    budgeting, life = load_control()
-    return Coordinator(budgeting, life, mode, directory).run()
+    started = time.monotonic()
+    _, life = load_control()
+    return Enclosure(life, mode, directory, started).run()
 
 
 def main():
     require(sys.flags.isolated and sys.flags.no_site and not sys.flags.optimize, "isolated interpreter")
-    _, life = load_control()
+    budgeting, life = load_control()
+    if sys.argv[1:2] == ["--coordinator"]:
+        binding, directory, started = coordinator_arguments(sys.argv[1:], life)
+        try:
+            result = Coordinator(budgeting, life, binding.mode, directory, started).run()
+        except FixtureFailure as error:
+            facts = error.facts
+            life._forget_error(error)
+        else:
+            write_coordinator_result(worker_wire(result), started + WAIT_SECONDS)
+            return 0
+        write_coordinator_result(facts, started + WAIT_SECONDS)
+        return 125
     binding, parent, ordinary = role_arguments(sys.argv[1:], life, os.environ)
     return Bootstrap(life, binding, parent, ordinary=ordinary).run()
 

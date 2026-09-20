@@ -1641,22 +1641,45 @@ importing the Foundation module, graph consumers, SDK tools or the subject
 while the restricted setup role has host authority. Before the worker barrier,
 only standard-library and existing budget/lifecycle control-plane code loads.
 
-One bare `ProbeBudget`, not a `ProbeSession`, owns the original **30-second**
-deadline. The fixture admits exactly **two runs and two states**: one fixed
+The public test driver captures the original monotonic start **before**
+launching one fixed ordinary `--coordinator` role from the same helper.
+That role accepts only the closed mode, actual U/G, original start and
+start+30 deadline, and canonical Foundation-directory identity; no command,
+PID, FD, source or timeout override exists. Its bare `ProbeBudget`, not a
+`ProbeSession`, inherits that earlier **30-second** deadline, including child
+startup time. The fixture admits exactly **two runs and two states**: one fixed
 availability operation, then one mode. Neither operation is refunded.
+The enclosing C process is separate test-driver supervision, not a third
+budget operation or a second budget.
 The availability command is the original immutable
 `unshare --user --map-current-user --keep-caps --mount --fork --kill-child
 --propagation private /usr/bin/true` under the sealed C-locale environment.
 Its bounded control output spends the existing control category, leaving the
 selected mode's **256 KiB combined capture** and restricted **52-entry,
-552,960-byte custody reservation** unchanged. The private tmpfs stays **1 MiB**;
-the 35-second wait and 45-second enclosing ceilings do not extend the common
-deadline, including checks, handshakes, publication and cleanup.
+552,960-byte custody reservation** unchanged. The private tmpfs stays **1 MiB**.
+The driver's nonblocking capture and normal wait use **original start+35**;
+all owned termination/reap waits use **original start+45**, including after
+kill or another cleanup fault. Every wait receives its remaining deadline.
+This external owner is necessary because the unchanged default budget cleanup
+can wait without a timeout; a stuck C cannot block the driver inside that API.
+It does not reset C's deadline or extend R/L handshakes and custody.
+The driver owns only its C child/pidfd, separate capture pipes and original
+directory pin. It uses WNOWAIT for an actual normal observation, reaps with
+agreement checks, never uses a recycled PID or adopts unrelated children,
+and retains uncertainty/ownership if a timely reap cannot be proved.
+Capture is admitted before growth: at most 16 KiB semantic stdout and the
+remaining 240 KiB stderr, within the unchanged 256 KiB combined ceiling.
+Stdout is the existing helper mode data or bounded fixture-failure facts,
+not a new R/L receipt or authority. No setup descriptors cross exec.
 
 Only actual status zero with empty stdout/stderr selects ordinary operation.
 Only actual status one, empty stdout and exactly
-`unshare: unshare failed: Operation not permitted\n` or
+`unshare: write failed /proc/self/uid_map: Operation not permitted\n`,
+`unshare: unshare failed: Operation not permitted\n`, or
 `unshare: unshare failed: Permission denied\n` selects restricted operation.
+The first shape is the **66-byte retained census failure** in
+[the closed startup census](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5730240399);
+it must not be confused with arbitrary proc-map errors or substring matches.
 These are finite command results, not invented syscall errno observations.
 Malformed output, other statuses, watchdog 125, an API exception, failed
 cleanup or an expired deadline fails. A failed mode is **never** retried on
@@ -1674,6 +1697,33 @@ maps, and enters only through the exact existing privileged
 fixture identity. Only this restricted route opts into `RunOutcome`.
 Ordinary `outcome=None` API errors remain failures; lost normal observations
 and unavailable four-record custody are not reconstructed.
+
+The ordinary creator deliberately differs from the restricted creator in
+dumpability **during creation/mapping**. After credential changes, N first
+sets/checks dumpable0, since those changes can reset it to `fs.suid_dumpable`.
+Before ordinary N may set/check dumpable1, it proves all real/effective/saved/fs
+IDs are actual nonzero U/G, the verified ordinary self-map has no ID-zero
+mapping, its capabilities are scoped there (SYS_ADMIN-only E/P, zero I/A),
+and NNP, namespace identities and label match the fixed boundary. Ordinary N
+stays dumpable1 through namespace creation and exact map readback, then
+sets/checks dumpable0 **before** normalization and final retirement. Restricted
+N, with real/saved initial-root IDs, stays dumpable0 throughout that verified
+creation/mapping handshake. Failure to restore or preserve the required
+dumpability stops before worker release.
+
+This is a proc-inode ownership requirement, not a relaxed worker guard:
+Linux v6.17
+[`task_dump_owner`](https://github.com/torvalds/linux/blob/v6.17/fs/proc/base.c)
+gives nondumpable proc files namespace-root ownership, falling back to global
+root when zero is unmapped. The 0644 map files then cannot be written by
+ordinary R: scoped DAC override also requires mapped inode U/G
+([capability checks](https://github.com/torvalds/linux/blob/v6.17/kernel/capability.c),
+[generic permission](https://github.com/torvalds/linux/blob/v6.17/fs/namei.c)).
+Dumpable1 exposes only the ordinary effective owner's map files. R rechecks
+its actual parent namespace/IDs/capabilities, the live bound N, and each map
+file's type/mode/owner before writing. It never maps host root or adds
+ordinary sudo. These are static Linux analysis and permission-aware inert
+controls, not newly observed kernel/LSM behavior.
 
 C owns a fresh 0700 container and empty fixture, pinned by original
 device/inode/type/owner/group/mount identity. They are siblings of the
@@ -1696,8 +1746,9 @@ reaping before GO. W drops to the actual nonzero owner, cap-zero/NNP1,
 enters user then mount namespace, refreshes root/cwd, closes namespace
 handles and rejects ancestor/device/enclosing-writer aliases **before**
 importing `sandbox_exec`. Original stdin is replaced only in R by an owned
-EOF pipe; C's exact original stdio remains unchanged. C's narrowly bounded
-entry scan may withdraw verified extra ordinary FIFOs, not arbitrary handles.
+EOF pipe. The driver preserves its original stdio, and C has exactly its
+separate sealed capture/EOF endpoints. The existing narrowly bounded ordinary
+entry scan may withdraw verified extra FIFOs, not arbitrary handles.
 
 Both backends execute the same seven mode branches:
 `readonly` and `writable` measure the actual selective operation; `wrong-device`
@@ -1719,12 +1770,15 @@ where the existing API actually observed them. Uncertainty always fails.
 All remaining owned closes/reaps are attempted without retrying an ambiguous
 descriptor or removal. Only after closed lifecycle custody does C remove
 its original, unchanged, empty directories; replacements, children or
-unproved ownership are retained. No privileged cleanup command, recursive
-deletion, alternate transport, frame/schema change or new limit is added.
+unproved ownership are retained. On enclosure timeout or capture/kill/reap/
+close failure the driver never removes C's unproved backing, retries a
+backend, or claims source/namespace completion. No privileged cleanup command,
+recursive deletion, R/L frame/schema change or new production limit is added.
 
 `NullMountFixtureInertTests` exercises selection, both backends, actual
 control APIs and the actual subject with modeled effect boundaries, seven
-mode representations, ownership/cleanup failures and paired restorations.
+mode representations, permission-aware proc-map ownership, measurable
+35/45-second stalled-C bounds, ownership/cleanup failures and paired restorations.
 It is separately selectable without discovering `FoundationTests`.
 This is **not kernel qualification**. The
 [closed hosted readonly representative](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5748930827)
