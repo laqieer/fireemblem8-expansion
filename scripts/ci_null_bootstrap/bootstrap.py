@@ -25,15 +25,18 @@ from types import SimpleNamespace
 
 REPOSITORY = "laqieer/fireemblem8-expansion"
 OWNER = "laqieer"
-BRANCH = "diagnostic/issue-180-null-bootstrap-1"
-WORKFLOW = ".github/workflows/issue180-null-bootstrap-1.yml"
+BRANCH = "diagnostic/issue-180-null-bootstrap-2"
+WORKFLOW = ".github/workflows/issue180-null-bootstrap-2.yml"
+ORIGINAL_WORKFLOW = ".github/workflows/issue180-null-bootstrap-1.yml"
+RUN_PREFIX = "issue180-null-bootstrap-2-"
 BASE = "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"
 PREPARATION = "20478394860b673b98fb32a4dd292fa0fc02a5d4"
 RECOVERY = "3302f790e944e81be4ea0777682f5282e560fd9c"
+FIRST_BOOTSTRAP = "496ed2ac184c48d6bdd6ec3f651183e67df9045b"
 SOURCE = "c8b365da1be29bc58352cf1edb8b836a2cf18321"
 PROGRAM = "scripts/ci_null_bootstrap/bootstrap.py"
 FILES = frozenset({
-    WORKFLOW, PROGRAM, "scripts/ci_null_bootstrap/__init__.py",
+    WORKFLOW, ORIGINAL_WORKFLOW, PROGRAM, "scripts/ci_null_bootstrap/__init__.py",
     "scripts/ci_null_bootstrap/test_bootstrap.py", "scripts/ci_null_bootstrap/README.md",
 })
 ARTIFACTS = ("scope.json", "launch.json", "custody.json", "mode.json", "cleanup.json")
@@ -60,6 +63,18 @@ TOKENS = (b"CREATOR_READY\n", b"CREATE\n", b"NS_CREATED\n", b"MAPS_COMPLETE\n", 
 CAP_KEYS = ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb")
 _cleanup_life = _cleanup_report = None
 PLACEMENT = "tmpfs-on-original-fixture"
+PREFLIGHT_REFUSALS = {
+    "ordinary coordinator": "ordinary-id-binding",
+    "ordinary full-map coordinator": "ordinary-state-binding",
+    "initial C descriptors": "ordinary-fd-closure",
+    "status duplicate": "status-duplicate",
+    "status fields": "status-fields",
+    "status shape": "status-shape",
+    "map shape": "map-shape",
+    "descriptor bound": "fd-bound",
+    "descriptor name": "fd-name",
+    "fixed file bound": "proc-file-bound",
+}
 
 
 class Refusal(RuntimeError):
@@ -157,7 +172,7 @@ def verify_checkout(root, sha, *, harness=False, deadline=None):
     require(git(root, "rev-parse", "HEAD", deadline=deadline).strip() == sha.encode(), "selected revision")
     git(root, "diff", "--quiet", "--no-ext-diff", "--ignore-submodules=none", sha, "--", deadline=deadline)
     if harness:
-        chain = (sha, RECOVERY, PREPARATION, BASE)
+        chain = (sha, FIRST_BOOTSTRAP, RECOVERY, PREPARATION, BASE)
         for child, parent in zip(chain, chain[1:]):
             parents = git(root, "rev-list", "--parents", "-n", "1", child, deadline=deadline).split()
             require(parents == [child.encode(), parent.encode()], "exact normal preparation lineage")
@@ -165,11 +180,16 @@ def verify_checkout(root, sha, *, harness=False, deadline=None):
         require(rows[-1:] == [b""] and len(rows) == 2 * len(FILES) + 1, "additive inventory")
         actual = list(zip(rows[:-1:2], rows[1:-1:2]))
         require(all(kind == b"A" for kind, _ in actual)
-                and {path.decode("ascii") for _, path in actual} == FILES, "five additive files")
-        changed = git(root, "diff", "--name-status", "-z", RECOVERY, sha, deadline=deadline).split(b"\0")
+                and {path.decode("ascii") for _, path in actual} == FILES, "closed additive files")
+        changed = git(root, "diff", "--name-status", "-z", FIRST_BOOTSTRAP, sha, deadline=deadline).split(b"\0")
         require(len(changed) >= 3 and len(changed) % 2 == 1 and changed[-1] == b"", "nonempty correction")
         delta = list(zip(changed[:-1:2], changed[1:-1:2]))
-        require(all(kind == b"M" and path.decode("ascii") in FILES for kind, path in delta)
+        allowed = {
+            WORKFLOW: b"A", PROGRAM: b"M", "scripts/ci_null_bootstrap/test_bootstrap.py": b"M",
+            "scripts/ci_null_bootstrap/README.md": b"M",
+        }
+        require((b"A", WORKFLOW.encode()) in delta
+                and all(kind == allowed.get(path.decode("ascii")) for kind, path in delta)
                 and len({path for _, path in delta}) == len(delta), "closed correction paths")
         for name in FILES:
             info = os.lstat(root / name)
@@ -231,7 +251,7 @@ def identity(event, context):
     )
     return {
         "repository": REPOSITORY, "branch": BRANCH, "workflow": WORKFLOW,
-        "base": BASE, "preparation": PREPARATION, "recovery": RECOVERY,
+        "base": BASE, "preparation": PREPARATION, "recovery": RECOVERY, "first_bootstrap": FIRST_BOOTSTRAP,
         "source": SOURCE, "harness": sha, "run_id": run,
         "run_number": 1, "run_attempt": 1, "creation_allocation_consumed": True,
         "never_merge": True, "qualified": False, "seven_modes": False, "fixture_placement": PLACEMENT,
@@ -244,7 +264,7 @@ def paths(context):
     require(Path(__file__).resolve() == harness / PROGRAM, "committed program path")
     run = context["GITHUB_RUN_ID"]
     require(re.fullmatch("[1-9][0-9]{0,19}", run) is not None, "run identity")
-    return harness, source, workspace / ("issue180-null-bootstrap-1-" + run + "-records")
+    return harness, source, workspace / (RUN_PREFIX + run + "-records")
 
 
 def write_record(output, name, value):
@@ -1344,7 +1364,7 @@ def reaper_arguments(arguments, life, harness, context):
     require(0 < remaining(deadline) <= WATCHDOG_SECONDS
             and context.get("SUDO_UID") == str(uid) and context.get("SUDO_GID") == str(gid)
             and parent.name == "fixture" and parent.parent.parent == harness.parent
-            and re.fullmatch("issue180-null-bootstrap-1-[1-9][0-9]{0,19}", parent.parent.name) is not None,
+            and re.fullmatch(re.escape(RUN_PREFIX) + "[1-9][0-9]{0,19}", parent.parent.name) is not None,
             "sudo caller/fixed fixture binding")
     binding = life._FixtureBinding("readonly", uid, gid, deadline, int(arguments[6]),
                                    int(arguments[7]), int(arguments[8]))
@@ -1672,7 +1692,7 @@ class Coordinator:
             self.budget.charge("sandbox", FIXTURE_BYTES)
             self.budget.charge("control", 8 * RECORD_BYTES + ARTIFACT_BYTES)
             self.stage = "acquisition"
-            name = "issue180-null-bootstrap-1-" + self.scope["run_id"]
+            name = RUN_PREFIX + self.scope["run_id"]
             self.directories = HostDirectories(
                 self.harness.parent, name, self.uid, self.gid, self.life, report, self.budget.deadline,
             )
@@ -1807,18 +1827,34 @@ def coordinate(context):
     require(read_json(read_file(output / "scope.json", RECORD_BYTES)) == scope, "first-creation scope")
     canonical(output)
     checks = {key: None for key in ("harness_before", "selected_before", "harness_after", "selected_after")}
-    stage = "ordinary-identity"
+    observed = {"ids": {"uid": None, "gid": None, "resuid": None, "resgid": None},
+                "state": None, "fds": None}
+    stage = "ordinary-id-read"
     error_stage = None
     error_fact = None
     try:
-        uid, gid = os.getuid(), os.getgid()
-        require(uid > 0 and gid > 0 and os.getresuid() == (uid,) * 3 and os.getresgid() == (gid,) * 3,
-                "ordinary coordinator")
+        uid = observed["ids"]["uid"] = os.getuid()
+        gid = observed["ids"]["gid"] = os.getgid()
+        stage = "ordinary-id-check"
+        require(uid > 0 and gid > 0, "ordinary coordinator")
+        for name, read, expected in (
+            ("resuid", os.getresuid, (uid,) * 3), ("resgid", os.getresgid, (gid,) * 3),
+        ):
+            stage = "ordinary-id-read"
+            observed["ids"][name] = read()
+            stage = "ordinary-id-check"
+            require(observed["ids"][name] == expected, "ordinary coordinator")
+        stage = "ordinary-state-read"
         initial = self_state()
+        observed["state"] = {name: initial[name] for name in ("uid", "gid", "caps", "uid_map", "gid_map", "nnp")}
+        stage = "ordinary-state-check"
         require(initial["uid"] == (uid,) * 4 and initial["gid"] == (gid,) * 4
                 and initial["uid_map"] == initial["gid_map"] == FULL_MAP
                 and all(initial["caps"][index] == 0 for index in (0, 1, 2, 4)), "ordinary full-map coordinator")
+        stage = "ordinary-fd-read"
         baseline = fd_inventory()
+        observed["fds"] = [[fd, value[2], value[3]] for fd, value in sorted(baseline.items())]
+        stage = "ordinary-fd-check"
         require(set(baseline) == {0, 1, 2}, "initial C descriptors")
         for key, root, sha, is_harness in (
             ("harness_before", harness, scope["harness"], True), ("selected_before", source, SOURCE, False),
@@ -1836,12 +1872,18 @@ def coordinate(context):
         budgeting, life = load_control(source)
     except BaseException as error:
         error_stage = stage
+        code = None
+        if isinstance(error, Refusal):
+            code = "unclassified-refusal"
+            if type(error) is Refusal and len(error.args) == 1 and type(error.args[0]) is str:
+                code = PREFLIGHT_REFUSALS.get(error.args[0], code)
         error_fact = {
             "kind": ("os-error" if isinstance(error, OSError) else
                      "interrupt" if isinstance(error, KeyboardInterrupt) else
                      "value-error" if isinstance(error, ValueError) else
                      "refusal" if isinstance(error, Refusal) else "other-error"),
             "errno": error.errno if isinstance(error, OSError) and integer(error.errno, 0, 4095) else None,
+            "code": code,
         }
         for attribute in ("__traceback__", "__context__", "__cause__"):
             BaseException.__setattr__(error, attribute, None)
@@ -1853,6 +1895,7 @@ def coordinate(context):
                           "old_operation_separately_exported": False},
             "cleanup.json": {
                 "preflight_refusal_stage": error_stage, "preflight_first_error": error_fact, "source_checks": checks,
+                "preflight_observations": observed,
                 "launch_owners_acquired": False, "checks_complete_before_artifact_publication": False,
                 "qualified": False, "publication_completion_attested": False,
             },

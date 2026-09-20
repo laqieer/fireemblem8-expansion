@@ -1,8 +1,8 @@
 # Issue 180 — local, nondelivery null bootstrap preparation
 
 **UNQUALIFIED AND NOT LAUNCH-READY. Never merge or push this branch as a
-delivery change. No namespace, privileged process, helper, or CI job was
-executed to prepare it.**
+delivery change. Bootstrap1 closed before native launch. This new preparation
+is local/inert and needs independent review and a separate launch freeze.**
 
 Scope:
 <https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5736286567>.
@@ -10,16 +10,38 @@ The mounted-root amendment is
 <https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5737056729>;
 the recovery-continuation lineage is frozen in
 <https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5748359622>.
-The branch has exactly three normal commits above
+The preflight-evidence continuation is frozen in
+<https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5748482765>.
+The branch has exactly four normal commits above
 `ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`: held preparation
 `20478394860b673b98fb32a4dd292fa0fc02a5d4`, interrupted recovery
-`3302f790e944e81be4ea0777682f5282e560fd9c`, then this correction.
-Each must be the sole direct parent of the next, and the correction must
-modify only the same five additive regular files. Its separately selected source is
+`3302f790e944e81be4ea0777682f5282e560fd9c`, first reviewed bootstrap
+`496ed2ac184c48d6bdd6ec3f651183e67df9045b`, then this correction.
+Each must be the sole direct parent of the next. The original five additive
+regular files plus the new bootstrap2 workflow are the full inventory.
+The correction cannot modify the closed bootstrap1 workflow. Its separately selected source is
 `c8b365da1be29bc58352cf1edb8b836a2cf18321`. The original ordinary startup census
 is closed, not repeated. This preparation does not adopt a FoundationTests
 backend, qualify seven modes, fix current CI, or allocate ROOT21, census2,
 H1, a compiler/Make/SDK workload, or a native supervisor.
+
+## Closed bootstrap1 and finite preflight attribution
+
+Run35497405046 on exact496ed2ac1 reached the ordinary coordinator but refused
+under the aggregate `ordinary-identity` stage. It retained zero run admissions,
+no acquired launch owners and no source-check results. No namespace or helper
+executed, and the actual sub-predicate/state was not retained. This is not
+evidence of another UID-map or LSM failure; that allocation is closed.
+
+Bootstrap2 preserves the same checks, call order and refusal behavior while
+separating ID-read/check, state-read/check and FD-read/check stages. Failed
+preflight records only obtained numeric IDs, consumed credential/map/capability/
+NNP fields and FD numbers/types/access modes. Unreached fields stay null.
+Fixed refusal predicates become closed diagnostic codes; unknown exception
+arguments are never stringified or exported. No labels, raw proc content,
+paths, namespace identities, environment or stack trace is retained.
+The same five artifact bounds and exit125 behavior remain; observations grant
+no authority or runtime qualification. No fallback relaxes the unknown failure.
 
 ## Historical interface hold and mounted-root correction
 
@@ -197,7 +219,7 @@ test "$(git -C "$C8_CHECKOUT" rev-parse HEAD)" = c8b365da1be29bc58352cf1edb8b836
 git -C "$C8_CHECKOUT" diff --quiet c8b365da1be29bc58352cf1edb8b836a2cf18321 -- scripts/validation_ownership
 ISSUE180_SELECTED_SOURCE="$C8_CHECKOUT" \
   python3 -B -m unittest scripts.ci_null_bootstrap.test_bootstrap -v
-actionlint .github/workflows/issue180-null-bootstrap-1.yml
+actionlint .github/workflows/issue180-null-bootstrap-2.yml
 ```
 
 Expected results: mocked ordinary-owner path reaches the fixed helper boundary;
@@ -210,6 +232,9 @@ APIs and a two-view directory model: pre-mount FDs continue to name host
 objects while newly opened mounted-root FDs name the tmpfs. Fault injection
 covers acquisition, mount, admission, capture, source checks, each close and
 removal, incomplete custody, deadline and artifact publication.
+The preflight matrix retains ten distinct inert failures with exact stages,
+closed reason codes and only obtained observations. Reordering state fields
+does not change the result; arbitrary exception strings are not disclosed.
 
 In-memory restorations remove the pre-entry and old-operation checks or
 create `volume` through the old host pin. Each must break its behavioral

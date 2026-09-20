@@ -105,7 +105,7 @@ class Inert(unittest.TestCase):
 
     def supervisor(self):
         root = b.Bootstrap(
-            life, self.binding, Path("/work/issue180-null-bootstrap-1-42/fixture"),
+            life, self.binding, Path("/work") / (b.RUN_PREFIX + "42") / "fixture",
             Path("/work/candidate"), Path("/work/harness"),
         )
         root.outer, root.target = self.outer, self.target
@@ -382,10 +382,13 @@ class Benign(Inert):
             if args[:2] == ("rev-parse", "HEAD"):
                 return sha.encode() + b"\n"
             if args[0] == "rev-list":
-                parents = {sha: b.RECOVERY, b.RECOVERY: b.PREPARATION, b.PREPARATION: b.BASE}
+                parents = {sha: b.FIRST_BOOTSTRAP, b.FIRST_BOOTSTRAP: b.RECOVERY,
+                           b.RECOVERY: b.PREPARATION, b.PREPARATION: b.BASE}
                 return (args[-1] + " " + parents[args[-1]]).encode() + b"\n"
             if "--name-status" in args:
-                return inventory if args[-2] == b.BASE else b"M\0" + b.PROGRAM.encode() + b"\0"
+                return inventory if args[-2] == b.BASE else (
+                    b"A\0" + b.WORKFLOW.encode() + b"\0M\0" + b.PROGRAM.encode() + b"\0"
+                )
             return b""
 
         with patch.object(b, "canonical"), patch.object(b, "git", side_effect=replies), \
@@ -402,27 +405,31 @@ class Benign(Inert):
                     b.verify_checkout(Path("/work/harness"), sha, harness=True)
                 inventory = prior
 
-    def test_ancestry_requires_exact_three_normal_nonempty_commits(self):
+    def test_ancestry_requires_exact_four_normal_nonempty_commits(self):
         sha = "b" * 40
         rows = b"".join(b"A\0" + name.encode() + b"\0" for name in sorted(b.FILES))
         faults = (
-            None, "one-commit", "two-commits", "extra-parent", "wrong-recovery", "wrong-preparation",
-            "merge-head", "merge-recovery", "merge-preparation", "empty", "foreign-delta",
+            None, "one-commit", "two-commits", "three-commits", "extra-parent", "wrong-first",
+            "wrong-recovery", "wrong-preparation", "merge-head", "merge-first", "merge-recovery",
+            "merge-preparation", "empty", "foreign-delta", "closed-workflow", "missing-new-workflow",
         )
         for fault in faults:
             def git(root, *args, **kwargs):
                 if args[0] == "rev-parse":
                     return sha.encode()
                 if args[0] == "rev-list":
-                    parents = {sha: b.RECOVERY, b.RECOVERY: b.PREPARATION, b.PREPARATION: b.BASE}
-                    if fault in ("one-commit", "two-commits", "extra-parent"):
+                    parents = {sha: b.FIRST_BOOTSTRAP, b.FIRST_BOOTSTRAP: b.RECOVERY,
+                               b.RECOVERY: b.PREPARATION, b.PREPARATION: b.BASE}
+                    if fault in ("one-commit", "two-commits", "three-commits", "extra-parent"):
                         parents[sha] = {"one-commit": b.BASE, "two-commits": b.PREPARATION,
-                                        "extra-parent": "c" * 40}[fault]
+                                        "three-commits": b.RECOVERY, "extra-parent": "c" * 40}[fault]
+                    elif fault == "wrong-first":
+                        parents[b.FIRST_BOOTSTRAP] = b.BASE
                     elif fault == "wrong-recovery":
                         parents[b.RECOVERY] = b.BASE
                     elif fault == "wrong-preparation":
                         parents[b.PREPARATION] = "d" * 40
-                    merges = {"merge-head": sha, "merge-recovery": b.RECOVERY,
+                    merges = {"merge-head": sha, "merge-first": b.FIRST_BOOTSTRAP, "merge-recovery": b.RECOVERY,
                               "merge-preparation": b.PREPARATION}
                     child = args[-1]
                     extra = " " + b.BASE if child == merges.get(fault) else ""
@@ -430,8 +437,17 @@ class Benign(Inert):
                 if "--name-status" in args:
                     if args[-2] == b.BASE:
                         return rows
-                    self.assertEqual(args[-2], b.RECOVERY)
-                    return b"" if fault == "empty" else b"M\0outside\0" if fault == "foreign-delta" else b"M\0" + b.PROGRAM.encode() + b"\0"
+                    self.assertEqual(args[-2], b.FIRST_BOOTSTRAP)
+                    delta = b"A\0" + b.WORKFLOW.encode() + b"\0M\0" + b.PROGRAM.encode() + b"\0"
+                    if fault == "empty":
+                        return b""
+                    if fault == "foreign-delta":
+                        return delta + b"M\0outside\0"
+                    if fault == "closed-workflow":
+                        return delta + b"M\0" + b.ORIGINAL_WORKFLOW.encode() + b"\0"
+                    if fault == "missing-new-workflow":
+                        return b"M\0" + b.PROGRAM.encode() + b"\0"
+                    return delta
                 return b""
 
             with self.subTest(fault=fault), patch.object(b, "canonical"), patch.object(b, "git", side_effect=git), \
@@ -451,7 +467,7 @@ class Benign(Inert):
             b.verify_environment(Path("/source"))
 
     def test_reaper_arguments_bind_sudo_and_independent_nonzero_ids(self):
-        parent = Path("/work/issue180-null-bootstrap-1-42/fixture")
+        parent = Path("/work") / (b.RUN_PREFIX + "42") / "fixture"
         arguments = ["--reaper", "readonly", "1001", "1002", "130.0", str(parent), "3", "4", "1001"]
         info = SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_dev=3, st_ino=4, st_uid=1001, st_gid=1002)
         context = {"SUDO_UID": "1001", "SUDO_GID": "1002"}
@@ -1074,7 +1090,7 @@ class Capture(Inert):
             "lifecycle.py", "130.0", "--outcome-v1", "a" * 32, "--",
             *budgeting.NAMESPACE_LAUNCHER, "/usr/bin/python3", "-I", "-S", "-B",
             str(self.harness / b.PROGRAM), "--reaper", "readonly",
-            "1001", "1002", "130.0", "/work/issue180-null-bootstrap-1-42/fixture", "3", "4", "1001",
+            "1001", "1002", "130.0", "/work/" + b.RUN_PREFIX + "42/fixture", "3", "4", "1001",
         ]
         with patch.object(life, "prctl"), patch.object(life, "require_pidfds"), \
              patch.object(life, "parent_death"), patch.object(life, "owned_children", return_value=[]), \
@@ -1372,7 +1388,7 @@ class DirectoryModel:
     def mount(self, source, target, flags, kind=None, data=None):
         def install():
             if (source, Path(target), flags, kind, data) != (
-                "tmpfs", self.workspace / "issue180-null-bootstrap-1-42/fixture",
+                "tmpfs", self.workspace / (b.RUN_PREFIX + "42") / "fixture",
                 14, "tmpfs", b"size=1048576,mode=0700",
             ) or self.mounts:
                 raise AssertionError("not the one original-fixture tmpfs")
@@ -1412,7 +1428,7 @@ class Backing(Inert):
     def host(self, model):
         self.report = life._CleanupReport("C", 130.0)
         b._cleanup_report = self.report
-        host = b.HostDirectories(model.workspace, "issue180-null-bootstrap-1-42",
+        host = b.HostDirectories(model.workspace, b.RUN_PREFIX + "42",
                                  1001, 1002, life, self.report, 130.0)
         host.create()
         return host
@@ -1608,7 +1624,7 @@ class CoordinatorControls(Inert):
         event, context = self.push()
         scope = b.identity(event, context)
         source = self.harness.parent / "candidate"
-        output = self.harness.parent / "issue180-null-bootstrap-1-42-records"
+        output = self.harness.parent / (b.RUN_PREFIX + "42-records")
         original_budget = b.new_budget(budgeting)
         # c8's dataclass default factory was bound at definition time.
         original_budget.started = 100.0
@@ -1725,6 +1741,18 @@ class CoordinatorControls(Inert):
                 active.enter_context(patch.object(module, name, return_value=value))
             if preflight == "uid":
                 active.enter_context(patch.object(b.os, "getresuid", return_value=(0, 1001, 0)))
+            elif preflight == "caps":
+                active.enter_context(patch.object(b, "self_state",
+                                                 return_value={**self.state(), "caps": (0, 1, 1, 0, 0)}))
+            elif preflight == "map":
+                active.enter_context(patch.object(b, "self_state",
+                                                 return_value={**self.state(), "uid_map": ((0, 1001, 1),)}))
+            elif preflight in ("status fields", "map shape", "private unretained reason"):
+                active.enter_context(patch.object(b, "self_state", side_effect=b.Refusal(preflight)))
+            elif preflight == "state-os":
+                active.enter_context(patch.object(b, "self_state", side_effect=OSError(errno.EIO, "private error")))
+            elif preflight in ("descriptor bound", "descriptor name"):
+                active.enter_context(patch.object(b, "fd_inventory", side_effect=b.Refusal(preflight)))
             elif preflight == "fd":
                 model.tables["C"][99] = (7, 702, stat.S_IFDIR, 0)
             active.enter_context(patch.object(b, "read_file", side_effect=lambda path, *args, **kwargs:
@@ -1836,7 +1864,7 @@ class CoordinatorControls(Inert):
                 self.assertFalse(value.records["cleanup.json"]["checks_complete_before_artifact_publication"])
                 self.assertNotIn("rmdir:C:fixture", value.model.events)
                 self.assertIsNotNone(value.model.host_fixture)
-                self.assertIn("issue180-null-bootstrap-1-42", value.model.root.children)
+                self.assertIn(b.RUN_PREFIX + "42", value.model.root.children)
                 self.assertFalse(value.records["custody.json"]["qualified"])
 
     def test_first_status_outer_failure_and_cleanup_faults_are_retained(self):
@@ -1881,6 +1909,65 @@ class CoordinatorControls(Inert):
             self.assertFalse(value.records["cleanup.json"]["source_checks"][source + "_after"])
             self.assertTrue(value.records["cleanup.json"]["directories"]["removed"]["fixture"])
             self.assertFalse(value.records["cleanup.json"]["checks_complete_before_artifact_publication"])
+
+    def test_preflight_retains_exact_finite_refusal_stage_and_obtained_numeric_values(self):
+        cases = (
+            ("uid", "ordinary-id-check", "ordinary-id-binding", False, False),
+            ("caps", "ordinary-state-check", "ordinary-state-binding", True, False),
+            ("map", "ordinary-state-check", "ordinary-state-binding", True, False),
+            ("status fields", "ordinary-state-read", "status-fields", False, False),
+            ("map shape", "ordinary-state-read", "map-shape", False, False),
+            ("descriptor bound", "ordinary-fd-read", "fd-bound", True, False),
+            ("descriptor name", "ordinary-fd-read", "fd-name", True, False),
+            ("fd", "ordinary-fd-check", "ordinary-fd-closure", True, True),
+            ("private unretained reason", "ordinary-state-read", "unclassified-refusal", False, False),
+            ("state-os", "ordinary-state-read", None, False, False),
+        )
+        for fault, stage, code, got_state, got_fds in cases:
+            with self.subTest(fault=fault):
+                value = self.exercise(preflight=fault)
+                self.assertEqual(value.result, 125)
+                self.assertNotIn("Popen", value.events)
+                cleanup = value.records["cleanup.json"]
+                self.assertEqual(cleanup["preflight_refusal_stage"], stage)
+                self.assertEqual(cleanup["preflight_first_error"]["code"], code)
+                observed = cleanup["preflight_observations"]
+                self.assertEqual(observed["ids"]["uid"], 1001)
+                self.assertEqual(observed["ids"]["gid"], 1002)
+                self.assertEqual(observed["state"] is not None, got_state)
+                self.assertEqual(observed["fds"] is not None, got_fds)
+                self.assertFalse(cleanup["launch_owners_acquired"])
+                self.assertEqual(value.records["launch.json"]["run_admissions"], 0)
+                self.assertTrue(all(actual is None for actual in cleanup["source_checks"].values()))
+                self.assertFalse(cleanup["qualified"])
+                if fault == "uid":
+                    self.assertEqual(observed["ids"]["resuid"], [0, 1001, 0])
+                    self.assertIsNone(observed["ids"]["resgid"])
+                if got_state:
+                    self.assertEqual(set(observed["state"]),
+                                     {"uid", "gid", "caps", "uid_map", "gid_map", "nnp"})
+                    self.assertNotIn("label", observed["state"])
+                if fault == "caps":
+                    self.assertEqual(observed["state"]["caps"], [0, 1, 1, 0, 0])
+                if fault == "map":
+                    self.assertEqual(observed["state"]["uid_map"], [[0, 1001, 1]])
+                if got_fds:
+                    self.assertEqual(observed["fds"], [
+                        [0, stat.S_IFIFO, 0], [1, stat.S_IFIFO, 1], [2, stat.S_IFIFO, 1],
+                        [99, stat.S_IFDIR, 0],
+                    ])
+                data = b.json_bytes(cleanup)
+                self.assertLessEqual(len(data), b.RECORD_BYTES)
+                self.assertNotIn(b"private", data)
+                if fault == "state-os":
+                    self.assertEqual(cleanup["preflight_first_error"],
+                                     {"kind": "os-error", "errno": errno.EIO, "code": None})
+
+    def test_preflight_observation_field_order_does_not_change_evidence(self):
+        expected = self.exercise(preflight="caps").records
+        original = self.state()
+        with patch.object(self, "state", return_value=dict(reversed(list(original.items())))):
+            self.assertEqual(self.exercise(preflight="caps").records, expected)
 
     def test_each_artifact_failure_is_a_failing_exit_without_future_close_attestation(self):
         for name in b.ARTIFACTS[1:]:
