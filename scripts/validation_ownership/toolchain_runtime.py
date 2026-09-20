@@ -227,11 +227,10 @@ def _execution_rows(executions, profile, parent_argv, *, complete):
         rows.append(row)
     if rows[0]["argv"] != list(parent_argv) or rows[0]["path"] != rows[0]["argv"][0]:
         raise MakeProbeError("toolchain compile role driver differs from its exact parent argv")
-    options(parent_argv[1:], syntax=False)
     return tuple(rows)
 
 
-def _operand_argv(row, actor):
+def _operand_argv(row, actor, *, system):
     zero = {
         "cc1": {
             "-quiet", "-mthumb", "-mthumb-interwork", "-ffreestanding", "-fno-pic", "-fno-pie",
@@ -265,6 +264,8 @@ def _operand_argv(row, actor):
             value = argv[index + 1]
             if not value or value.startswith("@") or "\0" in value:
                 raise MakeProbeError(f"toolchain {actor} role grammar has an invalid option value")
+            if word == "-isystem" and value not in system:
+                raise MakeProbeError("toolchain cc1 search root differs from its parent-admitted SDK")
             seen.add(word)
             if word == "-o":
                 outputs.append((index + 1, value))
@@ -288,16 +289,19 @@ def _operand_argv(row, actor):
 
 def compile_operand_roles(executions, profile, parent_argv, *, complete):
     rows = _execution_rows(executions, profile, parent_argv, complete=complete)
+    system = options(parent_argv[1:], syntax=False)[1]
     output = input_operand = None
     if len(rows) >= 2:
-        (output_index, output_value), (source_index, source) = _operand_argv(rows[1], "cc1")
+        (output_index, output_value), (source_index, source) = _operand_argv(
+            rows[1], "cc1", system=system,
+        )
         if source != "-":
             raise MakeProbeError("toolchain cc1 role grammar lost its sole standard-input source")
         output_value = _intermediate_path(output_value)
         output = ArgOperand("stage4-assembly", "output", 2, output_index, output_value)
     if len(rows) >= 3:
         (assembler_output_index, assembler_output), (input_index, input_value) = _operand_argv(
-            rows[2], "assembler",
+            rows[2], "assembler", system=system,
         )
         if assembler_output != "/dev/null" or input_value != output.value:
             raise MakeProbeError("toolchain assembler role grammar lost its exact output or writer input")
@@ -307,12 +311,16 @@ def compile_operand_roles(executions, profile, parent_argv, *, complete):
             (row["sequence"], index)
             for row in rows
             for index, value in enumerate(row["argv"])
-            if value == output.value
+            if output.value in value
         ]
         expected = [(2, output.argv_index)]
         if input_operand is not None:
             expected.append((3, input_operand.argv_index))
-        if occurrences != expected:
+        if occurrences != expected or any(
+            output.value in key or output.value in value
+            for row in rows
+            for key, value in row["environment"].items()
+        ):
             raise MakeProbeError("toolchain intermediate path appears outside its two parsed operand roles")
     return CompileRoles(
         1, 2 if output is not None else None, 3 if input_operand is not None else None,

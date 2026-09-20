@@ -264,6 +264,214 @@ class ToolchainProtocolDataTests(unittest.TestCase):
                         rows, model["profile"], rows[0]["argv"], complete=True,
                     )
 
+    def test_role_grammar_rejects_intermediate_mentions_in_all_actor_environments(self):
+        model = self.model()
+        path = model["roles"].output.value
+        aliases = (
+            ("INTERMEDIATE_ALIAS", path),
+            ("INTERMEDIATE_ALIAS", '"' + path + '"'),
+            ("INTERMEDIATE_ALIAS", "/usr/bin:" + path + ":/bin"),
+            (path, "value"),
+            ("ALIAS_" + path, "value"),
+        )
+        for actor in range(3):
+            for key, value in aliases:
+                for count in ((2, 3) if actor < 2 else (3,)):
+                    rows = copy.deepcopy(model["executions"][:count])
+                    rows[actor]["environment"][key] = value
+                    before = copy.deepcopy(rows)
+                    with self.subTest(actor=actor, key=key, value=value, count=count):
+                        with self.assertRaises(MakeProbeError):
+                            toolchain_runtime.compile_operand_roles(
+                                rows, model["profile"], rows[0]["argv"], complete=count == 3,
+                            )
+                        self.assertEqual(rows, before)
+
+    def test_role_grammar_rejects_intermediate_mentions_in_non_role_child_options(self):
+        model = self.model()
+        path = model["roles"].output.value
+        options = (
+            (1, False, ("-imultilib", "-isystem", "-dumpbase", "-dumpbase-ext")),
+            (1, True, ("-D", "-mcpu=", "-march=", "-mfloat-abi=", "-mlibarch=", "-mabi=")),
+            (2, True, ("-march=", "-mcpu=", "-mfpu=", "-mfloat-abi=", "-meabi=")),
+        )
+        for actor, attached, names in options:
+            for option in names:
+                for value in (path, 'prefix:"' + path + '":suffix'):
+                    for count in ((2, 3) if actor == 1 else (3,)):
+                        rows = copy.deepcopy(model["executions"][:count])
+                        argv = rows[actor]["argv"]
+                        if attached:
+                            word = option + ("INTERMEDIATE_ALIAS=" if option == "-D" else "") + value
+                            position = next((
+                                index for index, old in enumerate(argv)
+                                if option != "-D" and old.startswith(option)
+                            ), None)
+                            if position is None:
+                                argv.insert(1, word)
+                            else:
+                                argv[position] = word
+                        elif option in argv:
+                            argv[argv.index(option) + 1] = value
+                        else:
+                            argv[1:1] = [option, value]
+                        before = copy.deepcopy(rows)
+                        with self.subTest(actor=actor, option=option, value=value, count=count):
+                            with self.assertRaises(MakeProbeError):
+                                toolchain_runtime.compile_operand_roles(
+                                    rows, model["profile"], rows[0]["argv"], complete=count == 3,
+                                )
+                            self.assertEqual(rows, before)
+
+    def test_child_isystem_is_only_the_actual_parent_admitted_selection(self):
+        model = self.model()
+        admitted = "/usr/include/newlib"
+        for parent in ("separate", "attached", "absent"):
+            for child in (None, admitted, "/not-the-admitted-newlib", admitted + "/", "/usr/include/./newlib"):
+                for count in (2, 3):
+                    rows = copy.deepcopy(model["executions"][:count])
+                    driver = rows[0]["argv"]
+                    index = driver.index("-isystem")
+                    if parent == "attached":
+                        driver[index:index + 2] = ["-isystem" + admitted]
+                    elif parent == "absent":
+                        del driver[index:index + 2]
+                    cc1 = rows[1]["argv"]
+                    index = cc1.index("-isystem")
+                    if child is None:
+                        del cc1[index:index + 2]
+                    else:
+                        cc1[index + 1] = child
+                    before = copy.deepcopy(rows)
+                    with self.subTest(parent=parent, child=child, count=count):
+                        if child is None or parent != "absent" and child == admitted:
+                            roles = toolchain_runtime.compile_operand_roles(
+                                rows, model["profile"], driver, complete=count == 3,
+                            )
+                            self.assertEqual(cc1[roles.output.argv_index], model["roles"].output.value)
+                            if count == 3:
+                                self.assertEqual(rows[2]["argv"][roles.input.argv_index], roles.output.value)
+                            else:
+                                self.assertIsNone(roles.input)
+                        else:
+                            with self.assertRaises(MakeProbeError):
+                                toolchain_runtime.compile_operand_roles(
+                                    rows, model["profile"], driver, complete=count == 3,
+                                )
+                        self.assertEqual(rows, before)
+
+    def test_sdk_binding_preserves_closed_child_forms_and_parent_refusals(self):
+        model = self.model()
+        for path in ("/not-the-admitted-newlib", "/usr/include/newlib/", "/usr/include/./newlib"):
+            for count in (1, 2, 3):
+                rows = copy.deepcopy(model["executions"][:count])
+                driver = rows[0]["argv"]
+                driver[driver.index("-isystem") + 1] = path
+                if count >= 2:
+                    cc1 = rows[1]["argv"]
+                    cc1[cc1.index("-isystem") + 1] = path
+                with self.subTest(parent=path, count=count), self.assertRaises(MakeProbeError):
+                    toolchain_runtime.compile_operand_roles(
+                        rows, model["profile"], driver, complete=count == 3,
+                    )
+        for replacement in (
+            ["-isystem/usr/include/newlib"],
+            ["-isystem", "/usr/include/newlib", "-isystem", "/usr/include/newlib"],
+            ["-isystem", "/usr/include/newlib", "-isystem", "/not-the-admitted-newlib"],
+            ["-isystem"], ["-isystem", ""], ["-isystem", "@response"],
+        ):
+            rows = copy.deepcopy(model["executions"])
+            cc1 = rows[1]["argv"]
+            index = cc1.index("-isystem")
+            cc1[index:index + 2] = replacement
+            with self.subTest(child=replacement), self.assertRaises(MakeProbeError):
+                toolchain_runtime.compile_operand_roles(
+                    rows, model["profile"], rows[0]["argv"], complete=True,
+                )
+        for actor in (0, 2):
+            rows = copy.deepcopy(model["executions"])
+            rows[actor]["argv"][1:1] = ["-isystem", "/usr/include/newlib"]
+            with self.subTest(actor=actor), self.assertRaises(MakeProbeError):
+                toolchain_runtime.compile_operand_roles(
+                    rows, model["profile"], rows[0]["argv"], complete=True,
+                )
+
+    def test_accepted_role_forms_preserve_raw_values_order_and_only_two_projection_slots(self):
+        baseline = None
+        for variant in ("original", "value-looking-flags", "attached-parent-sdk", "without-sdk", "without-child-sdk"):
+            model = self.model()
+            rows = model["executions"]
+            driver, cc1, assembler = (row["argv"] for row in rows)
+            if variant == "value-looking-flags":
+                driver.insert(1, "-mabi=apcs-gnu")
+                cc1[cc1.index("-imultilib") + 1] = "-isystem"
+                cc1[cc1.index("-dumpbase") + 1] = "-o"
+                cc1[1:1] = [
+                    "-dumpbase-ext", "-isystem", "-quiet", "-fno-pic", "-mabi=apcs-gnu",
+                    "-DROLE=-o", "-DROLE=/work/other.s", "-DROLE=/elsewhere/ccL3VdjV.s",
+                ]
+                assembler[1:1] = ["-mthumb", "-mfpu=vfp"]
+                for row in rows:
+                    row["environment"]["UNRELATED"] = "/work/other.s:/elsewhere/ccL3VdjV.s"
+            elif variant == "attached-parent-sdk":
+                index = driver.index("-isystem")
+                driver[index:index + 2] = ["-isystem/usr/include/newlib"]
+            elif variant == "without-sdk":
+                index = driver.index("-isystem")
+                del driver[index:index + 2]
+                index = cc1.index("-isystem")
+                del cc1[index:index + 2]
+            elif variant == "without-child-sdk":
+                index = cc1.index("-isystem")
+                del cc1[index:index + 2]
+            before = copy.deepcopy(rows)
+            with self.subTest(variant=variant):
+                roles = toolchain_runtime.compile_operand_roles(
+                    rows, model["profile"], driver, complete=True,
+                )
+                self.assertEqual(rows, before)
+                model["receipt"]["writer"]["operand"]["argv_index"] = roles.output.argv_index
+                model["receipt"]["reader"]["operand"]["argv_index"] = roles.input.argv_index
+                for row, actor in zip(rows, model["receipt"]["actors"]):
+                    actor["exec_record_sha256"] = hashlib.sha256(toolchain_runtime.encoded(row)).hexdigest()
+                receipt = self.parse(model, reserve=self.reserve)
+                raw = self.probes(model)
+                original = copy.deepcopy(raw)
+                projected = toolchain_runtime.project_compile_identity(
+                    raw, receipt, roles, reserve=self.reserve,
+                )
+                expected = list(copy.deepcopy(raw))
+                for operand in (roles.output, roles.input):
+                    expected[operand.exec_sequence - 1]["argv"][operand.argv_index] = {
+                        "kind": "toolchain-intermediate-ref", "version": 1, "role": "stage4-assembly",
+                    }
+                self.assertEqual(projected["runtime_probes"], expected)
+                self.assertEqual(raw, original)
+                if baseline is None:
+                    baseline = projected
+                else:
+                    self.assertNotEqual(projected, baseline)
+
+    def test_receipt_role_admission_rejects_self_consistent_alias_and_sdk_models(self):
+        for mutation in ("environment", "macro", "sdk"):
+            model = self.model()
+            rows = model["executions"]
+            path = model["roles"].output.value
+            if mutation == "environment":
+                rows[1]["environment"]["INTERMEDIATE_ALIAS"] = path
+            elif mutation == "macro":
+                rows[1]["argv"].insert(1, "-DINTERMEDIATE_ALIAS=" + path)
+                model["receipt"]["writer"]["operand"]["argv_index"] += 1
+            else:
+                index = rows[1]["argv"].index("-isystem")
+                rows[1]["argv"][index + 1] = "/not-the-admitted-newlib"
+            for row, actor in zip(rows, model["receipt"]["actors"]):
+                actor["exec_record_sha256"] = hashlib.sha256(toolchain_runtime.encoded(row)).hexdigest()
+            before = copy.deepcopy(model)
+            with self.subTest(mutation=mutation), self.assertRaises(MakeProbeError):
+                self.parse(model, reserve=self.reserve)
+            self.assertEqual(model, before)
+
     def test_exact_model_receipt_validates_and_is_canonical_immutable_bytes(self):
         model = self.model()
         charges = []
