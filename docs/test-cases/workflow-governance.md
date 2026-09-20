@@ -9853,6 +9853,7 @@ retained. Do not invent either or rerun that spent pair as an automatic step.
      scripts.validation_ownership.tests.test_toolchain_runtime.ToolchainProtocolDataTests \
      scripts.validation_ownership.tests.test_toolchain_runtime.ToolchainIntermediateInertTests \
      scripts.validation_ownership.tests.test_toolchain_runtime.ToolchainCustodyInertTests \
+     scripts.validation_ownership.tests.test_toolchain_runtime.ToolchainCorrectionInertTests \
      scripts.validation_ownership.tests.test_header_pipeline.HeaderReceiptInertTests -v
    ```
 
@@ -9928,6 +9929,50 @@ not RSS or a full-root capacity certificate. Header's separately owned native
 procedure, bootstrap, source-phase integration and final delivery gates remain
 independent. No ROM/save/configuration/localization or gameplay compatibility
 change is introduced.
+
+#### Namespace and mutation-causality corrections
+
+The live descriptor control must model the supervisor's actual view:
+`<config.root>/work/cc*.s`, not the tracee's guest `/work/cc*.s`. Require the
+exact host-root spelling with the same object to pass, while foreign/escaped/
+deleted spellings and replaced FD/workspace identities reject. Inspect the
+returned raw receipt and confirm its path is still the original guest string.
+This correction grants no new path or alias.
+
+Before any expected regression-failure assertion, prepare and compile all
+source/function mutations. The existing nine-arm enforcement selector now
+preflights its whole plan; the six stop-fault removal arms also prepare outside
+their failure assertions. Missing or ambiguous AST targets, transform failures
+and syntax errors are preparation failures, never credited mutations.
+`Policy.leave` is selected explicitly for stdin-byte enforcement, distinct
+from `_ToolchainIntermediate.leave`. The inode, stdin, launch and target
+controls must report the actual boundary reached.
+
+The launch removal uses the original otherwise valid v2 `consume_launch`
+body and disables only issued-set membership for a real typed token whose
+original record/context remains bound. Missing, copied, forged and replayed
+tokens remain independent refusals. The native mutation must cross the valid
+launch boundary; a zero-run v1/schema refusal is not evidence for removal.
+The raw-record identity removal keeps the actual rows and disables only their
+image-identity comparison in `records()`, using the version-query stage to
+isolate that condition. Compile-stage role/image and intermediate actor
+binding remain independently enforced; returning an empty record set does
+not remove those requirements and is not an admissible mutation control.
+
+`test_captured_driver_changes_and_actual_target_result_adversary_never_succeed`
+retains its driver-identity control. Its post-seal foreign-target substitution
+must now assert copied/unissued custody rejection, original `arm-none-eabi`
+bytes and **zero returned aggregates**; do not unpack or fabricate a result.
+The separate
+`test_original_bound_foreign_target_stops_before_later_stages` changes the
+trusted test completion at the original issuance boundary, before the shared
+record freezes it. That labelled fault must produce the original target-error
+status/stderr and stop after stages 0/1. Removing only the execute target gate
+must expose an attempted stage 2 at the inert/native dispatch witness.
+The independent aggregate verifier still checks original target values; it
+must not be deleted to obtain a false final success. This additional native
+selector requires its own one-Make allocation and has not been allocated by
+code preparation.
 
 ### Interactions and save compatibility
 

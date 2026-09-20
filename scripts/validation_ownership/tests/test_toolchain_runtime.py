@@ -17,7 +17,7 @@ import tracemalloc
 import subprocess
 import threading
 import time
-from types import SimpleNamespace
+from types import FunctionType, SimpleNamespace
 import unittest
 import weakref
 from unittest.mock import patch
@@ -30,6 +30,178 @@ from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBud
 from scripts.validation_ownership.graph_commands import MakeCommands, ROOT_RUNTIME_FILES
 from scripts.validation_ownership.make_probe import Command
 from scripts.validation_ownership.tests import test_foundation as foundation
+
+
+class _MutationPreparationError(RuntimeError):
+    """Invalid preparation is never an expected regression assertion."""
+
+
+class _UnexpectedTargetStage(AssertionError):
+    """A bound foreign target reached a later execution stage."""
+
+
+def _mutation_function(tree, qualified):
+    names = qualified.split(".")
+    if len(names) == 1:
+        candidates = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == qualified
+        ]
+    else:
+        current = tree
+        for name in names[:-1]:
+            candidates = [
+                node for node in current.body
+                if isinstance(node, (ast.ClassDef, ast.FunctionDef)) and node.name == name
+            ]
+            if len(candidates) != 1:
+                raise _MutationPreparationError("mutation has no unique owning scope: " + qualified)
+            current = candidates[0]
+        candidates = [
+            node for node in current.body
+            if isinstance(node, ast.FunctionDef) and node.name == names[-1]
+        ]
+    if len(candidates) != 1:
+        raise _MutationPreparationError("mutation has no unique function: " + qualified)
+    return candidates[0]
+
+
+def _replace_mutation_function(tree, name, statements):
+    _mutation_function(tree, name).body = ast.parse(statements).body
+    ast.fix_missing_locations(tree)
+
+
+def _remove_mutation_condition(tree, function, constant=None, attribute=None):
+    owner = _mutation_function(tree, function)
+    candidates = [
+        node for node in ast.walk(owner) if isinstance(node, ast.If) and any(
+            isinstance(item, ast.Constant) and constant is not None and item.value == constant
+            or isinstance(item, ast.Attribute) and attribute is not None and item.attr == attribute
+            for item in ast.walk(node.test)
+        )
+    ]
+    if len(candidates) != 1:
+        raise _MutationPreparationError("mutation has no unique enforcement condition")
+    candidates[0].test = ast.Constant(False)
+    ast.fix_missing_locations(tree)
+
+
+def _disable_mutation_comparison(tree, function, expression):
+    owner = _mutation_function(tree, function)
+    expected = ast.dump(ast.parse(expression, mode="eval").body)
+    selected = [node for node in ast.walk(owner) if isinstance(node, ast.Compare) and ast.dump(node) == expected]
+    if len(selected) != 1:
+        raise _MutationPreparationError("mutation has no unique bounded comparison")
+    class Remove(ast.NodeTransformer):
+        def visit_Compare(self, node):
+            return ast.copy_location(ast.Constant(False), node) if node is selected[0] else self.generic_visit(node)
+    Remove().visit(owner)
+    ast.fix_missing_locations(tree)
+
+
+def _remove_launch_membership(tree):
+    _disable_mutation_comparison(tree, "consume_launch", "token not in self.issued")
+
+
+def _remove_record_identity(tree):
+    _disable_mutation_comparison(
+        tree, "records", 'row["identity"] != profile["images"][row["sequence"] - 1][1:]',
+    )
+
+
+def _remove_policy_stdin_guard(tree):
+    owner = _mutation_function(tree, "Policy.leave")
+    selected = [
+        node for node in ast.walk(owner) if isinstance(node, ast.If)
+        and isinstance(node.test, ast.Compare) and isinstance(node.test.left, ast.Name)
+        and node.test.left.id == "actual"
+        and any(isinstance(item, ast.Name) and item.id == "expected" for item in ast.walk(node.test))
+    ]
+    if len(selected) != 1:
+        raise _MutationPreparationError("stdin mutation has no unique Policy actual-byte check")
+    selected[0].test = ast.Constant(False)
+    ast.fix_missing_locations(tree)
+
+
+def _changed_stdin_input(tree):
+    _replace_mutation_function(
+        tree, "input_bytes",
+        """return profile["stdin"].replace('#include ', '#include\\t').encode("utf-8")""",
+    )
+
+
+def _function_mutant(function, change):
+    tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
+    try:
+        change(tree)
+    except AssertionError as error:
+        raise _MutationPreparationError("function mutation preflight failed") from error
+    ast.fix_missing_locations(tree)
+    namespace = dict(function.__globals__)
+    exec(compile(tree, "<owned-toolchain-mutation>", "exec"), namespace)
+    prepared = namespace[function.__name__]
+    result = FunctionType(
+        prepared.__code__, function.__globals__, function.__name__,
+        prepared.__defaults__, prepared.__closure__,
+    )
+    result.__kwdefaults__ = prepared.__kwdefaults__
+    return result
+
+
+def _prepare_native_runtime(changes):
+    prepared = {}
+    for name, change in changes.items():
+        if name not in {"toolchain_runtime.py", "syscall_guard.py"} or not callable(change):
+            raise _MutationPreparationError("native mutation has an unowned source or transform")
+        tree = ast.parse((make_probe.TRUSTED_ROOT / name).read_bytes())
+        try:
+            change(tree)
+        except AssertionError as error:
+            raise _MutationPreparationError("native mutation preflight failed: " + name) from error
+        ast.fix_missing_locations(tree)
+        compile(tree, name, "exec")
+        prepared[name] = (ast.unparse(tree) + "\n").encode()
+    return prepared
+
+
+def _prepare_enforcement_mutations():
+    def grammar(tree):
+        _replace_mutation_function(tree, "expect", """
+nonlocal position
+position += len(_shell_tokens(fragment, "toolchain grammar"))
+""")
+    def workspace(tree):
+        _replace_mutation_function(tree, "verify_workspace", "pass")
+    return {
+        "grammar": _function_mutant(toolchain_runtime.parse_recipe, grammar),
+        "launch": _function_mutant(toolchain_runtime.Controller.consume_launch, _remove_launch_membership),
+        "target": _function_mutant(
+            toolchain_runtime.Controller.execute,
+            lambda tree: _remove_mutation_condition(tree, "execute", constant=b"arm-none-eabi"),
+        ),
+        "records": _function_mutant(toolchain_runtime.records, _remove_record_identity),
+        "workspace": (
+            _prepare_native_runtime({"toolchain_runtime.py": workspace}),
+            _function_mutant(toolchain_runtime.verify_workspace, workspace),
+        ),
+        "sdk": _prepare_native_runtime({
+            "syscall_guard.py": lambda tree: _remove_mutation_condition(
+                tree, "Policy.header_runtime_access", attribute="hexdigest",
+            ),
+        }),
+        "image": _prepare_native_runtime({
+            "syscall_guard.py": lambda tree: _replace_mutation_function(
+                tree, "Policy.verify_dependency_image", "pass",
+            ),
+        }),
+        "stdin": _prepare_native_runtime({
+            "toolchain_runtime.py": _changed_stdin_input, "syscall_guard.py": _remove_policy_stdin_guard,
+        }),
+        "ignored-status": _function_mutant(
+            make_probe.ProbeSession._make,
+            lambda tree: _remove_mutation_condition(tree, "_make", constant="toolchain_check"),
+        ),
+    }
 
 
 class ToolchainProtocolDataTests(unittest.TestCase):
@@ -1153,7 +1325,7 @@ class _IntermediateModel:
     def readlink(self, path):
         _, _, pid, _, descriptor = str(path).split("/")
         assert (int(pid), int(descriptor)) in self.trace_fds
-        return self.model["roles"].output.value
+        return str(Path(self.policy.config["root"]) / self.model["roles"].output.value.lstrip("/"))
 
     def read(self, descriptor, count):
         kind, owner = self.handles[descriptor]
@@ -1683,7 +1855,7 @@ class _CustodyModel:
         config["toolchain_runtime"] = controller.consume_launch(token, config)
         return command, step, token, config
 
-    def native(self, stage=4, *, command=None, status=0):
+    def native(self, stage=4, *, command=None, status=0, stdout=None, mutate_report=None):
         command, step, token, config = self.launch(stage, command=command)
         rows = copy.deepcopy(self.model["executions"][:len(config["executables"])])
         for row in rows:
@@ -1706,12 +1878,15 @@ class _CustodyModel:
             accessed.append(toolchain_runtime.INTERMEDIATE_PREFIX + toolchain_runtime.encoded(receipt).decode("ascii"))
         outputs = (b"model GCC\n", b"arm-none-eabi\n", b"/usr/bin/arm-none-eabi-as\n", b"", b"")
         completed = subprocess.CompletedProcess(
-            tuple(command.argv), status, outputs[stage], b"inert compiler failure\n" if status else b"",
+            tuple(command.argv), status, outputs[stage] if stdout is None else stdout,
+            b"inert compiler failure\n" if status else b"",
         )
         observed = {
             "ok": True, "returncode": status, "accessed": accessed, "metadata": (),
             "consumed": [], "code_consumed": list(command.code), "executed": list(config["executables"]),
         }
+        if mutate_report is not None:
+            mutate_report(observed)
         payload = self.controller.prepare_native(token, completed, observed, config)
         self.session._native_issue_owner = token
         self.session._issue_native_return(toolchain_runtime.NATIVE_PURPOSE, token, completed, observed, payload)
@@ -2041,6 +2216,225 @@ class ToolchainCustodyInertTests(unittest.TestCase):
                 model.controller.seal_step_result(native[1], result, native_return=claimed)
 
 
+class ToolchainCorrectionInertTests(unittest.TestCase):
+    def test_supervisor_root_fd_spelling_completes_without_rewriting_guest_receipt(self):
+        with _IntermediateModel() as model:
+            try:
+                value = model.finish()
+            except syscall_guard.Violation as error:
+                self.fail("valid supervisor-root descriptor was rejected: " + str(error))
+            proof = json.loads(value[len(toolchain_runtime.INTERMEDIATE_PREFIX):])
+            self.assertEqual(proof["path"], "/work/ccL3VdjV.s")
+            self.assertTrue(proof["complete"])
+            self.assertEqual(model.peak, 3)
+            self.assertFalse(model.handles)
+
+    def test_foreign_escaped_alias_and_replaced_descriptor_paths_refuse(self):
+        paths = (
+            "/work/ccL3VdjV.s",
+            "/foreign/work/ccL3VdjV.s",
+            "/inert/command-root-10/work/ccL3VdjV.s",
+            "/inert/command-root-1/work/../work/ccL3VdjV.s",
+            "/inert/command-root-1/work/other.s",
+            "/inert/command-root-1/work/ccL3VdjV.s (deleted)",
+        )
+        for path in paths:
+            with self.subTest(path=path), _IntermediateModel() as model:
+                driver = model.actor(1)
+                with patch.object(syscall_guard.os, "readlink", return_value=path):
+                    with self.assertRaisesRegex(syscall_guard.Violation, "descriptor no longer names"):
+                        model.open_actor(driver, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+        with _IntermediateModel() as model:
+            driver = model.actor(1)
+            original = model.stat
+            def replaced(path, **options):
+                info = original(path, **options)
+                if str(path).startswith("/proc/"):
+                    info.st_ino += 1
+                return info
+            with patch.object(syscall_guard.os, "stat", replaced):
+                with self.assertRaisesRegex(syscall_guard.Violation, "descriptor no longer names"):
+                    model.open_actor(driver, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+
+    def test_launch_mutant_removes_only_membership_and_keeps_current_valid_protocol(self):
+        mutant = _function_mutant(toolchain_runtime.Controller.consume_launch, _remove_launch_membership)
+        for removed in (False, True, False):
+            with self.subTest(removed=removed), _CustodyModel() as model:
+                original = model.controller.consume_launch
+                def unregistered(token, config):
+                    model.controller.issued.discard(token)
+                    return mutant(model.controller, token, config) if removed else original(token, config)
+                with patch.object(model.controller, "consume_launch", unregistered):
+                    if removed:
+                        _, step, token, config = model.launch(0)
+                        self.assertEqual(config["toolchain_runtime"]["version"], 2)
+                        self.assertEqual(toolchain_runtime.validate_launch(config)["stage"], 0)
+                        self.assertIs(step.facts.token, token)
+                        self.assertEqual(step.phase, "launched")
+                    else:
+                        with self.assertRaisesRegex(MakeProbeError, "missing, copied, forged, expired"):
+                            model.launch(0)
+                self.assertEqual(model.session.budget.runs, 0)
+        for replace_token in (lambda token: None, copy.copy, lambda token: object()):
+            with _CustodyModel() as model:
+                def foreign(token, config):
+                    return mutant(model.controller, replace_token(token), config)
+                with patch.object(model.controller, "consume_launch", foreign), self.assertRaises(MakeProbeError):
+                    model.launch(0)
+
+    def test_record_mutant_preserves_rows_and_exposes_only_query_identity_mismatch(self):
+        mutant = _function_mutant(toolchain_runtime.records, _remove_record_identity)
+        def changed(report):
+            index = next(i for i, value in enumerate(report["accessed"]) if value.startswith(toolchain_runtime.EXEC_PREFIX))
+            row = json.loads(report["accessed"][index][len(toolchain_runtime.EXEC_PREFIX):])
+            row["identity"][1] += 1
+            report["accessed"][index] = toolchain_runtime.EXEC_PREFIX + toolchain_runtime.encoded(row).decode("ascii")
+        for removed in (False, True, False):
+            with self.subTest(removed=removed), _CustodyModel() as model:
+                selected = mutant if removed else toolchain_runtime.records
+                with patch.object(toolchain_runtime, "records", selected):
+                    if removed:
+                        native = model.native(0, mutate_report=changed)
+                        claimed, result = model.claim(native)
+                        self.assertEqual(len(result.runtime_probes), 1)
+                        self.assertEqual(result.runtime_probes[0]["identity"][1], 12)
+                        sealed = model.controller.seal_step_result(native[1], result, native_return=claimed)
+                        model.controller.consume_step_result(native[1], sealed)
+                    else:
+                        with self.assertRaisesRegex(MakeProbeError, "unbound actual toolchain executable"):
+                            model.native(0, mutate_report=changed)
+        with _CustodyModel() as model, patch.object(toolchain_runtime, "records", mutant):
+            with self.assertRaisesRegex(MakeProbeError, "actor differs from its authenticated execution row"):
+                model.native(4, mutate_report=changed)
+
+    def target_case(self, *, post_seal=False, remove_target=False):
+        mutant = _function_mutant(
+            toolchain_runtime.Controller.execute,
+            lambda tree: _remove_mutation_condition(tree, "execute", constant=b"arm-none-eabi"),
+        ) if remove_target else None
+        with _CustodyModel() as model:
+            model.controller.active = None
+            model.grant.stage = 0
+            stages, originals, aggregates = [], [], []
+            def command(subcommand):
+                stage = model.controller.steps[id(subcommand)].stage
+                stages.append(stage)
+                if stage > 1:
+                    raise _UnexpectedTargetStage("bound foreign target attempted a later stage")
+                native = model.native(
+                    stage, command=subcommand,
+                    stdout=b"foreign-target\n" if stage == 1 and not post_seal else None,
+                )
+                claimed, result = model.claim(native)
+                sealed = model.controller.seal_step_result(native[1], result, native_return=claimed)
+                if stage == 1:
+                    originals.append(sealed.stdout)
+                    if post_seal:
+                        return replace(sealed, stdout=b"foreign-target\n")
+                return sealed
+            def execute():
+                result = (
+                    mutant(model.controller, model.command) if mutant is not None
+                    else model.controller.execute(model.command)
+                )
+                aggregates.append(result)
+                return result
+            with patch.object(model.session, "_command", command), patch.object(
+                model.session, "_verify_runtime_tool", return_value=None,
+            ):
+                if post_seal:
+                    with self.assertRaisesRegex(MakeProbeError, "stage is unissued, copied, stale or replayed"):
+                        execute()
+                    self.assertEqual(originals, [b"arm-none-eabi\n"])
+                    self.assertEqual(aggregates, [])
+                elif remove_target:
+                    with self.assertRaisesRegex(_UnexpectedTargetStage, "attempted a later stage"):
+                        execute()
+                    self.assertEqual(stages, [0, 1, 2])
+                    self.assertEqual(aggregates, [])
+                else:
+                    result = execute()
+                    self.assertEqual(result.returncode, 1)
+                    self.assertEqual(result.stderr, b"error: modern compiler targets 'foreign-target'; expected 'arm-none-eabi'\n")
+                    self.assertEqual(stages, [0, 1])
+                    self.assertIsNone(model.controller.consume_recipe_result(model.command, result).projection)
+
+    def test_post_seal_target_substitution_is_custody_rejection_not_an_aggregate(self):
+        self.target_case(post_seal=True)
+
+    def test_original_bound_target_stops_before_later_dispatch_and_removal_exposes_it(self):
+        self.target_case()
+        self.target_case(remove_target=True)
+        self.target_case()
+
+    def test_stdin_transform_selects_policy_leave_and_exposes_actual_byte_guard(self):
+        tree = ast.parse(Path(syscall_guard.__file__).read_text())
+        before = ast.dump(_mutation_function(tree, "_ToolchainIntermediate.leave"))
+        _remove_policy_stdin_guard(tree)
+        self.assertEqual(ast.dump(_mutation_function(tree, "_ToolchainIntermediate.leave")), before)
+        compile(tree, "<prepared-stdin-guard>", "exec")
+        node = _mutation_function(tree, "Policy.leave")
+        namespace = dict(syscall_guard.__dict__)
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "<inert-policy-leave>", "exec"), namespace)
+        altered = FunctionType(namespace["leave"].__code__, syscall_guard.__dict__)
+        changed = toolchain_runtime.SYNTAX_INPUT.replace("#include ", "#include\t").encode()
+        for removed in (False, True, False):
+            policy = syscall_guard.Policy.__new__(syscall_guard.Policy)
+            policy.config = {"observation_limit": 65536}
+            policy.observation_bytes = 0
+            policy.toolchain = {"stage": 3, "stdin": toolchain_runtime.SYNTAX_INPUT}
+            policy.toolchain_stdin, policy.toolchain_eof = bytearray(), False
+            state = syscall_guard.Process("compiler")
+            state.pending = ("toolchain-stdin", (0x1000, len(changed)))
+            registers = syscall_guard.Registers()
+            registers.orig_rax, registers.rax = 0, len(changed)
+            with patch.object(syscall_guard, "memory", return_value=changed):
+                if removed:
+                    altered(policy, 401, state, registers)
+                    self.assertEqual(bytes(policy.toolchain_stdin), changed)
+                else:
+                    with self.assertRaisesRegex(syscall_guard.Violation, "stdin differs from its actual issued bytes"):
+                        policy.leave(401, state, registers)
+                    self.assertFalse(policy.toolchain_stdin)
+
+    def test_all_existing_enforcement_transforms_preflight_and_preparation_cannot_count_as_regression(self):
+        prepared = _prepare_enforcement_mutations()
+        self.assertEqual(set(prepared), {
+            "grammar", "launch", "target", "records", "workspace", "sdk", "image", "stdin", "ignored-status",
+        })
+        for name in ("sdk", "image", "stdin"):
+            for path, source in prepared[name].items():
+                compile(source, path, "exec")
+        for path, source in prepared["workspace"][0].items():
+            compile(source, path, "exec")
+        def broken(tree):
+            raise AssertionError("inert setup failure")
+        with self.assertRaises(_MutationPreparationError):
+            _prepare_native_runtime({"syscall_guard.py": broken})
+        with self.assertRaises(_MutationPreparationError):
+            _function_mutant(toolchain_runtime.records, broken)
+        tree = ast.parse(Path(syscall_guard.__file__).read_text())
+        with self.assertRaises(_MutationPreparationError):
+            _mutation_function(tree, "leave")
+
+    def test_all_prepared_stop_fault_and_removal_transforms_compile_before_regressions(self):
+        tree = ast.parse(Path(__file__).read_text())
+        owner = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ModernToolchainTests")
+        function = copy.deepcopy(_mutation_function(owner, "intermediate_fault"))
+        function.decorator_list = []
+        namespace = {"ast": ast}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), "<pure-stop-fault-preflight>", "exec"), namespace)
+        prepared = []
+        for kind in ("creation-status", "actor", "object", "reader", "writer-barrier", "retirement"):
+            for remove in (False, True):
+                def change(source):
+                    namespace["intermediate_fault"](source, kind, remove=remove)
+                sources = _prepare_native_runtime({"syscall_guard.py": change})
+                compile(sources["syscall_guard.py"], "<prepared-stop-fault>", "exec")
+                prepared.append((kind, remove))
+        self.assertEqual(len(prepared), 12)
+
+
 class ModernToolchainTests(unittest.TestCase):
     def setUp(self):
         self.fixture = foundation.FoundationTests()
@@ -2303,15 +2697,23 @@ class ModernToolchainTests(unittest.TestCase):
         ast.fix_missing_locations(tree)
         return messages[kind]
 
-    def assert_native_intermediate_fault(self, kind, *, remove=False):
+    def prepare_native_intermediate_fault(self, kind, *, remove=False):
         message = {}
         def mutate(tree):
             message["expected"] = self.intermediate_fault(tree, kind, remove=remove)
-        with self.native_runtime({"syscall_guard.py": mutate}):
-            with self.session() as session:
-                with self.assertRaisesRegex(MakeProbeError, re.escape(message["expected"])):
-                    self.make(session)
-            self.assert_clean(session)
+        prepared = _prepare_native_runtime({"syscall_guard.py": mutate})
+        return prepared, message["expected"]
+
+    def assert_native_intermediate_result(self, message):
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, re.escape(message)):
+                self.make(session)
+        self.assert_clean(session)
+
+    def assert_native_intermediate_fault(self, kind):
+        prepared, message = self.prepare_native_intermediate_fault(kind)
+        with self.native_runtime(prepared):
+            self.assert_native_intermediate_result(message)
 
     def test_native_intermediate_actor_fault_reaches_its_owned_stop_guard(self):
         self.assert_native_intermediate_fault("actor")
@@ -2333,8 +2735,9 @@ class ModernToolchainTests(unittest.TestCase):
 
     def test_native_intermediate_guard_removal_and_restoration(self):
         for kind in ("creation-status", "actor", "object", "reader", "writer-barrier", "retirement"):
-            with self.subTest(kind=kind), self.assertRaises(AssertionError):
-                self.assert_native_intermediate_fault(kind, remove=True)
+            prepared, message = self.prepare_native_intermediate_fault(kind, remove=True)
+            with self.native_runtime(prepared), self.subTest(kind=kind), self.assertRaises(AssertionError):
+                self.assert_native_intermediate_result(message)
             self.assert_native_intermediate_fault(kind)
 
     def test_native_copied_step_result_is_not_completion_authority(self):
@@ -2566,7 +2969,7 @@ class ModernToolchainTests(unittest.TestCase):
 
     def test_only_issued_actual_launches_accept_original_arguments_inputs_and_lifetime(self):
         for defect in getattr(self, "launch_controls", (
-            "missing", "copied", "forged", "replay", "closed", "epoch", "argv", "environment",
+            "missing", "unregistered", "copied", "forged", "replay", "closed", "epoch", "argv", "environment",
             "stdin", "executables", "sdk", "mount", "code", "workspace", "directory-object", "private-entry",
         )):
             with self.subTest(defect=defect), self.session() as session:
@@ -2585,6 +2988,8 @@ class ModernToolchainTests(unittest.TestCase):
                         return result
                     if defect == "missing":
                         options.pop("toolchain_launch")
+                    elif defect == "unregistered":
+                        session._toolchain.issued.discard(options["toolchain_launch"])
                     elif defect == "copied":
                         options["toolchain_launch"] = copy.copy(options["toolchain_launch"])
                     elif defect == "forged":
@@ -2619,8 +3024,12 @@ class ModernToolchainTests(unittest.TestCase):
                             output.mkdir()
                         else:
                             (output / "foreign").write_bytes(b"unissued")
-                    with self.assertRaises(MakeProbeError):
-                        run(root, **options)
+                    try:
+                        with self.assertRaises(MakeProbeError):
+                            run(root, **options)
+                    finally:
+                        if defect == "unregistered":
+                            self.launch_mutation_runs = session.budget.runs - before
                     self.assertEqual(session.budget.runs, before)
                     raise MakeProbeError("expected actual toolchain launch denial")
                 with patch.object(session, "_sandbox_run", changed):
@@ -2723,54 +3132,28 @@ class ModernToolchainTests(unittest.TestCase):
             self.assert_clean(session)
 
     @contextmanager
-    def native_runtime(self, changes):
+    def native_runtime(self, prepared):
         from scripts.validation_ownership import make_probe
 
+        if (
+            type(prepared) is not dict
+            or any(type(name) is not str or type(data) is not bytes for name, data in prepared.items())
+        ):
+            raise _MutationPreparationError("native runtime requires preflighted source bytes")
         root = self.fixture.directory / ("native-runtime-" + str(len(list(self.fixture.directory.iterdir()))))
         root.mkdir()
         for path in make_probe.TRUSTED_ROOT.iterdir():
             if path.is_file() and path.suffix in {".py", ".c", ".h"}:
                 data = path.read_bytes()
-                if path.name in changes:
-                    tree = ast.parse(data)
-                    changes[path.name](tree)
-                    data = (ast.unparse(tree) + "\n").encode()
+                if path.name in prepared:
+                    data = prepared[path.name]
                 (root / path.name).write_bytes(data)
         with patch.object(make_probe, "TRUSTED_ROOT", root):
             yield
 
-    @staticmethod
-    def replace_function(tree, name, statements):
-        candidates = [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == name]
-        if len(candidates) != 1:
-            raise AssertionError("mutation did not select exactly one function")
-        candidates[0].body = ast.parse(statements).body
-        ast.fix_missing_locations(tree)
-
-    @staticmethod
-    def remove_condition(tree, function, constant=None, attribute=None):
-        owners = [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == function]
-        if len(owners) != 1:
-            raise AssertionError("mutation did not select one owning function")
-        candidates = [
-            node for node in ast.walk(owners[0]) if isinstance(node, ast.If) and any(
-                isinstance(item, ast.Constant) and constant is not None and item.value == constant
-                or isinstance(item, ast.Attribute) and attribute is not None and item.attr == attribute
-                for item in ast.walk(node.test)
-            )
-        ]
-        if len(candidates) != 1:
-            raise AssertionError("mutation did not select one enforcement condition")
-        candidates[0].test = ast.Constant(False)
-        ast.fix_missing_locations(tree)
-
-    @staticmethod
-    def function_mutant(function, change):
-        tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
-        change(tree)
-        namespace = dict(function.__globals__)
-        exec(compile(tree, "<owned-toolchain-mutation>", "exec"), namespace)
-        return namespace[function.__name__]
+    replace_function = staticmethod(_replace_mutation_function)
+    remove_condition = staticmethod(_remove_mutation_condition)
+    function_mutant = staticmethod(_function_mutant)
 
     def assert_native_image_control(self):
         with self.session() as session:
@@ -2795,27 +3178,8 @@ class ModernToolchainTests(unittest.TestCase):
     def test_native_exec_checks_the_actual_image_even_after_valid_wire_shape(self):
         self.assert_native_image_control()
 
-    def assert_native_stdin_control(self, *, remove_guard=False):
-        def changed(tree):
-            self.replace_function(tree, "input_bytes", """
-return profile["stdin"].replace('#include ', '#include\\t').encode("utf-8")
-""")
-        def missing_guard(tree):
-            owners = [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == "leave"]
-            candidates = [
-                node for node in ast.walk(owners[0]) if isinstance(node, ast.If)
-                and isinstance(node.test, ast.Compare)
-                and isinstance(node.test.left, ast.Name) and node.test.left.id == "actual"
-                and any(isinstance(item, ast.Name) and item.id == "expected" for item in ast.walk(node.test))
-            ]
-            if len(candidates) != 1:
-                raise AssertionError("stdin mutation did not select one actual-byte check")
-            candidates[0].test = ast.Constant(False)
-            ast.fix_missing_locations(tree)
-        changes = {"toolchain_runtime.py": changed}
-        if remove_guard:
-            changes["syscall_guard.py"] = missing_guard
-        with self.native_runtime(changes), self.session() as session:
+    def assert_native_stdin_control(self):
+        with self.session() as session:
             read, reports = session.budget.read_bytes, []
             def capture(path, category):
                 data = read(path, category)
@@ -2836,9 +3200,12 @@ return profile["stdin"].replace('#include ', '#include\\t').encode("utf-8")
         self.assert_clean(session)
 
     def test_native_stdin_bytes_reject_before_the_frontend_can_consume_headers(self):
-        self.assert_native_stdin_control()
+        prepared = _prepare_native_runtime({"toolchain_runtime.py": _changed_stdin_input})
+        with self.native_runtime(prepared):
+            self.assert_native_stdin_control()
 
     def test_independent_enforcement_mutations_fail_the_corresponding_regressions(self):
+        prepared = _prepare_enforcement_mutations()
         checks = []
 
         def run_control(name, control, patches):
@@ -2855,13 +3222,7 @@ return profile["stdin"].replace('#include ', '#include\\t').encode("utf-8")
         @contextmanager
         def recipe_patch(case):
             case.recipe_controls = {"failure-branch"}
-            def changed(tree):
-                self.replace_function(tree, "expect", """
-nonlocal position
-position += len(_shell_tokens(fragment, "toolchain grammar"))
-""")
-            value = self.function_mutant(toolchain_runtime.parse_recipe, changed)
-            with patch.object(toolchain_runtime, "parse_recipe", value):
+            with patch.object(toolchain_runtime, "parse_recipe", prepared["grammar"]):
                 yield
         run_control("complete-original-grammar",
                     lambda case: case.test_complete_original_recipe_and_effective_flags_fail_closed_before_toolchain_launch(),
@@ -2869,38 +3230,35 @@ position += len(_shell_tokens(fragment, "toolchain grammar"))
 
         @contextmanager
         def capability_patch(case):
-            case.launch_controls = ("missing",)
-            def unissued(controller, token, config):
-                return {
-                    "version": 1, "scope": toolchain_runtime.launch_scope(config["root"]),
-                    "binding": toolchain_runtime.launch_binding(config),
-                }
-            with patch.object(toolchain_runtime.Controller, "consume_launch", unissued):
+            case.launch_controls = ("unregistered",)
+            case.launch_mutation_runs = 0
+            with patch.object(toolchain_runtime.Controller, "consume_launch", prepared["launch"]):
                 yield
+            self.assertGreater(case.launch_mutation_runs, 0, "mutation never crossed the valid v2 launch boundary")
         run_control("actual-one-shot-launch-authority",
                     lambda case: case.test_only_issued_actual_launches_accept_original_arguments_inputs_and_lifetime(),
                     capability_patch)
 
         @contextmanager
         def target_patch(case):
-            changed = lambda tree: self.remove_condition(tree, "execute", constant=b"arm-none-eabi")
-            value = self.function_mutant(toolchain_runtime.Controller.execute, changed)
-            with patch.object(toolchain_runtime.Controller, "execute", value):
+            case.target_mutation_witness = None
+            with patch.object(toolchain_runtime.Controller, "execute", prepared["target"]):
                 yield
-        run_control("actual-target-result", lambda case: case.test_captured_driver_changes_and_actual_target_result_adversary_never_succeed(),
+            self.assertEqual(case.target_mutation_witness, (0, 1, 2))
+        run_control("actual-target-result", lambda case: case.test_original_bound_foreign_target_stops_before_later_stages(),
                     target_patch)
 
         @contextmanager
         def receipt_patch(case):
-            with patch.object(toolchain_runtime, "records", return_value=()):
+            with patch.object(toolchain_runtime, "records", prepared["records"]):
                 yield
         run_control("authenticated-executable-input-results", lambda case: case.assert_receipt_control("identity"), receipt_patch)
 
         @contextmanager
         def workspace_patch(case):
             case.launch_controls = ("directory-object",)
-            changed = lambda tree: self.replace_function(tree, "verify_workspace", "pass")
-            with case.native_runtime({"toolchain_runtime.py": changed}), patch.object(toolchain_runtime, "verify_workspace"):
+            source, parent = prepared["workspace"]
+            with case.native_runtime(source), patch.object(toolchain_runtime, "verify_workspace", parent):
                 yield
         run_control("actual-owned-workspace", lambda case: case.test_only_issued_actual_launches_accept_original_arguments_inputs_and_lifetime(),
                     workspace_patch)
@@ -2908,30 +3266,26 @@ position += len(_shell_tokens(fragment, "toolchain grammar"))
         @contextmanager
         def sdk_patch(case):
             case.input_controls = ("sdk",)
-            changed = lambda tree: self.remove_condition(tree, "header_runtime_access", attribute="hexdigest")
-            with case.native_runtime({"syscall_guard.py": changed}):
+            with case.native_runtime(prepared["sdk"]):
                 yield
         run_control("actual-immutable-C-SDK", lambda case: case.test_native_compiler_rejects_changed_sdk_and_source_content_before_consumption(),
                     sdk_patch)
 
         @contextmanager
         def image_patch(case):
-            changed = lambda tree: self.replace_function(tree, "verify_dependency_image", "pass")
-            with case.native_runtime({"syscall_guard.py": changed}):
+            with case.native_runtime(prepared["image"]):
                 yield
         run_control("actual-native-executable-image", lambda case: case.assert_native_image_control(), image_patch)
 
         @contextmanager
-        def unchanged(case):
-            yield
-        run_control("stdin-before-frontend-effects", lambda case: case.assert_native_stdin_control(remove_guard=True), unchanged)
+        def stdin_patch(case):
+            with case.native_runtime(prepared["stdin"]):
+                yield
+        run_control("stdin-before-frontend-effects", lambda case: case.assert_native_stdin_control(), stdin_patch)
 
         @contextmanager
         def ignored_status_patch(case):
-            from scripts.validation_ownership.make_probe import ProbeSession
-            changed = lambda tree: self.remove_condition(tree, "_make", constant="toolchain_check")
-            value = self.function_mutant(ProbeSession._make, changed)
-            with patch.object(ProbeSession, "_make", value):
+            with patch.object(make_probe.ProbeSession, "_make", prepared["ignored-status"]):
                 yield
         run_control("failed-required-check-cannot-certify",
                     lambda case: case.test_ignored_real_recipe_failure_cannot_become_an_ownership_certificate(),
@@ -3259,9 +3613,43 @@ return token.value, token.operator, token.io_number, active
                 results.append(result)
                 return result
             with patch.object(session, "_command", wrong_target), patch.object(session._toolchain, "execute", record):
-                with self.assertRaises(MakeProbeError):
+                with self.assertRaisesRegex(MakeProbeError, "toolchain stage is unissued, copied, stale or replayed"):
                     self.make(session)
+            self.assertEqual(len(actual), 1)
             self.assertEqual(actual[0].stdout, b"arm-none-eabi\n")
+            self.assertEqual(results, [])
+        self.assert_clean(session)
+
+    def test_original_bound_foreign_target_stops_before_later_stages(self):
+        with self.session() as session:
+            command, execute, issue = session._command, session._toolchain.execute, session._issue_native_return
+            results, actual, stages = [], [], []
+            def original_target(purpose, owner, completed, observed, payload):
+                if purpose == toolchain_runtime.NATIVE_PURPOSE and payload.step.stage == 1:
+                    actual.append(completed.stdout)
+                    completed.stdout = b"foreign-target\n"
+                return issue(purpose, owner, completed, observed, payload)
+            def track(value, **options):
+                step = session._toolchain.steps.get(id(value))
+                if step is not None:
+                    stages.append(step.stage)
+                    if step.stage > 1:
+                        self.target_mutation_witness = tuple(stages)
+                        raise _UnexpectedTargetStage("target-value enforcement attempted a later stage")
+                return command(value, **options)
+            def record(value):
+                result = execute(value)
+                results.append(result)
+                return result
+            with (
+                patch.object(session, "_issue_native_return", original_target),
+                patch.object(session, "_command", track),
+                patch.object(session._toolchain, "execute", record),
+                self.assertRaisesRegex(MakeProbeError, "GNU Make failed after live producers"),
+            ):
+                self.make(session)
+            self.assertEqual(actual, [b"arm-none-eabi\n"])
+            self.assertEqual(stages, [0, 1])
             result, = results
             self.assertEqual(result.returncode, 1)
             self.assertEqual(result.stderr, b"error: modern compiler targets 'foreign-target'; expected 'arm-none-eabi'\n")
@@ -3281,6 +3669,8 @@ return token.value, token.operator, token.io_number, active
                 if index is None or defect == "sdk" and not any(value.startswith("arm-header:") for value in report["accessed"]):
                     return data
                 row = json.loads(report["accessed"][index][len(prefix):])
+                if defect == "identity" and row["stage"] != "version":
+                    return data
                 if defect == "executed":
                     report["executed"] = []
                 elif defect == "sdk":

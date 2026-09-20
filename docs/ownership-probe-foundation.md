@@ -258,6 +258,14 @@ driver creation, creator close, the cc1 output open/write/close/zero-exit,
 completed-file sealing, assembler input open/sequential returned bytes/close/
 zero-exit, and the driver's successful unlink/absence/nlink-zero/zero-exit.
 Mode, object identity, offsets, extent, content and ordering must agree.
+The tracee alone is chrooted. A `/proc/<pid>/fd/<fd>` link read by the
+supervisor is compared with the exact trusted-root pathname
+`<config.root>/work/<created-name>`, in that same namespace. The directory pin,
+entry identity and actual FD identity are still independently checked.
+Foreign roots, root-prefix lookalikes, escaped spellings, replacement objects
+and deleted names do not pass that equality. Raw argv and receipt paths
+remain the original canonical guest `/work/...` strings; no prefix filter or
+general path normalizer is introduced.
 Only grammar-derived operands identify the roles. A mention of the complete
 intermediate path in any other argument or execution environment rejects;
 child `-isystem`, when present, must equal the parent's admitted selection.

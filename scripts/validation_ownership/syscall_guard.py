@@ -470,11 +470,12 @@ class _ToolchainIntermediate:
     def descriptor(self, pid, state, descriptor, access):
         self.actor(pid, state)
         identity = self.object_identity()
-        self.reserve(4096 + 2048)
+        self.reserve(8192 + 64 * (len(self.policy.config["root"]) + len(self.path)))
         if not 0 <= descriptor < 128:
             raise Violation("toolchain descriptor is outside its native bound")
+        expected_path = str(Path(self.policy.config["root"]) / self.path.lstrip("/"))
         if (
-            os.readlink(f"/proc/{pid}/fd/{descriptor}") != self.path
+            os.readlink(f"/proc/{pid}/fd/{descriptor}") != expected_path
             or publication_identity(os.stat(f"/proc/{pid}/fd/{descriptor}")) != identity
         ):
             raise Violation("toolchain descriptor no longer names its pinned object")
