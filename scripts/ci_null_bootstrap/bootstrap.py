@@ -25,18 +25,20 @@ from types import SimpleNamespace
 
 REPOSITORY = "laqieer/fireemblem8-expansion"
 OWNER = "laqieer"
-BRANCH = "diagnostic/issue-180-null-bootstrap-2"
-WORKFLOW = ".github/workflows/issue180-null-bootstrap-2.yml"
+BRANCH = "diagnostic/issue-180-null-bootstrap-3"
+WORKFLOW = ".github/workflows/issue180-null-bootstrap-3.yml"
 ORIGINAL_WORKFLOW = ".github/workflows/issue180-null-bootstrap-1.yml"
-RUN_PREFIX = "issue180-null-bootstrap-2-"
+SECOND_WORKFLOW = ".github/workflows/issue180-null-bootstrap-2.yml"
+RUN_PREFIX = "issue180-null-bootstrap-3-"
 BASE = "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"
 PREPARATION = "20478394860b673b98fb32a4dd292fa0fc02a5d4"
 RECOVERY = "3302f790e944e81be4ea0777682f5282e560fd9c"
 FIRST_BOOTSTRAP = "496ed2ac184c48d6bdd6ec3f651183e67df9045b"
+SECOND_BOOTSTRAP = "9d61413261cb813fd1be5e48080ac876eaf3eb85"
 SOURCE = "c8b365da1be29bc58352cf1edb8b836a2cf18321"
 PROGRAM = "scripts/ci_null_bootstrap/bootstrap.py"
 FILES = frozenset({
-    WORKFLOW, ORIGINAL_WORKFLOW, PROGRAM, "scripts/ci_null_bootstrap/__init__.py",
+    WORKFLOW, ORIGINAL_WORKFLOW, SECOND_WORKFLOW, PROGRAM, "scripts/ci_null_bootstrap/__init__.py",
     "scripts/ci_null_bootstrap/test_bootstrap.py", "scripts/ci_null_bootstrap/README.md",
 })
 ARTIFACTS = ("scope.json", "launch.json", "custody.json", "mode.json", "cleanup.json")
@@ -74,6 +76,7 @@ PREFLIGHT_REFUSALS = {
     "descriptor bound": "fd-bound",
     "descriptor name": "fd-name",
     "fixed file bound": "proc-file-bound",
+    "entry FIFO identity changed": "entry-fifo-identity",
 }
 
 
@@ -172,7 +175,7 @@ def verify_checkout(root, sha, *, harness=False, deadline=None):
     require(git(root, "rev-parse", "HEAD", deadline=deadline).strip() == sha.encode(), "selected revision")
     git(root, "diff", "--quiet", "--no-ext-diff", "--ignore-submodules=none", sha, "--", deadline=deadline)
     if harness:
-        chain = (sha, FIRST_BOOTSTRAP, RECOVERY, PREPARATION, BASE)
+        chain = (sha, SECOND_BOOTSTRAP, FIRST_BOOTSTRAP, RECOVERY, PREPARATION, BASE)
         for child, parent in zip(chain, chain[1:]):
             parents = git(root, "rev-list", "--parents", "-n", "1", child, deadline=deadline).split()
             require(parents == [child.encode(), parent.encode()], "exact normal preparation lineage")
@@ -181,7 +184,7 @@ def verify_checkout(root, sha, *, harness=False, deadline=None):
         actual = list(zip(rows[:-1:2], rows[1:-1:2]))
         require(all(kind == b"A" for kind, _ in actual)
                 and {path.decode("ascii") for _, path in actual} == FILES, "closed additive files")
-        changed = git(root, "diff", "--name-status", "-z", FIRST_BOOTSTRAP, sha, deadline=deadline).split(b"\0")
+        changed = git(root, "diff", "--name-status", "-z", SECOND_BOOTSTRAP, sha, deadline=deadline).split(b"\0")
         require(len(changed) >= 3 and len(changed) % 2 == 1 and changed[-1] == b"", "nonempty correction")
         delta = list(zip(changed[:-1:2], changed[1:-1:2]))
         allowed = {
@@ -251,7 +254,8 @@ def identity(event, context):
     )
     return {
         "repository": REPOSITORY, "branch": BRANCH, "workflow": WORKFLOW,
-        "base": BASE, "preparation": PREPARATION, "recovery": RECOVERY, "first_bootstrap": FIRST_BOOTSTRAP,
+        "base": BASE, "preparation": PREPARATION, "recovery": RECOVERY,
+        "first_bootstrap": FIRST_BOOTSTRAP, "second_bootstrap": SECOND_BOOTSTRAP,
         "source": SOURCE, "harness": sha, "run_id": run,
         "run_number": 1, "run_attempt": 1, "creation_allocation_consumed": True,
         "never_merge": True, "qualified": False, "seven_modes": False, "fixture_placement": PLACEMENT,
@@ -496,6 +500,57 @@ def fd_inventory():
             fcntl.fcntl(descriptor, fcntl.F_GETFL) & os.O_ACCMODE,
         )
     return result
+
+
+def withdraw_entry_fifos(before, report):
+    require(type(before) is dict and len(before) <= 20 and {0, 1, 2} <= before.keys()
+            and all(integer(fd, 0, 0x7FFFFFFF) and type(value) is tuple and len(value) == 4
+                    and all(type(part) is int for part in value)
+                    and (fd <= 2 or value[2] == stat.S_IFIFO and value[3] in (0, 1, 2))
+                    for fd, value in before.items()), "initial C descriptors")
+    stdio = {fd: before[fd] for fd in (0, 1, 2)}
+    pending = [(fd, before[fd]) for fd in sorted(before) if fd > 2]
+    report["descriptors"] = [
+        {"fd": fd, "state": "pending", "error": {"kind": None, "errno": None}}
+        for fd, _ in pending
+    ]
+    primary = None
+    report["phase"] = "disposal"
+    for index, row in enumerate(report["descriptors"]):
+        descriptor, original = pending[index]
+        pending[index] = None
+        try:
+            row["state"] = "identity-refused"
+            info = os.fstat(descriptor)
+            actual = (info.st_dev, info.st_ino, stat.S_IFMT(info.st_mode),
+                      fcntl.fcntl(descriptor, fcntl.F_GETFL) & os.O_ACCMODE)
+            require(actual == original, "entry FIFO identity changed")
+            row["state"] = "close-uncertain"
+            os.close(descriptor)
+            row["state"] = "closed"
+        except BaseException as error:
+            if primary is None:
+                primary = error
+            if row["state"] == "closed":
+                row["state"] = "close-uncertain"
+            row["error"]["kind"] = (
+                "os-error" if isinstance(error, OSError) else
+                "interrupt" if isinstance(error, KeyboardInterrupt) else
+                "refusal" if isinstance(error, Refusal) else "other-error"
+            )
+            row["error"]["errno"] = (
+                error.errno if isinstance(error, OSError) and integer(error.errno, 0, 4095) else None
+            )
+            if error is not primary:
+                for attribute in ("__traceback__", "__context__", "__cause__"):
+                    BaseException.__setattr__(error, attribute, None)
+    if primary is not None:
+        raise primary
+    report["phase"] = "final-inventory"
+    after = fd_inventory()
+    require(after == stdio, "initial C descriptors")
+    report["phase"], report["complete"] = "complete", True
+    return after
 
 
 def validate_fds(actual, expected, capture):
@@ -1618,10 +1673,12 @@ def lifecycle_closed(snapshot, budget):
 class Coordinator:
     """One C owner; acquisition, custody, source checks and empty-directory cleanup."""
 
-    def __init__(self, budgeting, life, scope, harness, source, output, uid, gid, baseline, source_checks):
+    def __init__(self, budgeting, life, scope, harness, source, output, uid, gid, baseline, source_checks,
+                 entry_fifo_cleanup):
         self.budgeting, self.life, self.scope = budgeting, life, scope
         self.harness, self.source, self.output = harness, source, output
         self.uid, self.gid, self.baseline = uid, gid, baseline
+        self.entry_fifo_cleanup = entry_fifo_cleanup
         self.budget = self.owner = self.directories = self.primary = None
         self.stage, self.error_stage = "admission", None
         self.invoked = self.closed_lifecycle = self.capture_ok = self.fd_restored = False
@@ -1794,6 +1851,7 @@ class Coordinator:
             "cleanup.json": {
                 "coordinator_first_error": error_value, "coordinator_error_stage": self.error_stage,
                 "report": cleanup, "directories": directories, "source_checks": self.source_checks,
+                "entry_fifo_cleanup": self.entry_fifo_cleanup,
                 "lifecycle_closed": self.closed_lifecycle, "fd_inventory_restored": self.fd_restored,
                 "outcome_released": self.owner_released,
                 "checks_complete_before_artifact_publication": passed, "qualified": False,
@@ -1829,6 +1887,7 @@ def coordinate(context):
     checks = {key: None for key in ("harness_before", "selected_before", "harness_after", "selected_after")}
     observed = {"ids": {"uid": None, "gid": None, "resuid": None, "resgid": None},
                 "state": None, "fds": None}
+    entry_fifo_cleanup = {"complete": False, "phase": "validation", "descriptors": []}
     stage = "ordinary-id-read"
     error_stage = None
     error_fact = None
@@ -1855,6 +1914,7 @@ def coordinate(context):
         baseline = fd_inventory()
         observed["fds"] = [[fd, value[2], value[3]] for fd, value in sorted(baseline.items())]
         stage = "ordinary-fd-check"
+        baseline = withdraw_entry_fifos(baseline, entry_fifo_cleanup)
         require(set(baseline) == {0, 1, 2}, "initial C descriptors")
         for key, root, sha, is_harness in (
             ("harness_before", harness, scope["harness"], True), ("selected_before", source, SOURCE, False),
@@ -1896,6 +1956,7 @@ def coordinate(context):
             "cleanup.json": {
                 "preflight_refusal_stage": error_stage, "preflight_first_error": error_fact, "source_checks": checks,
                 "preflight_observations": observed,
+                "entry_fifo_cleanup": entry_fifo_cleanup,
                 "launch_owners_acquired": False, "checks_complete_before_artifact_publication": False,
                 "qualified": False, "publication_completion_attested": False,
             },
@@ -1907,7 +1968,8 @@ def coordinate(context):
                 for attribute in ("__traceback__", "__context__", "__cause__"):
                     BaseException.__setattr__(error, attribute, None)
         return 125
-    return Coordinator(budgeting, life, scope, harness, source, output, uid, gid, baseline, checks).run()
+    return Coordinator(budgeting, life, scope, harness, source, output, uid, gid, baseline, checks,
+                       entry_fifo_cleanup).run()
 
 
 def main():

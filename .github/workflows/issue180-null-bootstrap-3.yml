@@ -1,0 +1,79 @@
+name: Issue 180 fixed null bootstrap 3 (entry FIFO withdrawal)
+
+on:
+  push:
+    branches: [diagnostic/issue-180-null-bootstrap-3]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue180-null-bootstrap-3
+  cancel-in-progress: false
+
+jobs:
+  readonly-bootstrap:
+    if: >-
+      github.repository == 'laqieer/fireemblem8-expansion' &&
+      github.event.repository.private == false &&
+      github.actor == 'laqieer' &&
+      github.triggering_actor == 'laqieer' &&
+      github.event.sender.login == 'laqieer' &&
+      github.event.created == true &&
+      github.event.deleted == false &&
+      github.run_number == 1 &&
+      github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      EXPECTED_SOURCE_SHA: c8b365da1be29bc58352cf1edb8b836a2cf18321
+
+    steps:
+    - name: Checkout the exact nondelivery preparation
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ github.sha }}
+        path: harness
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Account for first job creation before setup
+      run: |
+        /usr/bin/python3 -I -S -B "$GITHUB_WORKSPACE/harness/scripts/ci_null_bootstrap/bootstrap.py" plan
+
+    - name: Checkout immutable c8 separately
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: c8b365da1be29bc58352cf1edb8b836a2cf18321
+        path: candidate
+        fetch-depth: 0
+        submodules: recursive
+        persist-credentials: false
+
+    - name: Verify selected source
+      working-directory: candidate
+      run: |
+        test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+
+    - name: Install the declared native CI dependencies
+      run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-dev libpng-dev pkg-config python3-venv
+
+    - name: One ordinary coordinator and original-fixture bootstrap
+      working-directory: candidate
+      run: |
+        /usr/bin/timeout --signal=KILL 45s \
+          /usr/bin/python3 -I -S -B "$GITHUB_WORKSPACE/harness/scripts/ci_null_bootstrap/bootstrap.py" run
+
+    - name: Upload only bounded semantic records
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+      with:
+        name: issue180-null-bootstrap-3-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+        retention-days: 7
+        if-no-files-found: error
+        path: |
+          ${{ github.workspace }}/issue180-null-bootstrap-3-${{ github.run_id }}-records/scope.json
+          ${{ github.workspace }}/issue180-null-bootstrap-3-${{ github.run_id }}-records/launch.json
+          ${{ github.workspace }}/issue180-null-bootstrap-3-${{ github.run_id }}-records/custody.json
+          ${{ github.workspace }}/issue180-null-bootstrap-3-${{ github.run_id }}-records/mode.json
+          ${{ github.workspace }}/issue180-null-bootstrap-3-${{ github.run_id }}-records/cleanup.json

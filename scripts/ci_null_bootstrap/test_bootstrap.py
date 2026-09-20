@@ -382,7 +382,8 @@ class Benign(Inert):
             if args[:2] == ("rev-parse", "HEAD"):
                 return sha.encode() + b"\n"
             if args[0] == "rev-list":
-                parents = {sha: b.FIRST_BOOTSTRAP, b.FIRST_BOOTSTRAP: b.RECOVERY,
+                parents = {sha: b.SECOND_BOOTSTRAP, b.SECOND_BOOTSTRAP: b.FIRST_BOOTSTRAP,
+                           b.FIRST_BOOTSTRAP: b.RECOVERY,
                            b.RECOVERY: b.PREPARATION, b.PREPARATION: b.BASE}
                 return (args[-1] + " " + parents[args[-1]]).encode() + b"\n"
             if "--name-status" in args:
@@ -405,31 +406,37 @@ class Benign(Inert):
                     b.verify_checkout(Path("/work/harness"), sha, harness=True)
                 inventory = prior
 
-    def test_ancestry_requires_exact_four_normal_nonempty_commits(self):
+    def test_ancestry_requires_exact_five_normal_nonempty_commits(self):
         sha = "b" * 40
         rows = b"".join(b"A\0" + name.encode() + b"\0" for name in sorted(b.FILES))
         faults = (
-            None, "one-commit", "two-commits", "three-commits", "extra-parent", "wrong-first",
+            None, "one-commit", "two-commits", "three-commits", "four-commits", "extra-parent", "wrong-second", "wrong-first",
             "wrong-recovery", "wrong-preparation", "merge-head", "merge-first", "merge-recovery",
-            "merge-preparation", "empty", "foreign-delta", "closed-workflow", "missing-new-workflow",
+            "merge-preparation", "merge-second", "empty", "foreign-delta", "closed-workflow",
+            "closed-second-workflow", "missing-new-workflow",
         )
         for fault in faults:
             def git(root, *args, **kwargs):
                 if args[0] == "rev-parse":
                     return sha.encode()
                 if args[0] == "rev-list":
-                    parents = {sha: b.FIRST_BOOTSTRAP, b.FIRST_BOOTSTRAP: b.RECOVERY,
+                    parents = {sha: b.SECOND_BOOTSTRAP, b.SECOND_BOOTSTRAP: b.FIRST_BOOTSTRAP,
+                               b.FIRST_BOOTSTRAP: b.RECOVERY,
                                b.RECOVERY: b.PREPARATION, b.PREPARATION: b.BASE}
-                    if fault in ("one-commit", "two-commits", "three-commits", "extra-parent"):
+                    if fault in ("one-commit", "two-commits", "three-commits", "four-commits", "extra-parent"):
                         parents[sha] = {"one-commit": b.BASE, "two-commits": b.PREPARATION,
-                                        "three-commits": b.RECOVERY, "extra-parent": "c" * 40}[fault]
+                                        "three-commits": b.RECOVERY, "four-commits": b.FIRST_BOOTSTRAP,
+                                        "extra-parent": "c" * 40}[fault]
+                    elif fault == "wrong-second":
+                        parents[b.SECOND_BOOTSTRAP] = b.BASE
                     elif fault == "wrong-first":
                         parents[b.FIRST_BOOTSTRAP] = b.BASE
                     elif fault == "wrong-recovery":
                         parents[b.RECOVERY] = b.BASE
                     elif fault == "wrong-preparation":
                         parents[b.PREPARATION] = "d" * 40
-                    merges = {"merge-head": sha, "merge-first": b.FIRST_BOOTSTRAP, "merge-recovery": b.RECOVERY,
+                    merges = {"merge-head": sha, "merge-second": b.SECOND_BOOTSTRAP,
+                              "merge-first": b.FIRST_BOOTSTRAP, "merge-recovery": b.RECOVERY,
                               "merge-preparation": b.PREPARATION}
                     child = args[-1]
                     extra = " " + b.BASE if child == merges.get(fault) else ""
@@ -437,7 +444,7 @@ class Benign(Inert):
                 if "--name-status" in args:
                     if args[-2] == b.BASE:
                         return rows
-                    self.assertEqual(args[-2], b.FIRST_BOOTSTRAP)
+                    self.assertEqual(args[-2], b.SECOND_BOOTSTRAP)
                     delta = b"A\0" + b.WORKFLOW.encode() + b"\0M\0" + b.PROGRAM.encode() + b"\0"
                     if fault == "empty":
                         return b""
@@ -445,6 +452,8 @@ class Benign(Inert):
                         return delta + b"M\0outside\0"
                     if fault == "closed-workflow":
                         return delta + b"M\0" + b.ORIGINAL_WORKFLOW.encode() + b"\0"
+                    if fault == "closed-second-workflow":
+                        return delta + b"M\0" + b.SECOND_WORKFLOW.encode() + b"\0"
                     if fault == "missing-new-workflow":
                         return b"M\0" + b.PROGRAM.encode() + b"\0"
                     return delta
@@ -1333,7 +1342,8 @@ class DirectoryModel:
         node = self.tables[self.actor][fd]
         if isinstance(node, DirectoryNode):
             return self.operation("fstat:" + self.actor + ":" + node.name, node.info)
-        return SimpleNamespace(st_dev=node[0], st_ino=node[1], st_mode=node[2] | 0o600)
+        return self.operation("fstat:" + self.actor + ":" + str(fd),
+                              lambda: SimpleNamespace(st_dev=node[0], st_ino=node[1], st_mode=node[2] | 0o600))
 
     def listdir(self, fd):
         node = self.resolve(fd)
@@ -1404,6 +1414,11 @@ class DirectoryModel:
             for fd, value in self.tables[self.actor].items()
         }
 
+    def fcntl(self, fd, command):
+        if command != b.fcntl.F_GETFL:
+            raise AssertionError("unmodeled descriptor operation")
+        return self.inventory()[fd][3]
+
     def destroy(self):
         if set(self.tables["R"]) != {0, 1, 2}:
             raise AssertionError("namespace destruction with a retained R pin")
@@ -1415,6 +1430,7 @@ class DirectoryModel:
             stack.enter_context(patch.object(b.os, name, getattr(self, name)))
         stack.enter_context(patch.object(b.os, "lstat", side_effect=self.stat))
         stack.enter_context(patch.object(b, "fd_inventory", side_effect=self.inventory))
+        stack.enter_context(patch.object(b.fcntl, "fcntl", side_effect=self.fcntl))
         stack.enter_context(patch.object(b, "mount_id", side_effect=lambda fd: self.resolve(fd).mount))
         stack.enter_context(patch.object(b, "tmpfs_state", side_effect=lambda fd: (0x01021994, b.FIXTURE_BYTES, 14)))
         stack.enter_context(patch.object(b, "namespace", return_value=(1, 11)))
@@ -1617,10 +1633,12 @@ class CoordinatorControls(Inert):
     def exercise(self, *, fault=None, outer=0, missing=False, kept_namespace=False, retained_child=False,
                  source_fault=None, publication_fault=None, admission=False, release_fault=None,
                  preflight=None, acquisition_interrupt=False, unknown_after=False,
-                 budget_close_fault=None, snapshot_fault=False, expired=None, missing_eof=False):
+                 budget_close_fault=None, snapshot_fault=False, expired=None, missing_eof=False,
+                 entry=None, missing_stdio=(), entry_fault=None, fault_error=None):
         model = DirectoryModel(self.harness.parent)
         if fault is not None:
-            model.fault = (*fault, OSError(errno.EIO, "inert coordinator boundary"))
+            model.fault = (*fault, fault_error if fault_error is not None else
+                           OSError(errno.EIO, "inert coordinator boundary"))
         event, context = self.push()
         scope = b.identity(event, context)
         source = self.harness.parent / "candidate"
@@ -1731,6 +1749,42 @@ class CoordinatorControls(Inert):
             records[name] = b.read_json(data)
 
         with model.patches(), ExitStack() as active:
+            if entry is not None:
+                model.tables["C"].update(entry)
+            for fd in missing_stdio:
+                model.tables["C"].pop(fd)
+            if entry_fault == "identity":
+                original_fstat = model.fstat
+
+                def replaced(fd):
+                    info = original_fstat(fd)
+                    if fd == min(entry):
+                        info.st_ino += 1
+                    return info
+
+                active.enter_context(patch.object(b.os, "fstat", side_effect=replaced))
+            elif entry_fault == "stdio":
+                original_close = model.close
+
+                def replaced_stdio(fd):
+                    result = original_close(fd)
+                    if fd == max(entry):
+                        model.tables["C"][1] = pipe_value(9999, 1)
+                    return result
+
+                active.enter_context(patch.object(b.os, "close", side_effect=replaced_stdio))
+            elif entry_fault == "double-close":
+                original_close = model.close
+
+                def fail_both(fd):
+                    result = original_close(fd)
+                    if fd == min(entry):
+                        raise OSError(errno.EIO, "first inert close")
+                    if fd == max(entry):
+                        raise KeyboardInterrupt("second inert close")
+                    return result
+
+                active.enter_context(patch.object(b.os, "close", side_effect=fail_both))
             for module, name, value in (
                 (b, "paths", (self.harness, source, output)),
                 (b, "self_state", self.state()), (b.os, "getuid", 1001), (b.os, "getgid", 1002),
@@ -1829,6 +1883,93 @@ class CoordinatorControls(Inert):
         self.assertFalse(cleanup["publication_completion_attested"])
         self.assertFalse(value.records["custody.json"]["qualified"])
         self.assertFalse(value.records["mode.json"]["old_operation_separately_exported"])
+
+    def test_verified_entry_fifos_are_withdrawn_before_the_unchanged_stdio_barrier(self):
+        for entry in (
+            {142: pipe_value(9142, 0), 145: pipe_value(9145, 1)},
+            {24: pipe_value(1, 0), 37: pipe_value(2, 1)},
+            {fd: pipe_value(9000 + fd, fd % 3) for fd in range(100, 117)},
+        ):
+            with self.subTest(descriptors=tuple(entry)):
+                value = self.exercise(entry=entry)
+                self.assertEqual(value.result, 0)
+                self.assertEqual(value.budget.runs, 1)
+                self.assertEqual(value.model.inventory(), value.baseline)
+                cleanup = value.records["cleanup.json"]["entry_fifo_cleanup"]
+                self.assertTrue(cleanup["complete"])
+                self.assertEqual(cleanup["phase"], "complete")
+                self.assertEqual(cleanup["descriptors"],
+                                 [{"fd": fd, "state": "closed", "error": {"kind": None, "errno": None}}
+                                  for fd in sorted(entry)])
+                for fd in entry:
+                    label = "close:C:" + str(fd)
+                    self.assertEqual(value.model.counts[label], 1)
+                    self.assertLess(value.model.events.index(label), value.model.events.index("open:C:workspace"))
+
+    def test_non_fifo_or_missing_stdio_refuses_before_any_entry_disposal(self):
+        entries = [{142: (8, 9142, kind, 0), 145: pipe_value(9145, 1)}
+                   for kind in (stat.S_IFDIR, stat.S_IFREG, stat.S_IFCHR, stat.S_IFSOCK)]
+        entries.append({142: pipe_value(9142, 3), 145: pipe_value(9145, 1)})
+        entries.append({fd: pipe_value(9000 + fd, 0) for fd in range(100, 118)})
+        for entry in entries:
+            with self.subTest(entry=entry):
+                value = self.exercise(entry=entry)
+                self.assertEqual(value.result, 125)
+                self.assertNotIn("Popen", value.events)
+                self.assertFalse(any(name.startswith("close:C:") for name in value.model.events))
+        value = self.exercise(entry={142: pipe_value(9142, 0)}, missing_stdio=(2,))
+        self.assertEqual(value.result, 125)
+        self.assertNotIn("Popen", value.events)
+        self.assertFalse(any(name.startswith("close:C:") for name in value.model.events))
+
+    def test_entry_disposal_preserves_identity_and_close_failures_without_retries(self):
+        entry = {142: pipe_value(9142, 0), 145: pipe_value(9145, 1)}
+        for timing in ("before", "after"):
+            with self.subTest(timing=timing):
+                value = self.exercise(entry=entry, fault=("close:C:142", 1, timing))
+                self.assertEqual(value.result, 125)
+                self.assertNotIn("Popen", value.events)
+                cleanup = value.records["cleanup.json"]
+                self.assertEqual(cleanup["preflight_first_error"]["errno"], errno.EIO)
+                disposal = cleanup["entry_fifo_cleanup"]
+                self.assertFalse(disposal["complete"])
+                self.assertEqual([row["state"] for row in disposal["descriptors"]],
+                                 ["close-uncertain", "closed"])
+                self.assertEqual(disposal["descriptors"][0]["error"]["errno"], errno.EIO)
+                self.assertEqual(value.model.counts["close:C:142"], 1)
+                self.assertEqual(value.model.counts["close:C:145"], 1)
+        value = self.exercise(entry=entry, entry_fault="identity")
+        self.assertEqual(value.result, 125)
+        self.assertNotIn("close:C:142", value.model.events)
+        self.assertEqual(value.model.counts["close:C:145"], 1)
+        disposal = value.records["cleanup.json"]["entry_fifo_cleanup"]
+        self.assertEqual([row["state"] for row in disposal["descriptors"]], ["identity-refused", "closed"])
+        self.assertFalse(disposal["complete"])
+        value = self.exercise(entry=entry, entry_fault="stdio")
+        self.assertEqual(value.result, 125)
+        self.assertNotIn("Popen", value.events)
+        self.assertFalse(value.records["cleanup.json"]["entry_fifo_cleanup"]["complete"])
+
+    def test_entry_close_interruptions_and_secondary_errors_preserve_first_cause(self):
+        entry = {142: pipe_value(9142, 0), 145: pipe_value(9145, 1)}
+        value = self.exercise(entry=entry, fault=("close:C:142", 1, "after"),
+                              fault_error=KeyboardInterrupt("inert close interruption"))
+        self.assertEqual(value.result, 125)
+        self.assertNotIn("Popen", value.events)
+        self.assertEqual(value.records["cleanup.json"]["preflight_first_error"]["kind"], "interrupt")
+        self.assertEqual(value.model.counts["close:C:142"], 1)
+        self.assertEqual(value.model.counts["close:C:145"], 1)
+        value = self.exercise(entry=entry, entry_fault="double-close")
+        self.assertEqual(value.result, 125)
+        self.assertNotIn("Popen", value.events)
+        cleanup = value.records["cleanup.json"]
+        self.assertEqual(cleanup["preflight_first_error"]["kind"], "os-error")
+        self.assertEqual(cleanup["preflight_first_error"]["errno"], errno.EIO)
+        self.assertEqual([row["error"]["kind"] for row in cleanup["entry_fifo_cleanup"]["descriptors"]],
+                         ["os-error", "interrupt"])
+        self.assertFalse(cleanup["entry_fifo_cleanup"]["complete"])
+        self.assertEqual(value.model.counts["close:C:142"], 1)
+        self.assertEqual(value.model.counts["close:C:145"], 1)
 
     def test_acquisition_faults_and_interruptions_never_invent_owned_objects(self):
         faults = [

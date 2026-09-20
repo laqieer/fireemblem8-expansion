@@ -12,14 +12,17 @@ the recovery-continuation lineage is frozen in
 <https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5748359622>.
 The preflight-evidence continuation is frozen in
 <https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5748482765>.
-The branch has exactly four normal commits above
+The ordinary entry-FIFO correction is frozen in
+<https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5748602432>.
+The branch has exactly five normal commits above
 `ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`: held preparation
 `20478394860b673b98fb32a4dd292fa0fc02a5d4`, interrupted recovery
 `3302f790e944e81be4ea0777682f5282e560fd9c`, first reviewed bootstrap
-`496ed2ac184c48d6bdd6ec3f651183e67df9045b`, then this correction.
+`496ed2ac184c48d6bdd6ec3f651183e67df9045b`, attributed second bootstrap
+`9d61413261cb813fd1be5e48080ac876eaf3eb85`, then this correction.
 Each must be the sole direct parent of the next. The original five additive
-regular files plus the new bootstrap2 workflow are the full inventory.
-The correction cannot modify the closed bootstrap1 workflow. Its separately selected source is
+regular files plus bootstrap2/3 workflows are the full inventory.
+The correction cannot modify either closed workflow. Its separately selected source is
 `c8b365da1be29bc58352cf1edb8b836a2cf18321`. The original ordinary startup census
 is closed, not repeated. This preparation does not adopt a FoundationTests
 backend, qualify seven modes, fix current CI, or allocate ROOT21, census2,
@@ -42,6 +45,34 @@ arguments are never stringified or exported. No labels, raw proc content,
 paths, namespace identities, environment or stack trace is retained.
 The same five artifact bounds and exit125 behavior remain; observations grant
 no authority or runtime qualification. No fallback relaxes the unknown failure.
+
+## Closed bootstrap2 and ordinary entry FIFO withdrawal
+
+Run35498636878 identified the actual next refusal: `ordinary-fd-check`,
+`ordinary-fd-closure`. Ordinary IDs, full maps and capability checks passed,
+but C had two extra FIFO references (142/read and145/write) before any budget,
+fixture or native launch. Their origin is unknown; their numbers are not an
+allowlist, and the first run's missing predicate remains unknown.
+
+Bootstrap3 withdraws that unneeded ordinary entry authority rather than
+allowing it across the stdio-only barrier. All three original stdio handles
+must exist and every extra descriptor must first be a FIFO with an ordinary
+access mode, under the existing20-descriptor bound. A directory, regular file,
+device, socket or malformed identity refuses before any close.
+
+The finite disposal list and report storage are owned before action. Each
+handle's original device/inode/type/access is revalidated; its numeric
+authority is withdrawn before one close attempt. Replacement or uncertainty
+refuses without retry, preserves the first error and still attempts the other
+original FIFO closes. Final inventory must be exactly the original stdio
+identities and only0/1/2. No range close, new process, privilege, fallback or
+extra worker descriptor is introduced.
+
+The same bounded cleanup artifact records only per-handle numeric disposition,
+finite error facts and whether final stdio verification actually completed.
+Failed disposal cannot launch a budget or fixture. Normal C evidence retains
+the completed disposal record. Kernel/LSM and namespace/helper qualification
+remain unproven until a separately frozen real launch.
 
 ## Historical interface hold and mounted-root correction
 
@@ -219,7 +250,7 @@ test "$(git -C "$C8_CHECKOUT" rev-parse HEAD)" = c8b365da1be29bc58352cf1edb8b836
 git -C "$C8_CHECKOUT" diff --quiet c8b365da1be29bc58352cf1edb8b836a2cf18321 -- scripts/validation_ownership
 ISSUE180_SELECTED_SOURCE="$C8_CHECKOUT" \
   python3 -B -m unittest scripts.ci_null_bootstrap.test_bootstrap -v
-actionlint .github/workflows/issue180-null-bootstrap-2.yml
+actionlint .github/workflows/issue180-null-bootstrap-3.yml
 ```
 
 Expected results: mocked ordinary-owner path reaches the fixed helper boundary;
@@ -235,6 +266,10 @@ removal, incomplete custody, deadline and artifact publication.
 The preflight matrix retains ten distinct inert failures with exact stages,
 closed reason codes and only obtained observations. Reordering state fields
 does not change the result; arbitrary exception strings are not disclosed.
+Entry-FIFO controls cover the observed handles and unrelated numbers/stdio
+aliases, non-FIFO/missing-stdio refusals before disposal, replaced identity,
+close failures before/after release, remaining closes, no retry and changed
+final stdio. Successful disposal must precede host fixture acquisition.
 
 In-memory restorations remove the pre-entry and old-operation checks or
 create `volume` through the old host pin. Each must break its behavioral
