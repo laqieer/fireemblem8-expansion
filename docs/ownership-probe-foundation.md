@@ -209,6 +209,21 @@ sign a prefix. The manifest is streamed in sequence order and retains no
 second ordered row list. Its maximum is derived from the issued observation
 count, file limit, exact profile shapes, scope and binding—not from an
 assumption that every allowed path executes.
+The size calculators themselves admit encoder/container workspace before
+building templates, including the worst escaped extent of the exact scope.
+Nested authentication checks each full wire string's exact type, ASCII and
+extent before making a payload slice. It separately admits the slice, bytes,
+decoded text/Unicode and parser nodes counted without copying the input.
+These are representation reservations, not an assumption that wire bytes
+equal Python heap bytes.
+
+During publication the spent marker remains present through both set
+insertions and retires last. Its overlap with the published entries is
+pre-admitted. An interrupted construction or transfer prevents completion;
+partial publication may conservatively overcount but never refunds authority.
+Failed/nonzero supervisor paths release the owned verifier before report
+construction. A successful path signs first, releases that reference, then
+constructs the report; later publication failure still runs cleanup.
 
 After the parent validates a successful report, the shared private
 native-return seam fingerprints the complete parsed report with exact builtin
@@ -220,6 +235,12 @@ nonfinite values and out-of-domain integers reject. Every issue and claim pays
 its own traversal, sorting, hash and retained-reference work from existing
 budgets. No whole-report JSON encoding, new limit, opaque report capability or
 toolchain placeholder is introduced.
+Traversal retains ancestor/index frames and selects one child at a time,
+not a width-sized collection of pending actions. Dictionary key references
+and sorting scratch receive separate pre-growth admission. The exact private
+fingerprint format, including repeated alias work and Unicode code points,
+is unchanged. Claim also requires the originally issued immutable stdout
+and stderr references: replacing either with distinct equal bytes rejects.
 
 An opt-in original read trace uses the actual GNU4.3 entry/return ABI and four
 x86-64 hardware execution-breakpoint slots. The runtime ELF, decoded control

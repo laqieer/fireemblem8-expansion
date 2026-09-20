@@ -165,6 +165,7 @@ class _ClaimedNativeReturn:
 _NATIVE_FINGERPRINT_DOMAIN = b"fe8-native-completion-value-v2\0"
 _NATIVE_POINTER_BYTES = struct.calcsize("P")
 _NATIVE_HASH_BYTES = 512
+_NATIVE_SORT_BYTES = (256 + 4 * 8 * _NATIVE_POINTER_BYTES) * _NATIVE_POINTER_BYTES + 128
 
 
 def _native_value_fingerprint(value, *, reserve, remaining, node_limit):
@@ -173,17 +174,15 @@ def _native_value_fingerprint(value, *, reserve, remaining, node_limit):
     reserve(_NATIVE_HASH_BYTES + 128)
     digest = hashlib.sha256()
     digest.update(_NATIVE_FINGERPRINT_DOMAIN)
-    stack = [("value", value, 0)]
-    active = set()
+    stack = []
+    item = value
     processed = 0
-    while stack:
+    pending = 1
+    while True:
         remaining()
-        action, item, depth = stack.pop()
-        if action == "leave":
-            active.remove(item)
-            continue
         processed += 1
-        if processed > node_limit or depth > node_limit:
+        pending -= 1
+        if processed > node_limit or len(stack) > node_limit:
             raise MakeProbeError("native completion fingerprint exceeds its traversal bound")
         reserve(128)
         kind = type(item)
@@ -222,48 +221,56 @@ def _native_value_fingerprint(value, *, reserve, remaining, node_limit):
                     remaining()
             if used:
                 digest.update(memoryview(chunk)[:used])
-        elif kind in (list, tuple):
-            identity = id(item)
-            if identity in active:
-                raise MakeProbeError("native completion fingerprint rejects cyclic arrays")
+        elif kind in (list, tuple, dict):
             count = len(item)
-            if processed + len(stack) + count > node_limit:
+            children = count * (2 if kind is dict else 1)
+            if processed + pending + len(stack) + children > node_limit:
                 raise MakeProbeError("native completion fingerprint exceeds its traversal bound")
-            reserve(16 + 128 + (count + 1) * 3 * _NATIVE_POINTER_BYTES)
-            digest.update(b"\x06")
+            # One ancestor frame, stack growth and ancestor-scan work; never
+            # a pending action for every sibling.
+            reserve(256 + sys.getsizeof(stack) + (len(stack) + 1) * 2 * _NATIVE_POINTER_BYTES)
+            if any(frame[0] is item for frame in stack):
+                raise MakeProbeError("native completion fingerprint rejects cyclic containers")
+            keys = None
+            if kind is dict:
+                reserve(128 + count * _NATIVE_POINTER_BYTES)
+                key_characters = 0
+                for key in item:
+                    if type(key) is not str:
+                        raise MakeProbeError("native completion fingerprint requires exact string keys")
+                    key_characters += len(key)
+                reserve(256 + sys.getsizeof([]) + (count + 1) * _NATIVE_POINTER_BYTES)
+                keys = list(item)
+                # Fixed Timsort merge stack/scratch and at most ceil(count/2)
+                # additional heap key references; keys themselves stay shared.
+                reserve(
+                    _NATIVE_SORT_BYTES + ((count + 1) // 2) * _NATIVE_POINTER_BYTES
+                    + 4 * key_characters + key_characters * max(1, count.bit_length())
+                )
+                remaining()
+                keys.sort()
+            digest.update(b"\x07" if kind is dict else b"\x06")
             digest.update(struct.pack(">Q", count))
-            active.add(identity)
-            stack.append(("leave", identity, depth))
-            stack.extend(("value", child, depth + 1) for child in reversed(item))
-        elif kind is dict:
-            identity = id(item)
-            if identity in active:
-                raise MakeProbeError("native completion fingerprint rejects cyclic objects")
-            count = len(item)
-            if processed + len(stack) + 2 * count > node_limit:
-                raise MakeProbeError("native completion fingerprint exceeds its traversal bound")
-            reserve(128 + max(1, count) * _NATIVE_POINTER_BYTES)
-            for key in item:
-                if type(key) is not str:
-                    raise MakeProbeError("native completion fingerprint requires exact string keys")
-            key_characters = sum(len(key) for key in item)
-            reserve(
-                16 + 256 + max(1, count) * 4 * _NATIVE_POINTER_BYTES
-                + 4 * key_characters
-                + key_characters * max(1, count.bit_length())
-            )
-            remaining()
-            keys = sorted(item)
-            digest.update(b"\x07")
-            digest.update(struct.pack(">Q", count))
-            active.add(identity)
-            stack.append(("leave", identity, depth))
-            for key in reversed(keys):
-                stack.append(("value", item[key], depth + 1))
-                stack.append(("value", key, depth + 1))
+            pending += children
+            if children:
+                stack.append([item, keys, 0, children])
         else:
             raise MakeProbeError("native completion fingerprint rejects unsupported values")
-    return digest.digest()
+        while stack:
+            parent, keys, index, children = stack[-1]
+            if index == children:
+                stack.pop()
+                remaining()
+                continue
+            stack[-1][2] = index + 1
+            if keys is None:
+                item = parent[index]
+            else:
+                key = keys[index // 2]
+                item = parent[key] if index % 2 else key
+            break
+        else:
+            return digest.digest()
 
 
 @dataclass(frozen=True, eq=False)
@@ -2831,6 +2838,7 @@ class ProbeSession:
             or record.completed is not completed or record.observed is not observed
             or type(completed.returncode) is not int or completed.returncode != record.returncode
             or type(completed.stdout) is not bytes or type(completed.stderr) is not bytes
+            or completed.stdout is not record.stdout or completed.stderr is not record.stderr
         ):
             raise MakeProbeError("native result changed or outlived its issued context")
         self.budget.charge("control", 512 + len(completed.stdout) + len(completed.stderr))

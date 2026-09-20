@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import re
 import struct
+import sys
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
@@ -40,6 +41,20 @@ _POINTER_BYTES = struct.calcsize("P")
 _ROW_CONTAINER_BYTES = 512 + len(ROW_FIELDS) * 3 * _POINTER_BYTES
 _TERMINAL_CONTAINER_BYTES = 512 + len(COMPLETION_FIELDS) * 3 * _POINTER_BYTES
 _HASH_STATE_BYTES = 512
+_TRANSFER_PRIVATE_BYTES = sys.getsizeof(object()) + 2 * sys.getsizeof({None})
+_JSON_NODE_BYTES = (
+    sys.getsizeof({"": None}) + 2 * sys.getsizeof([None])
+    + sys.getsizeof(("", None)) + sys.getsizeof("") + sys.getsizeof(0)
+)
+_ROW_WIRE_FIXED = (
+    2 + len(ROW_FIELDS) - 1 + sum(len(name) + 3 for name in ROW_FIELDS)
+    + 8 + 2 + max(map(len, (*STATFS_PATHS, *READ_PATHS, *ABSENT_PATHS)))
+    + 2 + 242 + 4 + 66 + 5
+)
+_TERMINAL_WIRE_FIXED = (
+    2 + len(COMPLETION_FIELDS) - 1 + sum(len(name) + 3 for name in COMPLETION_FIELDS)
+    + 1 + 2 + 66 + 1 + 66 + 66
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,37 +188,52 @@ def _row_mapping(sequence, operation, path, result, data, count, digest, eof):
     }
 
 
-def row_wire_limit(profile, *, count_limit, file_limit):
-    validate_filter(profile, ["/usr/bin/sed"])
+def _encoding_workspace(length, containers):
+    # ASCII writer (including its 1 KiB initial buffer), escaped fragment,
+    # final text/bytes overlap, mappings, sorted pairs and encoder containers.
+    return 1024 + 4 * (length + sys.getsizeof("")) + 2 * containers
+
+
+def row_wire_limit(profile, *, count_limit, file_limit, reserve=lambda size: None):
     if (
         type(count_limit) is not int or count_limit < 2
         or type(file_limit) is not int or file_limit < 0
     ):
         raise ChannelError("header receipt limits cannot reserve a completion")
+    reserve(_encoding_workspace(
+        _ROW_WIRE_FIXED + count_limit.bit_length() + file_limit.bit_length(),
+        _ROW_CONTAINER_BYTES,
+    ))
+    validate_filter(profile, ["/usr/bin/sed"])
     sequence = count_limit - 1
-    rows = []
+    maximum = 0
     for path, present in profile["statfs"]:
-        rows.append(_row_mapping(
+        row = _row_mapping(
             sequence, "statfs", path, 0 if present else -errno.ENOENT,
             "0" * 240 if present else None, None, None, None,
-        ))
-    rows.extend(
-        _row_mapping(sequence, "stream", path, 0, None, file_limit, "0" * 64, False)
-        for path in READ_PATHS
-    )
-    rows.extend(
-        _row_mapping(sequence, "absent", path, -errno.ENOENT, None, None, None, None)
-        for path in ABSENT_PATHS
-    )
-    return len(KERNEL_PREFIX) + max(len(encoded(row)) for row in rows)
+        )
+        maximum = max(maximum, len(encoded(row)))
+    for path in READ_PATHS:
+        row = _row_mapping(sequence, "stream", path, 0, None, file_limit, "0" * 64, False)
+        maximum = max(maximum, len(encoded(row)))
+    for path in ABSENT_PATHS:
+        row = _row_mapping(sequence, "absent", path, -errno.ENOENT, None, None, None, None)
+        maximum = max(maximum, len(encoded(row)))
+    return len(KERNEL_PREFIX) + maximum
 
 
-def terminal_wire_limit(scope, binding, *, count_limit):
+def terminal_wire_limit(scope, binding, *, count_limit, reserve=lambda size: None):
     if (
-        type(scope) is not str or type(binding) is not str or not _HEX64.fullmatch(binding)
+        type(scope) is not str or type(binding) is not str or len(binding) != 64
+        or not _HEX64.fullmatch(binding)
         or type(count_limit) is not int or count_limit < 2
     ):
         raise ChannelError("header completion reservation is malformed")
+    # A supplementary code point uses two six-byte JSON surrogate escapes.
+    reserve(_encoding_workspace(
+        _TERMINAL_WIRE_FIXED + 12 * len(scope) + count_limit.bit_length(),
+        _TERMINAL_CONTAINER_BYTES,
+    ))
     body = {
         "version": 2, "scope": scope, "binding": binding, "status": 0,
         "count": count_limit - 1, "manifest_sha256": "0" * 64, "tag": "0" * 64,
@@ -212,16 +242,47 @@ def terminal_wire_limit(scope, binding, *, count_limit):
 
 
 def row_private_reservation(row_limit):
-    return row_limit + _ROW_CONTAINER_BYTES + _HASH_STATE_BYTES
+    return (
+        _encoding_workspace(row_limit, _ROW_CONTAINER_BYTES) + 2 * row_limit
+        + _HASH_STATE_BYTES + _TRANSFER_PRIVATE_BYTES
+    )
 
 
 def terminal_private_reservation(terminal_limit):
-    return terminal_limit + _TERMINAL_CONTAINER_BYTES + 2 * _HASH_STATE_BYTES
+    return (
+        2 * _encoding_workspace(
+            terminal_limit + len(COMPLETION_DOMAIN) + 8, _TERMINAL_CONTAINER_BYTES,
+        )
+        + 2 * terminal_limit + 2 * _HASH_STATE_BYTES + _TRANSFER_PRIVATE_BYTES
+    )
 
 
-def _reserve_decode(reserve, length, *, terminal=False):
-    # ASCII copy, decoded text, parser containers and one canonical re-encoding.
-    reserve(6 * length + (_TERMINAL_CONTAINER_BYTES if terminal else _ROW_CONTAINER_BYTES))
+def _reserve_decode(reserve, value, start, *, terminal=False):
+    length = len(value) - start
+    reserve(256 + length)
+    nodes = 1
+    quoted = escaped = False
+    for index in range(start, len(value)):
+        character = value[index]
+        if quoted:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                quoted = False
+        elif character == '"':
+            quoted = True
+            nodes += 1
+        elif character in "{[,:":
+            nodes += 1
+    # Each structural separator/string admits a decoder node, its pair/list
+    # and dict slots. String scratch and decoded Unicode can each use four
+    # bytes per source character, in addition to slice/bytes/parser-text copies.
+    reserve(
+        11 * length + 3 * sys.getsizeof("") + nodes * _JSON_NODE_BYTES
+        + (_TERMINAL_CONTAINER_BYTES if terminal else _ROW_CONTAINER_BYTES)
+    )
 
 
 def validate_row_values(
@@ -291,24 +352,29 @@ def completion(scope, binding, receipt_key, count, manifest_sha256):
 def authenticate_records(
     values, profile, verifier, *, count_limit, file_limit, reserve=lambda size: None,
 ):
-    validate_filter(profile, ["/usr/bin/sed"])
     if (
         type(verifier) is not _FilterLaunch or type(verifier.scope) is not str
         or type(verifier.binding) is not str or not _HEX64.fullmatch(verifier.binding)
         or type(verifier.receipt_key) is not bytes or len(verifier.receipt_key) != 32
     ):
         raise ChannelError("header completion lacks its private launch verifier")
-    row_limit = row_wire_limit(profile, count_limit=count_limit, file_limit=file_limit)
-    terminal_limit = terminal_wire_limit(verifier.scope, verifier.binding, count_limit=count_limit)
+    row_limit = row_wire_limit(
+        profile, count_limit=count_limit, file_limit=file_limit, reserve=reserve,
+    )
+    terminal_limit = terminal_wire_limit(
+        verifier.scope, verifier.binding, count_limit=count_limit, reserve=reserve,
+    )
     reserve(256)
     rows = {}
     completed = None
     for value in values:
-        if isinstance(value, str) and value.startswith(KERNEL_END):
-            if completed is not None or len(value) > terminal_limit:
+        if type(value) is not str:
+            raise ChannelError("header observation is not an exact string")
+        if value.startswith(KERNEL_END):
+            if completed is not None or len(value) > terminal_limit or not value.isascii():
                 raise ChannelError("unbound or repeated header kernel completion")
+            _reserve_decode(reserve, value, len(KERNEL_END), terminal=True)
             payload = value[len(KERNEL_END):]
-            _reserve_decode(reserve, len(payload), terminal=True)
             try:
                 completed = parse_json(payload.encode("ascii"), "header kernel completion")
             except (MakeProbeError, UnicodeError) as error:
@@ -325,12 +391,12 @@ def authenticate_records(
             ):
                 raise ChannelError("malformed or foreign header kernel completion")
             continue
-        if not isinstance(value, str) or not value.startswith(KERNEL_PREFIX):
+        if not value.startswith(KERNEL_PREFIX):
             continue
-        if len(value) > row_limit:
+        if len(value) > row_limit or not value.isascii():
             raise ChannelError("header kernel input exceeds its row bound")
+        _reserve_decode(reserve, value, len(KERNEL_PREFIX))
         payload = value[len(KERNEL_PREFIX):]
-        _reserve_decode(reserve, len(payload))
         try:
             parsed = parse_json(payload.encode("ascii"), "header kernel input")
         except (MakeProbeError, UnicodeError) as error:
@@ -346,13 +412,13 @@ def authenticate_records(
         or any(sequence not in rows for sequence in range(1, completed["count"] + 1))
     ):
         raise ChannelError("incomplete header kernel input sequence")
-    manifest = hashlib.sha256()
     reserve(_HASH_STATE_BYTES)
+    manifest = hashlib.sha256()
     manifest.update(b"[")
     semantic_size = 2 + max(0, completed["count"] - 1)
     for sequence in range(1, completed["count"] + 1):
         row = rows[sequence]
-        reserve(row_limit + _HASH_STATE_BYTES)
+        reserve(_encoding_workspace(row_limit, _ROW_CONTAINER_BYTES) + _HASH_STATE_BYTES)
         value = encoded(row.mapping())
         if len(KERNEL_PREFIX) + len(value) > row_limit:
             raise ChannelError("header kernel input exceeded its admitted row shape")
@@ -365,7 +431,9 @@ def authenticate_records(
     digest = manifest.hexdigest()
     reserve(_TERMINAL_CONTAINER_BYTES)
     body = {name: completed[name] for name in COMPLETION_FIELDS if name != "tag"}
-    reserve(terminal_limit + _HASH_STATE_BYTES)
+    reserve(_encoding_workspace(
+        terminal_limit + len(COMPLETION_DOMAIN) + 8, _TERMINAL_CONTAINER_BYTES,
+    ) + _HASH_STATE_BYTES)
     expected = hmac.new(verifier.receipt_key, encoded([COMPLETION_DOMAIN, body]), hashlib.sha256).hexdigest()
     if digest != completed["manifest_sha256"] or not hmac.compare_digest(expected, completed["tag"]):
         raise ChannelError("header kernel completion authentication failed")

@@ -519,15 +519,21 @@ class Policy:
     def reserve_header_completion(self):
         if type(self.header_runtime) is not header_protocol._FilterLaunch:
             raise Violation("sed header runtime lacks its private completion verifier")
+        def reserve_workspace(size):
+            if self.observation_bytes + size > self.config["observation_limit"]:
+                raise Violation("header calculation workspace exceeds observation authority")
+            self.observation_bytes += size
         try:
             row_limit = header_protocol.row_wire_limit(
                 self.filter_kernel,
                 count_limit=self.config["observation_count"],
                 file_limit=self.config["file_limit"],
+                reserve=reserve_workspace,
             )
             terminal_limit = header_protocol.terminal_wire_limit(
                 self.header_runtime.scope, self.header_runtime.binding,
                 count_limit=self.config["observation_count"],
+                reserve=reserve_workspace,
             )
         except ChannelError as error:
             raise Violation(str(error)) from error
@@ -547,10 +553,13 @@ class Policy:
         self.kernel_row_limit = row_limit
         self.kernel_terminal_limit = terminal_limit
         self.kernel_terminal_reservation = reservation
+        self.kernel_transfer_pending = False
         self.kernel_manifest = hashlib.sha256()
         self.kernel_manifest.update(b"[")
 
     def reserve_header_row(self):
+        if self.kernel_transfer_pending:
+            raise Violation("header observation has an unfinished transfer")
         charge = (
             self.kernel_row_limit + 128
             + header_protocol.row_private_reservation(self.kernel_row_limit)
@@ -563,19 +572,22 @@ class Policy:
             raise Violation("header kernel row exceeds reserved observation authority")
         reservation = object()
         self.observation_bytes += charge
+        self.kernel_transfer_pending = True
         attempted.add(reservation)
         return reservation
 
     def commit_header_observation(self, reservation, value, limit):
+        self.kernel_transfer_pending = True
         if (
-            reservation not in self.observation_attempts["accessed"]
-            or not isinstance(value, str) or len(value.encode("ascii")) > limit
+            type(reservation) is not object or reservation not in self.observation_attempts["accessed"]
+            or type(value) is not str or len(value) > limit or not value.isascii()
             or value in self.accessed
         ):
             raise Violation("header observation transfer is malformed or repeated")
-        self.observation_attempts["accessed"].remove(reservation)
         self.observation_attempts["accessed"].add(value)
         self.accessed.add(value)
+        self.observation_attempts["accessed"].remove(reservation)
+        self.kernel_transfer_pending = False
 
     def header_completion(self, main_status):
         try:
@@ -583,6 +595,7 @@ class Policy:
                 type(main_status) is not int or main_status != 0 or self.kernel_streams
                 or not self.kernel_sequence or not self.kernel_has_first_statfs
                 or self.kernel_terminal_reservation is None or self.kernel_manifest is None
+                or self.kernel_transfer_pending
             ):
                 raise Violation("successful sed runtime lacks a complete header transcript")
             manifest = self.kernel_manifest.copy()
@@ -3581,13 +3594,16 @@ def supervise(config, drop_privileges):
                     processes.clear()
         def write_report():
             nonlocal result
+            try:
+                if error is None and policy.filter_kernel is not None and main_status == 0:
+                    policy.header_completion(main_status)
+            finally:
+                policy.header_runtime = None
             if error is None and policy.toolchain is not None and policy.toolchain["stdin"]:
                 policy.observe("accessed", toolchain_runtime.INPUT_PREFIX + encoded({
                     "stage": toolchain_runtime.STAGES[policy.toolchain["stage"]],
                     "stdin": bytes(policy.toolchain_stdin).decode("utf-8", "strict"), "eof": policy.toolchain_eof,
                 }).decode("ascii"))
-            if error is None and policy.filter_kernel is not None and main_status == 0:
-                policy.header_completion(main_status)
             result = {
                 "ok": error is None,
                 "returncode": main_status,

@@ -193,12 +193,21 @@ schema, accounting, execution and status checks succeed. A single private
 `ProbeSession` native-return registry then binds the exact launch owner, live
 job, source view/epoch, completed/report objects, original status and output
 bytes, and the streaming full-report fingerprint. Claim is one-use and removes
-the record before returning the accepted slots-based transcript. Header
+the record before returning the accepted slots-based transcript. Both output
+streams must still be the exact issued immutable byte objects; equal-value
+replacement is not an accepted pre-claim mutation. Header
 semantics receive immutable JSON-compatible eight-key dictionary views; the
 raw rows and terminal are never reparsed as authority after claim. The key and
 config are promptly unlinked and references are released on every path; this
 is not a memory-zeroization claim. The future GCC step receipt must extend this
 same purpose-sealed seam rather than introduce another gateway.
+The fingerprint schedules one child per ancestor frame; key-reference storage
+and sort workspace are admitted independently. Header size calculations and
+payload decoding admit their actual representations before encoding or copying.
+Publication retains spent reservation authority until both attempted/accessed
+insertions complete and retirement succeeds. Failure cannot refund or resume
+completion. Failed/nonzero report construction sees no owned verifier;
+successful signing precedes its release, and unconditional cleanup remains.
 The existing native worker installs the ARM compiler and C SDK headers for
 these controls without adding a job or owned command.
 
