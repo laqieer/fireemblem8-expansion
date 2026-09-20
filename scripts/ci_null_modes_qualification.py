@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 SOURCE = "0818374feed58b1495e9ff3c9e415791e2a8cb12"
+PREPARATION = "983290c992a28d5e6a1dac13e627a7c8551cf947"
 REPOSITORY = "laqieer/fireemblem8-expansion"
 BRANCH = "diagnostic/issue-180-null-modes-1"
 WORKFLOW = ".github/workflows/issue180-null-modes-1.yml"
@@ -64,12 +65,15 @@ def identity(context, event):
 
 
 def git(root, *arguments):
-    result = subprocess.run(
-        ["/usr/bin/git", "--no-pager", "--no-optional-locks", "-c", "core.hooksPath=/dev/null",
-         "-c", "core.fsmonitor=false", "-C", str(root), *arguments],
-        env=ENV, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        timeout=5, check=False,
-    )
+    try:
+        result = subprocess.run(
+            ["/usr/bin/git", "--no-pager", "--no-optional-locks", "-c", "core.hooksPath=/dev/null",
+             "-c", "core.fsmonitor=false", "-C", str(root), *arguments],
+            env=ENV, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            timeout=5, check=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("read-only source check timed out") from None
     require(result.returncode == 0 and len(result.stdout) <= 16384, "read-only source check")
     return result.stdout
 
@@ -80,11 +84,15 @@ def verify(root, revision, *, harness=False):
     git(root, "diff", "--quiet", "--no-ext-diff", "--ignore-submodules=none", revision, "--")
     if harness:
         require(git(root, "rev-list", "--parents", "-n", "1", revision).split() ==
-                [revision.encode(), SOURCE.encode()], "one normal preparation parent")
+                [revision.encode(), PREPARATION.encode()], "normal correction parent")
+        require(git(root, "rev-list", "--parents", "-n", "1", PREPARATION).split() ==
+                [PREPARATION.encode(), SOURCE.encode()], "normal preparation parent")
         rows = git(root, "diff", "--name-status", "-z", SOURCE, revision).split(b"\0")
         require(len(rows) == 5 and rows[-1] == b"", "two additive paths")
         require({(rows[index], rows[index + 1].decode("ascii")) for index in (0, 2)} ==
                 {(b"A", name) for name in FILES}, "closed preparation inventory")
+        require(git(root, "diff", "--name-status", "-z", PREPARATION, revision) ==
+                b"M\0" + PROGRAM.encode() + b"\0", "program-only correction")
         for name in FILES:
             mode = os.lstat(root / name).st_mode
             require(stat.S_ISREG(mode) and stat.S_IMODE(mode) == 0o644, "regular preparation mode")
