@@ -100,10 +100,6 @@ class IntermediateLimits:
             raise MakeProbeError("toolchain intermediate limits are outside their issued domains")
 
 
-def _no_reserve(size):
-    return None
-
-
 def _u64(value, boundary, *, positive=False):
     if type(value) is not int or not 0 <= value < 1 << 64 or positive and value == 0:
         raise MakeProbeError(f"toolchain intermediate {boundary} is not a bounded unsigned integer")
@@ -129,14 +125,13 @@ def _sha256(value, boundary):
 
 
 def _bounded_text(value, boundary, *, limit=INTERMEDIATE_PATH_LIMIT):
-    if type(value) is not str or "\0" in value or any(ord(char) < 32 or ord(char) == 127 for char in value):
+    if type(value) is not str:
         raise MakeProbeError(f"toolchain intermediate {boundary} is not bounded text")
-    try:
-        size = len(value.encode("utf-8"))
-    except UnicodeEncodeError as error:
-        raise MakeProbeError(f"toolchain intermediate {boundary} is not strict UTF-8") from error
-    if not value or size > limit:
+    if not value or len(value) > limit:
         raise MakeProbeError(f"toolchain intermediate {boundary} exceeds its byte bound")
+    if "\0" in value or any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise MakeProbeError(f"toolchain intermediate {boundary} is not bounded text")
+    _string_bytes(value, "toolchain intermediate " + boundary, limit)
     return value
 
 
@@ -179,6 +174,30 @@ def _same_live_object(first, second, *, size):
     )
 
 
+def _execution_row(row):
+    if (
+        type(row) is not dict or len(row) != 6
+        or set(row) != {"stage", "sequence", "path", "identity", "argv", "environment"}
+        or type(row["stage"]) is not str or row["stage"] != "compile"
+        or type(row["sequence"]) is not int or not 1 <= row["sequence"] <= 3
+        or type(row["path"]) is not str
+        or type(row["identity"]) is not list or len(row["identity"]) != 6
+        or any(type(value) is not int or not 0 <= value < 1 << 64 for value in row["identity"])
+        or type(row["argv"]) is not list or not 1 <= len(row["argv"]) <= COMPILE_ARG_LIMIT
+        or any(type(value) is not str or "\0" in value for value in row["argv"])
+        or type(row["environment"]) is not dict
+        or any(type(key) is not str or type(value) is not str for key, value in row["environment"].items())
+    ):
+        raise MakeProbeError("toolchain compile role actor has malformed execution data")
+    _bounded_text(row["path"], "executable path")
+    if sum(
+        _string_bytes(value, "toolchain compile argv", INTERMEDIATE_PATH_LIMIT)
+        for value in row["argv"]
+    ) > COMPILE_ARG_BYTES_LIMIT:
+        raise MakeProbeError("toolchain compile argv exceeds its aggregate byte bound")
+    return row
+
+
 def _execution_rows(executions, profile, parent_argv, *, complete):
     if (
         type(complete) is not bool or type(executions) not in (list, tuple)
@@ -187,33 +206,24 @@ def _execution_rows(executions, profile, parent_argv, *, complete):
         or type(profile.get("stage")) is not int or profile.get("stage") != 4
         or type(profile.get("images")) is not list or len(profile["images"]) != 3
         or type(parent_argv) not in (list, tuple)
+        or not 1 <= len(parent_argv) <= COMPILE_ARG_LIMIT
+        or any(type(value) is not str or "\0" in value for value in parent_argv)
     ):
         raise MakeProbeError("toolchain compile roles lack their prospective version-2 execution profile")
     if not 1 <= len(executions) <= 3 or complete and len(executions) != 3:
         raise MakeProbeError("toolchain compile roles omit or add an execution actor")
     rows = []
     for sequence, row in enumerate(executions, 1):
+        row = _execution_row(row)
         image = profile["images"][sequence - 1]
         if (
-            type(row) is not dict
-            or set(row) != {"stage", "sequence", "path", "identity", "argv", "environment"}
-            or row["stage"] != "compile" or type(row["sequence"]) is not int or row["sequence"] != sequence
-            or type(image) is not list or len(image) != 7 or row["path"] != image[0]
-            or type(row["identity"]) is not list or len(row["identity"]) != 6
-            or any(type(value) is not int or not 0 <= value < 1 << 64 for value in row["identity"])
+            row["sequence"] != sequence
+            or type(image) is not list or len(image) != 7
+            or type(image[0]) is not str or row["path"] != image[0]
+            or any(type(value) is not int or not 0 <= value < 1 << 64 for value in image[1:])
             or row["identity"] != image[1:]
-            or type(row["argv"]) is not list or not row["argv"]
-            or len(row["argv"]) > COMPILE_ARG_LIMIT
-            or any(type(value) is not str or "\0" in value for value in row["argv"])
-            or type(row["environment"]) is not dict
-            or any(type(key) is not str or type(value) is not str for key, value in row["environment"].items())
         ):
             raise MakeProbeError("toolchain compile role actor differs from its authenticated execution row")
-        if sum(
-            _string_bytes(value, "toolchain compile argv", INTERMEDIATE_PATH_LIMIT)
-            for value in row["argv"]
-        ) > COMPILE_ARG_BYTES_LIMIT:
-            raise MakeProbeError("toolchain compile argv exceeds its aggregate byte bound")
         rows.append(row)
     if rows[0]["argv"] != list(parent_argv) or rows[0]["path"] != rows[0]["argv"][0]:
         raise MakeProbeError("toolchain compile role driver differs from its exact parent argv")
@@ -353,13 +363,14 @@ def _json_shape(value):
 
 
 def _decode_intermediate(payload, reserve):
-    if type(payload) is not str or any(ord(character) > 127 for character in payload):
+    if type(payload) is not str or not payload.isascii():
         raise MakeProbeError("toolchain intermediate record is not its bounded ASCII JSON wire")
     if not payload or len(payload) + len(INTERMEDIATE_PREFIX) > INTERMEDIATE_RECORD_LIMIT:
         raise MakeProbeError("toolchain intermediate record exceeds its wire bound")
     reserve(len(payload) + 4096)
     nodes = _json_shape(payload)
-    reserve(4 * len(payload) + 256 * nodes)
+    # Decoded text may use four-byte characters; pairs, memo and containers coexist.
+    reserve(4 * len(payload) + 1024 * nodes + 8192)
 
     def pairs(items):
         result = {}
@@ -376,7 +387,7 @@ def _decode_intermediate(payload, reserve):
         row = json.loads(payload, object_pairs_hook=pairs, parse_constant=constant)
     except (ValueError, RecursionError) as error:
         raise MakeProbeError("toolchain intermediate record is malformed JSON") from error
-    reserve(6 * len(payload) + 256 * nodes)
+    reserve(_json_cost(row))
     canonical = encoded(row)
     if len(canonical) + len(INTERMEDIATE_PREFIX) > INTERMEDIATE_RECORD_LIMIT:
         raise MakeProbeError("toolchain intermediate canonical record exceeds its wire bound")
@@ -385,13 +396,13 @@ def _decode_intermediate(payload, reserve):
 
 def _json_cost(value, state=None, depth=0):
     if state is None:
-        state = [0, 0]
+        state = [0, 8192]
     if depth > INTERMEDIATE_DEPTH_LIMIT:
         raise MakeProbeError("toolchain data exceeds its bounded nesting")
     state[0] += 1
     if state[0] > 4096:
         raise MakeProbeError("toolchain data exceeds its bounded node count")
-    state[1] += 256
+    state[1] += 1024
     if value is None or type(value) is bool:
         state[1] += 32
     elif type(value) is int:
@@ -403,17 +414,18 @@ def _json_cost(value, state=None, depth=0):
             raise MakeProbeError("toolchain data contains a non-finite scalar")
         state[1] += 32
     elif type(value) is str:
-        state[1] += 6 * _string_bytes(value, "toolchain data text", 65536) + 64
+        # Escaped encoder fragments, joined text, bytes and copied data can overlap.
+        state[1] += 24 * _string_bytes(value, "toolchain data text", 65536) + 128
     elif type(value) in (list, tuple):
-        state[1] += 16 * len(value)
+        state[1] += 64 * len(value)
         for item in value:
             _json_cost(item, state, depth + 1)
     elif type(value) is dict:
-        state[1] += 32 * len(value)
+        state[1] += 128 * len(value)
         for key, item in value.items():
             if type(key) is not str:
                 raise MakeProbeError("toolchain data has a non-text dictionary key")
-            state[1] += 6 * _string_bytes(key, "toolchain data key", 65536) + 64
+            state[1] += 24 * _string_bytes(key, "toolchain data key", 65536) + 128
             _json_cost(item, state, depth + 1)
     else:
         raise MakeProbeError("toolchain data has an unsupported value")
@@ -459,8 +471,23 @@ def _flags(value, boundary, access, required, optional):
 
 
 def _receipt_data(record, roles, *, profile=None, launch=None, executions=None, limits=None):
-    if type(roles) is not CompileRoles or roles.output is None or roles.input is None:
+    if (
+        type(roles) is not CompileRoles
+        or type(roles.creator_sequence) is not int or roles.creator_sequence != 1
+        or type(roles.writer_sequence) is not int or roles.writer_sequence != 2
+        or type(roles.reader_sequence) is not int or roles.reader_sequence != 3
+        or type(roles.output) is not ArgOperand or type(roles.input) is not ArgOperand
+    ):
         raise MakeProbeError("toolchain intermediate receipt lacks complete parsed operand roles")
+    for operand, kind, sequence in ((roles.output, "output", 2), (roles.input, "input", 3)):
+        if (
+            type(operand.role) is not str or operand.role != "stage4-assembly"
+            or type(operand.kind) is not str or operand.kind != kind
+            or type(operand.exec_sequence) is not int or operand.exec_sequence != sequence
+            or type(operand.argv_index) is not int or not 0 <= operand.argv_index < COMPILE_ARG_LIMIT
+            or type(operand.value) is not str
+        ):
+            raise MakeProbeError("toolchain intermediate receipt has malformed operand role data")
     record = _exact(record, {
         "version", "scope", "binding", "stage", "role", "path", "workspace", "actors",
         "creation", "creator_close", "writer", "reader", "retirement", "driver_exit", "complete",
@@ -670,7 +697,7 @@ def _receipt_data(record, roles, *, profile=None, launch=None, executions=None, 
 
 
 def intermediate_record(
-    values, *, profile, launch, executions, returncode, limits, reserve=_no_reserve,
+    values, *, profile, launch, executions, returncode, limits, reserve,
 ):
     if type(limits) is not IntermediateLimits or not callable(reserve):
         raise MakeProbeError("toolchain intermediate parser lacks exact issued admission")
@@ -685,15 +712,25 @@ def intermediate_record(
                 raise MakeProbeError("successful compile stage has repeated toolchain intermediate receipts")
             selected = value
     if (
-        type(profile) is not dict
+        type(profile) is not dict or len(profile) != 7
         or set(profile) != {"version", "stage", "stdin", "inputs", "driver_identity", "images", "workspace"}
         or type(profile.get("version")) is not int or profile.get("version") != 2
         or type(profile.get("stage")) is not int or profile["stage"] not in range(5)
-        or type(launch) is not dict or set(launch) != {"version", "scope", "binding"}
+        or type(profile["stdin"]) is not str or type(profile["inputs"]) is not list
+        or type(profile["driver_identity"]) is not list or len(profile["driver_identity"]) != 6
+        or any(type(value) is not int or not 0 <= value < 1 << 64 for value in profile["driver_identity"])
+        or type(profile["images"]) is not list
+        or type(profile["workspace"]) is not list or len(profile["workspace"]) != 3
+        or any(type(value) is not int or not 0 <= value < 1 << 64 for value in profile["workspace"])
+        or type(launch) is not dict or len(launch) != 3 or set(launch) != {"version", "scope", "binding"}
         or type(launch.get("version")) is not int or launch.get("version") != 2
         or type(returncode) is not int or not -(1 << 63) <= returncode < 1 << 63
     ):
         raise MakeProbeError("toolchain intermediate parser lacks its prospective version-2 launch data")
+    _bounded_text(launch["scope"], "launch scope")
+    _sha256(launch["binding"], "launch binding")
+    if type(executions) not in (list, tuple):
+        raise MakeProbeError("toolchain intermediate parser lacks its execution sequence")
     if profile["stage"] != 4 or returncode:
         if selected is not None:
             raise MakeProbeError("toolchain intermediate receipt exists for an unsuccessful or foreign stage")
@@ -701,18 +738,25 @@ def intermediate_record(
     if selected is None:
         raise MakeProbeError("successful compile stage lacks exactly one toolchain intermediate receipt")
     value = selected
+    if not value.isascii():
+        raise MakeProbeError("toolchain intermediate record is not its bounded ASCII JSON wire")
+    if not len(INTERMEDIATE_PREFIX) < len(value) <= INTERMEDIATE_RECORD_LIMIT:
+        raise MakeProbeError("toolchain intermediate record exceeds its wire bound")
     if len(value) > limits.observation_limit:
         raise MakeProbeError("toolchain intermediate receipt exceeds its actual observation-byte remainder")
-    reserve(len(value) + 4096)
+    reserve(4 * len(value) + 4096)
     row, canonical = _decode_intermediate(value[len(INTERMEDIATE_PREFIX):], reserve)
     if len(canonical) + len(INTERMEDIATE_PREFIX) > limits.observation_limit:
         raise MakeProbeError("toolchain intermediate canonical receipt exceeds its actual observation bound")
-    roles = compile_operand_roles(executions, profile, executions[0]["argv"], complete=True)
+    if len(executions) != 3:
+        raise MakeProbeError("toolchain intermediate parser lacks its complete execution sequence")
     reserve(_json_cost(executions))
+    driver = _execution_row(executions[0])
+    roles = compile_operand_roles(executions, profile, driver["argv"], complete=True)
     _receipt_data(
         row, roles, profile=profile, launch=launch, executions=tuple(executions), limits=limits,
     )
-    reserve(len(canonical))
+    reserve(len(canonical) + 64)
     return canonical
 
 
@@ -735,12 +779,7 @@ def _copy_json(value, state, depth=0):
     if type(value) is str:
         if "\0" in value:
             raise MakeProbeError("toolchain semantic projection contains NUL text")
-        try:
-            size = len(value.encode("utf-8"))
-        except UnicodeEncodeError as error:
-            raise MakeProbeError("toolchain semantic projection text is not strict UTF-8") from error
-        if size > 65536:
-            raise MakeProbeError("toolchain semantic projection text exceeds its byte bound")
+        _string_bytes(value, "toolchain semantic projection text", 65536)
         return value
     if type(value) is list:
         return [_copy_json(item, state, depth + 1) for item in value]
@@ -753,36 +792,42 @@ def _copy_json(value, state, depth=0):
     raise MakeProbeError("toolchain semantic projection has an unsupported data value")
 
 
-def project_compile_identity(raw_probes, raw_intermediate, roles, *, reserve=_no_reserve):
+def project_compile_identity(raw_probes, raw_intermediate, roles, *, reserve):
     if (
         type(raw_probes) not in (list, tuple) or type(raw_intermediate) is not bytes
         or type(roles) is not CompileRoles or not callable(reserve)
     ):
         raise MakeProbeError("toolchain semantic projection lacks its inert typed data")
-    if len(raw_intermediate) + len(INTERMEDIATE_PREFIX) > INTERMEDIATE_RECORD_LIMIT:
+    if not raw_intermediate or len(raw_intermediate) + len(INTERMEDIATE_PREFIX) > INTERMEDIATE_RECORD_LIMIT:
         raise MakeProbeError("toolchain semantic projection receipt exceeds its wire bound")
-    reserve(len(raw_intermediate) + 4096)
-    try:
-        payload = raw_intermediate.decode("ascii")
-    except UnicodeDecodeError as error:
-        raise MakeProbeError("toolchain semantic projection receipt is not ASCII") from error
+    if not raw_intermediate.isascii():
+        raise MakeProbeError("toolchain semantic projection receipt is not ASCII")
+    reserve(4 * len(raw_intermediate) + 4096)
+    payload = raw_intermediate.decode("ascii")
     record, canonical = _decode_intermediate(payload, reserve)
     if canonical != raw_intermediate:
         raise MakeProbeError("toolchain semantic projection requires canonical receipt bytes")
-    summary = _receipt_data(record, roles)
     reserve(_json_cost(raw_probes))
+    summary = _receipt_data(record, roles)
     probes = _copy_json(raw_probes, [0])
     if type(probes) is tuple:
         probes = list(probes)
     rows = {}
     for row in probes:
-        if type(row) is dict and set(row) == {
-            "stage", "sequence", "path", "identity", "argv", "environment",
-        }:
-            sequence = row.get("sequence")
-            if sequence in rows:
-                raise MakeProbeError("toolchain semantic projection has repeated execution sequences")
-            rows[sequence] = row
+        if type(row) is dict and set(row) == {"stage", "stdin", "eof"}:
+            if (
+                type(row["stage"]) is not str or row["stage"] != "compile"
+                or type(row["stdin"]) is not str or type(row["eof"]) is not bool
+            ):
+                raise MakeProbeError("toolchain semantic projection has malformed input data")
+            continue
+        row = _execution_row(row)
+        sequence = row["sequence"]
+        if sequence in rows:
+            raise MakeProbeError("toolchain semantic projection has repeated execution sequences")
+        rows[sequence] = row
+    if set(rows) != {1, 2, 3}:
+        raise MakeProbeError("toolchain semantic projection lacks its complete execution data")
     occurrences = [
         (sequence, index)
         for sequence, row in rows.items()

@@ -12,6 +12,7 @@ from pathlib import Path
 import shlex
 import stat
 import textwrap
+import tracemalloc
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -27,6 +28,14 @@ from scripts.validation_ownership.tests import test_foundation as foundation
 
 class ToolchainProtocolDataTests(unittest.TestCase):
     """Pure model-data controls for the dormant stage-4 protocol helpers."""
+
+    def setUp(self):
+        self.reservations = []
+
+    def reserve(self, size):
+        self.assertIs(type(size), int)
+        self.assertGreater(size, 0)
+        self.reservations.append(size)
 
     def model(self, path="/work/ccL3VdjV.s"):
         driver = [
@@ -157,7 +166,7 @@ class ToolchainProtocolDataTests(unittest.TestCase):
             separators=(",", ":"), ensure_ascii=True,
         )
 
-    def parse(self, model, *, receipt=None, values=None, reserve=lambda size: None):
+    def parse(self, model, *, reserve, receipt=None, values=None):
         if values is None:
             values = [self.wire(model, receipt=receipt)]
         return toolchain_runtime.intermediate_record(
@@ -263,9 +272,9 @@ class ToolchainProtocolDataTests(unittest.TestCase):
         self.assertEqual(canonical, toolchain_runtime.encoded(model["receipt"]))
         self.assertGreaterEqual(len(charges), 4)
         self.assertTrue(all(type(value) is int and value > 0 for value in charges))
-        self.assertEqual(charges[-1], len(canonical))
+        self.assertGreater(charges[-1], len(canonical))
         reordered = {key: model["receipt"][key] for key in reversed(model["receipt"])}
-        self.assertEqual(self.parse(model, receipt=reordered), canonical)
+        self.assertEqual(self.parse(model, receipt=reordered, reserve=self.reserve), canonical)
 
     def test_receipt_duplicate_fields_extras_and_foreign_stage_never_validate(self):
         model = self.model()
@@ -274,28 +283,31 @@ class ToolchainProtocolDataTests(unittest.TestCase):
             '"version":1', '"version":1,"version":1', 1,
         )
         with self.assertRaises(MakeProbeError):
-            self.parse(model, values=[duplicate])
+            self.parse(model, values=[duplicate], reserve=self.reserve)
         extra = copy.deepcopy(model["receipt"])
         extra["grant"] = True
         with self.assertRaises(MakeProbeError):
-            self.parse(model, receipt=extra)
+            self.parse(model, receipt=extra, reserve=self.reserve)
         with self.assertRaises(MakeProbeError):
-            self.parse(model, values=[self.wire(model), self.wire(model)])
+            self.parse(model, values=[self.wire(model), self.wire(model)], reserve=self.reserve)
         foreign = copy.deepcopy(model)
         foreign["profile"]["stage"] = 3
         with self.assertRaises(MakeProbeError):
             toolchain_runtime.intermediate_record(
                 [self.wire(model)], profile=foreign["profile"], launch=model["launch"],
                 executions=model["executions"], returncode=0, limits=model["limits"],
+                reserve=self.reserve,
             )
         self.assertIsNone(toolchain_runtime.intermediate_record(
             [], profile=foreign["profile"], launch=model["launch"],
             executions=(), returncode=0, limits=model["limits"],
+            reserve=self.reserve,
         ))
         with self.assertRaises(MakeProbeError):
             toolchain_runtime.intermediate_record(
                 [self.wire(model)], profile=model["profile"], launch=model["launch"],
                 executions=model["executions"], returncode=1, limits=model["limits"],
+                reserve=self.reserve,
             )
 
     def test_receipt_type_role_actor_and_success_result_matrix_rejects(self):
@@ -320,7 +332,7 @@ class ToolchainProtocolDataTests(unittest.TestCase):
                     current = current[component]
                 current[path[-1]] = value
                 with self.assertRaises(MakeProbeError):
-                    self.parse(model, receipt=receipt)
+                    self.parse(model, receipt=receipt, reserve=self.reserve)
 
     def test_receipt_content_order_and_retirement_progression_are_independent(self):
         mutations = (
@@ -334,7 +346,7 @@ class ToolchainProtocolDataTests(unittest.TestCase):
             (("retirement", "after_identity", 6), 1),
         )
         model = self.model()
-        baseline = self.parse(model)
+        baseline = self.parse(model, reserve=self.reserve)
         for path, value in mutations:
             receipt = copy.deepcopy(model["receipt"])
             current = receipt
@@ -342,11 +354,11 @@ class ToolchainProtocolDataTests(unittest.TestCase):
                 current = current[component]
             current[path[-1]] = value
             with self.subTest(path=path), self.assertRaises(MakeProbeError):
-                self.parse(model, receipt=receipt)
+                self.parse(model, receipt=receipt, reserve=self.reserve)
             current[path[-1]] = copy.deepcopy(
                 self.value_at(model["receipt"], path)
             )
-            self.assertEqual(self.parse(model, receipt=receipt), baseline)
+            self.assertEqual(self.parse(model, receipt=receipt, reserve=self.reserve), baseline)
 
     @staticmethod
     def value_at(value, path):
@@ -359,11 +371,11 @@ class ToolchainProtocolDataTests(unittest.TestCase):
         receipt = copy.deepcopy(model["receipt"])
         receipt["retirement"]["after_identity"][0] += 1
         with self.assertRaises(MakeProbeError):
-            self.parse(model, receipt=receipt)
+            self.parse(model, receipt=receipt, reserve=self.reserve)
         with patch.object(toolchain_runtime, "_retirement_progression", return_value=True):
-            self.assertIs(type(self.parse(model, receipt=receipt)), bytes)
+            self.assertIs(type(self.parse(model, receipt=receipt, reserve=self.reserve)), bytes)
         with self.assertRaises(MakeProbeError):
-            self.parse(model, receipt=receipt)
+            self.parse(model, receipt=receipt, reserve=self.reserve)
 
     def test_receipt_pre_growth_wire_node_depth_and_issued_bounds_reject(self):
         model = self.model()
@@ -372,15 +384,15 @@ class ToolchainProtocolDataTests(unittest.TestCase):
         nodes = toolchain_runtime.INTERMEDIATE_PREFIX + "[" + ",".join("0" for _ in range(513)) + "]"
         for name, value in (("wire", oversized), ("depth", deep), ("nodes", nodes)):
             with self.subTest(name=name), self.assertRaises(MakeProbeError):
-                self.parse(model, values=[value])
+                self.parse(model, values=[value], reserve=self.reserve)
         small = copy.deepcopy(model)
         small["limits"] = replace(model["limits"], observation_limit=len(self.wire(model)) - 1)
         with self.assertRaises(MakeProbeError):
-            self.parse(small)
+            self.parse(small, reserve=self.reserve)
         small = copy.deepcopy(model)
         small["limits"] = replace(model["limits"], file_limit=63)
         with self.assertRaises(MakeProbeError):
-            self.parse(small)
+            self.parse(small, reserve=self.reserve)
         long_path = "/work/" + "x" * 4091
         with self.assertRaises(MakeProbeError):
             self.model(long_path)
@@ -402,8 +414,10 @@ class ToolchainProtocolDataTests(unittest.TestCase):
         model = self.model()
         raw = self.probes(model)
         before = copy.deepcopy(raw)
-        receipt = self.parse(model)
-        projected = toolchain_runtime.project_compile_identity(raw, receipt, model["roles"])
+        receipt = self.parse(model, reserve=self.reserve)
+        projected = toolchain_runtime.project_compile_identity(
+            raw, receipt, model["roles"], reserve=self.reserve,
+        )
         self.assertEqual(raw, before)
         self.assertEqual(set(projected), {"runtime_probes", "toolchain_semantics"})
         reference = {
@@ -433,18 +447,20 @@ class ToolchainProtocolDataTests(unittest.TestCase):
             toolchain_runtime.encoded(first_raw), toolchain_runtime.encoded(second_raw),
         )
         first_projected = toolchain_runtime.project_compile_identity(
-            first_raw, self.parse(first), first["roles"],
+            first_raw, self.parse(first, reserve=self.reserve), first["roles"],
+            reserve=self.reserve,
         )
         second_projected = toolchain_runtime.project_compile_identity(
-            second_raw, self.parse(second), second["roles"],
+            second_raw, self.parse(second, reserve=self.reserve), second["roles"],
+            reserve=self.reserve,
         )
         self.assertEqual(first_projected, second_projected)
 
     def test_projection_keeps_meaningful_runtime_content_and_outer_facts_unequal(self):
         model = self.model()
-        receipt = self.parse(model)
+        receipt = self.parse(model, reserve=self.reserve)
         baseline = toolchain_runtime.project_compile_identity(
-            self.probes(model), receipt, model["roles"],
+            self.probes(model), receipt, model["roles"], reserve=self.reserve,
         )
         mutations = []
         environment = list(self.probes(model))
@@ -465,12 +481,14 @@ class ToolchainProtocolDataTests(unittest.TestCase):
         content_model = copy.deepcopy(model)
         content_model["receipt"]["writer"]["completed"]["sha256"] = "f" * 64
         content_model["receipt"]["reader"]["completed"]["sha256"] = "f" * 64
-        content = self.parse(content_model)
+        content = self.parse(content_model, reserve=self.reserve)
         mutations.append(("assembly-content", self.probes(model), content, model["roles"]))
         for name, raw, selected_receipt, roles in mutations:
             with self.subTest(name=name):
                 self.assertNotEqual(
-                    toolchain_runtime.project_compile_identity(raw, selected_receipt, roles),
+                    toolchain_runtime.project_compile_identity(
+                        raw, selected_receipt, roles, reserve=self.reserve,
+                    ),
                     baseline,
                 )
         outer = {
@@ -491,15 +509,287 @@ class ToolchainProtocolDataTests(unittest.TestCase):
         reordered = tuple(
             dict(reversed(list(row.items()))) if type(row) is dict else row for row in raw
         )
-        receipt = self.parse(model)
+        receipt = self.parse(model, reserve=self.reserve)
         self.assertEqual(
-            toolchain_runtime.project_compile_identity(raw, receipt, model["roles"]),
-            toolchain_runtime.project_compile_identity(reordered, receipt, model["roles"]),
+            toolchain_runtime.project_compile_identity(raw, receipt, model["roles"], reserve=self.reserve),
+            toolchain_runtime.project_compile_identity(reordered, receipt, model["roles"], reserve=self.reserve),
         )
         changed = list(copy.deepcopy(raw))
         changed[1]["argv"][model["roles"].output.argv_index] = "/work/other.s"
         with self.assertRaises(MakeProbeError):
-            toolchain_runtime.project_compile_identity(changed, receipt, model["roles"])
+            toolchain_runtime.project_compile_identity(changed, receipt, model["roles"], reserve=self.reserve)
+
+    def test_both_data_helpers_require_explicit_callable_admission(self):
+        model = self.model()
+        values = [self.wire(model)]
+        receipt = self.parse(model, reserve=self.reserve)
+        arguments = {
+            "profile": model["profile"], "launch": model["launch"],
+            "executions": model["executions"], "returncode": 0, "limits": model["limits"],
+        }
+        with self.assertRaises(TypeError):
+            toolchain_runtime.intermediate_record(values, **arguments)
+        with self.assertRaises(TypeError):
+            toolchain_runtime.project_compile_identity(self.probes(model), receipt, model["roles"])
+        for reserve in (None, 0, [], {}):
+            with self.subTest(reserve=reserve), self.assertRaises(MakeProbeError):
+                toolchain_runtime.intermediate_record(values, **arguments, reserve=reserve)
+            with self.subTest(reserve=reserve), self.assertRaises(MakeProbeError):
+                toolchain_runtime.project_compile_identity(
+                    self.probes(model), receipt, model["roles"], reserve=reserve,
+                )
+
+    def test_complete_wire_type_and_bounds_reject_before_copy_admission(self):
+        class ForeignText(str):
+            def __getitem__(self, key):
+                raise AssertionError("foreign string sliced")
+
+            def encode(self, *args, **kwargs):
+                raise AssertionError("foreign string encoded")
+
+        model = self.model()
+        wire = self.wire(model)
+        bound = toolchain_runtime.INTERMEDIATE_RECORD_LIMIT
+        full = wire + " " * (bound - len(wire))
+        self.assertEqual(
+            self.parse(model, values=[full], reserve=self.reserve),
+            self.parse(model, reserve=self.reserve),
+        )
+        for value in (
+            ForeignText(wire), wire.encode("ascii"), None, [], {},
+            toolchain_runtime.INTERMEDIATE_PREFIX, full + " ",
+        ):
+            charges = []
+            with self.subTest(kind=type(value).__name__), self.assertRaises(MakeProbeError):
+                self.parse(model, values=[value], reserve=charges.append)
+            self.assertEqual(charges, [])
+        smaller = copy.deepcopy(model)
+        smaller["limits"] = replace(model["limits"], observation_limit=len(wire) - 1)
+        charges = []
+        with self.assertRaises(MakeProbeError):
+            self.parse(smaller, values=[wire], reserve=charges.append)
+        self.assertEqual(charges, [])
+
+    def test_non_ascii_complete_wire_rejects_without_payload_copy_allocation(self):
+        model = self.model()
+        for character in ("\u0100", "\U00010000", "\ud800"):
+            values = [toolchain_runtime.INTERMEDIATE_PREFIX + character * 60000]
+            charges = []
+            with self.subTest(codepoint=ord(character)):
+                tracemalloc.start()
+                try:
+                    with self.assertRaises(MakeProbeError):
+                        self.parse(model, values=values, reserve=charges.append)
+                    _, peak = tracemalloc.get_traced_memory()
+                finally:
+                    tracemalloc.stop()
+                self.assertEqual(charges, [])
+                self.assertLess(peak, 32768)
+        receipt = b"\xff" * 60000
+        probes = self.probes(model)
+        charges = []
+        with self.assertRaises(MakeProbeError):
+            toolchain_runtime.project_compile_identity(
+                probes, receipt, model["roles"], reserve=charges.append,
+            )
+        self.assertEqual(charges, [])
+
+    def test_representation_workspace_is_admitted_before_each_growth_phase(self):
+        for character in ("x", "\u0100", "\U00010000"):
+            path = "/work/" + character * (4090 // len(character.encode("utf-8")))
+            model = self.model(path)
+            for row, actor in zip(model["executions"], model["receipt"]["actors"]):
+                row["environment"]["ESCAPED"] = "\x01" * 4096
+                actor["exec_record_sha256"] = hashlib.sha256(toolchain_runtime.encoded(row)).hexdigest()
+            wire = self.wire(model)
+            values = [wire + " " * (toolchain_runtime.INTERMEDIATE_RECORD_LIMIT - len(wire))]
+            probes = self.probes(model)
+            receipt = self.parse(model, values=values, reserve=self.reserve)
+            operations = (
+                lambda reserve: self.parse(model, values=values, reserve=reserve),
+                lambda reserve: toolchain_runtime.project_compile_identity(
+                    probes, receipt, model["roles"], reserve=reserve,
+                ),
+            )
+            for index, operation in enumerate(operations):
+                with self.subTest(codepoint=ord(character), operation=index):
+                    admitted = 0
+                    checkpoints = []
+
+                    def reserve(size):
+                        nonlocal admitted
+                        _, peak = tracemalloc.get_traced_memory()
+                        if admitted:
+                            checkpoints.append((peak, admitted))
+                        admitted += size
+
+                    tracemalloc.start()
+                    try:
+                        result = operation(reserve)
+                        _, peak = tracemalloc.get_traced_memory()
+                    finally:
+                        tracemalloc.stop()
+                    self.assertIsNotNone(result)
+                    self.assertTrue(checkpoints)
+                    for observed, prior_admission in checkpoints:
+                        self.assertLessEqual(observed, prior_admission)
+                    self.assertLessEqual(peak, admitted)
+
+    def test_verification_admission_remains_cumulative_and_refusal_propagates(self):
+        model = self.model()
+        receipt = self.parse(model, reserve=self.reserve)
+        probes = self.probes(model)
+        values = [self.wire(model)]
+        operations = (
+            lambda reserve: self.parse(model, values=values, reserve=reserve),
+            lambda reserve: toolchain_runtime.project_compile_identity(
+                probes, receipt, model["roles"], reserve=reserve,
+            ),
+        )
+        for index, operation in enumerate(operations):
+            charges = []
+            expected = operation(charges.append)
+            for limit in (max(charges), sum(charges) - 1):
+                with self.subTest(operation=index, limit=limit):
+                    remaining = limit
+                    accepted = []
+
+                    def reserve(size):
+                        nonlocal remaining
+                        if size > remaining:
+                            raise MakeProbeError("model cumulative admission refused")
+                        remaining -= size
+                        accepted.append(size)
+
+                    with self.assertRaisesRegex(MakeProbeError, "model cumulative admission refused"):
+                        operation(reserve)
+                    self.assertTrue(accepted)
+                    self.assertEqual(remaining, limit - sum(accepted))
+                    self.assertLess(remaining, max(charges))
+                    self.assertEqual(operation(self.reserve), expected)
+
+    def test_intermediate_consumed_shapes_refuse_controlled_protocol_errors(self):
+        model = self.model()
+        mutations = (
+            (("executions",), []), (("executions",), None), (("executions",), 1),
+            (("executions",), {}), (("executions", 0), None),
+            (("executions", 0), {}), (("executions", 0, "argv"), 7),
+            (("executions", 0, "argv"), [[]]),
+            (("executions", 1, "identity"), None),
+            (("executions", 1, "identity", 0), True),
+            (("executions", 1, "sequence"), []),
+            (("executions", 1, "path"), []),
+            (("executions", 1, "environment"), []),
+            (("executions", 1, "environment"), {"LANG": None}),
+            (("executions", 1, "environment"), {1: "C"}),
+            (("profile",), None), (("profile",), []), (("profile",), 1),
+            (("profile", "version"), True), (("profile", "stage"), []),
+            (("profile", "stdin"), None), (("profile", "inputs"), None),
+            (("profile", "driver_identity"), None),
+            (("profile", "driver_identity", 0), True),
+            (("profile", "images"), None), (("profile", "images"), []),
+            (("profile", "images", 0), None), (("profile", "images", 0), []),
+            (("profile", "images", 0, 0), []),
+            (("profile", "images", 0, 1), True),
+            (("profile", "workspace"), None), (("profile", "workspace"), 1),
+            (("profile", "workspace"), {}), (("profile", "workspace"), []),
+            (("profile", "workspace"), [1, 2]),
+            (("profile", "workspace", 0), []),
+            (("profile", "workspace", 1), True),
+            (("profile", "workspace", 2), "directory"),
+            (("launch",), None), (("launch",), []), (("launch", "version"), True),
+            (("launch", "scope"), None), (("launch", "binding"), []),
+        )
+        for path, value in mutations:
+            changed = copy.deepcopy(model)
+            self.value_at(changed, path[:-1])[path[-1]] = value
+            with self.subTest(path=path, kind=type(value).__name__), self.assertRaises(MakeProbeError):
+                self.parse(changed, reserve=self.reserve)
+        for container in (("profile",), ("launch",), ("executions", 0)):
+            for field in self.value_at(model, container):
+                changed = copy.deepcopy(model)
+                del self.value_at(changed, container)[field]
+                with self.subTest(container=container, missing=field), self.assertRaises(MakeProbeError):
+                    self.parse(changed, reserve=self.reserve)
+
+    def test_role_parser_validates_parent_and_execution_shapes_before_use(self):
+        model = self.model()
+        for argv in (None, 1, True, {}, [], [None], [[]], [1], ("", None)):
+            with self.subTest(parent=argv), self.assertRaises(MakeProbeError):
+                toolchain_runtime.compile_operand_roles(
+                    model["executions"], model["profile"], argv, complete=True,
+                )
+        for field, values in (
+            ("argv", (None, 7, True, "argv", {}, (), [], [None], [[]])),
+            ("sequence", (None, True, [], {}, "2")),
+            ("identity", (None, [], [True] * 6, [[1]] * 6)),
+            ("environment", (None, [], {"LANG": []}, {1: "C"})),
+        ):
+            for value in values:
+                rows = copy.deepcopy(model["executions"])
+                rows[1][field] = value
+                with self.subTest(field=field, kind=type(value).__name__), self.assertRaises(MakeProbeError):
+                    toolchain_runtime.compile_operand_roles(
+                        rows, model["profile"], model["driver"], complete=True,
+                    )
+
+    def test_projection_consumed_shapes_refuse_controlled_protocol_errors(self):
+        model = self.model()
+        receipt = self.parse(model, reserve=self.reserve)
+        raw = self.probes(model)
+        malformed = [
+            None, 7, True, {}, [], [None], raw[1:], (raw[0], raw[1], raw[1], raw[2]),
+        ]
+        for field, values in (
+            ("argv", (None, 7, True, "argv", {}, (), [], [None], [[]])),
+            ("sequence", (None, True, [], {}, "2")),
+            ("path", (None, [])),
+            ("identity", (None, [], [True] * 6, [[1]] * 6)),
+            ("environment", (None, [], {"LANG": []}, {1: "C"})),
+            ("stage", (None, [])),
+        ):
+            for value in values:
+                changed = list(copy.deepcopy(raw))
+                changed[1][field] = value
+                malformed.append(changed)
+        for index in (0, 1, 2, 3):
+            for field in raw[index]:
+                changed = list(copy.deepcopy(raw))
+                del changed[index][field]
+                malformed.append(changed)
+        for field, value in (("stdin", 7), ("eof", 1), ("stage", [])):
+            changed = list(copy.deepcopy(raw))
+            changed[3][field] = value
+            malformed.append(changed)
+        for index, value in enumerate(malformed):
+            with self.subTest(case=index), self.assertRaises(MakeProbeError):
+                toolchain_runtime.project_compile_identity(
+                    value, receipt, model["roles"], reserve=self.reserve,
+                )
+
+    def test_projection_nested_role_shapes_refuse_before_operand_access(self):
+        model = self.model()
+        receipt = self.parse(model, reserve=self.reserve)
+        raw = self.probes(model)
+        roles = model["roles"]
+        malformed = [None, {}, 1]
+        for field, value in (
+            ("creator_sequence", True), ("writer_sequence", None), ("reader_sequence", []),
+            ("output", None), ("output", 7), ("input", {}), ("input", []),
+        ):
+            malformed.append(replace(roles, **{field: value}))
+        for name in ("output", "input"):
+            for field, value in (
+                ("role", []), ("kind", None), ("exec_sequence", True),
+                ("argv_index", True), ("argv_index", []), ("argv_index", -1),
+                ("argv_index", toolchain_runtime.COMPILE_ARG_LIMIT), ("value", None),
+            ):
+                malformed.append(replace(
+                    roles, **{name: replace(getattr(roles, name), **{field: value})},
+                ))
+        for index, value in enumerate(malformed):
+            with self.subTest(case=index), self.assertRaises(MakeProbeError):
+                toolchain_runtime.project_compile_identity(raw, receipt, value, reserve=self.reserve)
 
 
 class ModernToolchainTests(unittest.TestCase):
