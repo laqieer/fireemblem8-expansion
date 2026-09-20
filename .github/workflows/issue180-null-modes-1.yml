@@ -1,0 +1,61 @@
+name: Issue 180 restricted null modes 1
+
+on:
+  push:
+    branches: [diagnostic/issue-180-null-modes-1]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue180-null-modes-1
+  cancel-in-progress: false
+
+jobs:
+  restricted-modes:
+    if: >-
+      github.repository == 'laqieer/fireemblem8-expansion' &&
+      github.event.repository.private == false &&
+      github.actor == 'laqieer' &&
+      github.triggering_actor == 'laqieer' &&
+      github.event.sender.login == 'laqieer' &&
+      github.event.created == true &&
+      github.event.deleted == false &&
+      github.run_number == 1 &&
+      github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - name: Checkout exact never-merge qualifier
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ github.sha }}
+        path: harness
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Record first-creation allocation
+      run: /usr/bin/python3 -I -S -B "$GITHUB_WORKSPACE/harness/scripts/ci_null_modes_qualification.py" plan
+    - name: Checkout independently reviewed exact fixture
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: 0818374feed58b1495e9ff3c9e415791e2a8cb12
+        path: candidate
+        fetch-depth: 0
+        submodules: recursive
+        persist-credentials: false
+    - name: Qualify actual restricted selection and all seven modes once
+      working-directory: candidate
+      run: >-
+        /usr/bin/timeout --signal=KILL 360s
+        /usr/bin/python3 -I -S -B
+        "$GITHUB_WORKSPACE/harness/scripts/ci_null_modes_qualification.py" run
+    - name: Upload bounded semantic scope and result
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+      with:
+        name: issue180-null-modes-1-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+        retention-days: 7
+        if-no-files-found: error
+        path: |
+          ${{ github.workspace }}/issue180-null-modes-1-${{ github.run_id }}-records/scope.json
+          ${{ github.workspace }}/issue180-null-modes-1-${{ github.run_id }}-records/result.json
