@@ -5945,6 +5945,43 @@ require green results without changing limits, formats or selectors. These
 controls launch no candidate, compiler, SDK, sed or native supervisor process;
 the separate native qualification remains an independently allocated step.
 
+The [coherent-forgery case preparation](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5737416238)
+adds no execution allocation. Only after a separate exact-head authorization,
+use the existing small Linux x86-64/GNU Make4.3/ARM GCC/C SDK/sed fixture and
+run these two selectors in this order, stopping on the first failure:
+
+```sh
+python3 -B -m unittest -f -v \
+  scripts.validation_ownership.tests.test_header_pipeline.ArmHeaderPipelineTests.test_actual_arm_sdk_and_sed_keep_five_original_dispatches \
+  scripts.validation_ownership.tests.test_header_pipeline.ArmHeaderPipelineTests.test_actual_kernel_completion_rejects_repaired_forgery
+```
+
+The positive retains its ordinary-Make comparison and one confined Make.
+The negative uses one confined Make only. Completion of both therefore means
+three Make calls across two independent fixture/session lifetimes; do not
+substitute the full native class, add an ordinary negative run, or retry.
+
+For the positive, require the original five dispatches, actual ARM/SDK inputs,
+sed observations and final output agreement. For the negative, intercept
+exactly one actual returned filter report with a coherent version-2/status-0
+completion and nonempty contiguous rows. Duplicate one actual row under the
+next sequence, repair the public count/ordered manifest and conservatively
+increase observation accounting within the original public residual grants.
+Keep the actual tag, scope, binding, status and every original payload.
+Insufficient count/byte/file capacity fails the case; it never widens a limit.
+One-row and legitimate repeated-path transcripts remain supported.
+
+Require the genuine header authentication error to propagate through
+`_sandbox_run` to the Make caller before filter capability issue/claim,
+output materialization/capture, cache retention or semantic-view publication.
+Earlier directory/ARM-scan effects and the private empty filter-output
+preallocation are not claimed absent. Require normal owned cleanup afterward.
+Never inspect a private key/signer/config or retain/print raw reports, tags,
+environments or streams. The test-local transform is checked separately by
+`HeaderReceiptInertTests`, including acceptance when only MAC verification
+is removed; those model controls are not native results. The existing case,
+class/module mapping and all broader native selectors remain unchanged.
+
 For the actual ARM/SDK/sed header pipeline, run:
 
 ```sh

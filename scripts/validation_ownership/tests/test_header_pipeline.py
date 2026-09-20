@@ -25,6 +25,91 @@ from scripts.bash_parser import tokenize_bash_command
 from scripts.validation_ownership.tests import test_foundation as foundation
 
 
+def _repaired_header_forgery(report, *, count_limit, observation_limit, file_limit):
+    if (
+        any(type(value) is not int or value < 1 for value in (count_limit, observation_limit, file_limit))
+        or type(report) is not dict or report.get("ok") is not True
+        or type(report.get("returncode")) is not int or report["returncode"] != 0
+        or report.get("error") is not None or report.get("executed") != ["/usr/bin/sed"]
+    ):
+        raise ValueError("forgery requires a successful actual filter report and issued bounds")
+    observations, size = report.get("observations"), report.get("observation_bytes")
+    collections = [report.get(name) for name in ("consumed", "code_consumed", "accessed")]
+    if (
+        type(observations) is not int or not 0 <= observations < count_limit
+        or type(size) is not int or not 128 * observations <= size <= observation_limit
+        or any(
+            type(values) is not list or len(values) > observations
+            or any(type(value) is not str for value in values)
+            or len(set(values)) != len(values)
+            for values in collections
+        )
+        or sum(map(len, collections)) > observations
+    ):
+        raise ValueError("forgery lacks valid observation accounting or one remaining count")
+    rows, terminals = [], []
+    for value in report["accessed"]:
+        if value.startswith((header_runtime.KERNEL_PREFIX, header_runtime.KERNEL_END)):
+            if not value.isascii() or len(value) > file_limit:
+                raise ValueError("forgery input exceeds its actual wire authority")
+            if value.startswith(header_runtime.KERNEL_END):
+                terminals.append((value, make_probe.parse_json(
+                    value[len(header_runtime.KERNEL_END):].encode("ascii"), "forgery completion",
+                )))
+            else:
+                row = make_probe.parse_json(
+                    value[len(header_runtime.KERNEL_PREFIX):].encode("ascii"), "forgery row",
+                )
+                if (
+                    type(row) is not dict or set(row) != set(header_runtime.ROW_FIELDS)
+                    or type(row["sequence"]) is not int
+                    or any(type(item) not in (str, int, bool, type(None)) for item in row.values())
+                ):
+                    raise ValueError("forgery requires actual primitive-valued rows")
+                rows.append(row)
+    if len(terminals) != 1 or not rows:
+        raise ValueError("forgery requires one completion and a nonempty actual transcript")
+    old_terminal, completion = terminals[0]
+    rows.sort(key=lambda row: row["sequence"])
+    if (
+        type(completion) is not dict or set(completion) != set(header_runtime.COMPLETION_FIELDS)
+        or type(completion["version"]) is not int or completion["version"] != 2
+        or type(completion["status"]) is not int or completion["status"] != 0
+        or type(completion["count"]) is not int or completion["count"] != len(rows)
+        or type(completion["scope"]) is not str
+        or any(
+            type(completion[name]) is not str or not header_runtime._HEX64.fullmatch(completion[name])
+            for name in ("binding", "manifest_sha256", "tag")
+        )
+        or [row["sequence"] for row in rows] != list(range(1, len(rows) + 1))
+        or len(rows) + 1 >= count_limit
+        or completion["manifest_sha256"] != hashlib.sha256(canonical(rows)).hexdigest()
+    ):
+        raise ValueError("forgery requires a coherent version-2 actual transcript")
+    duplicate = {**rows[-1], "sequence": len(rows) + 1}
+    new_row = header_runtime.KERNEL_PREFIX + canonical(duplicate).decode("ascii")
+    repaired = {
+        **completion, "count": len(rows) + 1,
+        "manifest_sha256": hashlib.sha256(canonical([*rows, duplicate])).hexdigest(),
+    }
+    new_terminal = header_runtime.KERNEL_END + canonical(repaired).decode("ascii")
+    mutated = {
+        **report,
+        "accessed": sorted([
+            *(value for value in report["accessed"] if value != old_terminal),
+            new_row, new_terminal,
+        ]),
+        "observations": observations + 1,
+        "observation_bytes": size + len(new_row) + 128 + max(0, len(new_terminal) - len(old_terminal)),
+    }
+    if mutated["observation_bytes"] > observation_limit:
+        raise ValueError("forgery exceeds the original issued observation bytes")
+    result = canonical(mutated)
+    if len(result) > file_limit:
+        raise ValueError("forgery exceeds the original issued report extent")
+    return result
+
+
 class ArmHeaderPipelineTests(unittest.TestCase):
     def setUp(self):
         self.fixture = foundation.FoundationTests()
@@ -254,6 +339,130 @@ class ArmHeaderPipelineTests(unittest.TestCase):
                         session.make("expansion-modern-all", commands=MakeCommands(session, self.contracts))
                 self.assertEqual(changed, [defect])
             self.assert_clean(session)
+
+    def test_actual_kernel_completion_rejects_repaired_forgery(self):
+        with self.session() as session:
+            run, read = session._sandbox_run, session.budget.read_bytes
+            capture, finish, write = session._capture_outputs, session._finish_header_step, Path.write_bytes
+            issue, claim = session._issue_native_return, session._claim_native_return
+            state = {"filter_calls": 0, "reports": 0, "hmac_rejections": 0, "escaped": 0}
+            bounds = None
+            output_name = self.target + ".tmp2"
+
+            def escaped(*args, **kwargs):
+                state["escaped"] += 1
+                raise AssertionError("rejected filter reached a result publication boundary")
+
+            def issue_return(purpose, *args, **kwargs):
+                if purpose == header_runtime.FILTER_PURPOSE:
+                    escaped()
+                return issue(purpose, *args, **kwargs)
+
+            def claim_return(purpose, *args, **kwargs):
+                if purpose == header_runtime.FILTER_PURPOSE:
+                    escaped()
+                return claim(purpose, *args, **kwargs)
+
+            def capture_outputs(output, paths):
+                if output_name in paths:
+                    escaped()
+                return capture(output, paths)
+
+            def finish_step(record, paths=()):
+                if record is not None and record.step == 3:
+                    escaped()
+                return finish(record, paths)
+
+            def write_bytes(path, data):
+                if path.name == Path(output_name).name:
+                    escaped()
+                return write(path, data)
+
+            def filter_run(root, **options):
+                nonlocal bounds
+                if options.get("mode") != "compile" or options["argv"][0] != "/usr/bin/sed":
+                    return run(root, **options)
+                state["filter_calls"] += 1
+                self.assertEqual(state["filter_calls"], 1, "more than one filter invocation")
+                limits = session.budget.limits
+                control = limits.control_bytes - session.budget.bytes.get("control", 0)
+                # These are the public residual grants at _sandbox_run entry,
+                # before launch serialization; never read the private config.
+                bounds = {
+                    "count_limit": min(limits.entries, limits.observation_count - session.observations_used),
+                    "observation_limit": min(limits.file_bytes, control),
+                    "file_limit": min(
+                        limits.file_bytes, control,
+                        limits.event_bytes - session.budget.bytes.get("event", 0),
+                    ),
+                }
+                cached = {id(key): tuple(map(id, values)) for key, values in session.cache.items()}
+                cache_bytes = session.budget.bytes.get("cache", 0)
+                published = {name: id(value) for name, value in session.published_sources.items()}
+                self.assertTrue(self.target + ".tmp" in published, "earlier ARM scan was not published")
+                self.assertTrue(output_name not in published, "filter output was already published")
+                try:
+                    run(root, **options)
+                except MakeProbeError as error:
+                    if (
+                        type(error.__cause__) is not ChannelError
+                        or str(error.__cause__) != "header kernel completion authentication failed"
+                    ):
+                        raise AssertionError("filter refusal did not originate at header authentication") from None
+                    state["hmac_rejections"] += 1
+                    self.assertTrue(
+                        cached == {id(key): tuple(map(id, values)) for key, values in session.cache.items()},
+                        "filter result changed the command cache",
+                    )
+                    self.assertEqual(session.budget.bytes.get("cache", 0), cache_bytes)
+                    self.assertTrue(
+                        published == {name: id(value) for name, value in session.published_sources.items()},
+                        "filter refusal changed earlier public outputs",
+                    )
+                    self.assertFalse(
+                        any(record.purpose == header_runtime.FILTER_PURPOSE for record in session._native_returns.values()),
+                        "filter capability escaped before rejection",
+                    )
+                    raise
+                finally:
+                    bounds = None
+                raise AssertionError("forged filter report returned successfully")
+
+            def corrupt(path, category):
+                data = read(path, category)
+                if category != "control" or not Path(path).name.startswith("report-"):
+                    return data
+                report = make_probe.parse_json(data, "actual filter interception")
+                if not any(
+                    type(value) is str and value.startswith(header_runtime.KERNEL_END)
+                    for value in report.get("accessed", ())
+                ):
+                    return data
+                state["reports"] += 1
+                self.assertEqual(state["reports"], 1, "more than one actual filter report")
+                self.assertIsNotNone(bounds, "header completion did not come from the filter invocation")
+                self.assertLessEqual(len(data), bounds["file_limit"], "actual report exceeds issued extent")
+                return _repaired_header_forgery(report, **bounds)
+
+            with (
+                patch.object(session, "_sandbox_run", filter_run),
+                patch.object(session.budget, "read_bytes", corrupt),
+                patch.object(session, "_issue_native_return", issue_return),
+                patch.object(session, "_claim_native_return", claim_return),
+                patch.object(header_runtime, "immutable_views", escaped),
+                patch.object(session, "_capture_outputs", capture_outputs),
+                patch.object(session, "_finish_header_step", finish_step),
+                patch.object(Path, "write_bytes", write_bytes),
+            ):
+                try:
+                    session.make("expansion-modern-all", commands=MakeCommands(session, self.contracts))
+                except MakeProbeError as error:
+                    if "header kernel completion authentication failed" not in str(error):
+                        raise AssertionError("header authentication rejection did not propagate to Make") from None
+                else:
+                    self.fail("Make accepted the repaired filter forgery")
+            self.assertEqual(state, {"filter_calls": 1, "reports": 1, "hmac_rejections": 1, "escaped": 0})
+        self.assert_clean(session)
 
     def test_unsupported_options_expressions_and_shell_expansions_fail_closed(self):
         tool = RuntimeTool("/usr/bin/arm-none-eabi-gcc", "/usr/bin/arm-none-eabi-gcc", 0o755, "0" * 64)
@@ -490,6 +699,159 @@ class HeaderReceiptInertTests(unittest.TestCase):
             ),
             self.row(4),
         ]
+
+    def model_filter_report(self, rows):
+        values, completion = self.signed(rows)
+        accessed = sorted([*values, header_runtime.KERNEL_END + canonical(completion).decode("ascii")])
+        return {
+            "ok": True, "returncode": 0, "error": None,
+            "consumed": [], "code_consumed": [], "accessed": accessed,
+            "observations": len(accessed),
+            "observation_bytes": sum(len(value) + 128 for value in accessed),
+            "processes": 1, "syscalls": 1, "written_bytes": 0, "created_files": 0,
+            "memory_peak": 0, "live_process_peak": 1,
+            "metadata": make_probe.metadata_transport.encode_metadata_transport([]),
+            "events": [], "executed": ["/usr/bin/sed"],
+        }
+
+    def test_repaired_forgery_preserves_actual_payloads_and_only_repairs_public_fields(self):
+        for rows in ([self.row(1, "statfs", "/sys/fs/selinux")], self.complete_rows()):
+            original = self.model_filter_report(rows)
+            before = canonical(original)
+            def no_signer(*args, **kwargs):
+                raise AssertionError("transport forgery tried to sign")
+            with (
+                patch.object(header_runtime, "completion", no_signer),
+                patch.object(header_runtime.hmac, "new", no_signer),
+            ):
+                wire = _repaired_header_forgery(
+                    original, count_limit=32, observation_limit=65536, file_limit=65536,
+                )
+            forged = make_probe.parse_json(wire, "pure repaired forgery")
+            self.assertTrue(canonical(original) == before, "transform changed the original model report")
+            self.assertTrue(set(forged) == set(original), "transform changed the report schema")
+            self.assertTrue(all(
+                forged[name] == original[name]
+                for name in original if name not in {"accessed", "observations", "observation_bytes"}
+            ), "transform changed an unrelated public field")
+            self.assertEqual(forged["observations"], original["observations"] + 1)
+            self.assertGreater(forged["observation_bytes"], original["observation_bytes"])
+            old_terminal, = [
+                value for value in original["accessed"] if value.startswith(header_runtime.KERNEL_END)
+            ]
+            new_terminal, = [
+                value for value in forged["accessed"] if value.startswith(header_runtime.KERNEL_END)
+            ]
+            old = make_probe.parse_json(old_terminal[len(header_runtime.KERNEL_END):].encode(), "model terminal")
+            new = make_probe.parse_json(new_terminal[len(header_runtime.KERNEL_END):].encode(), "model terminal")
+            self.assertTrue(all(
+                old[name] == new[name] for name in old if name not in {"count", "manifest_sha256"}
+            ), "forgery changed the actual tag or launch/status binding")
+            self.assertTrue(
+                set(original["accessed"]) - {old_terminal} <= set(forged["accessed"]),
+                "forgery changed or omitted an original occurrence",
+            )
+            decoded = [
+                make_probe.parse_json(value[len(header_runtime.KERNEL_PREFIX):].encode(), "model row")
+                for value in forged["accessed"] if value.startswith(header_runtime.KERNEL_PREFIX)
+            ]
+            decoded.sort(key=lambda row: row["sequence"])
+            self.assertEqual([row["sequence"] for row in decoded], list(range(1, len(rows) + 2)))
+            self.assertTrue(decoded[:-1] == rows, "original ordered payloads changed")
+            self.assertTrue(decoded[-1] == {**rows[-1], "sequence": len(rows) + 1}, "extra row is not a duplicate")
+            self.assertEqual(new["count"], len(decoded))
+            self.assertTrue(
+                new["manifest_sha256"] == hashlib.sha256(canonical(decoded)).hexdigest(),
+                "repaired ordered manifest is inconsistent",
+            )
+            permuted = {**original, "accessed": list(reversed(original["accessed"]))}
+            self.assertTrue(wire == _repaired_header_forgery(
+                permuted, count_limit=32, observation_limit=65536, file_limit=65536,
+            ), "transport order changed the coherent forgery")
+
+    def test_repaired_forgery_rejects_invalid_transcripts_and_exhausted_issued_bounds(self):
+        original = self.model_filter_report([self.row(1, "statfs", "/sys/fs/selinux")])
+        bounds = {"count_limit": 32, "observation_limit": 65536, "file_limit": 65536}
+        wire = _repaired_header_forgery(original, **bounds)
+        forged = make_probe.parse_json(wire, "model boundary")
+        exact = {
+            "count_limit": forged["observations"],
+            "observation_limit": forged["observation_bytes"], "file_limit": len(wire),
+        }
+        self.assertTrue(wire == _repaired_header_forgery(original, **exact), "exact public bounds failed")
+        for name in exact:
+            with self.subTest(bound=name), self.assertRaises(ValueError):
+                _repaired_header_forgery(original, **{**exact, name: exact[name] - 1})
+            with self.subTest(boolean_bound=name), self.assertRaises(ValueError):
+                _repaired_header_forgery(original, **{**exact, name: True})
+        for defect in (
+            "version", "status", "count", "manifest", "missing", "empty", "sequence",
+            "duplicate", "failed", "returncode", "observations", "observation_bytes",
+        ):
+            changed = copy.deepcopy(original)
+            terminal_index = next(
+                index for index, value in enumerate(changed["accessed"])
+                if value.startswith(header_runtime.KERNEL_END)
+            )
+            terminal = make_probe.parse_json(
+                changed["accessed"][terminal_index][len(header_runtime.KERNEL_END):].encode(), "model terminal",
+            )
+            if defect in {"version", "status", "count", "manifest"}:
+                field = "manifest_sha256" if defect == "manifest" else defect
+                terminal[field] = "0" * 64 if defect == "manifest" else True
+                changed["accessed"][terminal_index] = header_runtime.KERNEL_END + canonical(terminal).decode()
+            elif defect == "missing":
+                del changed["accessed"][terminal_index]
+            elif defect == "empty":
+                changed["accessed"] = [changed["accessed"][terminal_index]]
+            elif defect == "sequence":
+                index = 1 - terminal_index
+                row = {**self.row(1, "statfs", "/sys/fs/selinux"), "sequence": 2}
+                changed["accessed"][index] = header_runtime.KERNEL_PREFIX + canonical(row).decode()
+            elif defect == "duplicate":
+                changed["accessed"].append(changed["accessed"][terminal_index])
+            elif defect == "failed":
+                changed["ok"] = False
+            elif defect == "returncode":
+                changed["returncode"] = False
+            elif defect == "observations":
+                changed["observations"] = True
+            else:
+                changed["observation_bytes"] = 0
+            with self.subTest(defect=defect), self.assertRaises(ValueError):
+                _repaired_header_forgery(changed, **bounds)
+
+    def test_repaired_forgery_reaches_real_hmac_rejection(self):
+        for rows in ([self.row(1, "statfs", "/sys/fs/selinux")], self.complete_rows()):
+            original = self.model_filter_report(rows)
+            accepted = header_runtime.authenticate_records(
+                original["accessed"], self.profile, self.verifier, count_limit=32, file_limit=65536,
+            )
+            self.assertEqual(len(accepted.rows), len(rows))
+            forged = make_probe.parse_json(_repaired_header_forgery(
+                original, count_limit=32, observation_limit=65536, file_limit=65536,
+            ), "pure repaired forgery")
+            with self.subTest(row_count=len(rows)), self.assertRaisesRegex(
+                ChannelError, "^header kernel completion authentication failed$",
+            ):
+                header_runtime.authenticate_records(
+                    forged["accessed"], self.profile, self.verifier, count_limit=32, file_limit=65536,
+                )
+
+    def test_repaired_forgery_is_exposed_when_only_mac_verification_is_removed(self):
+        for rows in ([self.row(1, "statfs", "/sys/fs/selinux")], self.complete_rows()):
+            forged = make_probe.parse_json(_repaired_header_forgery(
+                self.model_filter_report(rows), count_limit=32, observation_limit=65536, file_limit=65536,
+            ), "pure repaired forgery")
+            with patch.object(header_runtime.hmac, "compare_digest", return_value=True):
+                accepted = header_runtime.authenticate_records(
+                    forged["accessed"], self.profile, self.verifier, count_limit=32, file_limit=65536,
+                )
+            self.assertEqual(len(accepted.rows), len(rows) + 1)
+            self.assertTrue(
+                accepted.rows[-1].mapping() == {**rows[-1], "sequence": len(rows) + 1},
+                "restoration did not expose the duplicated actual payload",
+            )
 
     def receipt_policy(self, *, limit=1_000_000, count=3):
         policy = syscall_guard.Policy.__new__(syscall_guard.Policy)
