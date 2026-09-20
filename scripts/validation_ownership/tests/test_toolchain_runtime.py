@@ -1413,6 +1413,7 @@ class _IntermediateModel:
         pid, _ = actor
         def kernel():
             if not self.exists:
+                assert actor[1].toolchain_exec_sequence == 1, "MODEL writer must not create or repair an object"
                 self.exists = True
             self.trace_fds[pid, 7] = [0, flags]
         if number == 2:
@@ -1451,17 +1452,18 @@ class _IntermediateModel:
         self.close_actor(self.driver)
         return self.driver
 
-    def sealed(self):
+    def sealed(self, *, writer_request=None):
         self.created()
         writer = self.actor(2)
-        self.open_actor(writer, os.O_WRONLY | os.O_TRUNC, 0)
+        number, flags, mode = (2, os.O_WRONLY | os.O_TRUNC, 0) if writer_request is None else writer_request
+        self.open_actor(writer, flags, mode, number=number)
         self.write(writer)
         self.close_actor(writer)
         self.exit_actor(writer)
         return self.driver
 
-    def consumed(self):
-        self.sealed()
+    def consumed(self, *, writer_request=None):
+        self.sealed(writer_request=writer_request)
         reader = self.actor(3)
         self.open_actor(reader, os.O_RDONLY, 0)
         self.read_actor(reader)
@@ -1469,8 +1471,8 @@ class _IntermediateModel:
         self.exit_actor(reader)
         return self.driver
 
-    def finish(self):
-        self.consumed()
+    def finish(self, *, writer_request=None):
+        self.consumed(writer_request=writer_request)
         def unlink():
             self.exists = False
             self.links = 0
@@ -1483,10 +1485,192 @@ class _IntermediateModel:
 
 
 class ToolchainIntermediateInertTests(unittest.TestCase):
+    def test_existing_writer_requested_modes_keep_same_actual_0600_object(self):
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        for number in (2, 257):
+            for mode in (0o600, 0o666):
+                with self.subTest(number=number, MODEL_mode=mode), _IntermediateModel() as model:
+                    model.created()
+                    writer = model.actor(2)
+                    before = model.tracker.object_identity()
+                    self.assertTrue(model.exists)
+                    try:
+                        model.open_actor(writer, flags, mode, number=number)
+                    except syscall_guard.Violation as error:
+                        self.fail("valid MODEL existing-object request refused: " + str(error))
+                    after = model.tracker.object_identity()
+                    self.assertEqual(before[:4], after[:4])
+                    self.assertEqual(after[2], stat.S_IFREG | 0o600)
+                    self.assertEqual(after[6], 1)
+                    self.assertEqual(model.tracker.phase, "writer-open")
+                    opened = model.tracker.record["writer"]["open"]
+                    self.assertEqual((opened["requested_mode"], opened["flags"]), (mode, flags))
+                    self.assertEqual(opened["identity"], list(after))
+                    self.assertEqual(model.trace_fds[writer[0], 7], [0, flags])
+
+    def test_existing_writer_modes_roundtrip_raw_without_changing_actual_semantics(self):
+        case = ToolchainProtocolDataTests()
+        case.setUp()
+        raw, semantic = [], []
+        for mode in (0o600, 0o666):
+            with self.subTest(MODEL_mode=mode):
+                model = case.model()
+                opened = model["receipt"]["writer"]["open"]
+                opened["flags"] = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+                opened["requested_mode"] = mode
+                try:
+                    canonical = case.parse(model, reserve=case.reserve)
+                except MakeProbeError as error:
+                    self.fail("valid MODEL receipt refused: " + str(error))
+                observed = json.loads(canonical)
+                self.assertEqual(observed["writer"]["open"]["requested_mode"], mode)
+                self.assertEqual(observed["writer"]["open"]["flags"], opened["flags"])
+                self.assertEqual(observed["writer"]["open"]["identity"][2], stat.S_IFREG | 0o600)
+                projected = toolchain_runtime.project_compile_identity(
+                    case.probes(model), canonical, model["roles"], reserve=case.reserve,
+                )
+                self.assertEqual(projected["toolchain_semantics"]["intermediates"][0]["mode"], 0o600)
+                raw.append(canonical)
+                semantic.append(projected)
+        self.assertEqual(len(raw), 2, "both coherent existing-object request modes must parse")
+        self.assertNotEqual(raw[0], raw[1])
+        self.assertEqual(semantic[0], semantic[1])
+
+    def test_existing_writer_complete_models_bind_raw_request_and_proved_actual_mode(self):
+        values = []
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        for mode in (0o600, 0o666):
+            with self.subTest(MODEL_mode=mode), _IntermediateModel() as model:
+                wire = model.finish(writer_request=(257, flags, mode))
+                proof = json.loads(wire[len(toolchain_runtime.INTERMEDIATE_PREFIX):])
+                self.assertEqual(proof["writer"]["open"]["requested_mode"], mode)
+                self.assertEqual(proof["writer"]["open"]["flags"], flags)
+                self.assertEqual(proof["creation"]["requested_mode"], 0o600)
+                self.assertTrue(all(
+                    row[2] == stat.S_IFREG | 0o600 for row in (
+                        proof["creation"]["identity"], proof["writer"]["open"]["identity"],
+                        proof["writer"]["completed"]["identity"], proof["reader"]["open"]["identity"],
+                        proof["retirement"]["after_identity"],
+                    )
+                ))
+                self.assertTrue(proof["complete"])
+                self.assertFalse(model.handles)
+                values.append(proof["writer"]["completed"]["sha256"])
+        self.assertEqual(values[0], values[1])
+
+    def test_existing_writer_never_creates_repairs_or_accepts_a_foreign_preopen_object(self):
+        for defect in ("absent", "inode", "actual-mode", "links", "symlink", "nonempty", "actor"):
+            with self.subTest(defect=defect), _IntermediateModel() as model:
+                model.created()
+                writer = model.actor(2)
+                if defect == "absent":
+                    model.exists = False
+                elif defect == "inode":
+                    model.inode += 1
+                elif defect == "actual-mode":
+                    model.mode = stat.S_IFREG | 0o666
+                elif defect == "links":
+                    model.links = 2
+                elif defect == "symlink":
+                    model.mode = stat.S_IFLNK | 0o777
+                elif defect == "nonempty":
+                    model.body = b"not-empty"
+                else:
+                    model.policy.processes[writer[0]] = copy.copy(writer[1])
+                attempted = []
+                def kernel():
+                    attempted.append(True)
+                    raise AssertionError("MODEL writer must not repair/create this object")
+                with self.assertRaises((OSError, syscall_guard.Violation)):
+                    model.syscall(
+                        writer, 257, -100, 0x2000, os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                        0o666, result=7, kernel=kernel,
+                    )
+                self.assertFalse(attempted)
+                self.assertIsNone(model.tracker.descriptors[1])
+                self.assertNotIn("writer", model.tracker.record)
+
+    def test_existing_writer_revalidates_postopen_object_entry_and_actual_mode(self):
+        for defect in ("absent", "inode", "actual-mode", "links", "symlink", "fd-object"):
+            with self.subTest(defect=defect), _IntermediateModel() as model:
+                model.created()
+                writer = model.actor(2)
+                flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+                original = model.stat
+                def stat_value(path, **options):
+                    info = original(path, **options)
+                    if defect == "fd-object" and str(path).startswith("/proc/"):
+                        info.st_ino += 1
+                    return info
+                def kernel():
+                    model.trace_fds[writer[0], 7] = [0, flags]
+                    if defect == "absent":
+                        model.exists = False
+                    elif defect == "inode":
+                        model.inode += 1
+                    elif defect == "actual-mode":
+                        model.mode = stat.S_IFREG | 0o666
+                    elif defect == "links":
+                        model.links = 2
+                    elif defect == "symlink":
+                        model.mode = stat.S_IFLNK | 0o777
+                with patch.object(syscall_guard.os, "stat", stat_value):
+                    with self.assertRaises((OSError, syscall_guard.Violation)):
+                        model.syscall(writer, 257, -100, 0x2000, flags, 0o666, result=7, kernel=kernel)
+                self.assertIsNone(model.tracker.descriptors[1])
+                with self.assertRaises(syscall_guard.Violation):
+                    model.tracker.emit(0)
+                self.assertFalse(model.policy.accessed)
+
+    def test_existing_writer_extension_keeps_creator_bad_request_flags_and_actual_receipt_denials(self):
+        for flags, mode in (
+            (os.O_WRONLY | os.O_CREAT, 0), (os.O_WRONLY | os.O_CREAT, 0o644),
+            (os.O_WRONLY | os.O_CREAT, 0o664), (os.O_WRONLY | os.O_CREAT, 0o777),
+            (os.O_WRONLY | os.O_CREAT, 0o4000),
+            (os.O_WRONLY | os.O_TRUNC, 0o600), (os.O_WRONLY | os.O_TRUNC, 0o666),
+            (os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666),
+            (os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o666),
+            (os.O_WRONLY | os.O_CREAT | os.O_PATH, 0o666),
+        ):
+            with self.subTest(flags=flags, mode=mode), _IntermediateModel() as model:
+                model.created()
+                writer = model.actor(2)
+                with self.assertRaises(syscall_guard.Violation):
+                    model.open_actor(writer, flags, mode)
+                self.assertNotIn((writer[0], 7), model.trace_fds)
+        with _IntermediateModel() as model:
+            driver = model.actor(1)
+            with self.assertRaises(syscall_guard.Violation):
+                model.open_actor(driver, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o666)
+            self.assertFalse(model.exists)
+        case = ToolchainProtocolDataTests()
+        case.setUp()
+        for defect in ("creator-mode", "actual-mode", "inode", "links", "symlink", "requested-mode", "flags"):
+            model = case.model()
+            opened = model["receipt"]["writer"]["open"]
+            opened["flags"] |= os.O_CREAT
+            opened["requested_mode"] = 0o666
+            if defect == "creator-mode":
+                model["receipt"]["creation"]["requested_mode"] = 0o666
+            elif defect == "actual-mode":
+                opened["identity"][2] = stat.S_IFREG | 0o666
+            elif defect == "inode":
+                opened["identity"][1] += 1
+            elif defect == "links":
+                opened["identity"][6] = 2
+            elif defect == "symlink":
+                opened["identity"][2] = stat.S_IFLNK | 0o777
+            elif defect == "requested-mode":
+                opened["requested_mode"] = 0o664
+            else:
+                opened["flags"] |= os.O_EXCL
+            with self.subTest(receipt=defect), self.assertRaises(MakeProbeError):
+                case.parse(model, reserve=case.reserve)
+
     def test_writer_mode_refusal_reports_only_validated_bounded_fields(self):
         flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC | os.O_NOFOLLOW
         for number, form in ((2, "open"), (257, "openat")):
-            for mode in (0, 0o666, 0o777):
+            for mode in (0, 0o644, 0o777):
                 with self.subTest(number=number, MODEL_mode=mode), _IntermediateModel() as model:
                     model.created()
                     writer = model.actor(2)
@@ -1550,7 +1734,7 @@ class ToolchainIntermediateInertTests(unittest.TestCase):
                 writer = model.actor(2)
                 with patch.object(model.tracker, "reserve", side_effect=failure) as reserve:
                     with self.assertRaises(syscall_guard.Violation) as refused:
-                        model.open_actor(writer, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o666)
+                        model.open_actor(writer, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
                 reserve.assert_called_once_with(4096)
                 self.assertEqual(str(refused.exception), "toolchain writer changed its requested mode")
                 self.assertIs(refused.exception.__cause__, failure)
@@ -1565,7 +1749,7 @@ class ToolchainIntermediateInertTests(unittest.TestCase):
             before = model.policy.observation_bytes
             model.policy.config["observation_limit"] = before
             with self.assertRaises(syscall_guard.Violation) as refused:
-                model.open_actor(writer, os.O_WRONLY | os.O_CREAT, 0o666)
+                model.open_actor(writer, os.O_WRONLY | os.O_CREAT, 0o644)
             self.assertEqual(str(refused.exception), "toolchain writer changed its requested mode")
             self.assertEqual(model.policy.observation_bytes, before + 4096)
 
@@ -1594,7 +1778,7 @@ class ToolchainIntermediateInertTests(unittest.TestCase):
 
     def test_writer_mode_accepted_forms_remain_exact_for_open_and_openat(self):
         for number in (2, 257):
-            for create, mode in ((False, 0), (True, 0o600)):
+            for create, mode in ((False, 0), (True, 0o600), (True, 0o666)):
                 with self.subTest(number=number, create=create), _IntermediateModel() as model:
                     model.created()
                     writer = model.actor(2)

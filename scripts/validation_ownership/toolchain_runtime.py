@@ -579,8 +579,8 @@ def _receipt_data(record, roles, *, profile=None, launch=None, executions=None, 
         os.O_CREAT | os.O_TRUNC | getattr(os, "O_CLOEXEC", 0)
         | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_LARGEFILE", 0),
     )
-    expected_mode = 0o600 if writer_flags & os.O_CREAT else 0
-    if type(writer_open["requested_mode"]) is not int or writer_open["requested_mode"] != expected_mode:
+    expected_modes = (0o600, 0o666) if writer_flags & os.O_CREAT else (0,)
+    if type(writer_open["requested_mode"]) is not int or writer_open["requested_mode"] not in expected_modes:
         raise MakeProbeError("toolchain intermediate writer changed its requested mode")
     writer_open_identity = _identity(writer_open["identity"], "writer open identity")
     if not _same_live_object(created_identity, writer_open_identity, size=0):

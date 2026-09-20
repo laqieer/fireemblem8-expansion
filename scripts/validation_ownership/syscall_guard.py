@@ -712,7 +712,7 @@ class _ToolchainIntermediate:
                         flags, "writer", os.O_WRONLY, 0,
                         os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC | os.O_NOFOLLOW | getattr(os, "O_LARGEFILE", 0),
                     )
-                    if mode != (0o600 if flags & os.O_CREAT else 0):
+                    if mode not in ((0o600, 0o666) if flags & os.O_CREAT else (0,)):
                         message = "toolchain writer changed its requested mode"
                         try:
                             self.reserve(4096)

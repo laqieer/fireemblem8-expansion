@@ -10011,6 +10011,34 @@ Inert `0600`/`0666`/unused-argument examples are MODEL controls only.
 Independent review and a new separate allocation are required before another
 native discriminator; this diagnostic is not a compatibility allowance.
 
+The separately allocated writer discriminator on
+`6ac727246a63e08f3c867ddc7304b1e5e1dacd33` is **spent and closed**.
+One Make attempt failed after 6.452 seconds before the writer syscall, with
+`[syscall=257 form=openat role=writer phase=writer-exec flags=0x241 create=yes mode=0o666]`.
+These are actual `O_WRONLY|O_CREAT|O_TRUNC` entry arguments, not a successful
+open or changed actual inode mode. Older attempts keep their unretained mode
+values; no pair, final `assert_clean` or component acceptance is inferred.
+
+The amended contract admits requested `0600` **or** `0666` only for the
+writer's `O_CREAT` open of its already-created, pinned, single-link empty
+regular object. Both native and raw-receipt validation enforce this together.
+The actual inode/entry and regular `0600` mode must agree before and after;
+the writer cannot use `O_CREAT` to create, replace or repair an object.
+Initial driver exclusive creation still requests and creates `0600`.
+Non-`O_CREAT` behavior, other requested modes/flags and every remaining proof,
+resource and permission boundary are unchanged.
+
+In inert controls, exercise both requests through actual entry/leave and the
+receipt parser. Retain exact requested mode/flags in raw receipts, and require
+equal content-bound semantics with actual mode `0600`. Reject absent,
+replaced/new, actual-`0666`, linked/symlink, nonempty, foreign-actor and
+unsupported request/flag models without a fixup. Restore the old native
+predicate and the old parser independently and require `0666` positives to
+fail again. Post-open states in these tests are explicitly MODEL, not the
+unobserved kernel outcome. Independent exact review and a new separate native
+allocation remain required; no automatic next Make/root/report/resource/H1
+or delivery action is granted.
+
 The live descriptor control must model the supervisor's actual view:
 `<config.root>/work/cc*.s`, not the tracee's guest `/work/cc*.s`. Require the
 exact host-root spelling with the same object to pass, while foreign/escaped/

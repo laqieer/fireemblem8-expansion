@@ -258,6 +258,15 @@ driver creation, creator close, the cc1 output open/write/close/zero-exit,
 completed-file sealing, assembler input open/sequential returned bytes/close/
 zero-exit, and the driver's successful unlink/absence/nlink-zero/zero-exit.
 Mode, object identity, offsets, extent, content and ordering must agree.
+An `O_CREAT` writer open of the already-created, pinned, single-link empty
+regular intermediate may request `0600` or `0666`; it is not initial creation.
+The same actual inode/entry must remain exactly `0600` before and after the
+open. Driver exclusive creation still requires requested and actual `0600`,
+and the non-`O_CREAT` writer rule remains unchanged. Missing, replaced,
+permissive-mode, nonempty, symlink or multiple-link objects do not receive this
+compatibility. Native and receipt validators apply the same narrow request
+rule. Raw flags/requested mode are retained verbatim; semantic mode reflects
+the proved actual inode, not the ignored existing-file creation argument.
 The tracee alone is chrooted. A `/proc/<pid>/fd/<fd>` link read by the
 supervisor is compared with the exact trusted-root pathname
 `<config.root>/work/<created-name>`, in that same namespace. The directory pin,
