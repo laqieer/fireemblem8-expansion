@@ -382,8 +382,8 @@ class Benign(Inert):
             if args[:2] == ("rev-parse", "HEAD"):
                 return sha.encode() + b"\n"
             if args[0] == "rev-list":
-                return ((sha + " " + b.PREPARATION) if args[-1] == sha else
-                        (b.PREPARATION + " " + b.BASE)).encode() + b"\n"
+                parents = {sha: b.RECOVERY, b.RECOVERY: b.PREPARATION, b.PREPARATION: b.BASE}
+                return (args[-1] + " " + parents[args[-1]]).encode() + b"\n"
             if "--name-status" in args:
                 return inventory if args[-2] == b.BASE else b"M\0" + b.PROGRAM.encode() + b"\0"
             return b""
@@ -402,21 +402,35 @@ class Benign(Inert):
                     b.verify_checkout(Path("/work/harness"), sha, harness=True)
                 inventory = prior
 
-    def test_ancestry_requires_exact_two_normal_nonempty_commits(self):
+    def test_ancestry_requires_exact_three_normal_nonempty_commits(self):
         sha = "b" * 40
         rows = b"".join(b"A\0" + name.encode() + b"\0" for name in sorted(b.FILES))
-        for fault in (None, "one-commit", "merge", "extra-parent", "wrong-prior", "empty", "foreign-delta"):
+        faults = (
+            None, "one-commit", "two-commits", "extra-parent", "wrong-recovery", "wrong-preparation",
+            "merge-head", "merge-recovery", "merge-preparation", "empty", "foreign-delta",
+        )
+        for fault in faults:
             def git(root, *args, **kwargs):
                 if args[0] == "rev-parse":
                     return sha.encode()
                 if args[0] == "rev-list":
-                    if args[-1] == sha:
-                        parent = b.BASE if fault == "one-commit" else "c" * 40 if fault == "extra-parent" else b.PREPARATION
-                        return (sha + " " + parent + (" " + b.BASE if fault == "merge" else "")).encode()
-                    return (b.PREPARATION + " " + ("d" * 40 if fault == "wrong-prior" else b.BASE)).encode()
+                    parents = {sha: b.RECOVERY, b.RECOVERY: b.PREPARATION, b.PREPARATION: b.BASE}
+                    if fault in ("one-commit", "two-commits", "extra-parent"):
+                        parents[sha] = {"one-commit": b.BASE, "two-commits": b.PREPARATION,
+                                        "extra-parent": "c" * 40}[fault]
+                    elif fault == "wrong-recovery":
+                        parents[b.RECOVERY] = b.BASE
+                    elif fault == "wrong-preparation":
+                        parents[b.PREPARATION] = "d" * 40
+                    merges = {"merge-head": sha, "merge-recovery": b.RECOVERY,
+                              "merge-preparation": b.PREPARATION}
+                    child = args[-1]
+                    extra = " " + b.BASE if child == merges.get(fault) else ""
+                    return (child + " " + parents[child] + extra).encode()
                 if "--name-status" in args:
                     if args[-2] == b.BASE:
                         return rows
+                    self.assertEqual(args[-2], b.RECOVERY)
                     return b"" if fault == "empty" else b"M\0outside\0" if fault == "foreign-delta" else b"M\0" + b.PROGRAM.encode() + b"\0"
                 return b""
 

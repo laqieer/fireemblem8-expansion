@@ -29,6 +29,7 @@ BRANCH = "diagnostic/issue-180-null-bootstrap-1"
 WORKFLOW = ".github/workflows/issue180-null-bootstrap-1.yml"
 BASE = "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"
 PREPARATION = "20478394860b673b98fb32a4dd292fa0fc02a5d4"
+RECOVERY = "3302f790e944e81be4ea0777682f5282e560fd9c"
 SOURCE = "c8b365da1be29bc58352cf1edb8b836a2cf18321"
 PROGRAM = "scripts/ci_null_bootstrap/bootstrap.py"
 FILES = frozenset({
@@ -156,16 +157,16 @@ def verify_checkout(root, sha, *, harness=False, deadline=None):
     require(git(root, "rev-parse", "HEAD", deadline=deadline).strip() == sha.encode(), "selected revision")
     git(root, "diff", "--quiet", "--no-ext-diff", "--ignore-submodules=none", sha, "--", deadline=deadline)
     if harness:
-        parents = git(root, "rev-list", "--parents", "-n", "1", sha, deadline=deadline).split()
-        require(parents == [sha.encode(), PREPARATION.encode()], "normal correction parent")
-        prior = git(root, "rev-list", "--parents", "-n", "1", PREPARATION, deadline=deadline).split()
-        require(prior == [PREPARATION.encode(), BASE.encode()], "normal preparation parent")
+        chain = (sha, RECOVERY, PREPARATION, BASE)
+        for child, parent in zip(chain, chain[1:]):
+            parents = git(root, "rev-list", "--parents", "-n", "1", child, deadline=deadline).split()
+            require(parents == [child.encode(), parent.encode()], "exact normal preparation lineage")
         rows = git(root, "diff", "--name-status", "-z", BASE, sha, deadline=deadline).split(b"\0")
         require(rows[-1:] == [b""] and len(rows) == 2 * len(FILES) + 1, "additive inventory")
         actual = list(zip(rows[:-1:2], rows[1:-1:2]))
         require(all(kind == b"A" for kind, _ in actual)
                 and {path.decode("ascii") for _, path in actual} == FILES, "five additive files")
-        changed = git(root, "diff", "--name-status", "-z", PREPARATION, sha, deadline=deadline).split(b"\0")
+        changed = git(root, "diff", "--name-status", "-z", RECOVERY, sha, deadline=deadline).split(b"\0")
         require(len(changed) >= 3 and len(changed) % 2 == 1 and changed[-1] == b"", "nonempty correction")
         delta = list(zip(changed[:-1:2], changed[1:-1:2]))
         require(all(kind == b"M" and path.decode("ascii") in FILES for kind, path in delta)
@@ -230,7 +231,8 @@ def identity(event, context):
     )
     return {
         "repository": REPOSITORY, "branch": BRANCH, "workflow": WORKFLOW,
-        "base": BASE, "preparation": PREPARATION, "source": SOURCE, "harness": sha, "run_id": run,
+        "base": BASE, "preparation": PREPARATION, "recovery": RECOVERY,
+        "source": SOURCE, "harness": sha, "run_id": run,
         "run_number": 1, "run_attempt": 1, "creation_allocation_consumed": True,
         "never_merge": True, "qualified": False, "seven_modes": False, "fixture_placement": PLACEMENT,
     }

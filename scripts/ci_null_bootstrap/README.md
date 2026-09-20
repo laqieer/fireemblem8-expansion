@@ -6,57 +6,55 @@ executed to prepare it.**
 
 Scope:
 <https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5736286567>.
-The branch is a normal additive child of
-`ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`; its separately selected source is
+The mounted-root amendment is
+<https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5737056729>;
+the recovery-continuation lineage is frozen in
+<https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5748359622>.
+The branch has exactly three normal commits above
+`ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`: held preparation
+`20478394860b673b98fb32a4dd292fa0fc02a5d4`, interrupted recovery
+`3302f790e944e81be4ea0777682f5282e560fd9c`, then this correction.
+Each must be the sole direct parent of the next, and the correction must
+modify only the same five additive regular files. Its separately selected source is
 `c8b365da1be29bc58352cf1edb8b836a2cf18321`. The original ordinary startup census
 is closed, not repeated. This preparation does not adopt a FoundationTests
 backend, qualify seven modes, fix current CI, or allocate ROOT21, census2,
 H1, a compiler/Make/SDK workload, or a native supervisor.
 
-## Exact frozen-interface hold
+## Historical interface hold and mounted-root correction
 
-`execution_contract()` unconditionally refuses
-`original-private-child-identity-unavailable`. Neither environment variables
-nor a valid-looking result can enable execution. The prospective coordinator
-records unavailable custody and exits **125 without reserving an outcome,
-creating a fixture, launching sudo, or executing R**. The reaper command-line
-entry independently has the same refusal.
+The first preparation correctly refused
+`original-private-child-identity-unavailable`: R created a host backing child
+whose original identity could not reach C through the fixed custody frames.
+Namespace destruction releases mounts but does not unlink that host child.
+A late lookup cannot distinguish it from a replacement. The historical
+refusal is not an installed-kernel failure and is not reclassified as success.
 
-This is a concrete ownership-custody contradiction, not an installed-kernel
-failure or another abstract bootstrap proposal:
+The amended placement avoids that extra host object without expanding c8:
 
-1. The frozen sequence gives C an originally pinned **parent**, then requires
-   R to exclusively create a fresh private child and mount its 1 MiB tmpfs
-   there. The child backing directory is a distinct host-filesystem object.
-2. R must close every parent/setup handle and retire before GO. Namespace
-   teardown, not a newly added privileged unmount/cleanup operation, releases
-   the mounts. Namespace destruction does not unlink that backing directory.
-3. C must delete only originally owned objects and retain replaced/foreign
-   objects. Looking up `volume` for the first time after R exits does not
-   identify the original child: a substituted empty directory can have the
-   same owner, mode and name. The original parent identity alone does not
-   distinguish these cases.
-4. c8's concrete `_FixtureBinding` carries the already-bound parent, not a
-   second object. Its R frames reject an extra `fixture_child` or
-   `backing_identity`; replacing the parent inode is a binding mismatch.
-   The fixed worker mount-state and operation fields describe the null
-   mechanism, not this separate backing object.
-5. C's opted-in run admits neither arbitrary callbacks nor a producer
-   channel; this preparation adds no receipt file, channel, broker, frame
-   field or production API.
+1. C exclusively creates its run container and empty `fixture` child and
+   retains their original nofollow identities and CLOEXEC pins. The unchanged
+   `_FixtureBinding` names that original host fixture, never a mounted inode.
+2. R verifies the bound empty fixture, overmounts it only inside private M0
+   with the single 1 MiB tmpfs, and **closes its pre-mount host pin**. A new
+   mounted-root pin must prove a distinct tmpfs identity, exact size and
+   restrictions before any creation or metadata change.
+3. R creates `volume` and all fixture children only inside that filesystem.
+   Only fresh tmpfs objects are chowned. Host backing, mounted root and volume
+   are distinct identities, even though path names can overlap.
+4. After truthful lifecycle/namespace custody closes, C verifies its original
+   unchanged host fixture is empty and removes only that object and its own
+   empty container. Replacement, retained namespace/child, unknown FD,
+   uncertain close/removal or incomplete custody fails and retains unproved
+   objects. No recursive deletion, late identity adoption or privileged
+   cleanup is provided.
 
-The benign controls execute c8's real encoder/decoder to demonstrate (4), and
-exercise `remove_empty_fixture` against a retained child and substituted
-parent. That cleanup function will remove a genuinely empty pinned parent,
-but **will not recursively delete an unretained R-created child**. No child
-inode is fabricated from a late `stat`, and no unrelated field is overloaded.
-
-Consequently, the final C fixture-creation/launch/cleanup orchestration is
-intentionally **not connected**. The existing-budget `run_capture` adapter
-and the fixed role code are implemented and exercised with inert boundaries;
-they are not advertised as a complete runnable witness. Main must resolve
-the precise frozen ownership contract before a separately reviewed launch
-freeze. This branch changes no shipping API to resolve it.
+The connected C path now performs original acquisition, the existing-budget
+`run_capture`, source rechecks, custody retention and checked cleanup. Its
+tests are fully inert, not kernel or restricted-host evidence. Independent
+exact-code review and a separate launch freeze are still required.
+The original c8 serializer controls remain: extra child fields and a changed
+binding inode reject. No frame, callback, channel or production API changes.
 
 ## Prepared fixed role code
 
@@ -68,9 +66,9 @@ The selected source and harness paths are fixed checkout siblings.
 
 | Role | Fixed transition / authority |
 | --- | --- |
-| C | Actual nonzero independent U/G and exact Git source/harness guards; concrete c8 outcome binding and exact `NAMESPACE_LAUNCHER` adapter. The interface hold currently prevents live acquisition. |
+| C | Actual nonzero independent U/G and exact Git source/harness guards; original host acquisition, concrete c8 outcome binding, exact `NAMESPACE_LAUNCHER` adapter, source rechecks and identity-bound cleanup. |
 | L | Unchanged c8 lifecycle code. Its real API is tested with inert process/syscall boundaries, including L7 → cleanup fault → actual main125 → C cleanup fault. |
-| R setup | Verify private PID1/net/M0 with unchanged full-map U0 using the fixed launcher ancestry; replace proc with a P0-aligned view. Create only the fixed fresh volume and canaries; bind existing devices without mknod or device metadata changes. |
+| R setup | Verify private PID1/net/M0 with unchanged full-map U0 using the fixed launcher ancestry; replace proc with a P0-aligned view. Mount tmpfs on the originally bound fixture, withdraw the old pin and verify the mounted root before creating volume/canaries; bind existing devices without mknod or device metadata changes. |
 | N | Empty groups, effective U/G but temporary real/saved root, only initial CAP_SYS_ADMIN E/P, I/A0, dumpable0 and NNP1. One NEWUSER\|NEWNS creation after READY/CREATE. |
 | R maps | Owned waitable child, pidfd and proc/start identity; typed namespace FDs, direct parent U0, owner U, and mount owner U1. Empty maps, `deny`, exact `0 U 1` / `0 G 1`, complete writes and readback. |
 | N exit | Verify maps, normalize all saved IDs to namespace0, clear caps, exit. R observes status before reaping and closing all N/proc/map handles. N0 is not a mode result. |
@@ -87,8 +85,9 @@ on any pipe.
 
 ### FD ownership
 
-* C/L retain only their existing budget/lifecycle capture and lifetime owners.
-  No setup FD crosses sudo.
+* C retains its own original workspace/container/fixture CLOEXEC pins in
+  addition to the existing C/L budget/lifecycle capture and lifetime owners.
+  No setup FD crosses sudo; C withdraws all pins during checked cleanup.
 * N inherits only fixed control endpoints and trusted stdio; it imports no
   subject. It is reaped before worker handoff.
 * R holds N pidfd/proc/maps and temporary typed namespace relation handles
@@ -136,8 +135,8 @@ not runtime evidence:
   capture/EOF/reap/API-return availability.
 * `snapshot.qualified` remains false. `capture_complete` is only a necessary
   set of semantic capture checks, **not fixture acceptance**. Even four valid
-  records with zero statuses cannot overcome the explicit interface hold,
-  an outer125, missing EOF, failed cleanup or retained ownership.
+  records with zero statuses cannot overcome an outer125, missing EOF,
+  failed cleanup, changed backing identity, retained namespace or ownership.
 
 No snapshot, mode tuple, magic prefix or token is authentication by itself.
 The intended trust boundary is the fixed program plus actual exclusive
@@ -166,16 +165,21 @@ allocation even if setup fails. There is no dispatch trigger.
 Only `scope.json`, `launch.json`, `custody.json`, `mode.json`, `cleanup.json`
 are uploadable, each at most 16 KiB and together at most 64 KiB. No raw
 stdout/stderr/frame/environment/source/ROM/SDK/report artifact is allowed.
-Files live at a fixed workspace-relative output directory, not a temporary
-directory. Under the hold the four post-scope records explicitly report
-**no launch**, unavailable custody/mode and no acquired launch resources.
+Files live at a fixed workspace-relative `-records` directory, separate from
+C's removable run container. Preflight failures explicitly report no launch;
+later records distinguish adapter invocation, actual budget admissions,
+original identities, available observations, source checks and cleanup.
+`qualified` stays false. Cleanup records describe completed checks before
+artifact publication, not a prediction that later writes/closes will succeed;
+any artifact failure forces exit125.
 
 Readonly binds of the fixed selected/harness views and fresh source/runtime
 canaries are prepared inside the volume. The original checkouts are not
 edited. This is a fixed-function diagnostic, not a general hostile-code
-filesystem sandbox. The live C before/after source/fixture integration remains
-unconnected under the hold; no source-preservation-after-workload claim is
-made from a mock.
+filesystem sandbox. C records each before/after source check only if performed;
+unavailable checks are not reported as true. The connected source/fixture
+integration is exercised with mocks only; no after-workload source-preservation
+claim is made from that model.
 
 ## Benign local controls
 
@@ -200,11 +204,17 @@ Expected results: mocked ordinary-owner path reaches the fixed helper boundary;
 foreign/root/cap/NNP/map/namespace/root-cwd/FD states fail before it. Mocked
 old success, altered flags and missing/foreign custody fail. Every remaining
 owned close is attempted on errors, first cause survives, and recycled
-identity is not authority. The real c8 serializer rejects extra child custody;
-the actual coordinator's hold produces no attempted launch.
+identity is not authority. The real c8 serializer rejects extra child custody.
+The connected coordinator model uses actual c8 admission/capture/retirement
+APIs and a two-view directory model: pre-mount FDs continue to name host
+objects while newly opened mounted-root FDs name the tmpfs. Fault injection
+covers acquisition, mount, admission, capture, source checks, each close and
+removal, incomplete custody, deadline and artifact publication.
 
-Two in-memory restorations remove the pre-entry and old-operation checks:
-each must break its behavioral oracle, with the corrected code passing again.
+In-memory restorations remove the pre-entry and old-operation checks or
+create `volume` through the old host pin. Each must break its behavioral
+oracle, with the corrected code passing again; the host-pin restoration also
+proves the unowned host child is retained rather than recursively deleted.
 A neutral local-variable rename and JSON-key/global-frame interleaving retain
 behavior. No source-text phrase is used as evidence of namespace correctness.
 Only the workflow's public identities/permissions/action/allowlist syntax is
@@ -219,7 +229,7 @@ RSS or runtime-cleanup qualification.
 
 ## Remaining authority and unsupported claims
 
-Main owns the exact independent review and any separate revised interface/
+Main owns the exact independent review and any separate
 one-shot launch freeze. No launch is authorized by this commit or these
 tests. R/N/W are prepared code, not an accepted installed-platform mechanism.
 Creation and entry can each be denied by the unchanged LSM, with no fallback,
@@ -229,6 +239,6 @@ Even a later representative readonly mechanism would not qualify the four
 Foundation methods/seven modes or repair CI; that requires its own coherent
 integration and real restricted-host acceptance. ROM/RAM/save/localization/
 generated-data/build-profile contracts are unaffected. The only dependency
-is immutable c8's existing custody/helper interface; the explicit backing
-object contradiction is the current conflict. Discarding this never-merged
+is immutable c8's existing custody/helper interface; no interface expansion
+or conflicting production owner is introduced. Discarding this never-merged
 branch is the rollback; no production feature flag or migration is added.
