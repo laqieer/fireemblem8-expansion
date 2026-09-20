@@ -9959,6 +9959,36 @@ discriminator run requires independent exact-head review and a **new separate
 bounded allocation**. Do not rerun the native selector, enforcement matrix,
 root/report/resource or H1 automatically.
 
+The separately allocated discriminator attempt on
+`558ab8c60209cfe4e7b768475762b2668282d293` is also **spent and closed**.
+Its one Make attempt failed after 8.080 seconds before Make returned, with
+`[syscall=89 role=writer phase=writer-exec owned=no op=other]`.
+This identifies a readlink **entry attempt** on this x86-64 policy. The
+pathname and kernel return were not retained; neither `EINVAL` nor a
+successful readlink is claimed. The earlier first attempt remains
+unattributed, and neither attempt reached the final `assert_clean`.
+
+The tracker now preserves the general policy's already-admitted pathname
+readlink/readlinkat metadata family (89/267) only for the exact authenticated
+actor and canonical absolute pathname of its already-created, pinned regular
+intermediate. The supported `readlinkat` context is `AT_FDCWD`; relative,
+empty, alternate-dirfd and aliased intermediate spellings reject. Entry and
+exit bind the same stopped path arguments, namespace root, tracker phase and
+full pinned entry/object identity. Negative query outcomes remain metadata
+failures, not failed file I/O or successful intermediate facts; unexpected
+nonnegative link results reject. No I/O role, descriptor, content digest or
+creation/write/read/retirement transition is acquired or advanced.
+
+The existing metadata observer and request/buffer accounting are retained;
+the tracker adds only bounded request/revalidation admission and no buffer
+capture, resolver or metadata channel. Inert tests exercise both forms with
+explicitly **MODEL** regular-file outcomes, original observer records,
+actor/path/root/dirfd/alias/type/replacement/content and admission failures.
+These are not evidence of the unretained native kernel return. Fcntl
+mutation, seek, vector, mapping, descriptor-alias and all other unsupported
+forms remain denied. Independent exact review and another separately frozen
+native allocation are required before any third Make attempt.
+
 The live descriptor control must model the supervisor's actual view:
 `<config.root>/work/cc*.s`, not the tracee's guest `/work/cc*.s`. Require the
 exact host-root spelling with the same object to pass, while foreign/escaped/

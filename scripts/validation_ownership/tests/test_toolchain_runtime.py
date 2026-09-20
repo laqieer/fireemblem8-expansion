@@ -4,6 +4,7 @@ import ast
 import copy
 from contextlib import ExitStack, contextmanager
 from dataclasses import replace
+import errno
 import hashlib
 import inspect
 import json
@@ -1269,6 +1270,41 @@ class _IntermediateModel:
         state.path_context = path, dirfd, None
         return path
 
+    @contextmanager
+    def readlink_paths(self, spelling=None):
+        literal = [self.model["roles"].output.value if spelling is None else spelling]
+        root = self.policy.config["root"]
+        original_lstat = Path.lstat
+        def pathname(pid, address):
+            assert address == 0x2000
+            return literal[0]
+        def link(path):
+            value = str(path)
+            if value.startswith("/proc/"):
+                return self.readlink(path)
+            assert value.startswith(root + "/")
+            if value == root + "/work-alias":
+                return "/work"
+            raise OSError(errno.EINVAL, "MODEL nonsymlink component")
+        def lstat(path):
+            if str(path) == root + "/work/ccFOREGN.s":
+                raise FileNotFoundError("MODEL foreign absent temporary")
+            return original_lstat(path)
+        with (
+            patch.object(syscall_guard, "cstring", pathname),
+            patch.object(syscall_guard.os, "readlink", link),
+            patch.object(self.policy, "path", syscall_guard.Policy.path.__get__(self.policy)),
+            patch.object(Path, "lstat", lstat),
+        ):
+            yield literal
+
+    def readlink_query(self, actor, number, *, dirfd=-100, requested=64, result=-errno.EINVAL, kernel=None):
+        if number == 89:
+            self.syscall(actor, number, 0x2000, 0x3000, requested, result=result, kernel=kernel)
+        else:
+            assert number == 267
+            self.syscall(actor, number, dirfd, 0x2000, 0x3000, requested, result=result, kernel=kernel)
+
     def verify_workspace(self, path, expected):
         assert str(path) == "/inert/command-root-1/work"
         assert not self.exists
@@ -1443,6 +1479,163 @@ class _IntermediateModel:
 
 
 class ToolchainIntermediateInertTests(unittest.TestCase):
+    def test_readlink_metadata_models_preserve_state_and_complete_both_forms(self):
+        for number in (89, 267):
+            for result in (-errno.EINVAL, -errno.EIO):
+                with self.subTest(number=number, MODEL_result=result), _IntermediateModel() as model:
+                    model.created()
+                    writer = model.actor(2)
+                    before = copy.deepcopy(model.tracker.record)
+                    position = (
+                        model.tracker.phase, model.tracker.order, tuple(model.tracker.descriptors),
+                        model.tracker.written, model.tracker.read_bytes,
+                    )
+                    with model.readlink_paths():
+                        try:
+                            model.readlink_query(writer, number, result=result)
+                        except syscall_guard.Violation as error:
+                            self.fail("admitted MODEL regular-file metadata rejected: " + str(error))
+                    self.assertEqual(model.tracker.record, before)
+                    self.assertEqual(position, (
+                        model.tracker.phase, model.tracker.order, tuple(model.tracker.descriptors),
+                        model.tracker.written, model.tracker.read_bytes,
+                    ))
+                    self.assertFalse(model.tracker.failed)
+                    self.assertIsNone(writer[1].toolchain_pending)
+                    self.assertEqual(len(model.handles), 2)
+                    model.open_actor(writer, os.O_WRONLY | os.O_TRUNC, 0)
+                    model.write(writer)
+                    model.close_actor(writer)
+                    model.exit_actor(writer)
+                    reader = model.actor(3)
+                    model.open_actor(reader, os.O_RDONLY, 0)
+                    model.read_actor(reader)
+                    model.close_actor(reader)
+                    model.exit_actor(reader)
+                    def unlink():
+                        model.exists, model.links = False, 0
+                        model.ctime += 1
+                    model.syscall(model.driver, 87, 0x2000, kernel=unlink)
+                    model.exit_actor(model.driver)
+                    model.tracker.emit(0)
+                    proof, = model.policy.accessed
+                    self.assertTrue(json.loads(proof[len(toolchain_runtime.INTERMEDIATE_PREFIX):])["complete"])
+                    self.assertFalse(model.handles)
+
+    def test_readlink_metadata_does_not_replace_the_existing_observer_or_capture_buffer(self):
+        for number in (89, 267):
+            with self.subTest(number=number), _IntermediateModel() as model:
+                model.created()
+                writer = model.actor(2)
+                path = model.model["roles"].output.value
+                model.policy.config["runtime_files"] = [path]
+                attempts = len(model.policy.observation_attempts["accessed"])
+                with model.readlink_paths(), patch.object(
+                    syscall_guard, "memory", return_value=b"?" * 64,
+                ) as memory:
+                    model.readlink_query(writer, number)
+                self.assertEqual(memory.call_count, 2)
+                self.assertEqual([call.args[2] for call in memory.call_args_list], [64, 64])
+                row, = model.policy.metadata
+                self.assertEqual(tuple(row[:7]), (number, path, 0, 0, 64, 0, -errno.EINVAL))
+                self.assertEqual(row[7:], [(b"?" * 64).hex()] * 2)
+                self.assertEqual(len(model.policy.metadata_seen), 1)
+                self.assertEqual(len(model.policy.observation_attempts["accessed"]), attempts + 2)
+                self.assertFalse(model.policy.accessed)
+                self.assertFalse(model.tracker.failed)
+                self.assertEqual(model.tracker.phase, "writer-exec")
+
+    def test_readlink_metadata_refuses_uncreated_foreign_empty_dirfd_and_alias_contexts(self):
+        with _IntermediateModel() as model:
+            driver = model.actor(1)
+            with model.readlink_paths(), self.assertRaises(syscall_guard.Violation):
+                model.readlink_query(driver, 89)
+        for number, spelling, dirfd in (
+            (89, "/work/ccFOREGN.s", -100),
+            (89, "/work/./ccL3VdjV.s", -100),
+            (89, "/work/../work/ccL3VdjV.s", -100),
+            (89, "/work-alias/ccL3VdjV.s", -100),
+            (89, "ccL3VdjV.s", -100),
+            (267, "/work/ccL3VdjV.s", 7),
+            (267, "/work/ccL3VdjV.s", 42),
+            (267, "", 7),
+        ):
+            with self.subTest(number=number, spelling=spelling, dirfd=dirfd), _IntermediateModel() as model:
+                model.created()
+                writer = model.actor(2)
+                model.open_actor(writer, os.O_WRONLY | os.O_TRUNC, 0)
+                writer[1].cwd = "/work"
+                returned = []
+                with model.readlink_paths(spelling), self.assertRaises(syscall_guard.Violation):
+                    model.readlink_query(writer, number, dirfd=dirfd, kernel=lambda: returned.append(True))
+                self.assertFalse(returned)
+                self.assertEqual(model.tracker.phase, "writer-open")
+
+    def test_readlink_metadata_revalidates_actor_root_path_pin_type_and_content(self):
+        for defect in ("actor", "root", "path", "inode", "symlink", "content", "phase"):
+            for number in (89, 267):
+                with self.subTest(defect=defect, number=number), _IntermediateModel() as model:
+                    model.created()
+                    writer = model.actor(2)
+                    model.open_actor(writer, os.O_WRONLY | os.O_TRUNC, 0)
+                    model.write(writer)
+                    before = copy.deepcopy(model.tracker.record)
+                    with model.readlink_paths() as literal:
+                        def changed():
+                            if defect == "actor":
+                                model.policy.processes[writer[0]] = copy.copy(writer[1])
+                            elif defect == "root":
+                                model.policy.config["root"] = "/foreign/command-root-1"
+                            elif defect == "path":
+                                literal[0] = "/work/ccFOREGN.s"
+                            elif defect == "inode":
+                                model.inode += 1
+                            elif defect == "symlink":
+                                model.mode = stat.S_IFLNK | 0o777
+                            elif defect == "content":
+                                model.body = b"x" * len(model.body)
+                                model.mtime += 1
+                                model.ctime += 1
+                            else:
+                                model.tracker.phase = "writer-closed"
+                        with self.assertRaises(syscall_guard.Violation):
+                            model.readlink_query(writer, number, kernel=changed)
+                    self.assertEqual(model.tracker.record, before)
+                    self.assertFalse(model.policy.accessed)
+
+    def test_readlink_metadata_rejects_success_and_exhaustion_without_creating_proof(self):
+        for number in (89, 267):
+            for result in (0, 1, 65):
+                with self.subTest(number=number, MODEL_result=result), _IntermediateModel() as model:
+                    model.created()
+                    writer = model.actor(2)
+                    before = copy.deepcopy(model.tracker.record)
+                    with model.readlink_paths(), self.assertRaisesRegex(
+                        syscall_guard.Violation, "unexpected readlink success",
+                    ):
+                        model.readlink_query(writer, number, result=result)
+                    self.assertEqual(model.tracker.record, before)
+                    self.assertEqual(model.tracker.phase, "writer-exec")
+                    self.assertFalse(model.policy.accessed)
+            for boundary in ("entry", "exit"):
+                with self.subTest(number=number, boundary=boundary), _IntermediateModel() as model:
+                    model.created()
+                    writer = model.actor(2)
+                    before = model.policy.observation_bytes
+                    if boundary == "entry":
+                        model.policy.config["observation_limit"] = before
+                    returned = []
+                    def kernel():
+                        returned.append(True)
+                        model.policy.config["observation_limit"] = model.policy.observation_bytes
+                    with model.readlink_paths(), self.assertRaises(syscall_guard.Violation):
+                        model.readlink_query(writer, number, kernel=kernel)
+                    self.assertEqual(returned, [] if boundary == "entry" else [True])
+                    self.assertGreater(model.policy.observation_bytes, before)
+                    model.tracker.close()
+                    self.assertFalse(model.handles)
+                    self.assertTrue(model.exists)
+
     def test_actual_unsupported_entry_has_bounded_authenticated_attribution(self):
         for role in ("driver", "writer", "reader"):
             with self.subTest(role=role), _IntermediateModel() as model:

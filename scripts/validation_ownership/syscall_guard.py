@@ -763,6 +763,20 @@ class _ToolchainIntermediate:
                 raise Violation("toolchain retirement changed the sealed content")
             self.phase = "unlinking"
             state.toolchain_pending = ("unlink", identity, self.policy.calls, n)
+        elif n in {89, 267}:
+            requested = r.rdx if n == 89 else r.r10
+            self.reserve(requested + _TOOLCHAIN_WORD_SCRATCH)
+            if (
+                touched is None or touched[0] != "path" or touched[1] != self.path
+                or touched[2] != (self.path, -100, None)
+                or n == 267 and ctypes.c_int(r.rdi).value != -100
+            ):
+                raise Violation("toolchain readlink metadata lacks its exact created pathname")
+            identity = self.object_identity()
+            state.toolchain_pending = (
+                "readlink", sequence, n, r.rdi if n == 89 else r.rsi, requested,
+                touched[2], identity, self.phase, self.policy.config["root"],
+            )
         elif n in {4, 5, 6, 21, 262, 269, 332, 439} or n == 72 and r.rsi in {1, 3}:
             state.toolchain_pending = None
         else:
@@ -773,6 +787,24 @@ class _ToolchainIntermediate:
         if pending is None:
             return
         result = signed(r.rax)
+        if pending[0] == "readlink":
+            _, sequence, number, address, requested, context, identity, phase, root = pending
+            self.actor(pid, state, sequence)
+            self.reserve(_TOOLCHAIN_WORD_SCRATCH)
+            if (
+                r.orig_rax != number or (r.rdi if number == 89 else r.rsi) != address
+                or (r.rdx if number == 89 else r.r10) != requested
+                or number == 267 and ctypes.c_int(r.rdi).value != -100
+                or self.policy.config["root"] != root or self.phase != phase
+                or state.path_context != context
+            ):
+                raise Violation("toolchain readlink metadata changed its stopped context")
+            path = self.policy.path(pid, state, address, -100, follow_final=False)
+            if path != self.path or state.path_context != context or self.object_identity() != identity:
+                raise Violation("toolchain readlink metadata changed its pinned entry or object")
+            if result >= 0:
+                raise Violation("toolchain regular intermediate returned unexpected readlink success")
+            return
         if result < 0:
             self.failed = True
             self.phase = "failed"
