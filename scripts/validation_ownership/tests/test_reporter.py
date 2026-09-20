@@ -11,6 +11,7 @@ import subprocess
 import unittest
 from unittest import mock
 import sys
+from types import SimpleNamespace
 
 from scripts.validation_ownership import reporter
 from scripts.validation_ownership.authority import (
@@ -22,6 +23,70 @@ from scripts.workflow_pilot import candidate_evidence
 
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+class PublicMakeSourceTests(unittest.TestCase):
+    def setUp(self):
+        self.budget = ProbeBudget()
+        self.addCleanup(self.budget.close)
+        self.current = SimpleNamespace(entries={}, budget=self.budget)
+        self.base = SimpleNamespace(entries={}, budget=self.budget)
+        self.session = object()
+
+    @staticmethod
+    def metadata(loader):
+        return reporter._MakeMetadata(loader, None, {}, {})
+
+    def test_current_and_base_authorities_require_per_pass_source_in_the_shared_session(self):
+        from scripts.validation_ownership import graph_probe
+
+        targets, dispatch = {"owner-check"}, {"owner-check"}
+        for loader in (self.current, self.base):
+            metadata = self.metadata(loader)
+            observed = {"owner-check": {"record": {"variants": []}}}
+            with self.subTest(current=loader is self.current), \
+                 mock.patch.object(graph_probe, "run_probe", return_value=observed) as probe:
+                result = reporter._parse_make_authorities(
+                    loader, targets, session=self.session, _metadata=metadata, dispatch_targets=dispatch,
+                )
+            self.assertIs(result, observed)
+            self.assertEqual(result["owner-check"]["dynamic_dependencies"], [])
+            self.assertEqual(probe.call_count, 1)
+            self.assertIs(probe.call_args.args[0], loader)
+            self.assertIs(probe.call_args.args[1], targets)
+            self.assertEqual(probe.call_args.args[2], {})
+            self.assertIs(probe.call_args.args[3], metadata.contracts)
+            self.assertIs(probe.call_args.kwargs["session"], self.session)
+            self.assertIs(probe.call_args.kwargs["dispatch_targets"], dispatch)
+            self.assertIs(probe.call_args.kwargs.get("source_phases"), True)
+            self.assertEqual(probe.call_args.kwargs["declared_external_names"], set())
+        self.assertEqual((self.budget.runs, self.budget.states), (0, 0))
+
+    def test_source_phase_refusal_preserves_cause_without_retry_or_legacy_fallback(self):
+        from scripts.validation_ownership import graph_probe
+        from scripts.validation_ownership.budget import MakeProbeError
+
+        failure = MakeProbeError("original read-phase authority unavailable")
+        with mock.patch.object(graph_probe, "run_probe", side_effect=failure) as probe:
+            with self.assertRaises(reporter.OwnershipError) as raised:
+                reporter._parse_make_authorities(
+                    self.current, {"owner-check"}, session=self.session, _metadata=self.metadata(self.current),
+                )
+        self.assertIs(raised.exception.__cause__, failure)
+        self.assertEqual(probe.call_count, 1)
+        self.assertIs(probe.call_args.kwargs.get("source_phases"), True)
+        self.assertEqual((self.budget.runs, self.budget.states), (0, 0))
+
+    def test_foreign_metadata_view_is_rejected_before_source_observation(self):
+        from scripts.validation_ownership import graph_probe
+
+        with mock.patch.object(graph_probe, "run_probe") as probe:
+            with self.assertRaisesRegex(reporter.OwnershipError, "another selected authority view"):
+                reporter._parse_make_authorities(
+                    self.current, {"owner-check"}, session=self.session, _metadata=self.metadata(self.base),
+                )
+        probe.assert_not_called()
+        self.assertEqual((self.budget.runs, self.budget.states), (0, 0))
 
 
 class ArtifactLifecycleTests(unittest.TestCase):

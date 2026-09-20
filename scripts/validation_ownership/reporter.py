@@ -1478,6 +1478,7 @@ def _parse_make_authorities(
             "trusted_builtin_names": trusted_builtins,
             "session": session,
             "dispatch_targets": dispatch_targets,
+            "source_phases": True,
         }
         result = graph_probe.run_probe(
             loader, requested_targets, prerequisite_domains, dynamic_contracts, **common_args,

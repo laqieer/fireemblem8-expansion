@@ -318,7 +318,15 @@ directory relocation, guest permission or quota is added. Nested/general
 source-use interpretation and complete every-pass obligation union still
 precede any changed-namespace certificate or original-root planner claim.
 
-The explicit `run_probe(..., source_phases=True)` path interprets each
+The public reporter always selects `run_probe(..., source_phases=True)` through
+its shared Make-authority caller. CURRENT, BASE and lifecycle authority
+construction retain the same selected loader, session, budget, targets and
+dispatch obligations. A missing or rejected per-pass source proof propagates
+as an ownership failure; there is no public opt-out or legacy retry. The
+private low-level probe default remains available for its explicitly scoped
+baseline controls, not for public report authority.
+
+The `run_probe(..., source_phases=True)` path interprets each
 authenticated read pass independently and unions its source obligations.
 It requires the completed issued archive, entry images and mutation journal;
 every source mutation must belong to a real after-read/remake interval that
@@ -328,6 +336,12 @@ versions must match immutable input or prior actual publication identity and
 bytes. A failed include may be omitted only with actual original ENOENT,
 entry-image absence, an intervening publication and a successful next-pass
 visit.
+
+The focused `test_reporter.PublicMakeSourceTests` checks this caller contract
+without native execution, including shared CURRENT/BASE context and refusal
+propagation. Those routing controls do not qualify original-root behavior or
+complete-report resource fit; genuine source-phase and full-report evidence
+remain independently required.
 
 Supported initial bindings come from a complete plain global native scope,
 not final definitions or an empty-program guess. Special/private/per-target/
