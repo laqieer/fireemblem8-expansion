@@ -13,15 +13,17 @@ import traceback
 
 
 REPOSITORY = "laqieer/fireemblem8-expansion"
-BRANCH = "calibration/issue-180-toolchain-component-sizing-1"
-WORKFLOW = ".github/workflows/issue180-toolchain-component-sizing-1.yml"
+BRANCH = "calibration/issue-180-full-report-sizing-1"
+WORKFLOW = ".github/workflows/issue180-full-report-sizing-1.yml"
+COMPONENT_WORKFLOW = ".github/workflows/issue180-toolchain-component-sizing-1.yml"
 PREVIOUS_WORKFLOW = ".github/workflows/issue180-ci-baseline-20.yml"
-OUTPUT_PREFIX = "issue180-toolchain-component-sizing-1-"
+OUTPUT_PREFIX = "issue180-full-report-sizing-1-"
 BASE = "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"
-GRAPH = "c3e226e79ad69ad81c29acbc5e8810262ce5c8a6"
-WORKLOAD_KIND = "toolchain-component-control-measurement"
+GRAPH = "d5337fc1db5b36f701328cad7c2444384dc88bb5"
+WORKLOAD_KIND = "full-public-report-control-measurement"
+REPORT_API = "scripts.validation_ownership.graph_report.check"
 FIXTURE_VERSION = "one-make-two-checker-typed-intermediate-v1"
-PROFILE = "toolchain-component-control-under-global-v1"
+PROFILE = "full-report-control-under-global-v1"
 COMPONENT_METHOD = "test_one_make_two_checker_typed_intermediate_component"
 COMPONENT_CASE = "scripts.validation_ownership.tests.test_toolchain_runtime.ModernToolchainTests"
 COMPONENT_TARGET = "expansion-modern-all"
@@ -101,9 +103,20 @@ BYTE_CATEGORIES = ("snapshot", "output", "event", "mapping", "cache", "pending",
 SESSION_COUNTERS = ("processes_used", "syscalls_used", "observations_used", "files_created")
 SESSION_PEAKS = ("pending_commands_peak", "live_process_peak", "memory_peak")
 ABSENT_WORKLOADS = {
-    "root_check_attempts": 0, "graph_check_attempts": 0, "report_check_attempts": 0,
+    "root_check_attempts": 0, "graph_check_attempts": 0, "component_attempts": 0,
     "verifier_attempts": 0, "h1_attempts": 0,
 }
+REPORT_STATES = (
+    "check_attempts", "check_returned", "session_attempts", "session_constructed",
+    "serialization_attempts", "serialization_returned",
+)
+REPORT_ERROR_STAGES = frozenset({
+    "candidate-import", "source-identity", "diff-capture", "report-start",
+    "check", "serialization", "validation", "cleanup-observation", "counter-observation",
+    "constructor-reference", "report-reference", "serialization-reference",
+    "sampler-close", "budget-close", "error-publication", "counter-publication",
+    "observation-publication", "admission-publication", "source-defaults",
+})
 
 
 class GuardError(RuntimeError):
@@ -153,9 +166,8 @@ def validate_event(event, *, sha, run_id, attempt, run_number, environment, oper
         "graph_sha": GRAPH, "base_sha": BASE, "run_id": run_id,
         "run_attempt": 1, "run_number": 1, "diagnostic_only": True,
         "production_acceptance": False, "never_merge": True,
-        "workload_kind": WORKLOAD_KIND, "fixture_version": FIXTURE_VERSION,
-        "component_target": COMPONENT_TARGET, "component_method": COMPONENT_CASE + "." + COMPONENT_METHOD,
-        "profile": PROFILE, "source_phases": False, **ABSENT_WORKLOADS,
+        "workload_kind": WORKLOAD_KIND, "report_api": REPORT_API,
+        "profile": PROFILE, "source_phases": True, "lifecycle": True, **ABSENT_WORKLOADS,
     }
 
 
@@ -485,40 +497,489 @@ def component_secondary_error(error):
         return {"chain": [], "complete": False, "reason": "secondary-format-failed"}
 
 
-def validate_report(report):
-    if not isinstance(report, dict):
-        raise GuardError("graph returned no real report object")
-    coverage = report.get("coverage", {})
-    keys = ("tracked_paths", "owned_paths", "fail_closed_exclusions")
-    if any(type(coverage.get(key)) is not int or coverage[key] < 0 for key in keys):
-        raise GuardError("invalid full-report coverage")
-    if coverage["tracked_paths"] < 1 or coverage["tracked_paths"] != (
-        coverage["owned_paths"] + coverage["fail_closed_exclusions"]
-    ):
-        raise GuardError("full-report coverage does not partition the captured tree")
-    measurement = report.get("measurement", {})
-    if any(type(measurement.get(key)) is not int or measurement[key] != 0 for key in (
-        "false_positive_selections", "false_negative_selections",
-    )):
-        raise GuardError("full-report oracle rejected")
-    lifecycle = report.get("artifact", {}).get("executable_lifecycle")
-    if not isinstance(lifecycle, list) or len(lifecycle) != 3 or any(
-        not isinstance(item, dict) or item.get("removal") != "fail" or item.get("restoration") != "pass"
-        or any(not isinstance(item.get(key), str) or not item[key] for key in ("proof_id", "trigger_event_id", "trigger_type"))
-        for item in lifecycle
-    ):
-        raise GuardError("full-report lifecycle proof is incomplete")
-    if any(len({item[key] for item in lifecycle}) != 3 for key in ("proof_id", "trigger_event_id")):
-        raise GuardError("full-report lifecycle proof repeats an identity")
-    execution = report.get("execution", {})
-    if execution.get("revision") != GRAPH or execution.get("base_revision") != BASE:
-        raise GuardError("full report differs from the exact CURRENT/BASE scope")
-    if any(type(execution.get(key)) is not int or execution[key] < 1 for key in ("runs", "states")):
-        raise GuardError("full report has no actual execution")
+def source_cleanup_count(error):
+    try:
+        errors = BaseException.__getattribute__(error, "cleanup_errors")
+    except AttributeError:
+        return 0
+    except BaseException:
+        return None
+    # The original source retains strings, not typed exception objects. Count
+    # those failures without parsing or exporting their private messages.
+    return len(errors) if type(errors) is tuple else None
+
+
+def changed_path_set(data):
+    """Use --no-renames name-status records so both sides of renames survive."""
+    if type(data) is not bytes or len(data) > ORIGINAL_LIMITS["file_bytes"]:
+        raise GuardError("changed paths lack their bounded immutable Git diff")
+    rows = data.split(b"\0")
+    if len(rows) < 3 or len(rows) % 2 != 1 or rows[-1] != b"":
+        raise GuardError("changed paths require a complete nonempty Git diff")
+    changes = {}
+    for kind, raw in zip(rows[:-1:2], rows[1:-1:2]):
+        if kind not in {b"A", b"M", b"D", b"T"}:
+            raise GuardError("changed paths require both sides, not rename/copy shorthand")
+        try:
+            name = _root_path(raw.decode("utf-8", "strict"))
+        except UnicodeError as error:
+            raise GuardError("changed path is not UTF-8") from error
+        if name in changes or len(changes) >= ORIGINAL_LIMITS["entries"]:
+            raise GuardError("changed paths repeat or exceed the original inventory bound")
+        changes[name] = kind.decode("ascii")
+    return dict(sorted(changes.items()))
+
+
+def changed_path_binding(changes):
+    rows = b"".join(kind.encode("ascii") + b"\0" + name.encode("utf-8") + b"\0"
+                    for name, kind in changes.items())
+    canonical = changed_path_set(rows)
     return {
-        "coverage": coverage, "oracle_false_positives": 0, "oracle_false_negatives": 0,
-        "lifecycle_cases": len(lifecycle), "diagnostic_only": True, "production_acceptance": False,
+        "count": len(canonical),
+        **{name: sum(kind == tag for kind in canonical.values()) for name, tag in (
+            ("added", "A"), ("modified", "M"), ("deleted", "D"), ("type_changed", "T"),
+        )},
+        "sha256": hashlib.sha256(
+            b"issue180-full-report-path-set-v1\0" + encoded([GRAPH, BASE, canonical])
+        ).hexdigest(),
     }
+
+
+def validate_path_binding(value):
+    _component_fields(value, "count added modified deleted type_changed sha256")
+    if (
+        any(not _component_integer(value[name], ORIGINAL_LIMITS["entries"]) for name in (
+            "count", "added", "modified", "deleted", "type_changed",
+        ))
+        or value["count"] < 1
+        or value["count"] != sum(value[name] for name in ("added", "modified", "deleted", "type_changed"))
+        or type(value["sha256"]) is not str or re.fullmatch(r"[0-9a-f]{64}", value["sha256"]) is None
+    ):
+        raise GuardError("changed path binding is malformed")
+    return value
+
+
+def report_binding(scope):
+    value = {
+        "source_revision": scope["graph_sha"], "base_revision": scope["base_sha"],
+        "harness_revision": scope["harness_sha"], "run_id": scope["run_id"],
+        "run_attempt": scope["run_attempt"], "run_number": scope["run_number"],
+        "workload_kind": scope["workload_kind"], "api": scope["report_api"],
+        "profile": scope["profile"], "source_phases": scope["source_phases"],
+        "lifecycle": scope["lifecycle"], "changed_paths": scope["changed_paths"],
+        "tracked_paths": scope["tracked_paths"],
+    }
+    return validate_report_binding(value)
+
+
+def validate_report_binding(value):
+    _component_fields(value, (
+        "source_revision base_revision harness_revision run_id run_attempt run_number "
+        "workload_kind api profile source_phases lifecycle changed_paths tracked_paths"
+    ))
+    if (
+        any(type(value[name]) is not str or value[name] != expected for name, expected in (
+            ("source_revision", GRAPH), ("base_revision", BASE), ("workload_kind", WORKLOAD_KIND),
+            ("api", REPORT_API), ("profile", PROFILE),
+        ))
+        or type(value["harness_revision"]) is not str
+        or re.fullmatch(r"[0-9a-f]{40}", value["harness_revision"]) is None
+        or type(value["run_id"]) is not str or re.fullmatch(r"[1-9][0-9]{0,19}", value["run_id"]) is None
+        or any(type(value[name]) is not int or value[name] != 1 for name in ("run_attempt", "run_number"))
+        or value["source_phases"] is not True or value["lifecycle"] is not True
+        or not _component_integer(value["tracked_paths"], ORIGINAL_LIMITS["entries"], 1)
+    ):
+        raise GuardError("report binding is foreign or changes the frozen public API")
+    validate_path_binding(value["changed_paths"])
+    return value
+
+
+def validate_report_states(value, *, complete=False):
+    _component_fields(value, " ".join((*REPORT_STATES, "completed")))
+    if (
+        any(not _component_integer(value[name], 1) for name in REPORT_STATES)
+        or type(value["completed"]) is not bool
+        or value["check_returned"] > value["check_attempts"]
+        or value["session_attempts"] > value["check_attempts"]
+        or value["session_constructed"] > value["session_attempts"]
+        or value["serialization_attempts"] > value["check_returned"]
+        or value["serialization_returned"] > value["serialization_attempts"]
+        or (complete or value["completed"]) and (
+            value["completed"] is not True or any(value[name] != 1 for name in REPORT_STATES)
+        )
+    ):
+        raise GuardError("report attempt/return/completion states disagree")
+    return value
+
+
+def validate_report_cleanup(value, *, complete=False):
+    _component_fields(value, (
+        "budget_closed session_started children waiters retained_owners session_base_removed active_views "
+        "constructor_restored report_released serialization_released"
+    ))
+    for name in ("budget_closed", "session_started", "session_base_removed",
+                 "constructor_restored", "report_released", "serialization_released"):
+        if value[name] is not None and type(value[name]) is not bool:
+            raise GuardError("report cleanup flag is neither observed nor unavailable")
+    for name in ("children", "waiters", "retained_owners", "active_views"):
+        if value[name] is not None and not _component_integer(value[name]):
+            raise GuardError("report ownership count is malformed")
+    if complete and value != {
+        "budget_closed": True, "session_started": True, "children": 0, "waiters": 0,
+        "retained_owners": 0, "session_base_removed": True, "active_views": 0,
+        "constructor_restored": True, "report_released": True, "serialization_released": True,
+    }:
+        raise GuardError("report inner ownership or independent reference withdrawal is unconfirmed")
+    return value
+
+
+def _report_text(value):
+    if type(value) is not str or not value or len(value.encode("utf-8")) > ORIGINAL_LIMITS["file_bytes"]:
+        raise GuardError("report lacks an original nonempty bounded identity")
+    return value
+
+
+def _report_list(value):
+    if type(value) is not list or not 1 <= len(value) <= ORIGINAL_LIMITS["entries"]:
+        raise GuardError("report omitted or exceeded its original observation inventory")
+    return value
+
+
+def summarize_report(report, changes, counters, binding):
+    """Project only scalars; raw authorities, paths, seals and report bytes stay inside."""
+    validate_report_binding(binding)
+    if changed_path_binding(changes) != binding["changed_paths"]:
+        raise GuardError("report input differs from the exact immutable changed-path set")
+    validate_component_counters(counters, complete=True)
+    _component_fields(report, (
+        "schema_version policy coverage artifact measurement resolutions selected_gates review_invalidation seals execution"
+    ))
+    if type(report["schema_version"]) is not int or report["schema_version"] != 1 or (
+        type(report["policy"]) is not dict or encoded(report["policy"]) != encoded({
+            "classification": "framework-capability", "validation_effect": "report-only",
+            "narrowing_authorized": False, "review_invalidation": "resolved-edge-authority",
+        })
+    ):
+        raise GuardError("report has no original schema/policy")
+    coverage = report["coverage"]
+    _component_fields(coverage, "tracked_paths owned_paths fail_closed_exclusions path_rules")
+    if (
+        any(not _component_integer(number, ORIGINAL_LIMITS["entries"]) for number in coverage.values())
+        or coverage["tracked_paths"] != binding["tracked_paths"]
+        or coverage["owned_paths"] < 1 or coverage["path_rules"] < 1
+        or coverage["tracked_paths"] != coverage["owned_paths"] + coverage["fail_closed_exclusions"]
+    ):
+        raise GuardError("report coverage does not completely partition the selected tree")
+    resolutions = _report_list(report["resolutions"])
+    expected, paths, owner_count, base_paths = {}, set(), 0, 0
+    for row in resolutions:
+        _component_fields(row, "path rule surface surface_type git_mode admission graph_origin owners")
+        for name in ("path", "rule", "surface", "surface_type", "git_mode", "admission", "graph_origin"):
+            _report_text(row[name])
+        path = row["path"]
+        if path not in changes or path in paths or row["git_mode"] not in {"100644", "100755"}:
+            raise GuardError("report resolutions repeat, omit or change a Git path")
+        paths.add(path)
+        if row["admission"] not in {
+            "selected-base-tree", "exact-ownership-rule", "generated-source-registry",
+            "verifier-runtime-registry", "initial-graph-cohort",
+        } or (row["admission"] == "selected-base-tree") != (changes[path] == "D") or (
+            row["graph_origin"] not in {"selected-tree", "introduced-rules-over-base"}
+            or changes[path] != "D" and row["graph_origin"] != "selected-tree"
+        ):
+            raise GuardError("report resolved a path on the wrong CURRENT/BASE side")
+        base_paths += changes[path] == "D"
+        edges = set()
+        for owner in _report_list(row["owners"]):
+            _component_fields(owner, "edge_id edge_type evidence_id evidence_type gate reason")
+            for text in owner.values():
+                _report_text(text)
+            if owner["edge_id"] in edges:
+                raise GuardError("report repeats a path authority")
+            edges.add(owner["edge_id"])
+            owner_count += 1
+            selected = expected.setdefault(owner["evidence_id"], {
+                "evidence_type": owner["evidence_type"], "gate": owner["gate"], "reasons": [],
+            })
+            selected["reasons"].append((path, owner["edge_type"], owner["reason"]))
+    if paths != set(changes):
+        raise GuardError("report omitted changed or deleted paths")
+    selected_ids = set()
+    reason_count = 0
+    for row in _report_list(report["selected_gates"]):
+        _component_fields(row, "evidence_id evidence_type gate reasons")
+        identity = _report_text(row["evidence_id"])
+        if identity not in expected or identity in selected_ids:
+            raise GuardError("report selection is foreign, replayed or incomplete")
+        selected_ids.add(identity)
+        reasons = []
+        for reason in _report_list(row["reasons"]):
+            _component_fields(reason, "path edge_type explanation")
+            reasons.append(tuple(_report_text(reason[name]) for name in ("path", "edge_type", "explanation")))
+        wanted = expected[identity]
+        if row["evidence_type"] != wanted["evidence_type"] or row["gate"] != wanted["gate"] or (
+            sorted(reasons) != sorted(wanted["reasons"])
+        ):
+            raise GuardError("report selected gates differ from their actual resolved authorities")
+        reason_count += len(reasons)
+    if selected_ids != expected.keys():
+        raise GuardError("report selection lost an authority")
+    measurement = report["measurement"]
+    _component_fields(measurement, (
+        "source_case oracle_seal probe_count false_positive_selections false_negative_selections "
+        "estimated_maintenance_minutes max_maintenance_minutes probes"
+    ))
+    _report_text(measurement["source_case"])
+    probes = _report_list(measurement["probes"])
+    if (
+        type(measurement["probe_count"]) is not int or measurement["probe_count"] != len(probes)
+        or any(type(measurement[name]) is not int or measurement[name] != 0 for name in (
+            "false_positive_selections", "false_negative_selections",
+        ))
+        or not _component_integer(measurement["estimated_maintenance_minutes"])
+        or not _component_integer(measurement["max_maintenance_minutes"], minimum=1)
+        or measurement["estimated_maintenance_minutes"] > measurement["max_maintenance_minutes"]
+    ):
+        raise GuardError("report oracle did not complete without selection mismatches")
+    oracle_paths, oracle_owned = set(), 0
+    for row in probes:
+        if type(row) is not dict:
+            raise GuardError("report oracle observation is malformed")
+        _component_fields(row, "path exclusion" if "exclusion" in row else "path surface owners")
+        path = _report_text(row["path"])
+        if path in oracle_paths:
+            raise GuardError("report repeats an oracle observation")
+        oracle_paths.add(path)
+        if "exclusion" in row:
+            _report_text(row["exclusion"])
+        else:
+            _report_text(row["surface"])
+            pairs = []
+            for owner in _report_list(row["owners"]):
+                _component_fields(owner, "edge_type evidence_id")
+                pairs.append(tuple(_report_text(owner[name]) for name in ("edge_type", "evidence_id")))
+            if len(set(pairs)) != len(pairs):
+                raise GuardError("report repeats an oracle authority")
+            oracle_owned += 1
+    if not oracle_owned:
+        raise GuardError("report has no actual ownership oracle")
+    _component_fields(report["seals"], "schema graph resolved_edges")
+    for value in (*report["seals"].values(), measurement["oracle_seal"]):
+        if type(value) is not str or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+            raise GuardError("report lacks its original authority/oracle seals")
+    artifact = report["artifact"]
+    _component_fields(artifact, (
+        "artifact_id current_disposition executable_consumer consistency_check executable_lifecycle"
+    ))
+    for name in ("artifact_id", "current_disposition", "executable_consumer", "consistency_check"):
+        _report_text(artifact[name])
+    routes = {artifact["executable_consumer"], artifact["consistency_check"]}
+    lifecycle = _report_list(artifact["executable_lifecycle"])
+    proofs, triggers, kinds = set(), set(), set()
+    for row in lifecycle:
+        _component_fields(row, (
+            "trigger_event_id trigger_type proof_id removal reason restoration semantics verified_routes"
+        ))
+        for name in ("trigger_event_id", "trigger_type", "proof_id", "reason"):
+            _report_text(row[name])
+        if (
+            row["removal"] != "fail" or row["restoration"] != "pass"
+            or row["semantics"] != "verified-dispatch-and-shared-checker"
+            or type(row["verified_routes"]) is not list or len(row["verified_routes"]) != 2
+            or any(type(route) is not str for route in row["verified_routes"])
+            or set(row["verified_routes"]) != routes or len(routes) != 2
+        ):
+            raise GuardError("report lacks real shared-lifetime lifecycle outcomes")
+        proofs.add(row["proof_id"])
+        triggers.add(row["trigger_event_id"])
+        kinds.add(row["trigger_type"])
+    if len(lifecycle) != 3 or len(proofs) != 3 or len(triggers) != 3 or kinds != {
+        "artifact_checkpoint", "dependency_changed", "pre_graduation",
+    }:
+        raise GuardError("report lifecycle is incomplete or replayed")
+    review = report["review_invalidation"]
+    _component_fields(review, "invalidated reason changed_edge_ids")
+    _report_text(review["reason"])
+    if (
+        review["invalidated"] is not True or review["reason"] != "ownership-graph-introduced"
+        or type(review["changed_edge_ids"]) is not list
+        or not 1 <= len(review["changed_edge_ids"]) <= ORIGINAL_LIMITS["entries"]
+        or any(type(edge) is not str or not edge for edge in review["changed_edge_ids"])
+        or len(set(review["changed_edge_ids"])) != len(review["changed_edge_ids"])
+    ):
+        raise GuardError("report omitted or replayed its original BASE comparison")
+    execution = report["execution"]
+    _component_fields(execution, "revision base_revision runs states bytes processes live_process_peak syscalls")
+    expected_execution = {
+        "revision": GRAPH, "base_revision": BASE, "runs": counters["budget"]["runs"],
+        "states": counters["budget"]["states"],
+        "bytes": {name: counters["budget"]["categories"][name]["charged"]
+                  for name in counters["budget"]["present_categories"]},
+        "processes": counters["session"]["processes_used"],
+        "live_process_peak": counters["session"]["live_process_peak"],
+        "syscalls": counters["session"]["syscalls_used"],
+    }
+    if encoded(execution) != encoded(expected_execution):
+        raise GuardError("report execution differs from the same closed session/budget")
+    summary = {
+        "coverage": dict(coverage),
+        "resolved_paths": len(paths), "current_paths": len(paths) - base_paths, "base_paths": base_paths,
+        "owner_occurrences": owner_count, "authority_evidence": len(expected),
+        "selected_gates": len(selected_ids), "selection_reasons": reason_count,
+        "authority_seals": len(report["seals"]), "oracle_probes": len(probes),
+        "oracle_owned": oracle_owned, "oracle_excluded": len(probes) - oracle_owned,
+        "oracle_false_positives": measurement["false_positive_selections"],
+        "oracle_false_negatives": measurement["false_negative_selections"],
+        "lifecycle_cases": len(lifecycle), "lifecycle_removals_failed": len(lifecycle),
+        "lifecycle_restorations_passed": len(lifecycle), "lifecycle_verified_routes": len(routes),
+        "base_comparison": True, "review_invalidated": review["invalidated"],
+        "changed_authority_edges": len(review["changed_edge_ids"]),
+        "source_phase_counts": None,
+    }
+    validate_report_summary(summary, binding)
+    return summary
+
+
+def validate_report_summary(value, binding):
+    _component_fields(value, (
+        "coverage resolved_paths current_paths base_paths owner_occurrences authority_evidence selected_gates "
+        "selection_reasons authority_seals oracle_probes oracle_owned oracle_excluded oracle_false_positives "
+        "oracle_false_negatives lifecycle_cases lifecycle_removals_failed lifecycle_restorations_passed "
+        "lifecycle_verified_routes base_comparison review_invalidated changed_authority_edges source_phase_counts"
+    ))
+    _component_fields(value["coverage"], "tracked_paths owned_paths fail_closed_exclusions path_rules")
+    if any(not _component_integer(number, ORIGINAL_LIMITS["entries"]) for number in value["coverage"].values()):
+        raise GuardError("report coverage counts are malformed")
+    coverage = value["coverage"]
+    numbers = set(value) - {"coverage", "base_comparison", "review_invalidated", "source_phase_counts"}
+    if (
+        any(not _component_integer(value[name]) for name in numbers)
+        or coverage["tracked_paths"] != binding["tracked_paths"]
+        or coverage["owned_paths"] < 1 or coverage["path_rules"] < 1
+        or coverage["tracked_paths"] != coverage["owned_paths"] + coverage["fail_closed_exclusions"]
+        or value["resolved_paths"] != binding["changed_paths"]["count"]
+        or value["base_paths"] != binding["changed_paths"]["deleted"]
+        or value["current_paths"] + value["base_paths"] != value["resolved_paths"]
+        or value["owner_occurrences"] < value["resolved_paths"]
+        or not 1 <= value["authority_evidence"] <= value["owner_occurrences"]
+        or value["selected_gates"] != value["authority_evidence"]
+        or value["selection_reasons"] != value["owner_occurrences"]
+        or value["authority_seals"] != 3
+        or value["oracle_owned"] < 1 or value["oracle_probes"] != value["oracle_owned"] + value["oracle_excluded"]
+        or value["oracle_false_positives"] != 0 or value["oracle_false_negatives"] != 0
+        or any(value[name] != 3 for name in (
+            "lifecycle_cases", "lifecycle_removals_failed", "lifecycle_restorations_passed",
+        ))
+        or value["lifecycle_verified_routes"] != 2 or value["base_comparison"] is not True
+        or value["review_invalidated"] is not True or value["changed_authority_edges"] < 1
+        or value["source_phase_counts"] is not None
+    ):
+        raise GuardError("report summary is partial or contradicts its original public result")
+    return value
+
+
+def validate_report_result(value, binding):
+    _component_fields(value, "version binding states summary serialized_bytes counters cleanup")
+    validate_report_binding(value["binding"])
+    if value["binding"] != binding or type(value["version"]) is not int or value["version"] != 1:
+        raise GuardError("report result is foreign or replayed")
+    validate_report_states(value["states"], complete=True)
+    validate_report_summary(value["summary"], binding)
+    validate_component_counters(value["counters"], complete=True)
+    validate_report_cleanup(value["cleanup"], complete=True)
+    if not _component_integer(value["serialized_bytes"], minimum=1):
+        raise GuardError("report has no actual source-serialized output size")
+    return {
+        "workload_kind": WORKLOAD_KIND, "complete_repository_report": True,
+        "diagnostic_only": True, "production_acceptance": False, "standalone_verifier": False,
+    }
+
+
+def validate_report_start(value, binding, deadline):
+    _component_fields(value, "binding limits deadline check_attempts")
+    if value["binding"] != binding or type(value["check_attempts"]) is not int or value["check_attempts"] != 0 or (
+        type(value["deadline"]) not in (int, float) or value["deadline"] != deadline
+        or value["limits"] != profile_manifest(ORIGINAL_LIMITS, observation_count=ORIGINAL_LIMITS["entries"])
+    ):
+        raise GuardError("report start is foreign or claims invocation before the public call")
+    validate_report_binding(value["binding"])
+    return value
+
+
+def validate_report_progress(value, *, complete=False):
+    _component_fields(value, "phase counters semantics")
+    if (
+        type(value["phase"]) is not str or value["phase"] not in {
+            "candidate-import", "public-report", "report-serialization", "report-finalize", "completed-report",
+        }
+        or complete and value["phase"] != "completed-report"
+        or value["semantics"] != "Observed cumulative counters and funded VM peaks; not an atomic grant or physical RSS."
+    ):
+        raise GuardError("report sampler state is not its bounded numeric projection")
+    validate_component_counters(value["counters"], complete=complete)
+    return value
+
+
+def validate_report_error(value, binding):
+    if __package__:
+        from . import observation_failure
+    else:
+        import observation_failure
+    _component_fields(value, (
+        "binding stage error states cleanup counters summary serialized_bytes secondary "
+        "source_cleanup_failures observation_failure budget_admission"
+    ))
+    validate_report_binding(value["binding"])
+    if value["binding"] != binding:
+        raise GuardError("report error is foreign or replayed")
+    if type(value["stage"]) is not str or value["stage"] not in REPORT_ERROR_STAGES:
+        raise GuardError("report first failure lacks its actual operation stage")
+    validate_component_error_record(value["error"])
+    if value["source_cleanup_failures"] is not None and not _component_integer(value["source_cleanup_failures"]):
+        raise GuardError("source cleanup failure count is unavailable or numeric only")
+    if value["states"] is not None:
+        validate_report_states(value["states"])
+        if value["states"]["completed"]:
+            raise GuardError("failed report claims completion")
+    if value["cleanup"] is not None:
+        validate_report_cleanup(value["cleanup"])
+    if value["counters"] is not None:
+        validate_component_counters(value["counters"])
+    if value["summary"] is not None:
+        validate_report_summary(value["summary"], binding)
+    if value["serialized_bytes"] is not None and not _component_integer(value["serialized_bytes"], minimum=1):
+        raise GuardError("failed report serialization size is unavailable or positive only")
+    if value["serialized_bytes"] is not None and (
+        value["states"] is None or value["states"]["serialization_returned"] != 1
+    ) or value["summary"] is not None and value["serialized_bytes"] is None:
+        raise GuardError("failed report claims observations from an unreturned serialization")
+    if type(value["secondary"]) is not list or len(value["secondary"]) > 32:
+        raise GuardError("report secondary failures exceed the closed operation inventory")
+    for row in value["secondary"]:
+        _component_fields(row, "stage error")
+        if type(row["stage"]) is not str or row["stage"] not in REPORT_ERROR_STAGES:
+            raise GuardError("report secondary failure has a foreign stage")
+        validate_component_error_record(row["error"])
+    observation_failure.validate_fact(value["observation_failure"], admission=False)
+    observation_failure.validate_fact(value["budget_admission"], admission=True)
+    return value
+
+
+def validate_report_worker(value, binding, deadline):
+    _component_fields(value, " ".join(("report", "validation", "counters", "timing", *ABSENT_WORKLOADS)))
+    if any(type(value[name]) is not int or value[name] != 0 for name in ABSENT_WORKLOADS):
+        raise GuardError("report worker claims an unallocated independent workload")
+    checked = validate_report_result(value["report"], binding)
+    validate_report_progress(value["counters"], complete=True)
+    if value["counters"]["counters"] != value["report"]["counters"] or value["validation"] != checked:
+        raise GuardError("report and final same-session observations disagree")
+    timing = value["timing"]
+    fields = ("worker_started", "source_verified", "report_finished", "finalized")
+    _component_fields(timing, " ".join(fields))
+    if any(type(number) not in (int, float) or not math.isfinite(number) or not 0 <= number <= deadline
+           for number in timing.values()) or [timing[name] for name in fields] != sorted(timing.values()):
+        raise GuardError("report timing regressed or escaped the original deadline")
+    return checked
 
 
 def _root_path(value):

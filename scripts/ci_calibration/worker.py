@@ -1,4 +1,4 @@
-"""Unprivileged contained probes and the single real graph invocation."""
+"""Unprivileged contained probes and the single original public report."""
 
 from __future__ import annotations
 
@@ -442,48 +442,75 @@ def graph_error_record(error, sampler, observer, *, source_binding=None):
 
 
 def graph(config):
-    raise policy.GuardError("component measurement cannot execute a graph or public report")
+    raise policy.GuardError("full-report measurement cannot execute a separate graph")
 
 
 def root(config):
-    raise policy.GuardError("component measurement cannot execute an original root")
+    raise policy.GuardError("full-report measurement cannot execute a separate root")
 
 
-def finish_component(scope, sampler, budget, primary):
-    active = sys.exception()
-    closing = []
-    reporting = [active] if primary is not None and active is not None and active is not primary else []
-    for close in (sampler.close, *(() if budget is None else (budget.close,))):
+def finish_report(sampler, budget, primary, secondary):
+    first_stage = None
+    for stage, owner in (("sampler-close", sampler), ("budget-close", budget)):
+        if owner is None:
+            continue
         try:
-            close()
+            owner.close()
         except BaseException as error:
-            closing.append(error)
-    for error in (*closing, *reporting):
+            if primary is None:
+                primary = error
+                first_stage = stage
+            elif error is not primary:
+                secondary.append({"stage": stage, "error": policy.component_secondary_error(error)})
+    return primary, first_stage
+
+
+def report_error_record(primary, measurement, sampler, observer, binding, secondary, *, stage="check"):
+    record = {
+        "binding": binding, "stage": stage, "error": policy.component_secondary_error(primary),
+        "states": None if measurement is None else dict(measurement.states),
+        "cleanup": None if measurement is None else measurement.cleanup,
+        "summary": None if measurement is None else measurement.summary,
+        "serialized_bytes": None if measurement is None else measurement.serialized_bytes,
+        "counters": None, "secondary": list(secondary),
+        "source_cleanup_failures": policy.source_cleanup_count(primary),
+        "observation_failure": observation_failure.unavailable("binding-not-ready"),
+        "budget_admission": observation_failure.unavailable("binding-not-ready"),
+    }
+    if measurement is not None:
+        record["states"]["completed"] = False
+        record["secondary"][:0] = measurement.secondary
+    for stage, name, collect in (
+        ("counter-publication", "counters", lambda: sampler.snapshot()["counters"]),
+        ("observation-publication", "observation_failure",
+         lambda: observation_failure.validate_fact(observer.capture(primary), admission=False)),
+        ("admission-publication", "budget_admission",
+         lambda: observation_failure.validate_fact(observer.budget_admission(primary), admission=True)),
+    ):
+        if observer is None and name != "counters":
+            continue
         try:
-            kernel.emit(scope, "cleanup-error", policy.component_error_record(error))
+            record[name] = collect()
         except BaseException as error:
-            reporting.append(error)
-    if not closing and not reporting:
-        return
-    failure = primary if primary is not None else (closing or reporting)[0]
-    for stage, errors in (("close", closing), ("report", reporting)):
-        for error in errors:
-            if error is failure:
-                continue
-            detail = {"stage": stage, "error": policy.component_error_record(error)}
-            failure.component_secondary_errors = (*getattr(failure, "component_secondary_errors", ()), detail)
-    raise failure
+            record["secondary"].append({"stage": stage, "error": policy.component_secondary_error(error)})
+            record[name] = None if name == "counters" else observation_failure.unavailable("collector-failed")
+    policy.validate_report_error(record, binding)
+    return record
 
 
 def component(config):
+    raise policy.GuardError("the earlier component allocation is closed")
+
+
+def report(config):
     require_contained(config)
-    if config.get("mode") != "component":
-        raise policy.GuardError("component worker requires its one selected mode")
+    binding = policy.validate_report_binding(config["report_binding"])
+    if config.get("mode") != "report" or config["scope"] != binding["run_id"] + "/report":
+        raise policy.GuardError("report worker requires its one bound report scope")
     sampler = Sampler(config["scope"])
-    budget = None
-    observer = None
-    primary = None
-    result = None
+    budget = observer = primary = result = measurement = None
+    secondary = []
+    primary_stage = "candidate-import"
     started = time.monotonic()
     imported = ended = None
     try:
@@ -501,82 +528,85 @@ def component(config):
         observer = observation_failure.Observer(ProbeSession, budget)
         sampler.budget = budget
         candidate = Path("/repo")
+        primary_stage = "source-identity"
         head = git(candidate, budget, "rev-parse", "HEAD").decode().strip()
         base = git(candidate, budget, "rev-parse", policy.BASE + "^{commit}").decode().strip()
         if (head, base) != (policy.GRAPH, policy.BASE):
-            raise policy.GuardError("actual component candidate HEAD/BASE differ from the frozen scope")
+            raise policy.GuardError("actual report candidate HEAD/BASE differ from the frozen scope")
+        primary_stage = "diff-capture"
+        changes = policy.changed_path_set(git(
+            candidate, budget, "diff", "--no-ext-diff", "--no-textconv", "--no-renames",
+            "--ignore-submodules=none", "--name-status", "-z", policy.BASE, policy.GRAPH, "--",
+        ))
+        if policy.changed_path_binding(changes) != binding["changed_paths"]:
+            raise policy.GuardError("inner and outer immutable changed-path captures disagree")
+        measurement = root_stage.ReportMeasurement(candidate, budget, config, sampler, changes)
         imported = time.monotonic()
-        kernel.emit(config["scope"], "component-start", {
-            "head": head, "base": base, "workload_kind": policy.WORKLOAD_KIND,
-            "fixture_version": policy.FIXTURE_VERSION, "source_phases": False, "profile": policy.PROFILE,
-            "method": policy.COMPONENT_CASE + "." + policy.COMPONENT_METHOD,
-            "target": policy.COMPONENT_TARGET, "limits": classified, "deadline": budget.deadline,
-            "component_attempts": 1, **policy.ABSENT_WORKLOADS,
-            "semantics": "About to invoke the selected method once; this is not completion evidence.",
+        primary_stage = "report-start"
+        kernel.emit(config["scope"], "report-start", {
+            "binding": binding, "limits": classified, "deadline": budget.deadline, "check_attempts": 0,
         })
-        result = root_stage.run(candidate, budget, config, sampler)
-        validated = policy.validate_component_result(result)
-        if (
-            budget.limits is not limits or dataclasses.asdict(Limits()) != original
-            or Limits().observation_count != classified["observations"]["original_effective"]
-            or limits.observation_count != classified["observations"]["diagnostic_effective"]
-            or budget.deadline != config["deadline"]
-        ):
-            raise policy.GuardError("component source defaults, shared policy or original clock changed")
-        sampler.phase = "completed-component"
+        primary_stage = "check"
+        result = measurement.run()
+        validated = policy.validate_report_result(result, binding)
+        sampler.phase = "completed-report"
         ended = time.monotonic()
     except BaseException as error:
         primary = error
-        record = policy.component_error_record(error)
-        record["counters"] = sampler.snapshot()
-        record["observation_failure"] = (
-            observer.capture(error) if observer is not None else observation_failure.unavailable("binding-not-ready")
-        )
-        record["budget_admission"] = (
-            observer.budget_admission(error) if observer is not None else observation_failure.unavailable("binding-not-ready")
-        )
-        cleanup = getattr(error, "component_cleanup_state", None)
-        record["component_cleanup"] = None if cleanup is None else policy.validate_component_cleanup(cleanup)
-        for name in ("component_cleanup_error", "component_cleanup_observation_error"):
-            if hasattr(error, name):
-                record[name] = policy.validate_component_error_record(getattr(error, name))
-        if hasattr(error, "component_reference_errors"):
-            references = error.component_reference_errors
-            if type(references) is not list or not 1 <= len(references) <= 2:
-                raise policy.GuardError("component reference-error metadata is malformed")
-            for row in references:
-                if type(row) is not dict or row.keys() != {"stage", "error"} or type(row["stage"]) is not str or row["stage"] not in {
-                    "observation-reference", "result-reference",
-                }:
-                    raise policy.GuardError("component reference-error metadata has an unknown stage")
-                policy.validate_component_error_record(row["error"])
-            if len({row["stage"] for row in references}) != len(references):
-                raise policy.GuardError("component reference-error metadata repeats a stage")
-            record["component_reference_errors"] = references
-        kernel.emit(config["scope"], "error", record)
-        return None
+        if measurement is not None and measurement.first is error:
+            primary_stage = measurement.first_stage
     finally:
-        finish_component(config["scope"], sampler, budget, primary)
-    return {
-        "component": result, "validation": validated, "counters": sampler.snapshot(),
-        "component_attempts": 1, "component_completed": True, **policy.ABSENT_WORKLOADS,
-        "timing": {"worker_started": started, "source_verified": imported,
-                   "method_finished": ended, "finalized": time.monotonic()},
-    }
+        primary, closing_stage = finish_report(sampler, budget, primary, secondary)
+        if closing_stage is not None:
+            primary_stage = closing_stage
+    if primary is None:
+        try:
+            primary_stage = "source-defaults"
+            if (
+                budget.limits is not limits or dataclasses.asdict(Limits()) != original
+                or Limits().observation_count != classified["observations"]["original_effective"]
+                or limits.observation_count != classified["observations"]["diagnostic_effective"]
+                or budget.deadline != config["deadline"]
+            ):
+                raise policy.GuardError("report source defaults, shared policy or original clock changed")
+            primary_stage = "counter-publication"
+            returned = {
+                "report": result, "validation": validated, "counters": sampler.snapshot(),
+                **policy.ABSENT_WORKLOADS,
+                "timing": {"worker_started": started, "source_verified": imported,
+                           "report_finished": ended, "finalized": time.monotonic()},
+            }
+            primary_stage = "validation"
+            policy.validate_report_worker(returned, binding, config["deadline"])
+        except BaseException as error:
+            primary = error
+    if primary is not None:
+        try:
+            kernel.emit(config["scope"], "error", report_error_record(
+                primary, measurement, sampler, observer, binding, secondary, stage=primary_stage,
+            ))
+        except BaseException as error:
+            # Publication is not permission to replace a source/cleanup failure.
+            try:
+                primary.report_publication_error = policy.component_secondary_error(error)
+            finally:
+                raise primary
+        return None
+    return returned
 
 
 def main(config):
     proof = require_contained(config)
     kernel.emit(config["scope"], "ready", proof)
     mode = config["mode"]
-    if mode == "component":
-        result = component(config)
+    if mode == "report":
+        result = report(config)
         if result is None:
             return 1
         kernel.emit(config["scope"], "result", result)
         return 0
-    if mode in {"root", "graph", "report", "verifier", "source-phase", "h1"}:
-        raise policy.GuardError("component-only scope forbids roots, reports, verifiers, source phases and H1")
+    if mode in {"component", "root", "graph", "verifier", "source-phase", "h1"}:
+        raise policy.GuardError("report-only scope forbids separate components, roots, graphs, verifiers and H1")
     if mode == "identity":
         result = identity_probe(config)
     elif mode == "pids":
@@ -621,7 +651,7 @@ if __name__ == "__main__":
             raise policy.GuardError("worker requires its one readonly config")
     except BaseException as error:
         if active is not None:
-            formatter = policy.component_error_record if active.get("mode") == "component" else policy.error_record
+            formatter = policy.component_secondary_error if active.get("mode") == "report" else policy.error_record
             kernel.emit(active["scope"], "error", formatter(error))
         else:
             print("worker has no admitted readonly containment config", file=sys.stderr)

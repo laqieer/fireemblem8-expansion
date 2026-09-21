@@ -33,6 +33,7 @@ from scripts.validation_ownership import budget as budgeting
 
 REPO = Path(__file__).resolve().parents[2]
 WORKFLOW_TEXT = (REPO / policy.WORKFLOW).read_text()
+SUPERVISOR_AST = ast.parse((REPO / "scripts/ci_calibration/supervisor.py").read_text())
 
 
 class Inert(unittest.TestCase):
@@ -87,50 +88,113 @@ class Inert(unittest.TestCase):
             budget=budget, processes_used=16, syscalls_used=1000, observations_used=100,
             files_created=2, pending_commands_peak=1, live_process_peak=4, memory_peak=16 * policy.MIB,
             pending_commands=0, parked_capsules=[], make_depth=0, _file_owners={},
-            base=None if closed else Path("/owned/base"),
+            base=None if closed else Path("/owned/base"), _views=[],
         )
 
-    def component_result(self):
+    def changes(self):
+        return policy.changed_path_set(b"A\0include/new.h\0D\0include/removed.h\0M\0src/current.c\0")
+
+    def binding(self):
+        return policy.validate_report_binding({
+            "source_revision": policy.GRAPH, "base_revision": policy.BASE, "harness_revision": "a" * 40,
+            "run_id": "12345", "run_attempt": 1, "run_number": 1, "workload_kind": policy.WORKLOAD_KIND,
+            "api": policy.REPORT_API, "profile": policy.PROFILE, "source_phases": True, "lifecycle": True,
+            "changed_paths": policy.changed_path_binding(self.changes()), "tracked_paths": 100,
+        })
+
+    def raw_report(self, budget, session):
+        owners = {
+            name: {"edge_id": f"edge-{index}", "edge_type": "compile-owner",
+                   "evidence_id": f"evidence-{index}", "evidence_type": "compile",
+                   "gate": f"private authority {index}", "reason": "private original explanation"}
+            for index, name in enumerate(self.changes())
+        }
+        return {
+            "schema_version": 1, "policy": {
+                "classification": "framework-capability", "validation_effect": "report-only",
+                "narrowing_authorized": False, "review_invalidation": "resolved-edge-authority",
+            },
+            "coverage": {"tracked_paths": 100, "owned_paths": 98, "fail_closed_exclusions": 2, "path_rules": 8},
+            "artifact": {
+                "artifact_id": "private-artifact", "current_disposition": "retained",
+                "executable_consumer": "consumer", "consistency_check": "consistency",
+                "executable_lifecycle": [
+                    {"trigger_event_id": f"event-{index}", "trigger_type": kind, "proof_id": f"proof-{index}",
+                     "removal": "fail", "restoration": "pass", "reason": "private lifecycle reason",
+                     "semantics": "verified-dispatch-and-shared-checker",
+                     "verified_routes": ["consumer", "consistency"]}
+                    for index, kind in enumerate(("artifact_checkpoint", "dependency_changed", "pre_graduation"))
+                ],
+            },
+            "measurement": {
+                "source_case": "private-oracle", "oracle_seal": "b" * 64, "probe_count": 2,
+                "false_positive_selections": 0, "false_negative_selections": 0,
+                "estimated_maintenance_minutes": 5, "max_maintenance_minutes": 10,
+                "probes": [
+                    {"path": "src/current.c", "surface": "surface", "owners": [
+                        {"edge_type": "compile-owner", "evidence_id": "evidence-2"},
+                    ]},
+                    {"path": "excluded", "exclusion": "excluded-gitlink"},
+                ],
+            },
+            "resolutions": [
+                {"path": name, "rule": "rule", "surface": "surface", "surface_type": "source",
+                 "git_mode": "100644", "admission": "selected-base-tree" if kind == "D" else "exact-ownership-rule",
+                 "graph_origin": "introduced-rules-over-base" if kind == "D" else "selected-tree",
+                 "owners": [owners[name]]}
+                for name, kind in self.changes().items()
+            ],
+            "selected_gates": [
+                {"evidence_id": row["evidence_id"], "evidence_type": row["evidence_type"], "gate": row["gate"],
+                 "reasons": [{"path": name, "edge_type": row["edge_type"], "explanation": row["reason"]}]}
+                for name, row in owners.items()
+            ],
+            "review_invalidation": {
+                "invalidated": True, "reason": "ownership-graph-introduced", "changed_edge_ids": ["edge-0"],
+            },
+            "seals": dict.fromkeys(("schema", "graph", "resolved_edges"), "c" * 64),
+            "execution": {
+                "revision": policy.GRAPH, "base_revision": policy.BASE, "runs": budget.runs, "states": budget.states,
+                "bytes": dict(budget.bytes), "processes": session.processes_used,
+                "live_process_peak": session.live_process_peak, "syscalls": session.syscalls_used,
+            },
+        }
+
+    def report_result(self):
         budget = self.budget()
         budget.plan(1)
         budget.runs = 28
-        budget.charge("control", 33708478)
+        budget.charge("control", 104697218)
         budget.closed = True
+        budget.session_started = True
         session = self.session(budget)
+        counters = policy.counter_snapshot(budget, session)
+        raw = self.raw_report(budget, session)
         return {
-            "version": 1, "workload_kind": policy.WORKLOAD_KIND, "fixture_version": policy.FIXTURE_VERSION,
-            "source_revision": policy.GRAPH, "base_revision": policy.BASE, "profile": policy.PROFILE,
-            "method": policy.COMPONENT_CASE + "." + policy.COMPONENT_METHOD, "target": policy.COMPONENT_TARGET,
-            "source_phases": False, "component_attempts": 1, "component_completed": True,
-            **policy.ABSENT_WORKLOADS,
-            "fixture": {"preexisting_query": True, "genuine_headers": 3, "header_parents_absent": True,
-                        "text_producer": False, "empty_final_target": True},
-            "observation": {
-                "make_attempts": 1, "make_returned": 1, "checker_occurrences": 2, "recipe_receipts": 2,
-                "dispatch_sequences": [1, 7], "producer_slots": [2, 8],
-                "stage_names": [list(policy.STAGES), list(policy.STAGES)],
-                "intermediate_versions": [1, 1], "intermediate_complete": [True, True],
-                "retirement_absent": [True, True], "retired_nlinks": [0, 0], "assembly_extents": [128, 128],
-                "content_equal": True, "bindings_distinct": True, "raw_receipts_distinct": True,
-                "semantic_records": 1, "typed_references": 2,
-            },
-            "counters": policy.counter_snapshot(budget, session),
-            "cleanup": {"budget_closed": True, "children": 0, "waiters": 0, "retained_owners": 0,
-                        "session_base_removed": True, "fixture_removed": True},
+            "version": 1, "binding": self.binding(),
+            "states": {**dict.fromkeys(policy.REPORT_STATES, 1), "completed": True},
+            "summary": policy.summarize_report(raw, self.changes(), counters, self.binding()),
+            "serialized_bytes": len(policy.encoded(raw)), "counters": counters,
+            "cleanup": {**root_stage.cleanup_state(session, budget), "constructor_restored": True,
+                        "report_released": True, "serialization_released": True},
         }
 
-    def component_phase(self):
-        component = self.component_result()
+    def report_phase(self):
+        report = self.report_result()
         return {
-            "mode": "component", "first_cause": None, "returncode": 0, "deadline": 3700.0,
-            "component_attempts": 1, **policy.ABSENT_WORKLOADS, "empty": True,
+            "mode": "report", "first_cause": None, "returncode": 0, "deadline": 3700.0,
+            "report_starts": 1, "report_check_attempts": 1, "report_returned": True, "report_completed": True,
+            **policy.ABSENT_WORKLOADS, "empty": True,
             "empty_before_outer_cleanup": True, "watchdog_reaped": True,
             "lifetime_writer_closed": True, "output_exceeded": False,
             "worker": {
-                "component": component, "validation": policy.validate_component_result(component),
-                "counters": {"phase": "completed-component", "counters": component["counters"], "semantics": "inert"},
-                "component_attempts": 1, "component_completed": True, **policy.ABSENT_WORKLOADS,
-                "timing": {"worker_started": 100.0, "source_verified": 101.0, "method_finished": 110.0, "finalized": 111.0},
+                "report": report, "validation": policy.validate_report_result(report, self.binding()),
+                "counters": {
+                    "phase": "completed-report", "counters": report["counters"],
+                    "semantics": "Observed cumulative counters and funded VM peaks; not an atomic grant or physical RSS.",
+                },
+                **policy.ABSENT_WORKLOADS,
+                "timing": {"worker_started": 100.0, "source_verified": 101.0, "report_finished": 110.0, "finalized": 111.0},
             },
         }
 
@@ -155,12 +219,13 @@ class CalibrationControls(Inert):
                                   "pids_max": None, "pids_current": 0}],
         }
 
-    def test_only_first_owner_public_creation_can_plan_the_component(self):
+    def test_only_first_owner_public_creation_can_plan_the_report(self):
         result = policy.validate_event(self.event(), **self.authorization())
         self.assertEqual(result["graph_sha"], policy.GRAPH)
-        self.assertEqual(result["component_method"], policy.COMPONENT_CASE + "." + policy.COMPONENT_METHOD)
+        self.assertEqual(result["report_api"], policy.REPORT_API)
         self.assertFalse(result["production_acceptance"])
-        self.assertFalse(result["source_phases"])
+        self.assertTrue(result["source_phases"])
+        self.assertTrue(result["lifecycle"])
         for change in (
             {"attempt": "2"}, {"run_number": "2"}, {"environment": "self-hosted"},
             {"operating_system": "Windows"}, {"event_name": "workflow_dispatch"},
@@ -302,14 +367,14 @@ class CalibrationControls(Inert):
                 oracle()
         oracle()
 
-    def test_root_graph_report_source_and_h1_routes_refuse_before_candidate_import(self):
+    def test_component_root_graph_source_and_h1_routes_refuse_before_candidate_import(self):
         with mock.patch.object(root_stage, "candidate_api") as imported:
-            for function in (worker.root, worker.graph):
+            for function in (worker.root, worker.graph, worker.component):
                 with self.assertRaises(policy.GuardError):
                     function({"mode": "component"})
             with mock.patch.object(worker, "require_contained", return_value={}), \
                  mock.patch.object(kernel, "emit"):
-                for mode in ("root", "graph", "report", "verifier", "source-phase", "h1", "ordinary"):
+                for mode in ("component", "root", "graph", "verifier", "source-phase", "h1", "ordinary"):
                     with self.assertRaises(policy.GuardError):
                         worker.main({"mode": mode, "scope": "inert"})
             imported.assert_not_called()
@@ -321,7 +386,7 @@ class CalibrationControls(Inert):
         self.assertEqual(parser.feed(ready[5:])[0]["kind"], "ready")
         with self.assertRaises(policy.GuardError):
             parser.feed(ready)
-        for kind in ("root-start", "graph-start", "unknown"):
+        for kind in ("component-start", "root-start", "graph-start", "unknown"):
             with self.assertRaises(policy.GuardError):
                 parser.feed(policy.encoded({"scope": "fixed", "kind": kind, "data": {}}) + b"\n")
         for kind in ("error", "result"):
@@ -340,46 +405,52 @@ class CalibrationControls(Inert):
             output.observe_output(b"x" * 129, stderr=True)
 
     def test_completed_data_is_not_a_prefix_failed_budget_or_outer_cleanup_certificate(self):
-        result = self.component_result()
-        self.assertFalse(policy.validate_component_result(result)["production_acceptance"])
-        zero_slot = copy.deepcopy(result)
-        zero_slot["observation"]["producer_slots"] = [0, 1]
-        policy.validate_component_result(zero_slot)
-        mutations = [
-            ("component_completed", False), ("component_attempts", 2), ("source_phases", True),
-            ("root_check_attempts", 1), ("graph_check_attempts", 1), ("method", "another"),
-            ("profile", "control-sizing128"), ("source_revision", "b" * 40),
-        ]
-        for key, value in mutations:
-            with self.subTest(key=key), self.assertRaises(policy.GuardError):
-                policy.validate_component_result({**result, key: value})
-        for key in result["observation"]:
+        result = self.report_result()
+        self.assertFalse(policy.validate_report_result(result, self.binding())["production_acceptance"])
+        for key in policy.REPORT_STATES:
             altered = copy.deepcopy(result)
-            del altered["observation"][key]
+            altered["states"][key] = 0
+            with self.subTest(key=key), self.assertRaises(policy.GuardError):
+                policy.validate_report_result(altered, self.binding())
+        for key, value in (("profile", "control-sizing128"), ("source_revision", "b" * 40),
+                           ("base_revision", "c" * 40), ("harness_revision", "d" * 40),
+                           ("run_id", "12346"), ("run_attempt", 2), ("source_phases", False),
+                           ("lifecycle", False), ("api", "another")):
+            altered = copy.deepcopy(result)
+            altered["binding"][key] = value
+            with self.subTest(key=key), self.assertRaises(policy.GuardError):
+                policy.validate_report_result(altered, self.binding())
+        for key in result["summary"]:
+            altered = copy.deepcopy(result)
+            del altered["summary"][key]
             with self.subTest(missing=key), self.assertRaises(policy.GuardError):
-                policy.validate_component_result(altered)
-        for key, value in (("children", 1), ("retained_owners", 1), ("fixture_removed", False),
-                           ("session_base_removed", None), ("budget_closed", False)):
+                policy.validate_report_result(altered, self.binding())
+        for key, value in (("children", 1), ("waiters", 1), ("retained_owners", 1), ("active_views", 1),
+                           ("session_base_removed", None), ("budget_closed", False),
+                           ("constructor_restored", False), ("report_released", None), ("serialization_released", None)):
             altered = copy.deepcopy(result)
             altered["cleanup"][key] = value
             with self.assertRaises(policy.GuardError):
-                policy.validate_component_result(altered)
-            phase = self.component_phase()
-            phase["worker"]["component"] = altered
-            self.assertTrue(supervisor.component_retention(phase))
+                policy.validate_report_result(altered, self.binding())
+            phase = self.report_phase()
+            phase["worker"]["report"] = altered
+            self.assertTrue(supervisor.report_retention(phase))
         bad = copy.deepcopy(result)
         bad["counters"]["budget"]["failed"] = True
         with self.assertRaises(policy.GuardError):
-            policy.validate_component_result(bad)
-        self.assertTrue(supervisor.component_retention({"mode": "component"}))
+            policy.validate_report_result(bad, self.binding())
+        for size in (0, True, -1, 1 << 63, None):
+            with self.assertRaises(policy.GuardError):
+                policy.validate_report_result({**result, "serialized_bytes": size}, self.binding())
+        self.assertTrue(supervisor.report_retention({"mode": "report"}))
         for unknown in (None, [], {}, {"mode": "root"}):
-            self.assertTrue(supervisor.component_retention(unknown))
+            self.assertTrue(supervisor.report_retention(unknown))
 
     def test_counter_snapshot_is_complete_numeric_and_distinguishes_vm_from_ledgers(self):
-        result = self.component_result()
+        result = self.report_result()
         counts = result["counters"]
         self.assertEqual(set(counts["budget"]["categories"]), set(policy.BYTE_CATEGORIES))
-        self.assertEqual(counts["budget"]["categories"]["control"]["charged"], 33708478)
+        self.assertEqual(counts["budget"]["categories"]["control"]["charged"], 104697218)
         self.assertTrue(counts["budget"]["categories"]["control"]["exceeds_original"])
         self.assertEqual(counts["session"]["memory_peak"], 16 * policy.MIB)
         self.assertNotEqual(counts["budget"]["total"], counts["session"]["memory_peak"])
@@ -404,10 +475,11 @@ class CalibrationControls(Inert):
         neutral = json.loads(json.dumps(counts, sort_keys=True))
         self.assertEqual(policy.validate_component_counters(neutral, complete=True), counts)
 
-    def test_component_phase_requires_complete_timing_counters_and_both_cleanups(self):
-        phase = self.component_phase()
-        supervisor.validate_component_phase(phase)
-        for key, value in (("returncode", 1), ("returncode", False), ("first_cause", {}), ("component_attempts", 2),
+    def test_report_phase_requires_complete_timing_counters_and_both_cleanups(self):
+        phase = self.report_phase()
+        supervisor.validate_report_phase(phase, self.binding())
+        for key, value in (("returncode", 1), ("returncode", False), ("first_cause", {}), ("report_check_attempts", 2),
+                           ("report_starts", 2), ("report_returned", False), ("report_completed", False),
                            ("empty", False), ("watchdog_reaped", False), ("lifetime_writer_closed", False),
                            ("output_exceeded", True), ("cleanup_errors", [{"failed": True}])):
             changed = copy.deepcopy(phase)
@@ -415,16 +487,17 @@ class CalibrationControls(Inert):
             if key == "first_cause":
                 changed[key] = {"type": "failure"}
             with self.assertRaises(policy.GuardError):
-                supervisor.validate_component_phase(changed)
-        for key, value in (("finalized", 3701.0), ("method_finished", 99.0), ("worker_started", True)):
+                supervisor.validate_report_phase(changed, self.binding())
+        for key, value in (("finalized", 3701.0), ("report_finished", 99.0), ("worker_started", True),
+                           ("finalized", float("nan")), ("source_verified", None)):
             changed = copy.deepcopy(phase)
             changed["worker"]["timing"][key] = value
             with self.assertRaises(policy.GuardError):
-                supervisor.validate_component_phase(changed)
+                supervisor.validate_report_phase(changed, self.binding())
         changed = copy.deepcopy(phase)
-        changed["worker"]["counters"]["phase"] = "component-method"
+        changed["worker"]["counters"]["phase"] = "public-report"
         with self.assertRaises(policy.GuardError):
-            supervisor.validate_component_phase(changed)
+            supervisor.validate_report_phase(changed, self.binding())
 
     def test_first_error_format_never_exports_messages_frames_or_arbitrary_locals(self):
         class PrivateError(RuntimeError):
@@ -442,7 +515,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.CORRECTION_BASE_SHA}",
+            f"{'a' * 40} {supervisor.REPORT_BASE_SHA}",
+            f"{supervisor.REPORT_BASE_SHA} {supervisor.CORRECTION_BASE_SHA}",
             f"{supervisor.CORRECTION_BASE_SHA} {supervisor.COMPONENT_BASE_SHA}",
             f"{supervisor.COMPONENT_BASE_SHA} {supervisor.REVIEWED_HARNESS_SHA}",
             f"{supervisor.REVIEWED_HARNESS_SHA} {supervisor.ROOT18_HARNESS_SHA}",
@@ -484,29 +558,30 @@ class CalibrationControls(Inert):
         self.assertNotIn("secrets.", json.dumps(data))
 
     def test_pre_kill_empty_must_be_observed_true_not_credit_from_outer_cleanup(self):
-        original = self.component_phase()
-        supervisor.validate_component_phase(original)
-        self.assertFalse(supervisor.component_retention(original))
+        original = self.report_phase()
+        supervisor.validate_report_phase(original, self.binding())
+        self.assertFalse(supervisor.report_retention(original))
         for before in (False, None, 0, 1, "true", [], {}):
             with self.subTest(before=before):
                 changed = copy.deepcopy(original)
                 changed["empty_before_outer_cleanup"] = before
                 with self.assertRaises(policy.GuardError):
-                    supervisor.validate_component_phase(changed)
-                self.assertTrue(supervisor.component_retention(changed))
+                    supervisor.validate_report_phase(changed, self.binding())
+                self.assertTrue(supervisor.report_retention(changed))
         changed = copy.deepcopy(original)
         del changed["empty_before_outer_cleanup"]
         with self.assertRaises(policy.GuardError):
-            supervisor.validate_component_phase(changed)
-        self.assertTrue(supervisor.component_retention(changed))
+            supervisor.validate_report_phase(changed, self.binding())
+        self.assertTrue(supervisor.report_retention(changed))
         for field in ("empty", "watchdog_reaped", "lifetime_writer_closed"):
             changed = copy.deepcopy(original)
             changed[field] = False
             with self.assertRaises(policy.GuardError):
-                supervisor.validate_component_phase(changed)
-            self.assertTrue(supervisor.component_retention(changed))
+                supervisor.validate_report_phase(changed, self.binding())
+            self.assertTrue(supervisor.report_retention(changed))
         neutral = json.loads(json.dumps(original, sort_keys=True))
-        self.assertEqual(supervisor.validate_component_phase(neutral), supervisor.validate_component_phase(original))
+        self.assertEqual(supervisor.validate_report_phase(neutral, self.binding()),
+                         supervisor.validate_report_phase(original, self.binding()))
 
     def test_correction_inventory_is_nonempty_fixed_modifications_only(self):
         data = b"".join(b"M\0" + path.encode() + b"\0" for path in sorted(supervisor.CORRECTION_PATHS))
@@ -521,6 +596,277 @@ class CalibrationControls(Inert):
         ):
             with self.subTest(bad=bad), self.assertRaises(policy.GuardError):
                 supervisor.validate_correction_inventory(bad)
+
+    def test_new_inventory_preserves_every_old_workflow_and_only_admits_normal_modifications(self):
+        data = b"".join(
+            (b"A" if path == policy.WORKFLOW else b"M") + b"\0" + path.encode() + b"\0"
+            for path in sorted(supervisor.REPORT_PATHS)
+        )
+        supervisor.validate_report_inventory(data)
+        for bad in (
+            b"", data + data, data[:-1], data.replace(b"A\0", b"M\0"),
+            data + b"M\0" + policy.COMPONENT_WORKFLOW.encode() + b"\0",
+            data + b"M\0" + policy.PREVIOUS_WORKFLOW.encode() + b"\0",
+            data + b"M\0scripts/ci_calibration/entry.py\0",
+            data + b"M\0scripts/validation_ownership/graph_report.py\0",
+            data.replace(b"M\0scripts/ci_calibration/policy.py", b"A\0scripts/ci_calibration/policy.py"),
+            data.replace(b"M\0scripts/ci_calibration/policy.py", b"D\0scripts/ci_calibration/policy.py"),
+        ):
+            with self.subTest(bad=bad[:64]), self.assertRaises(policy.GuardError):
+                supervisor.validate_report_inventory(bad)
+
+    def test_complete_diff_binding_preserves_additions_deletions_and_both_rename_sides(self):
+        changes = self.changes()
+        binding = policy.changed_path_binding(changes)
+        self.assertEqual((binding["count"], binding["added"], binding["modified"], binding["deleted"]), (3, 1, 1, 1))
+        self.assertEqual(policy.changed_path_binding(dict(reversed(list(changes.items())))), binding)
+        for different in (
+            {key: value for key, value in changes.items() if value != "D"},
+            {**changes, "include/removed.h": "M"},
+            {**changes, "other.c": "A"},
+        ):
+            self.assertNotEqual(policy.changed_path_binding(different), binding)
+        for bad in (
+            b"", b"M\0a", b"M\0a\0M\0a\0", b"R100\0old\0new\0", b"C100\0a\0b\0",
+            b"D\0../outside\0", b"A\0/absolute\0", b"M\0bad\\path\0", b"M\0bad\npath\0",
+            b"M\0\xff\0", b"U\0unmerged\0",
+        ):
+            with self.subTest(bad=bad), self.assertRaises(policy.GuardError):
+                policy.changed_path_set(bad)
+        self.assertEqual(policy.changed_path_binding(policy.changed_path_set(b"T\0mode-change\0"))["type_changed"], 1)
+
+    def test_real_shape_projection_requires_nonempty_authority_oracle_and_all_path_sides(self):
+        budget = self.budget()
+        budget.plan(2)
+        budget.runs = 28
+        budget.charge("control", 104697218)
+        budget.closed = True
+        session = self.session(budget)
+        counters = policy.counter_snapshot(budget, session)
+        raw = self.raw_report(budget, session)
+        expected = policy.summarize_report(raw, self.changes(), counters, self.binding())
+        self.assertEqual((expected["resolved_paths"], expected["current_paths"], expected["base_paths"]), (3, 2, 1))
+        self.assertEqual((expected["authority_evidence"], expected["oracle_probes"], expected["lifecycle_cases"]), (3, 2, 3))
+        self.assertIsNone(expected["source_phase_counts"])
+        self.assertNotIn(b"private", policy.encoded(expected))
+        neutral = json.loads(json.dumps(raw, sort_keys=True))
+        self.assertEqual(policy.summarize_report(neutral, self.changes(), counters, self.binding()), expected)
+        mutations = (
+            lambda x: x["policy"].update(narrowing_authorized=True),
+            lambda x: x["coverage"].update(tracked_paths=99, owned_paths=97),
+            lambda x: x["coverage"].update(owned_paths=0, fail_closed_exclusions=100),
+            lambda x: x["coverage"].update(path_rules=False),
+            lambda x: x["resolutions"].pop(),
+            lambda x: x["resolutions"].append(copy.deepcopy(x["resolutions"][0])),
+            lambda x: x["resolutions"][1].update(admission="exact-ownership-rule"),
+            lambda x: x["resolutions"][0].update(admission="selected-base-tree"),
+            lambda x: x["resolutions"][0].update(owners=[]),
+            lambda x: x["selected_gates"].clear(),
+            lambda x: x["selected_gates"][0]["reasons"][0].update(path="foreign.c"),
+            lambda x: x["selected_gates"].append(copy.deepcopy(x["selected_gates"][0])),
+            lambda x: x["measurement"].update(probe_count=0, probes=[]),
+            lambda x: x["measurement"].update(false_positive_selections=1),
+            lambda x: x["measurement"].update(false_negative_selections=True),
+            lambda x: x["measurement"]["probes"].pop(),
+            lambda x: x["measurement"]["probes"][0]["owners"].clear(),
+            lambda x: x["measurement"].update(oracle_seal=None),
+            lambda x: x["seals"].pop("resolved_edges"),
+            lambda x: x["artifact"]["executable_lifecycle"].pop(),
+            lambda x: x["artifact"]["executable_lifecycle"][0].update(removal="pass"),
+            lambda x: x["artifact"]["executable_lifecycle"][1].update(restoration="fail"),
+            lambda x: x["artifact"]["executable_lifecycle"][0].update(verified_routes=["consumer"]),
+            lambda x: x["artifact"]["executable_lifecycle"][1].update(proof_id="proof-0"),
+            lambda x: x["artifact"]["executable_lifecycle"][1].update(trigger_type="artifact_checkpoint"),
+            lambda x: x["review_invalidation"].update(reason="comparison-not-requested"),
+            lambda x: x["review_invalidation"].update(changed_edge_ids=[]),
+            lambda x: x["execution"].update(base_revision=None),
+            lambda x: x["execution"].update(revision="b" * 40),
+            lambda x: x["execution"].update(runs=True),
+            lambda x: x["execution"].update(processes=0),
+            lambda x: x["execution"]["bytes"].update(control=0),
+            lambda x: x.update(raw_source="private"),
+        )
+        for index, mutate in enumerate(mutations):
+            altered = copy.deepcopy(raw)
+            mutate(altered)
+            with self.subTest(index=index), self.assertRaises(policy.GuardError):
+                policy.summarize_report(altered, self.changes(), counters, self.binding())
+
+    def test_closed_report_stream_rejects_foreign_replay_partial_and_failed_success(self):
+        binding = self.binding()
+        start = {
+            "binding": binding, "limits": policy.profile_manifest(policy.ORIGINAL_LIMITS, observation_count=32768),
+            "deadline": 3700.0, "check_attempts": 0,
+        }
+        result = self.report_phase()["worker"]
+        def frame(kind, value):
+            return policy.encoded({"scope": "12345/report", "kind": kind, "data": value}) + b"\n"
+        def parser():
+            value = supervisor.Protocol("12345/report", policy.OUTPUT_BYTES, report_binding=binding, deadline=3700.0)
+            value.feed(frame("ready", {}))
+            return value
+        stream = parser()
+        stream.feed(frame("report-start", start))
+        encoded = frame("result", result)
+        self.assertFalse(stream.feed(encoded[:-1]))
+        self.assertFalse(stream.finished)
+        self.assertTrue(stream.buffer)
+        stream.feed(encoded[-1:])
+        self.assertTrue(stream.finished)
+        with self.assertRaises(policy.GuardError):
+            stream.feed(encoded)
+        for bad in (
+            {**result, "extra": "private"},
+            {**result, "component_attempts": 1},
+            {**result, "report": {**result["report"], "serialized_bytes": 0}},
+        ):
+            value = parser()
+            value.feed(frame("report-start", start))
+            with self.assertRaises(policy.GuardError):
+                value.feed(frame("result", bad))
+        value = parser()
+        with self.assertRaises(policy.GuardError):
+            value.feed(frame("result", result))
+        value.feed(frame("report-start", start))
+        with self.assertRaises(policy.GuardError):
+            value.feed(frame("report-start", start))
+        replay = copy.deepcopy(result)
+        replay["report"]["binding"]["run_id"] = "12346"
+        with self.assertRaises(policy.GuardError):
+            value.feed(frame("result", replay))
+        failed = {
+            "binding": binding, "stage": "check", "error": policy.component_error_record(RuntimeError("private")),
+            "states": {**dict.fromkeys(policy.REPORT_STATES, 0), "completed": False},
+            "cleanup": None, "counters": None, "secondary": [], "source_cleanup_failures": 0,
+            "summary": None, "serialized_bytes": None,
+            "observation_failure": observation_failure.unavailable("binding-not-ready"),
+            "budget_admission": observation_failure.unavailable("binding-not-ready"),
+        }
+        value.feed(frame("error", failed))
+        with self.assertRaises(policy.GuardError):
+            value.feed(encoded)
+        for key in ("error", "counters", "secondary", "budget_admission", "cleanup"):
+            bad = {**failed, key: {"raw": "private"}}
+            with self.subTest(key=key), self.assertRaises(policy.GuardError):
+                policy.validate_report_error(bad, binding)
+        for fields in ({"serialized_bytes": 10}, {"summary": result["report"]["summary"]}):
+            with self.assertRaises(policy.GuardError):
+                policy.validate_report_error({**failed, **fields}, binding)
+
+    def test_original_cap_stricter_inputs_and_exact_retained_boundaries(self):
+        for name, value in policy.ORIGINAL_LIMITS.items():
+            if value is None:
+                continue
+            with self.subTest(name=name):
+                budgeting.Limits(**{name: value})
+                budgeting.Limits(**{name: value - 1})
+                with self.assertRaises(budgeting.MakeProbeError):
+                    budgeting.Limits(**{name: value + 1})
+        budget = self.budget()
+        budget.charge("control", 104697218)
+        normal = budgeting.ProbeBudget()
+        normal.started = 100.0
+        with self.assertRaises(budgeting.MakeProbeError):
+            normal.charge("control", 104697218)
+        for category in policy.BYTE_CATEGORIES:
+            maximum = policy.diagnostic_limit(category + "_bytes")
+            for amount, request, succeeds in ((maximum - 1, 1, True), (maximum, 1, False)):
+                issued = self.budget()
+                issued.charge(category, amount)
+                if succeeds:
+                    issued.charge(category, request)
+                    self.assertEqual(issued.bytes[category], maximum)
+                else:
+                    with self.assertRaises(budgeting.MakeProbeError):
+                        issued.charge(category, request)
+                    self.assertEqual(issued.bytes[category], maximum)
+        for name, cap in (("memory_peak", "address_space_bytes"), ("pending_commands_peak", "pending"),
+                          ("live_process_peak", "processes"), ("observations_used", "entries")):
+            value = self.report_result()["counters"]
+            value["session"][name] = policy.ORIGINAL_LIMITS[cap]
+            policy.validate_component_counters(value, complete=True)
+            value["session"][name] += 1
+            with self.assertRaises(policy.GuardError):
+                policy.validate_component_counters(value, complete=True)
+
+    def test_pre_kill_guard_restoration_and_neutral_refactor_are_behavioral_controls(self):
+        bad = self.report_phase()
+        bad["empty_before_outer_cleanup"] = False
+        functions = {
+            node.name: node for node in SUPERVISOR_AST.body if isinstance(node, ast.FunctionDef)
+        }
+        class RemoveObservation(ast.NodeTransformer):
+            def visit_Compare(self, node):
+                node = self.generic_visit(node)
+                if isinstance(node.left, ast.Call) and any(
+                    isinstance(arg, ast.Constant) and arg.value == "empty_before_outer_cleanup"
+                    for arg in node.left.args
+                ):
+                    return ast.copy_location(ast.Constant(value=False), node)
+                return node
+            def visit_Tuple(self, node):
+                node.elts = [element for element in node.elts if not (
+                    isinstance(element, ast.Constant) and element.value == "empty_before_outer_cleanup"
+                )]
+                return self.generic_visit(node)
+        class RenameLocal(ast.NodeTransformer):
+            def visit_Name(self, node):
+                if node.id == "result":
+                    node.id = "observed"
+                return node
+            def visit_arg(self, node):
+                if node.arg == "result":
+                    node.arg = "observed"
+                return node
+        def variant(name, transform):
+            tree = ast.Module(body=[transform.visit(copy.deepcopy(functions[name]))], type_ignores=[])
+            ast.fix_missing_locations(tree)
+            namespace = dict(vars(supervisor))
+            exec(compile(tree, "<inert-security-contract-mutation>", "exec"), namespace)
+            return namespace[name]
+        def phase_oracle():
+            with self.assertRaises(policy.GuardError):
+                supervisor.validate_report_phase(bad, self.binding())
+        def retention_oracle():
+            self.assertTrue(supervisor.report_retention(bad))
+        for name, oracle in (("validate_report_phase", phase_oracle), ("report_retention", retention_oracle)):
+            oracle()
+            with mock.patch.object(supervisor, name, variant(name, RemoveObservation())), self.assertRaises(AssertionError):
+                oracle()
+            with mock.patch.object(supervisor, name, variant(name, RenameLocal())):
+                oracle()
+            oracle()
+        self.report_result()
+        with mock.patch.object(policy, "CONTROL_CEILING", policy.ORIGINAL_LIMITS["control_bytes"]), \
+             self.assertRaises(budgeting.MakeProbeError):
+            self.report_result()
+        self.report_result()
+
+    def test_artifact_exact_boundaries_and_five_file_inventory_are_not_report_output(self):
+        owner = object.__new__(supervisor.Artifacts)
+        owner.root = Path("/owned/artifacts")
+        sizes = {}
+        def info(path):
+            return SimpleNamespace(st_size=sizes[path.name], st_mode=stat.S_IFREG | 0o644)
+        with mock.patch.object(Path, "exists", side_effect=lambda path: path.name in sizes, autospec=True), \
+             mock.patch.object(Path, "is_symlink", return_value=False), \
+             mock.patch.object(Path, "stat", side_effect=info, autospec=True), \
+             mock.patch.object(Path, "lstat", side_effect=info, autospec=True), \
+             mock.patch.object(Path, "iterdir", side_effect=lambda: [owner.root / name for name in sizes]):
+            for name in policy.ARTIFACT_NAMES:
+                maximum = policy.METRICS_BYTES if name == "metrics.jsonl" else (
+                    policy.PROGRESS_BYTES if name == "progress.jsonl" else policy.OUTPUT_BYTES
+                )
+                owner._capacity(name, maximum, False)
+                with self.assertRaises(policy.GuardError):
+                    owner._capacity(name, maximum + 1, False)
+            sizes["scope.json"] = policy.OUTPUT_BYTES
+            owner._capacity("result.json", policy.OUTPUT_BYTES, False)
+            sizes["metrics.jsonl"] = 1
+            with self.assertRaises(policy.GuardError):
+                owner._capacity("result.json", policy.OUTPUT_BYTES, False)
+            with self.assertRaises(policy.GuardError):
+                owner._capacity("raw-report.json", 1, False)
 
     def test_secondary_error_metadata_is_bounded_and_explicit_when_unavailable(self):
         value = policy.component_secondary_error(OSError(5, "private source"))

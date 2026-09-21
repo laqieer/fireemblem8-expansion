@@ -38,8 +38,9 @@ ROOT18_HARNESS_SHA = "e4c42d0f831806e4ecf1587ef7cbb977a7ff57e8"
 REVIEWED_HARNESS_SHA = "f50cbd175b02aef847e344c84154f6574aa5e457"
 COMPONENT_BASE_SHA = "f00bc2610d7031d14268855deb2979682ea196af"
 CORRECTION_BASE_SHA = "b854e3cd466166dbc79bfe8f717af956b424365c"
+REPORT_BASE_SHA = "d7172b7f6adf5cb43c005ba6cb7dc31142cc812b"
 COMPONENT_PATHS = frozenset({
-    policy.WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
+    policy.COMPONENT_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "worker.py", "root_stage.py", "supervisor.py", "observation_failure.py", "README.md",
         "test_ci_calibration.py", "test_root_stage.py", "test_observation_failure.py",
     )),
@@ -48,11 +49,13 @@ CORRECTION_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
     "supervisor.py", "root_stage.py", "worker.py", "policy.py", "README.md",
     "test_ci_calibration.py", "test_root_stage.py",
 ))
+REPORT_PATHS = (COMPONENT_PATHS - {policy.COMPONENT_WORKFLOW}) | {policy.WORKFLOW}
 
 
 def validate_harness_lineage(lines, head):
     if lines != [
-        f"{head} {CORRECTION_BASE_SHA}",
+        f"{head} {REPORT_BASE_SHA}",
+        f"{REPORT_BASE_SHA} {CORRECTION_BASE_SHA}",
         f"{CORRECTION_BASE_SHA} {COMPONENT_BASE_SHA}",
         f"{COMPONENT_BASE_SHA} {REVIEWED_HARNESS_SHA}",
         f"{REVIEWED_HARNESS_SHA} {ROOT18_HARNESS_SHA}",
@@ -60,7 +63,7 @@ def validate_harness_lineage(lines, head):
         f"{RETAINED_HARNESS_SHA} {PREPARATION_SHA}",
         f"{PREPARATION_SHA} {policy.BASE}",
     ]:
-        raise policy.GuardError("diagnostic requires its exact normal correction/component/root20/root19/root18/root17/preparation/BASE lineage")
+        raise policy.GuardError("diagnostic requires its exact normal report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
 
 
 def validate_correction_inventory(data):
@@ -76,6 +79,23 @@ def validate_correction_inventory(data):
         or len({name for _, name in changes}) != len(changes)
     ):
         raise policy.GuardError("correction changed an unfrozen surface")
+
+
+def validate_report_inventory(data):
+    if type(data) is not bytes:
+        raise policy.GuardError("report inventory is not a Git byte record")
+    rows = data.split(b"\0")
+    if len(rows) < 3 or len(rows) % 2 != 1 or rows[-1] != b"":
+        raise policy.GuardError("report preparation requires a complete nonempty inventory")
+    changes = list(zip(rows[:-1:2], rows[1:-1:2]))
+    workflow = policy.WORKFLOW.encode("ascii")
+    allowed = {name.encode("ascii") for name in REPORT_PATHS}
+    if (
+        (b"A", workflow) not in changes
+        or any(name not in allowed or kind != (b"A" if name == workflow else b"M") for kind, name in changes)
+        or len({name for _, name in changes}) != len(changes)
+    ):
+        raise policy.GuardError("report preparation changed a closed or unallocated surface")
 
 
 def apparmor_text(name):
@@ -402,7 +422,7 @@ class OutputLimitExceeded(policy.GuardError):
 
 
 class Protocol:
-    def __init__(self, scope, maximum, *, raw_after_ready=False):
+    def __init__(self, scope, maximum, *, raw_after_ready=False, report_binding=None, deadline=None):
         self.scope, self.maximum = scope, maximum
         self.total = 0
         self.stderr_total = 0
@@ -411,6 +431,14 @@ class Protocol:
         self.ready = False
         self.raw_after_ready = raw_after_ready
         self.finished = False
+        self.report_binding, self.deadline = report_binding, deadline
+        self.report_started = self.failed = False
+        if report_binding is not None:
+            policy.validate_report_binding(report_binding)
+            if scope != report_binding["run_id"] + "/report" or (
+                type(deadline) not in (int, float) or not 0 < deadline < float("inf")
+            ) or raw_after_ready:
+                raise policy.GuardError("report stream lacks its exact run and clock binding")
 
     def observe_output(self, data, *, stderr=False):
         if stderr:
@@ -434,14 +462,32 @@ class Protocol:
             if (
                 not isinstance(record, dict) or set(record) != {"scope", "kind", "data"}
                 or record["scope"] != self.scope or not isinstance(record["data"], dict)
-                or record["kind"] not in {"ready", "component-start", "progress", "error", "cleanup-error", "result", "probe-result", "escaped"}
+                or record["kind"] not in {"ready", "report-start", "progress", "error", "cleanup-error", "result", "probe-result", "escaped"}
             ):
                 raise policy.GuardError("foreign or malformed diagnostic protocol record")
             kind = record["kind"]
             if self.finished or (not self.ready and kind not in {"ready", "error"}):
                 raise policy.GuardError("diagnostic record is out of order")
             if "source_refusal" in record["data"]:
-                raise policy.GuardError("component scope cannot publish unrelated root source-refusal metadata")
+                raise policy.GuardError("report scope cannot publish unrelated root source-refusal metadata")
+            if self.report_binding is not None:
+                value = record["data"]
+                if kind == "report-start":
+                    if self.report_started or self.failed:
+                        raise policy.GuardError("report stream repeated or resumed its invocation")
+                    policy.validate_report_start(value, self.report_binding, self.deadline)
+                    self.report_started = True
+                elif kind == "result":
+                    if not self.report_started or self.failed:
+                        raise policy.GuardError("report result precedes invocation or follows a failure")
+                    policy.validate_report_worker(value, self.report_binding, self.deadline)
+                elif kind == "progress":
+                    policy.validate_report_progress(value)
+                elif kind == "error":
+                    policy.validate_report_error(value, self.report_binding)
+                    self.failed = True
+                elif kind != "ready":
+                    raise policy.GuardError("report stream contains an unallocated workload record")
             if kind == "ready":
                 if self.ready:
                     raise policy.GuardError("duplicate containment readiness")
@@ -476,6 +522,7 @@ def phase(owner, mode, volume, *, memory, pids, seconds):
         "apparmor_profile": owner.apparmor_profile,
         "tracked_paths": owner.tracked_paths,
         "runtime_manifest": owner.runtime_manifest,
+        **({"report_binding": policy.report_binding(owner.scope)} if mode == "report" else {}),
         "cgroup_file_identities": {
             name: [(group.path / name).stat().st_dev, (group.path / name).stat().st_ino]
             for name in policy.CGROUP_FILES
@@ -493,9 +540,13 @@ def phase(owner, mode, volume, *, memory, pids, seconds):
         argv = ["/usr/bin/aa-exec", "-p", owner.apparmor_profile, "--", *argv]
     reader, writer = os.pipe2(os.O_CLOEXEC)
     child = None
-    protocol = Protocol(scope, 65536 if mode == "output" else policy.OUTPUT_BYTES, raw_after_ready=mode == "output")
+    protocol = Protocol(
+        scope, 65536 if mode == "output" else policy.OUTPUT_BYTES, raw_after_ready=mode == "output",
+        report_binding=config.get("report_binding"), deadline=deadline,
+    )
     result = {"mode": mode, "deadline": deadline, "started_at": started,
-              "component_attempts": 0, **policy.ABSENT_WORKLOADS}
+              "report_starts": 0, "report_check_attempts": None if mode == "report" else 0,
+              "report_returned": None, "report_completed": False, **policy.ABSENT_WORKLOADS}
     cause = None
     last_sample = 0
     previous_io = {}
@@ -547,7 +598,7 @@ def phase(owner, mode, volume, *, memory, pids, seconds):
                         except OutputLimitExceeded as error:
                             cause = cause or {"type": "output-bound", "message": str(error)}
                             continue
-                        if not protocol.ready and protocol.stderr_total <= policy.ERROR_BYTES:
+                        if mode != "report" and not protocol.ready and protocol.stderr_total <= policy.ERROR_BYTES:
                             result["trusted_setup_stderr"] = result.get("trusted_setup_stderr", "") + data.decode("utf-8", "replace")
                         if cause is None:
                             cause = {
@@ -567,6 +618,14 @@ def phase(owner, mode, volume, *, memory, pids, seconds):
                         continue
                     for record in records:
                         kind, value = record["kind"], record["data"]
+                        if mode == "report" and kind in {"error", "result"}:
+                            states = value["report"]["states"] if kind == "result" else value["states"]
+                            if states is not None:
+                                result["report_check_attempts"] = states["check_attempts"]
+                                result["report_returned"] = states["check_returned"] == 1
+                                result["report_completed"] = states["completed"]
+                                owner.scope["report_attempted"] = states["check_attempts"] == 1
+                                owner.scope["report_returned"] = states["check_returned"] == 1
                         if kind == "error":
                             cause = cause or {"type": "worker-error", "error": value}
                         elif kind == "cleanup-error":
@@ -578,31 +637,11 @@ def phase(owner, mode, volume, *, memory, pids, seconds):
                             result["probe"] = value
                         elif kind == "ready":
                             result["identity"] = value
-                        elif kind == "component-start":
-                            result["component_attempts"] += 1
-                            if (
-                                mode != "component" or result["component_attempts"] != 1
-                                or set(value) != {
-                                    "head", "base", "workload_kind", "fixture_version", "source_phases",
-                                    "profile", "method", "target", "limits", "deadline",
-                                    "component_attempts", "semantics", *policy.ABSENT_WORKLOADS,
-                                }
-                                or value.get("head") != policy.GRAPH or value.get("base") != policy.BASE
-                                or value.get("workload_kind") != policy.WORKLOAD_KIND
-                                or value.get("fixture_version") != policy.FIXTURE_VERSION
-                                or value.get("target") != policy.COMPONENT_TARGET or value.get("source_phases") is not False
-                                or value.get("profile") != policy.PROFILE
-                                or value.get("method") != policy.COMPONENT_CASE + "." + policy.COMPONENT_METHOD
-                                or type(value.get("component_attempts")) is not int or value["component_attempts"] != 1
-                                or any(type(value.get(name)) is not int or value[name] != 0 for name in policy.ABSENT_WORKLOADS)
-                                or value.get("deadline") != deadline
-                                or value.get("limits") != policy.profile_manifest(
-                                    policy.ORIGINAL_LIMITS, observation_count=policy.ORIGINAL_LIMITS["entries"],
-                                )
-                                or not isinstance(value.get("semantics"), str)
-                            ):
-                                raise policy.GuardError("component invocation violated its exact single-attempt scope")
-                            owner.scope["component_attempted"] = True
+                        elif kind == "report-start":
+                            result["report_starts"] += 1
+                            if mode != "report" or result["report_starts"] != 1:
+                                raise policy.GuardError("report invocation violated its exact single-attempt scope")
+                            policy.validate_report_start(value, config["report_binding"], deadline)
                             owner.artifacts.write("scope.json", owner.scope)
                             owner.artifacts.append("progress.jsonl", record)
                         elif kind == "escaped":
@@ -617,14 +656,16 @@ def phase(owner, mode, volume, *, memory, pids, seconds):
                             owner.artifacts.append("progress.jsonl", record)
                 if now > deadline + 10:
                     raise policy.GuardError("watchdog/stream termination is unconfirmed")
-        if mode == "component" and (protocol.buffer or not protocol.finished and cause is None):
-            raise policy.GuardError("component stream ended without its complete terminal result")
+        if mode == "report" and (protocol.buffer or not protocol.finished and cause is None):
+            raise policy.GuardError("report stream ended without its complete terminal result")
         result["returncode"] = child.wait(timeout=5)
         result["empty_before_outer_cleanup"] = group.empty()
         if time.monotonic() >= deadline and cause is None:
             cause = {"type": "deadline", "message": "phase terminated at the original deadline"}
     except BaseException as error:
-        result["supervisor_error"] = policy.error_record(error)
+        result["supervisor_error"] = (
+            policy.component_secondary_error(error) if mode == "report" else policy.error_record(error)
+        )
         cause = cause or {"type": "supervisor-error", "error": result["supervisor_error"]}
     finally:
         group.kill()
@@ -752,12 +793,12 @@ class Owner:
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
         validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=7", "HEAD").decode().splitlines(),
+            git(self.harness, "rev-list", "--parents", "--max-count=8", "HEAD").decode().splitlines(),
             self.scope["harness_sha"],
         )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
         if any(
-            name and name.decode() not in {policy.WORKFLOW, policy.PREVIOUS_WORKFLOW}
+            name and name.decode() not in {policy.WORKFLOW, policy.COMPONENT_WORKFLOW, policy.PREVIOUS_WORKFLOW}
             and not name.decode().startswith("scripts/ci_calibration/")
             for name in changed
         ):
@@ -769,24 +810,35 @@ class Owner:
         )
         if git(self.harness, "diff", "--name-only", COMPONENT_BASE_SHA, "HEAD", "--", *preserved).strip():
             raise policy.GuardError("component preparation changed a preserved containment surface")
-        delta = git(self.harness, "diff", "--name-status", "-z", COMPONENT_BASE_SHA, "HEAD").split(b"\0")
+        if git(self.harness, "diff", "--name-only", REPORT_BASE_SHA, "HEAD", "--", policy.COMPONENT_WORKFLOW).strip():
+            raise policy.GuardError("full-report preparation changed the closed component workflow")
+        delta = git(self.harness, "diff", "--name-status", "-z", COMPONENT_BASE_SHA, REPORT_BASE_SHA).split(b"\0")
         if not delta or delta[-1] != b"" or len(delta) % 2 != 1:
             raise policy.GuardError("component preparation inventory is malformed")
         changes = list(zip(delta[:-1:2], delta[1:-1:2]))
         if (
-            (b"A", policy.WORKFLOW.encode()) not in changes
+            (b"A", policy.COMPONENT_WORKFLOW.encode()) not in changes
             or any(name.decode() not in COMPONENT_PATHS or kind != (
-                b"A" if name.decode() == policy.WORKFLOW else b"M"
+                b"A" if name.decode() == policy.COMPONENT_WORKFLOW else b"M"
             ) for kind, name in changes)
             or len({name for _, name in changes}) != len(changes)
         ):
             raise policy.GuardError("component preparation exceeds its exact allowed surfaces")
         validate_correction_inventory(git(
-            self.harness, "diff", "--name-status", "-z", CORRECTION_BASE_SHA, "HEAD",
+            self.harness, "diff", "--name-status", "-z", CORRECTION_BASE_SHA, REPORT_BASE_SHA,
+        ))
+        validate_report_inventory(git(
+            self.harness, "diff", "--name-status", "-z", REPORT_BASE_SHA, "HEAD",
         ))
         self.source_status("before")
         tree = git(self.candidate, "ls-tree", "-rz", "--full-tree", policy.GRAPH)
         self.tracked_paths = len([row for row in tree.split(b"\0") if row])
+        self.scope["tracked_paths"] = self.tracked_paths
+        self.scope["changed_paths"] = policy.changed_path_binding(policy.changed_path_set(git(
+            self.candidate, "diff", "--no-ext-diff", "--no-textconv", "--no-renames",
+            "--ignore-submodules=none", "--name-status", "-z", policy.BASE, policy.GRAPH, "--",
+        )))
+        policy.report_binding(self.scope)
         if git(self.candidate, "ls-tree", "-r", "--name-only", policy.GRAPH, "--", "build", "scripts/ci_calibration", policy.WORKFLOW).strip():
             raise policy.GuardError("source inventory overlaps writable build or diagnostic harness paths")
         for root in (self.harness, self.candidate, *(self.candidate / name for name in self.gitlinks)):
@@ -921,65 +973,61 @@ def arguments():
     return parser.parse_args()
 
 
-def validate_component_phase(result):
+def validate_report_phase(result, binding):
     if (
-        not isinstance(result, dict) or result.get("mode") != "component"
+        not isinstance(result, dict) or result.get("mode") != "report"
         or result.get("first_cause") or type(result.get("returncode")) is not int or result["returncode"] != 0
-        or type(result.get("component_attempts")) is not int or result["component_attempts"] != 1
+        or type(result.get("report_starts")) is not int or result["report_starts"] != 1
+        or type(result.get("report_check_attempts")) is not int or result["report_check_attempts"] != 1
+        or result.get("report_returned") is not True or result.get("report_completed") is not True
         or any(type(result.get(name)) is not int or result[name] != 0 for name in policy.ABSENT_WORKLOADS)
         or result.get("empty") is not True or result.get("watchdog_reaped") is not True
         or result.get("empty_before_outer_cleanup") is not True
         or result.get("lifetime_writer_closed") is not True
         or result.get("output_exceeded") or result.get("cleanup_errors") or result.get("supervisor_error")
-        or not isinstance(result.get("worker"), dict)
-        or set(result["worker"]) != {"component", "validation", "counters", "component_attempts",
-                                     "component_completed", "timing", *policy.ABSENT_WORKLOADS}
-        or type(result["worker"]["component_attempts"]) is not int or result["worker"]["component_attempts"] != 1
-        or result["worker"]["component_completed"] is not True
-        or any(type(result["worker"].get(name)) is not int or result["worker"][name] != 0
-               for name in policy.ABSENT_WORKLOADS)
+        or type(result.get("deadline")) not in (int, float)
     ):
-        raise policy.GuardError("single component failed or lacks actual completion/cleanup")
-    checked = policy.validate_component_result(result["worker"]["component"])
-    counters = result["worker"]["counters"]
-    if type(counters) is not dict or set(counters) != {"phase", "counters", "semantics"} or (
-        counters["phase"] != "completed-component" or type(counters["semantics"]) is not str
-    ):
-        raise policy.GuardError("component final sampler state is incomplete")
-    policy.validate_component_counters(counters["counters"], complete=True)
-    if counters["counters"] != result["worker"]["component"]["counters"]:
-        raise policy.GuardError("component final counter snapshots disagree")
-    timing = result["worker"]["timing"]
-    if type(timing) is not dict or set(timing) != {
-        "worker_started", "source_verified", "method_finished", "finalized",
-    } or any(type(value) not in (int, float) or not 0 <= value <= result["deadline"] for value in timing.values()):
-        raise policy.GuardError("component timing is incomplete or outside its original deadline")
-    if list(timing[name] for name in ("worker_started", "source_verified", "method_finished", "finalized")) != sorted(timing.values()):
-        raise policy.GuardError("component timing regressed")
-    if result["worker"]["validation"] != checked:
-        raise policy.GuardError("worker component validation differs from the closed result")
-    return checked
+        raise policy.GuardError("single report failed or lacks actual completion/cleanup")
+    return policy.validate_report_worker(result.get("worker"), binding, result["deadline"])
 
 
-def component_retention(result):
-    if type(result) is not dict or result.get("mode") != "component":
+def report_retention(result):
+    if type(result) is not dict or result.get("mode") != "report":
         return True
     if any(result.get(name) is not True for name in (
         "empty_before_outer_cleanup", "empty", "watchdog_reaped", "lifetime_writer_closed",
     )):
         return True
     worker = result.get("worker")
-    component = worker.get("component") if isinstance(worker, dict) else None
+    report = worker.get("report") if isinstance(worker, dict) else None
     cause = None if result is None else result.get("first_cause")
     error = cause.get("error") if isinstance(cause, dict) else None
-    cleanup = component.get("cleanup") if isinstance(component, dict) else error.get("component_cleanup") if isinstance(error, dict) else None
+    if isinstance(error, dict) and error.get("source_cleanup_failures") != 0:
+        return True
+    if isinstance(error, dict) and error.get("stage") in {
+        "sampler-close", "budget-close", "cleanup-observation", "counter-observation", "counter-publication",
+        "constructor-reference", "report-reference", "serialization-reference",
+    }:
+        return True
+    if isinstance(error, dict) and any(
+        row.get("stage") in {"sampler-close", "budget-close"}
+        for row in error.get("secondary", ()) if isinstance(row, dict)
+    ):
+        return True
+    if isinstance(error, dict):
+        counters = error.get("counters")
+        budget = counters.get("budget") if isinstance(counters, dict) else None
+        if not isinstance(budget, dict) or budget.get("failed") is not False:
+            return True
+    cleanup = report.get("cleanup") if isinstance(report, dict) else error.get("cleanup") if isinstance(error, dict) else None
     if cleanup is None:
         return True
-    policy.validate_component_cleanup(cleanup)
-    return cleanup != {
-        "budget_closed": True, "children": 0, "waiters": 0, "retained_owners": 0,
-        "session_base_removed": True, "fixture_removed": True,
-    }
+    policy.validate_report_cleanup(cleanup)
+    try:
+        policy.validate_report_cleanup(cleanup, complete=True)
+    except policy.GuardError:
+        return True
+    return False
 
 
 def main():
@@ -999,8 +1047,8 @@ def main():
         if (output / "scope.json").exists():
             raise policy.GuardError("one-shot scope already exists")
         scope.update(
-            planned_at_monotonic=time.monotonic(), component_launch_requested=False,
-            component_attempted=False, component_completed=False,
+            planned_at_monotonic=time.monotonic(), report_launch_requested=False,
+            report_attempted=False, report_returned=False, report_completed=False,
             policy=policy.profile_manifest(
                 policy.ORIGINAL_LIMITS, observation_count=policy.ORIGINAL_LIMITS["entries"],
             ),
@@ -1012,9 +1060,10 @@ def main():
     previous = policy.parse_json(kernel.read(output / "scope.json", policy.OUTPUT_BYTES))
     if (
         any(previous.get(key) != value for key, value in scope.items())
-        or previous.get("component_launch_requested") is not False
-        or previous.get("component_attempted") is not False
-        or previous.get("component_completed") is not False
+        or previous.get("report_launch_requested") is not False
+        or previous.get("report_attempted") is not False
+        or previous.get("report_returned") is not False
+        or previous.get("report_completed") is not False
     ):
         raise policy.GuardError("run does not match the unspent planned scope")
     scope = previous
@@ -1029,13 +1078,13 @@ def main():
     started = time.monotonic()
     artifacts.write("result.json", {
         "status": "preflight-started", "diagnostic_only": True,
-        "production_acceptance": False, "component_launch_requested": False, **policy.ABSENT_WORKLOADS,
+        "production_acceptance": False, "report_launch_requested": False, **policy.ABSENT_WORKLOADS,
     })
     try:
         if os.geteuid() != 0:
             raise policy.GuardError("run requires the hosted root supervisor")
         if started - previous["planned_at_monotonic"] > 15 * 60:
-            raise policy.GuardError("setup consumed the reserved job/cleanup margin; component will not start")
+            raise policy.GuardError("setup consumed the reserved job/cleanup margin; report will not start")
         os.chown(output, 0, 0)
         facts = capacity_facts(output.parent)
         policy.choose_envelope(facts)
@@ -1065,38 +1114,39 @@ def main():
         scope.update(runner_facts=facts, envelope=envelope)
         graph_volume = owner.volume("graph-volume", envelope["disk_bytes"])
         if time.monotonic() - started > 5 * 60:
-            raise policy.GuardError("preflight/setup exceeded its reserved margin; component will not start")
-        scope["component_launch_requested"] = True
+            raise policy.GuardError("preflight/setup exceeded its reserved margin; report will not start")
+        scope["report_launch_requested"] = True
+        scope["report_attempted"] = scope["report_returned"] = None
         artifacts.write("scope.json", scope)
         result = phase(
-            owner, "component", graph_volume, memory=envelope["memory_max"],
+            owner, "report", graph_volume, memory=envelope["memory_max"],
             pids=envelope["pids_max"], seconds=policy.GRAPH_SECONDS,
         )
         failing_phase = result
-        checked = validate_component_phase(result)
+        checked = validate_report_phase(result, policy.report_binding(scope))
         failing_phase = None
-        scope["component_completed"] = True
+        scope["report_completed"] = True
         result["validation"] = checked
     except BaseException as error:
         observed_cause = failing_phase.get("first_cause") if isinstance(failing_phase, dict) else None
-        first = observed_cause or policy.error_record(error)
+        first = observed_cause or policy.component_secondary_error(error)
     finally:
         if owner is not None:
             try:
-                if scope["component_launch_requested"] and (result is None or component_retention(result)):
-                    raise policy.GuardError("inner component ownership remains uncertain; retain outer resources after owned-process termination")
+                if scope["report_launch_requested"] and (result is None or report_retention(result)):
+                    raise policy.GuardError("inner report ownership remains uncertain; retain outer resources after owned-process termination")
                 owner.cleanup()
             except BaseException as error:
-                cleanup_error = policy.error_record(error)
+                cleanup_error = policy.component_secondary_error(error)
             try:
                 owner.source_status("after")
             except BaseException as error:
-                scope["source_status_after_error"] = policy.error_record(error)
+                scope["source_status_after_error"] = policy.component_secondary_error(error)
                 if first is None:
                     first = scope["source_status_after_error"]
         artifacts.write("scope.json", scope)
         artifacts.write("result.json", {
-            "status": "completed-component-diagnostic-only" if first is None and cleanup_error is None else "failed",
+            "status": "completed-report-diagnostic-only" if first is None and cleanup_error is None else "failed",
             "diagnostic_only": True, "production_acceptance": False,
             "first_error": first, "phase": result, "cleanup_error": cleanup_error,
             "cleanup_confirmed": cleanup_error is None,

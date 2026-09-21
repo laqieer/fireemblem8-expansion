@@ -1,9 +1,10 @@
-"""Effect-modeled component composition; never import or run the selected native case."""
+"""Actual harness composition with inert report/session effects, never native source imports."""
 
 import builtins
 import copy
 import dataclasses
 import errno
+import itertools
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,488 +14,585 @@ import unittest
 from unittest import mock
 from contextlib import ExitStack
 
-from scripts.ci_calibration import kernel, policy, root_stage, supervisor, worker
+from scripts.ci_calibration import kernel, observation_failure, policy, root_stage, supervisor, worker
 from scripts.ci_calibration.test_ci_calibration import Inert, budgeting
 
 
-def observation(fault=None):
-    receipts = []
-    for index in (1, 2):
-        stages = [{"stage": name} for name in policy.STAGES]
-        proof = {
-            "version": 1, "complete": True,
-            "writer": {"completed": {"extent": 128, "sha256": "a" * 64}},
-            "retirement": {"path_absent": True, "after_identity": [1, 2, 3, 4, 5, 6, 0]},
-        }
-        stages[-1].update(
-            intermediate=proof, launch_scope=f"private-{index}", launch_binding=f"binding-{index}",
-            workspace=[1, index, 3],
-        )
-        receipts.append({
-            "native_dispatch_sequence": 1 if index == 1 else 7,
-            "producer_slot": 2 if index == 1 else 8, "stages": stages,
-        })
-    if fault == "missing-checker":
-        receipts.pop()
-    elif fault == "retirement":
-        receipts[1]["stages"][-1]["intermediate"]["retirement"]["path_absent"] = False
-    elif fault == "content":
-        receipts[1]["stages"][-1]["intermediate"]["writer"]["completed"]["sha256"] = "b" * 64
-    elif fault == "binding":
-        receipts[1]["stages"][-1].update(
-            launch_scope=receipts[0]["stages"][-1]["launch_scope"],
-            launch_binding=receipts[0]["stages"][-1]["launch_binding"],
-            workspace=receipts[0]["stages"][-1]["workspace"],
-        )
-    elif fault == "stage":
-        receipts[1]["stages"].pop()
-    raw = tuple(policy.encoded(row) for row in receipts)
-    reference = {"kind": "toolchain-intermediate-ref", "version": 1, "role": "stage4-assembly"}
-    commands = [{"command": {"toolchain_check": True, "runtime_probes": [{"argv": [reference, reference]}]}}]
-    if fault == "semantic":
-        commands.append(copy.deepcopy(commands[0]))
-    return SimpleNamespace(
-        toolchain_receipts=raw, results=(object(), object()),
-        semantics={
-            "native_dispatches": [
-                {"sequence": sequence, "job": {"target": "expansion-modern-toolchain-check"}} for sequence in (1, 7)
-            ],
-            "dynamic_commands": commands,
-        },
-    )
+CANDIDATE_API = root_stage.candidate_api
 
 
 class RootStageControls(Inert):
-    def composition(self, fault=None, *, state_fault=False, teardown_fault=False, withdrawal_fault=None,
-                    formatter_fault=False):
+    def composition(self, *faults, use_worker=False):
+        faults = set(faults)
         budget = self.budget()
         sampler = SimpleNamespace(phase="candidate-import", session=None)
-        events, sessions, cases, recorders = [], [], [], []
-        first = RuntimeError("private source first failure")
-        state_error = OSError(errno.EIO, "private cleanup observation")
-        teardown_error = OSError(errno.EACCES, "private earlier teardown")
-        withdrawal_error = OSError(errno.EBADF, "private reference withdrawal")
-        state = {"removed": False}
-        root = Path("/repo/build/test-artifacts/component")
+        events, sessions, measurements, frames, calls, serialized = [], [], [], [], [], []
+        errors = {
+            name: OSError(number, "private " + name) for name, number in (
+                ("constructor", errno.EIO), ("enter", errno.EACCES), ("teardown", errno.ENOTEMPTY),
+                ("cleanup-observation", errno.EIO), ("counter-observation", errno.EOVERFLOW),
+                ("reference", errno.EBADF), ("serialization", errno.ENOSPC),
+                ("sampler-close", errno.EIO), ("budget-close", errno.EIO),
+                ("publication", errno.EPIPE),
+            )
+        }
+        class SourceError(RuntimeError):
+            def __setattr__(self, name, value):
+                if name == "report_publication_error" and "publication-attachment" in faults:
+                    raise RuntimeError("private attachment failure")
+                super().__setattr__(name, value)
+        errors["source"] = SourceError("private source first failure")
+        controls = self
+        runtime = ("/fixed/original/runtime", "/fixed/original/metadata")
+        config = {"mode": "report", "scope": "12345/report", "deadline": 3700.0, "report_binding": self.binding()}
 
-        class Entries:
-            def __init__(self, values, *, budget):
-                self.values, self.budget = values, budget
+        class Entries(dict):
+            def __init__(self, budget):
+                super().__init__()
+                self.budget, self.capture = budget, (Path("/repo"), policy.GRAPH)
 
         class Loader:
-            def __init__(self, root, entries, *, budget):
-                self.root, self.entries, self.budget = root, entries, budget
-
-        class Commands:
-            def __init__(self, session):
-                self.session = session
+            def __init__(self, budget):
+                self.budget, self.entries = budget, Entries(budget)
+                self.root, self.revision = Path("/repo"), policy.GRAPH
 
         class Session:
             def __init__(self, loader, *, scratch_root, budget, runtime_files):
-                events.append(("session", budget, loader.entries.budget))
-                self.loader, self.budget, self.base = loader, budget, root / "base"
-                self._file_owners = {}
-                self.parked_capsules = []
-                self.pending_commands = self.make_depth = 0
-                self.pending_commands_peak, self.live_process_peak, self.memory_peak = 1, 4, 16 * policy.MIB
-                self.processes_used, self.syscalls_used, self.observations_used, self.files_created = 16, 1000, 100, 2
-                self.runtime_files = runtime_files
+                events.append("constructor")
+                if "constructor-before" in faults:
+                    raise errors["constructor"]
+                vars(self).update(vars(controls.session(budget)))
+                self.loader, self.runtime_paths, self.scratch_root = loader, runtime_files, scratch_root
                 sessions.append(self)
-                if fault == "foreign-budget":
+                if "foreign-session-budget" in faults:
                     self.budget = object()
+                if "constructor-after" in faults:
+                    raise errors["constructor"]
+
             def __enter__(self):
-                self.budget.plan(1)
-                self.budget.charge("control", 33708478)
-                return self
-            def __exit__(self, kind, value, traceback):
-                events.append(("session-exit", value))
-                self.budget.close()
-                if fault == "retained":
-                    self._file_owners["retained"] = SimpleNamespace(retained=True)
-                else:
-                    self.base = None
-                if fault == "session-close":
-                    raise OSError("inert session close")
-            def make(self, target, **keywords):
-                events.append(("make", target))
-                self.budget.runs += 28
-                if fault == "make":
-                    raise first
-                return observation(fault)
+                events.append("enter")
+                self.budget.session_started = True
+                try:
+                    if "enter-before" in faults:
+                        raise errors["enter"]
+                    self.base = Path("/owned/session")
+                    self.budget.plan(2)
+                    self.budget.charge("control", 104697218)
+                    self.budget.runs = 28
+                    if "enter-after" in faults:
+                        raise errors["enter"]
+                    return self
+                except BaseException as error:
+                    self.__exit__(type(error), error, error.__traceback__)
+                    raise
 
-        class SelectedCase(unittest.TestCase):
-            def __delattr__(self, name):
-                if name == "results":
-                    events.append(("withdraw-results",))
-                    if withdrawal_fault == ("results", "before"):
-                        raise withdrawal_error
-                    super().__delattr__(name)
-                    if withdrawal_fault == ("results", "after"):
-                        raise withdrawal_error
-                    return
-                super().__delattr__(name)
+            def __exit__(self, kind, value, trace):
+                events.append("exit")
+                def retire():
+                    events.append("session-retire")
+                    if "teardown-before" in faults:
+                        self._file_owners["retained"] = SimpleNamespace(retained=True)
+                        raise errors["teardown"]
+                    self._views.clear()
+                    if "teardown-after" in faults:
+                        raise errors["teardown"]
+                def remove():
+                    events.append("session-remove")
+                    if not self._file_owners:
+                        self.base = None
+                try:
+                    budgeting.finish_cleanup([self.budget.close, retire, remove], primary=value)
+                except BaseException:
+                    self.budget.failed = True
+                    raise
 
-            def setUp(self):
-                cases.append(self)
-                self.fixture = SimpleNamespace(
-                    root=root / "repo", directory=root, scratch=root / "repo/build/probe",
-                    entries={"include/a.h": object(), "src/query.c": object(), "Makefile": object()},
-                )
-                events.append(("setup",))
-                if fault == "setup":
-                    raise first
-            def tearDown(self):
-                events.append(("teardown",))
-                if fault == "fixture-close" or teardown_fault:
-                    raise teardown_error
-                state["removed"] = True
-            def session(self):
-                raise AssertionError("stock fresh-budget seam called")
-            def capture(self, session):
-                target = "foreign" if fault == "target" else policy.COMPONENT_TARGET
-                value = session.make(target, commands=Commands(session))
-                if fault == "second-make":
-                    session.make(target, commands=Commands(session))
-                self.results = value.results
-                return value, self.results[0]
-            def test_one_make_two_checker_typed_intermediate_component(self):
-                events.append(("selected-method",))
-                if fault == "no-session":
-                    return
-                with self.session() as session:
-                    self.capture(session)
-                    if fault == "method":
-                        raise first
-                    if fault == "second-session":
-                        self.session()
-                self.assertTrue(session.budget.closed)
-                self.assertIsNone(session.base)
-                self.assertFalse(session._file_owners)
-                events.append(("source-clean-assertions",))
+            def _sandbox_run(self):
+                raise AssertionError("no native model is callable")
 
-        api = SimpleNamespace(
-            case=SelectedCase, method=SelectedCase.test_one_make_two_checker_typed_intermediate_component,
-            root=Path("/repo"), loader=Loader, entries=Entries, session=Session,
-            budget_type=budgeting.ProbeBudget, runtime_files=("fixed-runtime",), commands=Commands,
-        )
-        if fault == "method-replacement":
-            api.method = lambda case: None
-        def exists(path):
-            if path == root:
-                return not state["removed"]
-            if path == root / "repo/build/native":
-                return False
-            raise AssertionError("unmodeled source path")
-        result = error = None
-        recorder_type = root_stage.Recorder
-        class ObservedRecorder(recorder_type):
-            def __init__(self, *args):
-                super().__init__(*args)
-                recorders.append(self)
-
+        class ReportModule(SimpleNamespace):
             def __setattr__(self, name, value):
-                if name == "observation" and value is None and getattr(self, "observation", None) is not None:
-                    events.append(("withdraw-observation",))
-                    if withdrawal_fault == ("observation", "before"):
-                        raise withdrawal_error
+                if name == "ProbeSession" and getattr(self, "armed", False):
+                    action = "restore" if value is Session else "install"
+                    events.append(action)
+                    if action + "-before" in faults:
+                        raise errors["reference"]
                     super().__setattr__(name, value)
-                    if withdrawal_fault == ("observation", "after"):
-                        raise withdrawal_error
+                    if action + "-after" in faults:
+                        raise errors["reference"]
                     return
                 super().__setattr__(name, value)
 
-        with mock.patch.object(worker, "require_contained", return_value={}), \
-             mock.patch.object(root_stage, "candidate_api", return_value=api), \
-             mock.patch.object(root_stage, "Recorder", ObservedRecorder), \
-             mock.patch.object(Path, "read_bytes", return_value=b'#include "global.h"\n'), \
-             mock.patch.object(Path, "read_text", return_value="\nexpansion-modern-all: ;\n"), \
-             mock.patch.object(Path, "exists", exists), mock.patch.object(Path, "is_symlink", return_value=False), \
-             ExitStack() as effects:
-            if state_fault:
-                effects.enter_context(mock.patch.object(root_stage, "cleanup_state", side_effect=state_error))
-            if formatter_fault:
-                effects.enter_context(mock.patch.object(policy, "component_error_record", side_effect=ValueError("inert formatter")))
+        module = ReportModule(ProbeSession=Session, armed=True)
+        def check(root, *, budget, revision="HEAD", base_revision=None, changed_paths=(),
+                  runtime_files=runtime, lifecycle=True):
+            calls.append((root, budget, revision, base_revision, changed_paths, runtime_files, lifecycle))
+            if "source-before-constructor" in faults:
+                raise errors["source"]
+            loader = Loader(budget)
+            if "foreign-loader" in faults:
+                loader.revision = policy.BASE
+            if "foreign-loader-budget" in faults:
+                loader.budget = object()
+            if "no-session" in faults:
+                return {}
+            with module.ProbeSession(
+                loader, scratch_root=root / "build/test-artifacts/validation-ownership", budget=budget,
+                runtime_files=runtime_files + ("wrong",) if "runtime" in faults else runtime_files,
+            ) as session:
+                events.extend(("CURRENT", "BASE", "source-phases", "lifecycle"))
+                if "second-session" in faults:
+                    module.ProbeSession(loader, scratch_root=session.scratch_root, budget=budget, runtime_files=runtime)
+                if "source" in faults:
+                    raise errors["source"]
+                result = controls.raw_report(budget, session)
+                if "partial" in faults:
+                    result["resolutions"].pop()
+                return result
+        module.check = check
+        def serialize(value):
+            events.append("serialize")
+            serialized.append(value)
+            controls.assertTrue(budget.closed)
+            if "serialization" in faults:
+                raise errors["serialization"]
+            if "serialization-type" in faults:
+                return "not bytes"
+            return policy.encoded(value) + b"\n"
+        api = SimpleNamespace(
+            module=module, check=check, serializer=serialize, session=Session, loader=Loader, entries=Entries,
+            budget_type=budgeting.ProbeBudget, runtime_files=runtime,
+        )
+        methods = {name: getattr(Session, name) for name in ("__init__", "__enter__", "__exit__", "_sandbox_run")}
+        if "already-replaced" in faults:
+            module.armed = False
+            module.ProbeSession = object()
+            module.armed = True
+        original_type = root_stage.ReportMeasurement
+        class Measurement(original_type):
+            def __init__(self, *args):
+                super().__init__(*args)
+                measurements.append(self)
+                self.armed = True
+
+            def __setattr__(self, name, value):
+                if name in {"raw_report", "raw_serialization"} and value is None and getattr(self, "armed", False):
+                    action = "report" if name == "raw_report" else "serialization-reference"
+                    events.append("withdraw-" + action)
+                    if action + "-before" in faults:
+                        raise errors["reference"]
+                    super().__setattr__(name, value)
+                    if action + "-after" in faults:
+                        raise errors["reference"]
+                    return
+                super().__setattr__(name, value)
+
+        actual_import = builtins.__import__
+        def git(root, issued, *args):
+            self.assertIs(issued, budget)
+            if args == ("rev-parse", "HEAD"):
+                return policy.GRAPH.encode()
+            if args == ("rev-parse", policy.BASE + "^{commit}"):
+                return policy.BASE.encode()
+            self.assertEqual(args, (
+                "diff", "--no-ext-diff", "--no-textconv", "--no-renames",
+                "--ignore-submodules=none", "--name-status", "-z", policy.BASE, policy.GRAPH, "--",
+            ))
+            return b"".join(kind.encode() + b"\0" + path.encode() + b"\0" for path, kind in self.changes().items())
+        def imports(name, *args, **kwargs):
+            if name == "scripts.validation_ownership.authority":
+                return SimpleNamespace(git=git)
+            if name == "scripts.validation_ownership.budget":
+                return budgeting
+            if name == "scripts.validation_ownership.make_probe":
+                return SimpleNamespace(ProbeSession=Session)
+            return actual_import(name, *args, **kwargs)
+        def sampler_close(value):
+            events.append("sampler-close")
+            if "sampler-close" in faults:
+                raise errors["sampler-close"]
+        original_close = budget.close
+        def budget_close():
+            events.append("budget-close")
+            final = "sampler-close" in events
+            if final and "budget-close-before" in faults:
+                raise errors["budget-close"]
+            original_close()
+            if final and "budget-close-after" in faults:
+                raise errors["budget-close"]
+        def emit(scope, kind, data):
+            frames.append((kind, data))
+            if kind == "error" and "publication" in faults:
+                raise errors["publication"]
+        result = failure = None
+        with ExitStack() as effects:
+            effects.enter_context(mock.patch.object(worker, "require_contained", return_value={}))
+            effects.enter_context(mock.patch.object(root_stage, "candidate_api", return_value=api))
+            effects.enter_context(mock.patch.object(root_stage, "ReportMeasurement", Measurement))
+            effects.enter_context(mock.patch.object(budget, "close", side_effect=budget_close))
+            if "cleanup-observation" in faults:
+                effects.enter_context(mock.patch.object(root_stage, "cleanup_state", side_effect=errors["cleanup-observation"]))
+            if "counter-observation" in faults:
+                effects.enter_context(mock.patch.object(policy, "counter_snapshot", side_effect=errors["counter-observation"]))
+            if "formatter" in faults:
+                effects.enter_context(mock.patch.object(policy, "component_error_record", side_effect=ValueError("private format")))
+            if use_worker:
+                effects.enter_context(mock.patch.object(builtins, "__import__", side_effect=imports))
+                effects.enter_context(mock.patch.object(sys, "path", list(sys.path)))
+                effects.enter_context(mock.patch.object(threading.Thread, "start", side_effect=lambda: events.append("sampler-start")))
+                effects.enter_context(mock.patch.object(worker.Sampler, "close", sampler_close))
+                effects.enter_context(mock.patch.object(worker, "calibration_budget", return_value=(
+                    budget, budget.limits, dataclasses.asdict(budgeting.Limits()),
+                    policy.profile_manifest(policy.ORIGINAL_LIMITS, observation_count=32768),
+                )))
+                effects.enter_context(mock.patch.object(kernel, "emit", side_effect=emit))
             try:
-                result = root_stage.run(Path("/repo"), budget, {"mode": "component", "deadline": 3700.0}, sampler)
-            except BaseException as caught:
-                error = caught
+                result = worker.report(config) if use_worker else Measurement(
+                    Path("/repo"), budget, config, sampler, self.changes(),
+                ).run()
+            except BaseException as error:
+                failure = error
         return SimpleNamespace(
-            result=result, error=error, first=first, budget=budget, sampler=sampler,
-            api=api, events=events, sessions=sessions, cases=cases, state=state, recorders=recorders,
-            state_error=state_error, teardown_error=teardown_error, withdrawal_error=withdrawal_error,
+            result=result, failure=failure, errors=errors, measurements=measurements, sessions=sessions,
+            events=events, frames=frames, budget=budget, sampler=sampler, api=api, calls=calls, serialized=serialized,
+            methods=methods,
         )
 
-    def test_exact_inherited_method_uses_one_budget_session_and_make(self):
+    def test_actual_candidate_factory_only_binds_original_report_serializer_and_authority_types(self):
+        original_check, original_serializer = object(), object()
+        original_session, original_loader, original_entries = object(), object(), object()
+        runtime = ("original-runtime",)
+        graph = SimpleNamespace(check=original_check, ROOT_RUNTIME_FILES=runtime)
+        reporter = SimpleNamespace(normalized_json=original_serializer)
+        seen = []
+        def selected(name, *args, **kwargs):
+            seen.append(name)
+            if name == "scripts.validation_ownership":
+                return SimpleNamespace(graph_report=graph, reporter=reporter)
+            if name == "scripts.validation_ownership.authority":
+                return SimpleNamespace(AuthorityLoader=original_loader, GitTreeEntries=original_entries)
+            if name == "scripts.validation_ownership.budget":
+                return budgeting
+            if name == "scripts.validation_ownership.make_probe":
+                return SimpleNamespace(ProbeSession=original_session)
+            raise AssertionError("unallocated import: " + name)
+        with mock.patch.object(builtins, "__import__", side_effect=selected):
+            api = CANDIDATE_API()
+        self.assertEqual(len(seen), 4)
+        for observed, expected in (
+            (api.module, graph), (api.check, original_check), (api.serializer, original_serializer),
+            (api.session, original_session), (api.loader, original_loader), (api.entries, original_entries),
+            (api.runtime_files, runtime), (api.budget_type, budgeting.ProbeBudget),
+        ):
+            self.assertIs(observed, expected)
+
+    def test_exact_public_call_forwards_complete_current_base_deletions_lifecycle_and_defaults(self):
         value = self.composition()
-        self.assertIsNone(value.error)
+        self.assertIsNone(value.failure)
+        self.assertEqual(len(value.calls), 1)
+        root, budget, revision, base, paths, runtime, lifecycle = value.calls[0]
+        self.assertEqual((root, revision, base, paths, lifecycle),
+                         (Path("/repo"), policy.GRAPH, policy.BASE, tuple(self.changes()), True))
+        self.assertIs(budget, value.budget)
+        self.assertIs(runtime, value.api.runtime_files)
         self.assertEqual(len(value.sessions), 1)
-        self.assertEqual(value.events.count(("selected-method",)), 1)
-        self.assertEqual(value.events.count(("make", policy.COMPONENT_TARGET)), 1)
-        session, = value.sessions
+        session = value.sessions[0]
+        self.assertIs(type(session), value.api.session)
         self.assertIs(session.budget, value.budget)
         self.assertIs(session.loader.budget, value.budget)
         self.assertIs(session.loader.entries.budget, value.budget)
         self.assertIs(value.sampler.session, session)
-        self.assertIs(getattr(type(value.cases[0]), policy.COMPONENT_METHOD), value.api.method)
-        self.assertNotIn("make", vars(session))
-        self.assertTrue(value.state["removed"])
-        self.assertIn(("source-clean-assertions",), value.events)
-        self.assertFalse(hasattr(value.cases[0], "results"))
-        self.assertEqual(value.result["observation"]["checker_occurrences"], 2)
-        self.assertEqual(value.result["counters"]["budget"]["categories"]["control"]["charged"], 33708478)
-        self.assertFalse(policy.validate_component_result(value.result)["production_acceptance"])
-
-    def test_no_import_before_real_containment_or_for_a_foreign_workload(self):
-        budget = self.budget()
-        with mock.patch.object(worker, "require_contained", side_effect=policy.GuardError("not contained")), \
-             mock.patch.object(root_stage, "candidate_api") as imported:
-            with self.assertRaises(policy.GuardError):
-                root_stage.run(Path("/repo"), budget, {"mode": "component", "deadline": 3700.0}, object())
-            imported.assert_not_called()
+        self.assertIs(value.api.module.ProbeSession, value.api.session)
+        self.assertIs(value.api.module.check, value.api.check)
+        for name in ("__enter__", "__exit__", "_sandbox_run"):
+            self.assertNotIn(name, vars(session))
+        for name, method in value.methods.items():
+            self.assertIs(getattr(value.api.session, name), method)
+        self.assertEqual([event for event in value.events if event in {"CURRENT", "BASE", "source-phases", "lifecycle"}],
+                         ["CURRENT", "BASE", "source-phases", "lifecycle"])
+        self.assertEqual(value.result["serialized_bytes"], len(policy.encoded(value.serialized[0])) + 1)
+        self.assertEqual(value.result["summary"]["base_paths"], 1)
+        self.assertEqual(value.result["counters"]["budget"]["categories"]["control"]["charged"], 104697218)
+        self.assertEqual((budget.started, budget.deadline), (100.0, 3700.0))
+        self.assertLess(value.events.index("session-remove"), value.events.index("serialize"))
+        self.assertIsNone(value.measurements[0].raw_report)
+        self.assertIsNone(value.measurements[0].raw_serialization)
+        self.assertNotIn(b"private", policy.encoded(value.result))
         with mock.patch.object(worker, "require_contained", return_value={}), \
              mock.patch.object(root_stage, "candidate_api") as imported:
-            for root, mode, deadline in ((Path("/other"), "component", 3700), (Path("/repo"), "root", 3700),
-                                         (Path("/repo"), "component", 3800)):
+            with self.assertRaises(policy.GuardError):
+                value.measurements[0].run()
+            imported.assert_not_called()
+
+    def test_uncontained_foreign_clock_root_mode_and_paths_never_import_candidate(self):
+        budget = self.budget()
+        config = {"mode": "report", "deadline": 3700.0, "report_binding": self.binding()}
+        with mock.patch.object(root_stage, "candidate_api") as imported:
+            with mock.patch.object(worker, "require_contained", side_effect=policy.GuardError("not contained")):
                 with self.assertRaises(policy.GuardError):
-                    root_stage.run(root, budget, {"mode": mode, "deadline": deadline}, object())
+                    root_stage.ReportMeasurement(Path("/repo"), budget, config, object(), self.changes()).run()
+            with mock.patch.object(worker, "require_contained", return_value={}):
+                for root, mode, deadline, paths in (
+                    (Path("/foreign"), "report", 3700.0, self.changes()),
+                    (Path("/repo"), "component", 3700.0, self.changes()),
+                    (Path("/repo"), "report", 3701.0, self.changes()),
+                    (Path("/repo"), "report", 3700.0, {"src/current.c": "M"}),
+                ):
+                    with self.assertRaises(policy.GuardError):
+                        root_stage.ReportMeasurement(
+                            root, budget, {**config, "mode": mode, "deadline": deadline}, object(), paths,
+                        ).run()
             imported.assert_not_called()
 
-    def test_partial_foreign_replayed_and_content_changed_pairs_do_not_complete(self):
-        for fault in ("make", "target", "second-make", "second-session", "no-session", "foreign-budget",
-                      "method-replacement", "missing-checker", "retirement", "content", "binding", "stage", "semantic"):
-            with self.subTest(fault=fault):
-                value = self.composition(fault)
-                self.assertIsNotNone(value.error)
-                self.assertIsNone(value.result)
-                self.assertLessEqual(sum(row[0] == "make" for row in value.events), 1)
-                for session in value.sessions:
-                    self.assertNotIn("make", vars(session))
-
-    def test_method_failure_after_make_and_uncertain_cleanup_preserve_first_cause(self):
-        value = self.composition("method")
-        self.assertIs(value.error, value.first)
-        self.assertEqual(value.events.count(("make", policy.COMPONENT_TARGET)), 1)
-        self.assertNotIn(("source-clean-assertions",), value.events)
-        self.assertTrue(value.budget.closed)
-        self.assertIsNone(value.result)
-        for fault in ("setup", "retained", "session-close", "fixture-close"):
-            with self.subTest(fault=fault):
-                value = self.composition(fault)
-                self.assertIsNotNone(value.error)
-                self.assertIsNone(value.result)
-                if fault in ("setup", "retained", "fixture-close"):
-                    self.assertFalse(value.state["removed"])
-                if fault == "retained":
-                    self.assertNotIn(("teardown",), value.events)
-                    self.assertEqual(value.error.component_cleanup_state["retained_owners"], 1)
-
-    def test_cleanup_observation_failure_preserves_source_or_teardown_primary(self):
-        for source_failure, teardown in ((True, False), (True, True), (False, True), (False, False)):
-            with self.subTest(source=source_failure, teardown=teardown):
-                value = self.composition("method" if source_failure else None, state_fault=True,
-                                         teardown_fault=teardown)
-                expected = value.first if source_failure else value.teardown_error if teardown else value.state_error
-                self.assertIs(value.error, expected)
-                self.assertIsNone(value.result)
-                self.assertIsNone(value.error.component_cleanup_state)
-                self.assertEqual(value.error.component_cleanup_observation_error["chain"][0],
-                                 {"type": "OSError", "errno": errno.EIO})
-                if teardown:
-                    self.assertEqual(value.error.component_cleanup_error["chain"][0],
-                                     {"type": "PermissionError", "errno": errno.EACCES})
-                self.assertIn(("teardown",), value.events)
-                self.assertIn(("withdraw-observation",), value.events)
-                self.assertIn(("withdraw-results",), value.events)
-                self.assertEqual(value.events.count(("withdraw-observation",)), 1)
-                self.assertEqual(value.events.count(("withdraw-results",)), 1)
-                self.assertIsNone(value.recorders[0].observation)
-                self.assertFalse(hasattr(value.cases[0], "results"))
-                self.assertTrue(supervisor.component_retention({
-                    **self.component_phase(), "worker": None,
-                    "first_cause": {"type": "worker-error", "error": {"component_cleanup": None}},
-                }))
-
-    def test_reference_withdrawal_faults_attempt_both_owners_and_preserve_first_cause(self):
-        for reference in ("observation", "results"):
-            for when in ("before", "after"):
-                for source_failure in (False, True):
-                    with self.subTest(reference=reference, when=when, source=source_failure):
-                        value = self.composition(
-                            "method" if source_failure else None, withdrawal_fault=(reference, when),
-                        )
-                        self.assertIs(value.error, value.first if source_failure else value.withdrawal_error)
-                        self.assertIsNone(value.error.component_cleanup_state)
-                        self.assertEqual(value.error.component_reference_errors[0]["stage"],
-                                         "observation-reference" if reference == "observation" else "result-reference")
-                        self.assertIn(("withdraw-observation",), value.events)
-                        self.assertIn(("withdraw-results",), value.events)
-                        if reference == "observation":
-                            self.assertFalse(hasattr(value.cases[0], "results"))
-                            self.assertEqual(value.recorders[0].observation is None, when == "after")
-                        else:
-                            self.assertIsNone(value.recorders[0].observation)
-                            self.assertEqual(hasattr(value.cases[0], "results"), when == "before")
-
-    def test_secondary_formatter_failure_is_unavailable_not_a_replacement_or_skipped_withdrawal(self):
-        value = self.composition("method", state_fault=True, teardown_fault=True, formatter_fault=True)
-        self.assertIs(value.error, value.first)
-        self.assertIsNone(value.error.component_cleanup_state)
-        expected = {"chain": [], "complete": False, "reason": "secondary-format-failed"}
-        self.assertEqual(value.error.component_cleanup_error, expected)
-        self.assertEqual(value.error.component_cleanup_observation_error, expected)
-        self.assertIsNone(value.recorders[0].observation)
-        self.assertFalse(hasattr(value.cases[0], "results"))
-        original = policy.component_error_record
-        with mock.patch.object(policy, "component_error_record", side_effect=lambda error:
-                               dict(reversed(list(original(error).items())))):
-            neutral = self.composition("method", state_fault=True)
-        self.assertIs(neutral.error, neutral.first)
-        self.assertIsNone(neutral.error.component_cleanup_state)
-        self.assertEqual(neutral.error.component_cleanup_observation_error["chain"][0],
-                         {"type": "OSError", "errno": errno.EIO})
-        self.assertIsNone(neutral.recorders[0].observation)
-        self.assertFalse(hasattr(neutral.cases[0], "results"))
-
-    def test_summary_is_metadata_only_and_neutral_order_preserves_actual_comparisons(self):
-        raw = observation()
-        result = root_stage.summarize(raw, raw.results, 1, 1)
-        data = policy.encoded(result)
-        self.assertNotIn(b"private-", data)
-        self.assertNotIn(b"binding-", data)
-        self.assertNotIn(b"aaaaaaaa", data)
-        reversed_records = [
-            dict(reversed(list(policy.parse_json(row).items()))) for row in raw.toolchain_receipts
-        ]
-        raw.toolchain_receipts = tuple(policy.encoded(row) for row in reversed_records)
-        self.assertEqual(root_stage.summarize(raw, raw.results, 1, 1), result)
-        for bad in (0, 2, True):
-            with self.assertRaises(policy.GuardError):
-                root_stage.summarize(raw, raw.results, bad, 1)
-
-    def test_removing_component_admission_or_content_equality_breaks_its_oracle(self):
-        def oracle():
-            value = self.composition("content")
-            self.assertIsNotNone(value.error)
-            self.assertIsNone(value.result)
-        oracle()
-        validate = policy.validate_component_observation
-        def omit_content(value):
-            changed = {**value, "content_equal": True}
-            return validate(changed)
-        with mock.patch.object(policy, "validate_component_observation", side_effect=omit_content), self.assertRaises(AssertionError):
-            oracle()
-        oracle()
-
-    def worker_case(self, *, stage_failure=False, sampler_failure=False, budget_failure=False, publication_failure=False,
-                    observation_failure=False):
-        budget = self.budget()
-        first = RuntimeError("private workload failure")
-        closing = OSError("private cleanup")
-        events, frames = [], []
-        limits = budget.limits
-        original = dataclasses.asdict(budgeting.Limits())
-        manifest = policy.profile_manifest(original, observation_count=32768)
-        result = self.component_result()
-        session = self.session(budget)
-
-        class SelectedSession:
-            def _sandbox_run(self):
-                pass
-
-        actual_import = builtins.__import__
-        def selected_import(name, *args, **kwargs):
-            if name == "scripts.validation_ownership.authority":
-                return SimpleNamespace(git=lambda root, same_budget, *arguments:
-                    (policy.GRAPH if arguments[-1] == "HEAD" else policy.BASE).encode())
-            if name == "scripts.validation_ownership.budget":
-                return budgeting
-            if name == "scripts.validation_ownership.make_probe":
-                return SimpleNamespace(ProbeSession=SelectedSession)
-            return actual_import(name, *args, **kwargs)
-
-        def stage(root, same_budget, config, sampler):
-            self.assertIs(same_budget, budget)
-            sampler.session = session
-            events.append("stage")
-            budget.plan(1)
-            budget.runs = 28
-            budget.charge("control", 33708478)
-            budget.close()
-            if stage_failure:
-                first.component_cleanup_state = None if observation_failure else result["cleanup"]
-                if observation_failure:
-                    first.component_cleanup_observation_error = policy.component_secondary_error(
-                        OSError(errno.EIO, "private state observation"),
-                    )
-                raise first
-            result["counters"] = policy.counter_snapshot(budget, session)
-            return result
-
-        def close_sampler(sampler):
-            events.append("sampler-close")
-            if sampler_failure:
-                raise closing
-        original_close = budget.close
-        def close_budget():
-            events.append("budget-close")
-            original_close()
-            if budget_failure and events[-2:] != ["stage", "budget-close"]:
-                raise closing
-        def emit(scope, kind, data):
-            frames.append((kind, data))
-            if publication_failure and kind in ("error", "cleanup-error"):
-                raise BrokenPipeError("inert channel")
-        returned = failure = None
-        with mock.patch.object(worker, "require_contained", return_value={}), \
-             mock.patch.object(builtins, "__import__", side_effect=selected_import), \
-             mock.patch.object(sys, "path", list(sys.path)), \
-             mock.patch.object(worker, "calibration_budget", return_value=(budget, limits, original, manifest)), \
-             mock.patch.object(threading.Thread, "start"), \
-             mock.patch.object(worker.Sampler, "close", close_sampler), \
-             mock.patch.object(budget, "close", side_effect=close_budget), \
-             mock.patch.object(root_stage, "run", side_effect=stage), \
-             mock.patch.object(kernel, "emit", side_effect=emit):
-            try:
-                returned = worker.component({"mode": "component", "scope": "inert/component", "deadline": 3700.0})
-            except BaseException as error:
-                failure = error
-        return SimpleNamespace(returned=returned, failure=failure, first=first, events=events, frames=frames, budget=budget)
-
-    def test_worker_actual_composition_closes_sampler_and_budget_before_result(self):
-        value = self.worker_case()
-        self.assertIsNone(value.failure)
-        self.assertIsNotNone(value.returned)
-        self.assertEqual(value.events[-2:], ["sampler-close", "budget-close"])
-        self.assertEqual([kind for kind, _ in value.frames], ["component-start"])
-        self.assertTrue(value.returned["component_completed"])
-        self.assertEqual(value.returned["component"]["counters"], value.returned["counters"]["counters"])
-        self.assertTrue(value.budget.closed)
-
-    def test_worker_attempts_all_closes_and_preserves_original_failure_when_reporting_fails(self):
-        for case in (
-            {"stage_failure": True}, {"stage_failure": True, "sampler_failure": True},
-            {"stage_failure": True, "sampler_failure": True, "budget_failure": True, "publication_failure": True},
-            {"sampler_failure": True}, {"budget_failure": True},
+    def test_constructor_enter_foreign_repeated_partial_and_serialization_failures_never_complete(self):
+        for fault in (
+            "constructor-before", "constructor-after", "enter-before", "enter-after",
+            "foreign-session-budget", "foreign-loader", "foreign-loader-budget", "runtime",
+            "no-session", "second-session", "already-replaced", "partial", "serialization", "serialization-type",
         ):
-            with self.subTest(case=case):
-                value = self.worker_case(**case)
-                self.assertIsNone(value.returned)
+            with self.subTest(fault=fault):
+                value = self.composition(fault)
+                self.assertIsNone(value.result)
+                self.assertIsNotNone(value.failure)
+                self.assertLessEqual(value.events.count("constructor"), 1)
+                self.assertLessEqual(len(value.calls), 1)
+                if fault != "already-replaced":
+                    self.assertIs(value.api.module.ProbeSession, value.api.session)
+                if fault.startswith("constructor-"):
+                    self.assertEqual(value.measurements[0].states["session_constructed"], 0)
+                    self.assertIsNone(value.measurements[0].cleanup["session_base_removed"])
+                if fault.startswith("enter-"):
+                    self.assertIn("session-retire", value.events)
+                    self.assertIn("session-remove", value.events)
+
+    def test_first_source_teardown_collectors_and_formatter_combinations_preserve_all_attempts(self):
+        for source, teardown, cleanup, counters, formatter in itertools.product((False, True), repeat=5):
+            faults = [name for name, enabled in (
+                ("source", source), ("teardown-before", teardown), ("cleanup-observation", cleanup),
+                ("counter-observation", counters), ("formatter", formatter),
+            ) if enabled]
+            with self.subTest(faults=faults):
+                value = self.composition(*faults)
+                for event in ("budget-close", "session-retire", "session-remove", "restore",
+                              "withdraw-report", "withdraw-serialization-reference"):
+                    self.assertIn(event, value.events)
+                self.assertIs(value.api.module.ProbeSession, value.api.session)
+                measurement = value.measurements[0]
+                self.assertIsNone(measurement.raw_report)
+                self.assertIsNone(measurement.raw_serialization)
+                expected = (
+                    "source" if source else "teardown" if teardown else
+                    "cleanup-observation" if cleanup else "counter-observation" if counters else None
+                )
+                if expected is None:
+                    self.assertIsNone(value.failure)
+                    self.assertTrue(value.result["states"]["completed"])
+                else:
+                    self.assertIs(value.failure, value.errors[expected])
+                    self.assertIsNone(value.result)
+                    self.assertFalse(measurement.states["completed"])
+                    if cleanup:
+                        self.assertIsNone(measurement.cleanup)
+                    if source and teardown:
+                        self.assertEqual(policy.source_cleanup_count(value.failure), 1)
+                    if formatter and measurement.secondary:
+                        self.assertTrue(all(row["error"]["reason"] == "secondary-format-failed"
+                                            for row in measurement.secondary))
+
+    def test_independent_reference_faults_before_and_after_still_withdraw_every_other_reference(self):
+        for operation, when, source, collector in itertools.product(
+            ("restore", "report", "serialization-reference"), ("before", "after"), (False, True), (False, True),
+        ):
+            faults = [operation + "-" + when]
+            if source:
+                faults.append("source")
+            if collector:
+                faults.append("cleanup-observation")
+            with self.subTest(faults=faults):
+                value = self.composition(*faults)
+                expected = "source" if source else "cleanup-observation" if collector else "reference"
+                self.assertIs(value.failure, value.errors[expected])
+                self.assertIsNone(value.result)
+                for event in ("restore", "withdraw-report", "withdraw-serialization-reference"):
+                    self.assertEqual(value.events.count(event), 1)
+                measurement = value.measurements[0]
+                if not collector:
+                    field = {"restore": "constructor_restored", "report": "report_released",
+                             "serialization-reference": "serialization_released"}[operation]
+                    self.assertIsNone(measurement.cleanup[field])
+                if operation != "report" or when == "after":
+                    self.assertIsNone(measurement.raw_report)
+                if operation != "serialization-reference" or when == "after":
+                    self.assertIsNone(measurement.raw_serialization)
+                if operation != "restore" or when == "after":
+                    self.assertIs(value.api.module.ProbeSession, value.api.session)
+        for fault in ("install-before", "install-after"):
+            value = self.composition(fault)
+            self.assertIs(value.failure, value.errors["reference"])
+            self.assertFalse(value.calls)
+            self.assertIs(value.api.module.ProbeSession, value.api.session)
+            self.assertIn("withdraw-report", value.events)
+            self.assertIn("withdraw-serialization-reference", value.events)
+        value = self.composition("restore-before", "report-before", "serialization-reference-before", "source")
+        self.assertIs(value.failure, value.errors["source"])
+        self.assertEqual(len(value.measurements[0].secondary), 3)
+
+    def test_worker_runs_the_actual_adapter_and_closes_both_owners_before_publishing_result(self):
+        value = self.composition(use_worker=True)
+        self.assertIsNone(value.failure)
+        self.assertIsNotNone(value.result)
+        policy.validate_report_worker(value.result, self.binding(), 3700.0)
+        self.assertEqual(value.events[-2:], ["sampler-close", "budget-close"])
+        self.assertEqual([kind for kind, data in value.frames], ["report-start"])
+        self.assertEqual(value.frames[0][1]["check_attempts"], 0)
+        self.assertEqual(value.result["report"]["states"]["check_attempts"], 1)
+        self.assertEqual(value.result["counters"]["counters"], value.result["report"]["counters"])
+
+    def test_constructor_failures_with_collectors_teardown_and_reference_faults_keep_uncertainty(self):
+        for constructor, collector, reference, teardown in itertools.product(
+            ("constructor-before", "constructor-after"),
+            ((), ("cleanup-observation",), ("counter-observation",),
+             ("cleanup-observation", "counter-observation")),
+            ((), ("restore-before",), ("restore-after",), ("report-before",), ("report-after",),
+             ("serialization-reference-before",), ("serialization-reference-after",)),
+            ((), ("teardown-before",), ("teardown-after",)),
+        ):
+            faults = (constructor, *collector, *reference, *teardown)
+            with self.subTest(faults=faults):
+                value = self.composition(*faults, use_worker=True)
+                self.assertIsNone(value.result)
+                self.assertIs(value.measurements[0].first, value.errors["constructor"])
+                self.assertNotIn("enter", value.events)
+                self.assertNotIn("exit", value.events)
+                for event in ("restore", "withdraw-report", "withdraw-serialization-reference",
+                              "sampler-close", "budget-close"):
+                    self.assertIn(event, value.events)
+                record, = [data for kind, data in value.frames if kind == "error"]
+                self.assertEqual(record["error"]["chain"][0]["errno"], errno.EIO)
+                self.assertEqual(record["states"]["check_attempts"], 1)
+                self.assertEqual(record["states"]["session_attempts"], 1)
+                self.assertEqual(record["states"]["session_constructed"], 0)
+                self.assertEqual(record["states"]["check_returned"], 0)
+                self.assertIsNone(record["summary"])
+                self.assertIsNone(record["serialized_bytes"])
+                if record["cleanup"] is not None:
+                    self.assertIsNone(record["cleanup"]["session_base_removed"])
+                    self.assertIsNone(record["cleanup"]["retained_owners"])
+
+    def test_failed_or_unknown_inner_close_is_retained_even_if_outer_death_was_observed(self):
+        for faults in (
+            ("teardown-after",), ("source", "teardown-after"), ("budget-close-after",), ("sampler-close",),
+            ("cleanup-observation",), ("counter-observation",), ("restore-after",), ("report-after",),
+            ("serialization-reference-after",), ("constructor-before",),
+        ):
+            with self.subTest(faults=faults):
+                value = self.composition(*faults, use_worker=True)
+                record, = [data for kind, data in value.frames if kind == "error"]
+                phase = {**self.report_phase(), "worker": None, "first_cause": {"type": "worker-error", "error": record}}
+                self.assertTrue(supervisor.report_retention(phase))
+                with self.assertRaises(policy.GuardError):
+                    supervisor.validate_report_phase(phase, self.binding())
+        value = self.composition("source", use_worker=True)
+        record, = [data for kind, data in value.frames if kind == "error"]
+        phase = {**self.report_phase(), "worker": None, "first_cause": {"type": "worker-error", "error": record}}
+        self.assertFalse(supervisor.report_retention(phase))
+        with self.assertRaises(policy.GuardError):
+            supervisor.validate_report_phase(phase, self.binding())
+
+    def test_worker_all_closes_counter_errors_publication_errors_preserve_the_source_primary(self):
+        for source, sampler, close, publication in itertools.product((False, True), repeat=4):
+            faults = [name for name, enabled in (
+                ("source", source), ("sampler-close", sampler), ("budget-close-before", close),
+                ("publication", publication),
+            ) if enabled]
+            with self.subTest(faults=faults):
+                value = self.composition(*faults, use_worker=True)
                 self.assertIn("sampler-close", value.events)
                 self.assertEqual(value.events[-1], "budget-close")
-                self.assertTrue(value.budget.closed)
-                if case.get("stage_failure") and (case.get("sampler_failure") or case.get("publication_failure")):
-                    self.assertIs(value.failure, value.first)
-                for kind, record in value.frames:
-                    if kind in ("error", "cleanup-error"):
-                        self.assertNotIn(b"private", policy.encoded(record))
-                        self.assertNotIn(b"frames", policy.encoded(record))
+                failed = source or sampler or close
+                if not failed:
+                    self.assertIsNone(value.failure)
+                    self.assertIsNotNone(value.result)
+                    continue
+                self.assertIsNone(value.result)
+                expected = "source" if source else "sampler-close" if sampler else "budget-close"
+                records = [data for kind, data in value.frames if kind == "error"]
+                self.assertEqual(len(records), 1)
+                record = records[0]
+                policy.validate_report_error(record, self.binding())
+                self.assertFalse(record["states"]["completed"])
+                self.assertNotIn(b"private", policy.encoded(record))
+                if publication:
+                    self.assertIs(value.failure, value.errors[expected])
+                    self.assertEqual(value.failure.report_publication_error["chain"][0]["errno"], errno.EPIPE)
+                else:
+                    self.assertIsNone(value.failure)
+        for faults in (
+            ("source", "cleanup-observation", "counter-observation", "formatter"),
+            ("constructor-after",), ("source-before-constructor",), ("budget-close-after",),
+            ("source", "teardown-after", "sampler-close", "budget-close-after"),
+        ):
+            value = self.composition(*faults, use_worker=True)
+            self.assertIsNone(value.result)
+            record, = [data for kind, data in value.frames if kind == "error"]
+            policy.validate_report_error(record, self.binding())
+            if "counter-observation" in faults:
+                self.assertIsNone(record["counters"])
+            if "cleanup-observation" in faults:
+                self.assertIsNone(record["cleanup"])
+            if "teardown-after" in faults:
+                self.assertEqual(record["source_cleanup_failures"], 1)
+            self.assertNotIn(b"private", policy.encoded(record))
 
-    def test_sampler_failures_are_explicit_and_final_counters_survive_closed_session(self):
-        sampler = worker.Sampler("inert")
+    def test_collector_facts_are_closed_and_first_error_survives_later_attribution_faults(self):
+        sampler = worker.Sampler("12345/report")
+        sampler.budget = self.budget()
+        first = RuntimeError("private primary")
+        observer = SimpleNamespace(
+            capture=mock.Mock(side_effect=OSError("private native collector")),
+            budget_admission=mock.Mock(return_value={"status": "observed", "raw": "private"}),
+        )
+        record = worker.report_error_record(first, None, sampler, observer, self.binding(), [])
+        policy.validate_report_error(record, self.binding())
+        self.assertEqual(record["error"]["chain"][0]["type"], "RuntimeError")
+        self.assertEqual(record["observation_failure"], observation_failure.unavailable("collector-failed"))
+        self.assertEqual(record["budget_admission"], observation_failure.unavailable("collector-failed"))
+        self.assertEqual(len(record["secondary"]), 2)
+        self.assertNotIn(b"private", policy.encoded(record))
+
+    def test_close_reference_and_publication_attachment_failures_do_not_replace_first_or_skip_close(self):
+        for prior, sampler_get, budget_get in itertools.product((False, True), repeat=3):
+            events, secondary = [], []
+            first = RuntimeError("private first")
+            errors = {"sampler": OSError(errno.EIO, "private sampler reference"),
+                      "budget": OSError(errno.EBADF, "private budget reference")}
+            class Owner:
+                def __init__(self, name, fail):
+                    self.name, self.fail = name, fail
+                @property
+                def close(self):
+                    events.append("get-" + self.name)
+                    if self.fail:
+                        raise errors[self.name]
+                    return lambda: events.append("close-" + self.name)
+            result, stage = worker.finish_report(
+                Owner("sampler", sampler_get), Owner("budget", budget_get), first if prior else None, secondary,
+            )
+            self.assertIn("get-sampler", events)
+            self.assertIn("get-budget", events)
+            if not budget_get:
+                self.assertIn("close-budget", events)
+            expected = first if prior else errors["sampler"] if sampler_get else errors["budget"] if budget_get else None
+            self.assertIs(result, expected)
+        value = self.composition("source", "publication", "publication-attachment", use_worker=True)
+        self.assertIs(value.failure, value.errors["source"])
+        self.assertIn("sampler-close", value.events)
+        self.assertEqual(value.events[-1], "budget-close")
+
+    def test_sampler_failure_is_not_a_successful_session_close(self):
+        sampler = worker.Sampler("12345/report")
         sampler.budget = self.budget()
         sampler.session = self.session(sampler.budget)
-        sampler.budget.charge("control", 10)
-        first = OSError("inert sampler output")
+        first = OSError("private sampler")
         with mock.patch.object(sampler.stop, "wait", return_value=False), \
              mock.patch.object(kernel, "emit", side_effect=first):
             sampler.run()
@@ -502,26 +600,9 @@ class RootStageControls(Inert):
         with mock.patch.object(sampler.thread, "join"), mock.patch.object(sampler.thread, "is_alive", return_value=False):
             with self.assertRaises(OSError) as caught:
                 sampler.close()
-            self.assertIs(caught.exception, first)
+        self.assertIs(caught.exception, first)
         sampler.budget.close()
-        value = sampler.snapshot()
-        self.assertEqual(value["counters"]["budget"]["categories"]["control"]["charged"], 10)
-        self.assertEqual(value["counters"]["session"]["memory_peak"], sampler.session.memory_peak)
-        self.assertTrue(value["counters"]["budget"]["closed"])
-
-    def test_worker_exports_unavailable_cleanup_and_bounded_secondary_without_private_data(self):
-        value = self.worker_case(stage_failure=True, observation_failure=True)
-        error, = [data for kind, data in value.frames if kind == "error"]
-        self.assertEqual(error["chain"][0]["type"], "RuntimeError")
-        self.assertIsNone(error["component_cleanup"])
-        self.assertEqual(error["component_cleanup_observation_error"]["chain"][0],
-                         {"type": "OSError", "errno": errno.EIO})
-        self.assertNotIn(b"private", policy.encoded(error))
-        self.assertIn("sampler-close", value.events)
-        self.assertEqual(value.events[-1], "budget-close")
-        phase = {**self.component_phase(), "worker": None,
-                 "first_cause": {"type": "worker-error", "error": error}}
-        self.assertTrue(supervisor.component_retention(phase))
+        self.assertTrue(sampler.snapshot()["counters"]["budget"]["closed"])
 
     def supervisor_case(self, fault=None):
         arguments = SimpleNamespace(
@@ -540,7 +621,7 @@ class RootStageControls(Inert):
             environment="github-hosted", operating_system="Linux", event_name="push",
         )
         scope.update(
-            component_launch_requested=False, component_attempted=False, component_completed=False,
+            report_launch_requested=False, report_attempted=False, report_returned=False, report_completed=False,
             planned_at_monotonic=100.0,
         )
         stored, modes, cleanup, volumes = {}, [], [], []
@@ -550,24 +631,27 @@ class RootStageControls(Inert):
             "cgroup_ancestors": [{"memory_max": None, "memory_current": 0, "pids_max": None, "pids_current": 0}],
         }
         output = SimpleNamespace(root=Path(arguments.output), write=lambda name, value: stored.__setitem__(name, copy.deepcopy(value)))
-
+        binding = self.binding()
         class Owner:
             def __init__(self, args, actual_scope, artifacts):
                 self.scope = actual_scope
             def prepare(self):
                 if fault == "prepare":
-                    raise OSError(errno.EIO, "actual-owned-prepare")
+                    raise OSError(errno.EIO, "private owned prepare")
+                self.scope.update(changed_paths=binding["changed_paths"], tracked_paths=binding["tracked_paths"])
             def volume(self, name, size):
                 volumes.append((name, size))
                 if name == "graph-volume" and fault == "volume":
-                    raise OSError(errno.EIO, "actual-owned-volume")
+                    raise OSError(errno.EIO, "private owned volume")
                 return SimpleNamespace(close=lambda: cleanup.append("probe-volume-close"))
             def cleanup(self):
                 cleanup.append("owner-cleanup")
                 if fault == "cleanup":
-                    raise OSError(errno.EIO, "actual-owned-cleanup")
+                    raise OSError(errno.EIO, "private owned cleanup")
             def source_status(self, label):
                 cleanup.append("source-" + label)
+                if fault == "source-after":
+                    raise OSError(errno.EIO, "private changed source")
 
         def proc_proof():
             return {
@@ -581,20 +665,21 @@ class RootStageControls(Inert):
             }
         def phase(owner, mode, volume, *, memory, pids, seconds):
             modes.append((mode, memory, pids, seconds))
-            if mode == "component":
+            if mode == "report":
                 if fault == "prereturn":
-                    raise OSError(errno.EIO, "actual-component-prereturn")
-                value = self.component_phase()
+                    raise OSError(errno.EIO, "private report prereturn")
+                value = self.report_phase()
                 if fault == "pre-kill":
                     value["empty_before_outer_cleanup"] = False
-                if fault in ("component", "retained"):
+                if fault in ("report", "retained"):
                     value["first_cause"] = {"type": "worker-error", "error": {
-                        "component_cleanup": copy.deepcopy(value["worker"]["component"]["cleanup"]),
-                        "reason": "actual-component",
+                        "cleanup": copy.deepcopy(value["worker"]["report"]["cleanup"]),
+                        "source_cleanup_failures": 0, "stage": "check", "secondary": [],
+                        "counters": copy.deepcopy(value["worker"]["report"]["counters"]),
                     }}
                     if fault == "retained":
-                        value["worker"]["component"]["cleanup"]["retained_owners"] = 1
-                owner.scope["component_attempted"] = True
+                        value["worker"]["report"]["cleanup"]["retained_owners"] = 1
+                owner.scope["report_attempted"] = owner.scope["report_returned"] = True
                 return value
             value = {
                 "mode": mode, "identity": {"uid": 999, "gid": 998, "cgroup": "/owned", "namespaces": {"user": 1}},
@@ -618,8 +703,8 @@ class RootStageControls(Inert):
                     first_cause={"type": "deadline" if mode == "deadline" else "lifetime-eof"},
                     escaped={"pid": 9}, held_descendants_terminal=2, caller_lifetime_control_exercised=True,
                 )
-            if mode == "pids" and fault == "preflight":
-                value.update(first_cause={"type": "worker-error", "reason": "actual-preflight"}, returncode=1)
+            if fault == "preflight-" + mode:
+                value["supervisor_error"] = {"type": "inert-failure"}
             return value
 
         local_sys = SimpleNamespace(flags=SimpleNamespace(isolated=True, no_site=True), dont_write_bytecode=True)
@@ -637,40 +722,38 @@ class RootStageControls(Inert):
             code = supervisor.main()
         return SimpleNamespace(code=code, stored=stored, modes=modes, cleanup=cleanup, volumes=volumes)
 
-    def test_supervisor_composes_seven_fresh_controls_then_one_component_only(self):
+    def test_supervisor_composes_all_seven_fresh_controls_before_the_only_report(self):
         value = self.supervisor_case()
         self.assertEqual(value.code, 0)
         self.assertEqual([row[0] for row in value.modes],
-                         ["identity", "memory", "pids", "disk", "output", "deadline", "lifetime", "component"])
+                         ["identity", "memory", "pids", "disk", "output", "deadline", "lifetime", "report"])
         self.assertEqual(value.modes[1][1], 64 * policy.MIB)
         self.assertEqual(value.modes[2][2], 8)
         self.assertEqual(value.modes[5][3], 2)
         self.assertEqual(value.modes[-1][3], 3600)
         self.assertEqual(value.cleanup, ["probe-volume-close", "owner-cleanup", "source-after"])
-        self.assertEqual(value.stored["result.json"]["status"], "completed-component-diagnostic-only")
+        self.assertEqual(value.stored["result.json"]["status"], "completed-report-diagnostic-only")
         self.assertFalse(value.stored["result.json"]["production_acceptance"])
-        self.assertTrue(value.stored["scope.json"]["component_completed"])
+        self.assertTrue(value.stored["scope.json"]["report_completed"])
+        for mode in ("identity", "memory", "pids", "disk", "output", "deadline", "lifetime"):
+            value = self.supervisor_case("preflight-" + mode)
+            self.assertEqual(value.code, 1)
+            self.assertNotIn("report", [row[0] for row in value.modes])
+            self.assertEqual(value.modes[-1][0], mode)
 
-    def test_supervisor_setup_and_current_failure_never_borrow_a_qualified_negative(self):
-        for fault, expected in (("prepare", "actual-owned-prepare"), ("volume", "actual-owned-volume"),
-                                ("prereturn", "actual-component-prereturn")):
+    def test_supervisor_first_failures_unknown_inner_ownership_and_pre_kill_emptiness_never_complete(self):
+        for fault in ("prepare", "volume", "prereturn", "report", "retained", "cleanup", "pre-kill", "source-after"):
             with self.subTest(fault=fault):
                 value = self.supervisor_case(fault)
                 self.assertEqual(value.code, 1)
-                first = value.stored["result.json"]["first_error"]
-                self.assertEqual(first["chain"][0]["message"], str(OSError(errno.EIO, expected)))
-                self.assertNotEqual(first.get("type"), "lifetime-eof")
-        for fault in ("preflight", "component", "retained", "cleanup", "pre-kill"):
-            with self.subTest(fault=fault):
-                value = self.supervisor_case(fault)
-                self.assertEqual(value.code, 1)
-                if fault == "preflight":
-                    self.assertEqual([row[0] for row in value.modes], ["identity", "memory", "pids"])
-                    self.assertEqual(value.stored["result.json"]["first_error"]["reason"], "actual-preflight")
-                elif fault in ("component", "retained"):
-                    self.assertEqual(value.stored["result.json"]["first_error"]["error"]["reason"], "actual-component")
-                if fault in ("retained", "pre-kill"):
+                self.assertEqual(value.stored["result.json"]["status"], "failed")
+                self.assertNotIn(b"private", policy.encoded(value.stored))
+                if fault in ("prereturn", "retained", "pre-kill"):
                     self.assertNotIn("owner-cleanup", value.cleanup)
+                self.assertEqual(value.cleanup[-1], "source-after")
+                if fault == "prereturn":
+                    self.assertIsNone(value.stored["scope.json"]["report_attempted"])
+                    self.assertIsNone(value.stored["scope.json"]["report_returned"])
 
 
 if __name__ == "__main__":

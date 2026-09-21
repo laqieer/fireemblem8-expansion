@@ -1,8 +1,7 @@
-"""One selected component method with its original assertions and shared budget."""
+"""Observe one original public report, without replacing any authority method."""
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,300 +12,181 @@ else:
 
 
 def candidate_api():
+    from scripts.validation_ownership import graph_report, reporter
     from scripts.validation_ownership.authority import AuthorityLoader, GitTreeEntries
     from scripts.validation_ownership.budget import ProbeBudget
-    from scripts.validation_ownership.graph_commands import MakeCommands, ROOT_RUNTIME_FILES
     from scripts.validation_ownership.make_probe import ProbeSession
-    from scripts.validation_ownership.tests import test_toolchain_runtime as selected
 
-    case = selected.ModernToolchainTests
     return SimpleNamespace(
-        case=case, method=getattr(case, policy.COMPONENT_METHOD), root=selected.foundation.ROOT,
-        loader=AuthorityLoader, entries=GitTreeEntries, session=ProbeSession, budget_type=ProbeBudget,
-        runtime_files=ROOT_RUNTIME_FILES, commands=MakeCommands,
+        module=graph_report, check=graph_report.check, serializer=reporter.normalized_json,
+        loader=AuthorityLoader, entries=GitTreeEntries, session=ProbeSession,
+        budget_type=ProbeBudget, runtime_files=graph_report.ROOT_RUNTIME_FILES,
     )
 
 
-def cleanup_state(session, budget, fixture, *, setup_completed):
+def cleanup_state(session, budget):
     return {
-        "budget_closed": budget.closed, "children": len(budget.children),
-        "waiters": len(budget.producer_waiters),
-        "retained_owners": None if session is None else len([
-            owner for owner in session._file_owners.values() if owner.retained
-        ]),
+        "budget_closed": budget.closed, "session_started": budget.session_started,
+        "children": len(budget.children), "waiters": len(budget.producer_waiters),
+        "retained_owners": None if session is None else sum(
+            owner.retained for owner in session._file_owners.values()
+        ),
         "session_base_removed": None if session is None else session.base is None,
-        "fixture_removed": None if not setup_completed else not fixture.directory.exists(),
+        "active_views": None if session is None else len(session._views),
+        "constructor_restored": None, "report_released": None, "serialization_released": None,
     }
 
 
-def summarize(observation, results, attempts, returned):
-    receipts = observation.toolchain_receipts
-    if type(receipts) not in (tuple, list) or len(receipts) != 2 or len(results) != 2 or any(
-        type(data) is not bytes or len(data) > policy.ORIGINAL_LIMITS["file_bytes"] for data in receipts
-    ):
-        raise policy.GuardError("component lacks its two bounded returned recipe receipts")
-    records = [policy.parse_json(data) for data in receipts]
-    stages = [record["stages"] for record in records]
-    if any(type(items) is not list or len(items) != 5 for items in stages):
-        raise policy.GuardError("component checker stage extent changed")
-    proofs = [items[-1]["intermediate"] for items in stages]
-    commands = [
-        row for row in observation.semantics["dynamic_commands"]
-        if row["command"].get("toolchain_check") is True
-    ]
-    dispatches = [
-        row for row in observation.semantics["native_dispatches"]
-        if row["job"]["target"] == "expansion-modern-toolchain-check"
-    ]
-    if len(commands) != 1 or len(dispatches) != 2:
-        raise policy.GuardError("component has incomplete native/semantic checker observations")
-    references = [
-        value for row in commands[0]["command"]["runtime_probes"] if "argv" in row
-        for value in row["argv"] if type(value) is dict
-    ]
-    expected = {"kind": "toolchain-intermediate-ref", "version": 1, "role": "stage4-assembly"}
-    if references != [expected, expected] or [
-        record["native_dispatch_sequence"] for record in records
-    ] != [row["sequence"] for row in dispatches]:
-        raise policy.GuardError("component receipt sequence or typed reference differs from native evidence")
-    bindings = [
-        (items[-1]["launch_scope"], items[-1]["launch_binding"], items[-1]["workspace"])
-        for items in stages
-    ]
-    contents = [(proof["writer"]["completed"]["extent"], proof["writer"]["completed"]["sha256"])
-                for proof in proofs]
-    result = {
-        "make_attempts": attempts, "make_returned": returned, "checker_occurrences": len(results),
-        "recipe_receipts": len(receipts),
-        "dispatch_sequences": [record["native_dispatch_sequence"] for record in records],
-        "producer_slots": [record["producer_slot"] for record in records],
-        "stage_names": [[stage["stage"] for stage in items] for items in stages],
-        "intermediate_versions": [proof["version"] for proof in proofs],
-        "intermediate_complete": [proof["complete"] for proof in proofs],
-        "retirement_absent": [proof["retirement"]["path_absent"] for proof in proofs],
-        "retired_nlinks": [proof["retirement"]["after_identity"][6] for proof in proofs],
-        "assembly_extents": [content[0] for content in contents],
-        "content_equal": contents[0] == contents[1], "bindings_distinct": bindings[0] != bindings[1],
-        "raw_receipts_distinct": receipts[0] != receipts[1],
-        "semantic_records": len(commands), "typed_references": len(references),
-    }
-    policy.validate_component_observation(result)
-    return result
-
-
-class Recorder:
-    def __init__(self, api, budget, sampler):
-        self.api, self.budget, self.sampler = api, budget, sampler
-        self.session = None
+class ReportMeasurement:
+    def __init__(self, root, budget, config, sampler, changes):
+        self.root, self.budget, self.config, self.sampler = root, budget, config, sampler
+        self.changes = changes
+        self.binding = policy.validate_report_binding(config["report_binding"])
+        self.states = {**dict.fromkeys(policy.REPORT_STATES, 0), "completed": False}
+        self.api = self.session = None
         self.session_valid = False
-        self.session_attempts = self.capture_attempts = self.make_attempts = self.make_returned = 0
-        self.observation = self.summary = None
-        self.method_started = self.method_returned = False
+        self.raw_report = self.raw_serialization = None
+        self.summary = self.counters = self.cleanup = self.serialized_bytes = None
+        self.first = None
+        self.first_stage = None
+        self.secondary = []
 
-    def session_for(self, case):
-        if self.session_attempts or not self.method_started:
-            raise policy.GuardError("component permits one method-owned session")
-        self.session_attempts += 1
-        fixture = case.fixture
-        entries = self.api.entries(fixture.entries, budget=self.budget)
-        loader = self.api.loader(fixture.root, entries, budget=self.budget)
-        self.session = self.api.session(
-            loader, scratch_root=fixture.scratch, budget=self.budget, runtime_files=self.api.runtime_files,
-        )
+    def fail(self, stage, error):
+        if stage not in policy.REPORT_ERROR_STAGES:
+            raise policy.GuardError("unknown report failure stage")
+        if self.first is None:
+            self.first = error
+            self.first_stage = stage
+        elif error is not self.first:
+            self.secondary.append({"stage": stage, "error": policy.component_secondary_error(error)})
+        self.states["completed"] = False
+
+    def construct(self, loader, *, scratch_root, budget, runtime_files):
+        if self.states["session_attempts"] or self.states["check_attempts"] != 1:
+            raise policy.GuardError("report attempted a repeated or unowned session")
         if (
-            type(self.session) is not self.api.session or self.session.budget is not self.budget
-            or self.session.loader is not loader or loader.budget is not self.budget
-            or loader.entries.budget is not self.budget
+            budget is not self.budget or type(loader) is not self.api.loader
+            or loader.budget is not budget or type(loader.entries) is not self.api.entries
+            or loader.entries.budget is not budget or loader.root != self.root
+            or loader.revision != policy.GRAPH or loader.entries.capture != (self.root, policy.GRAPH)
+            or scratch_root != self.root / "build/test-artifacts/validation-ownership"
+            or runtime_files is not self.api.runtime_files
         ):
-            raise policy.GuardError("component session/loader/entries lost the exact issued budget")
+            raise policy.GuardError("report changed the original CURRENT loader, budget or runtime inventory")
+        self.states["session_attempts"] += 1
+        self.session = self.api.session(
+            loader, scratch_root=scratch_root, budget=budget, runtime_files=runtime_files,
+        )
+        self.states["session_constructed"] += 1
+        if (
+            type(self.session) is not self.api.session or self.session.loader is not loader
+            or self.session.budget is not budget or self.session.runtime_paths != runtime_files
+        ):
+            raise policy.GuardError("original report constructor returned a foreign session")
         self.session_valid = True
         self.sampler.session = self.session
         return self.session
 
-    @contextmanager
-    def watch_make(self, session):
-        if session is not self.session or session.budget is not self.budget or "make" in vars(session):
-            raise policy.GuardError("component cannot observe a foreign or already overridden session")
-        original = session.make
-
-        def make(target, **keywords):
-            if (
-                self.make_attempts or target != policy.COMPONENT_TARGET
-                or keywords.keys() != {"commands"} or type(keywords["commands"]) is not self.api.commands
-                or keywords["commands"].session is not session
-            ):
-                raise policy.GuardError("component permits only its original single Make invocation")
-            self.make_attempts += 1
-            value = original(target, **keywords)
-            self.make_returned += 1
-            self.observation = value
-            return value
-
-        session.make = make
+    def collect(self):
         try:
-            yield
+            self.cleanup = cleanup_state(self.session if self.session_valid else None, self.budget)
+            policy.validate_report_cleanup(self.cleanup)
+        except BaseException as error:
+            self.cleanup = None
+            self.fail("cleanup-observation", error)
+        try:
+            self.counters = policy.counter_snapshot(
+                self.budget, self.session if self.session_valid else None,
+            )
+        except BaseException as error:
+            self.counters = None
+            self.fail("counter-observation", error)
+
+    def withdraw(self, original):
+        # Each withdrawal is independent; even an after-effect exception leaves
+        # that observation unavailable and cannot erase the first failure.
+        for stage, field, action in (
+            ("constructor-reference", "constructor_restored",
+             lambda: setattr(self.api.module, "ProbeSession", original)),
+            ("report-reference", "report_released", lambda: setattr(self, "raw_report", None)),
+            ("serialization-reference", "serialization_released",
+             lambda: setattr(self, "raw_serialization", None)),
+        ):
+            try:
+                action()
+                if field == "constructor_restored" and self.api.module.ProbeSession is not original:
+                    raise policy.GuardError("report constructor reference did not restore")
+                if self.cleanup is not None:
+                    self.cleanup[field] = True
+            except BaseException as error:
+                if self.cleanup is not None:
+                    self.cleanup[field] = None
+                self.fail(stage, error)
+
+    def run(self):
+        if __package__:
+            from .worker import require_contained
+        else:
+            from worker import require_contained
+        require_contained(self.config)
+        if (
+            self.root != Path("/repo") or self.config["mode"] != "report"
+            or self.budget.deadline != self.config["deadline"] or self.budget.closed
+            or self.budget.session_started or self.states["check_attempts"]
+            or policy.changed_path_binding(self.changes) != self.binding["changed_paths"]
+        ):
+            raise policy.GuardError("report lacks its one unchanged budget, clock and immutable path set")
+        self.api = candidate_api()
+        original = self.api.module.ProbeSession
+        if (
+            original is not self.api.session or self.api.module.check is not self.api.check
+            or not isinstance(self.budget, self.api.budget_type)
+        ):
+            raise policy.GuardError("report source API or original constructor is already replaced")
+        stage = "check"
+        try:
+            self.api.module.ProbeSession = self.construct
+            self.sampler.phase = "public-report"
+            self.states["check_attempts"] += 1
+            self.raw_report = self.api.check(
+                self.root, budget=self.budget, revision=policy.GRAPH, base_revision=policy.BASE,
+                changed_paths=tuple(self.changes), lifecycle=True,
+            )
+            self.states["check_returned"] += 1
+            stage = "serialization"
+            self.sampler.phase = "report-serialization"
+            self.states["serialization_attempts"] += 1
+            self.raw_serialization = self.api.serializer(self.raw_report)
+            self.states["serialization_returned"] += 1
+            if type(self.raw_serialization) is not bytes or not self.raw_serialization:
+                raise policy.GuardError("source serializer did not return its real report bytes")
+            self.serialized_bytes = len(self.raw_serialization)
+        except BaseException as error:
+            self.fail(stage, error)
         finally:
-            del session.make
-
-    def capture_for(self, case, session):
-        if self.capture_attempts or not self.method_started or session is not self.session:
-            raise policy.GuardError("component capture is repeated or not method-owned")
-        self.capture_attempts += 1
-        with self.watch_make(session):
-            returned = self.api.case.capture(case, session)
-        if (
-            type(returned) is not tuple or len(returned) != 2 or returned[0] is not self.observation
-            or type(case.results) is not tuple or len(case.results) != 2
-            or returned[1] is not case.results[0]
-        ):
-            raise policy.GuardError("component capture differs from its actual source return")
-        self.summary = summarize(self.observation, case.results, self.make_attempts, self.make_returned)
-        return returned
-
-    def case(self):
-        recorder = self
-
-        class ContainedComponent(self.api.case):
-            def session(self):
-                return recorder.session_for(self)
-
-            def capture(self, session):
-                return recorder.capture_for(self, session)
-
-        if getattr(ContainedComponent, policy.COMPONENT_METHOD) is not self.api.method:
-            raise policy.GuardError("component replaced the selected original test method")
-        return ContainedComponent(policy.COMPONENT_METHOD)
-
-    def invoke(self, case):
-        if self.method_started or getattr(type(case), policy.COMPONENT_METHOD) is not self.api.method:
-            raise policy.GuardError("component method is repeated or foreign")
-        self.method_started = True
-        self.api.method(case)
-        self.method_returned = True
-        if (
-            self.session_attempts != 1 or self.capture_attempts != 1
-            or self.make_attempts != 1 or self.make_returned != 1 or self.summary is None
-        ):
-            raise policy.GuardError("source method returned without the complete original component")
-
-
-def fixture_state(case):
-    fixture = case.fixture
-    source = fixture.root / "src/query.c"
-    parents = fixture.root / "build/native"
-    query = source.read_bytes() == b'#include "global.h"\n'
-    count = sum(name.startswith("include/") and name.endswith(".h") for name in fixture.entries)
-    absent = not parents.exists() and not parents.is_symlink()
-    makefile = (fixture.root / "Makefile").read_text()
-    empty = makefile.endswith("\nexpansion-modern-all: ;\n")
-    no_text = "TEXT_PROCESS" not in makefile and "src/msg_data.c" not in fixture.entries
-    if not query or not count or not absent or not empty or not no_text:
-        raise policy.GuardError("selected original component fixture changed")
-    return {
-        "preexisting_query": query, "genuine_headers": count, "header_parents_absent": absent,
-        "text_producer": not no_text, "empty_final_target": empty,
-    }
-
-
-def finalize_case(case, recorder, budget, primary, *, setup_completed):
-    state = None
-    first = primary
-    errors = {}
-    try:
+            self.sampler.phase = "report-finalize"
+            try:
+                self.collect()
+                if self.first is None:
+                    try:
+                        self.summary = policy.summarize_report(
+                            self.raw_report, self.changes, self.counters, self.binding,
+                        )
+                    except BaseException as error:
+                        self.fail("validation", error)
+            finally:
+                self.withdraw(original)
+        if self.first is not None:
+            raise self.first
+        self.states["completed"] = True
+        result = {
+            "version": 1, "binding": self.binding, "states": dict(self.states),
+            "summary": self.summary, "serialized_bytes": self.serialized_bytes,
+            "counters": self.counters, "cleanup": self.cleanup,
+        }
         try:
-            session = recorder.session
-            safe = setup_completed and (not recorder.session_attempts or recorder.session_valid) and (
-                session is None and not budget.children and not budget.producer_waiters
-                or session is not None and session.base is None and not budget.children and not budget.producer_waiters
-                and not any(owner.retained for owner in session._file_owners.values())
-            )
-            if safe:
-                case.tearDown()
+            policy.validate_report_result(result, self.binding)
         except BaseException as error:
-            errors["teardown"] = error
-            if first is None:
-                first = error
-        try:
-            state = cleanup_state(
-                recorder.session if recorder.session_valid else None, budget, getattr(case, "fixture", None),
-                setup_completed=setup_completed,
-            )
-        except BaseException as error:
-            errors["observation"] = error
-            if first is None:
-                first = error
-    finally:
-        # Independent withdrawals still run when collection or another
-        # withdrawal fails; no failure authorizes reusing a released reference.
-        try:
-            recorder.observation = None
-        except BaseException as error:
-            errors["observation-reference"] = error
-            state = None
-            if first is None:
-                first = error
-        try:
-            if hasattr(case, "results"):
-                del case.results
-        except BaseException as error:
-            errors["result-reference"] = error
-            state = None
-            if first is None:
-                first = error
-    if first is not None:
-        first.component_cleanup_state = state
-        if "teardown" in errors:
-            first.component_cleanup_error = policy.component_secondary_error(errors["teardown"])
-        if "observation" in errors:
-            first.component_cleanup_observation_error = policy.component_secondary_error(errors["observation"])
-        references = [
-            {"stage": name, "error": policy.component_secondary_error(errors[name])}
-            for name in ("observation-reference", "result-reference") if name in errors
-        ]
-        if references:
-            first.component_reference_errors = references
-        if first is not primary:
-            raise first
-    return state
-
-
-def run(root, budget, config, sampler):
-    if __package__:
-        from .worker import require_contained
-    else:
-        from worker import require_contained
-    require_contained(config)
-    if root != Path("/repo") or config["mode"] != "component" or budget.deadline != config["deadline"] or budget.closed:
-        raise policy.GuardError("component lacks its fixed contained source and original clock")
-    api = candidate_api()
-    if api.root != root or not isinstance(budget, api.budget_type):
-        raise policy.GuardError("component source/budget origin differs from the selected candidate")
-    recorder = Recorder(api, budget, sampler)
-    case = recorder.case()
-    primary = None
-    setup_completed = False
-    fixture = None
-    try:
-        sampler.phase = "component-setup"
-        case.setUp()
-        setup_completed = True
-        fixture = fixture_state(case)
-        sampler.phase = "component-method"
-        recorder.invoke(case)
-        policy.validate_component_counters(policy.counter_snapshot(budget, recorder.session), complete=True)
-    except BaseException as error:
-        primary = error
-        raise
-    finally:
-        sampler.phase = "component-finalize"
-        state = finalize_case(case, recorder, budget, primary, setup_completed=setup_completed)
-    result = {
-        "version": 1, "workload_kind": policy.WORKLOAD_KIND, "fixture_version": policy.FIXTURE_VERSION,
-        "source_revision": policy.GRAPH, "base_revision": policy.BASE, "profile": policy.PROFILE,
-        "method": policy.COMPONENT_CASE + "." + policy.COMPONENT_METHOD, "target": policy.COMPONENT_TARGET,
-        "source_phases": False, "component_attempts": 1, "component_completed": recorder.method_returned,
-        **policy.ABSENT_WORKLOADS, "fixture": fixture, "observation": recorder.summary,
-        "counters": policy.counter_snapshot(budget, recorder.session), "cleanup": state,
-    }
-    policy.validate_component_result(result)
-    return result
+            self.fail("validation", error)
+            raise
+        return result

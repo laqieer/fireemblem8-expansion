@@ -1,4 +1,155 @@
-# Contained toolchain component control-policy measurement 1
+# Contained full public-report preparation 1
+
+**Preparation only; never merge this branch. No native execution, workflow
+launch, retry or production resource-policy decision is allocated here.**
+The frozen scope is
+[5759600529](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5759600529).
+This is one normal child of `d7172b7f6adf5cb43c005ba6cb7dc31142cc812b` on
+`calibration/issue-180-full-report-sizing-1`. The complete earlier normal
+lineage and component/correction inventories remain checked against their
+original immutable endpoints. Only the closed nine diagnostic files and the
+new `.github/workflows/issue180-full-report-sizing-1.yml` may change.
+Both earlier workflows, the entry/kernel/runtime/volume helpers, trusted
+namespace and lifecycle code, and production files remain unchanged.
+
+The selected source is `d5337fc1db5b36f701328cad7c2444384dc88bb5`; historical
+BASE is `ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`. Completed component
+run35582101567 measured control104697218 bytes, total109143265,
+physical cgroup peak225570816 and component9.372s with all seven controls and
+inner/pre-outer/final cleanup. That allocation is spent. Its 99.847MiB control
+point disproves32MiB for that component but neither measures this report nor
+chooses a production cap.
+
+## One unchanged report lifetime
+
+The sole workload is the selected source's original
+`scripts.validation_ownership.graph_report.check` with `/repo`, one shared
+diagnostic budget, exact CURRENT and BASE revisions, the complete immutable
+changed-path set, and `lifecycle=True`. No runtime inventory override is
+passed. Original CURRENT and required BASE capture/model/view work,
+Make/generator/source-phase authority, all roots and contexts, path
+resolutions, oracle and executable lifecycle stay inside the original API.
+The diagnostic does not select a fixture or call candidate test methods.
+
+Both owners independently obtain Git's `--no-renames --name-status -z` diff
+between those two exact revisions, including deletions and both sides of
+renames. The closed count/status/digest binding must agree before the call.
+Only this path-set binding is exported, not the path list. Full reported
+coverage must equal the actual selected Git inventory, and every changed path
+must resolve on its correct CURRENT or BASE side.
+
+The only source reference temporarily changed is the report module's
+`ProbeSession` constructor reference. Its observer calls the original
+constructor once, checks the original loader/entries/budget/runtime binding,
+and returns the **exact original object and type**, not a proxy or subclass.
+No session, loader, budget, native, graph, authority, lifecycle or verifier
+method is replaced. Original context entry, BASE selection and teardown
+execute normally. Final counters are read after that real context close;
+constructor failure leaves session ownership unavailable.
+
+The actual returned report is serialized once with the source's
+`reporter.normalized_json`. Serialization occurs inside containment, after
+the source's context close, exactly as at its public CLI seam. Only the
+resulting byte count survives. No second CLI process, report, session, clock,
+charge reset or serialization-specific refund is introduced.
+
+`full-report-control-under-global-v1` changes only `control_bytes` to the
+unchanged original `total_bytes`, **805306368 bytes**. The original frozen
+limit constructor, every budget method, all other fields and all original
+charges remain in use. Category and aggregate exhaustion are failures.
+The original absolute3600s deadline includes imports, diff capture, the
+report, serialization and final observations; timing outside it is rejected.
+No limit ladder or automatic rerun exists.
+
+## Closed observations and uncertainty
+
+Only `scope.json`, `preflight.json`, `metrics.jsonl`, `progress.jsonl` and
+`result.json` are emitted/uploaded, with the existing individual/aggregate
+bounds. The report stream is closed and bound to exact source/BASE/harness,
+run1/attempt1, API, profile, inventory and changed-path set. It rejects
+unknown, malformed, partial, replayed, foreign or post-failure success records.
+
+The start marker is **not** a call attempt or return. Actual check,
+constructor and serialization attempts/returns are counted separately;
+completion additionally requires valid original report data and cleanup.
+An outer termination before those observations leaves attempts/returns
+explicitly unknown, not successful or zero.
+
+The numeric summary comes from the returned coverage partition, all path
+resolutions and selected authority reasons, original authority/oracle seals,
+nonempty oracle probes with zero false selections, exact execution counters,
+BASE comparison and all three distinct lifecycle triggers. Each lifecycle
+requires actual removal failure, restoration success and both verified
+shared-checker routes. The public report does not expose a per-pass
+source-phase census after close: `source_phase_counts` is explicitly null,
+not an invented zero or substitute fixture observation. Inclusion of source
+phases is the unchanged public API's source-authority contract.
+
+All eight byte ledgers, runs/states/planned-state bytes, cumulative
+process/syscall/observation/file counters and pending/live/funded-VM high
+waters remain observed from the same session. Funded VM is not RSS and
+cumulative byte accounting is not simultaneous memory. The unchanged outer
+sampler separately records actual kernel memory/PID peaks/events, I/O and
+five-second sampled disk maxima; those disk samples are not instantaneous
+peaks or permission to reduce disk capacity.
+
+The bounded admission observer preserves refusal-time request/charged/cap
+facts separately from collection-time totals. Unretained aggregate predicates
+and effective native Make grants stay null. Original source cleanup failures
+retained as private strings are exported only as a count, never their text.
+Raw reports, receipts, source/SDK/output content, environments, keys,
+traceback locals and exception messages are not exported.
+
+CS1 remains strict: `empty_before_outer_cleanup` must be exactly true,
+independently of final cgroup emptiness, watchdog reap and lifetime closure.
+Outer kill cannot turn an incomplete report into success or prove inner
+ownership cleanup. CS2 preserves the first error, attempts every original
+source close and both outer sampler/budget closes, and independently restores
+the constructor reference and withdraws report/serialization references.
+Before/after-effect withdrawal failures, collectors and secondary formatting
+cannot skip another withdrawal or manufacture safe ownership. Missing or
+failed ownership observations retain the outer resources. Failed budgets are
+also retained even if later sampled ownership fields look empty. Exact clean
+HEAD/BASE and pinned submodules are checked before and after the attempt.
+
+## Focused preparation and separate prospective launch
+
+This diagnostic supports existing `TC-WORKFLOW-GATE-OWNERSHIP-001`; it adds no
+tester registry, production flag, saved data, localization or ROM behavior.
+Its only dependency is the exact reviewed source and original containment;
+it conflicts with any attempt to reuse earlier allocations or interpret this
+as standalone verifier/H1 or shipping-default acceptance.
+
+The three named harness control classes exercise positive report forwarding,
+CURRENT/BASE/deletions/lifecycle/default inventory, one lifetime, the closed
+numeric result and all malformed/partial/foreign/replay negatives. Real
+isolated selected-source limit/admission APIs cover exact/one-below bounds,
+the original32MiB negative, unchanged aggregate/other defaults and methods.
+Effect models cover constructor/entry/teardown, collector, before/after
+reference, formatter/publication and finalizer faults, first-error retention
+and every close/withdrawal. Parsed Git/AST/YAML controls preserve containment,
+the seven fresh qualifiers, historical inventories and the one fixed workflow.
+
+Use only the inspected session `run_inert.py` and commands recorded in the
+preparation handoff. It isolates original budget/default/cleanup definitions,
+blocks candidate/native imports and process/foreign/filesystem/signal effects,
+and selects only these harness classes. Do not use unittest discovery or
+execute the candidate reporter, native tests, Make, a compiler, SDK tooling,
+namespace/cgroup/mount/profile/credential operations or any workflow.
+Run actionlint on the new workflow only. Preparation success is not native
+qualification, full-report acceptance or launch permission.
+
+After the local normal commit, Main obtains independent exact-head review
+and separately freezes one first-owner-push hosted launch. That future launch
+must qualify all seven controls afresh before candidate import, use a fresh
+capacity-derived cage, then invoke this exact report at most once. Inspect
+its bounded terminal evidence and first failure; any failure spends that
+attempt. No prior host/profile lease, automatic retry or old workflow edit is
+permitted. Standalone trusted verifier/H1 work has its own separate contract.
+
+---
+
+## Historical closed component preparation (not this report)
 
 **Code preparation only. No native allocation, first creation push or hosted
 qualification is granted by this tree. Never merge this diagnostic branch.**

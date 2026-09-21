@@ -1,6 +1,7 @@
 """Actual bounded observers with synthetic effects and real budget admissions."""
 
 import errno
+import copy
 from types import SimpleNamespace
 import unittest
 
@@ -59,6 +60,7 @@ class ObservationFailureControls(Inert):
     def test_actual_normal_control_refusal_retains_only_original_numeric_locals(self):
         error, observer, budget = self.admission()
         value = observer.budget_admission(error)
+        self.assertIs(observation_failure.validate_fact(value, admission=True), value)
         self.assertEqual(value["status"], "observed")
         self.assertEqual((value["requested"], value["charged_before"], value["issued_cap"]),
                          (2039626, 31668852, 33554432))
@@ -80,6 +82,7 @@ class ObservationFailureControls(Inert):
             diagnostic=True, before=policy.CONTROL_CEILING - 1, request=1, other=1,
         )
         value = observer.budget_admission(error)
+        observation_failure.validate_fact(value, admission=True)
         self.assertEqual(value["issued_cap"], policy.CONTROL_CEILING)
         self.assertFalse(value["category_exhausted"])
         self.assertEqual(value["category_shortfall"], 0)
@@ -128,11 +131,13 @@ class ObservationFailureControls(Inert):
         for count, size, expected in ((1, 258, "count"), (2, 257, "bytes"), (1, 257, "both")):
             error, observer, _ = self.native(initial_count=count, initial_size=size)
             value = observer.capture(error)
+            observation_failure.validate_fact(value, admission=False)
             self.assertEqual(value["status"], "attributed")
             self.assertEqual(value["exhaustion"], expected)
             self.assertEqual((value["observations"], value["observation_bytes"]), (1, 258))
         error, observer, _ = self.native(mode="make", initial_count=4, initial_size=4096, producer=True)
         result = observer.capture(error)
+        observation_failure.validate_fact(result, admission=False)
         self.assertEqual(result["status"], "unknown")
         for name in ("effective_observation_count", "effective_observation_limit", "count_predicate",
                      "byte_predicate", "exhaustion"):
@@ -157,11 +162,17 @@ class ObservationFailureControls(Inert):
 
     def test_error_protocol_retains_numeric_facts_without_private_data_or_completion(self):
         error, observer, _ = self.admission()
-        primary = policy.component_error_record(error)
-        primary["budget_admission"] = observer.budget_admission(error)
-        parser = supervisor.Protocol("inert", policy.OUTPUT_BYTES)
-        parser.feed(policy.encoded({"scope": "inert", "kind": "ready", "data": {}}) + b"\n")
-        record, = parser.feed(policy.encoded({"scope": "inert", "kind": "error", "data": primary}) + b"\n")
+        primary = {
+            "binding": self.binding(), "stage": "check", "error": policy.component_error_record(error),
+            "states": {**dict.fromkeys(policy.REPORT_STATES, 0), "check_attempts": 1, "completed": False},
+            "cleanup": None, "counters": None, "secondary": [], "source_cleanup_failures": 0,
+            "summary": None, "serialized_bytes": None,
+            "budget_admission": observer.budget_admission(error),
+            "observation_failure": observer.capture(error),
+        }
+        parser = supervisor.Protocol("12345/report", policy.OUTPUT_BYTES, report_binding=self.binding(), deadline=3700.0)
+        parser.feed(policy.encoded({"scope": "12345/report", "kind": "ready", "data": {}}) + b"\n")
+        record, = parser.feed(policy.encoded({"scope": "12345/report", "kind": "error", "data": primary}) + b"\n")
         self.assertEqual(record["data"]["budget_admission"]["requested"], 2039626)
         self.assertFalse(parser.finished)
         for forbidden in (b"private", b"frames", b"environment", b"assembly"):
@@ -169,8 +180,47 @@ class ObservationFailureControls(Inert):
         self.assertNotIn("locals", record["data"])
         self.assertNotIn("locals", record["data"]["budget_admission"])
         with self.assertRaises(policy.GuardError):
-            policy.validate_component_result(record["data"])
+            policy.validate_report_result(record["data"], self.binding())
         self.assertEqual(error.args, ("aggregate control byte budget exhausted",))
+
+    def test_closed_failure_facts_reject_raw_data_inferred_totals_and_effective_make_grants(self):
+        error, observer, _ = self.admission()
+        admitted = observer.budget_admission(error)
+        for key, value in (
+            ("total_at_admission", admitted["collected"]["total_charged"]),
+            ("total_predicate", True), ("requested", True), ("charged_before", -1),
+            ("category_exhausted", 1), ("category_shortfall", 0), ("category", "private"),
+            ("semantics", "private environment"), ("extra", "private source"),
+        ):
+            with self.subTest(key=key), self.assertRaises(policy.GuardError):
+                observation_failure.validate_fact({**admitted, key: value}, admission=True)
+        changed = copy.deepcopy(admitted)
+        changed["collected"]["category_charged"] += 1
+        with self.assertRaises(policy.GuardError):
+            observation_failure.validate_fact(changed, admission=True)
+        error, observer, _ = self.native(mode="make", initial_count=4, initial_size=4096, producer=True)
+        native = observer.capture(error)
+        for key, value in (("effective_observation_count", 4), ("effective_observation_limit", 4096),
+                           ("count_predicate", False), ("byte_predicate", False), ("exhaustion", "bytes"),
+                           ("observations", True), ("status", "attributed"), ("extra", "private")):
+            with self.subTest(key=key), self.assertRaises(policy.GuardError):
+                observation_failure.validate_fact({**native, key: value}, admission=False)
+        for unavailable in (
+            {"status": "unavailable", "reason": "private"},
+            {"status": "unknown", "reason": "no-matching-admission"},
+            {"status": "invalid", "reason": [], "raw": "private"},
+        ):
+            with self.assertRaises(policy.GuardError):
+                observation_failure.validate_fact(unavailable, admission=True)
+
+    def test_original_source_cleanup_strings_are_counted_but_never_projected(self):
+        first = RuntimeError("private source failure")
+        self.assertEqual(policy.source_cleanup_count(first), 0)
+        first.cleanup_errors = ("private source path", "private SDK output")
+        self.assertEqual(policy.source_cleanup_count(first), 2)
+        self.assertNotIn(b"private", policy.encoded(policy.component_error_record(first)))
+        first.cleanup_errors = {"raw": "private"}
+        self.assertIsNone(policy.source_cleanup_count(first))
 
 
 if __name__ == "__main__":
