@@ -111,6 +111,7 @@ REPORT_STATES = (
     "serialization_attempts", "serialization_returned",
 )
 REPORT_ERROR_STAGES = frozenset({
+    "worker-entrypoint", "trusted-entry-setup", "error-recovery", "result-publication",
     "candidate-import", "source-identity", "diff-capture", "report-start",
     "check", "serialization", "validation", "cleanup-observation", "counter-observation",
     "constructor-reference", "report-reference", "serialization-reference",
@@ -498,15 +499,56 @@ def component_secondary_error(error):
 
 
 def source_cleanup_count(error):
-    try:
-        errors = BaseException.__getattribute__(error, "cleanup_errors")
-    except AttributeError:
-        return 0
-    except BaseException:
-        return None
-    # The original source retains strings, not typed exception objects. Count
-    # those failures without parsing or exporting their private messages.
-    return len(errors) if type(errors) is tuple else None
+    pending = [(error, False)]
+    nodes, active, complete, metadata, messages = {}, set(), set(), {}, set()
+    count = 0
+    while pending:
+        current, leaving = pending.pop()
+        identity = id(current)
+        if leaving:
+            active.remove(identity)
+            complete.add(identity)
+            continue
+        if identity in active:
+            return None
+        if identity in complete:
+            continue
+        if not isinstance(current, BaseException) or len(nodes) >= 32:
+            return None
+        nodes[identity] = current
+        active.add(identity)
+        try:
+            try:
+                errors = BaseException.__getattribute__(current, "cleanup_errors")
+            except AttributeError:
+                ancestry = type.__getattribute__(type(current), "__mro__")
+                if len(ancestry) > 32 or any(
+                    "cleanup_errors" in type.__getattribute__(kind, "__dict__") for kind in ancestry
+                ):
+                    return None
+                errors = ()
+            cause = BaseException.__getattribute__(current, "__cause__")
+            context = BaseException.__getattribute__(current, "__context__")
+        except BaseException:
+            return None
+        if type(errors) is not tuple:
+            return None
+        if id(errors) not in metadata:
+            if count + len(errors) > ORIGINAL_LIMITS["entries"]:
+                return None
+            metadata[id(errors)] = errors
+            for message in errors:
+                # Exact container aliases are counted once. Overlapping records
+                # in distinct containers cannot prove distinct cleanup failures.
+                if type(message) is not str or not message or id(message) in messages:
+                    return None
+                messages.add(id(message))
+            count += len(errors)
+        pending.append((current, True))
+        for related in (context, cause):
+            if related is not None:
+                pending.append((related, False))
+    return count
 
 
 def changed_path_set(data):
@@ -963,6 +1005,105 @@ def validate_report_error(value, binding):
     observation_failure.validate_fact(value["observation_failure"], admission=False)
     observation_failure.validate_fact(value["budget_admission"], admission=True)
     return value
+
+
+def unavailable_report_error(binding, error, *, stage, source_cleanup_failures=None):
+    value = {
+        "binding": binding, "stage": stage, "error": error, "states": None,
+        "cleanup": None, "counters": None, "summary": None, "serialized_bytes": None,
+        "secondary": [], "source_cleanup_failures": source_cleanup_failures,
+        "observation_failure": {"status": "unavailable", "reason": "binding-not-ready"},
+        "budget_admission": {"status": "unavailable", "reason": "binding-not-ready"},
+    }
+    return validate_report_error(value, binding)
+
+
+def merge_report_failure(first, following, binding):
+    validate_report_error(first, binding)
+    validate_report_error(following, binding)
+    if encoded({name: value for name, value in first.items() if name != "secondary"}) != encoded({
+        name: value for name, value in following.items() if name != "secondary"
+    }):
+        raise GuardError("report fallback changed its first failure or original observations")
+    remaining = [encoded(row) for row in following["secondary"]]
+    for row in first["secondary"]:
+        original = encoded(row)
+        if original not in remaining:
+            raise GuardError("report fallback discarded an earlier secondary failure")
+        remaining.remove(original)
+    if not remaining or any(parse_json(row)["stage"] not in {
+        "error-publication", "error-recovery",
+    } for row in remaining):
+        raise GuardError("report fallback is a replay or an independent workload failure")
+    first["secondary"] = list(following["secondary"])
+    return first
+
+
+def project_entry_failure(value, binding):
+    """The unchanged trusted entry's legacy wire format, before readiness only."""
+    _component_fields(value, "chain frames")
+    chain, frames = value["chain"], value["frames"]
+    if type(chain) is not list or not 1 <= len(chain) <= 33 or (
+        type(frames) is not list or len(frames) > 256 + 32
+    ):
+        raise GuardError("entry failure exceeds its original metadata bounds")
+    projected = []
+    for index, row in enumerate(chain):
+        if type(row) is not dict:
+            raise GuardError("entry exception record is not a closed object")
+        if row.keys() == {"evidence_overflow"}:
+            if index != 32 or row["evidence_overflow"] != "Exception chain exceeds the diagnostic bound.":
+                raise GuardError("entry exception chain has a foreign overflow marker")
+            continue
+        if len(projected) >= 32:
+            raise GuardError("entry exception chain exceeds its original bound")
+        name = row.get("type")
+        if type(name) is not str or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", name) is None:
+            raise GuardError("entry exception lacks a bounded type identity")
+        if row.keys() == {"type", "message"}:
+            if type(row["message"]) is not str or len(row["message"].encode("utf-8", "backslashreplace")) > ERROR_BYTES:
+                raise GuardError("entry message exceeds its original bound")
+        else:
+            _component_fields(row, "type message message_bytes message_sha256 evidence_overflow")
+            if row["message"] is not None or not _component_integer(
+                row["message_bytes"], minimum=ERROR_BYTES + 1,
+            ) or (
+                type(row["message_sha256"]) is not str
+                or re.fullmatch(r"[0-9a-f]{64}", row["message_sha256"]) is None
+                or row["evidence_overflow"] != (
+                    "Original message exceeds the diagnostic bound; no successful report is permitted."
+                )
+            ):
+                raise GuardError("entry message overflow metadata is malformed")
+        projected.append({"type": name, "errno": None})
+    for frame in frames:
+        if type(frame) is not dict:
+            raise GuardError("entry frame metadata is malformed")
+        if frame.keys() == {"evidence_overflow"}:
+            if frame["evidence_overflow"] != "Trace exceeds the bounded frame count.":
+                raise GuardError("entry frame has a foreign overflow marker")
+            continue
+        if not _component_integer(frame.get("line"), minimum=1):
+            raise GuardError("entry frame location is not bounded")
+        if frame.keys() == {"file", "line", "function"}:
+            if type(frame["file"]) is not str or len(frame["file"]) > 4096 or (
+                type(frame["function"]) is not str or len(frame["function"]) > 512
+            ):
+                raise GuardError("entry frame identity exceeds its original bound")
+        else:
+            _component_fields(frame, "line identity_sha256 evidence_overflow")
+            if type(frame["identity_sha256"]) is not str or re.fullmatch(
+                r"[0-9a-f]{64}", frame["identity_sha256"],
+            ) is None or frame["evidence_overflow"] != (
+                "Oversized frame identity is recorded by digest, not truncated."
+            ):
+                raise GuardError("entry frame overflow metadata is malformed")
+    # The legacy producer does not attest complete chain inspection or errno,
+    # readiness, source execution, counters or cleanup. None of those is inferred.
+    return unavailable_report_error(
+        binding, {"chain": projected, "complete": False, "reason": "error-metadata-unavailable"},
+        stage="trusted-entry-setup",
+    )
 
 
 def validate_report_worker(value, binding, deadline):

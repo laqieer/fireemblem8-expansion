@@ -4,13 +4,71 @@
 launch, retry or production resource-policy decision is allocated here.**
 The frozen scope is
 [5759600529](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5759600529).
-This is one normal child of `d7172b7f6adf5cb43c005ba6cb7dc31142cc812b` on
-`calibration/issue-180-full-report-sizing-1`. The complete earlier normal
+Reviewed preparation `246bad229efe8674ece41b0b91af89fcc4cb4585` is a normal child
+of `d7172b7f6adf5cb43c005ba6cb7dc31142cc812b` on
+`calibration/issue-180-full-report-sizing-1`. Its prelaunch error correction
+is one normal child of246bad22. The complete earlier normal
 lineage and component/correction inventories remain checked against their
-original immutable endpoints. Only the closed nine diagnostic files and the
-new `.github/workflows/issue180-full-report-sizing-1.yml` may change.
+original immutable endpoints. The original preparation admitted only nine
+diagnostic files and `.github/workflows/issue180-full-report-sizing-1.yml`;
+the correction's narrower M-only inventory is specified below.
 Both earlier workflows, the entry/kernel/runtime/volume helpers, trusted
 namespace and lifecycle code, and production files remain unchanged.
+
+## Prelaunch error-transport correction: FR1 and FR2
+
+Freeze:
+[5760515251](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5760515251).
+Independent complete review confirmed two Medium diagnostic defects: a
+delivered executable fallback was rejected by the report wire schema, and a
+wrapped source cleanup failure was published as zero. Neither finding
+allocates execution or changes the selected source, report, limits or workflow.
+The entire original ten-path preparation remains the immutable review
+baseline. The correction admits only nonempty M-only changes to the coupled
+policy, worker, supervisor, three focused test files and this README.
+
+FR1 keeps the last validated numeric error record and original primary
+metadata in an invocation-local worker boundary, independently of fallible
+exception-attribute attachment. A delivered fallback carries the same
+closed run/source/profile binding, known attempts/counters/cleanup when
+available, and distinct publication or recovery secondaries. Collection
+that did not finish is unavailable, not fabricated completion. If a whole
+error frame was written before publication failed, the one fallback may
+only append publication/recovery failures to that same first-cause record;
+it cannot replace observations, discard earlier errors or replay a result.
+An irrecoverably unavailable channel remains failed and unavailable.
+
+The protected entry is unchanged. Only the receiving seam may recognize its
+exact bounded legacy error format before readiness. It projects bounded
+exception type names, discards all messages, hashes and traceback frames,
+and explicitly leaves errno, complete exception inspection, source cleanup
+metadata and report observations unavailable. This associates a failure
+with the allocated scope; it does not establish worker readiness or source
+authority. Legacy errors after readiness, foreign or malformed envelopes,
+replays and later readiness after failed setup remain rejected. Successful
+report validation is not relaxed.
+
+FR2 examines both explicit causes and implicit contexts, with at most32
+distinct exception identities and at most the original entries bound of
+retained metadata items. A fully inspected empty chain of cleanup metadata
+is zero. Cycles, truncation, unreadable or malformed metadata are null, never
+zero. Shared exception nodes and the exact same retained tuple are counted
+once; overlapping string identities in distinct tuples are ambiguous and
+remain unavailable. Distinct original cleanup records with equal private
+text remain distinct failures. No private cleanup string is parsed,
+rendered, hashed or exported by the counter.
+
+The existing `TC-WORKFLOW-GATE-OWNERSHIP-001` preparation procedure now runs
+the correction handoff's inspected `run_inert.py`. It preserves all52
+original methods/477 subtests and adds actual executable-worker/protected-entry
+error producers through `kernel.emit` and the real report `Protocol`, plus
+the real isolated selected `finish_cleanup`, public-shaped explicit-cause
+wrapping and wire/retention controls. Immutable246bad22 entrypoint, receiving
+seam and cleanup-counter restorations reproduce the reviewed failures;
+neutral refactors and genuinely empty metadata remain accepted. All
+process, filesystem, signal, privilege and candidate/native effects remain
+trapped. This remains preparation only, followed by the same independent
+exact-head review before any separately frozen launch.
 
 The selected source is `d5337fc1db5b36f701328cad7c2444384dc88bb5`; historical
 BASE is `ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`. Completed component

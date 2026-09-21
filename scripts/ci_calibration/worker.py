@@ -498,11 +498,58 @@ def report_error_record(primary, measurement, sampler, observer, binding, second
     return record
 
 
+class ReportFailure:
+    """Retain bounded failure observations independently of exception attributes."""
+
+    def __init__(self):
+        self.primary = self.error = self.cleanup_failures = None
+        self.record = self.returned = None
+        self.stage = "worker-entrypoint"
+        self.secondary = []
+
+    def capture(self, primary, stage):
+        if self.primary is not None:
+            return
+        self.primary, self.stage = primary, stage
+        self.error = policy.component_secondary_error(primary)
+        self.cleanup_failures = policy.source_cleanup_count(primary)
+
+    def fallback(self, config, error):
+        binding = policy.validate_report_binding(config["report_binding"])
+        if config["scope"] != binding["run_id"] + "/report":
+            raise policy.GuardError("report fallback has a foreign run binding")
+        self.capture(error, self.stage)
+        value = policy.unavailable_report_error(
+            binding, self.error, stage=self.stage, source_cleanup_failures=self.cleanup_failures,
+        )
+        try:
+            if self.record is not None:
+                policy.validate_report_error(self.record, binding)
+                value = dict(self.record)
+            elif self.returned is not None:
+                policy.validate_report_result(self.returned, binding)
+                observed = {name: self.returned[name] for name in (
+                    "cleanup", "counters", "summary", "serialized_bytes",
+                )}
+                observed["states"] = {**self.returned["states"], "completed": False}
+                value = {**value, **observed}
+        except BaseException as secondary:
+            self.secondary.append({"stage": "error-recovery", "error": policy.component_secondary_error(secondary)})
+        value["error"] = self.error
+        value["source_cleanup_failures"] = self.cleanup_failures
+        value["secondary"] = [*value["secondary"], *self.secondary]
+        if error is not self.primary:
+            value["secondary"].append({"stage": "error-recovery", "error": policy.component_secondary_error(error)})
+        return policy.validate_report_error(value, binding)
+
+
 def component(config):
     raise policy.GuardError("the earlier component allocation is closed")
 
 
-def report(config):
+def report(config, *, failure=None):
+    if failure is None:
+        failure = ReportFailure()
     require_contained(config)
     binding = policy.validate_report_binding(config["report_binding"])
     if config.get("mode") != "report" or config["scope"] != binding["run_id"] + "/report":
@@ -581,28 +628,38 @@ def report(config):
         except BaseException as error:
             primary = error
     if primary is not None:
+        failure.capture(primary, primary_stage)
         try:
-            kernel.emit(config["scope"], "error", report_error_record(
+            failure.record = report_error_record(
                 primary, measurement, sampler, observer, binding, secondary, stage=primary_stage,
-            ))
+            )
+            kernel.emit(config["scope"], "error", failure.record)
         except BaseException as error:
             # Publication is not permission to replace a source/cleanup failure.
+            detail = policy.component_secondary_error(error)
+            failure.secondary.append({"stage": "error-publication", "error": detail})
             try:
-                primary.report_publication_error = policy.component_secondary_error(error)
+                primary.report_publication_error = detail
+            except BaseException as attachment:
+                failure.secondary.append({"stage": "error-recovery", "error": policy.component_secondary_error(attachment)})
             finally:
                 raise primary
         return None
     return returned
 
 
-def main(config):
+def main(config, *, failure=None):
+    if failure is None:
+        failure = ReportFailure()
     proof = require_contained(config)
     kernel.emit(config["scope"], "ready", proof)
     mode = config["mode"]
     if mode == "report":
-        result = report(config)
+        result = report(config, failure=failure)
         if result is None:
             return 1
+        failure.stage = "result-publication"
+        failure.returned = result["report"]
         kernel.emit(config["scope"], "result", result)
         return 0
     if mode in {"component", "root", "graph", "verifier", "source-phase", "h1"}:
@@ -630,8 +687,9 @@ def main(config):
     return 0
 
 
-if __name__ == "__main__":
+def entrypoint():
     active = None
+    failure = ReportFailure()
     try:
         if len(sys.argv) == 4 and sys.argv[1] == "--nested-probe":
             descriptor = int(sys.argv[2])
@@ -646,14 +704,23 @@ if __name__ == "__main__":
             code = 0
         elif len(sys.argv) == 2:
             active = kernel.owned_config(sys.argv[1])
-            code = main(active)
+            code = main(active, failure=failure)
         else:
             raise policy.GuardError("worker requires its one readonly config")
     except BaseException as error:
         if active is not None:
-            formatter = policy.component_secondary_error if active.get("mode") == "report" else policy.error_record
-            kernel.emit(active["scope"], "error", formatter(error))
+            if active.get("mode") == "report":
+                try:
+                    kernel.emit(active["scope"], "error", failure.fallback(active, error))
+                except BaseException:
+                    print("report failure evidence unavailable on its bounded channel", file=sys.stderr)
+            else:
+                kernel.emit(active["scope"], "error", policy.error_record(error))
         else:
             print("worker has no admitted readonly containment config", file=sys.stderr)
         code = 1
-    raise SystemExit(code)
+    return code
+
+
+if __name__ == "__main__":
+    raise SystemExit(entrypoint())

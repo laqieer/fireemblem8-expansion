@@ -39,6 +39,7 @@ REVIEWED_HARNESS_SHA = "f50cbd175b02aef847e344c84154f6574aa5e457"
 COMPONENT_BASE_SHA = "f00bc2610d7031d14268855deb2979682ea196af"
 CORRECTION_BASE_SHA = "b854e3cd466166dbc79bfe8f717af956b424365c"
 REPORT_BASE_SHA = "d7172b7f6adf5cb43c005ba6cb7dc31142cc812b"
+REPORT_PREPARATION_SHA = "246bad229efe8674ece41b0b91af89fcc4cb4585"
 COMPONENT_PATHS = frozenset({
     policy.COMPONENT_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "worker.py", "root_stage.py", "supervisor.py", "observation_failure.py", "README.md",
@@ -50,11 +51,16 @@ CORRECTION_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
     "test_ci_calibration.py", "test_root_stage.py",
 ))
 REPORT_PATHS = (COMPONENT_PATHS - {policy.COMPONENT_WORKFLOW}) | {policy.WORKFLOW}
+REPORT_ERROR_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
+    "policy.py", "worker.py", "supervisor.py", "README.md",
+    "test_ci_calibration.py", "test_root_stage.py", "test_observation_failure.py",
+))
 
 
 def validate_harness_lineage(lines, head):
     if lines != [
-        f"{head} {REPORT_BASE_SHA}",
+        f"{head} {REPORT_PREPARATION_SHA}",
+        f"{REPORT_PREPARATION_SHA} {REPORT_BASE_SHA}",
         f"{REPORT_BASE_SHA} {CORRECTION_BASE_SHA}",
         f"{CORRECTION_BASE_SHA} {COMPONENT_BASE_SHA}",
         f"{COMPONENT_BASE_SHA} {REVIEWED_HARNESS_SHA}",
@@ -63,7 +69,7 @@ def validate_harness_lineage(lines, head):
         f"{RETAINED_HARNESS_SHA} {PREPARATION_SHA}",
         f"{PREPARATION_SHA} {policy.BASE}",
     ]:
-        raise policy.GuardError("diagnostic requires its exact normal report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
+        raise policy.GuardError("diagnostic requires its exact normal error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
 
 
 def validate_correction_inventory(data):
@@ -96,6 +102,20 @@ def validate_report_inventory(data):
         or len({name for _, name in changes}) != len(changes)
     ):
         raise policy.GuardError("report preparation changed a closed or unallocated surface")
+
+
+def validate_report_error_inventory(data):
+    if type(data) is not bytes:
+        raise policy.GuardError("report error correction inventory is not a Git byte record")
+    rows = data.split(b"\0")
+    if len(rows) < 3 or len(rows) % 2 != 1 or rows[-1] != b"":
+        raise policy.GuardError("report error correction requires nonempty normal modifications")
+    changes = list(zip(rows[:-1:2], rows[1:-1:2]))
+    allowed = {name.encode("ascii") for name in REPORT_ERROR_PATHS}
+    if any(kind != b"M" or name not in allowed for kind, name in changes) or (
+        len({name for _, name in changes}) != len(changes)
+    ):
+        raise policy.GuardError("report error correction changed an unfrozen surface")
 
 
 def apparmor_text(name):
@@ -433,6 +453,8 @@ class Protocol:
         self.finished = False
         self.report_binding, self.deadline = report_binding, deadline
         self.report_started = self.failed = False
+        self.report_error = None
+        self.report_error_records = 0
         if report_binding is not None:
             policy.validate_report_binding(report_binding)
             if scope != report_binding["run_id"] + "/report" or (
@@ -484,8 +506,20 @@ class Protocol:
                 elif kind == "progress":
                     policy.validate_report_progress(value)
                 elif kind == "error":
+                    if value.keys() == {"chain", "frames"} and not self.ready and not self.failed:
+                        value = policy.project_entry_failure(value, self.report_binding)
+                        record["data"] = value
                     policy.validate_report_error(value, self.report_binding)
+                    if self.report_error_records >= 2:
+                        raise policy.GuardError("report stream exceeded its first publication and one fallback")
+                    if self.report_error is None:
+                        self.report_error = value
+                    else:
+                        record["data"] = policy.merge_report_failure(self.report_error, value, self.report_binding)
+                    self.report_error_records += 1
                     self.failed = True
+                elif kind == "ready" and self.failed:
+                    raise policy.GuardError("failed report setup cannot subsequently assert readiness")
                 elif kind != "ready":
                     raise policy.GuardError("report stream contains an unallocated workload record")
             if kind == "ready":
@@ -793,7 +827,7 @@ class Owner:
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
         validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=8", "HEAD").decode().splitlines(),
+            git(self.harness, "rev-list", "--parents", "--max-count=9", "HEAD").decode().splitlines(),
             self.scope["harness_sha"],
         )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
@@ -828,7 +862,10 @@ class Owner:
             self.harness, "diff", "--name-status", "-z", CORRECTION_BASE_SHA, REPORT_BASE_SHA,
         ))
         validate_report_inventory(git(
-            self.harness, "diff", "--name-status", "-z", REPORT_BASE_SHA, "HEAD",
+            self.harness, "diff", "--name-status", "-z", REPORT_BASE_SHA, REPORT_PREPARATION_SHA,
+        ))
+        validate_report_error_inventory(git(
+            self.harness, "diff", "--name-status", "-z", REPORT_PREPARATION_SHA, "HEAD",
         ))
         self.source_status("before")
         tree = git(self.candidate, "ls-tree", "-rz", "--full-tree", policy.GRAPH)

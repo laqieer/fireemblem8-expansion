@@ -2,11 +2,16 @@
 
 import errno
 import copy
+import io
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
-from scripts.ci_calibration import observation_failure, policy, supervisor
+from scripts.ci_calibration import kernel, observation_failure, policy, root_stage, supervisor, worker
 from scripts.ci_calibration.test_ci_calibration import Inert, budgeting
+
+
+PREIMAGE_SOURCE_CLEANUP_COUNT = None
 
 
 class FrameFixture:
@@ -32,6 +37,187 @@ class FrameFixture:
 
 
 class ObservationFailureControls(Inert):
+    def cleaned_error(self, failures=1, levels=1):
+        class OwnershipError(RuntimeError):
+            pass
+        budget = self.budget()
+        budget.plan(1)
+        budget.charge("control", 8)
+        budget.session_started = True
+        inner = budgeting.MakeProbeError("private source refusal")
+        closed = []
+        def failing_close():
+            closed.append("failed-close")
+            raise OSError(errno.EIO, "private cleanup")
+        try:
+            try:
+                raise inner
+            except budgeting.MakeProbeError as error:
+                budgeting.finish_cleanup(
+                    [*([failing_close] * failures), budget.close, lambda: closed.append("later-close")],
+                    primary=error,
+                )
+                if levels:
+                    raise OwnershipError(str(error)) from error
+                raise
+        except BaseException as caught:
+            outer = caught
+        for _ in range(max(0, levels - 1)):
+            try:
+                raise OwnershipError(str(outer)) from outer
+            except OwnershipError as caught:
+                outer = caught
+        self.assertTrue(budget.closed)
+        self.assertEqual(closed, ["failed-close"] * failures + ["later-close"])
+        return SimpleNamespace(inner=inner, outer=outer, budget=budget, closed=closed)
+
+    def cleanup_wire(self, value):
+        session = self.session(value.budget)
+        measurement = SimpleNamespace(
+            states={**dict.fromkeys(policy.REPORT_STATES, 0), "check_attempts": 1,
+                    "session_attempts": 1, "session_constructed": 1, "completed": False},
+            cleanup={**root_stage.cleanup_state(session, value.budget), "constructor_restored": True,
+                     "report_released": True, "serialization_released": True},
+            summary=None, serialized_bytes=None, secondary=[],
+        )
+        sampler = SimpleNamespace(snapshot=lambda: {"counters": policy.counter_snapshot(value.budget, session)})
+        record = worker.report_error_record(value.outer, measurement, sampler, None, self.binding(), [])
+        wire = io.BytesIO()
+        with mock.patch.object(kernel, "sys", SimpleNamespace(stdout=SimpleNamespace(buffer=wire))):
+            kernel.emit("12345/report", "error", record)
+        parser = supervisor.Protocol("12345/report", policy.OUTPUT_BYTES, report_binding=self.binding(), deadline=3700.0)
+        row, = parser.feed(wire.getvalue())
+        phase = {
+            "mode": "report", "empty_before_outer_cleanup": True, "empty": True, "watchdog_reaped": True,
+            "lifetime_writer_closed": True, "first_cause": {"type": "worker-error", "error": row["data"]},
+        }
+        self.assertTrue(parser.failed)
+        self.assertFalse(parser.finished)
+        self.assertNotIn(b"private", wire.getvalue())
+        return row["data"], supervisor.report_retention(phase)
+
+    def test_real_cleanup_survives_direct_wrapped_and_multilevel_wire_projection(self):
+        for levels in (0, 1, 4):
+            for failures in (0, 1, 2):
+                with self.subTest(levels=levels, failures=failures):
+                    value = self.cleaned_error(failures, levels)
+                    self.assertEqual(len(getattr(value.inner, "cleanup_errors", ())), failures)
+                    self.assertEqual(policy.source_cleanup_count(value.outer), failures)
+                    record, retained = self.cleanup_wire(value)
+                    self.assertEqual(record["source_cleanup_failures"], failures)
+                    self.assertEqual(retained, failures != 0)
+                    if levels:
+                        self.assertEqual(record["error"]["chain"][0]["type"], "OwnershipError")
+                        self.assertEqual(record["error"]["chain"][-1]["type"], "MakeProbeError")
+                    self.assertNotIn("OSError", [row["type"] for row in record["error"]["chain"]])
+                    self.assertFalse(record["states"]["completed"])
+
+    def test_chain_and_metadata_aliases_never_double_count_or_guess_distinct_failures(self):
+        value = self.cleaned_error(1)
+        self.assertIs(value.outer.__cause__, value.inner)
+        self.assertIs(value.outer.__context__, value.inner)
+        value.outer.cleanup_errors = value.inner.cleanup_errors
+        self.assertEqual(self.cleanup_wire(value)[0]["source_cleanup_failures"], 1)
+        del value.outer.cleanup_errors
+        other = self.cleaned_error(1).inner
+        value.outer.__context__ = other
+        self.assertEqual(self.cleanup_wire(value)[0]["source_cleanup_failures"], 2)
+        # A shared descendant is an alias, not an ancestor cycle.
+        other.__cause__ = value.inner
+        self.assertEqual(self.cleanup_wire(value)[0]["source_cleanup_failures"], 2)
+        value.outer.cleanup_errors = tuple(list(value.inner.cleanup_errors))
+        self.assertIsNot(value.outer.cleanup_errors, value.inner.cleanup_errors)
+        record, retained = self.cleanup_wire(value)
+        self.assertIsNone(record["source_cleanup_failures"])
+        self.assertTrue(retained)
+        value = self.cleaned_error(1)
+        message, = value.inner.cleanup_errors
+        value.inner.cleanup_errors = (message, message)
+        self.assertIsNone(self.cleanup_wire(value)[0]["source_cleanup_failures"])
+
+    def test_cycles_truncation_and_malformed_metadata_remain_unavailable_on_the_wire(self):
+        for fault in ("self-cycle", "ancestor-cycle", "too-deep", "list", "nonstring", "empty-string", "over-bound"):
+            with self.subTest(fault=fault):
+                value = self.cleaned_error(1)
+                if fault == "self-cycle":
+                    value.outer.__cause__ = value.outer
+                elif fault == "ancestor-cycle":
+                    value.inner.__context__ = value.outer
+                elif fault == "too-deep":
+                    for _ in range(32):
+                        following = RuntimeError()
+                        following.__cause__ = value.outer
+                        value.outer = following
+                elif fault == "list":
+                    value.inner.cleanup_errors = ["private"]
+                elif fault == "nonstring":
+                    value.inner.cleanup_errors = (object(),)
+                elif fault == "empty-string":
+                    value.inner.cleanup_errors = ("",)
+                else:
+                    value.inner.cleanup_errors = ("private",) * (policy.ORIGINAL_LIMITS["entries"] + 1)
+                record, retained = self.cleanup_wire(value)
+                self.assertIsNone(record["source_cleanup_failures"])
+                self.assertTrue(retained)
+        for kind in (AttributeError, OSError):
+            class Unreadable(RuntimeError):
+                @property
+                def cleanup_errors(self):
+                    raise kind("private unavailable metadata")
+            value = self.cleaned_error(0)
+            value.outer.__context__ = Unreadable()
+            record, retained = self.cleanup_wire(value)
+            self.assertIsNone(record["source_cleanup_failures"])
+            self.assertTrue(retained)
+        class ForeignCause(RuntimeError):
+            @property
+            def __cause__(self):
+                return object()
+        value.outer = ForeignCause()
+        record, retained = self.cleanup_wire(value)
+        self.assertIsNone(record["source_cleanup_failures"])
+        self.assertTrue(retained)
+
+    def test_complete_chain_and_metadata_boundaries_distinguish_true_zero_from_unknown(self):
+        value = self.cleaned_error(0, levels=0)
+        for _ in range(31):
+            following = RuntimeError()
+            following.__cause__ = value.outer
+            value.outer = following
+        record, retained = self.cleanup_wire(value)
+        self.assertEqual(record["source_cleanup_failures"], 0)
+        self.assertFalse(retained)
+        following = RuntimeError()
+        following.__cause__ = value.outer
+        value.outer = following
+        record, retained = self.cleanup_wire(value)
+        self.assertIsNone(record["source_cleanup_failures"])
+        self.assertTrue(retained)
+        for count in (policy.ORIGINAL_LIMITS["entries"], policy.ORIGINAL_LIMITS["entries"] + 1):
+            value = self.cleaned_error(0)
+            value.inner.cleanup_errors = tuple(f"private retained {index}" for index in range(count))
+            record, retained = self.cleanup_wire(value)
+            self.assertEqual(record["source_cleanup_failures"],
+                             count if count == policy.ORIGINAL_LIMITS["entries"] else None)
+            self.assertTrue(retained)
+
+    def test_old_outer_only_helper_restores_wrapped_zero_and_neutral_wrapping_preserves_count(self):
+        self.assertIsNotNone(PREIMAGE_SOURCE_CLEANUP_COUNT, "requires the inspected correction runner")
+        value = self.cleaned_error(1)
+        self.assertEqual(self.cleanup_wire(value)[0]["source_cleanup_failures"], 1)
+        with mock.patch.object(policy, "source_cleanup_count", PREIMAGE_SOURCE_CLEANUP_COUNT):
+            self.assertEqual(policy.source_cleanup_count(value.inner), 1)
+            record, retained = self.cleanup_wire(value)
+            self.assertEqual(record["source_cleanup_failures"], 0)
+            self.assertFalse(retained)
+            with self.assertRaises(AssertionError):
+                self.assertEqual(record["source_cleanup_failures"], len(value.inner.cleanup_errors))
+        value.outer.__context__ = None
+        value.outer.add_note("private irrelevant note")
+        record, retained = self.cleanup_wire(value)
+        self.assertEqual(record["source_cleanup_failures"], 1)
+        self.assertTrue(retained)
+
     def native(self, **changes):
         budget = self.budget()
         carrier = FrameFixture(budget)

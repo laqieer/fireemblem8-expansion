@@ -515,7 +515,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.REPORT_BASE_SHA}",
+            f"{'a' * 40} {supervisor.REPORT_PREPARATION_SHA}",
+            f"{supervisor.REPORT_PREPARATION_SHA} {supervisor.REPORT_BASE_SHA}",
             f"{supervisor.REPORT_BASE_SHA} {supervisor.CORRECTION_BASE_SHA}",
             f"{supervisor.CORRECTION_BASE_SHA} {supervisor.COMPONENT_BASE_SHA}",
             f"{supervisor.COMPONENT_BASE_SHA} {supervisor.REVIEWED_HARNESS_SHA}",
@@ -614,6 +615,21 @@ class CalibrationControls(Inert):
         ):
             with self.subTest(bad=bad[:64]), self.assertRaises(policy.GuardError):
                 supervisor.validate_report_inventory(bad)
+
+    def test_error_correction_inventory_is_nonempty_M_only_and_keeps_the_full_review_baseline(self):
+        data = b"".join(b"M\0" + name.encode() + b"\0" for name in sorted(supervisor.REPORT_ERROR_PATHS))
+        supervisor.validate_report_error_inventory(data)
+        for bad in (
+            b"", data[:-1], data + data, data.replace(b"M\0", b"A\0", 1),
+            data.replace(b"M\0", b"D\0", 1),
+            data + b"M\0" + policy.WORKFLOW.encode() + b"\0",
+            data + b"M\0scripts/ci_calibration/entry.py\0",
+            data + b"M\0scripts/ci_calibration/root_stage.py\0",
+            data + b"M\0scripts/ci_calibration/observation_failure.py\0",
+            data + b"M\0scripts/validation_ownership/budget.py\0",
+        ):
+            with self.subTest(bad=bad[:64]), self.assertRaises(policy.GuardError):
+                supervisor.validate_report_error_inventory(bad)
 
     def test_complete_diff_binding_preserves_additions_deletions_and_both_rename_sides(self):
         changes = self.changes()
