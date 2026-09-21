@@ -1236,7 +1236,7 @@ jobs:
           exit 1
         fi
 
-    - name: Run validation ownership regression suite (issue #180)
+    - name: 'Run validation ownership regression suite (issue #180)'
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       env:
         BASH_ENV: ''
@@ -1268,7 +1268,7 @@ jobs:
         PYTHONPATH: ''
       run: /usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py tests
 
-    - name: Validate validation ownership graph (issue #180)
+    - name: 'Validate validation ownership graph (issue #180)'
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       # The Makefile independently rejects execution-control flags at parse
       # time; this explicit scrub keeps the CI invocation and local mirror
@@ -1724,7 +1724,7 @@ jobs:
     # immediately after the artifact guard and before dependency
     # install/tool build/ROM linker gates below, so a documentation
     # regression fails in seconds instead of after a multi-minute build.
-    - name: Check documentation (issues #7/#17)
+    - name: 'Check documentation (issues #7/#17)'
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
         python3 -m unittest discover -s scripts/docs_check_tests -v
@@ -1756,7 +1756,7 @@ jobs:
     # probe based against the real Makefile/quickstart.sh plus the native
     # dependency fixture, so they run early and fail fast on any structural
     # regression before the slower linker gate below.
-    - name: Check default build lane and quickstart legacy glue (issue #15)
+    - name: 'Check default build lane and quickstart legacy glue (issue #15)'
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
         python3 -m unittest discover -s scripts/modernize/tests -p "test_build_default_lane.py" -v
@@ -1889,7 +1889,7 @@ jobs:
     - name: Run multilang texttools codec gates
       run: python3 -m unittest discover -s scripts/texttools/tests -p 'test_multilang_codec*.py' -v
 
-    - name: Run text generator atomic publication tests (issue #268)
+    - name: 'Run text generator atomic publication tests (issue #268)'
       run: python3 -m unittest scripts.texttools.tests.test_textprocess_publication -v
 
     - name: Run configuration and linker-budget gates

@@ -595,11 +595,19 @@ def _load_test_case_registry(
 
 
 def _canonical_workflow_lines(text: str) -> tuple[str, ...]:
-    return tuple(
-        line.rstrip()
-        for line in text.splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    )
+    lines = []
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        name = re.fullmatch(r"( {4}(?:- )?| {6})name:[ \t]*(.*)", line)
+        if name is not None:
+            try:
+                value = workflow_verify._workflow_name_scalar(name[2], "workflow authority name")
+            except ValueError as error:
+                raise OwnershipError(str(error)) from error
+            line = name[1] + "name: " + json.dumps(value, ensure_ascii=True)
+        lines.append(line.rstrip())
+    return tuple(lines)
 
 
 def _generic_workflow_authorities(
@@ -629,10 +637,14 @@ def _generic_workflow_authorities(
                     else len(lines)
                 ]
             )
-            match = re.search(r"^    - name:[ \t]*(.+?)\s*$", block, re.MULTILINE)
-            if match is None:
+            try:
+                _, fields = workflow_verify._workflow_step_fields(block, job_name, position)
+            except ValueError as error:
+                raise OwnershipError(f"Build workflow authority is invalid: {error}") from error
+            declared = [value for field, value, _ in fields if field == "name"]
+            if not declared:
                 continue
-            name = match.group(1).strip().strip("\"'")
+            name, = declared
             if not name or name in names:
                 raise OwnershipError(
                     f"Build workflow job {job_name!r} has missing or duplicate step name"
@@ -2326,6 +2338,18 @@ def exclusion_declaration_records(graph: dict[str, Any]) -> list[dict[str, Any]]
     return sorted(records, key=lambda record: record.get("id", ""))
 
 
+def path_rule_declaration_records(graph: dict[str, Any]) -> list[dict[str, Any]]:
+    records = []
+    for rule in graph.get("path_rules", []):
+        if not isinstance(rule, dict):
+            continue
+        record = dict(rule)
+        for field in ("include", "exclude"):
+            record[field] = sorted(rule.get(field, []), key=normalized_json)
+        records.append(record)
+    return sorted(records, key=lambda record: record.get("id", ""))
+
+
 def artifact_declaration_record(graph: dict[str, Any]) -> dict[str, Any]:
     return {
         "artifact": graph.get("artifact"),
@@ -2382,13 +2406,11 @@ def compare_graph_edges(
     }
     current_rules = {
         rule.get("id"): rule
-        for rule in current.get("path_rules", [])
-        if isinstance(rule, dict)
+        for rule in path_rule_declaration_records(current)
     }
     prior_rules = {
         rule.get("id"): rule
-        for rule in prior.get("path_rules", [])
-        if isinstance(rule, dict)
+        for rule in path_rule_declaration_records(prior)
     }
     for rule_id in set(current_rules) | set(prior_rules):
         if current_rules.get(rule_id) == prior_rules.get(rule_id):

@@ -333,6 +333,15 @@ def prove(root, graph, *, session, schema, oracle, model):
             for check_id in checks:
                 check(artifact_root, check_id, session=session, graph=graph,
                       schema=schema, oracle=oracle, model=model)
+        disposition = graph["artifact"]["history"][-1]["disposition"]
+        if (
+            event["semantic_result"] != "fail" or event["restored_result"] != "pass"
+            or disposition == "Delete"
+        ):
+            raise MakeProbeError(
+                "lifecycle observed removal=fail/restoration=pass contradicts "
+                f"proof {event['id']!r} or disposition {disposition!r}"
+            )
         results.append({
             "trigger_event_id": event["trigger_event_id"],
             "trigger_type": triggers[event["trigger_event_id"]]["type"],

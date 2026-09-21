@@ -1529,7 +1529,12 @@ def _validation_step_has_scrubbed_environment(step: str) -> bool:
 
 def _step_name(step: str) -> str | None:
     match = re.search(r"^    - name: (?P<name>.+)$", step, re.MULTILINE)
-    return match.group("name") if match is not None else None
+    if match is None:
+        return None
+    try:
+        return verify._workflow_name_scalar(match.group("name"), "step name")
+    except ValueError:
+        return None
 
 
 def _multiline_step_script(step: str) -> str:
@@ -1712,7 +1717,7 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
         ),
         _run_step_is_exact(
             steps[8],
-            "Run workflow-pilot reporter regression suite (issue #176)",
+            verify._WORKFLOW_PILOT_TEST_STEP_NAME,
             (WORKFLOW_PILOT_GATE,),
             if_expression=FULL_WORKER_STEP_CONDITION,
             env_lines=SCRUBBED_STEP_ENV,
@@ -2932,10 +2937,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "Run gba-playtest host test suite",
                 "Run upstream-port tooling test suite",
                 "Run workflow contract test suite",
-                "Run workflow-pilot reporter regression suite (issue #176)",
+                verify._WORKFLOW_PILOT_TEST_STEP_NAME,
                 "Validate workflow-pilot baseline against checked-out Git history",
-                "Run localization host test suite (issue #18)",
-                "Run full-game localization width contract (issue #18)",
+                "Run localization host test suite (issue",
+                "Run full-game localization width contract (issue",
             ],
         )
         owned = (
@@ -3433,7 +3438,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 SCRUBBED_STEP_ENV,
             ),
             (
-                "Run workflow-pilot reporter regression suite (issue #176)",
+                verify._WORKFLOW_PILOT_TEST_STEP_NAME,
                 SCRUBBED_STEP_ENV,
             ),
             (
@@ -3476,7 +3481,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             )
             for variant in variants:
                 with self.subTest(name=name, variant=variant):
-                    step_start = self.text.index(f"    - name: {name}\n")
+                    selected, = [
+                        step for job in _job_blocks(self.text).values() for step in _step_blocks(job)
+                        if _step_name(step) == name
+                    ]
+                    step_start = self.text.index(selected)
                     env_start = self.text.index("      env:\n", step_start)
                     run_start = self.text.index("      run:", env_start)
                     changed = (

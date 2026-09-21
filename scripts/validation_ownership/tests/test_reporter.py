@@ -25,6 +25,108 @@ from scripts.workflow_pilot import candidate_evidence
 ROOT = Path(__file__).resolve().parents[3]
 
 
+class ReportAuthorityApiTests(unittest.TestCase):
+    """Parsed graph/workflow controls; model authorities are explicit inert inputs."""
+
+    def setUp(self):
+        self.graph = reporter.load_json(ROOT / reporter.GRAPH_PATH)
+        self.schema = reporter.load_json(ROOT / reporter.SCHEMA_PATH)
+        self.oracle = reporter.load_json(ROOT / reporter.PROBE_ORACLE_PATH)
+
+    @staticmethod
+    def model(graph, oracle):
+        nodes = {node["id"]: node for node in graph["nodes"]}
+        surfaces = {name: node for name, node in nodes.items() if node["kind"] == "surface"}
+        evidence = {name: node for name, node in nodes.items() if node["kind"] == "evidence"}
+        exclusions = {item["id"]: item for item in graph["exclusions"]}
+        entries = {
+            probe["path"]: reporter.GitTreeEntry(
+                probe["path"], "160000" if gitlink else "100644", "commit" if gitlink else "blob", "0" * 40,
+            )
+            for probe in oracle["probes"]
+            for gitlink in (exclusions.get(probe.get("expected_exclusion"), {}).get("applies_to") == "gitlink",)
+        }
+        return reporter._ValidatedGraphModel(
+            graph=graph, nodes=nodes, surfaces=surfaces, evidence=evidence, entries=entries,
+            generated_paths={probe["path"] for probe in oracle["probes"]
+                             if probe.get("expected_surface") == "surface.generated"},
+            admission_sources={
+                "initial-graph-cohort": set(entries), "generated-source-registry": set(),
+                "verifier-runtime-registry": set(),
+            },
+            coverage={
+                probe["path"]: {"kind": "excluded", "exclusion": probe["expected_exclusion"]}
+                if "expected_exclusion" in probe else {"kind": "owned", "surface": probe["expected_surface"]}
+                for probe in oracle["probes"]
+            },
+            outgoing={name: [edge for edge in graph["edges"] if edge["source"] == name] for name in surfaces},
+            authorities={name: {"display": name, "modeled_authority": node["authority"]}
+                         for name, node in evidence.items()},
+        )
+
+    def test_actual_path_selector_permutations_preserve_membership_and_oracle(self):
+        from scripts.validation_ownership import ci_verifier
+
+        paths = getattr(self, "immutable_paths", None)
+        if paths is None:
+            budget = ProbeBudget()
+            try:
+                paths = tuple(git_tree_entries(ROOT, budget=budget))
+            finally:
+                budget.close()
+        self.assertGreater(len(paths), 10000)
+        original_rule = next(rule for rule in self.graph["path_rules"] if rule["id"] == "paths.runtime")
+        for field in ("include", "exclude"):
+            changed = copy.deepcopy(self.graph)
+            rule = next(rule for rule in changed["path_rules"] if rule["id"] == original_rule["id"])
+            self.assertGreater(len(rule[field]), 1)
+            rule[field].reverse()
+            with self.subTest(field=field):
+                reporter._validate_json_schema(changed, self.schema, self.schema)
+                for generated in (set(), set(paths)):
+                    before = {path for path in paths if reporter._path_rule_matches(original_rule, path, generated)}
+                    after = {path for path in paths if reporter._path_rule_matches(rule, path, generated)}
+                    self.assertEqual(before, after)
+                self.assertFalse(reporter.compare_graph_edges(changed, self.graph)["invalidated"])
+                ci_verifier._verify_oracle_pairs(
+                    self.oracle, changed, self.model(changed, self.oracle),
+                    self.graph, self.model(self.graph, self.oracle),
+                )
+
+    def test_real_selector_membership_and_ordered_authority_changes_invalidate(self):
+        from scripts.validation_ownership import ci_verifier
+
+        model = self.model(self.graph, self.oracle)
+        probe = next(probe for probe in self.oracle["probes"]
+                     if probe.get("expected_surface") == "surface.runtime")
+        changed = copy.deepcopy(self.graph)
+        rule = next(rule for rule in changed["path_rules"] if rule["id"] == "paths.runtime")
+        self.assertTrue(reporter._path_rule_matches(rule, probe["path"], set()))
+        rule["exclude"].append({"kind": "exact", "path": probe["path"]})
+        self.assertFalse(reporter._path_rule_matches(rule, probe["path"], set()))
+        self.assertEqual(set(reporter.compare_graph_edges(changed, self.graph)["changed_edge_ids"]), {
+            edge["id"] for edge in self.graph["edges"] if edge["source"] == "surface.runtime"
+        })
+        with self.assertRaises(reporter.OwnershipError):
+            ci_verifier._verify_oracle_pairs(
+                self.oracle, changed, self.model(changed, self.oracle), self.graph, model,
+            )
+        for field in ("recipe", "prerequisites"):
+            first, second = copy.deepcopy(model), copy.deepcopy(model)
+            owner = probe["expected_owners"][0]["evidence_id"]
+            first["authorities"][owner][field] = ["first", "second"]
+            second["authorities"][owner][field] = ["second", "first"]
+            with self.subTest(ordered=field), self.assertRaisesRegex(reporter.OwnershipError, "retargets"):
+                ci_verifier._verify_oracle_pairs(self.oracle, self.graph, first, self.graph, second)
+        changed = copy.deepcopy(self.graph)
+        changed["artifact"]["history"].append({
+            **changed["artifact"]["history"][0], "recorded_at": "2026-09-01T00:00:00Z",
+        })
+        original = copy.deepcopy(changed)
+        changed["artifact"]["history"].reverse()
+        self.assertTrue(reporter.compare_graph_edges(changed, original)["invalidated"])
+
+
 class PublicMakeSourceTests(unittest.TestCase):
     def setUp(self):
         self.budget = ProbeBudget()
