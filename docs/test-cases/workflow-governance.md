@@ -3863,6 +3863,80 @@ controls above do not replace them. All native fixtures remove only their
 owned roots after closure; modeled source pins never operate on real caller
 descriptors.
 
+### Native ownership, stderr effects and cumulative accounting
+
+These are additional deterministic controls for
+**TC-WORKFLOW-GATE-OWNERSHIP-001**, using the same clean source and host setup.
+The existing producer and sandbox cases retain their own native procedures;
+none of these checks changes gameplay, saves, generated game-data formats,
+localization or archival behavior.
+
+1. Run the named `PrivateInstallCleanupTests` methods in
+   `test_private_install.py` with their effect-trapped descriptor/process
+   models. Cause first, later and multiple close failures in pending source/
+   parent pins, process pidfds, acquisition unwind, completion and terminal
+   reaping. All remaining known-owned closes must be attempted once; the
+   original failure stays primary. A terminal exit or signal must already be
+   recorded before close failure, while the existing metadata/compiler/helper
+   allowed-status rules remain unchanged. Restore the former fail-fast and
+   late-status paths to recover abandoned resources or lost status.
+2. Use `NullMountFixtureInertTests` to begin with caller-owned FIFO handles.
+   They must retain their identities through successful and failing fixture
+   attempts. The owned child still receives only its declared stdio through
+   `close_fds=True` and empty `pass_fds`; unsupported caller handles reject
+   without being closed. Restore the former caller-FIFO withdrawal and require
+   the preservation control to fail. Real ordinary/restricted backend and all
+   seven mode results still require the existing bounded native qualification.
+3. Run the producer stderr inert controls with the real two item-cap query
+   strings. The issued plan must retain each ordered merge/discard operation,
+   exact environment/source-view binding and one-use launch authority.
+   Exercise actual modeled initial parent-stop activation before first resume,
+   not manual activation before the integration. Null access must be write-only
+   with the full original status flags; all temporary root/dev/null pins retire
+   before first exec, which has exactly descriptors 0, 1 and 2. Wrong actor,
+   object, path, flags, open-how, receipt, stale view, replay or early exec
+   rejects. Restore each old refusal, omitted effect, read-write stdin copy,
+   collapsed order, missing revocation and missing initial activation to
+   recover its behavioral failure.
+4. Exercise the actual stderr JSON admission with DEL, neighboring ASCII,
+   quote/backslash, Unicode and surrogate inputs. Predicted size must match
+   the real ASCII JSON bytes; exact capacity succeeds and one byte less rejects
+   before encoding. DEL remains valid input and contributes its six-byte
+   escape. A larger quota or restricted input alphabet is not the fix.
+5. In the supported separately bounded native environment, run the explicit
+   `GraphCommandTests` selectors
+   `test_live_real_item_cap_queries_use_the_original_make_declarations`,
+   `test_native_stderr_full_descriptor_semantics_match_ordinary_shell`,
+   `test_native_stderr_startup_and_nonzero_failures_do_not_become_empty_success`
+   and
+   `test_native_stderr_keeps_nodev_unknown_fd_and_postbootstrap_openat2_guards`.
+   Compare the actual original Make declarations, default and explicit caps,
+   full descriptor flags, flushed two-stream order, startup failures, nonzero
+   exits, source receipts and cleanup. Effectful commands must execute again,
+   not bypass a newly failing open through cached output. Preserve `NODEV`
+   pathname refusal and post-bootstrap syscall 437 rejection. Never alter
+   shared host `/dev/null` to manufacture a negative.
+6. Run `CumulativeQuotaPolicyTests` in `test_foundation.py` with effect-trapped
+   IO. Ordinary quotas and explicit stricter values still reject at their
+   original boundaries. An injected cumulative policy may retain totals beyond
+   those quotas but cannot enlarge each original stream, pending record/plan,
+   variant cohort, native capsule, input cardinality, live process pool or
+   funded VM. A successful native claim above its issued observation-byte cap
+   rejects; a failed funded attempt retains its real bytes and original error.
+   Repeated settlement is not a second charge and resumption cannot refill a
+   capsule. Restore the original coupled quota/unit paths and successful-byte
+   omission to recover the corresponding negative outcomes.
+
+The separately authored
+`ObservationAllowanceTests.test_cumulative_policy_keeps_each_real_capsule_bound_after_global_crossing`
+requires genuine bounded native execution: four 32-observation capsules may
+produce a report-wide total of 128 while each retains a 64-observation cap;
+one oversized capsule still rejects. The inert controls are not this result.
+The diagnostic accounting-only harness additionally measures physical memory,
+PID, disk and elapsed time under its independent hard enclosure. Sampled quota
+crossings or a failed report prefix cannot select shipping limits or replace
+complete report/verifier, H1, CI and cleanup acceptance.
+
 ### Lifecycle time controls
 
 Run `python3 -m unittest scripts.validation_ownership.tests.test_reporter.ArtifactLifecycleTests -v`.
