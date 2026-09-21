@@ -259,7 +259,7 @@ class PrivateInstallCleanupTests(unittest.TestCase):
                 emit=Mock(), close=Mock(),
             ),
             filter_kernel=None, header_runtime=object(), directory_installs=None,
-            read_trace=None, source_effects=None, journal_receipts=None, private_install=None,
+            read_trace=None, source_effects=None, journal_receipts=None, private_install=None, stderr_setup=None,
             file_cleanup_enabled=False,
             producer_requests=(), consumed=set(), code_consumed=set(), accessed=set(), events=[],
             total_processes=0, live_process_peak=0, calls=0, written=0, created=0, memory_peak=0,

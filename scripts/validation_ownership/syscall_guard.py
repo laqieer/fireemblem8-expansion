@@ -44,6 +44,8 @@ if __package__:
     from .producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
+        STDERR_ROOT_FLAGS, STDERR_NULL_FLAGS, STDERR_OPEN_HOW, STDERR_LARGEFILE,
+        stderr_encoded, stderr_fd_state, stderr_operations, validate_stderr_launch, validate_stderr_receipt,
     )
 else:
     from authority import _event_command, _read_events, encoded, parse_json
@@ -64,6 +66,8 @@ else:
     from producer_channel import (
         ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
         publication_identity, validate_publication_identity, validate_dispatch_context, validate_job_context,
+        STDERR_ROOT_FLAGS, STDERR_NULL_FLAGS, STDERR_OPEN_HOW, STDERR_LARGEFILE,
+        stderr_encoded, stderr_fd_state, stderr_operations, validate_stderr_launch, validate_stderr_receipt,
     )
 
 
@@ -200,6 +204,324 @@ def trace_me(drop_privileges):
         raise OSError(error, "cannot restore tracee memory observation")
     ptrace(TRACEME, 0)
     os.kill(os.getpid(), signal.SIGSTOP)
+
+
+def _stderr_open_null(directory):
+    ctypes.set_errno(0)
+    result = LIBC.syscall(
+        ctypes.c_long(437), ctypes.c_int(directory), ctypes.c_char_p(b"null"),
+        ctypes.c_char_p(STDERR_OPEN_HOW), ctypes.c_size_t(24),
+    )
+    if result == -1:
+        error = ctypes.get_errno()
+        raise OSError(error, "closed stderr null lookup failed")
+    return result
+
+
+def _stderr_bootstrap(effects, root):
+    primary = None
+    try:
+        for effect in effects:
+            if effect == "stdout":
+                os.dup2(1, 2)
+                continue
+            directory = os.open("dev", STDERR_ROOT_FLAGS, 0, dir_fd=root)
+            with cleanup_scope([lambda: os.close(directory)]):
+                null = _stderr_open_null(directory)
+                with cleanup_scope([lambda: os.close(null)]):
+                    os.dup2(null, 2)
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        if root is not None:
+            finish_cleanup([lambda: os.close(root)], primary=primary)
+
+
+class _StderrSetup:
+    """One parent-observed bootstrap; its private pins never enter generic FD authority."""
+
+    def __init__(self, policy):
+        self.policy = policy
+        self.spec = validate_stderr_launch(
+            policy.config["stderr_setup"], policy.config, policy.charge_metadata,
+        )
+        self.effects = tuple(self.spec["effects"])
+        policy.charge_metadata(8 * (5 * len(self.effects) + 1))
+        self.steps = tuple(stderr_operations(self.effects))
+        self.index = 0
+        self.pid = None
+        self.actor = None
+        self.pending = None
+        self.opened = {}
+        self.directory = self.leaf = None
+        self.initial = []
+        self.final = []
+        self.records = []
+        self.credentials = None
+        self.failed = None
+        self.retired = False
+        self.parent_credentials = self._credentials(os.getpid())
+        self.references = [
+            self._reference("/", True), self._reference("/dev", True),
+            self._reference("/dev/null", False),
+            self._reference(str(Path(policy.config["root"]) / "dev/null"), False),
+        ]
+        root, dev, null, mounted = self.references
+        if (
+            not stat.S_ISDIR(root[2]) or not stat.S_ISDIR(dev[2])
+            or not stat.S_ISCHR(null[2]) or null[5] != os.makedev(1, 3)
+            or mounted[:6] != null[:6] or null[8] & os.ST_NODEV
+            or mounted[8] & (os.ST_NODEV | os.ST_NOSUID | os.ST_NOEXEC)
+            != os.ST_NODEV | os.ST_NOSUID | os.ST_NOEXEC
+        ):
+            raise Violation("stderr setup lacks its exact null object and NODEV boundary")
+
+    def _read(self, path, limit):
+        self.policy.charge_metadata(limit + 1)
+        buffer = bytearray(limit + 1)
+        with open(path, "rb", buffering=0) as stream:
+            size = stream.readinto(buffer)
+        if size is None or size > limit:
+            raise Violation("stderr kernel observation exceeds its bound")
+        self.policy.charge_metadata(size)
+        return bytes(memoryview(buffer)[:size])
+
+    def _fd(self, pid, descriptor):
+        data = self._read(f"/proc/{pid}/fdinfo/{descriptor}", 4096)
+        flags = re.findall(rb"^flags:\s*([0-7]+)$", data, re.MULTILINE)
+        mounts = re.findall(rb"^mnt_id:\s*([0-9]+)$", data, re.MULTILINE)
+        if len(flags) != 1 or len(mounts) != 1:
+            raise Violation("stderr descriptor lacks exact flags/mount identity")
+        path = f"/proc/{pid}/fd/{descriptor}"
+        info = os.stat(path)
+        value = (
+            info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid, info.st_rdev,
+            int(flags[0], 8), int(mounts[0]), os.statvfs(path).f_flag,
+        )
+        stderr_fd_state(value)
+        self.policy.charge_metadata(len(encoded(value)))
+        return value
+
+    def _reference(self, path, directory):
+        flags = STDERR_ROOT_FLAGS if directory else os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC
+        descriptor = os.open(path, flags)
+        with cleanup_scope([lambda: os.close(descriptor)]):
+            return self._fd(os.getpid(), descriptor)
+
+    def _credentials(self, pid):
+        raw = self._read(f"/proc/{pid}/status", SYSCALL_MEMORY_LIMIT)
+        fields = {}
+        wanted = (b"Uid", b"Gid", b"Groups", b"CapInh", b"CapPrm", b"CapEff", b"CapBnd", b"CapAmb", b"NoNewPrivs")
+        for line in raw.splitlines():
+            name, separator, value = line.partition(b":")
+            if name in wanted:
+                if not separator or name in fields:
+                    raise Violation("stderr caller has duplicate credential fields")
+                values = value.split()
+                if len(values) > 1024 or any(
+                    not re.fullmatch(rb"[0-9a-fA-F]+" if name.startswith(b"Cap") else rb"[0-9]+", item)
+                    or len(item) > 20 for item in values
+                ):
+                    raise Violation("stderr caller identity exceeds its bound")
+                self.policy.charge_metadata(32 * len(values))
+                fields[name] = [int(item, 16 if name.startswith(b"Cap") else 10) for item in values]
+        if (
+            set(fields) != set(wanted) or len(fields[b"Uid"]) != 4 or len(fields[b"Gid"]) != 4
+            or any(len(fields[name]) != 1 for name in wanted[3:])
+        ):
+            raise Violation("stderr caller lacks complete kernel credentials")
+        return {
+            "uid": fields[b"Uid"], "gid": fields[b"Gid"], "groups": fields[b"Groups"],
+            "caps": [fields[name][0] for name in wanted[3:8]], "nnp": fields[b"NoNewPrivs"][0],
+        }
+
+    def _inventory(self, pid):
+        expected_max = 6
+        names = []
+        with os.scandir(f"/proc/{pid}/fd") as entries:
+            for entry in entries:
+                self.policy.charge_metadata(len(entry.name) + 32)
+                if not entry.name.isascii() or not entry.name.isdigit() or len(names) >= expected_max:
+                    raise Violation("stderr bootstrap has unexpected descriptors")
+                names.append(int(entry.name))
+        return sorted(names)
+
+    def begin(self, pid, state):
+        if (
+            self.pid is not None or not state.bootstrap or state.role != "command"
+            or self.policy.processes.get(pid) is not state
+        ):
+            raise Violation("stderr setup belongs to a different bootstrap actor")
+        self.pid = pid
+        self.actor = state
+        actual = self._credentials(pid)
+        expected = self.parent_credentials
+        if self.policy.config["sudo_drop"]:
+            expected = {
+                "uid": [self.policy.config["runner_uid"]] * 4,
+                "gid": [self.policy.config["runner_gid"]] * 4, "groups": [],
+            }
+        if (
+            any(actual[name] != expected[name] for name in ("uid", "gid", "groups"))
+            or actual["caps"] != [0] * 5 or actual["nnp"] != 1
+        ):
+            raise Violation("stderr setup precedes permanent caller privilege drop")
+        self.credentials = actual
+        wanted = [0, 1, 2, 3] if "null" in self.effects else [0, 1, 2]
+        if self._inventory(pid) != wanted:
+            raise Violation("stderr bootstrap inherited an unissued descriptor")
+        self.initial = [[fd, list(self._fd(pid, fd))] for fd in wanted]
+        self.policy.charge_metadata(len(encoded(self.initial)))
+        initial = dict(self.initial)
+        if (
+            tuple(initial[0][:6]) != self.references[2][:6]
+            or initial[0][6] != os.O_RDWR | STDERR_LARGEFILE
+            or any(not stat.S_ISFIFO(initial[fd][2]) or initial[fd][6] != os.O_WRONLY for fd in (1, 2))
+            or 3 in initial and tuple(initial[3]) != self.references[0]
+        ):
+            raise Violation("stderr bootstrap changed its original stdio/root pin")
+        if 3 in initial:
+            self.opened[3] = self.references[0]
+
+    def enter(self, pid, state, registers):
+        if self.retired:
+            return False
+        if (
+            self.pid != pid or state is not self.actor or self.policy.processes.get(pid) is not state
+            or not state.bootstrap or state.role != "command" or self.pending is not None
+        ):
+            raise Violation("stderr setup has a foreign actor or overlapping syscall")
+        number = registers.orig_rax
+        a, b, c, d = registers.rdi, registers.rsi, registers.rdx, registers.r10
+        expected = self.steps[self.index] if self.index < len(self.steps) else None
+        if number in {56, 57, 58, 435}:
+            raise Violation("stderr bootstrap cannot delegate its pins")
+        if number == 59:
+            if self.failed is not None or expected is not None or self.opened:
+                raise Violation("stderr bootstrap attempted exec before complete retirement")
+            return False
+        if number in {257, 437, 33, 292, 3}:
+            if self.failed is not None:
+                if number != 3 or a not in self.opened:
+                    raise Violation("failed stderr setup attempted another effect")
+                operation = "cleanup"
+            elif number == 257 and expected == "open-dev":
+                if a != 3 or cstring(pid, b) != "dev" or c != STDERR_ROOT_FLAGS or d != 0:
+                    raise Violation("stderr directory lookup escaped its exact original-root pin")
+                operation = expected
+            elif number == 437 and expected == "open-null":
+                if a != self.directory or cstring(pid, b) != "null" or d != 24 or memory(pid, c, 24) != STDERR_OPEN_HOW:
+                    raise Violation("stderr openat2 escaped its exact null-leaf ABI")
+                operation = expected
+            elif number == 33 and expected in {"dup-stdout", "dup-null"}:
+                if a != (1 if expected == "dup-stdout" else self.leaf) or b != 2:
+                    raise Violation("stderr setup duplicated an unissued descriptor")
+                operation = expected
+            elif number == 3 and expected in {"close-null", "close-dev", "close-root"}:
+                if a != {"close-null": self.leaf, "close-dev": self.directory, "close-root": 3}[expected]:
+                    raise Violation("stderr setup retired a different descriptor")
+                operation = expected
+            else:
+                raise Violation("stderr bootstrap has an unplanned descriptor operation")
+            if number in {257, 437, 3} and a not in self.opened:
+                raise Violation("stderr bootstrap descriptor lost its issued ownership")
+            for fd, identity in self.opened.items():
+                if self._fd(pid, fd) != identity:
+                    raise Violation("stderr bootstrap pin changed before its operation")
+            if operation == "open-null":
+                info = os.stat(f"/proc/{pid}/fd/{self.directory}/null", follow_symlinks=False)
+                if (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid, info.st_rdev) != self.references[2][:6]:
+                    raise Violation("stderr null leaf changed before its write-only open")
+            self.pending = operation, number, a
+            return True
+        if number in {0, 1, 5, 8, 16, 17, 18, 19, 20, 32, 72, 73, 74, 75, 77, 81, 91, 93, 138} and a in self.opened:
+            raise Violation("stderr bootstrap pin used outside its closed sequence")
+        if number in {60, 231} and (self.failed is None or self.opened):
+            raise Violation("stderr bootstrap exited before its complete cleanup")
+        if number not in {9, 11, 12, 13, 14, 15, 24, 39, 60, 127, 128, 186, 202, 231, 234}:
+            if self.failed is None or number not in {1, 20} or a not in {1, 2}:
+                raise Violation("stderr bootstrap attempted an unmatched operation")
+        return False
+
+    def leave(self, pid, state, registers):
+        if self.pending is None:
+            return False
+        if (
+            pid != self.pid or state is not self.actor or self.policy.processes.get(pid) is not state
+            or registers.orig_rax != self.pending[1]
+        ):
+            raise Violation("stderr operation lost its actual syscall exit")
+        operation, _, descriptor = self.pending
+        self.pending = None
+        result = signed(registers.rax)
+        actual = None
+        if result < 0:
+            if self.failed is None:
+                self.failed = f"stderr setup {operation} failed: {result}"
+            if operation.startswith("close") or operation == "cleanup":
+                if descriptor not in self._inventory(pid):
+                    del self.opened[descriptor]
+        elif operation.startswith("open-"):
+            if not 3 <= result < 128 or result in self.opened:
+                raise Violation("stderr open returned an unexpected descriptor")
+            actual = self._fd(pid, result)
+            reference = self.references[1 if operation == "open-dev" else 2]
+            flags = STDERR_ROOT_FLAGS if operation == "open-dev" else os.O_WRONLY | STDERR_LARGEFILE | os.O_CLOEXEC
+            if actual[:6] != reference[:6] or actual[6] != flags or actual[7:] != reference[7:]:
+                raise Violation("stderr open returned a foreign device/object/mount or full status flags")
+            self.opened[result] = actual
+            if operation == "open-dev":
+                self.directory = result
+            else:
+                self.leaf = result
+        elif operation.startswith("dup-"):
+            if result != 2:
+                raise Violation("stderr duplication returned a different descriptor")
+            source = self._fd(pid, descriptor)
+            actual = self._fd(pid, 2)
+            if actual != (*source[:6], source[6] & ~os.O_CLOEXEC, *source[7:]):
+                raise Violation("stderr duplication lost its actual alias/full flags")
+        else:
+            if result != 0 or descriptor in self._inventory(pid):
+                raise Violation("stderr close did not retire its actual descriptor")
+            del self.opened[descriptor]
+        row = [operation, descriptor, result, None if actual is None else list(actual)]
+        if len(self.records) >= len(self.steps) + 3:
+            raise Violation("stderr setup outcomes exceed their bounded sequence")
+        self.policy.reserve_observation("accessed", "stderr-setup:" + str(len(self.records)))
+        stderr_encoded(row, self.policy.charge_metadata)
+        self.records.append(row)
+        if self.failed is None:
+            self.index += 1
+        return True
+
+    def executed(self, pid, state):
+        if (
+            pid != self.pid or state is not self.actor or self.policy.processes.get(pid) is not state
+            or self.retired or not state.bootstrap or self.pending is not None
+            or self.failed is not None or self.index != len(self.steps) or self.opened
+            or self._inventory(pid) != [0, 1, 2] or self._credentials(pid) != self.credentials
+        ):
+            raise Violation("stderr setup reached exec with incomplete/foreign authority")
+        self.final = [[fd, list(self._fd(pid, fd))] for fd in (0, 1, 2)]
+        self.policy.charge_metadata(len(encoded(self.final)))
+        receipt = self.receipt()
+        receipt["complete"] = True
+        validate_stderr_receipt(receipt, self.spec)
+        self.retired = True
+        return "<stdout>" if self.effects[-1] == "stdout" else "/dev/null"
+
+    def receipt(self):
+        value = {
+            "version": 1, **{name: self.spec[name] for name in ("scope", "nonce", "context", "binding", "effects")},
+            "pid": self.pid, "credentials": self.credentials,
+            "references": [list(row) for row in self.references],
+            "initial": self.initial, "operations": self.records, "final": self.final,
+            "complete": self.retired,
+        }
+        stderr_encoded(value, self.policy.charge_metadata)
+        return value
 
 
 def signed(value):
@@ -1045,6 +1367,8 @@ class _ToolchainIntermediate:
 
 
 class Policy:
+    stderr_setup = None
+
     def __init__(self, config):
         self.config = config
         self.mode = config["mode"]
@@ -1235,6 +1559,7 @@ class Policy:
                 while parent != "/":
                     directories.add(parent)
                     parent = posixpath.dirname(parent)
+        self.stderr_setup = _StderrSetup(self) if "stderr_setup" in config else None
 
     def reserve_observation(self, name, value):
         attempted = self.observation_attempts[name]
@@ -3101,6 +3426,8 @@ class Policy:
         state.observations.clear()
         state.observation_needs_bytes = False
         trusted = self.observer(state, r)
+        if self.stderr_setup is not None and self.stderr_setup.enter(pid, state, r):
+            return
         if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_JOB_POLICY, VO_JOB_CONTEXT, VO_SOURCE_IO, VO_TOOLCHAIN_STATUS}:
             if a == VO_QUERY_KIND:
                 if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE, VO_LIVE}:
@@ -3580,6 +3907,10 @@ class Policy:
             self.toolchain_intermediate.enter(pid, state, r)
 
     def leave(self, pid, state, r):
+        if self.stderr_setup is not None and self.stderr_setup.leave(pid, state, r):
+            state.memory_reservation = 0
+            state.process_reservation = False
+            return
         if self.toolchain is not None and self.toolchain["stage"] == 4:
             self.toolchain_intermediate.leave(pid, state, r)
         state.dependency_stop = None
@@ -3749,11 +4080,19 @@ def supervise(config, drop_privileges):
         raise Violation("no remaining guest-process capacity")
     pid = os.fork()
     if pid == 0:
+        stderr_root = None
         try:
+            if policy.stderr_setup is not None:
+                os.closerange(3, 65536)
+                if "null" in policy.stderr_setup.effects:
+                    stderr_root = os.open("/", STDERR_ROOT_FLAGS, 0)
+                    if stderr_root != 3:
+                        raise Violation("stderr bootstrap lost its exact original-root slot")
             os.chroot(config["root"])
             os.chdir("/repo")
             os.umask(0o022)
-            os.closerange(3, 65536)
+            if policy.stderr_setup is None:
+                os.closerange(3, 65536)
             if policy.toolchain is not None:
                 if policy.toolchain["stdin"]:
                     reader, writer = os.pipe()
@@ -3773,8 +4112,13 @@ def supervise(config, drop_privileges):
             cpu = max(1, math.ceil(config["deadline"] - time.monotonic()))
             resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
             trace_me(drop_privileges)
+            if policy.stderr_setup is not None:
+                owned, stderr_root = stderr_root, None
+                _stderr_bootstrap(policy.stderr_setup.effects, owned)
             os.execve(config["argv"][0], config["argv"], config["environment"])
         except BaseException as failure:
+            if stderr_root is not None:
+                finish_cleanup([lambda: os.close(stderr_root)], primary=failure)
             os.write(2, ("capsule exec failed: " + repr(failure)).encode("utf-8")[:4096])
             os._exit(125)
     processes[pid] = Process(
@@ -3815,6 +4159,11 @@ def supervise(config, drop_privileges):
     def handle_stop(stopped, status):
         nonlocal main_status
         state = processes.get(stopped)
+        if (
+            policy.stderr_setup is not None and not policy.stderr_setup.retired
+            and os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGSTOP
+        ):
+            raise Violation("stderr bootstrap received a repeated or foreign initial stop")
         if state is None:
             if os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGSTOP:
                 if policy.read_trace is not None:
@@ -3847,6 +4196,8 @@ def supervise(config, drop_privileges):
                     or state.role == "helper" and state.toolchain_status == code == 1
                     and state.toolchain_status_queried and state.producer_event_written
                 ):
+                    if policy.stderr_setup is not None and policy.stderr_setup.failed is not None:
+                        raise Violation(policy.stderr_setup.failed)
                     raise Violation(f"sandbox process exited unsuccessfully: {code}")
             finally:
                 del processes[stopped]
@@ -3925,11 +4276,14 @@ def supervise(config, drop_privileges):
                         policy.toolchain_intermediate.executed(stopped, state, row, wire)
                     state.toolchain_exec = None
                 state.exec_path = None
+            stderr_role = None
             if state.bootstrap:
                 descriptors = {entry.name for entry in Path(f"/proc/{stopped}/fd").iterdir()}
                 policy.charge_metadata(sum(len(name) + 16 for name in descriptors))
                 if descriptors != {"0", "1", "2"}:
                     raise Violation("initial guest exec inherited a nonstandard descriptor")
+                if policy.stderr_setup is not None:
+                    stderr_role = policy.stderr_setup.executed(stopped, state)
             state.role = state.pending[1]
             if policy.read_trace is not None:
                 policy.read_trace.actual_exec(stopped, state.role == "make")
@@ -3937,6 +4291,8 @@ def supervise(config, drop_privileges):
                 policy.source_effects.helper_exec(stopped, state)
             state.bootstrap = False
             state.fds = {0: "<stdin>", 1: "<stdout>", 2: "<stderr>"}
+            if stderr_role is not None:
+                state.fds[2] = stderr_role
             state.observer_ranges = ()
             state.observer_ready = False
             state.memory_reservation = 0
@@ -4297,6 +4653,12 @@ def supervise(config, drop_privileges):
         waited, status = os.waitpid(pid, 0)
         if waited != pid or not os.WIFSTOPPED(status):
             raise Violation("sandbox child did not enter traced confinement")
+        if policy.stderr_setup is not None and (
+            os.WSTOPSIG(status) != signal.SIGSTOP or status >> 16
+            or policy.stderr_setup.pid is not None or policy.stderr_setup.actor is not None
+            or policy.stderr_setup.retired
+        ):
+            raise Violation("stderr bootstrap requires its fresh initial SIGSTOP")
         if policy.toolchain is not None and policy.toolchain["stage"] == 4:
             policy.toolchain_intermediate.birth(pid, processes[pid])
         policy.pin_private_install_parents()
@@ -4307,6 +4669,8 @@ def supervise(config, drop_privileges):
         policy.reserve_memory(pid, processes[pid], 0)
         if "published" in config:
             policy.adopt_published(config["published"])
+        if policy.stderr_setup is not None:
+            policy.stderr_setup.begin(pid, processes[pid])
         ptrace(SYSCALL, pid)
         while processes:
             if time.monotonic() >= config["deadline"]:
@@ -4342,6 +4706,10 @@ def supervise(config, drop_privileges):
     except BaseException as failure:
         primary = failure
         error = str(failure)
+        if policy.stderr_setup is not None and policy.stderr_setup.failed is not None:
+            first = policy.stderr_setup.failed
+            if error != first:
+                error = first + "; subsequent failure: " + error
     finally:
         cleanup_primary = primary
 
@@ -4424,6 +4792,9 @@ def supervise(config, drop_privileges):
                 "metadata": encode_metadata_transport(policy.metadata),
                 "events": policy.events,
             }
+            if policy.stderr_setup is not None:
+                result["stderr_setup"] = policy.stderr_setup.receipt()
+                result["observation_bytes"] = policy.observation_bytes
             if config.get("dependency"):
                 result["executed"] = policy.executed
             if error is None and main_status == 0 and policy.read_trace is not None:

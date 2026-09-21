@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import json
 import selectors
 import socket
 import stat
@@ -22,6 +24,255 @@ class ChannelError(RuntimeError):
 
 PUBLICATION_POLICIES = ("replace", "if-content-changed", "if-content-changed-preserve-mode")
 PUBLICATION_MAGIC = b"VOGEN2\0\0"
+
+STDERR_ROOT_FLAGS = os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+STDERR_NULL_FLAGS = os.O_WRONLY | os.O_CLOEXEC
+STDERR_OPEN_HOW = struct.pack("<QQQ", STDERR_NULL_FLAGS, 0, 0x04 | 0x08)
+STDERR_LARGEFILE = 0x8000
+STDERR_BINDING_FIELDS = (
+    "root", "mode", "argv", "environment", "code", "sources", "enumerations",
+    "executables", "mounts",
+)
+
+
+def stderr_effects(value, argc):
+    if (
+        type(value) not in (tuple, list) or type(argc) is not int
+        or not 1 <= argc <= 1024 or len(value) + argc > 1024
+        or any(type(item) is not str or item not in {"stdout", "null"} for item in value)
+    ):
+        raise ChannelError("invalid or excessive ordered stderr effects")
+    return value
+
+
+def stderr_json_size(value, reserve=None, _depth=0):
+    """Pre-admit the exact ASCII JSON wire before encoding the closed records."""
+    if _depth > 8:
+        raise ChannelError("stderr record exceeds its closed nesting")
+    def account(size):
+        if reserve is not None:
+            reserve(size)
+        return size
+    kind = type(value)
+    if value is None:
+        return account(4)
+    if kind is bool:
+        return account(4 if value else 5)
+    if kind is int:
+        if not -(1 << 64) < value < 1 << 64:
+            raise ChannelError("stderr record integer is outside its ABI")
+        return account(len(str(value)))
+    if kind is str:
+        total, pending = account(2), 0
+        for index, character in enumerate(value):
+            number = ord(character)
+            pending += (
+                2 if character in '"\\\b\f\n\r\t' else
+                6 if number < 32 or 127 <= number <= 65535 else
+                12 if number > 65535 else 1
+            )
+            if index % 1024 == 1023:
+                total += account(pending)
+                pending = 0
+        return total + account(pending)
+    if kind in (tuple, list):
+        return account(2 + max(0, len(value) - 1)) + sum(
+            stderr_json_size(item, reserve, _depth + 1) for item in value
+        )
+    if kind is dict and all(type(key) is str for key in value):
+        return account(2 + max(0, len(value) - 1) + len(value)) + sum(
+            stderr_json_size(key, reserve, _depth + 1) + stderr_json_size(item, reserve, _depth + 1)
+            for key, item in value.items()
+        )
+    raise ChannelError("stderr record is outside the closed JSON representation")
+
+
+def stderr_encoded(value, reserve):
+    size = stderr_json_size(value, reserve)
+    reserve(size)
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
+
+
+def stderr_launch_binding(config, value, reserve):
+    data = {name: config[name] for name in STDERR_BINDING_FIELDS}
+    data["stderr"] = {name: value[name] for name in ("scope", "nonce", "context", "effects")}
+    return hashlib.sha256(stderr_encoded(data, reserve)).hexdigest()
+
+
+def validate_stderr_inputs(config):
+    def strings(items, count, size):
+        return (
+            type(items) is list and len(items) <= count
+            and all(type(item) is str and "\0" not in item and len(item) <= size for item in items)
+        )
+    if (
+        type(config) is not dict or any(name not in config for name in STDERR_BINDING_FIELDS)
+        or type(config["root"]) is not str or not config["root"].startswith("/")
+        or len(config["root"]) > 4096 or os.path.normpath(config["root"]) != config["root"]
+        or not strings(config["argv"], 1024, 65536)
+        or any(not strings(config[name], 4096, 4096) for name in ("code", "sources", "enumerations"))
+        or type(config["environment"]) is not dict or len(config["environment"]) > 1024
+        or any(type(name) is not str or not name or "=" in name or "\0" in name
+               or type(content) is not str or "\0" in content or len(name) + len(content) > 65536
+               for name, content in config["environment"].items())
+        or type(config["mounts"]) is not list or len(config["mounts"]) != 4
+        or any(type(row) is not dict or set(row) != {"source", "target", "writable", "executable"}
+               or type(row["source"]) is not str or not row["source"].startswith("/")
+               or len(row["source"]) > 4096 or type(row["target"]) is not str
+               or type(row["writable"]) is not bool or type(row["executable"]) is not bool
+               for row in config["mounts"])
+        or [(row["target"], row["writable"], row["executable"]) for row in config["mounts"]]
+        != [("/repo", False, False), ("/usr", False, True), ("/work", True, False), ("/dev/null", True, False)]
+        or config["mounts"][1]["source"] != "/usr" or config["mounts"][3]["source"] != "/dev/null"
+    ):
+        raise ChannelError("stderr launch has malformed command inputs or mounts")
+
+
+def validate_stderr_launch(value, config, reserve):
+    validate_stderr_inputs(config)
+    if (
+        type(value) is not dict or set(value) != {"version", "scope", "nonce", "context", "effects", "binding"}
+        or type(value["version"]) is not int or value["version"] != 1
+        or type(value["scope"]) is not str
+        or value["scope"] != config["root"].rstrip("/").rsplit("/", 1)[-1]
+        or not re.fullmatch(r"[A-Za-z0-9_-]+", value["scope"])
+        or type(value["nonce"]) is not str or not re.fullmatch("[0-9a-f]{32}", value["nonce"])
+        or type(value["binding"]) is not str or not re.fullmatch("[0-9a-f]{64}", value["binding"])
+        or type(value["context"]) is not str or not re.fullmatch("[0-9a-f]{64}", value["context"])
+        or type(value["effects"]) is not list or not value["effects"]
+        or config["mode"] != "command" or config["executables"] != ["/usr/bin/python3"]
+        or config["argv"][:4] != ["/usr/bin/python3", "-I", "-S", "-B"]
+        or any(config.get(name) for name in (
+            "dependency", "metadata_validation", "private_install", "header_runtime",
+            "toolchain_runtime", "producer_endpoint", "file_cleanup", "observe_recipe_dispatch",
+        ))
+    ):
+        raise ChannelError("unbound or incompatible stderr launch")
+    stderr_effects(value["effects"], len(config["argv"]))
+    if value["binding"] != stderr_launch_binding(config, value, reserve):
+        raise ChannelError("stderr launch changed after issuance")
+    return value
+
+
+def stderr_operations(effects):
+    for effect in effects:
+        if effect == "stdout":
+            yield "dup-stdout"
+        else:
+            yield from ("open-dev", "open-null", "dup-null", "close-null", "close-dev")
+    if "null" in effects:
+        yield "close-root"
+
+
+def stderr_fd_state(value):
+    if (
+        type(value) not in (tuple, list) or len(value) != 9
+        or any(type(item) is not int or not 0 <= item < 1 << 64 for item in value)
+        or not value[1] or not value[7]
+    ):
+        raise ChannelError("invalid stderr kernel descriptor identity")
+    return tuple(value)
+
+
+def validate_stderr_receipt(value, launch):
+    if (
+        type(value) is not dict or set(value) != {
+            "version", "scope", "nonce", "context", "binding", "effects", "pid", "credentials",
+            "references", "initial", "operations", "final", "complete",
+        }
+        or type(value["version"]) is not int or value["version"] != 1
+        or any(value[name] != launch[name] for name in ("scope", "nonce", "context", "binding", "effects"))
+        or value["complete"] is not True or type(value["pid"]) is not int or not 0 < value["pid"] < 1 << 31
+        or type(value["references"]) is not list or len(value["references"]) != 4
+        or type(value["initial"]) is not list or type(value["final"]) is not list
+        or type(value["operations"]) is not list
+    ):
+        raise ChannelError("incomplete or unbound stderr setup receipt")
+    principal = value["credentials"]
+    if (
+        type(principal) is not dict or set(principal) != {"uid", "gid", "groups", "caps", "nnp"}
+        or any(type(principal[name]) is not list for name in ("uid", "gid", "groups", "caps"))
+        or len(principal["uid"]) != 4 or len(principal["gid"]) != 4
+        or len(principal["groups"]) > 1024 or principal["caps"] != [0] * 5
+        or type(principal["nnp"]) is not int or principal["nnp"] != 1
+        or any(type(number) is not int or not 0 <= number < 1 << 32
+               for name in ("uid", "gid", "groups", "caps") for number in principal[name])
+    ):
+        raise ChannelError("stderr setup lacks its permanently dropped caller")
+    root, dev, null, mounted = map(stderr_fd_state, value["references"])
+    if (
+        not stat.S_ISDIR(root[2]) or not stat.S_ISDIR(dev[2])
+        or root[6] != STDERR_ROOT_FLAGS or dev[6] != STDERR_ROOT_FLAGS
+        or not stat.S_ISCHR(null[2]) or null[5] != os.makedev(1, 3)
+        or null[:6] != mounted[:6] or null[8] & os.ST_NODEV
+        or mounted[8] & (os.ST_NODEV | os.ST_NOSUID | os.ST_NOEXEC)
+        != os.ST_NODEV | os.ST_NOSUID | os.ST_NOEXEC
+    ):
+        raise ChannelError("stderr setup changed its null object or mount boundary")
+
+    def descriptors(rows, expected):
+        if (
+            len(rows) != len(expected)
+            or any(type(row) is not list or len(row) != 2 for row in rows)
+            or [row[0] for row in rows] != expected
+            or any(type(row[0]) is not int for row in rows)
+        ):
+            raise ChannelError("stderr setup has an unexpected descriptor set")
+        return {row[0]: stderr_fd_state(row[1]) for row in rows}
+
+    initial = descriptors(value["initial"], [0, 1, 2, 3] if "null" in launch["effects"] else [0, 1, 2])
+    final = descriptors(value["final"], [0, 1, 2])
+    if (
+        initial[0][:6] != null[:6] or initial[0][6] != os.O_RDWR | STDERR_LARGEFILE
+        or not all(stat.S_ISFIFO(initial[fd][2]) and initial[fd][6] == os.O_WRONLY for fd in (1, 2))
+        or initial[1][:6] == initial[2][:6]
+        or initial[0] != final[0] or initial[1] != final[1]
+        or 3 in initial and initial[3] != root
+    ):
+        raise ChannelError("stderr setup lost its original standard streams")
+    expected = tuple(stderr_operations(launch["effects"]))
+    if len(value["operations"]) != len(expected):
+        raise ChannelError("stderr setup omitted or repeated an operation")
+    opened = {3: root} if 3 in initial else {}
+    selected = initial[2]
+    directory = leaf = None
+    for expected_name, row in zip(expected, value["operations"]):
+        if (
+            type(row) is not list or len(row) != 4 or row[0] != expected_name
+            or any(type(row[index]) is not int for index in (1, 2))
+        ):
+            raise ChannelError("stderr setup changed its ordered operation")
+        name, descriptor, result, actual = row
+        if name.startswith("open-"):
+            wanted = root if name == "open-dev" else dev
+            if descriptor not in opened or opened[descriptor][:6] != wanted[:6] or not 3 <= result < 128 or result in opened:
+                raise ChannelError("stderr setup opened through a foreign descriptor")
+            actual = stderr_fd_state(actual)
+            reference = dev if name == "open-dev" else null
+            flags = STDERR_ROOT_FLAGS if name == "open-dev" else os.O_WRONLY | STDERR_LARGEFILE | os.O_CLOEXEC
+            if actual[:6] != reference[:6] or actual[6] != flags or actual[7:] != reference[7:]:
+                raise ChannelError("stderr setup opened a different object or status mode")
+            opened[result] = actual
+            if name == "open-dev":
+                directory = result
+            else:
+                leaf = result
+        elif name.startswith("dup-"):
+            source = initial[1] if name == "dup-stdout" else opened.get(leaf)
+            if descriptor != (1 if name == "dup-stdout" else leaf) or result != 2 or source is None:
+                raise ChannelError("stderr setup duplicated a foreign descriptor")
+            actual = stderr_fd_state(actual)
+            if actual != (*source[:6], source[6] & ~os.O_CLOEXEC, *source[7:]):
+                raise ChannelError("stderr setup lost its actual descriptor alias or flags")
+            selected = actual
+        else:
+            wanted = {"close-null": leaf, "close-dev": directory, "close-root": 3}[name]
+            if descriptor != wanted or descriptor not in opened or result != 0 or actual is not None:
+                raise ChannelError("stderr setup did not retire its actual descriptor")
+            del opened[descriptor]
+    if opened or final[2] != selected:
+        raise ChannelError("stderr setup retained authority or substituted final stderr")
+    return value
 
 
 def publication_identity(info):

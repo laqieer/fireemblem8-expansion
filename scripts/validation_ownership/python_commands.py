@@ -170,18 +170,20 @@ def python_code_closure(session, body, code=()):
 
 
 def python_command(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=(),
-                   publication_policy="replace"):
+                   publication_policy="replace", stderr_effects=()):
     modules = python_code_closure(session, body, code)
     prefix = "import sys;"
     if modules:
         prefix += "sys.path.insert(0,'/repo');"
-    return Command(
+    command = Command(
         (PYTHON, "-I", "-S", "-B", "-c",
          prefix + body, *arguments),
         code=modules, sources=tuple(sources), outputs=tuple(outputs),
         directories=tuple(sorted(set(directories) | set(python_import_directories(modules)))),
         publication_policy=publication_policy,
+        stderr_effects=stderr_effects,
     )
+    return session._native_context_command(command) if stderr_effects else command
 
 
 def _directory_closure(paths):
