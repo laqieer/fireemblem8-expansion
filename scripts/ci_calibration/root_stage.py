@@ -208,6 +208,68 @@ def fixture_state(case):
     }
 
 
+def finalize_case(case, recorder, budget, primary, *, setup_completed):
+    state = None
+    first = primary
+    errors = {}
+    try:
+        try:
+            session = recorder.session
+            safe = setup_completed and (not recorder.session_attempts or recorder.session_valid) and (
+                session is None and not budget.children and not budget.producer_waiters
+                or session is not None and session.base is None and not budget.children and not budget.producer_waiters
+                and not any(owner.retained for owner in session._file_owners.values())
+            )
+            if safe:
+                case.tearDown()
+        except BaseException as error:
+            errors["teardown"] = error
+            if first is None:
+                first = error
+        try:
+            state = cleanup_state(
+                recorder.session if recorder.session_valid else None, budget, getattr(case, "fixture", None),
+                setup_completed=setup_completed,
+            )
+        except BaseException as error:
+            errors["observation"] = error
+            if first is None:
+                first = error
+    finally:
+        # Independent withdrawals still run when collection or another
+        # withdrawal fails; no failure authorizes reusing a released reference.
+        try:
+            recorder.observation = None
+        except BaseException as error:
+            errors["observation-reference"] = error
+            state = None
+            if first is None:
+                first = error
+        try:
+            if hasattr(case, "results"):
+                del case.results
+        except BaseException as error:
+            errors["result-reference"] = error
+            state = None
+            if first is None:
+                first = error
+    if first is not None:
+        first.component_cleanup_state = state
+        if "teardown" in errors:
+            first.component_cleanup_error = policy.component_secondary_error(errors["teardown"])
+        if "observation" in errors:
+            first.component_cleanup_observation_error = policy.component_secondary_error(errors["observation"])
+        references = [
+            {"stage": name, "error": policy.component_secondary_error(errors[name])}
+            for name in ("observation-reference", "result-reference") if name in errors
+        ]
+        if references:
+            first.component_reference_errors = references
+        if first is not primary:
+            raise first
+    return state
+
+
 def run(root, budget, config, sampler):
     if __package__:
         from .worker import require_contained
@@ -237,32 +299,7 @@ def run(root, budget, config, sampler):
         raise
     finally:
         sampler.phase = "component-finalize"
-        session = recorder.session
-        known = getattr(case, "fixture", None)
-        safe = setup_completed and (not recorder.session_attempts or recorder.session_valid) and (
-            session is None and not budget.children and not budget.producer_waiters
-            or session is not None and session.base is None and not budget.children and not budget.producer_waiters
-            and not any(owner.retained for owner in session._file_owners.values())
-        )
-        cleanup_error = None
-        if safe:
-            try:
-                case.tearDown()
-            except BaseException as error:
-                cleanup_error = error
-        state = cleanup_state(
-            session if recorder.session_valid else None, budget, known, setup_completed=setup_completed,
-        )
-        if primary is not None:
-            primary.component_cleanup_state = state
-            if cleanup_error is not None:
-                primary.component_cleanup_error = policy.component_error_record(cleanup_error)
-        elif cleanup_error is not None:
-            cleanup_error.component_cleanup_state = state
-            raise cleanup_error
-        recorder.observation = None
-        if hasattr(case, "results"):
-            del case.results
+        state = finalize_case(case, recorder, budget, primary, setup_completed=setup_completed)
     result = {
         "version": 1, "workload_kind": policy.WORKLOAD_KIND, "fixture_version": policy.FIXTURE_VERSION,
         "source_revision": policy.GRAPH, "base_revision": policy.BASE, "profile": policy.PROFILE,

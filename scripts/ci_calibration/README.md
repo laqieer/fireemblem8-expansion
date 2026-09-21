@@ -6,9 +6,14 @@ Main must independently review the full exact harness and separately freeze
 the first owner-created launch. The implementation contract is
 [5754711352](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5754711352).
 
-This is a normal child of reviewed
+This cleanup-evidence correction is a normal child of preparation
+`b854e3cd466166dbc79bfe8f717af956b424365c`, then reviewed
 `f00bc2610d7031d14268855deb2979682ea196af`, preserving its exact earlier
 normal lineage to BASE `ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`.
+The correction must be nonempty and modify only its fixed existing
+supervisor/adapter/worker/policy/test/documentation surfaces. It cannot change
+the workflow, selected source, limits or containment primitives, and it does
+not reopen any historical allocation.
 The selected immutable source is
 `c3e226e79ad69ad81c29acbc5e8810262ce5c8a6`, checked out separately with its
 Git-pinned submodules and without credentials. The closed20 workflow stays
@@ -144,6 +149,23 @@ cgroup death is not proof of inner ownership cleanup. Unsupported, partial,
 oversized, malformed or trailing-incomplete component streams fail. Failed
 evidence cannot become a resource sizing point or a shipping policy.
 
+Completion additionally requires the actual `empty_before_outer_cleanup`
+observation to be **exactly true**. Post-kill `empty=true`, even with a clean
+inner report, cannot substitute for it. Missing, false or wrongly typed
+pre-kill state fails acceptance and retains uncertainty; post-cleanup cgroup,
+watchdog and lifetime closure are still independently required. All outer
+termination/close attempts and postchecks remain in place.
+
+Cleanup-state observation itself is fallible. A later collector error cannot
+replace an earlier source or teardown exception: it is retained as bounded
+independent secondary metadata, with cleanup state explicitly unavailable.
+Without a prior failure, the collector's own failure is surfaced. Recorder
+observation and case-result references are withdrawn independently, even if
+state collection, another withdrawal or secondary formatting fails. A failed
+withdrawal remains a failure with unavailable ownership, never a fabricated
+clean state. Metadata formatting failure is explicitly unavailable and does
+not export a private message or traceback.
+
 ## Preparation and later tester procedure
 
 This procedure belongs to the existing
@@ -165,6 +187,11 @@ changes, schema ambiguity, counter/finalization failures, first-cause,
 all-closes and uncertainty retention. Restoration of old all-category
 policy or removed enforcement must break the corresponding oracle; neutral
 JSON order/local spelling remains data-equivalent.
+The cleanup correction's inert controls also combine source, teardown,
+observation, formatter and reference-withdrawal failures. Actual parent-helper
+restorations must recover pre-kill false acceptance and primary-error
+replacement; corrected and neutral controls must pass before independent
+follow-up. This is preparation evidence only, not a native cleanup observation.
 
 After independent exact-harness review, Main must separately freeze one
 first owner-created hosted allocation. Require all seven fresh controls,

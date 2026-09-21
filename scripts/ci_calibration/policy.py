@@ -454,6 +454,37 @@ def component_error_record(error):
     return {"chain": chain, "complete": True, "reason": None}
 
 
+def validate_component_error_record(value):
+    _component_fields(value, "chain complete reason")
+    if (
+        type(value["chain"]) is not list or len(value["chain"]) > 32
+        or type(value["complete"]) is not bool
+        or value["complete"] and (value["reason"] is not None or not value["chain"])
+        or not value["complete"] and value["reason"] not in {
+            "exception-chain-bound", "error-metadata-unavailable", "secondary-format-failed",
+        }
+    ):
+        raise GuardError("component error metadata is not its bounded closed record")
+    for row in value["chain"]:
+        _component_fields(row, "type errno")
+        if (
+            type(row["type"]) is not str
+            or row["type"] != "unavailable-type" and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", row["type"]) is None
+            or row["errno"] is not None and not _component_integer(row["errno"], 4095)
+        ):
+            raise GuardError("component error metadata contains an unbounded or private field")
+    return value
+
+
+def component_secondary_error(error):
+    try:
+        return validate_component_error_record(component_error_record(error))
+    except BaseException:
+        # A failed metadata collector must not replace the operation whose
+        # failure is being recorded. The unavailable record is never success.
+        return {"chain": [], "complete": False, "reason": "secondary-format-failed"}
+
+
 def validate_report(report):
     if not isinstance(report, dict):
         raise GuardError("graph returned no real report object")

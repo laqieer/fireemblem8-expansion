@@ -37,24 +37,45 @@ RETAINED_HARNESS_SHA = "1a2d177749cec443c05021855e4f006cdae821f1"
 ROOT18_HARNESS_SHA = "e4c42d0f831806e4ecf1587ef7cbb977a7ff57e8"
 REVIEWED_HARNESS_SHA = "f50cbd175b02aef847e344c84154f6574aa5e457"
 COMPONENT_BASE_SHA = "f00bc2610d7031d14268855deb2979682ea196af"
+CORRECTION_BASE_SHA = "b854e3cd466166dbc79bfe8f717af956b424365c"
 COMPONENT_PATHS = frozenset({
     policy.WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "worker.py", "root_stage.py", "supervisor.py", "observation_failure.py", "README.md",
         "test_ci_calibration.py", "test_root_stage.py", "test_observation_failure.py",
     )),
 })
+CORRECTION_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
+    "supervisor.py", "root_stage.py", "worker.py", "policy.py", "README.md",
+    "test_ci_calibration.py", "test_root_stage.py",
+))
 
 
 def validate_harness_lineage(lines, head):
     if lines != [
-        f"{head} {COMPONENT_BASE_SHA}",
+        f"{head} {CORRECTION_BASE_SHA}",
+        f"{CORRECTION_BASE_SHA} {COMPONENT_BASE_SHA}",
         f"{COMPONENT_BASE_SHA} {REVIEWED_HARNESS_SHA}",
         f"{REVIEWED_HARNESS_SHA} {ROOT18_HARNESS_SHA}",
         f"{ROOT18_HARNESS_SHA} {RETAINED_HARNESS_SHA}",
         f"{RETAINED_HARNESS_SHA} {PREPARATION_SHA}",
         f"{PREPARATION_SHA} {policy.BASE}",
     ]:
-        raise policy.GuardError("diagnostic requires its exact normal component/root20/root19/root18/root17/preparation/BASE lineage")
+        raise policy.GuardError("diagnostic requires its exact normal correction/component/root20/root19/root18/root17/preparation/BASE lineage")
+
+
+def validate_correction_inventory(data):
+    if type(data) is not bytes:
+        raise policy.GuardError("correction inventory is not a Git byte record")
+    rows = data.split(b"\0")
+    if len(rows) < 3 or len(rows) % 2 != 1 or rows[-1] != b"":
+        raise policy.GuardError("correction requires a nonempty normal modification")
+    changes = list(zip(rows[:-1:2], rows[1:-1:2]))
+    allowed = {name.encode("ascii") for name in CORRECTION_PATHS}
+    if (
+        any(kind != b"M" or name not in allowed for kind, name in changes)
+        or len({name for _, name in changes}) != len(changes)
+    ):
+        raise policy.GuardError("correction changed an unfrozen surface")
 
 
 def apparmor_text(name):
@@ -731,7 +752,7 @@ class Owner:
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
         validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=6", "HEAD").decode().splitlines(),
+            git(self.harness, "rev-list", "--parents", "--max-count=7", "HEAD").decode().splitlines(),
             self.scope["harness_sha"],
         )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
@@ -760,6 +781,9 @@ class Owner:
             or len({name for _, name in changes}) != len(changes)
         ):
             raise policy.GuardError("component preparation exceeds its exact allowed surfaces")
+        validate_correction_inventory(git(
+            self.harness, "diff", "--name-status", "-z", CORRECTION_BASE_SHA, "HEAD",
+        ))
         self.source_status("before")
         tree = git(self.candidate, "ls-tree", "-rz", "--full-tree", policy.GRAPH)
         self.tracked_paths = len([row for row in tree.split(b"\0") if row])
@@ -904,6 +928,7 @@ def validate_component_phase(result):
         or type(result.get("component_attempts")) is not int or result["component_attempts"] != 1
         or any(type(result.get(name)) is not int or result[name] != 0 for name in policy.ABSENT_WORKLOADS)
         or result.get("empty") is not True or result.get("watchdog_reaped") is not True
+        or result.get("empty_before_outer_cleanup") is not True
         or result.get("lifetime_writer_closed") is not True
         or result.get("output_exceeded") or result.get("cleanup_errors") or result.get("supervisor_error")
         or not isinstance(result.get("worker"), dict)
@@ -938,6 +963,10 @@ def validate_component_phase(result):
 
 def component_retention(result):
     if type(result) is not dict or result.get("mode") != "component":
+        return True
+    if any(result.get(name) is not True for name in (
+        "empty_before_outer_cleanup", "empty", "watchdog_reaped", "lifetime_writer_closed",
+    )):
         return True
     worker = result.get("worker")
     component = worker.get("component") if isinstance(worker, dict) else None

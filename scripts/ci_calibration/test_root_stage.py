@@ -65,11 +65,15 @@ def observation(fault=None):
 
 
 class RootStageControls(Inert):
-    def composition(self, fault=None):
+    def composition(self, fault=None, *, state_fault=False, teardown_fault=False, withdrawal_fault=None,
+                    formatter_fault=False):
         budget = self.budget()
         sampler = SimpleNamespace(phase="candidate-import", session=None)
-        events, sessions, cases = [], [], []
+        events, sessions, cases, recorders = [], [], [], []
         first = RuntimeError("private source first failure")
+        state_error = OSError(errno.EIO, "private cleanup observation")
+        teardown_error = OSError(errno.EACCES, "private earlier teardown")
+        withdrawal_error = OSError(errno.EBADF, "private reference withdrawal")
         state = {"removed": False}
         root = Path("/repo/build/test-artifacts/component")
 
@@ -119,6 +123,17 @@ class RootStageControls(Inert):
                 return observation(fault)
 
         class SelectedCase(unittest.TestCase):
+            def __delattr__(self, name):
+                if name == "results":
+                    events.append(("withdraw-results",))
+                    if withdrawal_fault == ("results", "before"):
+                        raise withdrawal_error
+                    super().__delattr__(name)
+                    if withdrawal_fault == ("results", "after"):
+                        raise withdrawal_error
+                    return
+                super().__delattr__(name)
+
             def setUp(self):
                 cases.append(self)
                 self.fixture = SimpleNamespace(
@@ -130,8 +145,8 @@ class RootStageControls(Inert):
                     raise first
             def tearDown(self):
                 events.append(("teardown",))
-                if fault == "fixture-close":
-                    raise OSError("inert fixture close")
+                if fault == "fixture-close" or teardown_fault:
+                    raise teardown_error
                 state["removed"] = True
             def session(self):
                 raise AssertionError("stock fresh-budget seam called")
@@ -171,18 +186,42 @@ class RootStageControls(Inert):
                 return False
             raise AssertionError("unmodeled source path")
         result = error = None
+        recorder_type = root_stage.Recorder
+        class ObservedRecorder(recorder_type):
+            def __init__(self, *args):
+                super().__init__(*args)
+                recorders.append(self)
+
+            def __setattr__(self, name, value):
+                if name == "observation" and value is None and getattr(self, "observation", None) is not None:
+                    events.append(("withdraw-observation",))
+                    if withdrawal_fault == ("observation", "before"):
+                        raise withdrawal_error
+                    super().__setattr__(name, value)
+                    if withdrawal_fault == ("observation", "after"):
+                        raise withdrawal_error
+                    return
+                super().__setattr__(name, value)
+
         with mock.patch.object(worker, "require_contained", return_value={}), \
              mock.patch.object(root_stage, "candidate_api", return_value=api), \
+             mock.patch.object(root_stage, "Recorder", ObservedRecorder), \
              mock.patch.object(Path, "read_bytes", return_value=b'#include "global.h"\n'), \
              mock.patch.object(Path, "read_text", return_value="\nexpansion-modern-all: ;\n"), \
-             mock.patch.object(Path, "exists", exists), mock.patch.object(Path, "is_symlink", return_value=False):
+             mock.patch.object(Path, "exists", exists), mock.patch.object(Path, "is_symlink", return_value=False), \
+             ExitStack() as effects:
+            if state_fault:
+                effects.enter_context(mock.patch.object(root_stage, "cleanup_state", side_effect=state_error))
+            if formatter_fault:
+                effects.enter_context(mock.patch.object(policy, "component_error_record", side_effect=ValueError("inert formatter")))
             try:
                 result = root_stage.run(Path("/repo"), budget, {"mode": "component", "deadline": 3700.0}, sampler)
             except BaseException as caught:
                 error = caught
         return SimpleNamespace(
             result=result, error=error, first=first, budget=budget, sampler=sampler,
-            api=api, events=events, sessions=sessions, cases=cases, state=state,
+            api=api, events=events, sessions=sessions, cases=cases, state=state, recorders=recorders,
+            state_error=state_error, teardown_error=teardown_error, withdrawal_error=withdrawal_error,
         )
 
     def test_exact_inherited_method_uses_one_budget_session_and_make(self):
@@ -249,6 +288,73 @@ class RootStageControls(Inert):
                     self.assertNotIn(("teardown",), value.events)
                     self.assertEqual(value.error.component_cleanup_state["retained_owners"], 1)
 
+    def test_cleanup_observation_failure_preserves_source_or_teardown_primary(self):
+        for source_failure, teardown in ((True, False), (True, True), (False, True), (False, False)):
+            with self.subTest(source=source_failure, teardown=teardown):
+                value = self.composition("method" if source_failure else None, state_fault=True,
+                                         teardown_fault=teardown)
+                expected = value.first if source_failure else value.teardown_error if teardown else value.state_error
+                self.assertIs(value.error, expected)
+                self.assertIsNone(value.result)
+                self.assertIsNone(value.error.component_cleanup_state)
+                self.assertEqual(value.error.component_cleanup_observation_error["chain"][0],
+                                 {"type": "OSError", "errno": errno.EIO})
+                if teardown:
+                    self.assertEqual(value.error.component_cleanup_error["chain"][0],
+                                     {"type": "PermissionError", "errno": errno.EACCES})
+                self.assertIn(("teardown",), value.events)
+                self.assertIn(("withdraw-observation",), value.events)
+                self.assertIn(("withdraw-results",), value.events)
+                self.assertEqual(value.events.count(("withdraw-observation",)), 1)
+                self.assertEqual(value.events.count(("withdraw-results",)), 1)
+                self.assertIsNone(value.recorders[0].observation)
+                self.assertFalse(hasattr(value.cases[0], "results"))
+                self.assertTrue(supervisor.component_retention({
+                    **self.component_phase(), "worker": None,
+                    "first_cause": {"type": "worker-error", "error": {"component_cleanup": None}},
+                }))
+
+    def test_reference_withdrawal_faults_attempt_both_owners_and_preserve_first_cause(self):
+        for reference in ("observation", "results"):
+            for when in ("before", "after"):
+                for source_failure in (False, True):
+                    with self.subTest(reference=reference, when=when, source=source_failure):
+                        value = self.composition(
+                            "method" if source_failure else None, withdrawal_fault=(reference, when),
+                        )
+                        self.assertIs(value.error, value.first if source_failure else value.withdrawal_error)
+                        self.assertIsNone(value.error.component_cleanup_state)
+                        self.assertEqual(value.error.component_reference_errors[0]["stage"],
+                                         "observation-reference" if reference == "observation" else "result-reference")
+                        self.assertIn(("withdraw-observation",), value.events)
+                        self.assertIn(("withdraw-results",), value.events)
+                        if reference == "observation":
+                            self.assertFalse(hasattr(value.cases[0], "results"))
+                            self.assertEqual(value.recorders[0].observation is None, when == "after")
+                        else:
+                            self.assertIsNone(value.recorders[0].observation)
+                            self.assertEqual(hasattr(value.cases[0], "results"), when == "before")
+
+    def test_secondary_formatter_failure_is_unavailable_not_a_replacement_or_skipped_withdrawal(self):
+        value = self.composition("method", state_fault=True, teardown_fault=True, formatter_fault=True)
+        self.assertIs(value.error, value.first)
+        self.assertIsNone(value.error.component_cleanup_state)
+        expected = {"chain": [], "complete": False, "reason": "secondary-format-failed"}
+        self.assertEqual(value.error.component_cleanup_error, expected)
+        self.assertEqual(value.error.component_cleanup_observation_error, expected)
+        self.assertIsNone(value.recorders[0].observation)
+        self.assertFalse(hasattr(value.cases[0], "results"))
+        original = policy.component_error_record
+        with mock.patch.object(policy, "component_error_record", side_effect=lambda error:
+                               dict(reversed(list(original(error).items())))):
+            neutral = self.composition("method", state_fault=True)
+        self.assertIs(neutral.error, neutral.first)
+        self.assertIsNone(neutral.error.component_cleanup_state)
+        self.assertEqual(neutral.error.component_cleanup_observation_error["chain"][0],
+                         {"type": "OSError", "errno": errno.EIO})
+        self.assertIsNone(neutral.recorders[0].observation)
+        self.assertFalse(hasattr(neutral.cases[0], "results"))
+
     def test_summary_is_metadata_only_and_neutral_order_preserves_actual_comparisons(self):
         raw = observation()
         result = root_stage.summarize(raw, raw.results, 1, 1)
@@ -279,7 +385,8 @@ class RootStageControls(Inert):
             oracle()
         oracle()
 
-    def worker_case(self, *, stage_failure=False, sampler_failure=False, budget_failure=False, publication_failure=False):
+    def worker_case(self, *, stage_failure=False, sampler_failure=False, budget_failure=False, publication_failure=False,
+                    observation_failure=False):
         budget = self.budget()
         first = RuntimeError("private workload failure")
         closing = OSError("private cleanup")
@@ -314,7 +421,11 @@ class RootStageControls(Inert):
             budget.charge("control", 33708478)
             budget.close()
             if stage_failure:
-                first.component_cleanup_state = result["cleanup"]
+                first.component_cleanup_state = None if observation_failure else result["cleanup"]
+                if observation_failure:
+                    first.component_cleanup_observation_error = policy.component_secondary_error(
+                        OSError(errno.EIO, "private state observation"),
+                    )
                 raise first
             result["counters"] = policy.counter_snapshot(budget, session)
             return result
@@ -398,6 +509,20 @@ class RootStageControls(Inert):
         self.assertEqual(value["counters"]["session"]["memory_peak"], sampler.session.memory_peak)
         self.assertTrue(value["counters"]["budget"]["closed"])
 
+    def test_worker_exports_unavailable_cleanup_and_bounded_secondary_without_private_data(self):
+        value = self.worker_case(stage_failure=True, observation_failure=True)
+        error, = [data for kind, data in value.frames if kind == "error"]
+        self.assertEqual(error["chain"][0]["type"], "RuntimeError")
+        self.assertIsNone(error["component_cleanup"])
+        self.assertEqual(error["component_cleanup_observation_error"]["chain"][0],
+                         {"type": "OSError", "errno": errno.EIO})
+        self.assertNotIn(b"private", policy.encoded(error))
+        self.assertIn("sampler-close", value.events)
+        self.assertEqual(value.events[-1], "budget-close")
+        phase = {**self.component_phase(), "worker": None,
+                 "first_cause": {"type": "worker-error", "error": error}}
+        self.assertTrue(supervisor.component_retention(phase))
+
     def supervisor_case(self, fault=None):
         arguments = SimpleNamespace(
             operation="run", harness="/owned/harness", candidate="/owned/candidate",
@@ -460,6 +585,8 @@ class RootStageControls(Inert):
                 if fault == "prereturn":
                     raise OSError(errno.EIO, "actual-component-prereturn")
                 value = self.component_phase()
+                if fault == "pre-kill":
+                    value["empty_before_outer_cleanup"] = False
                 if fault in ("component", "retained"):
                     value["first_cause"] = {"type": "worker-error", "error": {
                         "component_cleanup": copy.deepcopy(value["worker"]["component"]["cleanup"]),
@@ -533,7 +660,7 @@ class RootStageControls(Inert):
                 first = value.stored["result.json"]["first_error"]
                 self.assertEqual(first["chain"][0]["message"], str(OSError(errno.EIO, expected)))
                 self.assertNotEqual(first.get("type"), "lifetime-eof")
-        for fault in ("preflight", "component", "retained", "cleanup"):
+        for fault in ("preflight", "component", "retained", "cleanup", "pre-kill"):
             with self.subTest(fault=fault):
                 value = self.supervisor_case(fault)
                 self.assertEqual(value.code, 1)
@@ -542,7 +669,7 @@ class RootStageControls(Inert):
                     self.assertEqual(value.stored["result.json"]["first_error"]["reason"], "actual-preflight")
                 elif fault in ("component", "retained"):
                     self.assertEqual(value.stored["result.json"]["first_error"]["error"]["reason"], "actual-component")
-                if fault == "retained":
+                if fault in ("retained", "pre-kill"):
                     self.assertNotIn("owner-cleanup", value.cleanup)
 
 

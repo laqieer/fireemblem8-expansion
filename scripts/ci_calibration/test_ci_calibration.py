@@ -124,7 +124,8 @@ class Inert(unittest.TestCase):
         return {
             "mode": "component", "first_cause": None, "returncode": 0, "deadline": 3700.0,
             "component_attempts": 1, **policy.ABSENT_WORKLOADS, "empty": True,
-            "watchdog_reaped": True, "lifetime_writer_closed": True, "output_exceeded": False,
+            "empty_before_outer_cleanup": True, "watchdog_reaped": True,
+            "lifetime_writer_closed": True, "output_exceeded": False,
             "worker": {
                 "component": component, "validation": policy.validate_component_result(component),
                 "counters": {"phase": "completed-component", "counters": component["counters"], "semantics": "inert"},
@@ -441,7 +442,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.COMPONENT_BASE_SHA}",
+            f"{'a' * 40} {supervisor.CORRECTION_BASE_SHA}",
+            f"{supervisor.CORRECTION_BASE_SHA} {supervisor.COMPONENT_BASE_SHA}",
             f"{supervisor.COMPONENT_BASE_SHA} {supervisor.REVIEWED_HARNESS_SHA}",
             f"{supervisor.REVIEWED_HARNESS_SHA} {supervisor.ROOT18_HARNESS_SHA}",
             f"{supervisor.ROOT18_HARNESS_SHA} {supervisor.RETAINED_HARNESS_SHA}",
@@ -480,6 +482,61 @@ class CalibrationControls(Inert):
         self.assertIn("run", arguments)
         self.assertEqual(arguments[arguments.index("--output") + 1], "$RUNNER_TEMP/" + policy.OUTPUT_PREFIX + "$GITHUB_RUN_ID")
         self.assertNotIn("secrets.", json.dumps(data))
+
+    def test_pre_kill_empty_must_be_observed_true_not_credit_from_outer_cleanup(self):
+        original = self.component_phase()
+        supervisor.validate_component_phase(original)
+        self.assertFalse(supervisor.component_retention(original))
+        for before in (False, None, 0, 1, "true", [], {}):
+            with self.subTest(before=before):
+                changed = copy.deepcopy(original)
+                changed["empty_before_outer_cleanup"] = before
+                with self.assertRaises(policy.GuardError):
+                    supervisor.validate_component_phase(changed)
+                self.assertTrue(supervisor.component_retention(changed))
+        changed = copy.deepcopy(original)
+        del changed["empty_before_outer_cleanup"]
+        with self.assertRaises(policy.GuardError):
+            supervisor.validate_component_phase(changed)
+        self.assertTrue(supervisor.component_retention(changed))
+        for field in ("empty", "watchdog_reaped", "lifetime_writer_closed"):
+            changed = copy.deepcopy(original)
+            changed[field] = False
+            with self.assertRaises(policy.GuardError):
+                supervisor.validate_component_phase(changed)
+            self.assertTrue(supervisor.component_retention(changed))
+        neutral = json.loads(json.dumps(original, sort_keys=True))
+        self.assertEqual(supervisor.validate_component_phase(neutral), supervisor.validate_component_phase(original))
+
+    def test_correction_inventory_is_nonempty_fixed_modifications_only(self):
+        data = b"".join(b"M\0" + path.encode() + b"\0" for path in sorted(supervisor.CORRECTION_PATHS))
+        supervisor.validate_correction_inventory(data)
+        for bad in (
+            b"", b"M\0", b"M\0scripts/ci_calibration/root_stage.py",
+            b"A\0scripts/ci_calibration/root_stage.py\0",
+            b"D\0scripts/ci_calibration/root_stage.py\0",
+            b"M\0" + policy.WORKFLOW.encode() + b"\0",
+            b"M\0scripts/ci_calibration/kernel.py\0",
+            b"M\0scripts/validation_ownership/budget.py\0", data + data,
+        ):
+            with self.subTest(bad=bad), self.assertRaises(policy.GuardError):
+                supervisor.validate_correction_inventory(bad)
+
+    def test_secondary_error_metadata_is_bounded_and_explicit_when_unavailable(self):
+        value = policy.component_secondary_error(OSError(5, "private source"))
+        self.assertEqual(value["chain"], [{"type": "OSError", "errno": 5}])
+        self.assertIs(policy.validate_component_error_record(value), value)
+        with mock.patch.object(policy, "component_error_record", side_effect=ValueError("private formatter")):
+            unavailable = policy.component_secondary_error(RuntimeError("original secondary"))
+        self.assertEqual(unavailable, {"chain": [], "complete": False, "reason": "secondary-format-failed"})
+        policy.validate_component_error_record(unavailable)
+        for bad in (
+            {**value, "message": "private"}, {**value, "chain": [{"type": "OSError", "errno": True}]},
+            {**value, "chain": [{"type": "private value", "errno": None}]},
+            {**value, "complete": False, "reason": "invented"}, {**value, "chain": []},
+        ):
+            with self.assertRaises(policy.GuardError):
+                policy.validate_component_error_record(bad)
 
     def test_fresh_qualifiers_cannot_credit_unrelated_failures_or_outer_kill(self):
         lifetime = {

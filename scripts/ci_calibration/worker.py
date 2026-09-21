@@ -536,10 +536,23 @@ def component(config):
             observer.budget_admission(error) if observer is not None else observation_failure.unavailable("binding-not-ready")
         )
         cleanup = getattr(error, "component_cleanup_state", None)
-        if cleanup is not None:
-            record["component_cleanup"] = policy.validate_component_cleanup(cleanup)
-        if hasattr(error, "component_cleanup_error"):
-            record["component_cleanup_error"] = error.component_cleanup_error
+        record["component_cleanup"] = None if cleanup is None else policy.validate_component_cleanup(cleanup)
+        for name in ("component_cleanup_error", "component_cleanup_observation_error"):
+            if hasattr(error, name):
+                record[name] = policy.validate_component_error_record(getattr(error, name))
+        if hasattr(error, "component_reference_errors"):
+            references = error.component_reference_errors
+            if type(references) is not list or not 1 <= len(references) <= 2:
+                raise policy.GuardError("component reference-error metadata is malformed")
+            for row in references:
+                if type(row) is not dict or row.keys() != {"stage", "error"} or type(row["stage"]) is not str or row["stage"] not in {
+                    "observation-reference", "result-reference",
+                }:
+                    raise policy.GuardError("component reference-error metadata has an unknown stage")
+                policy.validate_component_error_record(row["error"])
+            if len({row["stage"] for row in references}) != len(references):
+                raise policy.GuardError("component reference-error metadata repeats a stage")
+            record["component_reference_errors"] = references
         kernel.emit(config["scope"], "error", record)
         return None
     finally:
