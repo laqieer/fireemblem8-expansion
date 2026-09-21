@@ -148,6 +148,66 @@ capture, `import scripts` keeps Python's `NamespaceLoader`,
 capture missing gitlink admission still fails at the actual `/repo`
 enumeration boundary instead of falling back to synthetic package objects.
 
+### Generic graph registrations and original shell effects
+
+The generic graph adapter's `python3 -c`, `python3 -m`, and script registrations
+use the existing session-issued native-context capability. At actual dispatch,
+the primary command receives the authenticated Make child environment, not the
+controller's ambient environment or a substituted canonical environment.
+Supported inherited and exported values, including `FE8_ITEM_ID_CAP`, remain
+observable. A literal leading `FE8_ITEM_ID_CAP=...` retains its original override;
+its exact value is also bound in the command argv. Isolated/no-site/no-bytecode
+startup remains mandatory. Unsupported loader and shell startup controls,
+uncontrolled unqualified-Python lookup, and noncanonical Python startup inputs
+reject rather than being silently scrubbed. The Make variable `PYTHON` itself
+is not a Python interpreter startup control.
+
+Each lookup reconstructs an issued generic registration, including after source
+view/epoch changes. The existing capability checks the command binding, source
+snapshot, tree, epoch and exact consuming dispatch. The execution cache includes
+the actual environment, admitted source identities and metadata revalidation;
+the live receipt records that environment with the original inputs and output
+digest. A previous view's handle cannot supply current live authority.
+Standalone `python_command(...)` and auxiliary registration-time executions
+remain canonical, even while another producer is being registered.
+
+The adapter applies each admitted `2>&1` with a real descriptor duplication
+before producer code runs. Flushed stdout/stderr and descriptor-level writes
+therefore share the original stream order; separately captured byte strings are
+never concatenated afterward. Generic Python `2>/dev/null` is explicitly
+unsupported, including when a later redirect would overwrite it: the generic
+capsule has no issued null-device transition under its existing `NODEV` mount
+policy. Such a command fails before producer execution, never succeeds with
+discarded evidence. The separately typed compiler-directory query's established
+stderr suppression is unchanged. The committed chapter-objectives enablement
+registration still supports its required `2>&1`.
+
+Argv-only adapters accept only words proved literal from their original raw
+shell tokens, including assignment values and redirect operands. Single quotes,
+double-quoted glob characters, escaped characters and mixed literal quote
+segments are preserved. Double quotes do not make `$NAME`, `${NAME}`, command
+substitution or backticks literal. Unproved active pathname/variable/other shell
+expansion rejects instead of becoming a literal argument. In particular,
+`find texts -type f -name *.txt` rejects whether the original cwd would match
+zero, one or several names; quoted or escaped literal patterns retain the
+literal find pattern. Registry matching still independently requires one
+authorized command form; these rules do not authorize new commands.
+
+The focused API/effect-model controls are
+`test_graph_commands.CommandSemanticsTests`. Genuine producer regressions in
+`GraphCommandTests` compare original Make environments, recipe exports, cache
+receipts, two-stream ordering and cwd glob effects with ordinary execution.
+These belong to the existing
+[`TC-WORKFLOW-GATE-OWNERSHIP-001`](test-cases/workflow-governance.md#tc-workflow-gate-ownership-001-resolve-every-admitted-path-to-complete-validation-ownership),
+[`TC-WORKFLOW-PROBE-PRODUCER-001`](test-cases/workflow-governance.md#tc-workflow-probe-producer-001-preserve-live-producer-context-and-native-remakes),
+and [`TC-PROBE-PYTHON-PRODUCERS-001`](test-cases/workflow-governance.md#tc-probe-python-producers-001-share-source-only-python-producer-commands)
+procedures, not a new registry. They require the existing bounded native
+allocation before execution; inert controls are not native acceptance.
+Dependencies are the shared shell tokens, issued context, command cache and
+producer receipt APIs. No source-planner, native containment, budget, gameplay,
+save, generated game-data, modern/archival profile or localization contract
+changes, and no additional feature interactions, are introduced.
+
 Generated-dependency registrations validate their exact named option set before
 lookup, order selector arguments by the declared module signature rather than
 the caller's CLI order, and keep every support/discovery step inside the

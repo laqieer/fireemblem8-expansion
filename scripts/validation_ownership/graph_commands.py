@@ -16,6 +16,7 @@ from . import arm_headers, header_effects, toolchain_runtime
 from .authority import ENVIRONMENT, encoded, parse_json, relative_path
 from .budget import MakeProbeError, text
 from .make_probe import Command, ProbeSession
+from .graph_lifecycle import _startup_environment
 from .graph_regex import CommandPatterns
 from .python_commands import GENERATED_DEPENDENCY_MODULES, generated_dependency_command
 
@@ -191,7 +192,43 @@ def _operator(token, value):
 def _simple_words(tokens, label):
     if any(token.operator or token.io_number for token in tokens):
         raise MakeProbeError(f"{label} has unconsumed active shell syntax")
-    return [token.value for token in tokens]
+    words = []
+    for token in tokens:
+        if not token.raw:
+            raise MakeProbeError(f"{label} lacks original shell word roles")
+        quote, index, value = None, 0, []
+        while index < len(token.raw):
+            character = token.raw[index]
+            if quote == "'":
+                if character == "'":
+                    quote = None
+                else:
+                    value.append(character)
+            elif character == "\\":
+                following = token.raw[index + 1:index + 2]
+                if not following:
+                    raise MakeProbeError(f"{label} has an incomplete shell escape")
+                if quote != '"' or following in '$`"\\\n':
+                    if following != "\n":
+                        value.append(following)
+                    index += 1
+                else:
+                    value.append(character)
+            elif character == quote:
+                quote = None
+            elif character in "'\"" and quote is None:
+                quote = character
+            elif character in "$`" or quote is None and character in "*?[]{}~":
+                raise MakeProbeError(f"{label} contains unproven active shell expansion")
+            elif quote is None and character in " \t\n;&|<>()":
+                raise MakeProbeError(f"{label} has malformed shell word roles")
+            else:
+                value.append(character)
+            index += 1
+        if quote is not None:
+            raise MakeProbeError(f"{label} has incomplete shell quoting")
+        words.append("".join(value))
+    return words
 
 
 def _literal_header_words(tokens):
@@ -224,9 +261,10 @@ def _stderr_redirections(tokens):
         descriptor, operator, destination = tokens[-3:]
         if not descriptor.io_number or descriptor.value != "2" or destination.operator:
             break
-        if _operator(operator, ">&") and destination.value == "1":
+        target, = _simple_words((destination,), "stderr redirection")
+        if _operator(operator, ">&") and target == "1":
             consumed.append("stdout")
-        elif _operator(operator, ">") and destination.value == "/dev/null":
+        elif _operator(operator, ">") and target == "/dev/null":
             consumed.append("null")
         else:
             break
@@ -237,11 +275,32 @@ def _stderr_redirections(tokens):
 def _environment_assignments(tokens):
     environment = {}
     while tokens and tokens[0].assignment:
-        name, value = tokens.pop(0).value.split("=", 1)
+        assignment, = _simple_words((tokens.pop(0),), "producer environment")
+        name, value = assignment.split("=", 1)
         if name != "FE8_ITEM_ID_CAP":
             raise MakeProbeError(f"unsupported domain environment input: {name}")
         environment[name] = value
     return environment
+
+
+def _python_environment(session, program):
+    if not session._live_dispatches:
+        return
+    context = session._require_live_dispatch()
+    environment = dict(context.environment)
+    _startup_environment(
+        {"environment": environment}, (program,),
+        shell=context.arguments[0] in {"/bin/sh", "/bin/bash"},
+    )
+    controls = {
+        name for name, value in environment.items()
+        if name.startswith("PYTHON") and name != "PYTHON"
+        and (name not in ENVIRONMENT or value != ENVIRONMENT[name])
+    }
+    if controls:
+        raise MakeProbeError(
+            "registered Python producer has unsupported startup controls: " + ", ".join(sorted(controls))
+        )
 
 
 def _long_option_values(arguments, label):
@@ -379,9 +438,9 @@ class MakeCommands:
         if len(matches) != 1:
             raise MakeProbeError(f"command lacks exactly one sealed domain: {command!r}")
         contract = matches[0]
-        if command in self.registrations and contract["id"] not in {
+        if (command in self.registrations and contract["id"] not in {
             "legacy-text-dry-run-recipe", toolchain_runtime.CONTRACT, *HEADER_STEPS,
-        }:
+        } and id(self.registrations[command]) not in self.session._native_context_commands):
             return self.registrations[command]
         self.session.budget.charge("cache", len(encoded([contract["id"], command])))
         self.requests.append({"id": contract["id"], "command": command})
@@ -680,7 +739,14 @@ class MakeCommands:
             raise MakeProbeError(
                 f"graph domain needs a typed command adapter: {contract['id']}: {command!r}"
             )
+        _python_environment(self.session, tokens[0])
+        if "null" in redirections:
+            raise MakeProbeError("registered Python stderr discard lacks admitted null-device authority")
         prefix = "import os;os.environ.update(" + repr(environment) + ");"
+        for redirect in redirections:
+            if redirect != "stdout":
+                raise MakeProbeError("registered Python has an unsupported stderr effect")
+            prefix += "os.dup2(1,2);"
         if stdin is not None:
             prefix += "import io;sys.stdin=io.StringIO(" + repr(stdin) + ");"
         arguments = tokens[1:]
@@ -735,6 +801,6 @@ class MakeCommands:
         ]
         if contract["id"] == "modern-expansion-config-resolution":
             sources.append("config.mk")
-        return python_command(
+        return self.session._native_context_command(python_command(
             self.session, body, sources=tuple(sorted(set(sources))), code=python_code,
-        )
+        ))
