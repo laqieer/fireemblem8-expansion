@@ -4154,6 +4154,11 @@ def supervise(config, drop_privileges):
     def handle_stop(stopped, status):
         nonlocal main_status
         state = processes.get(stopped)
+        if (
+            policy.stderr_setup is not None and not policy.stderr_setup.retired
+            and os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGSTOP
+        ):
+            raise Violation("stderr bootstrap received a repeated or foreign initial stop")
         if state is None:
             if os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGSTOP:
                 if policy.read_trace is not None:
@@ -4324,11 +4329,6 @@ def supervise(config, drop_privileges):
             policy.read_trace.trap(stopped, state)
         elif sig not in {signal.SIGSTOP, signal.SIGCHLD, signal.SIGTRAP}:
             raise Violation(f"sandbox signal {sig}")
-        if (
-            sig == signal.SIGSTOP and stopped == pid and state.bootstrap
-            and policy.stderr_setup is not None and policy.stderr_setup.pid is None
-        ):
-            policy.stderr_setup.begin(stopped, state)
         resume(stopped)
 
     def unsettled(state):
@@ -4648,6 +4648,12 @@ def supervise(config, drop_privileges):
         waited, status = os.waitpid(pid, 0)
         if waited != pid or not os.WIFSTOPPED(status):
             raise Violation("sandbox child did not enter traced confinement")
+        if policy.stderr_setup is not None and (
+            os.WSTOPSIG(status) != signal.SIGSTOP or status >> 16
+            or policy.stderr_setup.pid is not None or policy.stderr_setup.actor is not None
+            or policy.stderr_setup.retired
+        ):
+            raise Violation("stderr bootstrap requires its fresh initial SIGSTOP")
         if policy.toolchain is not None and policy.toolchain["stage"] == 4:
             policy.toolchain_intermediate.birth(pid, processes[pid])
         policy.pin_private_install_parents()
@@ -4658,6 +4664,8 @@ def supervise(config, drop_privileges):
         policy.reserve_memory(pid, processes[pid], 0)
         if "published" in config:
             policy.adopt_published(config["published"])
+        if policy.stderr_setup is not None:
+            policy.stderr_setup.begin(pid, processes[pid])
         ptrace(SYSCALL, pid)
         while processes:
             if time.monotonic() >= config["deadline"]:

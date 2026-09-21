@@ -13,6 +13,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import secrets
+import signal
 import shlex
 import shutil
 import subprocess
@@ -595,11 +596,100 @@ class _StderrModel:
 
     def run(self):
         setup = self.policy.stderr_setup
-        setup.begin(11, self.state)
+        self.parent_start()
         syscall_guard._stderr_bootstrap(setup.effects, 3 if "null" in setup.effects else None)
         self.state.fds[2] = setup.executed(11, self.state)
         self.state.bootstrap = False
         return setup.receipt()
+
+    @staticmethod
+    def supervisor_source():
+        tree = ast.parse((ROOT / "scripts/validation_ownership/syscall_guard.py").read_bytes())
+        supervisor = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "supervise")
+        constants = [
+            node for node in tree.body if isinstance(node, ast.Assign)
+            and {name.id for target in node.targets for name in ast.walk(target) if isinstance(name, ast.Name)}
+            & {"SETOPTIONS", "SYSCALL", "OPTIONS"}
+        ]
+        return supervisor, constants
+
+    def parent_namespace(self, wait_result=None, fault=None):
+        self.start_events = []
+        def step(name, *values):
+            self.start_events.append((name, *values))
+            if name == fault:
+                raise OSError(errno.EIO, "modeled parent " + name)
+        def waitpid(pid, flags):
+            if (pid, flags) != (11, 0):
+                raise AssertionError("unmodeled parent wait")
+            step("wait", pid, flags)
+            return (11, (int(signal.SIGSTOP) << 8) | 0x7F) if wait_result is None else wait_result
+        def maps(path):
+            if str(path) != "/proc/11/maps":
+                raise AssertionError("unmodeled parent maps")
+            def read():
+                step("maps", str(path))
+                return "1000-2000 rw-p 0 0:0 0 [heap]\n"
+            return SimpleNamespace(read_text=read)
+        self.policy.pin_private_install_parents = lambda: step("pins")
+        self.policy.reserve_memory = lambda pid, state, amount: step("memory", pid, state is self.state, amount)
+        self.policy.adopt_published = lambda value: step("adopt", value)
+        self.policy.require_fresh_process = lambda pid: step("unexpected-child", pid)
+        self.policy.account_processes = lambda: step("unexpected-account")
+        self.policy.total_processes = 1
+        namespace = {
+            **syscall_guard.__dict__, "pid": 11, "processes": self.policy.processes,
+            "policy": self.policy, "config": self.config, "Path": maps, "signal": signal,
+            "newborn_stops": {}, "vfork_waiters": {}, "main_status": None,
+            "resume": lambda child: step("handler-resume", child),
+            "release_vfork": lambda child: step("release-vfork", child),
+        }
+        def ptrace(request, pid, *arguments):
+            if request == namespace["SETOPTIONS"]:
+                step("options", pid, *arguments)
+            elif request == namespace["SYSCALL"]:
+                setup = self.policy.stderr_setup
+                step("resume", pid, None if setup is None else setup.pid,
+                     None if setup is None else setup.actor is self.state)
+            else:
+                raise AssertionError("unmodeled parent ptrace request")
+        namespace["ptrace"] = ptrace
+        namespace["os"] = SimpleNamespace(
+            waitpid=waitpid, WIFSTOPPED=os.WIFSTOPPED, WSTOPSIG=os.WSTOPSIG,
+            WIFEXITED=os.WIFEXITED, WIFSIGNALED=os.WIFSIGNALED,
+            waitstatus_to_exitcode=os.waitstatus_to_exitcode,
+            pidfd_open=lambda pid: (step("unexpected-pidfd", pid) or 9012),
+        )
+        return namespace
+
+    def parent_start(self, wait_result=None, fault=None):
+        supervisor, constants = self.supervisor_source()
+        startup = next(
+            node for node in supervisor.body if isinstance(node, ast.Try)
+            and any(isinstance(item, ast.Assign) and isinstance(item.value, ast.Call)
+                    and isinstance(item.value.func, ast.Attribute) and item.value.func.attr == "waitpid"
+                    for item in node.body)
+        )
+        before_loop = []
+        for statement in startup.body:
+            if isinstance(statement, ast.While):
+                break
+            before_loop.append(statement)
+        namespace = self.parent_namespace(wait_result, fault)
+        exec(compile(ast.Module(body=[*constants, *before_loop], type_ignores=[]),
+                     "actual_parent_initial_wait", "exec"), namespace)
+        return self.start_events
+
+    def parent_stop(self, pid=11, status=None):
+        supervisor, constants = self.supervisor_source()
+        handler = next(node for node in supervisor.body if isinstance(node, ast.FunctionDef) and node.name == "handle_stop")
+        factory = ast.parse("def bind_handler():\n main_status = None\n return handle_stop\n").body[0]
+        factory.body.insert(1, handler)
+        namespace = self.parent_namespace()
+        exec(compile(ast.fix_missing_locations(ast.Module(body=[*constants, factory], type_ignores=[])),
+                     "actual_parent_stop_handler", "exec"), namespace)
+        namespace["bind_handler"]()(pid, (int(signal.SIGSTOP) << 8) | 0x7F if status is None else status)
+        return self.start_events
 
 
 class StderrSetupTests(unittest.TestCase):
@@ -608,6 +698,84 @@ class StderrSetupTests(unittest.TestCase):
     dispatch = CommandSemanticsTests.dispatch
     consuming = CommandSemanticsTests.consuming
     execute = CommandSemanticsTests.execute
+
+    def test_actual_initial_parent_wait_activates_stdout_and_null_before_first_operation(self):
+        for effects in (("stdout",), ("null",), ("null", "stdout")):
+            with self.subTest(effects=effects), _StderrModel(effects).active() as model:
+                self.assertIsNone(model.policy.stderr_setup.pid)
+                events = model.parent_start()
+                self.assertEqual(events[0], ("wait", 11, 0))
+                self.assertEqual([row[0] for row in events], ["wait", "pins", "maps", "options", "memory", "resume"])
+                self.assertEqual(events[-1], ("resume", 11, 11, True))
+                self.assertEqual(model.state.break_end, 0x2000)
+                self.assertEqual(model.policy.calls, 0)
+                syscall_guard._stderr_bootstrap(effects, 3 if "null" in effects else None)
+                self.assertEqual(model.operations[0][:2], ("dup-stdout", 1) if effects[0] == "stdout" else ("open-dev", 3))
+                model.policy.stderr_setup.executed(11, model.state)
+                self.assertEqual(set(model.tables[11]), {0, 1, 2})
+                self.assertTrue(model.policy.stderr_setup.retired)
+
+    def test_initial_parent_wait_refuses_foreign_malformed_and_replayed_starts(self):
+        stop = (int(signal.SIGSTOP) << 8) | 0x7F
+        for result in ((12, stop), (11, 0), (11, int(signal.SIGTERM)),
+                       (11, (int(signal.SIGTRAP) << 8) | 0x7F), (11, stop | (1 << 16))):
+            with self.subTest(result=result), _StderrModel(("null",)).active() as model:
+                with self.assertRaises(syscall_guard.Violation):
+                    model.parent_start(result)
+                self.assertEqual([row[0] for row in model.start_events], ["wait"])
+                self.assertIsNone(model.policy.stderr_setup.pid)
+                self.assertEqual(model.policy.calls, 0)
+        with _StderrModel(("null",)).active() as model:
+            model.parent_start()
+            with self.assertRaises(syscall_guard.Violation):
+                model.parent_start()
+            self.assertEqual([row[0] for row in model.start_events], ["wait"])
+            self.assertIs(model.policy.stderr_setup.actor, model.state)
+        for altered in ("role", "bootstrap", "caps", "pin"):
+            with self.subTest(altered=altered), _StderrModel(("null",)).active() as model:
+                if altered == "role":
+                    model.state.role = "make"
+                elif altered == "bootstrap":
+                    model.state.bootstrap = False
+                elif altered == "caps":
+                    model.child["caps"] = [0, 0, 1, 0, 0]
+                else:
+                    model.install(11, 3, model.references["/dev"])
+                with self.assertRaises(syscall_guard.Violation):
+                    model.parent_start()
+                self.assertNotIn("resume", [row[0] for row in model.start_events])
+
+    def test_later_stop_handler_cannot_supply_or_repeat_initial_activation(self):
+        for started in (False, True):
+            for pid in (11, 12):
+                with self.subTest(started=started, pid=pid), _StderrModel(("null",)).active() as model:
+                    if started:
+                        model.parent_start()
+                    with self.assertRaisesRegex(syscall_guard.Violation, "stderr bootstrap"):
+                        model.parent_stop(pid)
+                    self.assertFalse(model.start_events)
+                    self.assertEqual(model.policy.stderr_setup.pid, 11 if started else None)
+        with _StderrModel(("stdout",)).active() as model:
+            model.policy.stderr_setup = None
+            self.assertEqual(model.parent_stop(), [("handler-resume", 11)])
+
+    def test_initial_parent_faults_stop_resume_and_plain_startup_remains_unchanged(self):
+        for phase in ("wait", "pins", "maps", "options", "memory", "adopt", "resume"):
+            with self.subTest(phase=phase), _StderrModel(("null",)).active() as model:
+                model.config["published"] = []
+                with self.assertRaisesRegex(OSError, "modeled parent " + phase):
+                    model.parent_start(fault=phase)
+                self.assertEqual(model.start_events[-1][0], phase)
+                self.assertEqual(model.policy.stderr_setup.pid, 11 if phase == "resume" else None)
+                self.assertEqual(model.policy.calls, 0)
+                self.assertFalse(model.policy.stderr_setup.retired)
+        with _StderrModel(("stdout",)).active() as model:
+            model.policy.stderr_setup = None
+            model.parent_start()
+            self.assertEqual([row[0] for row in model.start_events], ["wait", "pins", "maps", "options", "memory", "resume"])
+            self.assertEqual(model.start_events[-1], ("resume", 11, None, None))
+            self.assertEqual(model.state.break_end, 0x2000)
+            self.assertEqual(set(model.tables[11]), {0, 1, 2})
 
     def test_actual_supervisor_child_branch_drops_then_traces_sets_up_and_execs(self):
         tree = ast.parse((ROOT / "scripts/validation_ownership/syscall_guard.py").read_bytes())
@@ -646,7 +814,7 @@ class StderrSetupTests(unittest.TestCase):
             def tracing(dropper):
                 dropper()
                 events.append("traced-stop")
-                model.policy.stderr_setup.begin(11, model.state)
+                model.parent_start()
             def execution(path, argv, environment):
                 self.assertEqual((path, argv, environment),
                                  (model.config["argv"][0], model.config["argv"], model.config["environment"]))
