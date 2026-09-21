@@ -45,6 +45,7 @@ REPORT_FINALIZATION_SHA = "4dad318411d6e191d79db1a3570d611f5464afad"
 REPORT_ACCOUNTING_SHA = "ae3fd7a9589e50903fbc88a8df72baaaea2d0423"
 REPORT_TELEMETRY_SHA = "e4034683d4fc68871847c58a2130d954c03370fc"
 REPORT_REBIND_SHA = "4cc7c1635927d9ce8785704ed4780a9c18b6b592"
+REPORT_LOCALIZATION_SHA = "1fdd209ed4c823dec55a01fb6790504090545579"
 COMPONENT_PATHS = frozenset({
     policy.COMPONENT_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "worker.py", "root_stage.py", "supervisor.py", "observation_failure.py", "README.md",
@@ -72,11 +73,16 @@ LOCALIZATION_PATHS = frozenset({
         "test_ci_calibration.py", "test_root_stage.py", "test_observation_failure.py",
     )),
 })
+REGISTRATION_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
+    "observation_failure.py", "supervisor.py", "README.md",
+    "test_ci_calibration.py", "test_observation_failure.py",
+))
 
 
 def validate_harness_lineage(lines, head):
     if lines != [
-        f"{head} {REPORT_REBIND_SHA}",
+        f"{head} {REPORT_LOCALIZATION_SHA}",
+        f"{REPORT_LOCALIZATION_SHA} {REPORT_REBIND_SHA}",
         f"{REPORT_REBIND_SHA} {REPORT_TELEMETRY_SHA}",
         f"{REPORT_TELEMETRY_SHA} {REPORT_ACCOUNTING_SHA}",
         f"{REPORT_ACCOUNTING_SHA} {REPORT_FINALIZATION_SHA}",
@@ -91,7 +97,7 @@ def validate_harness_lineage(lines, head):
         f"{RETAINED_HARNESS_SHA} {PREPARATION_SHA}",
         f"{PREPARATION_SHA} {policy.BASE}",
     ]:
-        raise policy.GuardError("diagnostic requires its exact normal localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
+        raise policy.GuardError("diagnostic requires its exact normal registration/localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
 
 
 def validate_correction_inventory(data):
@@ -195,6 +201,20 @@ def validate_localization_inventory(data):
         or len({name for _, name in changes}) != len(changes)
     ):
         raise policy.GuardError("localization changed a closed workflow or unallocated surface")
+
+
+def validate_registration_inventory(data):
+    if type(data) is not bytes:
+        raise policy.GuardError("registration correction inventory is not a Git byte record")
+    rows = data.split(b"\0")
+    if len(rows) < 3 or len(rows) % 2 != 1 or rows[-1] != b"":
+        raise policy.GuardError("registration correction requires complete normal modifications")
+    changes = list(zip(rows[:-1:2], rows[1:-1:2]))
+    allowed = {name.encode("ascii") for name in REGISTRATION_PATHS}
+    if any(kind != b"M" for kind, _ in changes) or (
+        {name for _, name in changes} != allowed or len(changes) != len(allowed)
+    ):
+        raise policy.GuardError("registration correction changed or omitted a frozen surface")
 
 
 def apparmor_text(name):
@@ -992,7 +1012,7 @@ class Owner:
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
         validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=14", "HEAD").decode().splitlines(),
+            git(self.harness, "rev-list", "--parents", "--max-count=15", "HEAD").decode().splitlines(),
             self.scope["harness_sha"],
         )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
@@ -1047,7 +1067,10 @@ class Owner:
             self.harness, "diff", "--name-status", "-z", REPORT_TELEMETRY_SHA, REPORT_REBIND_SHA,
         ))
         validate_localization_inventory(git(
-            self.harness, "diff", "--name-status", "-z", REPORT_REBIND_SHA, "HEAD",
+            self.harness, "diff", "--name-status", "-z", REPORT_REBIND_SHA, REPORT_LOCALIZATION_SHA,
+        ))
+        validate_registration_inventory(git(
+            self.harness, "diff", "--name-status", "-z", REPORT_LOCALIZATION_SHA, "HEAD",
         ))
         validate_accounting_workflow(
             git(self.harness, "show", REPORT_FINALIZATION_SHA + ":" + policy.FULL_REPORT_WORKFLOW),

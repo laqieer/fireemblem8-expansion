@@ -2,10 +2,16 @@
 
 **Preparation only; never merge this branch. No native execution, workflow
 launch, retry or production resource-policy decision is allocated here.**
-Current localization freeze:
+Current registration correction freeze:
+[5768979816](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5768979816).
+This correction is a normal child of
+`1fdd209ed4c823dec55a01fb6790504090545579` on the same localization branch.
+Only the locator, its direct tests/docs and exact normal lineage/inventory
+change; the workflow, source binding, quotas and physical substrate do not.
+Original localization freeze:
 [5768163036](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5768163036).
-This is a normal child of `4cc7c1635927d9ce8785704ed4780a9c18b6b592` on the
-new `calibration/issue-180-report-localization-1` branch, with one new fixed
+That preparation was a normal child of `4cc7c1635927d9ce8785704ed4780a9c18b6b592`
+on `calibration/issue-180-report-localization-1`, with one fixed
 first-owner-push workflow. The old full-report-sizing-1 workflow and every
 earlier allocation stay unchanged and closed.
 
@@ -42,9 +48,18 @@ code identities.
 
 Registration walks actual function objects, ordinary class dictionaries,
 static/class/property function objects and original `__wrapped__` functions,
-then their actual nested code objects before the check. It never invokes a
-candidate descriptor. The bounded registration retains only weak code/module
-identities, not source namespaces or frames. A traceback code object must be
+then their actual nested code objects before the check. Wrapper traversal is
+independent of the wrapper's globals: a standard `contextmanager` may expose
+the real source generator without a convenient original-function alias.
+Each function still needs its own exact source globals/module/file/code
+identity; traversing a foreign wrapper grants no authority to its code.
+Wrapper chains reuse the 32-node metadata bound, reject identity cycles, and
+charge all visited functions and attribute entries to the existing aggregate
+registration bound. Both registration and projection admit only exact builtin
+function-attribute dictionaries with exact string keys; subclass callbacks,
+colliding non-string keys and unsupported wrapper targets are never invoked.
+It never invokes a candidate descriptor. The bounded registration retains
+only weak code/module identities, not source namespaces or frames. A traceback code object must be
 that original registered object in that original module namespace, and its
 line/offset must agree with its actual code line table. Late-created code is
 not admitted even when installed in an owned module with a matching filename.
@@ -72,15 +87,20 @@ all hard limits, original clock, first-error/all-close/AT/FR behavior,
 physical algorithms and five bounded artifacts remain the same. There is
 no alternate workload, tracing platform, source hash ledger or automatic retry.
 
-The inspected localization runner preserves all111 prior methods/675 subtests
+The registration-correction runner preserves all 127 prior methods / 751 subtests
 and exercises actual raised direct/nested/method/wrapped errors through the
-Observer and Protocol. Foreign/dynamic/unbound/bad-membership cases, cycles,
+Observer and Protocol, including standard contextmanager generators without
+aliases. Foreign/dynamic/unbound/bad-membership cases, wrapper cycles/depth,
+metadata callback tripwires at registration and projection,
 bounds, locator/withdrawal/publication fault combinations,
 missing-location/incorrect-binding/late-registration restorations and neutral
-record ordering or function aliases are inert controls only.
+record ordering or function aliases remain inert controls only. Restoring the
+old module scanner reproduces both the missed original and metadata callbacks.
 Independent review and a separate one-shot allocation must precede any
-owner-created localization push. The active final source review and all
-real report/verifier/H1/delivery requirements remain open.
+owner-created localization push. The final D source review completed with
+three Medium RA findings under separate correction; none is inferred to be
+the cause of the spent report failure. Source correction and all real
+report/verifier/H1/delivery requirements remain open.
 
 ## Historical source-rebind preparation (closed allocation)
 

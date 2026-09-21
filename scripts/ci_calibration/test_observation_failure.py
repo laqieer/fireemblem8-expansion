@@ -4,6 +4,7 @@ import errno
 import copy
 import io
 from contextlib import contextmanager
+from functools import wraps
 from importlib.machinery import ModuleSpec, SourceFileLoader
 from pathlib import Path
 import sys
@@ -17,6 +18,7 @@ from scripts.ci_calibration.test_ci_calibration import Inert, budgeting
 
 PREIMAGE_SOURCE_CLEANUP_COUNT = None
 PREIMAGE_REPORT_ERROR_RECORD = None
+PREIMAGE_REGISTRATION_MODULE = None
 
 
 class FrameFixture:
@@ -917,6 +919,307 @@ def check(kind="direct", callback=None, depth=0):
                 row[field] = "replacement" if field == "code" else row[field] + 1
                 with self.subTest(field=field), self.assertRaises(policy.GuardError):
                     policy.merge_report_failure(record, changed, self.binding())
+
+
+class RegistrationControls(Inert):
+    wire = LocationControls.wire
+
+    @contextmanager
+    def wrapper_fixture(self):
+        with LocationControls.fixture(self) as value:
+            value.graph.contextmanager = contextmanager
+            exec(compile("""
+@contextmanager
+def source_scope(kind):
+    if kind == "nested":
+        def nested_boundary():
+            raise ModelError("private nested generator")
+        nested_boundary()
+    elif kind == "wrapped":
+        try:
+            raise ModelError("private generator cause")
+        except ModelError as error:
+            raise WrappedError("private generator wrapper") from error
+    else:
+        raise ModelError("private original generator")
+    yield
+class ScopeWork:
+    @contextmanager
+    def scope(self):
+        raise ModelError("private method generator")
+        yield
+def check(kind="direct"):
+    if kind == "method":
+        with ScopeWork().scope():
+            pass
+    else:
+        with source_scope(kind):
+            pass
+""", value.graph.__file__, "exec"), value.graph.__dict__)
+            value.measurement.api.check = value.graph.check
+            value.original = value.graph.source_scope.__wrapped__
+            value.method_original = value.graph.ScopeWork.__dict__["scope"].__wrapped__
+            self.assertIs(value.original.__globals__, value.graph.__dict__)
+            self.assertIsNot(value.graph.source_scope.__globals__, value.graph.__dict__)
+            self.assertFalse(any(member is value.original for member in value.graph.__dict__.values()))
+            value.observer = observation_failure.Observer(value.probing.ProbeSession, value.budget)
+            yield value
+
+    def register(self, value):
+        value.secondary = value.observer.register_locations(value.measurement.api)
+        self.assertEqual(value.secondary, [])
+
+    def raise_check(self, value, kind="direct"):
+        try:
+            value.graph.check(kind)
+        except BaseException as error:
+            value.error = error
+        else:
+            self.fail("inert source boundary did not raise")
+
+    def assert_observed(self, value):
+        first = value.error
+        record = self.wire(value)
+        locations = record["source_locations"]
+        self.assertEqual(locations["status"], "observed")
+        self.assertIs(value.error, first)
+        self.assertTrue(locations["references_closed"])
+        self.assertFalse(locations["authority"])
+        current = first
+        for row in locations["locations"]:
+            trace = current.__traceback__
+            while trace.tb_next is not None:
+                trace = trace.tb_next
+            self.assertEqual(
+                (row["file"], row["code"], row["line"], row["offset"]),
+                (trace.tb_frame.f_code.co_filename.removeprefix("/repo/"),
+                 trace.tb_frame.f_code.co_name, trace.tb_lineno, trace.tb_lasti),
+            )
+            current = current.__cause__
+        self.assertIsNone(current)
+        self.assertEqual(value.observer.location_codes, {})
+        return record
+
+    @staticmethod
+    def forwarding(function):
+        @wraps(function)
+        def wrapper(*args, **kwargs):
+            return function(*args, **kwargs)
+        return wrapper
+
+    def test_standard_contextmanager_originals_and_nested_methods_reach_protocol_without_alias(self):
+        for kind in ("direct", "nested", "method", "wrapped"):
+            for decorated in (False, True):
+                with self.subTest(kind=kind, decorated=decorated), self.wrapper_fixture() as value:
+                    if decorated:
+                        value.graph.source_scope = self.forwarding(value.graph.source_scope)
+                    self.register(value)
+                    self.assertIsNone(value.observer.location_reason)
+                    self.assertIn(id(value.original.__code__), value.observer.location_codes)
+                    self.assertIn(id(value.method_original.__code__), value.observer.location_codes)
+                    self.assertNotIn(id(value.graph.source_scope.__code__), value.observer.location_codes)
+                    self.raise_check(value, kind)
+                    self.assert_observed(value)
+
+    def test_foreign_wrapper_code_cannot_borrow_its_originals_source_identity(self):
+        for false_filename in (False, True):
+            with self.subTest(false_filename=false_filename), self.wrapper_fixture() as value:
+                original_wrapper = value.graph.source_scope
+                @wraps(original_wrapper)
+                def foreign(kind):
+                    raise RuntimeError("private foreign wrapper")
+                if false_filename:
+                    foreign.__code__ = foreign.__code__.replace(co_filename=value.graph.__file__)
+                value.graph.source_scope = foreign
+                self.register(value)
+                self.assertIn(id(value.original.__code__), value.observer.location_codes)
+                self.assertNotIn(id(foreign.__code__), value.observer.location_codes)
+                self.raise_check(value)
+                record = self.wire(value)
+                self.assertEqual(record["error"]["chain"][0]["type"], "RuntimeError")
+                self.assertEqual(record["source_locations"]["status"], "unavailable")
+                self.assertEqual(record["source_locations"]["locations"], [])
+                self.assertTrue(record["source_locations"]["references_closed"])
+
+    def test_wrapper_cycles_depth_and_nonfunction_targets_are_bounded_on_both_passes(self):
+        for stage in ("registration", "projection"):
+            for fault in ("self-cycle", "cycle", "target", 31, 32, 33):
+                with self.subTest(stage=stage, fault=fault), self.wrapper_fixture() as value:
+                    callbacks = []
+                    if stage == "projection":
+                        self.register(value)
+                    if fault == "self-cycle":
+                        value.graph.source_scope.__wrapped__ = value.graph.source_scope
+                    elif fault == "cycle":
+                        value.original.__wrapped__ = value.graph.source_scope
+                    elif fault == "target":
+                        class Unsupported:
+                            def __getattribute__(self, name):
+                                callbacks.append(name)
+                                return object.__getattribute__(self, name)
+                            def __call__(self, *args):
+                                callbacks.append("call")
+                        value.graph.source_scope.__wrapped__ = Unsupported()
+                    else:
+                        for _ in range(fault - 2):
+                            value.graph.source_scope = self.forwarding(value.graph.source_scope)
+                    if stage == "registration":
+                        self.register(value)
+                    self.raise_check(value)
+                    record = self.wire(value)
+                    observed = type(fault) is int and fault <= 32
+                    self.assertEqual(record["source_locations"]["status"], "observed" if observed else "unavailable")
+                    self.assertEqual(callbacks, [])
+                    self.assertTrue(record["source_locations"]["references_closed"])
+                    self.assertEqual(value.observer.location_codes, {})
+                    if not observed:
+                        self.assertEqual(record["source_locations"]["reason"], {
+                            "self-cycle": "cyclic-wrapper-chain", "cycle": "cyclic-wrapper-chain",
+                            "target": "source-code-unbound", 33: "wrapper-chain-bound",
+                        }[fault])
+
+    def test_wrapped_original_module_file_and_frozen_code_cannot_be_replaced(self):
+        for fault in ("module", "filename", "globals", "late-code", "late-wrapped"):
+            with self.subTest(fault=fault), self.wrapper_fixture() as value:
+                if fault.startswith("late-"):
+                    self.register(value)
+                original = value.original
+                if fault == "module":
+                    original.__module__ = "foreign"
+                elif fault == "filename":
+                    original.__code__ = original.__code__.replace(co_filename="/foreign/source.py")
+                elif fault == "globals":
+                    value.graph.source_scope.__wrapped__ = type(original)(
+                        original.__code__, {"__name__": value.graph.__name__}, original.__name__,
+                    )
+                elif fault == "late-code":
+                    original.__code__ = original.__code__.replace(co_name="late_generator")
+                else:
+                    value.graph.source_scope.__wrapped__ = type(original)(
+                        original.__code__.replace(co_name="late_generator"), original.__globals__, original.__name__,
+                    )
+                if not fault.startswith("late-"):
+                    self.register(value)
+                self.raise_check(value)
+                record = self.wire(value)
+                self.assertEqual(record["source_locations"]["status"], "unavailable")
+                self.assertEqual(record["source_locations"]["locations"], [])
+                self.assertEqual(record["error"]["chain"][0]["type"], "ModelError")
+                self.assertTrue(record["source_locations"]["references_closed"])
+
+    @staticmethod
+    def callback_metadata(function, callbacks):
+        class Metadata(dict):
+            def get(self, *args):
+                callbacks.append("get")
+                return dict.get(self, *args)
+            def __len__(self):
+                callbacks.append("len")
+                return dict.__len__(self)
+            def __iter__(self):
+                callbacks.append("iter")
+                return dict.__iter__(self)
+            def __getitem__(self, key):
+                callbacks.append("getitem")
+                return dict.__getitem__(self, key)
+        function.__dict__ = Metadata(function.__dict__)
+
+    def test_metadata_subclass_callbacks_never_run_at_registration_or_projection(self):
+        for stage in ("registration", "projection"):
+            for target in ("wrapper", "original", "direct"):
+                with self.subTest(stage=stage, target=target), self.wrapper_fixture() as value:
+                    if stage == "projection":
+                        self.register(value)
+                    callbacks = []
+                    function = {
+                        "wrapper": value.graph.source_scope, "original": value.original, "direct": value.graph.direct,
+                    }[target]
+                    self.callback_metadata(function, callbacks)
+                    if stage == "registration":
+                        self.register(value)
+                    self.assertEqual(callbacks, [])
+                    self.raise_check(value)
+                    first = value.error
+                    record = self.wire(value)
+                    self.assertEqual(callbacks, [])
+                    self.assertIs(value.error, first)
+                    self.assertEqual(record["error"]["chain"][0]["type"], "ModelError")
+                    self.assertEqual(record["source_locations"]["reason"], "function-metadata-unavailable")
+                    self.assertTrue(record["source_locations"]["references_closed"])
+                    self.assertIsNotNone(record["counters"])
+                    self.assertEqual(value.observer.location_codes, {})
+
+    def test_malformed_metadata_keys_and_oversized_attributes_fail_before_callbacks(self):
+        for stage in ("registration", "projection"):
+            for fault in ("colliding-key", "string-subclass", "capacity"):
+                with self.subTest(stage=stage, fault=fault), self.wrapper_fixture() as value:
+                    if stage == "projection":
+                        self.register(value)
+                    callbacks = []
+                    class Key:
+                        def __hash__(self):
+                            callbacks.append("hash")
+                            return hash("__wrapped__")
+                        def __eq__(self, other):
+                            callbacks.append("equal")
+                            return False
+                    class StringKey(str):
+                        def __eq__(self, other):
+                            callbacks.append("equal")
+                            return str.__eq__(self, other)
+                        __hash__ = str.__hash__
+                    value.original.__dict__ = (
+                        {f"entry{index}": None for index in range(policy.ORIGINAL_LIMITS["entries"])}
+                        if fault == "capacity" else {Key() if fault == "colliding-key" else StringKey("__wrapped__"): None}
+                    )
+                    callbacks.clear()
+                    if stage == "registration":
+                        self.register(value)
+                    self.assertEqual(callbacks, [])
+                    self.raise_check(value)
+                    record = self.wire(value)
+                    self.assertEqual(callbacks, [])
+                    self.assertEqual(record["source_locations"]["reason"],
+                                     "registration-bound" if fault == "capacity" else "function-metadata-unavailable")
+                    self.assertTrue(record["source_locations"]["references_closed"])
+
+    def test_old_scanner_restoration_reproduces_both_review_witnesses(self):
+        self.assertIsNotNone(PREIMAGE_REGISTRATION_MODULE, "requires the inspected registration correction runner")
+        with self.wrapper_fixture() as value:
+            self.register(value)
+            self.raise_check(value)
+            self.assert_observed(value)
+        with mock.patch.object(observation_failure._SourceLocations, "module", PREIMAGE_REGISTRATION_MODULE):
+            with self.wrapper_fixture() as value:
+                self.register(value)
+                self.assertNotIn(id(value.original.__code__), value.observer.location_codes)
+                self.raise_check(value)
+                self.assertEqual(self.wire(value)["source_locations"]["reason"], "source-code-unbound")
+            with LocationControls.fixture(self) as value:
+                callbacks = []
+                self.callback_metadata(value.graph.direct, callbacks)
+                value.observer = observation_failure.Observer(value.probing.ProbeSession, value.budget)
+                self.register(value)
+                self.assertEqual(callbacks, ["get"])
+                self.assertEqual(self.wire(value)["source_locations"]["status"], "observed")
+                self.assertEqual(callbacks, ["get", "get"])
+
+    def test_neutral_names_and_metadata_order_preserve_original_wrapper_locations(self):
+        for change in ("name", "metadata-order", "module-order"):
+            with self.subTest(change=change), self.wrapper_fixture() as value:
+                if change == "name":
+                    value.original.__name__ = "equivalent_generator_name"
+                elif change == "metadata-order":
+                    metadata = {**value.graph.source_scope.__dict__, "note": None}
+                    value.graph.source_scope.__dict__ = dict(reversed(tuple(metadata.items())))
+                else:
+                    namespace = value.graph.__dict__
+                    ordered = dict(reversed(tuple(namespace.items())))
+                    namespace.clear()
+                    namespace.update(ordered)
+                self.register(value)
+                self.raise_check(value, "nested")
+                self.assert_observed(value)
 
 
 if __name__ == "__main__":

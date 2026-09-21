@@ -534,7 +534,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.REPORT_REBIND_SHA}",
+            f"{'a' * 40} {supervisor.REPORT_LOCALIZATION_SHA}",
+            f"{supervisor.REPORT_LOCALIZATION_SHA} {supervisor.REPORT_REBIND_SHA}",
             f"{supervisor.REPORT_REBIND_SHA} {supervisor.REPORT_TELEMETRY_SHA}",
             f"{supervisor.REPORT_TELEMETRY_SHA} {supervisor.REPORT_ACCOUNTING_SHA}",
             f"{supervisor.REPORT_ACCOUNTING_SHA} {supervisor.REPORT_FINALIZATION_SHA}",
@@ -689,6 +690,21 @@ class CalibrationControls(Inert):
                 {**self.event(), "ref": "refs/heads/calibration/issue-180-full-report-sizing-1"},
                 **self.authorization(),
             )
+
+    def test_registration_inventory_keeps_workflow_policy_and_containment_unchanged(self):
+        data = b"".join(b"M\0" + name.encode() + b"\0" for name in sorted(supervisor.REGISTRATION_PATHS))
+        supervisor.validate_registration_inventory(data)
+        for changed in (
+            b"", data[:-1], data + data, data.replace(b"M\0", b"A\0", 1),
+            data.replace(b"M\0", b"D\0", 1), data.split(b"\0", 2)[2],
+            data + b"M\0" + policy.WORKFLOW.encode() + b"\0",
+            data + b"M\0scripts/ci_calibration/policy.py\0",
+            data + b"M\0scripts/ci_calibration/worker.py\0",
+            data + b"M\0scripts/ci_calibration/root_stage.py\0",
+            data + b"M\0scripts/validation_ownership/make_probe.py\0",
+        ):
+            with self.subTest(changed=changed[:64]), self.assertRaises(policy.GuardError):
+                supervisor.validate_registration_inventory(changed)
 
     def test_complete_diff_binding_preserves_additions_deletions_and_both_rename_sides(self):
         changes = self.changes()

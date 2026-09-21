@@ -22,7 +22,8 @@ LOCATION_REASONS = frozenset({
     "binding-not-ready", "source-binding-invalid", "source-file-unowned", "source-module-unowned",
     "source-code-unbound", "public-call-unobserved", "no-source-trace", "cyclic-exception-chain",
     "exception-chain-bound", "trace-frame-bound", "registration-bound", "invalid-code-location",
-    "location-size-bound", "locator-failed",
+    "location-size-bound", "locator-failed", "cyclic-wrapper-chain", "wrapper-chain-bound",
+    "function-metadata-unavailable",
 })
 
 
@@ -268,17 +269,7 @@ class _SourceLocations:
             if identity in self.seen:
                 continue
             if type(member) is types.FunctionType:
-                if member.__globals__ is not namespace or type(member.__module__) is not str or member.__module__ != name:
-                    continue
-                self.seen.add(identity)
-                if member.__code__.co_filename == filename:
-                    self.register_code(member.__code__, namespace, filename, relative)
-                wrapped = member.__dict__.get("__wrapped__")
-                if wrapped is not None:
-                    if type(wrapped) is not types.FunctionType:
-                        raise _LocationUnavailable("source-code-unbound")
-                    self.account()
-                    pending.append(wrapped)
+                self.register_function(member, namespace, filename, relative)
             elif type(member) is type:
                 fields = type.__getattribute__(member, "__dict__")
                 if type(fields.get("__module__")) is not str or fields["__module__"] != name:
@@ -296,6 +287,34 @@ class _SourceLocations:
                 self.account(len(values))
                 pending.extend(values)
         return relative
+
+    def register_function(self, member, namespace, filename, relative):
+        chain = set()
+        while member is not None:
+            if type(member) is not types.FunctionType:
+                raise _LocationUnavailable("source-code-unbound")
+            identity = id(member)
+            if identity in chain:
+                raise _LocationUnavailable("cyclic-wrapper-chain")
+            if len(chain) >= 32:
+                raise _LocationUnavailable("wrapper-chain-bound")
+            chain.add(identity)
+            metadata = member.__dict__
+            if type(metadata) is not dict:
+                raise _LocationUnavailable("function-metadata-unavailable")
+            self.account(1 + len(metadata))
+            if any(type(key) is not str for key in metadata):
+                raise _LocationUnavailable("function-metadata-unavailable")
+            if (
+                member.__globals__ is namespace and type(member.__module__) is str
+                and member.__module__ == namespace["__name__"]
+            ):
+                self.seen.add(identity)
+                if member.__code__.co_filename == filename:
+                    self.register_code(member.__code__, namespace, filename, relative)
+            # Standard wrappers can have foreign globals; only each original
+            # function's own identity can admit its code.
+            member = dict.get(metadata, "__wrapped__")
 
     def register_code(self, code, namespace, filename, relative):
         pending = [code]
