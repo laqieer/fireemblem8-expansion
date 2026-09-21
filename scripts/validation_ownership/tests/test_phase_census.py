@@ -3,6 +3,7 @@
 import copy
 from dataclasses import asdict, replace
 import gc
+from pathlib import Path, PurePosixPath
 import shlex
 import subprocess
 import sys
@@ -16,6 +17,240 @@ from scripts.validation_ownership import graph_probe, make_probe, phase_census, 
 from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
 from scripts.validation_ownership.tests import test_source_phases as phases
 from scripts.validation_ownership.tests import test_foundation as foundation
+
+
+class OriginalTemplateApiTests(unittest.TestCase):
+    """Actual source APIs over synthetic pass records, never native certification."""
+
+    def original(self, source, *, wildcard="", terminal=None, includes=(), namespace=()):
+        budget = ProbeBudget()
+        sources = {"Makefile": source.encode()}
+        visits = [SimpleNamespace(
+            number=1, name="/repo/Makefile", resolved="/repo/Makefile", parent=None,
+            error=0, source=SimpleNamespace(data=sources["Makefile"]),
+        )]
+        for number, (name, content) in enumerate(includes, 2):
+            sources[name] = content.encode()
+            visits.append(SimpleNamespace(
+                number=number, name="/repo/" + name, resolved="/repo/" + name, parent=1,
+                error=0, source=SimpleNamespace(data=sources[name]),
+            ))
+        session = SimpleNamespace(
+            budget=budget, loader=SimpleNamespace(entries={name: None for name in sources}),
+            snapshot=SimpleNamespace(files=sources, gitlink_roots=()),
+        )
+        semantics = {"domains": {}, "files": [], "dynamic_commands": [], "native_dispatches": []}
+        observation = SimpleNamespace(semantics=semantics, generated=())
+        queries = []
+
+        def terminal_make(target, **options):
+            queries.extend(options["definitions"])
+            self.assertIsNotNone(terminal, "original-source interpretation queried terminal Make")
+            return SimpleNamespace(semantics={
+                **semantics, "definitions": {"global": {
+                    name: {"origin": "file", "flavor": "recursive" if name == "RULE" else "simple",
+                           "value": terminal[name]}
+                    for name in options["definitions"]
+                }},
+            })
+
+        session.make = terminal_make
+        session._wildcard_image = lambda image, pattern, directory: (
+            wildcard[pattern] if isinstance(wildcard, dict) else wildcard
+        )
+        proof = SimpleNamespace(
+            session=session, observation=observation, missing={}, require_live=lambda: None,
+        )
+        part = SimpleNamespace(
+            number=1, exec=1, inputs=(SimpleNamespace(parent=None, variables=()),), visits=tuple(visits),
+        )
+        paths = set(sources) | set(namespace) | {"src"}
+        paths.update(str(parent) for name in tuple(paths) for parent in PurePosixPath(name).parents)
+        members = {name: [] for name in paths}
+        for name in paths - {"."}:
+            members[str(PurePosixPath(name).parent)].append((PurePosixPath(name).name, None))
+        image = SimpleNamespace(directories=tuple(members), members=members, forbidden=())
+        phase = phase_census.SourcePass(proof, part, image, (), "all", (), {}, "Makefile")
+        stream, inputs, scoped = graph_probe._prepare_rule_templates(
+            session, "all", (), {}, observation, phase.sources, primary_source="Makefile", phase=phase,
+        )
+        phase.prepare_deferred_reads(stream)
+        usage = graph_probe.source_census(
+            phase.sources, reference_units=stream, template_graph_inputs=inputs, template_scoped=scoped,
+            budget=budget, source_target="all", original_read_check=phase.check_reads,
+            execution_bindings=tuple(phase.executions),
+        )
+        self.assertEqual((budget.runs, budget.states), (0, 0))
+        self.assertFalse(budget.children)
+        return stream, usage, queries
+
+    @staticmethod
+    def template_source(parameter=None, *, after=""):
+        return (
+            "FILES := $(wildcard src/*.c)\n"
+            "ifeq ($(FILES),)\nTABLES := early\nelse\nTABLES := late\nendif\n"
+            + ("" if parameter is None else "TABLES := " + parameter + "\n")
+            + "CONFIG_early := first\nCONFIG_late := last\n"
+            "define RULE\nout/$(1): $(CONFIG_$(1))\nendef\n"
+            "$(foreach item,$(TABLES),$(eval $(call RULE,$(item))))\n" + after + "all: ;\n"
+        )
+
+    def test_original_template_pass_keeps_early_reader_without_terminal_query(self):
+        stream, usage, queries = self.original(self.template_source(), terminal={
+            "TABLES": "late", "RULE": "out/$(1): $(CONFIG_$(1))",
+            "CONFIG_early": "first", "CONFIG_late": "last",
+        })
+        self.assertEqual(queries, [])
+        header, = [unit for _, _, unit in stream.ordered if unit.native_literal_header]
+        self.assertEqual(header.text, "out/early: $(CONFIG_early)")
+        self.assertEqual(header.source_rule.targets, ("out/early",))
+        self.assertEqual(header.source_rule.prerequisites, ("first",))
+        self.assertIn("CONFIG_early", usage["graph"])
+        self.assertNotIn("CONFIG_late", usage["graph"])
+
+    def test_original_pass_union_preserves_both_template_readers(self):
+        usages = []
+        for wildcard, word, prerequisite in (("", "early", "first"), ("src/new.c", "late", "last")):
+            with self.subTest(wildcard=wildcard):
+                stream, usage, queries = self.original(self.template_source(), wildcard=wildcard)
+                header, = [unit for _, _, unit in stream.ordered if unit.native_literal_header]
+                self.assertEqual(header.source_rule.targets, ("out/" + word,))
+                self.assertEqual(header.source_rule.prerequisites, (prerequisite,))
+                self.assertIn("CONFIG_" + word, usage["graph"])
+                self.assertEqual(queries, [])
+                usages.append(usage)
+        self.assertEqual(len(usages), 2)
+        self.assertTrue({"CONFIG_early", "CONFIG_late"} <= phase_census.union_usages(usages)["graph"])
+
+    def test_caller_time_facts_survive_later_values_and_repeated_source_sites(self):
+        source = (
+            "CONFIG_early := first\nCONFIG_late := last\n"
+            "define RULE\nout/$(1): $(CONFIG_$(1))\nendef\n"
+            "TABLES := early\ninclude rules.mk\nTABLES := late\ninclude rules.mk\nall: ;\n"
+        )
+        caller = "$(foreach item,$(TABLES),$(eval $(call RULE,$(item))))\n"
+        stream, usage, queries = self.original(
+            source, includes=(("rules.mk", caller), ("rules.mk", caller)),
+        )
+        headers = [unit for _, _, unit in stream.ordered if unit.native_literal_header]
+        self.assertEqual([unit.source_rule.targets for unit in headers], [("out/early",), ("out/late",)])
+        self.assertEqual(headers[0].site, headers[1].site)
+        self.assertNotEqual(headers[0].source_rule.number, headers[1].source_rule.number)
+        self.assertTrue({"CONFIG_early", "CONFIG_late"} <= usage["graph"])
+        self.assertEqual(queries, [])
+
+    def test_unproven_original_parameters_refuse_instead_of_borrowing_empty_headers(self):
+        for parameter in ("$(sort early late)", "$(word 1,early late)"):
+            with self.subTest(parameter=parameter), self.assertRaises(MakeProbeError):
+                self.original(self.template_source(parameter), terminal={
+                    "TABLES": "", "RULE": "out/$(1): $(CONFIG_$(1))",
+                    "CONFIG_early": "first", "CONFIG_late": "last",
+                })
+        stream, usage, queries = self.original(self.template_source(""))
+        self.assertFalse(any(unit.native_literal_header for _, _, unit in stream.ordered))
+        self.assertIn("TABLES", usage["graph"])
+        self.assertEqual(queries, [])
+        for before, after in (
+            ("define RULE\n", "define RULE :=\n"),
+            ("RULE,$(item)", "RULE, $(item)"),
+            ("CONFIG_early := first", "CONFIG_early := first; injected:"),
+        ):
+            with self.subTest(before=before), self.assertRaises(MakeProbeError):
+                self.original(self.template_source().replace(before, after))
+
+    def test_original_framework_template_sources_construct_the_same_reference_rules(self):
+        root = Path(__file__).resolve().parents[3]
+        includes = []
+        for path, name in (
+            ("generated_data.mk", "GENERATED_DATA_LINK_TABLE_RULES"),
+            ("modern.mk", "GENERATED_DATA_MODERN_OVERRIDE_RULES"),
+        ):
+            original = (root / path).read_text()
+            start = original.index("define " + name + "\n")
+            stop = original.index("\nendef", start) + len("\nendef")
+            caller, = [line for line in original.splitlines() if line.startswith("$(foreach ") and name in line]
+            includes.append((path, original[start:stop] + "\n" + caller + "\n"))
+        source = (
+            "GENERATED_DATA_OUT_DIR := build/generated/data\n"
+            "GENERATED_DATA_LINKED_HAND_SOURCES := src/data_alpha.c src/data_beta.c\n"
+            "GENERATED_DATA_LINKED_TABLES := $(patsubst src/data_%.c,%,$(GENERATED_DATA_LINKED_HAND_SOURCES))\n"
+            "GENERATED_DATA_SHARED_PY_SOURCES := $(wildcard scripts/generated_data/*.py)\n"
+            "GENERATED_DATA_CONFIG_INPUTS_alpha := include/alpha.h\n"
+            "GENERATED_DATA_CONFIG_INPUTS_beta := include/beta.h\n"
+            "GENERATED_DATA_PY := /usr/bin/python3 -m scripts.generated_data\n"
+            "MODERN_OUTPUT_DIR := build/modern\nMODERN_CC := /usr/bin/arm-none-eabi-gcc\n"
+            "MODERN_CFLAGS := -mthumb -mcpu=arm7tdmi -O2\n"
+            "include generated_data.mk\ninclude modern.mk\nall: build/modern/src/data_alpha.o\n"
+        )
+        patterns = {
+            "scripts/generated_data/*.py": "scripts/generated_data/__init__.py",
+            **{f"scripts/generated_data/{name}/*.py": f"scripts/generated_data/{name}/schema.py"
+               for name in ("alpha", "beta")},
+        }
+        for renamed in (False, True):
+            selected = [(path, value.replace("GENERATED_DATA_LINK_TABLE_RULES", "PROJECT_RULE")
+                         if renamed else value) for path, value in includes]
+            with self.subTest(renamed=renamed):
+                stream, usage, queries = self.original(
+                    source, includes=selected, wildcard=patterns, namespace=patterns.values(),
+                )
+                rules = {
+                    unit.source_rule.targets[0]: unit.source_rule.prerequisites
+                    for _, _, unit in stream.ordered if unit.native_literal_header
+                }
+                for name in ("alpha", "beta"):
+                    self.assertEqual(rules[f"build/modern/src/data_{name}.o"], (f"build/generated/data/data_{name}.c",))
+                    self.assertEqual(set(rules[f"build/generated/data/data_{name}.c"]), {
+                        f"src/data/{name}.json", f"scripts/generated_data/{name}/schema.py",
+                        "scripts/generated_data/__init__.py", f"include/{name}.h",
+                    })
+                    self.assertIn("GENERATED_DATA_CONFIG_INPUTS_" + name, usage["graph"])
+                self.assertEqual(len(rules), 4)
+                self.assertEqual(queries, [])
+
+    def test_reference_closure_rejects_odd_dollar_universe_aliases_only_when_executed(self):
+        for count in range(1, 6):
+            for reference in ("(PAYLOAD)", "{PAYLOAD}", "P"):
+                budget = ProbeBudget()
+                source = (
+                    "PAYLOAD = $(.VARIABLES:%=%)\nP = $(PAYLOAD)\nall:\n"
+                    "\t@printf '%s' '" + "$" * count + reference + "'\n"
+                )
+                checker = SimpleNamespace(exports=(), session=SimpleNamespace(budget=budget))
+                with self.subTest(dollars=count, reference=reference):
+                    def census():
+                        return graph_probe.source_census(
+                            {"Makefile": source.encode()}, budget=budget,
+                            original_read_check=lambda *args: phase_census.SourcePass.check_reads(checker, *args),
+                        )
+                    if count % 2:
+                        with self.assertRaisesRegex(MakeProbeError, "variable-universe"):
+                            census()
+                    else:
+                        self.assertEqual(census()["recipe"], set())
+        source = "PAYLOAD = $(.VARIABLES:%=%)\nall: ; @printf '%s' '$$$(value PAYLOAD)'\n"
+        budget = ProbeBudget()
+        checker = SimpleNamespace(exports=(), session=SimpleNamespace(budget=budget))
+        graph_probe.source_census(
+            {"Makefile": source.encode()}, budget=budget,
+            original_read_check=lambda *args: phase_census.SourcePass.check_reads(checker, *args),
+        )
+
+    def test_scoped_recipe_rendering_keeps_short_braced_and_substitution_references(self):
+        budget = ProbeBudget()
+        phase = SimpleNamespace(session=SimpleNamespace(budget=budget))
+        mode = graph_probe._MakeSourceMode(budget=budget)
+        rule = graph_probe._SourceRule(
+            1, None, ("out/%.o",), None, ("src/%.c",), "src/%.c",
+        )
+        context = graph_probe._ScopeContext("out/unit.o", "out/%.o", "recipe", rule)
+        self.assertEqual(phase_census.SourcePass.rendered_recipe(
+            phase, mode, "@printf '%s' '$@ $< ${@D} $(@:%.o=%.d)'", context,
+        ), "printf '%s' 'out/unit.o src/unit.c out out/unit.d'")
+        self.assertIsNone(phase_census.SourcePass.rendered_recipe(
+            phase, mode, "@printf '%s' '$$$@'", context,
+        ))
+        self.assertEqual((budget.runs, budget.states), (0, 0))
 
 
 class PhaseCensusTests(unittest.TestCase):
@@ -32,6 +267,89 @@ class PhaseCensusTests(unittest.TestCase):
             "all", variables=("HIDDEN", "FILES"), commands=self.case.commands(session),
             observe_source_journal=True, source_journal_mode=source_directories.MODE,
         )
+
+    def test_native_template_include_remake_retains_original_parameter_and_domain_reads(self):
+        self.fixture.add("Makefile", (
+            ".DEFAULT_GOAL := all\nFILES := $(wildcard src/*.c)\n"
+            "ifeq ($(FILES),)\nTABLES := early\nelse\nTABLES := late\nendif\n"
+            "CONFIG_early ?= first\nCONFIG_late := last\n"
+            "define RULE\nout/$(1): $(CONFIG_$(1))\n\t@printf '%s' '$$<'\nendef\n"
+            "$(foreach item,$(TABLES),$(eval $(call RULE,$(item))))\n"
+            "build/remade.mk: out/$(TABLES)\n\tpython3 writer.py\n"
+            "include build/remade.mk\nall: out/$(TABLES)\nfirst second last: ;\n"
+        ))
+        with self.case.session() as session:
+            commands = self.case.commands(session)
+            observed = session.make(
+                "all", variables=("CONFIG_early",), definitions=("TABLES",), commands=commands,
+                observe_source_journal=True, source_journal_mode=source_directories.MODE,
+            )
+            self.assertEqual(observed.semantics["definitions"]["global"]["TABLES"]["value"], "late")
+            with patch.object(session, "make", side_effect=AssertionError("terminal query supplied an earlier pass")):
+                usage, _, streams, individual = phase_census.analyze(session, observed, "all", (), commands)
+            self.assertEqual(len(individual), 2)
+            self.assertIn("CONFIG_early", individual[0]["graph"])
+            self.assertNotIn("CONFIG_late", individual[0]["graph"])
+            self.assertIn("CONFIG_late", individual[1]["graph"])
+            self.assertTrue({"CONFIG_early", "CONFIG_late"} <= usage["graph"])
+            for stream, expected in zip(streams, ("first", "last")):
+                header, = [unit for _, _, unit in stream.ordered if unit.native_literal_header]
+                self.assertEqual(header.source_rule.prerequisites, (expected,))
+        self.fixture.assert_clean(session)
+        with self.case.session() as session:
+            with patch.object(graph_probe, "MakeCommands", side_effect=lambda owner, contracts: self.case.commands(owner)):
+                result = graph_probe.run_probe(
+                    session.loader, {"all"},
+                    {"CONFIG_early": {"kind": "explicit", "values": ["first", "second"]}},
+                    {}, session=session, source_phases=True, declared_external_names={"CONFIG_early"},
+                    scoped_variable_names={"1", "item", "<"},
+                )["all"]
+            self.assertEqual(result["prerequisite_domain_census"]["enumerated"], ["CONFIG_early"])
+            seen = set()
+            for variant in result["record"]["variants"]:
+                value = variant["record"]["domains"]["CONFIG_early"]["value"]
+                jobs = [
+                    event for event in variant["record"]["native_dispatches"]
+                    if event["job"]["target"] == "out/early"
+                ]
+                self.assertTrue(jobs)
+                self.assertTrue(all(phase_census.SourcePass.corroborates_recipe(
+                    "printf '%s' '" + value + "'", event,
+                ) for event in jobs))
+                seen.add(value)
+            self.assertEqual(seen, {"first", "second"})
+        self.fixture.assert_clean(session)
+
+    def test_native_original_recipe_reads_after_paired_dollars_remain_active(self):
+        for count in (2, 3, 4, 5):
+            self.fixture.add("Makefile", (
+                "PAYLOAD = $(.VARIABLES:%=%)\nall:\n\t@printf '%s' '"
+                + "$" * count + "(PAYLOAD)'\n"
+            ))
+            with self.subTest(dollars=count), self.case.session() as session:
+                observed = session.make(
+                    "all", observe_source_journal=True, source_journal_mode=source_directories.MODE,
+                )
+                if count % 2:
+                    with self.assertRaisesRegex(MakeProbeError, "variable-universe"):
+                        phase_census.analyze(session, observed, "all", (), {})
+                else:
+                    usage, _, _, _ = phase_census.analyze(session, observed, "all", (), {})
+                    self.assertNotIn("PAYLOAD", usage["recipe"])
+            self.fixture.assert_clean(session)
+
+    def test_native_unused_single_choice_selector_refuses_before_unbounded_expansion(self):
+        values = "V0 = x\n" + "".join(
+            f"V{index} = $(V{index - 1})$(V{index - 1})\n" for index in range(1, 9)
+        )
+        self.fixture.add("Makefile", values + "UNUSED = $($(V8))\nall: ;\n")
+        with self.case.session() as session:
+            observed = session.make(
+                "all", observe_source_journal=True, source_journal_mode=source_directories.MODE,
+            )
+            with self.assertRaisesRegex(MakeProbeError, "name.*bound"):
+                phase_census.analyze(session, observed, "all", (), {})
+        self.fixture.assert_clean(session)
 
     def recipe_binding_source(self, recipe=None, *, remake=False, extra=""):
         modern = (foundation.ROOT / "modern.mk").read_text()

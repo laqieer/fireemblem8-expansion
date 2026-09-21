@@ -380,6 +380,12 @@ snapshot; literal metadata reads remain body-lazy. Each pass has fresh source
 state, and only constants valid and equal in every pass survive the union.
 First-pass defaults remain obligations even when absent from final metadata.
 The union also retains first-pass graph, recipe, export and dependency reads.
+Parameterized rules retain immutable reference units and exact target/
+prerequisite facts at their original caller occurrence. Repeated visits to
+the same source site remain separate occurrences. Earlier `TABLES`, macro
+bodies and selected input names cannot come from a terminal Make query,
+even when the terminal graph is stable. Missing original facts refuse;
+only a proven empty parameter list may legitimately emit no rules.
 Local-binder analysis uses the original source-unit role. In a proven active
 ordinary recipe, including an inline recipe segment, each `$$` pair is literal
 dollar data for that Make expansion. This supports shell/awk/printf data and
@@ -407,6 +413,11 @@ computed aliases, before admission. Direct, braced, substitution and invoked
 unsupported even when no wildcard was evaluated. Unexecuted bodies and
 literal `origin`/`flavor`/`value` reads stay body-lazy; no final definitions
 seed this check.
+Ordinary, short, scoped and nested references share the dollar-parity
+scanner. The active third/fifth dollar after escaped pairs still reads its
+binding, including an alias of an unsupported universe or unsealed input.
+Even-dollar literal controls stay inert; shell quoting does not suppress
+Make expansion. Literal-binding-module consumer checks use the same closure.
 Actually executed original command-line/environment bodies also contribute
 their effective, source-context read forms and dependency edges. They do not
 need a source-file declaration and are not reclassified as source definitions.
@@ -1305,6 +1316,19 @@ used to construct an internal selector name is not reimplemented in Python:
 admit that selector through the existing finite/fallback domain seam so its
 actual GNU value is observed, or retain the rejection. Unconsumed unresolved
 definitions do not execute.
+Selector analysis itself remains admitted even for an unused definition.
+It checkpoints the original shared budget and charges scanning, bounded
+completed memo entries and combinations before allocation. A single distinct
+choice does not excuse doubling work or name growth: the existing 128-character
+name, input-file byte, 512-choice/reference-depth and aggregate cache/deadline
+bounds apply. Resource refusal is not downgraded to an unused unresolved
+selector. Memo entries are local to one definitions/observations context and
+its active-reference ancestry; incomplete alternatives never enter the cache.
+The observed-constant `subst`/`patsubst` fallback scans its declaration under
+that same budget. Its outer expression counts toward the existing 512-entry
+scanner depth: 511 nested literal delimiters fit, while 512 refuse even if
+the observed selected name is short. Fallback depth, cache and deadline
+failures remain hard errors, not unresolved alternatives or cached successes.
 When secondary expansion or eval is involved, the existing native variable
 pages also capture literal post-parse definitions without expanding their
 bodies. The graph census retains immediate and deferred forms and closes their
@@ -1743,12 +1767,17 @@ The real generation and modern-object templates in `generated_data.mk` and
 their symbol spellings. A top-level `foreach` passes one literal identifier
 word as one positional argument through `eval`/`call` to one prior recursive
 source macro. Its native raw body/origin/flavor must agree with that original
-definition; external macro overrides, extra parameters, redefinitions,
-uncertain/repeated include order and unsupported generated writes reject.
+definition on the private terminal-observation path. The public per-pass path
+instead consumes its original caller-time proof, without terminal metadata
+queries or terminal-value substitution. External macro overrides, extra
+parameters, redefinitions, uncertain/repeated include order and unsupported
+generated writes reject.
 The emitted rule has one literal separator and a parameter-bound confined
-target. Immediate inputs must have proven preceding global assignment
-histories, pure initializers and literal native values that cannot inject
-another reference, line, rule or assignment. Deferred recipe references and
+target. Immediate inputs must have proven original global bindings and literal
+values that cannot inject another reference, line, rule or assignment. The
+private terminal path additionally checks preceding assignment histories and
+pure initializers; a public pass retains its actual effective source/input
+facts at the caller instead. Deferred recipe references and
 automatic-variable substitutions remain recipe context; deferred operations
 or additional unbound scope references do not acquire template authority.
 
@@ -2057,6 +2086,27 @@ behind fallback-only parsing. Branch-only undeclared or graph-shaping symbolic
 selectors reject immediately; branch-only recipe symbolic inputs contribute
 authentic recipe-only census evidence, and recipe-only finite domains remain in
 the observed census without spawning closure-expansion variants.
+Scheduling retains every other assignment and origin in the state, including
+tracked fallbacks and singleton explicit domains. Equal literal values do not
+prove independence: joint command-line/environment assignments can change
+`origin`, `flavor`, precedence and conditional behavior. Baseline plus one
+singleton per input is not complete domain evidence. Required combinations
+must fit the unchanged 512-context/shared-state and planned-byte bounds or the
+whole plan refuses. There is no name-based independence shortcut or quota
+increase; scalable collapse would require a separate source/phase-derived
+non-interference proof. Complete 112-domain report/resource fit remains an
+independent acceptance requirement, not an inference from smaller controls.
+
+`GraphSemanticApiTests` and `OriginalTemplateApiTests` exercise these source,
+template, planner and selector contracts with inert observations and actual
+API behavior. The neighboring named native controls cover include remakes,
+paired-dollar reads and joint domain states against GNU Make. Neither inert
+observations nor copied original template construction certify a native
+archive or complete-report resource fit. These controls extend
+**TC-WORKFLOW-GATE-OWNERSHIP-001** and its existing probe-budget boundary,
+not a new tester registry. They change no game/save/locale/ROM/RAM behavior,
+containment policy, source custody or release profile.
+
 Tool defaults such as `MODERN_SIZE` are sealed as ambient recipe-only values:
 their actual values affect recipe authority, but neither graph selection nor
 new executable/source admission is granted by that classification.

@@ -6,6 +6,7 @@ from itertools import chain
 from pathlib import PurePosixPath
 import sys
 import traceback
+from typing import NamedTuple
 from .authority import encoded, relative_path
 from .budget import MakeProbeError
 from .graph_commands import _shell_tokens
@@ -50,7 +51,22 @@ def _fixed_environment_binding(name, binding):
     )
 
 
+class _OriginalTemplateCall(NamedTuple):
+    site: graph._SourceSite
+    expression: str
+    macro_name: str
+    macro: graph._ModeBinding
+    units: tuple
+    inputs: tuple
+    scoped: tuple
+
+
 class SourceTemplates(graph._TemplateModeProof):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.calls = []
+        self.next_call = 0
+
     def value(self, mode, name, *, active=()):
         return mode.exact_reference(name, active)
 
@@ -59,6 +75,64 @@ class SourceTemplates(graph._TemplateModeProof):
 
     def native_value(self, name):
         raise MakeProbeError("original per-pass interpretation cannot borrow a terminal native value")
+
+    def retain_call(self, mode, expression, macro, words):
+        if mode.site is None:
+            raise MakeProbeError("original rule-template call lacks a source occurrence")
+        variable, values, macro_name = graph._rule_template_call(expression)
+        reference = graph.NAME_PART.fullmatch(values)
+        if reference is None and "$" in values:
+            raise MakeProbeError("rule-template parameters lack an original literal/reference contract")
+        inputs = () if reference is None else (reference[1] or reference[2],)
+        left, right, recipes = graph._rule_template_parts(macro.value)
+        units = []
+        for word in words:
+            mode.checkpoint()
+            graph._charge_template_expansion(self.session.budget, macro.value, word, len(recipes))
+            substitute = lambda value: value.replace("$(1)", word).replace("${1}", word)
+            target, prerequisite = substitute(left), substitute(right)
+            actual_target, actual_prerequisite = self.text(mode, target), self.text(mode, prerequisite)
+            if actual_target is None or actual_prerequisite is None:
+                raise MakeProbeError("rule-template header lacks exact original caller-time values")
+            source_rule = mode.source_rule(
+                graph._join_make_text((actual_target, ":", actual_prerequisite), self.session.budget),
+                literal=True, site=mode.site,
+            )
+            if source_rule is None or source_rule.targets is None or source_rule.prerequisites is None:
+                raise MakeProbeError("rule-template header lacks its original source rule context")
+            units.append(graph.MakeSourceUnit(
+                target + ":" + prerequisite, native_literal_header=True, source_rule=source_rule, site=mode.site,
+            ))
+            units.extend(
+                graph.MakeSourceUnit(substitute(recipe).replace("$$", "$"), source_rule=source_rule,
+                                     recipe_ordinal=ordinal, site=mode.site)
+                for ordinal, recipe in enumerate(recipes, 1)
+            )
+        if len(self.calls) >= self.session.budget.limits.observation_count:
+            raise MakeProbeError("original template calls exceed the existing observation bound")
+        record = _OriginalTemplateCall(
+            mode.site, expression, macro_name, macro, tuple(units), inputs,
+            (variable, "1") if words else (variable,),
+        )
+        self.session.budget.charge("cache", len(encoded((
+            record.site, record.expression, record.macro_name,
+            (macro.origin, macro.flavor, macro.value), record.units, record.inputs, record.scoped,
+        ))))
+        self.calls.append(record)
+
+    def original_call(self, site, expression):
+        self.session.budget.remaining()
+        if self.next_call >= len(self.calls):
+            raise MakeProbeError("rule-template invocation lacks original caller-time facts")
+        record = self.calls[self.next_call]
+        if record.site != site or record.expression != graph.strip_comment(expression).strip(graph.MAKE_SPACE):
+            raise MakeProbeError("rule-template facts differ from the original source occurrence")
+        self.next_call += 1
+        return record
+
+    def require_complete(self):
+        if self.next_call != len(self.calls):
+            raise MakeProbeError("original rule-template source occurrences were omitted")
 
 
 class SourcePass:
@@ -229,12 +303,8 @@ class SourcePass:
         expression = expression.lstrip(graph.MAKE_SPACE)
         while expression[:1] in {"@", "-", "+"}:
             expression = expression[1:].lstrip(graph.MAKE_SPACE)
-        normalized = graph.SCOPED.sub(
-            lambda match: "$(" + next(item for item in match.groups() if item is not None) + ")",
-            expression,
-        )
-        self.session.budget.charge("cache", len(encoded(normalized)))
-        return graph._resolve_make_text(normalized, resolve, self.session.budget)
+        self.session.budget.charge("cache", len(encoded(expression)))
+        return graph._resolve_make_text(expression, resolve, self.session.budget)
 
     def retain_scope_context(self, unit, context):
         if len(self.issued_contexts) >= self.session.budget.limits.observation_count:
@@ -982,6 +1052,7 @@ def _check_deferred_namespace(phase, stream, usage, causes, snapshot_checks):
         unresolved = []
         names = graph.references(value) | graph.selected_names(
             (value,), usage["definitions"], usage["observed_values"], unresolved=unresolved,
+            budget=phase.session.budget,
         )
         condition = (
             "unresolved-selector" if unresolved else "direct-wildcard" if _has_namespace(value)
