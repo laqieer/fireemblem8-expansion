@@ -393,35 +393,16 @@ def fd_inventory(*, ordinary_entry=False):
     return result
 
 
-def withdraw_entry_fifos(before, report):
+def preserve_entry_fds(before, *, stdio_only=False):
+    require(type(stdio_only) is bool, "entry descriptor mode")
     require(type(before) is dict and len(before) <= 20 and {0, 1, 2} <= before.keys()
             and all(integer(fd, 0, 0x7FFFFFFF) and type(value) is tuple and len(value) == 4
                     and all(type(part) is int for part in value)
                     and (fd <= 2 or value[2] == stat.S_IFIFO and value[3] in (0, 1, 2))
                     for fd, value in before.items()), "initial C descriptors")
-    stdio = {fd: before[fd] for fd in (0, 1, 2)}
-    primary = None
-    for descriptor in sorted(fd for fd in before if fd > 2):
-        try:
-            info = os.fstat(descriptor)
-            actual = (info.st_dev, info.st_ino, stat.S_IFMT(info.st_mode),
-                      fcntl.fcntl(descriptor, fcntl.F_GETFL) & os.O_ACCMODE)
-            require(actual == before[descriptor], "entry FIFO identity changed")
-            try:
-                os.close(descriptor)
-            except BaseException:
-                report.unsure("cleanup")
-                raise
-        except BaseException as error:
-            report.error("cleanup", error)
-            if primary is None:
-                primary = error
-            elif error is not primary:
-                _cleanup_life._forget_error(error)
-    if primary is not None:
-        raise primary
-    require(fd_inventory() == stdio, "initial C descriptors")
-    return stdio
+    require(not stdio_only or before.keys() == {0, 1, 2}, "coordinator inherited descriptors")
+    require(fd_inventory(ordinary_entry=True) == before, "initial C descriptors")
+    return before
 
 
 def validate_fds(actual, expected, capture):
@@ -1725,7 +1706,7 @@ class Coordinator:
                     and all(initial["caps"][index] == 0 for index in (0, 1, 2, 4)),
                     "ordinary coordinator authority")
             self.facts["stage"] = "entry-descriptors"
-            self.baseline = withdraw_entry_fifos(fd_inventory(ordinary_entry=True), self.report)
+            self.baseline = preserve_entry_fds(fd_inventory(ordinary_entry=True), stdio_only=True)
             self.facts["stage"] = "environment"
             verify_environment()
             self.facts["stage"] = "source-before"
@@ -2006,7 +1987,8 @@ class Enclosure:
         require(value["uid"] == (uid,) * 4 and value["gid"] == (gid,) * 4
                 and all(value["caps"][index] == 0 for index in (0, 1, 2, 4)),
                 "enclosure has no setup authority")
-        self.baseline = withdraw_entry_fifos(fd_inventory(ordinary_entry=True), self.report)
+        self.baseline = fd_inventory(ordinary_entry=True)
+        preserve_entry_fds(self.baseline)
         self.life.ordinary_executable("/usr/bin/python3")
         require(canonical(PROGRAM) == Path(__file__).resolve(), "enclosure fixed source")
 
@@ -2171,7 +2153,7 @@ class Enclosure:
 
     def check_fds(self):
         if self.baseline is not None:
-            self.fd_restored = fd_inventory() == self.baseline
+            self.fd_restored = fd_inventory(ordinary_entry=True) == self.baseline
             require(self.fd_restored, "enclosure final descriptors")
 
     def run(self):

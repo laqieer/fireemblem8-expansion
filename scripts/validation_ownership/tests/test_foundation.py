@@ -12452,11 +12452,11 @@ class NullMountFixtureInertTests(unittest.TestCase):
             with self.assertRaises(b.Refusal):
                 b.validate_local_setup({**self.state(entered=True), "caps": caps})
 
-    def test_actual_entry_scan_counts_only_one_transient_and_preserves_stdio(self):
+    def test_actual_entry_scan_counts_only_one_transient_and_preserves_caller_fds(self):
         b = self.b
         for count, entry in ((19, True), (20, True), (21, True), (20, False)):
             live = {fd: (8, 1000 + fd, stat.S_IFIFO, 1 if fd in (1, 2) else fd % 3) for fd in range(count)}
-            stdio, closed = {fd: live[fd] for fd in (0, 1, 2)}, []
+            original, closed = dict(live), []
             def fstat(fd):
                 if fd not in live:
                     raise OSError(errno.EBADF, "closed scan iterator")
@@ -12475,8 +12475,9 @@ class NullMountFixtureInertTests(unittest.TestCase):
                 if entry and count <= 20:
                     actual = b.fd_inventory(ordinary_entry=True)
                     self.assertEqual(len(actual), count)
-                    self.assertEqual(b.withdraw_entry_fifos(actual, self.report), stdio)
-                    self.assertEqual(len(closed), count - 3)
+                    self.assertEqual(b.preserve_entry_fds(actual), original)
+                    self.assertEqual(live, original)
+                    self.assertEqual(closed, [])
                 else:
                     with self.assertRaises(b.Refusal):
                         b.fd_inventory(ordinary_entry=entry)
@@ -12489,36 +12490,28 @@ class NullMountFixtureInertTests(unittest.TestCase):
             with self.assertRaisesRegex(b.Refusal, "entry descriptor scan changed"):
                 b.fd_inventory(ordinary_entry=True)
 
-    def test_entry_disposal_rejects_foreign_handles_and_continues_after_first_error(self):
+    def test_entry_rejection_never_closes_borrowed_or_changed_handles(self):
         b = self.b
         stdio = {fd: (8, 1000 + fd, stat.S_IFIFO, 0 if fd == 0 else 1) for fd in (0, 1, 2)}
-        for kind in (stat.S_IFDIR, stat.S_IFREG, stat.S_IFCHR, stat.S_IFSOCK):
-            with self.subTest(kind=kind), self.assertRaises(b.Refusal):
-                b.withdraw_entry_fifos({**stdio, 10: (8, 1010, kind, 0)}, self.report)
-        for when in ("identity", "before", "after"):
-            live = {**stdio, 10: (8, 1010, stat.S_IFIFO, 0), 11: (8, 1011, stat.S_IFIFO, 1)}
-            attempted = []
-            first = OSError(errno.EIO, "first")
-            def close(fd):
-                attempted.append(fd)
-                if fd == 10 and when == "before":
-                    raise first
-                del live[fd]
-                if fd == 10:
-                    raise first
-            def fstat(fd):
-                value = live[fd]
-                return SimpleNamespace(st_dev=value[0], st_ino=value[1] + (fd == 10 and when == "identity"),
-                                       st_mode=value[2])
-            with self.subTest(when=when), patch.object(os, "close", side_effect=close), \
-                 patch.object(os, "fstat", side_effect=fstat), \
-                 patch.object(b.fcntl, "fcntl", side_effect=lambda fd, command: live[fd][3]):
-                with self.assertRaises((b.Refusal, OSError)) as caught:
-                    b.withdraw_entry_fifos(dict(live), self.report)
-                if when != "identity":
-                    self.assertIs(caught.exception, first)
-            self.assertEqual(attempted, [11] if when == "identity" else [10, 11])
-            self.assertEqual({fd: live[fd] for fd in (0, 1, 2)}, stdio)
+        for kind in (stat.S_IFDIR, stat.S_IFREG, stat.S_IFCHR, stat.S_IFSOCK, stat.S_IFIFO):
+            live = {**stdio, 7: (8, 1010, kind, 0), 8: (8, 1010, kind, 1)}
+            original = dict(live)
+            with self.subTest(kind=kind), patch.object(b, "fd_inventory", side_effect=lambda **kwargs: dict(live)), \
+                 patch.object(os, "close", side_effect=lambda fd: live.pop(fd)) as close:
+                if kind == stat.S_IFIFO:
+                    self.assertEqual(b.preserve_entry_fds(dict(live)), original)
+                    with self.assertRaises(b.Refusal):
+                        b.preserve_entry_fds(dict(live), stdio_only=True)
+                    changed = {**live, 7: (8, 1999, kind, 0)}
+                    with self.assertRaises(b.Refusal):
+                        b.preserve_entry_fds(changed)
+                else:
+                    with self.assertRaises(b.Refusal):
+                        b.preserve_entry_fds(dict(live))
+                close.assert_not_called()
+                self.assertEqual(live, original)
+        with patch.object(b, "fd_inventory", return_value=stdio):
+            self.assertEqual(b.preserve_entry_fds(dict(stdio), stdio_only=True), stdio)
 
     def test_worker_fds_reject_directions_devices_ancestors_and_writer_aliases(self):
         b = self.b
@@ -13677,10 +13670,12 @@ class NullMountFixtureInertTests(unittest.TestCase):
 
     def enclosure(self, *, status=0, stalled=None, fault=None, payload=None, diagnostics=b"",
                   malformed_pid=False, expired=False, reap_mismatch=False, foreign_wait=False,
-                  load_delay=0, capture_directions=True, mode="readonly"):
+                  load_delay=0, capture_directions=True, mode="readonly", caller_fds=None):
         b, life = self.b, self.life
         model = _NullDirectories(b, "unused")
         model.root.children[self.directory.name] = _NullDirectory("driver", 3, 88, 50, mode=stat.S_IFDIR | 0o755)
+        model.tables["C"].update({} if caller_fds is None else caller_fds)
+        original, child_entries = model.inventory(), []
         clock, calls, wait_calls, signals, launches, inner_waits = [100.0], [], [], [], [], []
         if fault is not None:
             model.fault = (*fault, OSError(errno.EIO, "inert enclosing boundary"))
@@ -13718,6 +13713,18 @@ class NullMountFixtureInertTests(unittest.TestCase):
         def launch(argv, **kwargs):
             launches.append((tuple(argv), kwargs))
             model.operation("Popen", lambda: None)
+            inherited = {
+                fd: value for fd, value in model.inventory().items()
+                if fd > 2 and (not kwargs["close_fds"] or fd in kwargs["pass_fds"])
+            }
+            child_fds = {0: (8, 912, stat.S_IFIFO, 0), 1: (8, 910, stat.S_IFIFO, 1),
+                         2: (8, 911, stat.S_IFIFO, 1), **inherited}
+            child_entries.append(child_fds)
+            with patch.object(b, "fd_inventory", return_value=child_fds), \
+                 patch.object(Path, "cwd", return_value=b.SOURCE), \
+                 patch.object(b, "death_signal", return_value=signal.SIGKILL), \
+                 patch.dict(os.environ, kwargs["env"], clear=True):
+                b.coordinator_arguments(argv[5:], life)
             child.stdout, child.stderr, child.stdin = Stream(10), Stream(11), Stream(12)
             for fd, access in ((10, 0), (11, 0), (12, 1)):
                 model.tables["C"][fd] = (8, 900 + fd, stat.S_IFIFO, access if capture_directions else 1)
@@ -13823,7 +13830,63 @@ class NullMountFixtureInertTests(unittest.TestCase):
         self.assertEqual(len(parents), 1)
         parent = parents[0]
         return SimpleNamespace(result=result, failure=failure, parent=parent, model=model, elapsed=clock[0] - 100,
-                               waits=wait_calls, selects=calls, signals=signals, launches=launches, inner_waits=inner_waits)
+                               waits=wait_calls, selects=calls, signals=signals, launches=launches, inner_waits=inner_waits,
+                               original=original, child_entries=child_entries)
+
+    def test_enclosure_preserves_caller_pipes_across_success_and_failure(self):
+        caller = {7: (8, 700, stat.S_IFIFO, 0), 8: (8, 700, stat.S_IFIFO, 1)}
+        for case in ({}, {"status": 7, "payload": b""}, {"payload": b"not-json"},
+                     {"fault": ("Popen", 1, "before")}, {"fault": ("close:C:10", 1, "after")}):
+            with self.subTest(case=case):
+                value = self.enclosure(caller_fds=caller, **case)
+                self.assertEqual(value.model.inventory(), value.original)
+                self.assertEqual(value.parent.baseline, value.original)
+                self.assertEqual({fd: value.model.inventory()[fd] for fd in caller}, caller)
+                self.assertTrue(value.parent.fd_restored)
+                self.assertFalse(any(value.model.counts.get("close:C:" + str(fd), 0) for fd in caller))
+                self.assertEqual(value.failure is None, not case)
+                self.assertEqual(len(value.launches), 1)
+                for entry in value.child_entries:
+                    self.assertEqual(set(entry), {0, 1, 2})
+                _, options = value.launches[0]
+                self.assertIs(options["close_fds"], True)
+                self.assertEqual(options["pass_fds"], ())
+        neutral = self.enclosure(
+            caller_fds=dict(reversed(list(caller.items()))),
+            payload=self.b.json_bytes(dict(reversed(list(self.success_value().items())))),
+        )
+        self.assertIsNone(neutral.failure)
+        self.assertEqual(neutral.result, self.enclosure(caller_fds=caller).result)
+        self.assertEqual(neutral.model.inventory(), neutral.original)
+
+    def test_enclosure_rejects_unsupported_caller_descriptors_without_disposal(self):
+        for kind in (stat.S_IFDIR, stat.S_IFREG, stat.S_IFCHR, stat.S_IFSOCK):
+            caller = {7: (8, 700, kind, 0), 8: (8, 701, stat.S_IFIFO, 1)}
+            with self.subTest(kind=kind):
+                value = self.enclosure(caller_fds=caller)
+                self.assertIsNotNone(value.failure)
+                self.assertEqual(value.launches, [])
+                self.assertEqual(value.model.inventory(), value.original)
+                self.assertEqual(value.parent.baseline, value.original)
+                self.assertTrue(value.parent.fd_restored)
+                self.assertFalse(any(label.startswith("close:") for label in value.model.events))
+
+    def test_enclosure_caller_preservation_keeps_both_selections_and_all_modes(self):
+        caller = {7: (8, 700, stat.S_IFIFO, 0), 8: (8, 700, stat.S_IFIFO, 1)}
+        for backend, status, stderr in (
+            ("ordinary", 0, b""), ("restricted", 1, self.b.PERMISSION_UNAVAILABLE[0]),
+        ):
+            observed = subprocess.CompletedProcess(list(self.b.AVAILABILITY), status, b"", stderr)
+            self.assertEqual(self.b.classify_availability(observed), backend)
+            for mode in self.b.MODES:
+                with self.subTest(backend=backend, mode=mode):
+                    payload = self.b.json_bytes(self.success_value(mode, backend, status))
+                    value = self.enclosure(caller_fds=caller, mode=mode, payload=payload)
+                    self.assertIsNone(value.failure)
+                    self.assertEqual(value.model.inventory(), value.original)
+                    self.assertEqual((value.result["backend"], value.result["availability_status"]), (backend, status))
+                    self.assertEqual(value.result["mode"], mode)
+                    self.assertEqual(set(value.child_entries[0]), {0, 1, 2})
 
     def test_enclosure_is_one_fixed_ordinary_child_with_original_deadline_and_capture(self):
         b = self.b
@@ -13967,6 +14030,7 @@ class NullMountFixtureInertTests(unittest.TestCase):
                 patch.object(b, "death_signal", return_value=0),
                 patch.object(os, "getresuid", return_value=(0, 1001, 0)),
                 patch.object(b, "fd_inventory", return_value={**stdio, 9: (8, 4, stat.S_IFDIR, 0)}),
+                patch.object(b, "fd_inventory", return_value={**stdio, 9: (8, 4, stat.S_IFIFO, 0)}),
                 patch.object(b, "fd_inventory", return_value={**stdio, 2: stdio[1]}),
                 patch.dict(os.environ, {"SUDO_UID": "1001"}),
             ):

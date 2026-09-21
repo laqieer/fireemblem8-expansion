@@ -292,13 +292,15 @@ class Process:
             dependency_image=self.dependency_image,
         )
 
-    def close(self):
+    def close(self, *, primary=None):
+        actions = []
         if self.pending is not None and self.pending[0] == "private-install":
-            self.pending[1].close()
-            self.pending = None
+            pending, self.pending = self.pending[1], None
+            actions.append(lambda: pending.close(primary=primary))
         if self.pidfd >= 0:
-            os.close(self.pidfd)
-            self.pidfd = -1
+            descriptor, self.pidfd = self.pidfd, -1
+            actions.append(lambda: os.close(descriptor))
+        finish_cleanup(actions, primary=primary)
 
 
 @dataclass
@@ -312,12 +314,13 @@ class _PendingInstall:
     arguments: tuple
     sequence: int
 
-    def close(self):
+    def close(self, *, primary=None):
         descriptors = self.source_fd, self.parent_fd
         self.source_fd = self.parent_fd = -1
-        for descriptor in descriptors:
-            if descriptor >= 0:
-                os.close(descriptor)
+        finish_cleanup([
+            lambda descriptor=descriptor: os.close(descriptor)
+            for descriptor in descriptors if descriptor >= 0
+        ], primary=primary)
 
 
 _TOOLCHAIN_WORD_SCRATCH = 8192
@@ -2147,11 +2150,12 @@ class Policy:
             if install_protocol.directory_identity(os.fstat(descriptor)) != expected:
                 raise Violation("private install initial parent identity changed")
 
-    def close_private_install_parents(self):
+    def close_private_install_parents(self, *, primary=None):
         descriptors = tuple(self.install_parent_fds.values())
         self.install_parent_fds.clear()
-        for descriptor in descriptors:
-            os.close(descriptor)
+        finish_cleanup([
+            lambda descriptor=descriptor: os.close(descriptor) for descriptor in descriptors
+        ], primary=primary)
 
     def _install_parent(self, parent):
         for name, expected in self.install_parents.items():
@@ -2164,11 +2168,9 @@ class Policy:
                 raise Violation("private install lacks its original pinned parent")
             actual = Path(self.config["root"]) / name.lstrip("/")
             descriptor = os.open(actual, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
-            try:
+            with cleanup_scope([lambda: os.close(descriptor)]):
                 if install_protocol.directory_identity(os.fstat(descriptor)) != expected:
                     raise Violation("private install parent identity changed")
-            finally:
-                os.close(descriptor)
         return os.dup(self.install_parent_fds[parent])
 
     def _install_path(self, pid, state, address, dirfd):
@@ -2273,10 +2275,13 @@ class Policy:
                 source, destination, identity, parent, parent_fd, source_fd,
                 (old_argument, new_argument), len(self.install_attempts),
             ))
-        except BaseException:
-            if source_fd >= 0:
-                os.close(source_fd)
-            os.close(parent_fd)
+        except BaseException as failure:
+            descriptors = source_fd, parent_fd
+            source_fd = parent_fd = -1
+            finish_cleanup([
+                lambda descriptor=descriptor: os.close(descriptor)
+                for descriptor in descriptors if descriptor >= 0
+            ], primary=failure)
             raise
 
     def finish_private_install(self, pid, pending, result):
@@ -2316,7 +2321,7 @@ class Policy:
                 "result": result, "identity": identity,
             }).decode("ascii"))
         finally:
-            pending.close()
+            pending.close(primary=sys.exc_info()[1])
 
     def source_mode(self, path):
         for forbidden in self.config["forbidden_paths"]:
@@ -3833,7 +3838,7 @@ def supervise(config, drop_privileges):
                     policy.toolchain_intermediate.exited(stopped, state, code)
             finally:
                 del processes[stopped]
-                state.close()
+                state.close(primary=sys.exc_info()[1])
             if config["mode"] == "make":
                 policy.charge_metadata(16)
                 policy.closed_processes.add(stopped)
@@ -4338,26 +4343,55 @@ def supervise(config, drop_privileges):
         primary = failure
         error = str(failure)
     finally:
+        cleanup_primary = primary
+
+        def close_reaped(record):
+            nonlocal cleanup_primary, error
+            try:
+                record.close(primary=cleanup_primary)
+            except BaseException as failure:
+                cleanup_primary = failure
+                if error is None:
+                    error = str(failure)
+                raise
+
         def reap_owned():
-            for child, descriptor in newborn_stops.items():
+            for child, descriptor in tuple(newborn_stops.items()):
                 processes.setdefault(child, Process("unresolved", pidfd=descriptor))
+                del newborn_stops[child]
             signal_tracees(processes)
-            while processes:
-                try:
-                    child, status = os.waitpid(-1, WALL)
-                    if os.WIFEXITED(status) or os.WIFSIGNALED(status):
-                        record = processes.pop(child, None)
-                        if record is not None:
-                            record.close()
-                    else:
-                        try:
-                            ptrace(SYSCALL, child, 0, signal.SIGKILL)
-                        except OSError:
-                            pass
-                except ChildProcessError:
-                    for record in processes.values():
-                        record.close()
-                    processes.clear()
+
+            def closes():
+                while processes:
+                    try:
+                        child, status = os.waitpid(-1, WALL)
+                        if os.WIFEXITED(status) or os.WIFSIGNALED(status):
+                            record = processes.pop(child, None)
+                            if record is not None:
+                                yield lambda record=record: close_reaped(record)
+                        else:
+                            try:
+                                ptrace(SYSCALL, child, 0, signal.SIGKILL)
+                            except OSError:
+                                pass
+                    except ChildProcessError:
+                        records = tuple(processes.values())
+                        processes.clear()
+                        for record in records:
+                            yield lambda record=record: close_reaped(record)
+
+            finish_cleanup(closes(), primary=primary)
+
+        def close_install_parents():
+            nonlocal cleanup_primary, error
+            try:
+                policy.close_private_install_parents(primary=cleanup_primary)
+            except BaseException as failure:
+                cleanup_primary = failure
+                if error is None:
+                    error = str(failure)
+                raise
+
         def write_report():
             nonlocal result
             try:
@@ -4430,7 +4464,7 @@ def supervise(config, drop_privileges):
                         error = str(failure)
                     raise
         finish_cleanup([
-            reap_owned, policy.close_private_install_parents, finish_channel, write_report,
+            reap_owned, close_install_parents, finish_channel, write_report,
             lambda: setattr(policy, "header_runtime", None),
             *([] if policy.toolchain is None or policy.toolchain["stage"] != 4
               else [policy.toolchain_intermediate.close]),

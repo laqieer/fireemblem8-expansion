@@ -1,8 +1,14 @@
+import errno
 import json
+import os
+import signal
+import stat
 import unittest
+from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from scripts.validation_ownership import private_install
 from scripts.validation_ownership.budget import MakeProbeError
@@ -13,6 +19,348 @@ from scripts.validation_ownership.tests import test_foundation as foundation
 
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+class PrivateInstallCleanupTests(unittest.TestCase):
+    """Actual install owners and supervisor teardown with inert descriptors."""
+
+    def setUp(self):
+        from scripts.validation_ownership import lifecycle, syscall_guard
+        self.guard = syscall_guard
+        self.stack = ExitStack()
+        self.addCleanup(self.stack.close)
+        self.attempted, self.live, self.faults = [], set(), {}
+
+        def close(descriptor):
+            self.assertIn(descriptor, self.live)
+            self.assertNotIn(descriptor, self.attempted, "ambiguous close was retried")
+            self.attempted.append(descriptor)
+            error, after = self.faults.get(descriptor, (None, False))
+            if error is not None and not after:
+                raise error
+            self.live.remove(descriptor)
+            if error is not None:
+                raise error
+
+        self.os = SimpleNamespace(
+            close=close, O_RDONLY=os.O_RDONLY, O_DIRECTORY=os.O_DIRECTORY,
+            O_NOFOLLOW=os.O_NOFOLLOW, O_CLOEXEC=os.O_CLOEXEC, O_PATH=os.O_PATH,
+            open=Mock(side_effect=AssertionError("unmodeled open")),
+            stat=Mock(side_effect=AssertionError("unmodeled stat")),
+            fstat=Mock(side_effect=AssertionError("unmodeled fstat")),
+            dup=Mock(side_effect=AssertionError("unmodeled dup")),
+        )
+        self.stack.enter_context(patch.object(syscall_guard, "os", self.os))
+        self.stack.enter_context(patch.object(lifecycle, "signal", SimpleNamespace(
+            SIG_BLOCK=signal.SIG_BLOCK, SIG_SETMASK=signal.SIG_SETMASK,
+            pthread_sigmask=lambda *args: set(), sigpending=lambda: set(),
+        )))
+        self.info = SimpleNamespace(
+            st_dev=1, st_ino=2, st_mode=stat.S_IFREG | 0o600, st_size=4,
+            st_mtime_ns=5, st_ctime_ns=6, st_nlink=1,
+        )
+        self.parent = SimpleNamespace(st_dev=1, st_ino=3, st_mode=stat.S_IFDIR | 0o700)
+
+    def own(self, *descriptors, faults=(), after=False):
+        self.attempted.clear()
+        self.live = set(descriptors)
+        self.faults = {
+            descriptor: (OSError(errno.EIO, "inert descriptor " + str(descriptor)), after)
+            for descriptor in faults
+        }
+
+    def pending(self, source=101, parent=102):
+        return self.guard._PendingInstall(
+            "/work/out/temp", "/work/out/result", self.guard.publication_identity(self.info),
+            "/work/out", parent, source, ((1, "temp"), (2, "result")), 1,
+        )
+
+    def assert_errors(self, primary, descriptors):
+        notes = getattr(primary, "cleanup_errors", ())
+        self.assertEqual(len(notes), len(descriptors))
+        for descriptor in descriptors:
+            self.assertTrue(any(str(self.faults[descriptor][0]) in note for note in notes), notes)
+
+    def test_pending_and_parent_pins_attempt_every_close_once(self):
+        for owner in ("pending", "parents"):
+            for faults in ((), (101,), (102,), (101, 102)):
+                for after in (False, True):
+                    with self.subTest(owner=owner, faults=faults, after=after):
+                        self.own(101, 102, faults=faults, after=after)
+                        pending = self.pending()
+                        policy = SimpleNamespace(install_parent_fds={"/work": 101, "/work/out": 102})
+                        close = pending.close if owner == "pending" else lambda: (
+                            self.guard.Policy.close_private_install_parents(policy)
+                        )
+                        if faults:
+                            with self.assertRaises(OSError) as caught:
+                                close()
+                            self.assertIs(caught.exception, self.faults[faults[0]][0])
+                            self.assert_errors(caught.exception, faults[1:])
+                        else:
+                            close()
+                        self.assertEqual(self.attempted, [101, 102])
+                        if owner == "pending":
+                            self.assertEqual((pending.source_fd, pending.parent_fd), (-1, -1))
+                        else:
+                            self.assertEqual(policy.install_parent_fds, {})
+                        close()
+                        self.assertEqual(self.attempted, [101, 102])
+                        self.assertEqual(self.live, set(faults) if not after else set())
+
+    def test_process_withdraws_pending_and_pidfd_before_all_attempt_cleanup(self):
+        for faults in ((), (101,), (103,), (101, 102, 103)):
+            for active in (False, True):
+                with self.subTest(faults=faults, active=active):
+                    self.own(101, 102, 103, faults=faults)
+                    pending = self.pending()
+                    process = self.guard.Process("command", pending=("private-install", pending), pidfd=103)
+                    primary = self.guard.Violation("original rejection") if active else None
+                    if faults and primary is None:
+                        with self.assertRaises(OSError) as caught:
+                            process.close()
+                        self.assertIs(caught.exception, self.faults[faults[0]][0])
+                        self.assert_errors(caught.exception, faults[1:])
+                    else:
+                        process.close(primary=primary)
+                        if active:
+                            self.assert_errors(primary, faults)
+                    self.assertEqual(self.attempted, [101, 102, 103])
+                    self.assertIsNone(process.pending)
+                    self.assertEqual((process.pidfd, pending.source_fd, pending.parent_fd), (-1, -1, -1))
+                    process.close()
+                    pending.close()
+                    self.assertEqual(self.attempted, [101, 102, 103])
+        self.own(103)
+        process = self.guard.Process("command", pending=("read", 8), pidfd=103)
+        process.close()
+        self.assertEqual(process.pending, ("read", 8))
+        self.assertEqual(self.attempted, [103])
+
+    def install_policy(self):
+        return SimpleNamespace(
+            private_install=SimpleNamespace(destinations=("/work/out/result",), scope="owned/launch"),
+            mode="command", processes={9: object()}, newborn_stops={}, install_attempts=set(),
+            install_completed=set(), install_parents={"/work/out": (1, 3, stat.S_IFDIR | 0o700)},
+            _install_path=Mock(side_effect=[
+                ("/work/out/temp", (1, "temp")), ("/work/out/result", (2, "result")),
+            ]),
+            _install_parent=Mock(return_value=102), _install_aliases=Mock(),
+            reserve_creation=Mock(), observe=Mock(),
+        )
+
+    def test_acquisition_rejection_keeps_primary_and_every_acquired_close(self):
+        for phase in ("destination", "open", "source", "aliases", "reservation", "success"):
+            for faults in ((), (101, 102)):
+                with self.subTest(phase=phase, faults=faults):
+                    acquired = (102,) if phase in ("destination", "open") else (101, 102)
+                    self.own(*acquired, faults=tuple(fd for fd in faults if fd in acquired))
+                    primary = self.guard.Violation("original acquisition rejection")
+                    policy, state = self.install_policy(), self.guard.Process("command", bootstrap=False)
+                    self.os.stat.side_effect = None if phase == "destination" else FileNotFoundError()
+                    self.os.open.side_effect = primary if phase == "open" else None
+                    self.os.open.return_value = 101
+                    self.os.fstat.side_effect = None
+                    self.os.fstat.return_value = (
+                        SimpleNamespace(**{**vars(self.info), "st_nlink": 2}) if phase == "source" else self.info
+                    )
+                    if phase == "aliases":
+                        policy._install_aliases.side_effect = primary
+                    if phase == "reservation":
+                        policy.reserve_creation.side_effect = primary
+                    registers = SimpleNamespace(orig_rax=82, rdi=1, rsi=2)
+                    if phase == "success":
+                        self.guard.Policy.prepare_private_install(policy, 9, state, registers)
+                        self.assertEqual(self.attempted, [])
+                        self.assertEqual(policy.install_attempts, {"/work/out/result"})
+                        self.assertEqual((state.pending[1].source_fd, state.pending[1].parent_fd), (101, 102))
+                        state.close(primary=primary)
+                    else:
+                        with self.assertRaises(self.guard.Violation) as caught:
+                            self.guard.Policy.prepare_private_install(policy, 9, state, registers)
+                        if phase in ("open", "aliases", "reservation"):
+                            self.assertIs(caught.exception, primary)
+                        self.assert_errors(caught.exception, tuple(fd for fd in faults if fd in acquired))
+                        self.assertIsNone(state.pending)
+                        self.assertFalse(policy.install_attempts)
+                    self.assertEqual(self.attempted, list(acquired))
+
+    def test_parent_identity_rejection_is_not_masked_by_temporary_close(self):
+        self.own(101, 102, faults=(102,))
+        policy = SimpleNamespace(
+            install_parents={"/work": (1, 3, stat.S_IFDIR | 0o700)},
+            install_parent_fds={"/work": 101}, config={"root": "/inert"},
+        )
+        self.os.open.side_effect, self.os.open.return_value = None, 102
+        self.os.fstat.side_effect = [self.parent, self.info]
+        with self.assertRaises(self.guard.Violation) as caught:
+            self.guard.Policy._install_parent(policy, "/work")
+        self.assertEqual(self.attempted, [102])
+        self.assertEqual(policy.install_parent_fds, {"/work": 101})
+        self.assert_errors(caught.exception, (102,))
+        self.os.dup.assert_not_called()
+
+    def test_completion_keeps_rejection_and_both_close_failures(self):
+        for phase in ("pathname", "parent", "observation", "success", "failed-syscall", "invalid-status"):
+            for faults in ((), (101,), (101, 102)):
+                with self.subTest(phase=phase, faults=faults):
+                    self.own(101, 102, 103, faults=faults)
+                    pending, policy = self.pending(), self.install_policy()
+                    policy._install_parent.return_value = 103
+                    primary = self.guard.Violation("original completion rejection")
+                    self.os.fstat.side_effect = lambda fd: self.parent if fd == 102 else self.info
+                    self.os.stat.side_effect = lambda name, **kwargs: (
+                        self.info if name == "result" else (_ for _ in ()).throw(FileNotFoundError())
+                    )
+                    if phase == "parent":
+                        policy.install_parents["/work/out"] = (1, 99, self.parent.st_mode)
+                    if phase == "observation":
+                        policy.observe.side_effect = primary
+                    outcome = -errno.ENOENT if phase == "failed-syscall" else 1 if phase == "invalid-status" else 0
+                    with patch.object(self.guard, "cstring", side_effect=(
+                        primary if phase == "pathname" else lambda pid, pointer: {1: "temp", 2: "result"}[pointer]
+                    )):
+                        if phase not in ("success", "failed-syscall"):
+                            with self.assertRaises(self.guard.Violation) as caught:
+                                self.guard.Policy.finish_private_install(policy, 9, pending, outcome)
+                            if phase in ("pathname", "observation"):
+                                self.assertIs(caught.exception, primary)
+                            self.assert_errors(caught.exception, faults)
+                        elif faults:
+                            with self.assertRaises(OSError) as caught:
+                                self.guard.Policy.finish_private_install(policy, 9, pending, outcome)
+                            self.assertIs(caught.exception, self.faults[101][0])
+                            self.assert_errors(caught.exception, faults[1:])
+                        else:
+                            self.guard.Policy.finish_private_install(policy, 9, pending, outcome)
+                    expected = [101, 102] if phase in ("pathname", "parent") else [103, 101, 102]
+                    self.assertEqual(self.attempted, expected)
+                    self.assertEqual((pending.source_fd, pending.parent_fd), (-1, -1))
+                    pending.close()
+                    self.assertEqual(self.attempted, expected)
+                    if phase in ("success", "failed-syscall"):
+                        row = json.loads(policy.observe.call_args.args[1].split(":", 1)[1])
+                        self.assertEqual(row["result"], outcome)
+                        self.assertEqual(row["identity"], list(pending.source_identity) if outcome == 0 else None)
+
+    def supervised(self, *, phase="setup", faults=(), no_children=False, reporting=False):
+        guard = self.guard
+        descriptors = (90, 101, 102, 103, 201, 202, 203, 401, 402)
+        self.own(*descriptors, *((303,) if phase != "success" else ()), faults=faults)
+        primary = guard.Violation("original terminal rejection")
+        reporting_error = OSError(errno.ENOSPC, "inert report failure")
+        events, reports, records, waited = [], [], [], []
+        policy = SimpleNamespace(
+            toolchain=None, filter_kernel=None, header_runtime=object(), directory_installs=None,
+            read_trace=None, source_effects=None, journal_receipts=None, private_install=None,
+            file_cleanup_enabled=False,
+            producer_requests=(), consumed=set(), code_consumed=set(), accessed=set(), events=[],
+            total_processes=0, live_process_peak=0, calls=0, written=0, created=0, memory_peak=0,
+            observation_bytes=0, observation_attempts={}, metadata=[], install_parent_fds={},
+            charge_metadata=Mock(), closed_processes=set(),
+            retire_job=Mock(side_effect=primary if phase == "exit" else None),
+            reserve_memory=Mock(side_effect=primary if phase == "setup" else None),
+        )
+        def account():
+            first = policy.processes[9]
+            first.pending = ("private-install", self.pending())
+            second = guard.Process("command", pidfd=203, pending=("private-install", self.pending(201, 202)))
+            policy.processes[10] = second
+            if phase != "success":
+                policy.newborn_stops[11] = 303
+            records.extend((first, second))
+        policy.account_processes = account
+        policy.pin_private_install_parents = lambda: policy.install_parent_fds.update({"/work": 401, "/work/out": 402})
+        close_parents = guard.Policy.close_private_install_parents
+        policy.close_private_install_parents = lambda **kwargs: close_parents(policy, **kwargs)
+        waits = iter([(9, ("stop", 19)), (9, ("exit", 0)), (10, ("exit", 0)), (11, ("exit", 0))])
+        def waitpid(pid, flags):
+            events.append(("wait", pid))
+            waited.append(pid)
+            self.assertLessEqual(len(waited), 5, "inert reaper repeated its finite wait inventory")
+            if no_children and len(waited) > (2 if phase == "exit" else 1):
+                raise ChildProcessError()
+            return next(waits)
+        for name, function in {
+            "getpid": lambda: 8, "pidfd_open": lambda pid: 90 if pid == 8 else 103,
+            "fork": lambda: 9, "waitpid": waitpid, "WIFSTOPPED": lambda status: status[0] == "stop",
+            "WIFEXITED": lambda status: status[0] == "exit", "WIFSIGNALED": lambda status: False,
+            "WSTOPSIG": lambda status: status[1], "waitstatus_to_exitcode": lambda status: status[1],
+        }.items():
+            setattr(self.os, name, function)
+        self.os.WNOHANG = 1
+        def write_report(data, **kwargs):
+            reports.append(json.loads(data))
+            if reporting:
+                raise reporting_error
+        paths = Mock(return_value=SimpleNamespace(read_text=lambda: "", write_text=write_report))
+        signals = SimpleNamespace(
+            SIGKILL=9, SIGSTOP=19, SIGTRAP=5,
+            pidfd_send_signal=lambda *args: events.append(("signal", *args)),
+        )
+        config = {name: 10 for name in (
+            "descendant_limit", "syscall_limit", "write_limit", "creation_limit",
+            "observation_count", "observation_limit", "process_limit", "memory_limit",
+        )}
+        config.update(mode="make" if phase == "exit" else "command", deadline=130, report="/inert/report")
+        failure = result = None
+        with patch.object(guard, "Policy", return_value=policy), \
+             patch.object(guard, "Path", paths), patch.object(guard, "signal", signals), \
+             patch.object(guard, "ptrace", return_value=0), \
+             patch.object(guard, "resource", SimpleNamespace(prlimit=lambda *args: None)), \
+             patch.object(guard, "time", SimpleNamespace(monotonic=lambda: 100)), \
+             patch.object(guard, "encode_metadata_transport", return_value={}):
+            try:
+                result = guard.supervise(config, lambda: self.fail("child execution"))
+            except BaseException as error:
+                failure = error
+        return SimpleNamespace(
+            result=result, failure=failure, primary=primary, reporting_error=reporting_error,
+            reports=reports, events=events, policy=policy, records=records,
+        )
+
+    def test_supervisor_reaps_every_owner_and_preserves_terminal_and_report_errors(self):
+        for phase in ("setup", "exit", "success"):
+            for no_children in (False, True):
+                if phase == "success" and no_children:
+                    continue
+                for reporting in (False, True):
+                    faults = (101, 102, 103, 201, 202, 203, 401, 402)
+                    with self.subTest(phase=phase, no_children=no_children, reporting=reporting):
+                        value = self.supervised(phase=phase, faults=faults, no_children=no_children, reporting=reporting)
+                        self.assertIsNone(value.failure)
+                        self.assertEqual(value.result, 125)
+                        self.assertEqual(set(self.attempted), set(self.live) | {90, 303} if phase != "success"
+                                         else set(self.live) | {90})
+                        self.assertEqual(len(self.attempted), len(set(self.attempted)))
+                        self.assertFalse(value.policy.processes)
+                        self.assertFalse(value.policy.newborn_stops)
+                        self.assertFalse(value.policy.install_parent_fds)
+                        self.assertTrue(all(record.pidfd == -1 and record.pending is None for record in value.records))
+                        failure = self.faults[101][0] if phase == "success" else value.primary
+                        expected = faults[1:] if phase == "success" else faults
+                        notes = getattr(failure, "cleanup_errors", ())
+                        self.assertEqual(len(notes), len(expected) + reporting)
+                        for fd in expected:
+                            self.assertTrue(any(str(self.faults[fd][0]) in note for note in notes), notes)
+                        if reporting:
+                            self.assertTrue(any(str(value.reporting_error) in note for note in notes), notes)
+                        self.assertEqual(value.reports[0]["error"], str(failure))
+                        self.assertFalse(value.reports[0]["ok"])
+
+    def test_supervisor_normal_and_cleanup_only_failures_do_not_publish_false_success(self):
+        value = self.supervised(phase="success")
+        self.assertIsNone(value.failure)
+        self.assertEqual(value.result, 0)
+        self.assertTrue(value.reports[0]["ok"])
+        self.assertFalse(self.live)
+        for reporting in (False, True):
+            value = self.supervised(phase="success", faults=(401, 402), reporting=reporting)
+            self.assertIs(value.failure, self.faults[401][0])
+            self.assertEqual(len(value.failure.cleanup_errors), 1 + reporting)
+            self.assertEqual(set(self.attempted), {90, 101, 102, 103, 201, 202, 203, 401, 402})
+            self.assertFalse(value.reports[0]["ok"])
+            self.assertEqual(value.reports[0]["error"], str(self.faults[401][0]))
 
 
 class PrivateInstallTests(unittest.TestCase):
