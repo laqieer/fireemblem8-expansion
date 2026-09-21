@@ -36,17 +36,25 @@ PREPARATION_SHA = "4dcbcb7e462a3d0953fea5b54d29c30954193ea7"
 RETAINED_HARNESS_SHA = "1a2d177749cec443c05021855e4f006cdae821f1"
 ROOT18_HARNESS_SHA = "e4c42d0f831806e4ecf1587ef7cbb977a7ff57e8"
 REVIEWED_HARNESS_SHA = "f50cbd175b02aef847e344c84154f6574aa5e457"
+COMPONENT_BASE_SHA = "f00bc2610d7031d14268855deb2979682ea196af"
+COMPONENT_PATHS = frozenset({
+    policy.WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
+        "policy.py", "worker.py", "root_stage.py", "supervisor.py", "observation_failure.py", "README.md",
+        "test_ci_calibration.py", "test_root_stage.py", "test_observation_failure.py",
+    )),
+})
 
 
 def validate_harness_lineage(lines, head):
     if lines != [
-        f"{head} {REVIEWED_HARNESS_SHA}",
+        f"{head} {COMPONENT_BASE_SHA}",
+        f"{COMPONENT_BASE_SHA} {REVIEWED_HARNESS_SHA}",
         f"{REVIEWED_HARNESS_SHA} {ROOT18_HARNESS_SHA}",
         f"{ROOT18_HARNESS_SHA} {RETAINED_HARNESS_SHA}",
         f"{RETAINED_HARNESS_SHA} {PREPARATION_SHA}",
         f"{PREPARATION_SHA} {policy.BASE}",
     ]:
-        raise policy.GuardError("diagnostic requires its exact normal root20/root19/root18/root17/preparation/BASE lineage")
+        raise policy.GuardError("diagnostic requires its exact normal component/root20/root19/root18/root17/preparation/BASE lineage")
 
 
 def apparmor_text(name):
@@ -405,16 +413,14 @@ class Protocol:
             if (
                 not isinstance(record, dict) or set(record) != {"scope", "kind", "data"}
                 or record["scope"] != self.scope or not isinstance(record["data"], dict)
-                or record["kind"] not in {"ready", "graph-start", "root-start", "progress", "error", "cleanup-error", "result", "probe-result", "escaped"}
+                or record["kind"] not in {"ready", "component-start", "progress", "error", "cleanup-error", "result", "probe-result", "escaped"}
             ):
                 raise policy.GuardError("foreign or malformed diagnostic protocol record")
             kind = record["kind"]
             if self.finished or (not self.ready and kind not in {"ready", "error"}):
                 raise policy.GuardError("diagnostic record is out of order")
             if "source_refusal" in record["data"]:
-                if kind != "error":
-                    raise policy.GuardError("source refusal metadata is permitted only on an error record")
-                record["data"]["source_refusal"] = policy.retain_source_refusal(record["data"]["source_refusal"])
+                raise policy.GuardError("component scope cannot publish unrelated root source-refusal metadata")
             if kind == "ready":
                 if self.ready:
                     raise policy.GuardError("duplicate containment readiness")
@@ -435,7 +441,8 @@ def phase(owner, mode, volume, *, memory, pids, seconds):
     directory = owner.control / mode
     directory.mkdir()
     scope = owner.scope["run_id"] + "/" + mode
-    deadline = time.monotonic() + seconds
+    started = time.monotonic()
+    deadline = started + seconds
     config = {
         "scope": scope, "mode": mode, "cgroup": str(group.path), "cgroup_relative": "/" + group.path.name,
         "uid": owner.uid, "gid": owner.gid, "memory_max": memory, "pids_max": pids,
@@ -466,7 +473,8 @@ def phase(owner, mode, volume, *, memory, pids, seconds):
     reader, writer = os.pipe2(os.O_CLOEXEC)
     child = None
     protocol = Protocol(scope, 65536 if mode == "output" else policy.OUTPUT_BYTES, raw_after_ready=mode == "output")
-    result = {"mode": mode, "deadline": deadline, "graph_check_attempts": 0, "root_check_attempts": 0}
+    result = {"mode": mode, "deadline": deadline, "started_at": started,
+              "component_attempts": 0, **policy.ABSENT_WORKLOADS}
     cause = None
     last_sample = 0
     previous_io = {}
@@ -549,35 +557,31 @@ def phase(owner, mode, volume, *, memory, pids, seconds):
                             result["probe"] = value
                         elif kind == "ready":
                             result["identity"] = value
-                        elif kind == "graph-start":
-                            result["graph_check_attempts"] += 1
-                            if mode != "graph" or result["graph_check_attempts"] != 1:
-                                raise policy.GuardError("graph invocation violated the closed single-attempt scope")
-                            owner.scope["graph_check_attempted"] = True
-                            owner.artifacts.write("scope.json", owner.scope)
-                            owner.artifacts.append("progress.jsonl", record)
-                        elif kind == "root-start":
-                            result["root_check_attempts"] += 1
+                        elif kind == "component-start":
+                            result["component_attempts"] += 1
                             if (
-                                mode != "root" or result["root_check_attempts"] != 1
+                                mode != "component" or result["component_attempts"] != 1
                                 or set(value) != {
                                     "head", "base", "workload_kind", "fixture_version", "source_phases",
-                                    "target", "limits", "deadline", "root_check_attempts", "graph_check_attempts", "semantics",
+                                    "profile", "method", "target", "limits", "deadline",
+                                    "component_attempts", "semantics", *policy.ABSENT_WORKLOADS,
                                 }
                                 or value.get("head") != policy.GRAPH or value.get("base") != policy.BASE
                                 or value.get("workload_kind") != policy.WORKLOAD_KIND
                                 or value.get("fixture_version") != policy.FIXTURE_VERSION
-                                or value.get("target") != policy.ROOT_TARGET or value.get("source_phases") is not True
-                                or type(value.get("root_check_attempts")) is not int or value["root_check_attempts"] != 1
-                                or type(value.get("graph_check_attempts")) is not int or value["graph_check_attempts"] != 0
+                                or value.get("target") != policy.COMPONENT_TARGET or value.get("source_phases") is not False
+                                or value.get("profile") != policy.PROFILE
+                                or value.get("method") != policy.COMPONENT_CASE + "." + policy.COMPONENT_METHOD
+                                or type(value.get("component_attempts")) is not int or value["component_attempts"] != 1
+                                or any(type(value.get(name)) is not int or value[name] != 0 for name in policy.ABSENT_WORKLOADS)
                                 or value.get("deadline") != deadline
                                 or value.get("limits") != policy.profile_manifest(
                                     policy.ORIGINAL_LIMITS, observation_count=policy.ORIGINAL_LIMITS["entries"],
                                 )
                                 or not isinstance(value.get("semantics"), str)
                             ):
-                                raise policy.GuardError("root invocation violated its exact single-attempt scope")
-                            owner.scope["root_check_attempted"] = True
+                                raise policy.GuardError("component invocation violated its exact single-attempt scope")
+                            owner.scope["component_attempted"] = True
                             owner.artifacts.write("scope.json", owner.scope)
                             owner.artifacts.append("progress.jsonl", record)
                         elif kind == "escaped":
@@ -592,6 +596,8 @@ def phase(owner, mode, volume, *, memory, pids, seconds):
                             owner.artifacts.append("progress.jsonl", record)
                 if now > deadline + 10:
                     raise policy.GuardError("watchdog/stream termination is unconfirmed")
+        if mode == "component" and (protocol.buffer or not protocol.finished and cause is None):
+            raise policy.GuardError("component stream ended without its complete terminal result")
         result["returncode"] = child.wait(timeout=5)
         result["empty_before_outer_cleanup"] = group.empty()
         if time.monotonic() >= deadline and cause is None:
@@ -644,6 +650,8 @@ def phase(owner, mode, volume, *, memory, pids, seconds):
         result["output_bytes"] = protocol.total + protocol.stderr_total
         result["output_exceeded"] = protocol.output_exceeded
         result["first_cause"] = cause
+        result["ended_at"] = time.monotonic()
+        result["elapsed_seconds"] = result["ended_at"] - started
         owner.artifacts.append("metrics.jsonl", {"scope": scope, "terminal": True, **result["kernel"]})
     return result
 
@@ -723,15 +731,35 @@ class Owner:
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
         validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=5", "HEAD").decode().splitlines(),
+            git(self.harness, "rev-list", "--parents", "--max-count=6", "HEAD").decode().splitlines(),
             self.scope["harness_sha"],
         )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
         if any(
-            name and name.decode() != policy.WORKFLOW and not name.decode().startswith("scripts/ci_calibration/")
+            name and name.decode() not in {policy.WORKFLOW, policy.PREVIOUS_WORKFLOW}
+            and not name.decode().startswith("scripts/ci_calibration/")
             for name in changed
         ):
             raise policy.GuardError("diagnostic branch modified a production surface")
+        preserved = (
+            policy.PREVIOUS_WORKFLOW, "scripts/ci_calibration/entry.py", "scripts/ci_calibration/kernel.py",
+            "scripts/ci_calibration/runtime_view.py", "scripts/ci_calibration/volume_mount.py",
+            "scripts/validation_ownership/sandbox_exec.py", "scripts/validation_ownership/lifecycle.py",
+        )
+        if git(self.harness, "diff", "--name-only", COMPONENT_BASE_SHA, "HEAD", "--", *preserved).strip():
+            raise policy.GuardError("component preparation changed a preserved containment surface")
+        delta = git(self.harness, "diff", "--name-status", "-z", COMPONENT_BASE_SHA, "HEAD").split(b"\0")
+        if not delta or delta[-1] != b"" or len(delta) % 2 != 1:
+            raise policy.GuardError("component preparation inventory is malformed")
+        changes = list(zip(delta[:-1:2], delta[1:-1:2]))
+        if (
+            (b"A", policy.WORKFLOW.encode()) not in changes
+            or any(name.decode() not in COMPONENT_PATHS or kind != (
+                b"A" if name.decode() == policy.WORKFLOW else b"M"
+            ) for kind, name in changes)
+            or len({name for _, name in changes}) != len(changes)
+        ):
+            raise policy.GuardError("component preparation exceeds its exact allowed surfaces")
         self.source_status("before")
         tree = git(self.candidate, "ls-tree", "-rz", "--full-tree", policy.GRAPH)
         self.tracked_paths = len([row for row in tree.split(b"\0") if row])
@@ -869,52 +897,60 @@ def arguments():
     return parser.parse_args()
 
 
-def validate_root_phase(result):
+def validate_component_phase(result):
     if (
-        not isinstance(result, dict) or result.get("mode") != "root"
-        or result.get("first_cause") or result.get("returncode") != 0
-        or type(result.get("root_check_attempts")) is not int or result["root_check_attempts"] != 1
-        or type(result.get("graph_check_attempts")) is not int or result["graph_check_attempts"] != 0
+        not isinstance(result, dict) or result.get("mode") != "component"
+        or result.get("first_cause") or type(result.get("returncode")) is not int or result["returncode"] != 0
+        or type(result.get("component_attempts")) is not int or result["component_attempts"] != 1
+        or any(type(result.get(name)) is not int or result[name] != 0 for name in policy.ABSENT_WORKLOADS)
         or result.get("empty") is not True or result.get("watchdog_reaped") is not True
         or result.get("lifetime_writer_closed") is not True
         or result.get("output_exceeded") or result.get("cleanup_errors") or result.get("supervisor_error")
         or not isinstance(result.get("worker"), dict)
-        or set(result["worker"]) != {"root", "validation", "counters", "root_check_attempts",
-                                     "root_check_completed", "graph_check_attempts"}
-        or type(result["worker"]["root_check_attempts"]) is not int or result["worker"]["root_check_attempts"] != 1
-        or result["worker"]["root_check_completed"] is not True
-        or type(result["worker"]["graph_check_attempts"]) is not int or result["worker"]["graph_check_attempts"] != 0
+        or set(result["worker"]) != {"component", "validation", "counters", "component_attempts",
+                                     "component_completed", "timing", *policy.ABSENT_WORKLOADS}
+        or type(result["worker"]["component_attempts"]) is not int or result["worker"]["component_attempts"] != 1
+        or result["worker"]["component_completed"] is not True
+        or any(type(result["worker"].get(name)) is not int or result["worker"][name] != 0
+               for name in policy.ABSENT_WORKLOADS)
     ):
-        raise policy.GuardError("single root invocation failed or lacks actual completion/cleanup")
-    checked = policy.validate_root_result(result["worker"]["root"])
-    policy.validate_root_counters(result["worker"]["counters"])
+        raise policy.GuardError("single component failed or lacks actual completion/cleanup")
+    checked = policy.validate_component_result(result["worker"]["component"])
+    counters = result["worker"]["counters"]
+    if type(counters) is not dict or set(counters) != {"phase", "counters", "semantics"} or (
+        counters["phase"] != "completed-component" or type(counters["semantics"]) is not str
+    ):
+        raise policy.GuardError("component final sampler state is incomplete")
+    policy.validate_component_counters(counters["counters"], complete=True)
+    if counters["counters"] != result["worker"]["component"]["counters"]:
+        raise policy.GuardError("component final counter snapshots disagree")
+    timing = result["worker"]["timing"]
+    if type(timing) is not dict or set(timing) != {
+        "worker_started", "source_verified", "method_finished", "finalized",
+    } or any(type(value) not in (int, float) or not 0 <= value <= result["deadline"] for value in timing.values()):
+        raise policy.GuardError("component timing is incomplete or outside its original deadline")
+    if list(timing[name] for name in ("worker_started", "source_verified", "method_finished", "finalized")) != sorted(timing.values()):
+        raise policy.GuardError("component timing regressed")
     if result["worker"]["validation"] != checked:
-        raise policy.GuardError("worker root validation differs from the closed result")
+        raise policy.GuardError("worker component validation differs from the closed result")
     return checked
 
 
-def root_retention(result):
-    if result is None or result.get("mode") != "root":
-        return False
+def component_retention(result):
+    if type(result) is not dict or result.get("mode") != "component":
+        return True
     worker = result.get("worker")
-    root = worker.get("root") if isinstance(worker, dict) else None
+    component = worker.get("component") if isinstance(worker, dict) else None
     cause = None if result is None else result.get("first_cause")
     error = cause.get("error") if isinstance(cause, dict) else None
-    cleanup = root.get("cleanup") if isinstance(root, dict) else error.get("root_cleanup") if isinstance(error, dict) else None
+    cleanup = component.get("cleanup") if isinstance(component, dict) else error.get("component_cleanup") if isinstance(error, dict) else None
     if cleanup is None:
         return True
-    if (
-        not isinstance(cleanup, dict) or set(cleanup) != {
-            "budget_closed", "children", "waiters", "retained_owners", "session_base_removed", "fixture_removed",
-        }
-        or any(type(cleanup[name]) is not int or cleanup[name] < 0 for name in ("children", "waiters", "retained_owners"))
-        or any(type(cleanup[name]) is not bool for name in ("budget_closed", "session_base_removed", "fixture_removed"))
-    ):
-        raise policy.GuardError("unknown inner cleanup state requires retained diagnostic resources")
-    return (
-        bool(cleanup["retained_owners"] or cleanup["children"] or cleanup["waiters"])
-        or not cleanup["budget_closed"] or not cleanup["session_base_removed"] or not cleanup["fixture_removed"]
-    )
+    policy.validate_component_cleanup(cleanup)
+    return cleanup != {
+        "budget_closed": True, "children": 0, "waiters": 0, "retained_owners": 0,
+        "session_base_removed": True, "fixture_removed": True,
+    }
 
 
 def main():
@@ -927,16 +963,15 @@ def main():
         environment=args.runner_environment, operating_system=args.runner_os, event_name=args.event_name,
     )
     output = Path(args.output).absolute()
-    if output.name != "issue180-ci-baseline-20-" + args.run_id or output.is_symlink():
+    if output.name != policy.OUTPUT_PREFIX + args.run_id or output.is_symlink():
         raise policy.GuardError("output does not identify the single owned artifact directory")
     artifacts = Artifacts(output)
     if args.operation == "plan":
         if (output / "scope.json").exists():
             raise policy.GuardError("one-shot scope already exists")
         scope.update(
-            planned_at_monotonic=time.monotonic(), graph_launch_requested=False,
-            graph_check_attempted=False, graph_check_completed=False,
-            root_launch_requested=False, root_check_attempted=False, root_check_completed=False,
+            planned_at_monotonic=time.monotonic(), component_launch_requested=False,
+            component_attempted=False, component_completed=False,
             policy=policy.profile_manifest(
                 policy.ORIGINAL_LIMITS, observation_count=policy.ORIGINAL_LIMITS["entries"],
             ),
@@ -948,8 +983,9 @@ def main():
     previous = policy.parse_json(kernel.read(output / "scope.json", policy.OUTPUT_BYTES))
     if (
         any(previous.get(key) != value for key, value in scope.items())
-        or previous.get("root_launch_requested") is not False
-        or previous.get("graph_launch_requested") is not False
+        or previous.get("component_launch_requested") is not False
+        or previous.get("component_attempted") is not False
+        or previous.get("component_completed") is not False
     ):
         raise policy.GuardError("run does not match the unspent planned scope")
     scope = previous
@@ -964,13 +1000,13 @@ def main():
     started = time.monotonic()
     artifacts.write("result.json", {
         "status": "preflight-started", "diagnostic_only": True,
-        "production_acceptance": False, "graph_launch_requested": False, "root_launch_requested": False,
+        "production_acceptance": False, "component_launch_requested": False, **policy.ABSENT_WORKLOADS,
     })
     try:
         if os.geteuid() != 0:
             raise policy.GuardError("run requires the hosted root supervisor")
         if started - previous["planned_at_monotonic"] > 15 * 60:
-            raise policy.GuardError("setup consumed the reserved job/cleanup margin; graph will not start")
+            raise policy.GuardError("setup consumed the reserved job/cleanup margin; component will not start")
         os.chown(output, 0, 0)
         facts = capacity_facts(output.parent)
         policy.choose_envelope(facts)
@@ -1000,17 +1036,17 @@ def main():
         scope.update(runner_facts=facts, envelope=envelope)
         graph_volume = owner.volume("graph-volume", envelope["disk_bytes"])
         if time.monotonic() - started > 5 * 60:
-            raise policy.GuardError("preflight/setup exceeded its reserved margin; graph will not start")
-        scope["root_launch_requested"] = True
+            raise policy.GuardError("preflight/setup exceeded its reserved margin; component will not start")
+        scope["component_launch_requested"] = True
         artifacts.write("scope.json", scope)
         result = phase(
-            owner, "root", graph_volume, memory=envelope["memory_max"],
+            owner, "component", graph_volume, memory=envelope["memory_max"],
             pids=envelope["pids_max"], seconds=policy.GRAPH_SECONDS,
         )
         failing_phase = result
-        checked = validate_root_phase(result)
+        checked = validate_component_phase(result)
         failing_phase = None
-        scope["root_check_completed"] = True
+        scope["component_completed"] = True
         result["validation"] = checked
     except BaseException as error:
         observed_cause = failing_phase.get("first_cause") if isinstance(failing_phase, dict) else None
@@ -1018,8 +1054,8 @@ def main():
     finally:
         if owner is not None:
             try:
-                if scope["root_launch_requested"] and (result is None or root_retention(result)):
-                    raise policy.GuardError("inner root ownership remains uncertain; retain outer resources after owned-process termination")
+                if scope["component_launch_requested"] and (result is None or component_retention(result)):
+                    raise policy.GuardError("inner component ownership remains uncertain; retain outer resources after owned-process termination")
                 owner.cleanup()
             except BaseException as error:
                 cleanup_error = policy.error_record(error)
@@ -1031,7 +1067,7 @@ def main():
                     first = scope["source_status_after_error"]
         artifacts.write("scope.json", scope)
         artifacts.write("result.json", {
-            "status": "completed-root-diagnostic-only" if first is None and cleanup_error is None else "failed",
+            "status": "completed-component-diagnostic-only" if first is None and cleanup_error is None else "failed",
             "diagnostic_only": True, "production_acceptance": False,
             "first_error": first, "phase": result, "cleanup_error": cleanup_error,
             "cleanup_confirmed": cleanup_error is None,

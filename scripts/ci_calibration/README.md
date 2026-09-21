@@ -1,4 +1,183 @@
-# Prospective issue-180 original-root acceptance 20
+# Contained toolchain component control-policy measurement 1
+
+**Code preparation only. No native allocation, first creation push or hosted
+qualification is granted by this tree. Never merge this diagnostic branch.**
+Main must independently review the full exact harness and separately freeze
+the first owner-created launch. The implementation contract is
+[5754711352](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5754711352).
+
+This is a normal child of reviewed
+`f00bc2610d7031d14268855deb2979682ea196af`, preserving its exact earlier
+normal lineage to BASE `ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`.
+The selected immutable source is
+`c3e226e79ad69ad81c29acbc5e8810262ce5c8a6`, checked out separately with its
+Git-pinned submodules and without credentials. The closed20 workflow stays
+unchanged. The only new trigger is the prospective, never-merge
+`calibration/issue-180-toolchain-component-sizing-1` first owner-created public
+push, new workflow run1/attempt1. Setup failure consumes that later allocation.
+There is no dispatch, retry, branch reuse or alternative source route.
+
+## Scope: one Make, two checkers, no root/report/H1
+
+The only component method is the inherited selected-source
+`ModernToolchainTests.test_one_make_two_checker_typed_intermediate_component`.
+The harness-local adaptor provides one shared original-deadline budget to
+the exact source `ProbeSession`, `AuthorityLoader` and `GitTreeEntries`.
+It does not call the stock fresh-budget `FoundationTests.session` seam.
+The selected test method, original fixture setup, capture assertions and
+cleanup assertions remain unmodified. A read-only scoped delegate records
+the actual single `session.make("expansion-modern-all", commands=...)`
+return and restores the original method afterward.
+
+Two checker occurrences must be acknowledged in original producer/native
+order, with five stages each, complete typed intermediate proofs, actual
+retirement, distinct raw bindings and receipts, equal completed assembly
+extent/digest, one deduplicated semantic record and two typed operand
+references. Producer slots retain the source's zero-based domain.
+The original source method also validates its consumed version2 launches;
+the harness does not invent a separately serialized launch-version field.
+Provisional observations are not completion. The exact inherited method
+and its inner cleanup assertions must return normally before a completed
+component result is accepted.
+
+This fixture has preexisting `src/query.c`, copied genuine headers, initially
+absent generated header parents, no text producer and an empty final target.
+Its default source-phase/read/journal selection is unchanged. It is not
+ROOT21, an ordinary Make oracle, another source variant, graph probe, public
+report, standalone verifier, source-phase adoption or H1. Those entry routes
+are explicitly denied. One Make means one direct observation, not one
+`ProbeBudget.run`: all setup, compiler and runtime-query runs remain counted.
+
+## Sole aggregate-derived diagnostic override
+
+The known incomplete normal run refused a real control request of 2,039,626
+after 31,668,852 charged bytes: prospective 33,708,478 exceeds the original
+33,554,432 cap by 154,046. It did not return a complete Make/checker pair.
+No further unchanged normal-profile attempt or charge discount is implied.
+
+`toolchain-component-control-under-global-v1` changes **only**
+`control_bytes` to the original `total_bytes`: **805,306,368 bytes (768 MiB)**.
+The total stays exactly that value. With nonnegative charges,
+`control + other + request <= total` already implies
+`control + request <= total`; the category ceiling is thus derived from the
+existing aggregate, not doubled, guessed, a measured cost or a shipping
+recommendation. Every other field retains its original value, including
+all unrelated cumulative categories, runs, states, descendants, syscalls,
+`observations=None` and its actual effective 32,768 count.
+
+The existing frozen `dataclasses.make_dataclass` subclass supplies this
+single diagnostic default and inherits the selected validator and all
+budget methods. Ordinary `Limits(control_bytes=805306368)` still rejects.
+No `__post_init__` bypass, frozen-field mutation, charge replacement,
+discount, refund, reopened budget or reset clock exists. The subclass and
+original defaults/effective observation count are checked before and after.
+The historical all-category signed64 sentinel policy below is NOT this
+component profile.
+
+Live guests32, pending32, entries32768, created files4096, file/message16MiB,
+per-process output1MiB and funded guest/regex VM512MiB remain unchanged,
+along with both original independent1MiB record/plan admissions.
+Native grant formulas still take the minimum of their original fixed caps
+and actual remaining budgets. Larger cumulative control headroom does not
+widen a file/message/entry/VM or ownership boundary. If another unchanged
+limit refuses, this attempt is incomplete and stops; there is no quota ladder.
+
+## Unchanged external containment and fresh qualification
+
+The reviewed `entry.py`, `kernel.py`, `runtime_view.py`, `volume_mount.py`,
+BASE namespace helper/lifecycle and closed20 workflow are unchanged.
+The supervisor preserves effective-ancestor memory/PID/disk formulas,
+swap0/OOM grouping, original3600s deadline,70m step/90m job and15m plan-age/
+5m setup margins. It retains the dedicated host UID/GID, empty groups and
+capability sets, NNP/death protection, private mount/PID/net/IPC/UTS,
+readonly source/runtime/control objects, pivot-root, fixed ext4 volume,
+network denial, real cgroup ownership and non-lazy cleanup checks.
+The optional owned temporary process-selected AppArmor userns mechanism
+is exactly the reviewed one, not a historical lease or a global policy change.
+
+All seven real identity, memory, PID, disk, output, deadline and lifetime
+controls must qualify afresh before any candidate import. Unavailable full
+host cgroup-v2/nsdelegate/controllers/peaks/kill/pidfd/loop/mount/AppArmor
+facilities are explicit holds, never a fallback to a shared host or weaker
+guard. The small probe volume closes before the separate measurement volume.
+Ordinary or hosted fixture081 qualification is not qualification of this cage.
+
+## Bounded evidence and failure ownership
+
+Only the existing five files are emitted/uploaded: `scope.json`,
+`preflight.json`, `metrics.jsonl`, `progress.jsonl`, `result.json`.
+Worker output remains16MiB combined; artifacts32MiB total; metrics/progress
+4MiB each. There is no raw report, receipt, source, SDK, environment,
+assembly/digest dump, key, image or traceback-local export.
+
+The closed component start/result bind exact source/base/harness/profile/
+method/fixture and separately count attempt, return, assertion completion and
+cleanup. Root/graph/report/verifier/H1 attempts remain zero.
+Eight byte categories retain actual charged values, original/diagnostic caps,
+remaining amounts and exceeded-original predicates. Runs, states and planned
+state bytes are retained, as are cumulative processes/syscalls/observations/
+file creations and pending/live-process/funded-VM high waters. Final known
+closed-session counters survive authority-registry clearing. Missing data
+is unavailable, not zero or completed.
+
+The unchanged outer sampler records real cgroup memory/PID peaks/events,
+CPU/I/O, fixed filesystem capacity/use and wall time. Funded VM peak is not
+RSS; cumulative accounting is not simultaneous memory. Five-second disk
+maxima and I/O rates are explicitly sampled, not instantaneous peaks or a
+basis for shrinking future disk policy. Diagnostic sampler overhead remains
+inside the physical cage and is not discounted.
+
+The added numeric admission observer matches the exact selected charge code,
+exception type and issued budget. It keeps requested/charged-before/cap/
+prospective/remaining/shortfall scalars separately from collection-time
+ledger totals/runs/states/closed/children. The aggregate expression was not
+retained in the source frame and stays null, never replaced with a later
+collection total. Native observation-limit telemetry keeps its separate
+meaning, including unknown effective Make grants. Component error records
+retain bounded type/errno chains without formatting private messages.
+
+Every remaining owned close is attempted. First workload failures survive
+later close or publication errors. A stopped sampler and closed budget do
+not substitute for source-method completion. Inner retained owners, children,
+waiters or uncertain fixture/session removal prevent outer volume teardown;
+cgroup death is not proof of inner ownership cleanup. Unsupported, partial,
+oversized, malformed or trailing-incomplete component streams fail. Failed
+evidence cannot become a resource sizing point or a shipping policy.
+
+## Preparation and later tester procedure
+
+This procedure belongs to the existing
+`TC-WORKFLOW-OWNERSHIP-MODERN-TOOLCHAIN-001`; no registry/command owner is added.
+The three preparation classes in `test_ci_calibration.py`,
+`test_root_stage.py` and `test_observation_failure.py` use effect models,
+not the selected native class or its workload method. Preparation must load
+the exact selected budget/lifecycle control modules under import-time foreign/
+process guards, then run only inspected inert selectors. Source/native class
+identity is checked by parsed source plus adaptor method-identity controls,
+not by executing a native testcase locally. All source/workflow/default/
+preserved-file inspections are read-only Git/AST/YAML evidence.
+
+Controls preserve the real32MiB numeric preimage, exact and one-over category/
+aggregate admission, unchanged record/plan/live/VM boundaries, monotonic
+original clock, one shared budget/session, no repeated/foreign method or Make,
+missing/contradictory receipt data, meaningful content/binding/retirement
+changes, schema ambiguity, counter/finalization failures, first-cause,
+all-closes and uncertainty retention. Restoration of old all-category
+policy or removed enforcement must break the corresponding oracle; neutral
+JSON order/local spelling remains data-equivalent.
+
+After independent exact-harness review, Main must separately freeze one
+first owner-created hosted allocation. Require all seven fresh controls,
+then the exact one-Make/two-checker method and the complete evidence above.
+Do not run native fault variants, the twelve-Make removal/restoration method,
+another Make, a root or report in that allocation. A completed component is
+only a diagnostic resource point; complete root/public-report/verifier/H1
+evidence is still required before any shipping resource/default decision.
+No execution follows merely from passing preparation tests or this README.
+
+---
+
+## Historical closed root20 preparation (not this component)
 
 **Local preparation only. No execution allocation, creation push or hosted
 qualification for20 is claimed. Never merge this diagnostic branch.** Main must bind

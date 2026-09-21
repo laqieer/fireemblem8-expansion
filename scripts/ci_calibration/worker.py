@@ -349,33 +349,33 @@ class Sampler:
     def __init__(self, scope):
         self.scope = scope
         self.budget = None
+        self.session = None
+        self.failure = None
         self.phase = "candidate-import"
         self.stop = threading.Event()
         self.thread = threading.Thread(target=self.run, name="diagnostic-sampler", daemon=True)
 
     def snapshot(self):
-        if self.budget is None:
-            return {"phase": self.phase, "budget": None}
-        budget = self.budget
-        amounts = budget.bytes.copy()
         return {
             "phase": self.phase,
-            "budget": {
-                "bytes": amounts, "total": sum(amounts.values()), "runs": budget.runs,
-                "states": budget.states, "failed": budget.failed, "closed": budget.closed,
-            },
-            "semantics": "Observed counters, not an atomic admission receipt or a live-memory measurement.",
+            "counters": policy.counter_snapshot(self.budget, self.session),
+            "semantics": "Observed cumulative counters and funded VM peaks; not an atomic grant or physical RSS.",
         }
 
     def run(self):
-        while not self.stop.wait(policy.SAMPLE_SECONDS):
-            kernel.emit(self.scope, "progress", self.snapshot())
+        try:
+            while not self.stop.wait(policy.SAMPLE_SECONDS):
+                kernel.emit(self.scope, "progress", self.snapshot())
+        except BaseException as error:
+            self.failure = error
 
     def close(self):
         self.stop.set()
         self.thread.join(timeout=2)
         if self.thread.is_alive():
             raise policy.GuardError("diagnostic sampler did not stop")
+        if self.failure is not None:
+            raise self.failure
 
 
 def calibration_budget(limits_type, budget_type, deadline):
@@ -384,7 +384,7 @@ def calibration_budget(limits_type, budget_type, deadline):
     classified = policy.profile_manifest(original, observation_count=original_limits.observation_count)
     profile_type = dataclasses.make_dataclass(
         "HostedDiagnosticLimits",
-        [(name, int, dataclasses.field(default=policy.POLICY_SENTINEL)) for name in policy.RELAXED],
+        [(name, int, dataclasses.field(default=policy.diagnostic_limit(name))) for name in policy.RELAXED],
         bases=(limits_type,), frozen=True,
     )
 
@@ -396,12 +396,20 @@ def calibration_budget(limits_type, budget_type, deadline):
             self.started = original_deadline - self.limits.seconds
 
     limits = profile_type()
-    if type(limits.observation_count) is not int or limits.observation_count != policy.POLICY_SENTINEL:
-        raise policy.GuardError("diagnostic observations do not resolve to the explicit cumulative sentinel")
+    if type(limits.observation_count) is not int or limits.observation_count != original_limits.observation_count:
+        raise policy.GuardError("diagnostic observations changed the original None/entries contract")
     budget = ClockBudget(limits=limits, original_deadline=deadline)
     if (
         budget.deadline != deadline or dataclasses.asdict(limits_type()) != original
         or limits_type().observation_count != classified["observations"]["original_effective"]
+        or dataclasses.asdict(limits) != {
+            name: classified[name]["diagnostic"] for name in original
+        }
+        or type(deadline) not in (int, float) or not math.isfinite(deadline)
+        or not 0 < deadline - time.monotonic() <= limits.seconds
+        or any(getattr(type(budget), name) is not getattr(budget_type, name) for name in (
+            "run", "charge", "remaining", "plan", "admit_planned_state", "read_bytes", "close",
+        ))
     ):
         raise policy.GuardError("original clock/default policy was not preserved")
     return budget, limits, original, classified
@@ -434,10 +442,14 @@ def graph_error_record(error, sampler, observer, *, source_binding=None):
 
 
 def graph(config):
-    raise policy.GuardError("scope17 is root-only; full graph execution requires a separate scope")
+    raise policy.GuardError("component measurement cannot execute a graph or public report")
 
 
-def finish_root(scope, sampler, budget, primary):
+def root(config):
+    raise policy.GuardError("component measurement cannot execute an original root")
+
+
+def finish_component(scope, sampler, budget, primary):
     active = sys.exception()
     closing = []
     reporting = [active] if primary is not None and active is not None and active is not primary else []
@@ -446,9 +458,9 @@ def finish_root(scope, sampler, budget, primary):
             close()
         except BaseException as error:
             closing.append(error)
-    for error in closing:
+    for error in (*closing, *reporting):
         try:
-            kernel.emit(scope, "cleanup-error", policy.error_record(error))
+            kernel.emit(scope, "cleanup-error", policy.component_error_record(error))
         except BaseException as error:
             reporting.append(error)
     if not closing and not reporting:
@@ -458,26 +470,27 @@ def finish_root(scope, sampler, budget, primary):
         for error in errors:
             if error is failure:
                 continue
-            message = f"after owned root {stage}: {type(error).__name__}: {error}"
-            failure.cleanup_errors = (*getattr(failure, "cleanup_errors", ()), message)
-            failure.add_note(message)
+            detail = {"stage": stage, "error": policy.component_error_record(error)}
+            failure.component_secondary_errors = (*getattr(failure, "component_secondary_errors", ()), detail)
     raise failure
 
 
-def root(config):
+def component(config):
     require_contained(config)
-    if config.get("mode") != "root":
-        raise policy.GuardError("root worker requires its one selected original-root mode")
+    if config.get("mode") != "component":
+        raise policy.GuardError("component worker requires its one selected mode")
     sampler = Sampler(config["scope"])
-    sampler.thread.start()
     budget = None
     observer = None
     primary = None
-    source_binding = None
+    result = None
+    started = time.monotonic()
+    imported = ended = None
     try:
+        sampler.thread.start()
         sys.path.insert(0, "/repo")
         from scripts.validation_ownership.authority import git
-        from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
+        from scripts.validation_ownership.budget import Limits, ProbeBudget
         from scripts.validation_ownership.make_probe import ProbeSession
         if __package__:
             from . import root_stage
@@ -491,54 +504,66 @@ def root(config):
         head = git(candidate, budget, "rev-parse", "HEAD").decode().strip()
         base = git(candidate, budget, "rev-parse", policy.BASE + "^{commit}").decode().strip()
         if (head, base) != (policy.GRAPH, policy.BASE):
-            raise policy.GuardError("actual root candidate HEAD/BASE differ from the frozen scope")
-        source_binding = MakeProbeError, head, budget.deadline
-        kernel.emit(config["scope"], "root-start", {
+            raise policy.GuardError("actual component candidate HEAD/BASE differ from the frozen scope")
+        imported = time.monotonic()
+        kernel.emit(config["scope"], "component-start", {
             "head": head, "base": base, "workload_kind": policy.WORKLOAD_KIND,
-            "fixture_version": policy.FIXTURE_VERSION, "source_phases": True,
-            "target": policy.ROOT_TARGET, "limits": classified, "deadline": budget.deadline,
-            "root_check_attempts": 1, "graph_check_attempts": 0,
-            "semantics": "About to invoke the root stage once; this marker is not completion evidence.",
+            "fixture_version": policy.FIXTURE_VERSION, "source_phases": False, "profile": policy.PROFILE,
+            "method": policy.COMPONENT_CASE + "." + policy.COMPONENT_METHOD,
+            "target": policy.COMPONENT_TARGET, "limits": classified, "deadline": budget.deadline,
+            "component_attempts": 1, **policy.ABSENT_WORKLOADS,
+            "semantics": "About to invoke the selected method once; this is not completion evidence.",
         })
-        sampler.phase = "original-root-stage"
-        result = root_stage.run(candidate, budget, config)
-        validated = policy.validate_root_result(result)
+        result = root_stage.run(candidate, budget, config, sampler)
+        validated = policy.validate_component_result(result)
         if (
             budget.limits is not limits or dataclasses.asdict(Limits()) != original
             or Limits().observation_count != classified["observations"]["original_effective"]
             or limits.observation_count != classified["observations"]["diagnostic_effective"]
             or budget.deadline != config["deadline"]
         ):
-            raise policy.GuardError("root source defaults, shared policy or original clock changed")
-        sampler.phase = "completed-root-only"
-        return {
-            "root": result, "validation": validated, "counters": sampler.snapshot(),
-            "root_check_attempts": 1, "root_check_completed": True, "graph_check_attempts": 0,
-        }
+            raise policy.GuardError("component source defaults, shared policy or original clock changed")
+        sampler.phase = "completed-component"
+        ended = time.monotonic()
     except BaseException as error:
         primary = error
-        record = graph_error_record(error, sampler, observer, source_binding=source_binding)
-        cleanup = getattr(error, "root_cleanup_state", None)
+        record = policy.component_error_record(error)
+        record["counters"] = sampler.snapshot()
+        record["observation_failure"] = (
+            observer.capture(error) if observer is not None else observation_failure.unavailable("binding-not-ready")
+        )
+        record["budget_admission"] = (
+            observer.budget_admission(error) if observer is not None else observation_failure.unavailable("binding-not-ready")
+        )
+        cleanup = getattr(error, "component_cleanup_state", None)
         if cleanup is not None:
-            record["root_cleanup"] = cleanup
+            record["component_cleanup"] = policy.validate_component_cleanup(cleanup)
+        if hasattr(error, "component_cleanup_error"):
+            record["component_cleanup_error"] = error.component_cleanup_error
         kernel.emit(config["scope"], "error", record)
         return None
     finally:
-        finish_root(config["scope"], sampler, budget, primary)
+        finish_component(config["scope"], sampler, budget, primary)
+    return {
+        "component": result, "validation": validated, "counters": sampler.snapshot(),
+        "component_attempts": 1, "component_completed": True, **policy.ABSENT_WORKLOADS,
+        "timing": {"worker_started": started, "source_verified": imported,
+                   "method_finished": ended, "finalized": time.monotonic()},
+    }
 
 
 def main(config):
     proof = require_contained(config)
     kernel.emit(config["scope"], "ready", proof)
     mode = config["mode"]
-    if mode == "root":
-        result = root(config)
+    if mode == "component":
+        result = component(config)
         if result is None:
             return 1
         kernel.emit(config["scope"], "result", result)
         return 0
-    if mode == "graph":
-        raise policy.GuardError("scope17 is root-only; a public/full graph attempt is not authorized")
+    if mode in {"root", "graph", "report", "verifier", "source-phase", "h1"}:
+        raise policy.GuardError("component-only scope forbids roots, reports, verifiers, source phases and H1")
     if mode == "identity":
         result = identity_probe(config)
     elif mode == "pids":
@@ -583,7 +608,8 @@ if __name__ == "__main__":
             raise policy.GuardError("worker requires its one readonly config")
     except BaseException as error:
         if active is not None:
-            kernel.emit(active["scope"], "error", policy.error_record(error))
+            formatter = policy.component_error_record if active.get("mode") == "component" else policy.error_record
+            kernel.emit(active["scope"], "error", formatter(error))
         else:
             print("worker has no admitted readonly containment config", file=sys.stderr)
         code = 1

@@ -1,4 +1,4 @@
-"""One genuine bounded original-root stage, not a public/full graph report."""
+"""One selected component method with its original assertions and shared budget."""
 
 from __future__ import annotations
 
@@ -13,334 +13,263 @@ else:
 
 
 def candidate_api():
-    from scripts.validation_ownership import graph_probe, phase_census, reporter
     from scripts.validation_ownership.authority import AuthorityLoader, GitTreeEntries
-    from scripts.validation_ownership.graph_commands import ROOT_RUNTIME_FILES
-    from scripts.validation_ownership.graph_report import capture
+    from scripts.validation_ownership.budget import ProbeBudget
+    from scripts.validation_ownership.graph_commands import MakeCommands, ROOT_RUNTIME_FILES
     from scripts.validation_ownership.make_probe import ProbeSession
-    from scripts.validation_ownership.tests import test_foundation as foundation
+    from scripts.validation_ownership.tests import test_toolchain_runtime as selected
 
+    case = selected.ModernToolchainTests
     return SimpleNamespace(
-        graph=graph_probe, phases=phase_census, reporter=reporter, capture=capture,
-        loader=AuthorityLoader, entries=GitTreeEntries, session=ProbeSession,
-        runtime_files=ROOT_RUNTIME_FILES, fixture=foundation.FoundationTests, root=foundation.ROOT,
+        case=case, method=getattr(case, policy.COMPONENT_METHOD), root=selected.foundation.ROOT,
+        loader=AuthorityLoader, entries=GitTreeEntries, session=ProbeSession, budget_type=ProbeBudget,
+        runtime_files=ROOT_RUNTIME_FILES, commands=MakeCommands,
     )
 
 
-def fixture_makefile(modern, makefile, logical_chunks):
-    chunks = list(logical_chunks(modern))
-    def logical(prefix):
-        matches = [chunk.text for chunk in chunks if chunk.text.startswith(prefix)]
-        if len(matches) != 1:
-            raise policy.GuardError("original fixture source no longer has its unique construction")
-        return matches[0]
-    toolchain = modern[modern.index("expansion-modern-toolchain-check:\n"):
-                       modern.index("\nexpansion-modern-cohort:")]
-    header = modern[modern.index("$(MODERN_ALL_C_HEADER_DEPS): $(MODERN_OUTPUT_DIR)/%.headers.d: %.c\n"):
-                    modern.index("\nexpansion-modern-clean:")]
-    lines = makefile.splitlines()
-    starts = [index for index, line in enumerate(lines) if line.startswith("src/msg_data.c:")]
-    if len(starts) != 1:
-        raise policy.GuardError("original fixture lost its unique genuine text rule")
-    text_rule = "\n".join(lines[starts[0]:starts[0] + 2]) + "\n"
-    return (
-        ".DEFAULT_GOAL := expansion-modern-all\n"
-        "PYTHON := python3\nTEXT_TOOLS := scripts/texttools\nTEXT_DIR := texts\n"
-        "TEXT_PROCESS := $(PYTHON) $(TEXT_TOOLS)/textprocess.py\n"
-        "TEXT_MAIN := $(TEXT_DIR)/texts.txt\nTEXT_DEFS := $(TEXT_DIR)/textdefs.txt\n"
-        "TEXT_SRC := $(TEXT_MAIN)\nTEXT_HEADER := include/constants/msg.h\n"
-        "MODERN_OUTPUT_DIR := build/modern/release/aapcs\nMODERN_CC := arm-none-eabi-gcc\n"
-        "MODERN_CONFIG := release\nMODERN_ABI := aapcs\n"
-        "MODERN_BINUTILS_FLAG :=\nMODERN_DRIVER_FLAGS :=\n"
-        "MODERN_ARCH_FLAGS := -mcpu=arm7tdmi -mthumb -mthumb-interwork\n"
-        "MODERN_LANGUAGE_FLAGS := -std=gnu11\nMODERN_ABI_FLAGS := -mabi=aapcs\n"
-        "MODERN_DEFINE_FLAGS := -DMODERN=1 -DNONMATCHING=1 -DBUGFIX=1\n"
-        "MODERN_INCLUDE_FLAGS := -isystem /usr/include/newlib -Iinclude -I.\n"
-        "MODERN_CFLAGS := $(MODERN_ARCH_FLAGS) $(MODERN_LANGUAGE_FLAGS) -ffreestanding "
-        "$(MODERN_DEFINE_FLAGS) $(MODERN_INCLUDE_FLAGS)\n"
-        "MODERN_GENERATED_HEADER_BASENAME_RE := missing\\.h\n"
-        + logical("MODERN_ALL_C_SOURCES ?=") + "\n"
-        + logical("ifeq (,$(findstring src/msg_data.c,") + "\n"
-        + logical("MODERN_ALL_C_SOURCES += src/msg_data.c") + "\nendif\n"
-        + logical("MODERN_ALL_C_OBJECTS := $(addprefix") + "\n"
-        + logical("MODERN_ALL_OBJECTS :=") + "\n"
-        + logical("MODERN_ALL_C_HEADER_DEPS :=") + "\n"
-        + logical("MODERN_ALL_SOURCE_GOALS :=") + "\n"
-        + logical("expansion-modern-all: expansion-modern-toolchain-check") + "\n"
-        "\t@printf 'Built %s modern relocatable objects in %s\\n' '$(words $(MODERN_ALL_OBJECTS))' '$(MODERN_OUTPUT_DIR)'\n"
-        "expansion-modern-bgm-registry-check:\n\t@:\n"
-        ".PHONY: expansion-modern-toolchain-check expansion-modern-bgm-registry-check\n"
-        + toolchain + "\n"
-        + logical("$(MODERN_ALL_C_HEADER_DEPS): |") + "\n"
-        + logical("$(MODERN_OUTPUT_DIR)/%.o: %.c") + "\n"
-        "\t@mkdir -p \"$(@D)\"\n"
-        "\t\"$(MODERN_CC)\" $(MODERN_CFLAGS) -MMD -MP -MF \"$(@:.o=.d)\" -MQ \"$@\" -c \"$<\" -o \"$@\"\n"
-        + text_rule + header
-    )
-
-
-def populate_fixture(root, fixture, logical_chunks):
-    fixture.add("Makefile", fixture_makefile(
-        (root / "modern.mk").read_text(), (root / "Makefile").read_text(), logical_chunks,
-    ))
-    fixture.add("src/.keep", "original empty C namespace\n")
-    for name in ("scripts/texttools/textprocess.py", "scripts/texttools/huffman.py", "texts/texts.txt", "texts/textdefs.txt"):
-        fixture.add(name, (root / name).read_bytes())
-    for path in sorted((root / "include").rglob("*.h")):
-        fixture.add(path.relative_to(root).as_posix(), path.read_bytes())
-    return require_initial_absence(fixture.root)
-
-
-def require_initial_absence(root):
-    for path in (root / "src/msg_data.c", root / "build/modern"):
-        if path.exists() or path.is_symlink():
-            raise policy.GuardError("original root fixture has precreated C or public parents")
-    return {"generated_c": True, "public_parents": True}
-
-
-def selected_policies(api, root, budget):
-    loader = api.capture(root, policy.GRAPH, budget)
-    metadata = api.reporter._selected_make_data(loader, None, required=True)
-    domains = api.reporter.load_make_prerequisite_domains(loader, required=True, _metadata=metadata)
-    ambient = api.reporter.load_make_ambient_contracts(loader, required=True, _metadata=metadata)
-    trusted, scoped, escaped = api.reporter.load_make_typed_variable_contracts(loader, required=True, _metadata=metadata)
-    names = {"MODERN_ALL_C_SOURCES"}
-    if (
-        not names <= set(metadata.data["ambient_inputs"]["allowed_names"])
-        or not names <= set(metadata.data["prerequisite_domains"]["tracked_fallback_names"])
-        or domains.get("MODERN_ALL_C_SOURCES") != {"name": "MODERN_ALL_C_SOURCES", "kind": "tracked-fallback"}
-    ):
-        raise policy.GuardError("original root's declared tracked-fallback policy changed")
-    return {name: {"kind": domains[name]["kind"]} for name in names}, metadata.contracts, {
-        "source_phases": True, "declared_external_names": names, "environment_names": names,
-        "scoped_variable_names": scoped, "trusted_builtin_names": trusted,
-        "ambient_undefined_names": {name for name, value in ambient.items() if value["category"] == "undefined"},
-        "escaped_literal_names": escaped,
+def cleanup_state(session, budget, fixture, *, setup_completed):
+    return {
+        "budget_closed": budget.closed, "children": len(budget.children),
+        "waiters": len(budget.producer_waiters),
+        "retained_owners": None if session is None else len([
+            owner for owner in session._file_owners.values() if owner.retained
+        ]),
+        "session_base_removed": None if session is None else session.base is None,
+        "fixture_removed": None if not setup_completed else not fixture.directory.exists(),
     }
 
 
-def toolchain_summary(command):
-    if command.get("returncode") != 0:
-        raise policy.GuardError("failed original toolchain check cannot supply root acceptance")
-    observations = command.get("runtime_probes", ())
+def summarize(observation, results, attempts, returned):
+    receipts = observation.toolchain_receipts
+    if type(receipts) not in (tuple, list) or len(receipts) != 2 or len(results) != 2 or any(
+        type(data) is not bytes or len(data) > policy.ORIGINAL_LIMITS["file_bytes"] for data in receipts
+    ):
+        raise policy.GuardError("component lacks its two bounded returned recipe receipts")
+    records = [policy.parse_json(data) for data in receipts]
+    stages = [record["stages"] for record in records]
+    if any(type(items) is not list or len(items) != 5 for items in stages):
+        raise policy.GuardError("component checker stage extent changed")
+    proofs = [items[-1]["intermediate"] for items in stages]
+    commands = [
+        row for row in observation.semantics["dynamic_commands"]
+        if row["command"].get("toolchain_check") is True
+    ]
+    dispatches = [
+        row for row in observation.semantics["native_dispatches"]
+        if row["job"]["target"] == "expansion-modern-toolchain-check"
+    ]
+    if len(commands) != 1 or len(dispatches) != 2:
+        raise policy.GuardError("component has incomplete native/semantic checker observations")
+    references = [
+        value for row in commands[0]["command"]["runtime_probes"] if "argv" in row
+        for value in row["argv"] if type(value) is dict
+    ]
+    expected = {"kind": "toolchain-intermediate-ref", "version": 1, "role": "stage4-assembly"}
+    if references != [expected, expected] or [
+        record["native_dispatch_sequence"] for record in records
+    ] != [row["sequence"] for row in dispatches]:
+        raise policy.GuardError("component receipt sequence or typed reference differs from native evidence")
+    bindings = [
+        (items[-1]["launch_scope"], items[-1]["launch_binding"], items[-1]["workspace"])
+        for items in stages
+    ]
+    contents = [(proof["writer"]["completed"]["extent"], proof["writer"]["completed"]["sha256"])
+                for proof in proofs]
     result = {
-        "executed": command.get("executed"),
-        "stages": [],
-        "stdin": [],
-        "repository_inputs": len(command.get("inputs", ())),
-        "sdk_inputs": len(command.get("runtime_inputs", ())),
+        "make_attempts": attempts, "make_returned": returned, "checker_occurrences": len(results),
+        "recipe_receipts": len(receipts),
+        "dispatch_sequences": [record["native_dispatch_sequence"] for record in records],
+        "producer_slots": [record["producer_slot"] for record in records],
+        "stage_names": [[stage["stage"] for stage in items] for items in stages],
+        "intermediate_versions": [proof["version"] for proof in proofs],
+        "intermediate_complete": [proof["complete"] for proof in proofs],
+        "retirement_absent": [proof["retirement"]["path_absent"] for proof in proofs],
+        "retired_nlinks": [proof["retirement"]["after_identity"][6] for proof in proofs],
+        "assembly_extents": [content[0] for content in contents],
+        "content_equal": contents[0] == contents[1], "bindings_distinct": bindings[0] != bindings[1],
+        "raw_receipts_distinct": receipts[0] != receipts[1],
+        "semantic_records": len(commands), "typed_references": len(references),
     }
-    for stage in ("version", "target", "assembler", "syntax", "compile"):
-        events = [row for row in observations if row.get("stage") == stage and "sequence" in row]
-        events.sort(key=lambda row: row["sequence"])
-        if [row["sequence"] for row in events] != list(range(1, len(events) + 1)):
-            raise policy.GuardError("toolchain native sequence is incomplete")
-        result["stages"].append({"stage": stage, "executed": [row["path"] for row in events]})
-    for stage, expected in (
-        ("syntax", '#include "global.h"\n'),
-        ("compile", "void modern_arm7tdmi_thumb_probe(void) {}\n"),
-    ):
-        events = [row for row in observations if row.get("stage") == stage and "stdin" in row]
-        if len(events) != 1 or events[0]["stdin"] != expected or events[0]["eof"] is not True:
-            raise policy.GuardError("original toolchain stdin observation differs from the actual contract")
-        result["stdin"].append({"stage": stage, "bytes": len(events[0]["stdin"].encode()), "eof": True})
-    policy.validate_root_toolchain(result)
+    policy.validate_component_observation(result)
     return result
 
 
 class Recorder:
-    """Bind summaries to real returned objects, never registration intentions."""
+    def __init__(self, api, budget, sampler):
+        self.api, self.budget, self.sampler = api, budget, sampler
+        self.session = None
+        self.session_valid = False
+        self.session_attempts = self.capture_attempts = self.make_attempts = self.make_returned = 0
+        self.observation = self.summary = None
+        self.method_started = self.method_returned = False
 
-    def __init__(self, session, budget):
-        self.session, self.budget = session, budget
-        self.pending = {}
-        self.completed = []
-        self.attempted = False
-
-    def input_state(self):
-        result = {}
-        for name in self.session.snapshot.files:
-            info = (self.session.tree / name).stat(follow_symlinks=False)
-            result[name] = (
-                info.st_dev, info.st_ino, info.st_mode, info.st_size,
-                info.st_mtime_ns, info.st_ctime_ns, info.st_nlink,
-            )
-        self.budget.charge("control", len(policy.encoded(result)))
-        return result
-
-    def observe(self, observation, target, keywords, inputs):
-        if not keywords.get("observe_source_journal"):
-            return
+    def session_for(self, case):
+        if self.session_attempts or not self.method_started:
+            raise policy.GuardError("component permits one method-owned session")
+        self.session_attempts += 1
+        fixture = case.fixture
+        entries = self.api.entries(fixture.entries, budget=self.budget)
+        loader = self.api.loader(fixture.root, entries, budget=self.budget)
+        self.session = self.api.session(
+            loader, scratch_root=fixture.scratch, budget=self.budget, runtime_files=self.api.runtime_files,
+        )
         if (
-            target != policy.ROOT_TARGET or self.session.budget is not self.budget
-            or id(observation) in self.pending
-            or keywords.get("makefile") != "Makefile"
-            or keywords.get("source_journal_mode") != "prewatched-directories"
+            type(self.session) is not self.api.session or self.session.budget is not self.budget
+            or self.session.loader is not loader or loader.budget is not self.budget
+            or loader.entries.budget is not self.budget
         ):
-            raise policy.GuardError("root observation escaped its original selected context")
-        state = tuple(keywords.get("assignments", ()))
-        self.session._original_namespace(observation, target=target, makefile="Makefile", assignments=state)
-        archive = self.session._original_source_archive(observation)
-        images = self.session._source_phase_images(observation)
-        if (
-            len(images) != len(archive.passes) or not images
-            or observation.source_journal is None or observation.source_journal.get("closed") is not True
-            or observation.source_journal.get("scope") != archive.scope
-        ):
-            raise policy.GuardError("root lacks genuine closed native source evidence")
-        jobs = {"text": 0, "toolchain": 0, "header": 0}
-        for row in observation.semantics["native_dispatches"]:
-            name = row["job"]["target"]
-            for key, wanted in (("text", "src/msg_data.c"), ("toolchain", "expansion-modern-toolchain-check"),
-                                ("header", policy.ROOT_HEADER)):
-                if name == wanted:
-                    jobs[key] += 1
-        toolchains = [
-            toolchain_summary(row["command"]) for row in observation.semantics["dynamic_commands"]
-            if row["command"].get("toolchain_check") is True
-        ]
-        if inputs is None or self.input_state() != inputs:
-            raise policy.GuardError("original source input metadata changed during the native root observation")
-        for name, expected in self.session.snapshot.files.items():
-            if self.budget.read_bytes(self.session.tree / name, "control") != expected:
-                raise policy.GuardError("original source input changed during the native root observation")
-        summary = {
-            "state": [list(row) for row in state], "passes": len(archive.passes),
-            "source_journal_closed": True, "native_jobs": jobs, "toolchain": toolchains,
-            "generated": sorted(
-                ({"path": item.path, "mode": item.mode, "size": len(item.data)} for item in observation.generated),
-                key=lambda row: row["path"],
-            ),
-            "inputs_unchanged": True,
-        }
-        self.pending[id(observation)] = observation, state, summary
-
-    def analyzed(self, session, observation, target, state, result):
-        current = self.pending.pop(id(observation), None)
-        if (
-            session is not self.session or session.budget is not self.budget
-            or target != policy.ROOT_TARGET or current is None or current[0] is not observation
-            or current[1] != tuple(state) or not isinstance(result, tuple) or len(result) != 4
-        ):
-            raise policy.GuardError("source analysis is foreign, repeated or not paired with native completion")
-        usage, sources, streams, parts = result
-        if not isinstance(usage, dict) or len(streams) != len(parts) or len(parts) != current[2]["passes"]:
-            raise policy.GuardError("source analysis omitted an actual original pass")
-        current[2].update(analyzed_passes=len(parts), source_files=sorted(sources))
-        self.completed.append(current[2])
+            raise policy.GuardError("component session/loader/entries lost the exact issued budget")
+        self.session_valid = True
+        self.sampler.session = self.session
+        return self.session
 
     @contextmanager
-    def intercept(self, phases):
-        session = self.session
-        original_make = session.make
-        original_analyze = phases.analyze
+    def watch_make(self, session):
+        if session is not self.session or session.budget is not self.budget or "make" in vars(session):
+            raise policy.GuardError("component cannot observe a foreign or already overridden session")
+        original = session.make
+
         def make(target, **keywords):
-            inputs = self.input_state() if keywords.get("observe_source_journal") else None
-            result = original_make(target, **keywords)
-            self.observe(result, target, keywords, inputs)
-            return result
-        def analyze(owner, observation, target, state, commands, **keywords):
-            result = original_analyze(owner, observation, target, state, commands, **keywords)
-            self.analyzed(owner, observation, target, state, result)
-            return result
-        session.make, phases.analyze = make, analyze
+            if (
+                self.make_attempts or target != policy.COMPONENT_TARGET
+                or keywords.keys() != {"commands"} or type(keywords["commands"]) is not self.api.commands
+                or keywords["commands"].session is not session
+            ):
+                raise policy.GuardError("component permits only its original single Make invocation")
+            self.make_attempts += 1
+            value = original(target, **keywords)
+            self.make_returned += 1
+            self.observation = value
+            return value
+
+        session.make = make
         try:
             yield
         finally:
             del session.make
-            phases.analyze = original_analyze
 
-    def invoke(self, api, loader, domains, contracts, options):
-        if self.attempted or self.session.budget is not self.budget or options.get("source_phases") is not True:
-            raise policy.GuardError("original root invocation is repeated or lacks its exact source mode/budget")
-        self.attempted = True
-        with self.intercept(api.phases):
-            result = api.graph.run_probe(
-                loader, {policy.ROOT_TARGET}, domains, contracts, session=self.session, **options,
-            )
-        if not isinstance(result, dict) or set(result) != {policy.ROOT_TARGET} or self.pending or not self.completed:
-            raise policy.GuardError("original root returned without complete matching native/phase results")
-        record = result[policy.ROOT_TARGET]
-        return {
-            "states": [variant["state"] for variant in record["record"]["variants"]],
-            "used_domains": record["prerequisite_domain_census"]["used"],
-            "enumerated_domains": record["prerequisite_domain_census"]["enumerated"],
-        }
+    def capture_for(self, case, session):
+        if self.capture_attempts or not self.method_started or session is not self.session:
+            raise policy.GuardError("component capture is repeated or not method-owned")
+        self.capture_attempts += 1
+        with self.watch_make(session):
+            returned = self.api.case.capture(case, session)
+        if (
+            type(returned) is not tuple or len(returned) != 2 or returned[0] is not self.observation
+            or type(case.results) is not tuple or len(case.results) != 2
+            or returned[1] is not case.results[0]
+        ):
+            raise policy.GuardError("component capture differs from its actual source return")
+        self.summary = summarize(self.observation, case.results, self.make_attempts, self.make_returned)
+        return returned
+
+    def case(self):
+        recorder = self
+
+        class ContainedComponent(self.api.case):
+            def session(self):
+                return recorder.session_for(self)
+
+            def capture(self, session):
+                return recorder.capture_for(self, session)
+
+        if getattr(ContainedComponent, policy.COMPONENT_METHOD) is not self.api.method:
+            raise policy.GuardError("component replaced the selected original test method")
+        return ContainedComponent(policy.COMPONENT_METHOD)
+
+    def invoke(self, case):
+        if self.method_started or getattr(type(case), policy.COMPONENT_METHOD) is not self.api.method:
+            raise policy.GuardError("component method is repeated or foreign")
+        self.method_started = True
+        self.api.method(case)
+        self.method_returned = True
+        if (
+            self.session_attempts != 1 or self.capture_attempts != 1
+            or self.make_attempts != 1 or self.make_returned != 1 or self.summary is None
+        ):
+            raise policy.GuardError("source method returned without the complete original component")
 
 
-def cleanup_state(session, budget, fixture):
+def fixture_state(case):
+    fixture = case.fixture
+    source = fixture.root / "src/query.c"
+    parents = fixture.root / "build/native"
+    query = source.read_bytes() == b'#include "global.h"\n'
+    count = sum(name.startswith("include/") and name.endswith(".h") for name in fixture.entries)
+    absent = not parents.exists() and not parents.is_symlink()
+    makefile = (fixture.root / "Makefile").read_text()
+    empty = makefile.endswith("\nexpansion-modern-all: ;\n")
+    no_text = "TEXT_PROCESS" not in makefile and "src/msg_data.c" not in fixture.entries
+    if not query or not count or not absent or not empty or not no_text:
+        raise policy.GuardError("selected original component fixture changed")
     return {
-        "budget_closed": budget.closed, "children": len(budget.children),
-        "waiters": len(budget.producer_waiters),
-        "retained_owners": len([owner for owner in session._file_owners.values() if owner.retained]),
-        "session_base_removed": session.base is None,
-        "fixture_removed": not fixture.directory.exists(),
+        "preexisting_query": query, "genuine_headers": count, "header_parents_absent": absent,
+        "text_producer": not no_text, "empty_final_target": empty,
     }
 
 
-def run(root, budget, config):
+def run(root, budget, config, sampler):
     if __package__:
         from .worker import require_contained
     else:
         from worker import require_contained
     require_contained(config)
-    if root != Path("/repo") or config["mode"] != "root" or budget.deadline != config["deadline"] or budget.closed:
-        raise policy.GuardError("root stage lacks its exact contained source and injected clock")
+    if root != Path("/repo") or config["mode"] != "component" or budget.deadline != config["deadline"] or budget.closed:
+        raise policy.GuardError("component lacks its fixed contained source and original clock")
     api = candidate_api()
-    if api.root != root:
-        raise policy.GuardError("fixture helpers were not imported from the pinned candidate")
-    domains, contracts, options = selected_policies(api, root, budget)
-    fixture = api.fixture()
-    fixture.setUp()
-    session = None
+    if api.root != root or not isinstance(budget, api.budget_type):
+        raise policy.GuardError("component source/budget origin differs from the selected candidate")
+    recorder = Recorder(api, budget, sampler)
+    case = recorder.case()
     primary = None
+    setup_completed = False
+    fixture = None
     try:
-        absence = populate_fixture(root, fixture, api.graph._make_logical_chunks)
-        loader = api.loader(fixture.root, api.entries(fixture.entries, budget=budget), budget=budget)
-        session = api.session(
-            loader, scratch_root=fixture.scratch, budget=budget, runtime_files=api.runtime_files,
-        )
-        with session:
-            require_initial_absence(session.tree)
-            recorder = Recorder(session, budget)
-            planner = recorder.invoke(api, loader, domains, contracts, options)
-        state = cleanup_state(session, budget, fixture)
-        if (
-            not state["budget_closed"] or state["children"] or state["waiters"]
-            or state["retained_owners"] or not state["session_base_removed"]
-        ):
-            raise policy.GuardError("native root completed with unclosed or retained inner ownership")
+        sampler.phase = "component-setup"
+        case.setUp()
+        setup_completed = True
+        fixture = fixture_state(case)
+        sampler.phase = "component-method"
+        recorder.invoke(case)
+        policy.validate_component_counters(policy.counter_snapshot(budget, recorder.session), complete=True)
     except BaseException as error:
         primary = error
         raise
     finally:
-        safe = session is None or (
-            session.base is None and not budget.children and not budget.producer_waiters
+        sampler.phase = "component-finalize"
+        session = recorder.session
+        known = getattr(case, "fixture", None)
+        safe = setup_completed and (not recorder.session_attempts or recorder.session_valid) and (
+            session is None and not budget.children and not budget.producer_waiters
+            or session is not None and session.base is None and not budget.children and not budget.producer_waiters
             and not any(owner.retained for owner in session._file_owners.values())
         )
+        cleanup_error = None
         if safe:
             try:
-                fixture.tearDown()
+                case.tearDown()
             except BaseException as error:
-                if primary is None:
-                    raise
-                primary.add_note("owned fixture cleanup failed: " + str(error))
-        elif primary is not None:
-            primary.add_note("uncertain root fixture retained; outer containment is not inner ownership cleanup")
+                cleanup_error = error
+        state = cleanup_state(
+            session if recorder.session_valid else None, budget, known, setup_completed=setup_completed,
+        )
         if primary is not None:
-            primary.root_cleanup_state = (
-                cleanup_state(session, budget, fixture) if session is not None else {
-                    "budget_closed": budget.closed, "children": len(budget.children),
-                    "waiters": len(budget.producer_waiters), "retained_owners": 0,
-                    "session_base_removed": True, "fixture_removed": not fixture.directory.exists(),
-                }
-            )
+            primary.component_cleanup_state = state
+            if cleanup_error is not None:
+                primary.component_cleanup_error = policy.component_error_record(cleanup_error)
+        elif cleanup_error is not None:
+            cleanup_error.component_cleanup_state = state
+            raise cleanup_error
+        recorder.observation = None
+        if hasattr(case, "results"):
+            del case.results
     result = {
         "version": 1, "workload_kind": policy.WORKLOAD_KIND, "fixture_version": policy.FIXTURE_VERSION,
-        "source_revision": policy.GRAPH, "base_revision": policy.BASE, "target": policy.ROOT_TARGET,
-        "source_phases": True, "root_check_attempts": 1, "root_check_completed": True,
-        "graph_check_attempts": 0, "complete_repository_report": False, "initial_absence": absence,
-        "observations": recorder.completed, "planner": planner, "cleanup": cleanup_state(session, budget, fixture),
+        "source_revision": policy.GRAPH, "base_revision": policy.BASE, "profile": policy.PROFILE,
+        "method": policy.COMPONENT_CASE + "." + policy.COMPONENT_METHOD, "target": policy.COMPONENT_TARGET,
+        "source_phases": False, "component_attempts": 1, "component_completed": recorder.method_returned,
+        **policy.ABSENT_WORKLOADS, "fixture": fixture, "observation": recorder.summary,
+        "counters": policy.counter_snapshot(budget, recorder.session), "cleanup": state,
     }
-    policy.validate_root_result(result)
+    policy.validate_component_result(result)
     return result

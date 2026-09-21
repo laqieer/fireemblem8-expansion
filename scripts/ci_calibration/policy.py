@@ -13,12 +13,19 @@ import traceback
 
 
 REPOSITORY = "laqieer/fireemblem8-expansion"
-BRANCH = "calibration/issue-180-ci-baseline-20"
-WORKFLOW = ".github/workflows/issue180-ci-baseline-20.yml"
+BRANCH = "calibration/issue-180-toolchain-component-sizing-1"
+WORKFLOW = ".github/workflows/issue180-toolchain-component-sizing-1.yml"
+PREVIOUS_WORKFLOW = ".github/workflows/issue180-ci-baseline-20.yml"
+OUTPUT_PREFIX = "issue180-toolchain-component-sizing-1-"
 BASE = "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"
-GRAPH = "61856581bc9859f59fdd938edc219fabc07cd6ef"
-WORKLOAD_KIND = "original-root-acceptance"
-FIXTURE_VERSION = "original-root-single-message-disabled-bgm-v1"
+GRAPH = "c3e226e79ad69ad81c29acbc5e8810262ce5c8a6"
+WORKLOAD_KIND = "toolchain-component-control-measurement"
+FIXTURE_VERSION = "one-make-two-checker-typed-intermediate-v1"
+PROFILE = "toolchain-component-control-under-global-v1"
+COMPONENT_METHOD = "test_one_make_two_checker_typed_intermediate_component"
+COMPONENT_CASE = "scripts.validation_ownership.tests.test_toolchain_runtime.ModernToolchainTests"
+COMPONENT_TARGET = "expansion-modern-all"
+STAGES = ("version", "target", "assembler", "syntax", "compile")
 ROOT_TARGET = "expansion-modern-all"
 ROOT_HEADER = "build/modern/release/aapcs/src/msg_data.headers.d"
 MIB = 1024 * 1024
@@ -60,7 +67,7 @@ ORIGINAL_LIMITS = {
     "process_output_bytes": MIB, "address_space_bytes": 512 * MIB,
     "syscalls": 2_000_000, "observations": None,
 }
-RELAXED = {
+UNCHANGED_CUMULATIVE = {
     "runs": "Cumulative subprocess work; external deadline/PID containment remains.",
     "states": "Cumulative attempted states; the graph's fixed per-target 512-context guard remains.",
     "descendants": "Cumulative guest creations; live guest and external cgroup PID limits remain.",
@@ -72,9 +79,11 @@ RELAXED = {
     "mapping_bytes": "Cumulative mappings; fixed per-file/request/ownership checks remain.",
     "cache_bytes": "Cumulative cache representations; real cache/replay/owner lifetimes remain.",
     "pending_bytes": "Cumulative requests/plans; the separate original 1 MiB whole-record and aggregate-plan admissions remain.",
-    "control_bytes": "Cumulative control/raw/decoded/replay traffic; fixed file/buffer guards remain.",
     "sandbox_bytes": "Cumulative writes; individual file and external filesystem bounds remain.",
     "observations": "Cumulative attempted observation work; the original entries cap still bounds every capsule and inventory.",
+}
+RELAXED = {
+    "control_bytes": "Cumulative control traffic bounded by the unchanged original aggregate; not a size estimate.",
 }
 RETAINED = {
     "seconds": "One original-duration absolute graph deadline, also independently enforced outside the worker.",
@@ -85,6 +94,15 @@ RETAINED = {
     "file_bytes": "Genuine file/message/decoded-frame admission and guest RLIMIT_FSIZE boundary.",
     "process_output_bytes": "Genuine per-process captured-output boundary.",
     "address_space_bytes": "Original funded guest VM pool and independent regex-worker AS bound.",
+    **UNCHANGED_CUMULATIVE,
+}
+CONTROL_CEILING = ORIGINAL_LIMITS["total_bytes"]
+BYTE_CATEGORIES = ("snapshot", "output", "event", "mapping", "cache", "pending", "control", "sandbox")
+SESSION_COUNTERS = ("processes_used", "syscalls_used", "observations_used", "files_created")
+SESSION_PEAKS = ("pending_commands_peak", "live_process_peak", "memory_peak")
+ABSENT_WORKLOADS = {
+    "root_check_attempts": 0, "graph_check_attempts": 0, "report_check_attempts": 0,
+    "verifier_attempts": 0, "h1_attempts": 0,
 }
 
 
@@ -136,7 +154,8 @@ def validate_event(event, *, sha, run_id, attempt, run_number, environment, oper
         "run_attempt": 1, "run_number": 1, "diagnostic_only": True,
         "production_acceptance": False, "never_merge": True,
         "workload_kind": WORKLOAD_KIND, "fixture_version": FIXTURE_VERSION,
-        "root_target": ROOT_TARGET, "source_phases": True,
+        "component_target": COMPONENT_TARGET, "component_method": COMPONENT_CASE + "." + COMPONENT_METHOD,
+        "profile": PROFILE, "source_phases": False, **ABSENT_WORKLOADS,
     }
 
 
@@ -150,15 +169,15 @@ def profile_manifest(original, *, observation_count):
     result = {
         name: {
             "original": value,
-            "diagnostic": POLICY_SENTINEL if name in RELAXED else value,
-            "classification": "relaxed cumulative policy" if name in RELAXED else "retained boundary",
+            "diagnostic": CONTROL_CEILING if name in RELAXED else value,
+            "classification": "aggregate-derived cumulative policy" if name in RELAXED else "unchanged original limit",
             "reason": (RELAXED if name in RELAXED else RETAINED)[name],
         }
         for name, value in original.items()
     }
     result["observations"].update({
         "original_effective": observation_count,
-        "diagnostic_effective": POLICY_SENTINEL,
+        "diagnostic_effective": observation_count,
     })
     return result
 
@@ -206,6 +225,233 @@ def choose_envelope(facts):
         "effective_pids_available": pids_available,
         "memory_semantics": "Kernel cgroup memory, including its descendants; not summed RSS or all host RAM.",
     }
+
+
+def diagnostic_limit(name):
+    return CONTROL_CEILING if name == "control_bytes" else ORIGINAL_LIMITS[name]
+
+
+def _component_fields(value, names):
+    if type(value) is not dict or value.keys() != set(names.split()):
+        raise GuardError("component record has missing or unknown fields")
+
+
+def _component_integer(value, maximum=POLICY_SENTINEL, minimum=0):
+    return type(value) is int and minimum <= value <= maximum
+
+
+def validate_component_cleanup(value, *, complete=False):
+    _component_fields(value, "budget_closed children waiters retained_owners session_base_removed fixture_removed")
+    if any(type(value[name]) is not bool for name in ("budget_closed",)) or any(
+        value[name] is not None and type(value[name]) is not bool
+        for name in ("session_base_removed", "fixture_removed")
+    ) or any(
+        value[name] is not None and not _component_integer(value[name])
+        for name in ("children", "waiters", "retained_owners")
+    ):
+        raise GuardError("component cleanup observations are malformed")
+    if complete and value != {
+        "budget_closed": True, "children": 0, "waiters": 0, "retained_owners": 0,
+        "session_base_removed": True, "fixture_removed": True,
+    }:
+        raise GuardError("component inner ownership is not closed")
+    return value
+
+
+def counter_snapshot(budget, session=None):
+    if budget is None:
+        return {"budget": None, "session": None}
+    amounts = budget.bytes.copy()
+    if not amounts.keys() <= set(BYTE_CATEGORIES):
+        raise GuardError("unknown observed accounting category")
+    categories = {}
+    for name in BYTE_CATEGORIES:
+        amount = amounts.get(name, 0)
+        limit = getattr(budget.limits, name + "_bytes")
+        categories[name] = {
+            "charged": amount, "original_cap": ORIGINAL_LIMITS[name + "_bytes"],
+            "diagnostic_cap": limit, "remaining": limit - amount,
+            "exceeds_original": amount > ORIGINAL_LIMITS[name + "_bytes"],
+        }
+    result = {
+        "budget": {
+            "categories": categories, "present_categories": sorted(amounts), "total": sum(amounts.values()),
+            "total_cap": budget.limits.total_bytes, "runs": budget.runs, "states": budget.states,
+            "planned_state_bytes": budget.planned_state_bytes, "failed": budget.failed, "closed": budget.closed,
+        },
+        "session": None,
+    }
+    if session is not None:
+        if session.budget is not budget:
+            raise GuardError("telemetry session differs from the issued budget")
+        result["session"] = {
+            **{name: getattr(session, name) for name in (*SESSION_COUNTERS, *SESSION_PEAKS)},
+            "pending_commands": session.pending_commands, "parked_capsules": len(session.parked_capsules),
+            "make_depth": session.make_depth, "children": len(budget.children),
+            "waiters": len(budget.producer_waiters),
+        }
+    validate_component_counters(result)
+    return result
+
+
+def validate_component_counters(value, *, complete=False):
+    _component_fields(value, "budget session")
+    budget, session = value["budget"], value["session"]
+    if budget is None:
+        if complete or session is not None:
+            raise GuardError("component counters lack the actual budget")
+        return value
+    _component_fields(
+        budget, "categories present_categories total total_cap runs states planned_state_bytes failed closed",
+    )
+    if (
+        type(budget["categories"]) is not dict or budget["categories"].keys() != set(BYTE_CATEGORIES)
+        or type(budget["present_categories"]) is not list
+        or any(type(name) is not str or name not in BYTE_CATEGORIES for name in budget["present_categories"])
+        or len(set(budget["present_categories"])) != len(budget["present_categories"])
+        or any(not _component_integer(budget[name]) for name in ("total", "total_cap", "runs", "states", "planned_state_bytes"))
+        or budget["total_cap"] != ORIGINAL_LIMITS["total_bytes"]
+        or type(budget["failed"]) is not bool or type(budget["closed"]) is not bool
+    ):
+        raise GuardError("component budget counters are malformed")
+    total = 0
+    for name, row in budget["categories"].items():
+        _component_fields(row, "charged original_cap diagnostic_cap remaining exceeds_original")
+        if (
+            any(not _component_integer(row[key]) for key in ("charged", "original_cap", "diagnostic_cap", "remaining"))
+            or row["original_cap"] != ORIGINAL_LIMITS[name + "_bytes"]
+            or row["diagnostic_cap"] != diagnostic_limit(name + "_bytes")
+            or row["remaining"] != row["diagnostic_cap"] - row["charged"]
+            or type(row["exceeds_original"]) is not bool
+            or row["exceeds_original"] != (row["charged"] > row["original_cap"])
+            or name not in budget["present_categories"] and row["charged"] != 0
+        ):
+            raise GuardError("component category counters disagree with actual policy")
+        total += row["charged"]
+    if total != budget["total"] or total > budget["total_cap"]:
+        raise GuardError("component aggregate accounting is inconsistent")
+    if session is not None:
+        _component_fields(session, " ".join((
+            *SESSION_COUNTERS, *SESSION_PEAKS, "pending_commands", "parked_capsules",
+            "make_depth", "children", "waiters",
+        )))
+        if any(not _component_integer(number) for number in session.values()):
+            raise GuardError("component session counters are malformed")
+    if complete:
+        if (
+            budget["failed"] is not False or budget["closed"] is not True
+            or not 1 <= budget["runs"] <= ORIGINAL_LIMITS["runs"]
+            or not 1 <= budget["states"] <= ORIGINAL_LIMITS["states"]
+            or budget["planned_state_bytes"] > MIB or session is None
+            or any(session[name] != 0 for name in (
+                "pending_commands", "parked_capsules", "make_depth", "children", "waiters",
+            ))
+            or any(session[name] > ORIGINAL_LIMITS[limit] for name, limit in (
+                ("processes_used", "descendants"), ("syscalls_used", "syscalls"),
+                ("observations_used", "entries"), ("files_created", "created_files"),
+                ("pending_commands_peak", "pending"), ("live_process_peak", "processes"),
+                ("memory_peak", "address_space_bytes"),
+            ))
+        ):
+            raise GuardError("component counters are incomplete, open or exceed a retained boundary")
+    return value
+
+
+def validate_component_observation(value):
+    _component_fields(value, (
+        "make_attempts make_returned checker_occurrences recipe_receipts dispatch_sequences producer_slots "
+        "stage_names intermediate_versions intermediate_complete retirement_absent "
+        "retired_nlinks assembly_extents content_equal bindings_distinct raw_receipts_distinct "
+        "semantic_records typed_references"
+    ))
+    if (
+        any(type(value[name]) is not int or value[name] != expected for name, expected in (
+            ("make_attempts", 1), ("make_returned", 1), ("checker_occurrences", 2),
+            ("recipe_receipts", 2), ("semantic_records", 1), ("typed_references", 2),
+        ))
+        or any(value[name] is not True for name in ("content_equal", "bindings_distinct", "raw_receipts_distinct"))
+        or value["stage_names"] != [list(STAGES), list(STAGES)]
+    ):
+        raise GuardError("component lacks one real Make and its exact checker pair")
+    for name in (
+        "dispatch_sequences", "producer_slots", "intermediate_versions",
+        "intermediate_complete", "retirement_absent", "retired_nlinks", "assembly_extents",
+    ):
+        if type(value[name]) is not list or len(value[name]) != 2:
+            raise GuardError("component pair observation is incomplete")
+    if (
+        any(not _component_integer(number, minimum=1) for number in value["dispatch_sequences"])
+        or any(not _component_integer(number, ORIGINAL_LIMITS["entries"] - 1) for number in value["producer_slots"])
+        or value["dispatch_sequences"][0] >= value["dispatch_sequences"][1]
+        or value["producer_slots"][0] >= value["producer_slots"][1]
+        or any(type(number) is not int or number != 1 for number in value["intermediate_versions"])
+        or any(flag is not True for name in ("intermediate_complete", "retirement_absent") for flag in value[name])
+        or any(type(number) is not int or number != 0 for number in value["retired_nlinks"])
+        or any(not _component_integer(number, ORIGINAL_LIMITS["file_bytes"]) for number in value["assembly_extents"])
+        or value["assembly_extents"][0] != value["assembly_extents"][1]
+    ):
+        raise GuardError("component binding/content/retirement evidence is invalid")
+    return value
+
+
+def validate_component_result(value):
+    _component_fields(value, (
+        "version workload_kind fixture_version source_revision base_revision profile method target source_phases "
+        "component_attempts component_completed root_check_attempts graph_check_attempts report_check_attempts "
+        "verifier_attempts h1_attempts fixture observation counters cleanup"
+    ))
+    expected = {
+        "workload_kind": WORKLOAD_KIND, "fixture_version": FIXTURE_VERSION, "source_revision": GRAPH,
+        "base_revision": BASE, "profile": PROFILE, "method": COMPONENT_CASE + "." + COMPONENT_METHOD,
+        "target": COMPONENT_TARGET,
+    }
+    if (
+        any(type(value[name]) is not str or value[name] != wanted for name, wanted in expected.items())
+        or type(value["version"]) is not int or value["version"] != 1
+        or type(value["component_attempts"]) is not int or value["component_attempts"] != 1
+        or value["component_completed"] is not True or value["source_phases"] is not False
+        or any(type(value[name]) is not int or value[name] != 0 for name in ABSENT_WORKLOADS)
+    ):
+        raise GuardError("component result is foreign, partial or claims another workload")
+    fixture = value["fixture"]
+    _component_fields(fixture, "preexisting_query genuine_headers header_parents_absent text_producer empty_final_target")
+    if (
+        fixture["preexisting_query"] is not True or fixture["header_parents_absent"] is not True
+        or fixture["text_producer"] is not False or fixture["empty_final_target"] is not True
+        or not _component_integer(fixture["genuine_headers"], ORIGINAL_LIMITS["entries"], 1)
+    ):
+        raise GuardError("component fixture is not the selected original small source")
+    validate_component_observation(value["observation"])
+    validate_component_counters(value["counters"], complete=True)
+    validate_component_cleanup(value["cleanup"], complete=True)
+    return {
+        "workload_kind": WORKLOAD_KIND, "component_only": True, "make_invocations": 1,
+        "checker_invocations": 2, "diagnostic_only": True, "production_acceptance": False,
+        "complete_repository_report": False,
+    }
+
+
+def component_error_record(error):
+    chain, seen = [], set()
+    current = error
+    while current is not None:
+        if id(current) in seen or len(seen) >= 32:
+            return {"chain": chain, "complete": False, "reason": "exception-chain-bound"}
+        seen.add(id(current))
+        name = type.__getattribute__(type(current), "__name__")
+        if type(name) is not str or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", name) is None:
+            name = "unavailable-type"
+        try:
+            number = current.errno if isinstance(current, OSError) else None
+        except BaseException:
+            chain.append({"type": name, "errno": None})
+            return {"chain": chain, "complete": False, "reason": "error-metadata-unavailable"}
+        if number is not None and not _component_integer(number, 4095):
+            number = None
+        chain.append({"type": name, "errno": number})
+        cause = BaseException.__getattribute__(current, "__cause__")
+        current = cause if cause is not None else BaseException.__getattribute__(current, "__context__")
+    return {"chain": chain, "complete": True, "reason": None}
 
 
 def validate_report(report):
