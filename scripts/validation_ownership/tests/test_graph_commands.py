@@ -765,12 +765,47 @@ class StderrSetupTests(unittest.TestCase):
             self.assertEqual(len(calls), 3)
             self.assertTrue(session.cache)
 
+    def assert_stderr_wire_boundary(self, value):
+        dumps = json.dumps
+        expected = dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
+        with self.subTest(stage="predicted-wire"):
+            self.assertEqual(producer_channel.stderr_json_size(value), len(expected))
+        for shortfall in (0, 1):
+            with self.subTest(stage="reservation", shortfall=shortfall):
+                limit = 2 * len(expected) - shortfall
+                charged = 0
+                def reserve(size):
+                    nonlocal charged
+                    self.assertIs(type(size), int)
+                    self.assertGreaterEqual(size, 0)
+                    if charged + size > limit:
+                        raise producer_channel.ChannelError("exact wire admission exceeded")
+                    charged += size
+                def encode(*args, **kwargs):
+                    self.assertEqual(charged, 2 * len(expected))
+                    return dumps(*args, **kwargs)
+                with mock.patch.object(producer_channel.json, "dumps", side_effect=encode) as encoder:
+                    if shortfall:
+                        with self.assertRaisesRegex(producer_channel.ChannelError, "wire admission"):
+                            producer_channel.stderr_encoded(value, reserve)
+                        encoder.assert_not_called()
+                    else:
+                        self.assertEqual(producer_channel.stderr_encoded(value, reserve), expected)
+                        self.assertEqual(charged, limit)
+                        encoder.assert_called_once()
+
     def test_closed_wire_admission_counts_actual_ascii_encoding_before_growth(self):
-        for value in (None, True, -15, ["stdout", "null"], {"key": "a\\b\n\"日本語\U0001f600"}):
-            charges = []
-            encoded_value = producer_channel.stderr_encoded(value, charges.append)
-            self.assertEqual(len(encoded_value), producer_channel.stderr_json_size(value))
-            self.assertEqual(sum(charges), 2 * len(encoded_value))
+        values = [
+            None, False, True, -15, ["stdout", "null"], {"key": "a\\b\n\"日本語\U0001f600"},
+            *(chr(number) for number in range(129)),
+            "".join(chr(number) for number in range(129)),
+            "\x7f" * 1025, {"\x7f": "\x7f"}, {"\ud800": "\udfff"}, "\ud800\udc00",
+            *(chr(number) for number in (0xD7FF, 0xD800, 0xDBFF, 0xDC00, 0xDFFF,
+                                        0xE000, 0xFFFF, 0x10000, 0x10FFFF)),
+        ]
+        for value in values:
+            with self.subTest(value=repr(value)):
+                self.assert_stderr_wire_boundary(value)
         def refuse(size):
             raise MakeProbeError("model byte admission")
         with mock.patch.object(producer_channel.json, "dumps", side_effect=AssertionError("encoded before admission")):
@@ -780,6 +815,34 @@ class StderrSetupTests(unittest.TestCase):
         cycle.append(cycle)
         with self.assertRaises(producer_channel.ChannelError):
             producer_channel.stderr_json_size(cycle)
+
+    def test_del_environment_binding_keeps_supported_input_and_exact_charges(self):
+        config = _StderrModel(("null",)).config
+        config["environment"] = {"VALUE": "\x7f"}
+        producer_channel.validate_stderr_inputs(config)
+        declaration = config["stderr_setup"]
+        payload = {name: config[name] for name in producer_channel.STDERR_BINDING_FIELDS}
+        payload["stderr"] = {name: declaration[name] for name in ("scope", "nonce", "context", "effects")}
+        expected = encoded(payload)
+        self.assert_stderr_wire_boundary(payload)
+        charges = []
+        binding = producer_channel.stderr_launch_binding(config, declaration, charges.append)
+        self.assertEqual(binding, hashlib.sha256(expected).hexdigest())
+        self.assertEqual(sum(charges), 2 * len(expected))
+
+    def test_closed_wire_malformed_inputs_reject_before_encoding(self):
+        values = (b"bytes", {"set"}, 1.5, float("nan"), float("inf"), object(),
+                  {None: "value"}, 1 << 64, -(1 << 64))
+        with mock.patch.object(producer_channel.json, "dumps",
+                               side_effect=AssertionError("malformed input reached encoder")) as encoder:
+            for value in values:
+                with self.subTest(value=repr(value)), self.assertRaises(producer_channel.ChannelError):
+                    producer_channel.stderr_encoded(value, lambda size: None)
+            encoder.assert_not_called()
+        config = _StderrModel(("null",)).config
+        for value in ("\0", None, 1):
+            with self.subTest(environment=value), self.assertRaises(producer_channel.ChannelError):
+                producer_channel.validate_stderr_inputs({**config, "environment": {"VALUE": value}})
 
     def test_bad_credentials_extra_pins_and_unclosed_authority_refuse_exec(self):
         for changed in ("uid", "groups", "caps", "nnp", "extra", "root", "state"):

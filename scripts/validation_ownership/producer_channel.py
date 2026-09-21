@@ -68,7 +68,7 @@ def stderr_json_size(value, reserve=None, _depth=0):
             number = ord(character)
             pending += (
                 2 if character in '"\\\b\f\n\r\t' else
-                6 if number < 32 or 128 <= number <= 65535 else
+                6 if number < 32 or 127 <= number <= 65535 else
                 12 if number > 65535 else 1
             )
             if index % 1024 == 1023:
