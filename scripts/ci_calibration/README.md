@@ -7,7 +7,8 @@ The frozen scope is
 Reviewed preparation `246bad229efe8674ece41b0b91af89fcc4cb4585` is a normal child
 of `d7172b7f6adf5cb43c005ba6cb7dc31142cc812b` on
 `calibration/issue-180-full-report-sizing-1`. Its prelaunch error correction
-is one normal child of246bad22. The complete earlier normal
+is `c8f2fdeac66f5c50ed4859396765ec12f6f462d0`, one normal child of246bad22.
+The FR1 finalization follow-through is one normal child ofc8f2. The complete earlier normal
 lineage and component/correction inventories remain checked against their
 original immutable endpoints. The original preparation admitted only nine
 diagnostic files and `.github/workflows/issue180-full-report-sizing-1.yml`;
@@ -16,6 +17,44 @@ Both earlier workflows, the entry/kernel/runtime/volume helpers, trusted
 namespace and lifecycle code, and production files remain unchanged.
 
 ## Prelaunch error-transport correction: FR1 and FR2
+
+Finalization follow-through freeze:
+[5761762243](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5761762243).
+Review closed FR2 and the original schema/pre-readiness mismatch, but found
+two composed FR1 failures. No new source/accounting mode is integrated here.
+The selected source, control-only diagnostic profile, workflow and physical
+containment stay unchanged. Both earlier preparation/correction inventories
+remain bound to their exact Git endpoints; the new normal child uses the same
+nonempty closed M-only surface.
+
+Already-known measurement and sampler/budget-close secondaries are now
+validated and copied into the invocation carrier before fallible full-record
+construction. If construction fails, the unavailable-observation fallback
+retains every known independent failure alongside the source primary and
+publication failure. Later mutation of a collector's input cannot erase
+that snapshot. A successfully built full record already includes those
+observations, so fallback does not append duplicate close failures.
+
+A delivered result remains provisional until the executable/outer phase
+finishes successfully. After that result, the receiver permits exactly one
+closed `result-publication` error with the same binding and identical observed
+states/counters/cleanup/summary/size except `completed=False`. It preserves
+the original result object as provisional evidence, records the actual
+publication failure, and clears stream completion. No replay, changed or
+foreign observation, other message, extra terminal error or post-failure
+result can restore success. Malformed terminal input consumes that one
+receiving opportunity and cannot be retried into acceptance. The physical
+phase and its existing first-cause/exit/cleanup acceptance remain unchanged.
+
+The finalization runner preserves the original52 methods/477 subtests and
+the reviewed15 methods/52 subtests, including FR2 and protected pre-readiness
+coverage. Additional actual executable/kernel.emit/Protocol controls combine
+source, both-close, measurement, formatter and record-construction faults;
+exercise before/after-write publication, bounded terminal rejection and
+retained provisional evidence; and restore both exact c8f2 boundaries as
+failing controls. Neutral record ordering remains accepted. All execution
+is inert and effect-trapped; Main's separate source quota/admission work is
+outside this correction.
 
 Freeze:
 [5760515251](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5760515251).

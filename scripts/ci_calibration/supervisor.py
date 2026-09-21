@@ -40,6 +40,7 @@ COMPONENT_BASE_SHA = "f00bc2610d7031d14268855deb2979682ea196af"
 CORRECTION_BASE_SHA = "b854e3cd466166dbc79bfe8f717af956b424365c"
 REPORT_BASE_SHA = "d7172b7f6adf5cb43c005ba6cb7dc31142cc812b"
 REPORT_PREPARATION_SHA = "246bad229efe8674ece41b0b91af89fcc4cb4585"
+REPORT_ERROR_SHA = "c8f2fdeac66f5c50ed4859396765ec12f6f462d0"
 COMPONENT_PATHS = frozenset({
     policy.COMPONENT_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "worker.py", "root_stage.py", "supervisor.py", "observation_failure.py", "README.md",
@@ -59,7 +60,8 @@ REPORT_ERROR_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
 
 def validate_harness_lineage(lines, head):
     if lines != [
-        f"{head} {REPORT_PREPARATION_SHA}",
+        f"{head} {REPORT_ERROR_SHA}",
+        f"{REPORT_ERROR_SHA} {REPORT_PREPARATION_SHA}",
         f"{REPORT_PREPARATION_SHA} {REPORT_BASE_SHA}",
         f"{REPORT_BASE_SHA} {CORRECTION_BASE_SHA}",
         f"{CORRECTION_BASE_SHA} {COMPONENT_BASE_SHA}",
@@ -69,7 +71,7 @@ def validate_harness_lineage(lines, head):
         f"{RETAINED_HARNESS_SHA} {PREPARATION_SHA}",
         f"{PREPARATION_SHA} {policy.BASE}",
     ]:
-        raise policy.GuardError("diagnostic requires its exact normal error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
+        raise policy.GuardError("diagnostic requires its exact normal finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
 
 
 def validate_correction_inventory(data):
@@ -455,6 +457,8 @@ class Protocol:
         self.report_started = self.failed = False
         self.report_error = None
         self.report_error_records = 0
+        self.report_result = None
+        self.result_error_seen = False
         if report_binding is not None:
             policy.validate_report_binding(report_binding)
             if scope != report_binding["run_id"] + "/report" or (
@@ -480,6 +484,12 @@ class Protocol:
         while b"\n" in self.buffer:
             line, _, rest = self.buffer.partition(b"\n")
             self.buffer = bytearray(rest)
+            terminal_result = self.report_result is not None
+            if terminal_result:
+                if self.result_error_seen:
+                    raise policy.GuardError("report terminal publication outcome is already closed")
+                self.result_error_seen = True
+                self.finished = False
             record = policy.parse_json(line)
             if (
                 not isinstance(record, dict) or set(record) != {"scope", "kind", "data"}
@@ -488,7 +498,9 @@ class Protocol:
             ):
                 raise policy.GuardError("foreign or malformed diagnostic protocol record")
             kind = record["kind"]
-            if self.finished or (not self.ready and kind not in {"ready", "error"}):
+            if terminal_result and (kind != "error" or self.failed) or (
+                self.finished or not self.ready and kind not in {"ready", "error"}
+            ):
                 raise policy.GuardError("diagnostic record is out of order")
             if "source_refusal" in record["data"]:
                 raise policy.GuardError("report scope cannot publish unrelated root source-refusal metadata")
@@ -503,6 +515,7 @@ class Protocol:
                     if not self.report_started or self.failed:
                         raise policy.GuardError("report result precedes invocation or follows a failure")
                     policy.validate_report_worker(value, self.report_binding, self.deadline)
+                    self.report_result = value
                 elif kind == "progress":
                     policy.validate_report_progress(value)
                 elif kind == "error":
@@ -510,6 +523,10 @@ class Protocol:
                         value = policy.project_entry_failure(value, self.report_binding)
                         record["data"] = value
                     policy.validate_report_error(value, self.report_binding)
+                    if terminal_result:
+                        policy.validate_result_publication_failure(
+                            value, self.report_result, self.report_binding, self.deadline,
+                        )
                     if self.report_error_records >= 2:
                         raise policy.GuardError("report stream exceeded its first publication and one fallback")
                     if self.report_error is None:
@@ -827,7 +844,7 @@ class Owner:
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
         validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=9", "HEAD").decode().splitlines(),
+            git(self.harness, "rev-list", "--parents", "--max-count=10", "HEAD").decode().splitlines(),
             self.scope["harness_sha"],
         )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
@@ -865,7 +882,10 @@ class Owner:
             self.harness, "diff", "--name-status", "-z", REPORT_BASE_SHA, REPORT_PREPARATION_SHA,
         ))
         validate_report_error_inventory(git(
-            self.harness, "diff", "--name-status", "-z", REPORT_PREPARATION_SHA, "HEAD",
+            self.harness, "diff", "--name-status", "-z", REPORT_PREPARATION_SHA, REPORT_ERROR_SHA,
+        ))
+        validate_report_error_inventory(git(
+            self.harness, "diff", "--name-status", "-z", REPORT_ERROR_SHA, "HEAD",
         ))
         self.source_status("before")
         tree = git(self.candidate, "ls-tree", "-rz", "--full-tree", policy.GRAPH)

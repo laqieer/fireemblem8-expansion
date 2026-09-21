@@ -962,6 +962,17 @@ def validate_report_progress(value, *, complete=False):
     return value
 
 
+def validate_report_secondaries(value):
+    if type(value) is not list or len(value) > 32:
+        raise GuardError("report secondary failures exceed the closed operation inventory")
+    for row in value:
+        _component_fields(row, "stage error")
+        if type(row["stage"]) is not str or row["stage"] not in REPORT_ERROR_STAGES:
+            raise GuardError("report secondary failure has a foreign stage")
+        validate_component_error_record(row["error"])
+    return value
+
+
 def validate_report_error(value, binding):
     if __package__:
         from . import observation_failure
@@ -995,13 +1006,7 @@ def validate_report_error(value, binding):
         value["states"] is None or value["states"]["serialization_returned"] != 1
     ) or value["summary"] is not None and value["serialized_bytes"] is None:
         raise GuardError("failed report claims observations from an unreturned serialization")
-    if type(value["secondary"]) is not list or len(value["secondary"]) > 32:
-        raise GuardError("report secondary failures exceed the closed operation inventory")
-    for row in value["secondary"]:
-        _component_fields(row, "stage error")
-        if type(row["stage"]) is not str or row["stage"] not in REPORT_ERROR_STAGES:
-            raise GuardError("report secondary failure has a foreign stage")
-        validate_component_error_record(row["error"])
+    validate_report_secondaries(value["secondary"])
     observation_failure.validate_fact(value["observation_failure"], admission=False)
     observation_failure.validate_fact(value["budget_admission"], admission=True)
     return value
@@ -1037,6 +1042,21 @@ def merge_report_failure(first, following, binding):
         raise GuardError("report fallback is a replay or an independent workload failure")
     first["secondary"] = list(following["secondary"])
     return first
+
+
+def validate_result_publication_failure(value, result, binding, deadline):
+    validate_report_worker(result, binding, deadline)
+    validate_report_error(value, binding)
+    observed = result["report"]
+    expected = {
+        "states": {**observed["states"], "completed": False},
+        **{name: observed[name] for name in ("cleanup", "counters", "summary", "serialized_bytes")},
+    }
+    if value["stage"] != "result-publication" or any(
+        encoded(value[name]) != encoded(wanted) for name, wanted in expected.items()
+    ) or any(row["stage"] not in {"error-publication", "error-recovery"} for row in value["secondary"]):
+        raise GuardError("terminal publication failure changed the provisional report or its operation")
+    return value
 
 
 def project_entry_failure(value, binding):

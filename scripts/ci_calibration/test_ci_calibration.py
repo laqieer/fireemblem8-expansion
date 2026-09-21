@@ -515,7 +515,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.REPORT_PREPARATION_SHA}",
+            f"{'a' * 40} {supervisor.REPORT_ERROR_SHA}",
+            f"{supervisor.REPORT_ERROR_SHA} {supervisor.REPORT_PREPARATION_SHA}",
             f"{supervisor.REPORT_PREPARATION_SHA} {supervisor.REPORT_BASE_SHA}",
             f"{supervisor.REPORT_BASE_SHA} {supervisor.CORRECTION_BASE_SHA}",
             f"{supervisor.CORRECTION_BASE_SHA} {supervisor.COMPONENT_BASE_SHA}",

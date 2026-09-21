@@ -25,6 +25,7 @@ WORKER_TREE = ast.parse(Path(worker.__file__).read_text())
 WORKER_MAIN = ast.Module(body=[WORKER_TREE.body[-1]], type_ignores=[])
 ENTRY_MAIN = ast.Module(body=[ast.parse(Path(entry.__file__).read_text()).body[-1]], type_ignores=[])
 PREIMAGE_WORKER_MAIN = PREIMAGE_PROTOCOL = None
+FINALIZATION_PREIMAGE_FAILURE = FINALIZATION_PREIMAGE_REPORT = FINALIZATION_PREIMAGE_PROTOCOL = None
 
 
 class RootStageControls(Inert):
@@ -258,6 +259,14 @@ class RootStageControls(Inert):
                 effects.enter_context(mock.patch.object(policy, "component_error_record", side_effect=ValueError("private format")))
             if "record-collection" in faults:
                 effects.enter_context(mock.patch.object(worker, "report_error_record", side_effect=ValueError("private collector")))
+            if "record-mutation" in faults:
+                def mutate_record(primary, measurement, sampler, observer, binding, secondary, **ignored):
+                    for row in (*measurement.secondary, *secondary):
+                        row["error"]["chain"].clear()
+                    measurement.secondary.clear()
+                    secondary.clear()
+                    raise ValueError("private mutating collector")
+                effects.enter_context(mock.patch.object(worker, "report_error_record", side_effect=mutate_record))
             if use_worker:
                 effects.enter_context(mock.patch.object(builtins, "__import__", side_effect=imports))
                 effects.enter_context(mock.patch.object(sys, "path", list(sys.path)))
@@ -320,6 +329,212 @@ class RootStageControls(Inert):
             with self.assertRaises(SystemExit) as ended:
                 exec(compile(ENTRY_MAIN, "<inert-protected-entry>", "exec"), namespace)
         return SimpleNamespace(exit_code=ended.exception.code, wire=wire.getvalue(), stderr=stderr.getvalue())
+
+    def after_result_write(self):
+        emit = kernel.emit
+        def after(scope, kind, data):
+            emit(scope, kind, data)
+            if kind == "result":
+                raise OSError(errno.EIO, "private after-write publication")
+        with mock.patch.object(kernel, "emit", side_effect=after):
+            return self.composition(use_worker=True, executable=WORKER_MAIN)
+
+    def test_combined_close_and_measurement_facts_survive_full_record_construction_failure(self):
+        for collector, measurement, formatter in itertools.product(
+            ("record-collection", "record-mutation"),
+            ((), ("cleanup-observation", "counter-observation", "restore-after")),
+            ((), ("formatter",)),
+        ):
+            faults = ("source", "sampler-close", "budget-close-before", collector, *measurement, *formatter)
+            with self.subTest(faults=faults):
+                value = self.composition(*faults, use_worker=True, executable=WORKER_MAIN)
+                self.assertEqual(value.exit_code, 1)
+                self.assertIsNone(value.failure)
+                parser, records = self.consume_executable(value)
+                record, = [row["data"] for row in records if row["kind"] == "error"]
+                self.assertTrue(parser.failed)
+                self.assertFalse(parser.finished)
+                expected = ["sampler-close", "budget-close", "error-publication"]
+                if measurement:
+                    expected += ["cleanup-observation", "counter-observation", "constructor-reference"]
+                stages = [row["stage"] for row in record["secondary"]]
+                self.assertCountEqual(stages, expected)
+                for stage in expected:
+                    self.assertEqual(stages.count(stage), 1)
+                if formatter:
+                    self.assertFalse(record["error"]["complete"])
+                else:
+                    self.assertEqual(record["error"]["chain"][0]["type"], "SourceError")
+                    self.assertTrue(all(row["error"]["chain"] for row in record["secondary"]))
+                    publication, = [row for row in record["secondary"] if row["stage"] == "error-publication"]
+                    self.assertEqual(publication["error"]["chain"][0]["type"], "ValueError")
+                for name in ("states", "counters", "cleanup", "summary", "serialized_bytes"):
+                    self.assertIsNone(record[name])
+                self.assertEqual(value.events[-2:], ["sampler-close", "budget-close"])
+                self.assertNotIn(b"private", value.wire)
+
+    def test_known_secondary_snapshots_do_not_duplicate_successfully_constructed_error_records(self):
+        for publication in ("publication", "publication-after"):
+            value = self.composition(
+                "source", "sampler-close", "budget-close-after", "cleanup-observation",
+                publication, use_worker=True, executable=WORKER_MAIN,
+            )
+            parser, records = self.consume_executable(value)
+            record = [row["data"] for row in records if row["kind"] == "error"][-1]
+            self.assertTrue(parser.failed)
+            self.assertFalse(parser.finished)
+            self.assertCountEqual([row["stage"] for row in record["secondary"]], [
+                "cleanup-observation", "sampler-close", "budget-close", "error-publication",
+            ])
+
+    def test_restoring_c8f2_record_boundary_recovers_the_lost_known_close_facts(self):
+        self.assertIsNotNone(FINALIZATION_PREIMAGE_FAILURE, "requires the finalization runner")
+        self.assertIsNotNone(FINALIZATION_PREIMAGE_REPORT)
+        faults = ("source", "sampler-close", "budget-close-before", "record-collection")
+        def observed():
+            value = self.composition(*faults, use_worker=True, executable=WORKER_MAIN)
+            self.assertEqual(value.exit_code, 1)
+            record, = [row["data"] for row in self.consume_executable(value)[1] if row["kind"] == "error"]
+            self.assertEqual(record["error"]["chain"][0]["type"], "SourceError")
+            return [row["stage"] for row in record["secondary"]]
+        self.assertCountEqual(observed(), ["sampler-close", "budget-close", "error-publication"])
+        with mock.patch.object(worker, "ReportFailure", FINALIZATION_PREIMAGE_FAILURE), \
+             mock.patch.object(worker, "report", FINALIZATION_PREIMAGE_REPORT):
+            self.assertEqual(observed(), ["error-publication"])
+            with self.assertRaises(AssertionError):
+                self.assertIn("budget-close", observed())
+        self.assertCountEqual(observed(), ["sampler-close", "budget-close", "error-publication"])
+
+    def test_after_write_result_failure_preserves_provisional_observations_and_invalidates_completion(self):
+        value = self.after_result_write()
+        self.assertEqual(value.exit_code, 1)
+        self.assertIsNone(value.failure)
+        parser, records = self.consume_executable(value)
+        self.assertEqual([row["kind"] for row in records], ["ready", "report-start", "result", "error"])
+        result, error = records[-2]["data"], records[-1]["data"]
+        self.assertIs(parser.report_result, result)
+        self.assertTrue(parser.failed)
+        self.assertFalse(parser.finished)
+        self.assertTrue(parser.result_error_seen)
+        self.assertEqual(parser.report_error_records, 1)
+        self.assertEqual(error["stage"], "result-publication")
+        self.assertEqual(error["error"]["chain"][0]["errno"], errno.EIO)
+        self.assertFalse(error["states"]["completed"])
+        self.assertTrue(result["report"]["states"]["completed"])
+        self.assertEqual(error["states"], {**result["report"]["states"], "completed": False})
+        for name in ("cleanup", "counters", "summary", "serialized_bytes"):
+            self.assertEqual(error[name], result["report"][name])
+        phase = {
+            **self.report_phase(), "worker": result, "first_cause": {"type": "worker-error", "error": error},
+            "report_completed": False, "returncode": value.exit_code,
+        }
+        with self.assertRaises(policy.GuardError):
+            supervisor.validate_report_phase(phase, self.binding())
+        phase["returncode"] = 0
+        with self.assertRaises(policy.GuardError):
+            supervisor.validate_report_phase(phase, self.binding())
+        self.assertNotIn(b"private", value.wire)
+
+    def test_terminal_result_failure_is_single_use_and_no_later_message_can_restore_success(self):
+        value = self.after_result_write()
+        rows = [policy.parse_json(line) for line in value.wire.splitlines()]
+        for kind in ("error", "result", "ready", "report-start", "progress", "probe-result", "escaped", "cleanup-error"):
+            with self.subTest(kind=kind):
+                parser, _ = self.consume_executable(value)
+                data = rows[-1]["data"] if kind == "error" else rows[-2]["data"] if kind == "result" else {}
+                with self.assertRaises(policy.GuardError):
+                    parser.feed(policy.encoded({"scope": "12345/report", "kind": kind, "data": data}) + b"\n")
+                self.assertTrue(parser.failed)
+                self.assertFalse(parser.finished)
+        for kind in ("result", "ready", "report-start", "progress"):
+            parser = supervisor.Protocol("12345/report", policy.OUTPUT_BYTES,
+                                         report_binding=self.binding(), deadline=3700.0)
+            for row in rows[:-1]:
+                parser.feed(policy.encoded(row) + b"\n")
+            with self.assertRaises(policy.GuardError):
+                parser.feed(policy.encoded({**rows[-2], "kind": kind}) + b"\n")
+            self.assertFalse(parser.finished)
+            with self.assertRaises(policy.GuardError):
+                parser.feed(policy.encoded(rows[-1]) + b"\n")
+
+    def test_terminal_publication_failure_rejects_foreign_malformed_or_changed_observations(self):
+        rows = [policy.parse_json(line) for line in self.after_result_write().wire.splitlines()]
+        mutations = (
+            lambda row: row.update(scope="999/report"),
+            lambda row: row["data"]["binding"].update(run_id="999"),
+            lambda row: row["data"]["binding"].update(harness_revision="b" * 40),
+            lambda row: row["data"].update(stage="check"),
+            lambda row: row["data"].update(raw="private"),
+            lambda row: row["data"].update(serialized_bytes=row["data"]["serialized_bytes"] + 1),
+            lambda row: row["data"].update(counters=None),
+            lambda row: row["data"].update(cleanup=None),
+            lambda row: row["data"].update(summary=None),
+            lambda row: row["data"]["states"].update(completed=True),
+            lambda row: row["data"]["states"].update(check_attempts=False),
+            lambda row: row["data"]["counters"]["budget"].update(runs=row["data"]["counters"]["budget"]["runs"] + 1),
+            lambda row: row["data"]["cleanup"].update(session_base_removed=None),
+            lambda row: row["data"].update(secondary=[{
+                "stage": "sampler-close", "error": policy.component_secondary_error(OSError(errno.EIO, "private")),
+            }]),
+        )
+        for index, mutate in enumerate(mutations):
+            with self.subTest(index=index):
+                parser = supervisor.Protocol("12345/report", policy.OUTPUT_BYTES,
+                                             report_binding=self.binding(), deadline=3700.0)
+                for row in rows[:-1]:
+                    parser.feed(policy.encoded(row) + b"\n")
+                changed = copy.deepcopy(rows[-1])
+                mutate(changed)
+                with self.assertRaises(policy.GuardError):
+                    parser.feed(policy.encoded(changed) + b"\n")
+                self.assertFalse(parser.finished)
+                self.assertFalse(parser.failed)
+                self.assertIsNone(parser.report_error)
+                with self.assertRaises(policy.GuardError):
+                    parser.feed(policy.encoded(rows[-1]) + b"\n")
+        parser = supervisor.Protocol("12345/report", policy.OUTPUT_BYTES,
+                                     report_binding=self.binding(), deadline=3700.0)
+        for row in rows[:-1]:
+            parser.feed(policy.encoded(row) + b"\n")
+        with self.assertRaises(policy.GuardError):
+            parser.feed(b'{"scope":"12345/report","scope":"foreign","kind":"error","data":{}}\n')
+        self.assertFalse(parser.finished)
+
+    def test_restoring_c8f2_terminal_boundary_rejects_the_real_after_write_error(self):
+        self.assertIsNotNone(FINALIZATION_PREIMAGE_PROTOCOL, "requires the finalization runner")
+        value = self.after_result_write()
+        self.assertTrue(self.consume_executable(value)[0].failed)
+        parser = FINALIZATION_PREIMAGE_PROTOCOL(
+            "12345/report", policy.OUTPUT_BYTES, report_binding=self.binding(), deadline=3700.0,
+        )
+        with self.assertRaises(policy.GuardError):
+            for line in value.wire.splitlines(keepends=True):
+                parser.feed(line)
+        self.assertTrue(parser.finished)
+        self.assertFalse(parser.failed)
+
+    def test_neutral_failure_record_order_preserves_known_facts_and_terminal_invalidation(self):
+        original = worker.report_error_record
+        def reordered(*args, **kwargs):
+            return dict(reversed(list(original(*args, **kwargs).items())))
+        with mock.patch.object(worker, "report_error_record", side_effect=reordered):
+            value = self.composition(
+                "source", "sampler-close", "budget-close-before", "publication",
+                use_worker=True, executable=WORKER_MAIN,
+            )
+        parser, records = self.consume_executable(value)
+        self.assertTrue(parser.failed)
+        record, = [row["data"] for row in records if row["kind"] == "error"]
+        self.assertCountEqual([row["stage"] for row in record["secondary"]],
+                              ["sampler-close", "budget-close", "error-publication"])
+        value = self.after_result_write()
+        rows = [policy.parse_json(line) for line in value.wire.splitlines()]
+        rows[-1]["data"] = dict(reversed(list(rows[-1]["data"].items())))
+        neutral = SimpleNamespace(wire=b"".join(policy.encoded(dict(reversed(list(row.items())))) + b"\n" for row in rows))
+        parser, records = self.consume_executable(neutral)
+        self.assertTrue(parser.failed)
+        self.assertFalse(parser.finished)
+        self.assertEqual(records[-1]["data"]["error"]["chain"][0]["errno"], errno.EIO)
 
     def test_executable_fallback_delivers_primary_publication_and_cleanup_secondaries(self):
         for faults in (

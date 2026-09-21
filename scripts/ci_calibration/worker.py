@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import copy
 import dataclasses
 import errno
 import hashlib
@@ -505,6 +506,7 @@ class ReportFailure:
         self.primary = self.error = self.cleanup_failures = None
         self.record = self.returned = None
         self.stage = "worker-entrypoint"
+        self.known_secondary = []
         self.secondary = []
 
     def capture(self, primary, stage):
@@ -514,6 +516,9 @@ class ReportFailure:
         self.error = policy.component_secondary_error(primary)
         self.cleanup_failures = policy.source_cleanup_count(primary)
 
+    def retain_secondaries(self, value):
+        self.known_secondary = copy.deepcopy(policy.validate_report_secondaries(value))
+
     def fallback(self, config, error):
         binding = policy.validate_report_binding(config["report_binding"])
         if config["scope"] != binding["run_id"] + "/report":
@@ -522,6 +527,7 @@ class ReportFailure:
         value = policy.unavailable_report_error(
             binding, self.error, stage=self.stage, source_cleanup_failures=self.cleanup_failures,
         )
+        value["secondary"] = list(self.known_secondary)
         try:
             if self.record is not None:
                 policy.validate_report_error(self.record, binding)
@@ -630,6 +636,9 @@ def report(config, *, failure=None):
     if primary is not None:
         failure.capture(primary, primary_stage)
         try:
+            failure.retain_secondaries([
+                *(() if measurement is None else measurement.secondary), *secondary,
+            ])
             failure.record = report_error_record(
                 primary, measurement, sampler, observer, binding, secondary, stage=primary_stage,
             )
