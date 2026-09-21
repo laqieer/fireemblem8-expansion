@@ -3828,6 +3828,8 @@ def supervise(config, drop_privileges):
             raise Violation("unrecorded sandbox descendant")
         if os.WIFEXITED(status) or os.WIFSIGNALED(status):
             code = os.waitstatus_to_exitcode(status)
+            if stopped == pid:
+                main_status = code
             unfulfilled = state.producer_requested and (
                 state.producer_slot is None or not state.producer_event_written
             )
@@ -3836,6 +3838,16 @@ def supervise(config, drop_privileges):
                     policy.retire_job(stopped, state)
                 if policy.toolchain is not None and policy.toolchain["stage"] == 4:
                     policy.toolchain_intermediate.exited(stopped, state, code)
+                if unfulfilled:
+                    raise Violation("parked or unfulfilled producer helper exited")
+                if code != 0 and not (
+                    stopped == pid and (config["mode"] == "make"
+                    or config.get("metadata_validation") and code in {1, 2})
+                    or policy.toolchain is not None
+                    or state.role == "helper" and state.toolchain_status == code == 1
+                    and state.toolchain_status_queried and state.producer_event_written
+                ):
+                    raise Violation(f"sandbox process exited unsuccessfully: {code}")
             finally:
                 del processes[stopped]
                 state.close(primary=sys.exc_info()[1])
@@ -3844,18 +3856,6 @@ def supervise(config, drop_privileges):
                 policy.closed_processes.add(stopped)
             vfork_waiters.pop(stopped, None)
             release_vfork(stopped)
-            if stopped == pid:
-                main_status = code
-            if unfulfilled:
-                raise Violation("parked or unfulfilled producer helper exited")
-            if code != 0 and not (
-                stopped == pid and (config["mode"] == "make"
-                or config.get("metadata_validation") and code in {1, 2})
-                or policy.toolchain is not None
-                or state.role == "helper" and state.toolchain_status == code == 1
-                and state.toolchain_status_queried and state.producer_event_written
-            ):
-                raise Violation(f"sandbox process exited unsuccessfully: {code}")
             return
         state.parked = True
         sig = os.WSTOPSIG(status)

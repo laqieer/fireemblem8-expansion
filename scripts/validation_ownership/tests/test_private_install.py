@@ -243,15 +243,22 @@ class PrivateInstallCleanupTests(unittest.TestCase):
                         self.assertEqual(row["result"], outcome)
                         self.assertEqual(row["identity"], list(pending.source_identity) if outcome == 0 else None)
 
-    def supervised(self, *, phase="setup", faults=(), no_children=False, reporting=False):
+    def supervised(self, *, phase="setup", faults=(), no_children=False, reporting=False,
+                   main_status=0, child_status=0, after=False, mode=None, metadata=False,
+                   toolchain_stage=None, main_state=None, child_state=None, intermediate_failure=False):
         guard = self.guard
-        descriptors = (90, 101, 102, 103, 201, 202, 203, 401, 402)
-        self.own(*descriptors, *((303,) if phase != "success" else ()), faults=faults)
+        descriptors = (90, 101, 102, 103, 201, 202, 203, 401, 402) + ((303,) if phase != "success" else ())
+        self.own(*descriptors, faults=faults, after=after)
         primary = guard.Violation("original terminal rejection")
         reporting_error = OSError(errno.ENOSPC, "inert report failure")
-        events, reports, records, waited = [], [], [], []
+        events, reports, records, waited, cleanup_primaries = [], [], [], [], []
         policy = SimpleNamespace(
-            toolchain=None, filter_kernel=None, header_runtime=object(), directory_installs=None,
+            toolchain=None if toolchain_stage is None else {"stage": toolchain_stage, "stdin": False},
+            toolchain_intermediate=SimpleNamespace(
+                birth=Mock(), exited=Mock(side_effect=primary if intermediate_failure else None),
+                emit=Mock(), close=Mock(),
+            ),
+            filter_kernel=None, header_runtime=object(), directory_installs=None,
             read_trace=None, source_effects=None, journal_receipts=None, private_install=None,
             file_cleanup_enabled=False,
             producer_requests=(), consumed=set(), code_consumed=set(), accessed=set(), events=[],
@@ -265,6 +272,9 @@ class PrivateInstallCleanupTests(unittest.TestCase):
             first = policy.processes[9]
             first.pending = ("private-install", self.pending())
             second = guard.Process("command", pidfd=203, pending=("private-install", self.pending(201, 202)))
+            for record, changes in ((first, main_state), (second, child_state)):
+                for name, value in ({} if changes is None else changes).items():
+                    setattr(record, name, value)
             policy.processes[10] = second
             if phase != "success":
                 policy.newborn_stops[11] = 303
@@ -273,7 +283,10 @@ class PrivateInstallCleanupTests(unittest.TestCase):
         policy.pin_private_install_parents = lambda: policy.install_parent_fds.update({"/work": 401, "/work/out": 402})
         close_parents = guard.Policy.close_private_install_parents
         policy.close_private_install_parents = lambda **kwargs: close_parents(policy, **kwargs)
-        waits = iter([(9, ("stop", 19)), (9, ("exit", 0)), (10, ("exit", 0)), (11, ("exit", 0))])
+        def terminal(code):
+            return ("exit", code) if code >= 0 else ("signal", -code)
+        waits = iter([(9, ("stop", 19)), (9, terminal(main_status)),
+                      (10, terminal(child_status)), (11, ("exit", 0))])
         def waitpid(pid, flags):
             events.append(("wait", pid))
             waited.append(pid)
@@ -284,8 +297,9 @@ class PrivateInstallCleanupTests(unittest.TestCase):
         for name, function in {
             "getpid": lambda: 8, "pidfd_open": lambda pid: 90 if pid == 8 else 103,
             "fork": lambda: 9, "waitpid": waitpid, "WIFSTOPPED": lambda status: status[0] == "stop",
-            "WIFEXITED": lambda status: status[0] == "exit", "WIFSIGNALED": lambda status: False,
-            "WSTOPSIG": lambda status: status[1], "waitstatus_to_exitcode": lambda status: status[1],
+            "WIFEXITED": lambda status: status[0] == "exit", "WIFSIGNALED": lambda status: status[0] == "signal",
+            "WSTOPSIG": lambda status: status[1],
+            "waitstatus_to_exitcode": lambda status: -status[1] if status[0] == "signal" else status[1],
         }.items():
             setattr(self.os, name, function)
         self.os.WNOHANG = 1
@@ -303,13 +317,23 @@ class PrivateInstallCleanupTests(unittest.TestCase):
             "observation_count", "observation_limit", "process_limit", "memory_limit",
         )}
         config.update(mode="make" if phase == "exit" else "command", deadline=130, report="/inert/report")
+        if mode is not None:
+            config["mode"] = mode
+        if metadata:
+            config["metadata_validation"] = True
+        cleanup = guard.finish_cleanup
+        def observe_cleanup(actions, **kwargs):
+            if kwargs.get("primary") is not None:
+                cleanup_primaries.append(kwargs["primary"])
+            return cleanup(actions, **kwargs)
         failure = result = None
         with patch.object(guard, "Policy", return_value=policy), \
              patch.object(guard, "Path", paths), patch.object(guard, "signal", signals), \
              patch.object(guard, "ptrace", return_value=0), \
              patch.object(guard, "resource", SimpleNamespace(prlimit=lambda *args: None)), \
              patch.object(guard, "time", SimpleNamespace(monotonic=lambda: 100)), \
-             patch.object(guard, "encode_metadata_transport", return_value={}):
+             patch.object(guard, "encode_metadata_transport", return_value={}), \
+             patch.object(guard, "finish_cleanup", side_effect=observe_cleanup):
             try:
                 result = guard.supervise(config, lambda: self.fail("child execution"))
             except BaseException as error:
@@ -317,6 +341,7 @@ class PrivateInstallCleanupTests(unittest.TestCase):
         return SimpleNamespace(
             result=result, failure=failure, primary=primary, reporting_error=reporting_error,
             reports=reports, events=events, policy=policy, records=records,
+            cleanup_primaries=cleanup_primaries, owned=descriptors,
         )
 
     def test_supervisor_reaps_every_owner_and_preserves_terminal_and_report_errors(self):
@@ -361,6 +386,149 @@ class PrivateInstallCleanupTests(unittest.TestCase):
             self.assertEqual(set(self.attempted), {90, 101, 102, 103, 201, 202, 203, 401, 402})
             self.assertFalse(value.reports[0]["ok"])
             self.assertEqual(value.reports[0]["error"], str(self.faults[401][0]))
+
+    def assert_terminal_cleanup(self, value, faults, after):
+        self.assertIsNone(value.failure)
+        self.assertEqual(set(self.attempted), set(value.owned))
+        self.assertEqual(len(self.attempted), len(value.owned))
+        self.assertEqual(self.live, set() if after else set(faults))
+        self.assertFalse(value.policy.processes)
+        self.assertFalse(value.policy.newborn_stops)
+        self.assertFalse(value.policy.install_parent_fds)
+        for record in value.records:
+            self.assertIsNone(record.pending)
+            self.assertEqual(record.pidfd, -1)
+            record.close()
+        self.assertEqual(len(self.attempted), len(value.owned))
+        self.assertEqual(len(value.reports), 1)
+
+    def test_supervisor_observed_terminal_status_and_rejection_precede_close_faults(self):
+        for status in (0, 7, -9):
+            for faults in ((), (103,), (101, 102, 103)):
+                for after in (False, True):
+                    with self.subTest(status=status, faults=faults, after=after):
+                        value = self.supervised(phase="success", main_status=status, faults=faults, after=after)
+                        self.assert_terminal_cleanup(value, faults, after)
+                        report = value.reports[0]
+                        self.assertEqual(report["returncode"], status)
+                        self.assertEqual(value.result, 125 if status or faults else 0)
+                        self.assertEqual(report["ok"], not (status or faults))
+                        if status:
+                            first = value.cleanup_primaries[-1]
+                            self.assertIsInstance(first, self.guard.Violation)
+                            self.assertEqual(str(first), f"sandbox process exited unsuccessfully: {status}")
+                            self.assert_errors(first, faults)
+                        elif faults:
+                            first = self.faults[faults[0]][0]
+                            self.assertIs(value.cleanup_primaries[-1], first)
+                            self.assert_errors(first, faults[1:])
+                        else:
+                            first = None
+                            self.assertEqual(value.cleanup_primaries, [])
+                        self.assertEqual(report["error"], None if first is None else str(first))
+
+    def test_supervisor_terminal_status_exceptions_keep_their_exact_scope(self):
+        helper = {
+            "role": "helper", "toolchain_status": 1,
+            "toolchain_status_queried": True, "producer_event_written": True,
+        }
+        cases = [
+            ({"mode": "make", "main_status": code}, True, code, 103) for code in (7, -9)
+        ] + [
+            ({"metadata": True, "main_status": code}, code in (1, 2), code, 103)
+            for code in (1, 2, 7, -9)
+        ] + [
+            ({"mode": "compile", "toolchain_stage": stage, "main_status": code}, True, code, 103)
+            for stage in (0, 4) for code in (7, -9)
+        ] + [
+            ({"mode": "compile", "main_status": 1}, False, 1, 103),
+            ({"mode": "make", "child_status": 7}, False, 7, 203),
+            ({"metadata": True, "child_status": 1}, False, 1, 203),
+            ({"mode": "compile", "toolchain_stage": 4, "child_status": 7}, True, 7, 203),
+            ({"child_status": 1, "child_state": helper}, True, 1, 203),
+        ] + [
+            ({"child_status": 1, "child_state": {**helper, key: wrong}}, False, 1, 203)
+            for key, wrong in (("role", "command"), ("toolchain_status", 0),
+                               ("toolchain_status_queried", False), ("producer_event_written", False))
+        ] + [
+            ({"child_status": code, "child_state": {**helper, "toolchain_status": code}}, False, code, 203)
+            for code in (2, -9)
+        ]
+        for options, allowed, code, pin in cases:
+            for faults, after in (((), False), ((pin,), False), ((pin,), True)):
+                with self.subTest(options=options, faults=faults, after=after):
+                    value = self.supervised(phase="success", faults=faults, after=after, **options)
+                    self.assert_terminal_cleanup(value, faults, after)
+                    report = value.reports[0]
+                    self.assertEqual(report["returncode"], options.get("main_status", 0))
+                    self.assertEqual(report["ok"], allowed and not faults)
+                    self.assertEqual(value.result, 0 if allowed and not faults else 125)
+                    if not allowed:
+                        first = value.cleanup_primaries[-1]
+                        self.assertIsInstance(first, self.guard.Violation)
+                        self.assertEqual(str(first), f"sandbox process exited unsuccessfully: {code}")
+                        self.assert_errors(first, faults)
+                    elif faults:
+                        first = self.faults[pin][0]
+                        self.assertIs(value.cleanup_primaries[-1], first)
+                    else:
+                        first = None
+                        self.assertEqual(value.cleanup_primaries, [])
+                    self.assertEqual(report["error"], None if first is None else str(first))
+                    if options.get("toolchain_stage") == 4:
+                        value.policy.toolchain_intermediate.close.assert_called_once()
+                        if allowed and not faults:
+                            value.policy.toolchain_intermediate.emit.assert_called_once_with(
+                                options.get("main_status", 0),
+                            )
+                        else:
+                            value.policy.toolchain_intermediate.emit.assert_not_called()
+
+    def test_supervisor_terminal_or_earlier_validation_failure_remains_primary(self):
+        faults = (101, 102, 103, 201, 202, 203, 401, 402)
+        for status in (0, 7, -9):
+            for earlier in ("retirement", "source-validation", None):
+                if status == 0 and earlier is None:
+                    continue
+                for after in (False, True):
+                    with self.subTest(status=status, earlier=earlier, after=after):
+                        value = self.supervised(
+                            phase="exit" if earlier == "retirement" else "success",
+                            main_status=status, faults=faults, after=after, reporting=True,
+                            toolchain_stage=4 if earlier == "source-validation" else None,
+                            intermediate_failure=earlier == "source-validation",
+                        )
+                        self.assert_terminal_cleanup(value, faults, after)
+                        self.assertEqual(value.result, 125)
+                        first = value.cleanup_primaries[-1]
+                        if earlier is not None:
+                            self.assertIs(first, value.primary)
+                        else:
+                            self.assertIsInstance(first, self.guard.Violation)
+                            self.assertEqual(str(first), f"sandbox process exited unsuccessfully: {status}")
+                        self.assertEqual(len(first.cleanup_errors), len(faults) + 1)
+                        for error in (*[self.faults[pin][0] for pin in faults], value.reporting_error):
+                            self.assertTrue(any(str(error) in note for note in first.cleanup_errors))
+                        self.assertEqual(value.reports[0]["returncode"], status)
+                        self.assertEqual(value.reports[0]["error"], str(first))
+                        self.assertFalse(value.reports[0]["ok"])
+
+    def test_supervisor_unfulfilled_helper_rejection_precedes_close(self):
+        for status in (0, 1, -9):
+            for after in (False, True):
+                with self.subTest(status=status, after=after):
+                    value = self.supervised(
+                        phase="success", main_status=status, toolchain_stage=0,
+                        main_state={"producer_requested": True}, faults=(103,), after=after,
+                    )
+                    self.assert_terminal_cleanup(value, (103,), after)
+                    self.assertEqual(value.reports[0]["returncode"], status)
+                    self.assertEqual(value.result, 125)
+                    first = value.cleanup_primaries[-1]
+                    self.assertIsInstance(first, self.guard.Violation)
+                    self.assertEqual(str(first), "parked or unfulfilled producer helper exited")
+                    self.assert_errors(first, (103,))
+                    self.assertEqual(value.reports[0]["error"], str(first))
 
 
 class PrivateInstallTests(unittest.TestCase):
