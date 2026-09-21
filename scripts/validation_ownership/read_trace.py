@@ -14,10 +14,12 @@ import time
 
 if __package__:
     from .authority import encoded
+    from .lifecycle import finish_cleanup
     from . import read_epochs
     from . import source_phases
 else:
     from authority import encoded
+    from lifecycle import finish_cleanup
     import read_epochs
     import source_phases
 
@@ -369,8 +371,8 @@ class NativeReadTrace:
             )
             if path != current["path"]:
                 raise read_epochs.ReadEpochError("original source status names a different actual stream")
-            os.close(current["pin"])
-            current["pin"] = None
+            pin, current["pin"] = current["pin"], None
+            os.close(pin)
         self.goals[pointer] = current["visit"]
         self.event("source-exit", **self.context(), visit=current["visit"], resolved=resolved,
                    flags=flags, error=error, source=current["source"])
@@ -389,7 +391,9 @@ class NativeReadTrace:
         return result
 
     def close(self):
+        pins = []
         for frame in self.active:
-            if frame["pin"] is not None:
-                os.close(frame["pin"])
-                frame["pin"] = None
+            pin, frame["pin"] = frame["pin"], None
+            if pin is not None:
+                pins.append(pin)
+        finish_cleanup([lambda pin=pin: os.close(pin) for pin in pins])

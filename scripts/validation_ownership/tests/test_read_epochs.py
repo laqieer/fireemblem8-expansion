@@ -2,10 +2,16 @@
 
 import base64
 import copy
+from contextlib import ExitStack
 from dataclasses import replace
+import errno
 import json
 from pathlib import Path
+import posixpath
 import shlex
+import signal
+import struct
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -14,6 +20,272 @@ from scripts.validation_ownership import make_probe
 from scripts.validation_ownership.budget import MakeProbeError
 from scripts.validation_ownership.make_probe import Command
 from scripts.validation_ownership.tests import test_foundation as foundation
+
+
+class SourcePinLifetimeTests(unittest.TestCase):
+    """Actual source-return proofs and pin retirement with only inert effects."""
+
+    def setUp(self):
+        from scripts.validation_ownership import lifecycle, read_trace
+        self.life, self.subject = lifecycle, read_trace
+        self.stack = ExitStack()
+        self.addCleanup(self.stack.close)
+        self.stack.enter_context(patch.object(read_trace, "os", SimpleNamespace(
+            fstat=self.fstat, close=self.close_descriptor,
+        )))
+        self.stack.enter_context(patch.object(lifecycle, "signal", SimpleNamespace(
+            SIG_BLOCK=signal.SIG_BLOCK, SIG_SETMASK=signal.SIG_SETMASK,
+            pthread_sigmask=lambda *args: set(), sigpending=lambda: set(),
+        )))
+        self.make_trace()
+
+    def make_trace(self, pins=(17,)):
+        self.live, self.frames, self.closes, self.stats, self.faults = {}, [], [], [], {}
+        for visit, pin in enumerate(pins, 1):
+            identity = (3, 100 + visit, 0o100644, 7, 11, 12, 1)
+            if pin is not None:
+                self.live[pin] = ("source-" + str(visit), identity)
+            self.frames.append({
+                "visit": visit, "stack": 100, "flags": 0,
+                "source": visit if pin is not None else None, "pin": pin,
+                "closed": True, "identity": identity, "name": "Makefile", "path": "/repo/Makefile",
+            })
+        self.trace = object.__new__(self.subject.NativeReadTrace)
+        self.trace.active, self.trace.io, self.trace.goals = list(self.frames), None, {}
+        self.trace.execs = self.trace.passes = 1
+        self.trace.events, self.charges = [], []
+        self.trace.config = {"observation_count": 8}
+        self.trace.policy = SimpleNamespace(charge_metadata=self.charges.append)
+        self.trace.native = SimpleNamespace(publication_identity=lambda info: info, posixpath=posixpath)
+        self.trace.pass_frame = {"stack": 80}
+        self.trace.memory, self.trace.string = self.memory, self.string
+        self.registers = SimpleNamespace(rsp=108, rax=900)
+        self.values = [0, 200, 300, 0, 0, 0, 0, 0, 0]
+        self.resolved, self.reads, self.strings = "Makefile", [], []
+        self.raw = None
+        return self.trace
+
+    def memory(self, address, count):
+        self.reads.append((address, count))
+        if (address, count) == (900, 64):
+            return struct.pack("<QQQQIiQQQ", *self.values) if self.raw is None else self.raw
+        self.assertEqual((address, count), (300, 8))
+        return (200).to_bytes(8, "little")
+
+    def string(self, address, maximum):
+        self.assertEqual((address, maximum), (200, 4096))
+        self.strings.append((address, maximum))
+        return self.resolved
+
+    def fstat(self, pin):
+        self.stats.append(pin)
+        self.assertIn(pin, self.live)
+        return self.live[pin][1]
+
+    def close_descriptor(self, pin):
+        self.assertIn(pin, self.live, "close of an unavailable modeled descriptor")
+        owner = self.live[pin]
+        self.closes.append((pin, owner, tuple(frame["pin"] for frame in self.frames)))
+        error, after = self.faults.get(pin, (None, False))
+        if error is not None and not after:
+            raise error
+        del self.live[pin]
+        if error is not None:
+            raise error
+
+    def test_source_return_proves_identity_status_and_name_then_closes_once(self):
+        for pin in (0, 17):
+            for indirect in (False, True):
+                with self.subTest(pin=pin, indirect=indirect):
+                    trace = self.make_trace((pin,))
+                    frame = self.frames[0]
+                    self.values[1] = 0 if indirect else 200
+                    self.values[4] = 1 << 16
+                    self.resolved = "/repo/Makefile" if indirect else "Makefile"
+                    trace.source_return(self.registers)
+                    self.assertEqual(self.stats, [pin])
+                    self.assertEqual(self.reads, [(900, 64), (300, 8)] if indirect else [(900, 64)])
+                    self.assertEqual(self.strings, [(200, 4096)])
+                    self.assertEqual(self.closes, [(pin, ("source-1", frame["identity"]), (None,))])
+                    self.assertIsNone(frame["pin"])
+                    self.assertEqual(trace.goals, {900: 1})
+                    self.assertEqual(trace.events, [{
+                        "seq": 1, "kind": "source-exit", "exec": 1, "pass": 1, "visit": 1,
+                        "resolved": self.resolved, "flags": 1 << 16, "error": 0, "source": 1,
+                    }])
+                    self.assertEqual(self.charges, [len(self.subject.encoded(trace.events[0]))])
+                    self.assertEqual(trace.active, [])
+                    self.assertEqual(self.live, {})
+                    trace.close()
+                    trace.close()
+                    self.assertEqual(len(self.closes), 1)
+
+    def test_source_return_preserves_missing_source_status_without_a_pin(self):
+        trace = self.make_trace((None,))
+        self.values[5] = errno.ENOENT
+        self.resolved = "missing.mk"
+        trace.source_return(self.registers)
+        trace.close()
+        self.assertEqual(trace.events, [{
+            "seq": 1, "kind": "source-exit", "exec": 1, "pass": 1, "visit": 1,
+            "resolved": "missing.mk", "flags": 0, "error": errno.ENOENT, "source": None,
+        }])
+        self.assertEqual(trace.goals, {900: 1})
+        self.assertEqual(trace.active, [])
+        self.assertEqual(self.closes, [])
+        self.assertEqual(self.stats, [])
+
+    def test_post_release_return_error_never_retries_a_reused_descriptor(self):
+        for error in (OSError(errno.EINTR, "inert post-release close"), KeyboardInterrupt("inert interrupt")):
+            with self.subTest(error=type(error).__name__):
+                trace = self.make_trace()
+                frame = self.frames[0]
+                self.faults[17] = (error, True)
+                with self.assertRaises(type(error)) as caught:
+                    trace.source_return(self.registers)
+                self.assertIs(caught.exception, error)
+                self.assertIsNone(frame["pin"])
+                self.assertEqual(self.live, {})
+                self.assertEqual(trace.events, [])
+                self.assertEqual(trace.goals, {})
+                self.assertEqual(trace.active, [frame])
+                foreign = ("foreign-reused", (9, 999, 0o100600, 1, 1, 1, 1))
+                self.live[17] = foreign
+                trace.close()
+                trace.close()
+                self.assertIs(self.live[17], foreign)
+                self.assertEqual(self.closes, [(17, ("source-1", frame["identity"]), (None,))])
+                with self.assertRaises(read_epochs.ReadEpochError):
+                    trace.finish()
+                self.assertEqual(trace.events, [])
+
+    def test_pre_release_close_fault_does_not_restore_uncertain_pin_authority(self):
+        error = OSError(errno.EIO, "inert ambiguous close")
+        self.faults[17] = (error, False)
+        original = self.live[17]
+        with self.assertRaises(OSError) as caught:
+            self.trace.source_return(self.registers)
+        self.assertIs(caught.exception, error)
+        self.assertIsNone(self.frames[0]["pin"])
+        self.trace.close()
+        self.trace.close()
+        self.assertIs(self.live[17], original)
+        self.assertEqual(len(self.closes), 1)
+        self.assertEqual(self.trace.events, [])
+        with self.assertRaises(read_epochs.ReadEpochError):
+            self.trace.finish()
+
+    def test_source_return_rejections_keep_proof_checks_and_cleanup_custody(self):
+        defects = (
+            "entry", "io", "stack", "goal", "flags", "negative-error", "overflow-error",
+            "missing-source", "source-error", "name", "stream", "path", "truncated",
+            *(("identity", index) for index in range(7)),
+        )
+        for defect in defects:
+            with self.subTest(defect=defect):
+                trace = self.make_trace(() if defect == "entry" else (17,))
+                if defect == "io":
+                    trace.io = ("pending-source-stream",)
+                elif defect == "stack":
+                    self.registers.rsp += 8
+                elif defect == "goal":
+                    trace.goals[900] = 5
+                elif defect == "flags":
+                    self.values[4] = 1
+                elif defect in ("negative-error", "overflow-error", "source-error"):
+                    self.values[5] = {"negative-error": -1, "overflow-error": 4096, "source-error": 2}[defect]
+                elif defect == "missing-source":
+                    self.frames[0]["source"] = None
+                elif defect == "name":
+                    self.resolved = ""
+                elif defect == "stream":
+                    self.frames[0]["closed"] = False
+                elif defect == "path":
+                    self.resolved = "different.mk"
+                elif defect == "truncated":
+                    self.raw = bytes(63)
+                elif type(defect) is tuple:
+                    owner, identity = self.live[17]
+                    changed = list(identity)
+                    changed[defect[1]] += 1
+                    self.live[17] = (owner, tuple(changed))
+                with self.assertRaises((read_epochs.ReadEpochError, struct.error)):
+                    trace.source_return(self.registers)
+                self.assertEqual(trace.events, [])
+                self.assertEqual(self.closes, [])
+                if self.frames:
+                    self.assertEqual(self.frames[0]["pin"], 17)
+                trace.close()
+                self.assertEqual([call[0] for call in self.closes], [] if defect == "entry" else [17])
+                self.assertEqual(self.live, {})
+                self.assertTrue(all(frame["pin"] is None for frame in self.frames))
+
+    def test_cleanup_detaches_every_pin_and_attempts_all_closes_without_retry(self):
+        for faults in ((), (17,), (18,), (0, 17, 18)):
+            for after in (False, True):
+                with self.subTest(faults=faults, after=after):
+                    trace = self.make_trace((0, None, 17, 18))
+                    proof = [{key: value for key, value in frame.items() if key != "pin"}
+                             for frame in self.frames]
+                    self.faults = {pin: (OSError(errno.EIO, "inert pin " + str(pin)), after) for pin in faults}
+                    if faults:
+                        with self.assertRaises(OSError) as caught:
+                            trace.close()
+                        self.assertIs(caught.exception, self.faults[faults[0]][0])
+                        notes = getattr(caught.exception, "cleanup_errors", ())
+                        self.assertEqual(len(notes), len(faults) - 1)
+                        for pin in faults[1:]:
+                            self.assertTrue(any(str(self.faults[pin][0]) in note for note in notes), notes)
+                    else:
+                        trace.close()
+                    self.assertEqual({call[0] for call in self.closes}, {0, 17, 18})
+                    self.assertEqual(len(self.closes), 3)
+                    self.assertTrue(all(call[2] == (None,) * 4 for call in self.closes))
+                    self.assertTrue(all(frame["pin"] is None for frame in self.frames))
+                    self.assertEqual(self.live.keys(), set(faults) if not after else set())
+                    self.assertEqual(proof, [{key: value for key, value in frame.items() if key != "pin"}
+                                             for frame in self.frames])
+                    if after:
+                        self.live.update({pin: ("foreign-reused", (9, pin)) for pin in faults})
+                    retained = dict(self.live)
+                    trace.close()
+                    trace.close()
+                    self.assertEqual(self.live, retained)
+                    self.assertEqual(len(self.closes), 3)
+                    self.assertEqual(trace.events, [])
+                    self.assertEqual(trace.goals, {})
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        trace.finish()
+
+    def test_earlier_primary_survives_pin_cleanup_and_remaining_owned_actions(self):
+        for after in (False, True):
+            with self.subTest(after=after):
+                trace = self.make_trace((17, 18, 19))
+                original = read_epochs.ReadEpochError("inert original source read failure")
+                close_error = OSError(errno.EIO, "inert pin cleanup")
+                later_error = OSError(errno.ENOSPC, "inert later cleanup")
+                self.faults[17] = (close_error, after)
+                remaining = []
+                def read(address, count):
+                    raise original
+                def later():
+                    remaining.append("attempted")
+                    raise later_error
+                trace.memory = read
+                with self.assertRaises(read_epochs.ReadEpochError) as caught:
+                    with self.life.cleanup_scope([trace.close, later]):
+                        trace.source_return(self.registers)
+                self.assertIs(caught.exception, original)
+                self.assertEqual({call[0] for call in self.closes}, {17, 18, 19})
+                self.assertEqual(len(self.closes), 3)
+                self.assertTrue(all(call[2] == (None,) * 3 for call in self.closes))
+                self.assertEqual(remaining, ["attempted"])
+                self.assertEqual(len(original.cleanup_errors), 2)
+                for error in (close_error, later_error):
+                    self.assertTrue(any(str(error) in note for note in original.cleanup_errors))
+                trace.close()
+                self.assertEqual(len(self.closes), 3)
+                self.assertEqual(trace.events, [])
 
 
 class ReadEpochTests(unittest.TestCase):
