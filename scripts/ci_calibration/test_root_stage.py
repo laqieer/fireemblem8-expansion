@@ -255,6 +255,15 @@ class RootStageControls(Inert):
                 effects.enter_context(mock.patch.object(root_stage, "cleanup_state", side_effect=errors["cleanup-observation"]))
             if "counter-observation" in faults:
                 effects.enter_context(mock.patch.object(policy, "counter_snapshot", side_effect=errors["counter-observation"]))
+            if "accounting-collector" in faults:
+                effects.enter_context(mock.patch.object(
+                    policy.AccountingRegistry, "observe", side_effect=errors["counter-observation"],
+                ))
+            if "missing-final-accounting" in faults:
+                original_observe = policy.AccountingRegistry.observe
+                def without_final(registry, counters, elapsed, *, final=False):
+                    return original_observe(registry, counters, elapsed, final=False)
+                effects.enter_context(mock.patch.object(policy.AccountingRegistry, "observe", without_final))
             if "formatter" in faults:
                 effects.enter_context(mock.patch.object(policy, "component_error_record", side_effect=ValueError("private format")))
             if "record-collection" in faults:
@@ -535,6 +544,25 @@ class RootStageControls(Inert):
         self.assertTrue(parser.failed)
         self.assertFalse(parser.finished)
         self.assertEqual(records[-1]["data"]["error"]["chain"][0]["errno"], errno.EIO)
+
+    def test_accounting_collector_or_missing_final_never_masks_source_or_becomes_completion(self):
+        for fault, source in itertools.product(("accounting-collector", "missing-final-accounting"), (False, True)):
+            faults = (fault, "source") if source else (fault,)
+            with self.subTest(faults=faults):
+                value = self.composition(*faults, use_worker=True, executable=WORKER_MAIN)
+                self.assertEqual(value.exit_code, 1)
+                self.assertIsNone(value.failure)
+                parser, rows = self.consume_executable(value)
+                self.assertTrue(parser.failed)
+                self.assertFalse(parser.finished)
+                self.assertFalse(any(row["kind"] == "result" for row in rows))
+                record, = [row["data"] for row in rows if row["kind"] == "error"]
+                if source:
+                    self.assertEqual(record["error"]["chain"][0]["type"], "SourceError")
+                if fault == "accounting-collector":
+                    self.assertIsNone(record["accounting"])
+                self.assertEqual(value.events[-2:], ["sampler-close", "budget-close"])
+                self.assertNotIn(b"private", value.wire)
 
     def test_executable_fallback_delivers_primary_publication_and_cleanup_secondaries(self):
         for faults in (

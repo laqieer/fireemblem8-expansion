@@ -80,7 +80,7 @@ class ObservationFailureControls(Inert):
                      "report_released": True, "serialization_released": True},
             summary=None, serialized_bytes=None, secondary=[],
         )
-        sampler = SimpleNamespace(snapshot=lambda: {"counters": policy.counter_snapshot(value.budget, session)})
+        sampler = SimpleNamespace(snapshot=lambda: {"counters": policy.counter_snapshot(value.budget, session), "accounting": None})
         record = worker.report_error_record(value.outer, measurement, sampler, None, self.binding(), [])
         wire = io.BytesIO()
         with mock.patch.object(kernel, "sys", SimpleNamespace(stdout=SimpleNamespace(buffer=wire))):
@@ -265,15 +265,15 @@ class ObservationFailureControls(Inert):
 
     def test_diagnostic_aggregate_refusal_is_not_mislabeled_as_control_overflow(self):
         error, observer, _ = self.admission(
-            diagnostic=True, before=policy.CONTROL_CEILING - 1, request=1, other=1,
+            diagnostic=True, before=policy.POLICY_SENTINEL - 1, request=1, other=1,
         )
         value = observer.budget_admission(error)
         observation_failure.validate_fact(value, admission=True)
-        self.assertEqual(value["issued_cap"], policy.CONTROL_CEILING)
+        self.assertEqual(value["issued_cap"], policy.POLICY_SENTINEL)
         self.assertFalse(value["category_exhausted"])
         self.assertEqual(value["category_shortfall"], 0)
         self.assertIsNone(value["total_at_admission"])
-        self.assertEqual(value["collected"]["total_charged"], policy.CONTROL_CEILING)
+        self.assertEqual(value["collected"]["total_charged"], policy.POLICY_SENTINEL)
         self.assertTrue(value["diagnostic_override"])
 
     def test_admission_rejects_foreign_unsettled_malformed_and_unavailable_bindings(self):
@@ -351,7 +351,7 @@ class ObservationFailureControls(Inert):
         primary = {
             "binding": self.binding(), "stage": "check", "error": policy.component_error_record(error),
             "states": {**dict.fromkeys(policy.REPORT_STATES, 0), "check_attempts": 1, "completed": False},
-            "cleanup": None, "counters": None, "secondary": [], "source_cleanup_failures": 0,
+            "cleanup": None, "counters": None, "accounting": None, "secondary": [], "source_cleanup_failures": 0,
             "summary": None, "serialized_bytes": None,
             "budget_admission": observer.budget_admission(error),
             "observation_failure": observer.capture(error),

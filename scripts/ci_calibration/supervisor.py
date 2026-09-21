@@ -41,6 +41,7 @@ CORRECTION_BASE_SHA = "b854e3cd466166dbc79bfe8f717af956b424365c"
 REPORT_BASE_SHA = "d7172b7f6adf5cb43c005ba6cb7dc31142cc812b"
 REPORT_PREPARATION_SHA = "246bad229efe8674ece41b0b91af89fcc4cb4585"
 REPORT_ERROR_SHA = "c8f2fdeac66f5c50ed4859396765ec12f6f462d0"
+REPORT_FINALIZATION_SHA = "4dad318411d6e191d79db1a3570d611f5464afad"
 COMPONENT_PATHS = frozenset({
     policy.COMPONENT_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "worker.py", "root_stage.py", "supervisor.py", "observation_failure.py", "README.md",
@@ -56,11 +57,13 @@ REPORT_ERROR_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
     "policy.py", "worker.py", "supervisor.py", "README.md",
     "test_ci_calibration.py", "test_root_stage.py", "test_observation_failure.py",
 ))
+ACCOUNTING_PATHS = REPORT_PATHS
 
 
 def validate_harness_lineage(lines, head):
     if lines != [
-        f"{head} {REPORT_ERROR_SHA}",
+        f"{head} {REPORT_FINALIZATION_SHA}",
+        f"{REPORT_FINALIZATION_SHA} {REPORT_ERROR_SHA}",
         f"{REPORT_ERROR_SHA} {REPORT_PREPARATION_SHA}",
         f"{REPORT_PREPARATION_SHA} {REPORT_BASE_SHA}",
         f"{REPORT_BASE_SHA} {CORRECTION_BASE_SHA}",
@@ -71,7 +74,7 @@ def validate_harness_lineage(lines, head):
         f"{RETAINED_HARNESS_SHA} {PREPARATION_SHA}",
         f"{PREPARATION_SHA} {policy.BASE}",
     ]:
-        raise policy.GuardError("diagnostic requires its exact normal finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
+        raise policy.GuardError("diagnostic requires its exact normal accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
 
 
 def validate_correction_inventory(data):
@@ -118,6 +121,31 @@ def validate_report_error_inventory(data):
         len({name for _, name in changes}) != len(changes)
     ):
         raise policy.GuardError("report error correction changed an unfrozen surface")
+
+
+def validate_accounting_inventory(data):
+    if type(data) is not bytes:
+        raise policy.GuardError("accounting inventory is not a Git byte record")
+    rows = data.split(b"\0")
+    if len(rows) < 3 or len(rows) % 2 != 1 or rows[-1] != b"":
+        raise policy.GuardError("accounting preparation requires nonempty normal modifications")
+    changes = list(zip(rows[:-1:2], rows[1:-1:2]))
+    allowed = {name.encode("ascii") for name in ACCOUNTING_PATHS}
+    if (
+        (b"M", policy.WORKFLOW.encode("ascii")) not in changes
+        or any(kind != b"M" or name not in allowed for kind, name in changes)
+        or len({name for _, name in changes}) != len(changes)
+    ):
+        raise policy.GuardError("accounting preparation changed an unallocated surface")
+
+
+def validate_accounting_workflow(before, after):
+    old = b"        ref: d5337fc1db5b36f701328cad7c2444384dc88bb5\n"
+    new = b"        ref: " + policy.GRAPH.encode("ascii") + b"\n"
+    if type(before) is not bytes or type(after) is not bytes or before.count(old) != 1 or (
+        after != before.replace(old, new, 1)
+    ):
+        raise policy.GuardError("accounting workflow may change only its exact immutable source binding")
 
 
 def apparmor_text(name):
@@ -459,6 +487,10 @@ class Protocol:
         self.report_error_records = 0
         self.report_result = None
         self.result_error_seen = False
+        self.accounting_sequence = 0
+        self.accounting_elapsed = 0
+        self.accounting_values = self.accounting_quotas = None
+        self.accounting_crossings = {}
         if report_binding is not None:
             policy.validate_report_binding(report_binding)
             if scope != report_binding["run_id"] + "/report" or (
@@ -474,6 +506,43 @@ class Protocol:
         if self.total + self.stderr_total > self.maximum:
             self.output_exceeded = True
             raise OutputLimitExceeded("external combined stdout/stderr bound exceeded")
+
+    def observe_accounting(self, value, counters, *, final=False):
+        if value is None:
+            return
+        sequence, elapsed = value["sequence"], value["elapsed_seconds"]
+        observed = policy.accounting_values(counters)
+        quotas = counters["budget"]["quotas"]
+        if sequence <= self.accounting_sequence or elapsed < self.accounting_elapsed or (
+            self.accounting_quotas is not None and self.accounting_quotas != quotas
+        ):
+            raise policy.GuardError("accounting stream changed quotas, regressed or replayed a sample")
+        if self.accounting_values is not None and any(
+            before is not None and (observed[name] is None or observed[name] < before)
+            for name, before in self.accounting_values.items()
+        ):
+            raise policy.GuardError("accounting stream decreased or lost an observed counter")
+        crossings = {
+            name: row["first_observed"] for name, row in value["records"].items()
+            if row["first_observed"] is not None
+        } if final else value["first_observed"]
+        if final:
+            if any(crossings.get(name) != row for name, row in self.accounting_crossings.items()) or any(
+                name not in self.accounting_crossings and row["sequence"] != sequence
+                for name, row in crossings.items()
+            ):
+                raise policy.GuardError("final accounting omitted or changed first-observed crossings")
+        elif crossings.keys() & self.accounting_crossings.keys():
+            raise policy.GuardError("accounting stream repeated a first-observed crossing")
+        if any(
+            number is not None and number > quotas[name]["original"]
+            and name not in self.accounting_crossings and name not in crossings
+            for name, number in observed.items()
+        ):
+            raise policy.GuardError("accounting stream omitted an observed quota crossing")
+        self.accounting_sequence, self.accounting_elapsed = sequence, elapsed
+        self.accounting_values, self.accounting_quotas = observed, quotas
+        self.accounting_crossings.update(crossings)
 
     def feed(self, data):
         self.observe_output(data)
@@ -515,9 +584,11 @@ class Protocol:
                     if not self.report_started or self.failed:
                         raise policy.GuardError("report result precedes invocation or follows a failure")
                     policy.validate_report_worker(value, self.report_binding, self.deadline)
+                    self.observe_accounting(value["counters"]["accounting"], value["counters"]["counters"], final=True)
                     self.report_result = value
                 elif kind == "progress":
                     policy.validate_report_progress(value)
+                    self.observe_accounting(value["accounting"], value["counters"])
                 elif kind == "error":
                     if value.keys() == {"chain", "frames"} and not self.ready and not self.failed:
                         value = policy.project_entry_failure(value, self.report_binding)
@@ -844,7 +915,7 @@ class Owner:
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
         validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=10", "HEAD").decode().splitlines(),
+            git(self.harness, "rev-list", "--parents", "--max-count=11", "HEAD").decode().splitlines(),
             self.scope["harness_sha"],
         )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
@@ -885,8 +956,15 @@ class Owner:
             self.harness, "diff", "--name-status", "-z", REPORT_PREPARATION_SHA, REPORT_ERROR_SHA,
         ))
         validate_report_error_inventory(git(
-            self.harness, "diff", "--name-status", "-z", REPORT_ERROR_SHA, "HEAD",
+            self.harness, "diff", "--name-status", "-z", REPORT_ERROR_SHA, REPORT_FINALIZATION_SHA,
         ))
+        validate_accounting_inventory(git(
+            self.harness, "diff", "--name-status", "-z", REPORT_FINALIZATION_SHA, "HEAD",
+        ))
+        validate_accounting_workflow(
+            git(self.harness, "show", REPORT_FINALIZATION_SHA + ":" + policy.WORKFLOW),
+            git(self.harness, "show", "HEAD:" + policy.WORKFLOW),
+        )
         self.source_status("before")
         tree = git(self.candidate, "ls-tree", "-rz", "--full-tree", policy.GRAPH)
         self.tracked_paths = len([row for row in tree.split(b"\0") if row])

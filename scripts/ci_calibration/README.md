@@ -1,29 +1,111 @@
-# Contained full public-report preparation 1
+# Contained accounting-only full-report preparation
 
 **Preparation only; never merge this branch. No native execution, workflow
 launch, retry or production resource-policy decision is allocated here.**
-The frozen scope is
+Current freeze:
+[5763493659](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5763493659),
+implementing the approved accounting-only contract
+[5760898805](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5760898805)
+after the quota/admission separation
+[5761682432](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5761682432).
+This is a normal child of reviewed harness
+`4dad318411d6e191d79db1a3570d611f5464afad`, not a new execution allocation.
+
+**The preparation source is `db50dc744fee3aa697fdc5df458474e101e25e25`,
+and is NOT native-ready.** Its reviewed cumulative query/caps are integrated,
+but null-stderr support and remaining source-review corrections are still
+open. Main must bind the final corrected reviewed source before a separately
+approved launch. This harness change neither edits nor accepts those source
+corrections, standalone H1, or native resource fit.
+
+The original full-report scope is
 [5759600529](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5759600529).
 Reviewed preparation `246bad229efe8674ece41b0b91af89fcc4cb4585` is a normal child
 of `d7172b7f6adf5cb43c005ba6cb7dc31142cc812b` on
 `calibration/issue-180-full-report-sizing-1`. Its prelaunch error correction
 is `c8f2fdeac66f5c50ed4859396765ec12f6f462d0`, one normal child of246bad22.
-The FR1 finalization follow-through is one normal child ofc8f2. The complete earlier normal
+The accepted FR1 finalization follow-through is4dad, a normal child ofc8f2. The complete earlier normal
 lineage and component/correction inventories remain checked against their
 original immutable endpoints. The original preparation admitted only nine
 diagnostic files and `.github/workflows/issue180-full-report-sizing-1.yml`;
-the correction's narrower M-only inventory is specified below.
+the accounting child permits only existing coupled harness files plus the
+full-report workflow's exact source binding. Its M-only inventory and every
+earlier immutable endpoint are checked separately. The source-binding-only
+workflow guard is an exact externally consumed YAML change contract, not a
+source-content identity ledger; parsed workflow checks also preserve its
+trigger, permissions, timing, jobs and five-artifact allowlist.
 Both earlier workflows, the entry/kernel/runtime/volume helpers, trusted
 namespace and lifecycle code, and production files remain unchanged.
 
-## Prelaunch error-transport correction: FR1 and FR2
+## Accounting-only policy with unchanged hard Limits
+
+`full-report-accounting-only-v1` overrides only the selected source's
+`ProbeBudget.cumulative_limit(name)` for fourteen cumulative quotas:
+`runs`, `states`, `descendants`, `syscalls`, `observations`, `total_bytes`,
+and the eight `snapshot/output/event/mapping/cache/pending/control/sandbox_bytes`
+ledgers. Their diagnostic value is the exact finite signed64 sentinel
+**9223372036854775807**, not infinity, a workload estimate or a shipping cap.
+
+The actual effective `Limits` object retains all original fields and hard
+values. No raised-default Limits subclass remains. Original accounting,
+charge/run/plan/remaining/close and native settlement/grant methods are
+inherited; only the cumulative query and original-clock constructor differ.
+The source's reviewed separation keeps explicit streams, pre-assembly,
+1MiB record/plan bounds, variant cohorts, original capsule ceilings/resumption,
+host inventories, creation, live processes and funded VM hard. No source,
+semantic, permission, ownership, representation or cleanup failure is soft.
+
+The fixed workload receives one explicitly injected original `Limits()` and
+one budget. The private factory distinguishes omitted input with an identity
+sentinel, never value equality. An explicit original Limits object is retained
+by identity with all its effective ordinary quotas, including values equal to
+old defaults, `observations=None`, and an entries-backed alias. It is not
+automatically softened. A shorter explicit seconds value keeps the original
+start and shortens the deadline; it cannot buy a later start or another
+lifetime. No captured dataclass default factory or module alias is rebound.
+There is no public production flag or generic dispatcher.
+
+All eight actual ledgers and their actual sum remain counted. The closed
+nineteen-counter registry additionally covers run/state/descendant/syscall/
+observation totals and retained creation, whole-plan bytes, pending/live
+peaks and funded-VM peak. It records actual effective original/diagnostic
+quotas, latest/high-water values, would-exceed predicates and at most one
+first-observed crossing per counter. Observation declaration/entries/effective
+alias values remain explicit. An unavailable session counter stays null.
+
+These are sampled observations, not reconstructed admissions, requests,
+instructions or exact crossing times. Periodic progress carries actual
+counters and only newly first-observed crossings; full bounded registry
+state is retained for the mandatory final snapshot and available failure
+evidence. This avoids an ever-growing per-charge log or repeating every
+crossing on every tick. Exact finite scalar types, closed keys, monotonic
+values/time, quota/alias identity and the original clock are enforced.
+Decreases, overflow, unknown fields, collector failure or a missing final
+snapshot invalidate completion. The receiver also rejects replayed samples,
+omitted/repeated crossings and a final registry inconsistent with its stream.
+An after-write publication failure preserves this final accounting snapshot
+with the original result as provisional evidence; it cannot become success.
+
+Preparation controls preserve the prior75 methods/559 subtests. Only the
+superseded control-only/default-raising and cumulative-refusal expectations
+are replaced: the stronger controls now prove ordinary refusal versus
+retained diagnostic charges, original hard Limits/method identities, real
+constructor injection, explicit caller provenance/aliases/clocks, all
+fourteen query values and exact finite boundaries. Actual isolated source
+stream/cohort/native-configuration/resumption/positive-overclaim APIs retain
+hard bounds. The source model replaces IO/launch/cleanup collaborators only;
+no native method or workload is run. Unknown/decreasing/overflowing/missing
+telemetry, collector faults, finite artifact extent, old accounting/raised-unit
+restorations and neutral data order are also covered.
+
+## Reviewed error-transport corrections (preserved)
 
 Finalization follow-through freeze:
 [5761762243](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5761762243).
 Review closed FR2 and the original schema/pre-readiness mismatch, but found
-two composed FR1 failures. No new source/accounting mode is integrated here.
-The selected source, control-only diagnostic profile, workflow and physical
-containment stay unchanged. Both earlier preparation/correction inventories
+two composed FR1 failures, subsequently closed at4dad. That earlier correction
+did not change its source or control-only profile. Physical containment and
+both earlier preparation/correction inventories
 remain bound to their exact Git endpoints; the new normal child uses the same
 nonempty closed M-only surface.
 
@@ -109,7 +191,7 @@ process, filesystem, signal, privilege and candidate/native effects remain
 trapped. This remains preparation only, followed by the same independent
 exact-head review before any separately frozen launch.
 
-The selected source is `d5337fc1db5b36f701328cad7c2444384dc88bb5`; historical
+The earlier control-only source was `d5337fc1db5b36f701328cad7c2444384dc88bb5`; historical
 BASE is `ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`. Completed component
 run35582101567 measured control104697218 bytes, total109143265,
 physical cgroup peak225570816 and component9.372s with all seven controls and
@@ -139,8 +221,9 @@ The only source reference temporarily changed is the report module's
 `ProbeSession` constructor reference. Its observer calls the original
 constructor once, checks the original loader/entries/budget/runtime binding,
 and returns the **exact original object and type**, not a proxy or subclass.
-No session, loader, budget, native, graph, authority, lifecycle or verifier
-method is replaced. Original context entry, BASE selection and teardown
+No session, loader, native, graph, authority, lifecycle or verifier method is
+replaced. The diagnostic budget changes only the cumulative query and its
+original-clock constructor. Original context entry, BASE selection and teardown
 execute normally. Final counters are read after that real context close;
 constructor failure leaves session ownership unavailable.
 
@@ -150,10 +233,12 @@ the source's context close, exactly as at its public CLI seam. Only the
 resulting byte count survives. No second CLI process, report, session, clock,
 charge reset or serialization-specific refund is introduced.
 
-`full-report-control-under-global-v1` changes only `control_bytes` to the
-unchanged original `total_bytes`, **805306368 bytes**. The original frozen
-limit constructor, every budget method, all other fields and all original
-charges remain in use. Category and aggregate exhaustion are failures.
+The superseded `full-report-control-under-global-v1` profile raised a shared
+Limits field and still stopped at the original aggregate. The current mode
+uses only the separated query; all original hard values and all charges stay
+real. Crossing an ordinary cumulative quota is telemetry, not failure or
+production acceptance. Exhausting finite representation, an external hard
+envelope, or any retained hard or semantic boundary remains a failure.
 The original absolute3600s deadline includes imports, diff capture, the
 report, serialization and final observations; timing outside it is rejected.
 No limit ladder or automatic rerun exists.
@@ -217,11 +302,12 @@ Its only dependency is the exact reviewed source and original containment;
 it conflicts with any attempt to reuse earlier allocations or interpret this
 as standalone verifier/H1 or shipping-default acceptance.
 
-The three named harness control classes exercise positive report forwarding,
+The named harness control classes exercise positive report forwarding,
 CURRENT/BASE/deletions/lifecycle/default inventory, one lifetime, the closed
 numeric result and all malformed/partial/foreign/replay negatives. Real
 isolated selected-source limit/admission APIs cover exact/one-below bounds,
-the original32MiB negative, unchanged aggregate/other defaults and methods.
+the original32MiB negative, query-only accounting and unchanged hard defaults
+and inherited methods.
 Effect models cover constructor/entry/teardown, collector, before/after
 reference, formatter/publication and finalizer faults, first-error retention
 and every close/withdrawal. Parsed Git/AST/YAML controls preserve containment,
@@ -236,7 +322,8 @@ namespace/cgroup/mount/profile/credential operations or any workflow.
 Run actionlint on the new workflow only. Preparation success is not native
 qualification, full-report acceptance or launch permission.
 
-After the local normal commit, Main obtains independent exact-head review
+After the local normal commit, Main obtains independent exact-head harness
+and budget-boundary review, finishes/reviews/rebinds the selected source,
 and separately freezes one first-owner-push hosted launch. That future launch
 must qualify all seven controls afresh before candidate import, use a fresh
 capacity-derived cage, then invoke this exact report at most once. Inspect

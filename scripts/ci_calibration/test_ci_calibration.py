@@ -34,6 +34,7 @@ from scripts.validation_ownership import budget as budgeting
 REPO = Path(__file__).resolve().parents[2]
 WORKFLOW_TEXT = (REPO / policy.WORKFLOW).read_text()
 SUPERVISOR_AST = ast.parse((REPO / "scripts/ci_calibration/supervisor.py").read_text())
+QUOTA_MODEL = SOURCE_PROBING = OLD_BUDGET_CHARGE = OLD_CALIBRATION_FACTORY = None
 
 
 class Inert(unittest.TestCase):
@@ -169,6 +170,7 @@ class Inert(unittest.TestCase):
         budget.session_started = True
         session = self.session(budget)
         counters = policy.counter_snapshot(budget, session)
+        self.last_accounting = policy.AccountingRegistry(budget).observe(counters, 11.0, final=True)
         raw = self.raw_report(budget, session)
         return {
             "version": 1, "binding": self.binding(),
@@ -191,6 +193,7 @@ class Inert(unittest.TestCase):
                 "report": report, "validation": policy.validate_report_result(report, self.binding()),
                 "counters": {
                     "phase": "completed-report", "counters": report["counters"],
+                    "accounting": self.last_accounting,
                     "semantics": "Observed cumulative counters and funded VM peaks; not an atomic grant or physical RSS.",
                 },
                 **policy.ABSENT_WORKLOADS,
@@ -259,7 +262,7 @@ class CalibrationControls(Inert):
             with self.subTest(key=key), self.assertRaises(policy.GuardError):
                 policy.choose_envelope({**self.facts(), key: value})
 
-    def test_profile_changes_only_control_to_the_unchanged_aggregate(self):
+    def test_profile_uses_only_cumulative_query_and_original_hard_limits(self):
         original = dataclasses.asdict(budgeting.Limits())
         self.assertEqual(original, policy.ORIGINAL_LIMITS)
         with self.assertRaises(budgeting.MakeProbeError):
@@ -268,8 +271,15 @@ class CalibrationControls(Inert):
             budgeting.Limits, budgeting.ProbeBudget, 3700.0,
         )
         self.assertEqual(captured, original)
-        self.assertEqual(dataclasses.asdict(limits), {**original, "control_bytes": original["total_bytes"]})
-        self.assertEqual({name for name in original if manifest[name]["diagnostic"] != original[name]}, {"control_bytes"})
+        self.assertIs(type(limits), budgeting.Limits)
+        self.assertIs(budget.limits, limits)
+        self.assertEqual(dataclasses.asdict(limits), original)
+        self.assertEqual({name for name in original if manifest[name]["diagnostic"] != original[name]}, set())
+        self.assertEqual(len(policy.RELAXED), 14)
+        self.assertEqual({name for name in original if budget.cumulative_limit(name) != (
+            limits.observation_count if name == "observations" else original[name]
+        )}, set(policy.RELAXED))
+        self.assertTrue(all(budget.cumulative_limit(name) == policy.POLICY_SENTINEL for name in policy.RELAXED))
         self.assertEqual(set(manifest), set(original))
         self.assertEqual((limits.observations, limits.observation_count), (None, 32768))
         self.assertEqual((budget.started, budget.deadline), (100.0, 3700.0))
@@ -298,23 +308,28 @@ class CalibrationControls(Inert):
         with self.assertRaises(budgeting.MakeProbeError):
             diagnostic.charge("control", 1)
 
-    def test_every_category_exact_limit_and_aggregate_one_over_remain_enforced(self):
+    def test_every_category_keeps_hard_limits_and_finite_cumulative_representability(self):
         for category in policy.BYTE_CATEGORIES:
             with self.subTest(category=category):
                 budget = self.budget()
-                cap = getattr(budget.limits, category + "_bytes")
-                budget.charge(category, cap)
+                cap = budget.cumulative_limit(category + "_bytes")
+                self.assertEqual(getattr(budget.limits, category + "_bytes"), policy.ORIGINAL_LIMITS[category + "_bytes"])
+                if category == "pending":
+                    budget.bytes[category] = cap - 1
+                    budget.charge(category, 1)
+                else:
+                    budget.charge(category, cap)
                 self.assertEqual(budget.bytes[category], cap)
                 with self.assertRaises(budgeting.MakeProbeError):
                     budget.charge(category, 1)
                 self.assertEqual(budget.bytes[category], cap)
         budget = self.budget()
         budget.charge("snapshot", 1)
-        budget.charge("control", policy.CONTROL_CEILING - 1)
-        self.assertEqual(sum(budget.bytes.values()), policy.CONTROL_CEILING)
+        budget.charge("control", policy.POLICY_SENTINEL - 1)
+        self.assertEqual(sum(budget.bytes.values()), policy.POLICY_SENTINEL)
         with self.assertRaises(budgeting.MakeProbeError):
             budget.charge("control", 1)
-        self.assertEqual(budget.bytes["control"], policy.CONTROL_CEILING - 1)
+        self.assertEqual(budget.bytes["control"], policy.POLICY_SENTINEL - 1)
 
     def test_pending_record_plan_and_original_nonbyte_limits_cannot_borrow_control(self):
         budget = self.budget()
@@ -351,20 +366,22 @@ class CalibrationControls(Inert):
             with self.assertRaises(policy.GuardError):
                 worker.calibration_budget(budgeting.Limits, budgeting.ProbeBudget, deadline)
 
-    def test_old_all_category_sentinel_breaks_the_one_override_oracle(self):
-        original = policy.diagnostic_limit
+    def test_old_control_policy_and_raised_hard_limits_break_accounting_oracle(self):
         def oracle():
             budget = self.budget()
-            self.assertEqual(dataclasses.asdict(budget.limits), {
-                **policy.ORIGINAL_LIMITS, "control_bytes": policy.CONTROL_CEILING,
-            })
+            self.assertEqual(dataclasses.asdict(budget.limits), policy.ORIGINAL_LIMITS)
+            budget.charge("snapshot", policy.ORIGINAL_LIMITS["snapshot_bytes"] + 1)
+            self.assertEqual(budget.bytes["snapshot"], policy.ORIGINAL_LIMITS["snapshot_bytes"] + 1)
         oracle()
-        with mock.patch.object(policy, "RELAXED", {**policy.RELAXED, "total_bytes": "old"}), \
-             self.assertRaises((policy.GuardError, AssertionError)):
+        with mock.patch.object(policy, "RELAXED", {"control_bytes": "old control-only policy"}), \
+             self.assertRaises((policy.GuardError, budgeting.MakeProbeError, AssertionError)):
             oracle()
-        with mock.patch.object(policy, "diagnostic_limit", side_effect=lambda name: policy.POLICY_SENTINEL if name == "control_bytes" else original(name)):
-            with self.assertRaises((policy.GuardError, AssertionError)):
-                oracle()
+        raised = dataclasses.make_dataclass(
+            "RaisedHardLimits", [("control_bytes", int, dataclasses.field(default=policy.POLICY_SENTINEL))],
+            bases=(budgeting.Limits,), frozen=True,
+        )
+        with self.assertRaises(policy.GuardError):
+            worker.calibration_budget(raised, budgeting.ProbeBudget, 3700.0)
         oracle()
 
     def test_component_root_graph_source_and_h1_routes_refuse_before_candidate_import(self):
@@ -515,7 +532,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.REPORT_ERROR_SHA}",
+            f"{'a' * 40} {supervisor.REPORT_FINALIZATION_SHA}",
+            f"{supervisor.REPORT_FINALIZATION_SHA} {supervisor.REPORT_ERROR_SHA}",
             f"{supervisor.REPORT_ERROR_SHA} {supervisor.REPORT_PREPARATION_SHA}",
             f"{supervisor.REPORT_PREPARATION_SHA} {supervisor.REPORT_BASE_SHA}",
             f"{supervisor.REPORT_BASE_SHA} {supervisor.CORRECTION_BASE_SHA}",
@@ -754,7 +772,7 @@ class CalibrationControls(Inert):
         failed = {
             "binding": binding, "stage": "check", "error": policy.component_error_record(RuntimeError("private")),
             "states": {**dict.fromkeys(policy.REPORT_STATES, 0), "completed": False},
-            "cleanup": None, "counters": None, "secondary": [], "source_cleanup_failures": 0,
+            "cleanup": None, "counters": None, "accounting": None, "secondary": [], "source_cleanup_failures": 0,
             "summary": None, "serialized_bytes": None,
             "observation_failure": observation_failure.unavailable("binding-not-ready"),
             "budget_admission": observation_failure.unavailable("binding-not-ready"),
@@ -789,7 +807,10 @@ class CalibrationControls(Inert):
             maximum = policy.diagnostic_limit(category + "_bytes")
             for amount, request, succeeds in ((maximum - 1, 1, True), (maximum, 1, False)):
                 issued = self.budget()
-                issued.charge(category, amount)
+                if category == "pending":
+                    issued.bytes[category] = amount
+                else:
+                    issued.charge(category, amount)
                 if succeeds:
                     issued.charge(category, request)
                     self.assertEqual(issued.bytes[category], maximum)
@@ -798,7 +819,7 @@ class CalibrationControls(Inert):
                         issued.charge(category, request)
                     self.assertEqual(issued.bytes[category], maximum)
         for name, cap in (("memory_peak", "address_space_bytes"), ("pending_commands_peak", "pending"),
-                          ("live_process_peak", "processes"), ("observations_used", "entries")):
+                          ("live_process_peak", "processes"), ("files_created", "created_files")):
             value = self.report_result()["counters"]
             value["session"][name] = policy.ORIGINAL_LIMITS[cap]
             policy.validate_component_counters(value, complete=True)
@@ -854,8 +875,8 @@ class CalibrationControls(Inert):
                 oracle()
             oracle()
         self.report_result()
-        with mock.patch.object(policy, "CONTROL_CEILING", policy.ORIGINAL_LIMITS["control_bytes"]), \
-             self.assertRaises(budgeting.MakeProbeError):
+        with mock.patch.object(policy, "POLICY_SENTINEL", policy.ORIGINAL_LIMITS["control_bytes"]), \
+             self.assertRaises((budgeting.MakeProbeError, policy.GuardError)):
             self.report_result()
         self.report_result()
 
@@ -979,6 +1000,327 @@ class CalibrationControls(Inert):
         self.assertEqual((peaks["7:1/rbytes_per_second"], peaks["7:1/wbytes_per_second"]), (50, 60))
         with self.assertRaises(policy.GuardError):
             supervisor.io_peaks({"7:1": {"wbytes": 100}}, {"7:1": {"wbytes": 1}}, 1, {})
+
+
+class AccountingControls(Inert):
+    def test_factory_distinguishes_omission_from_every_explicit_limits_object(self):
+        for limits in (
+            budgeting.Limits(), budgeting.Limits(control_bytes=policy.ORIGINAL_LIMITS["control_bytes"]),
+            budgeting.Limits(control_bytes=7, total_bytes=11),
+            budgeting.Limits(entries=8), budgeting.Limits(entries=8, observations=None),
+            budgeting.Limits(entries=8, observations=16), budgeting.Limits(seconds=30),
+        ):
+            with self.subTest(limits=dataclasses.asdict(limits)):
+                budget, actual, _, _ = worker.calibration_budget(
+                    budgeting.Limits, budgeting.ProbeBudget, 3700.0, limits=limits,
+                )
+                self.assertIs(actual, limits)
+                self.assertIs(budget.limits, limits)
+                self.assertEqual(budget.started, 100.0)
+                self.assertEqual(budget.deadline, 100.0 + limits.seconds)
+                for name in policy.RELAXED:
+                    self.assertEqual(budget.cumulative_limit(name), limits.observation_count if name == "observations"
+                                     else getattr(limits, name))
+        for invalid in (None, False, {}, object()):
+            with self.assertRaises(policy.GuardError):
+                worker.calibration_budget(budgeting.Limits, budgeting.ProbeBudget, 3700.0, limits=invalid)
+        with mock.patch.object(time, "monotonic", return_value=131.0), self.assertRaises(policy.GuardError):
+            worker.calibration_budget(budgeting.Limits, budgeting.ProbeBudget, 3700.0, limits=budgeting.Limits(seconds=30))
+
+    def test_constructor_injection_does_not_rebind_captured_default_factories(self):
+        original = budgeting.Limits
+        factory = budgeting.ProbeBudget.__dataclass_fields__["limits"].default_factory
+        self.assertIs(factory, original)
+        replacement = mock.Mock(side_effect=AssertionError("rebound alias is not the captured constructor"))
+        with mock.patch.object(budgeting, "Limits", replacement):
+            ordinary = budgeting.ProbeBudget()
+            budget, limits, _, _ = worker.calibration_budget(original, budgeting.ProbeBudget, 3700.0)
+        replacement.assert_not_called()
+        self.assertIs(type(ordinary.limits), original)
+        self.assertIs(type(limits), original)
+        self.assertIs(budget.limits, limits)
+        self.assertIs(budgeting.ProbeBudget.__dataclass_fields__["limits"].default_factory, factory)
+        self.assertEqual(ordinary.cumulative_limit("control_bytes"), policy.ORIGINAL_LIMITS["control_bytes"])
+        self.assertEqual(budget.cumulative_limit("control_bytes"), policy.POLICY_SENTINEL)
+        for name, method in vars(budgeting.ProbeBudget).items():
+            if name.startswith("__") or name == "cumulative_limit" or not (
+                callable(method) or isinstance(method, (staticmethod, classmethod, property))
+            ):
+                continue
+            self.assertIs(next(base.__dict__[name] for base in type(budget).__mro__ if name in base.__dict__), method)
+
+    def test_all_cumulative_byte_thresholds_keep_real_charges_and_first_observed_crossings(self):
+        for category in policy.BYTE_CATEGORIES:
+            with self.subTest(category=category):
+                cap = policy.ORIGINAL_LIMITS[category + "_bytes"]
+                ordinary = budgeting.ProbeBudget()
+                ordinary.started = 100.0
+                ordinary.charge(category, cap)
+                with self.assertRaises(budgeting.MakeProbeError):
+                    ordinary.charge(category, 1)
+                budget = self.budget()
+                tracker = policy.AccountingRegistry(budget)
+                budget.charge(category, cap)
+                initial = tracker.observe(policy.counter_snapshot(budget), 0)
+                self.assertIsNone(initial["records"][category + "_bytes"]["first_observed"])
+                budget.charge(category, 1)
+                crossed = tracker.observe(policy.counter_snapshot(budget), 1)
+                row = crossed["records"][category + "_bytes"]
+                self.assertEqual(row["latest"], cap + 1)
+                self.assertTrue(row["would_exceed"])
+                self.assertEqual(row["first_observed"], {"sequence": 2, "elapsed_seconds": 1, "value": cap + 1})
+                budget.charge(category, 2)
+                latest = tracker.observe(policy.counter_snapshot(budget), 2)
+                self.assertEqual(latest["records"][category + "_bytes"]["first_observed"], row["first_observed"])
+                self.assertEqual(budget.bytes[category], cap + 3)
+                self.assertEqual(getattr(budget.limits, category + "_bytes"), cap)
+        budget = self.budget()
+        cap = policy.ORIGINAL_LIMITS["total_bytes"]
+        budget.charge("snapshot", cap)
+        tracker = policy.AccountingRegistry(budget)
+        tracker.observe(policy.counter_snapshot(budget), 0)
+        budget.charge("output", 1)
+        final = tracker.observe(policy.counter_snapshot(budget), 1)
+        self.assertEqual(final["records"]["total_bytes"]["latest"], cap + 1)
+        self.assertTrue(final["records"]["total_bytes"]["would_exceed"])
+        self.assertEqual(sum(budget.bytes.values()), cap + 1)
+
+    def test_original_record_plan_pending_stream_and_clock_guards_still_stop_actual_apis(self):
+        budget = self.budget()
+        budget.charge("pending", policy.MIB)
+        budget.charge("pending", policy.MIB)
+        self.assertEqual(budget.bytes["pending"], 2 * policy.MIB)
+        with self.assertRaises(budgeting.MakeProbeError):
+            budget.charge("pending", policy.MIB + 1)
+        budget = self.budget()
+        budget.admit_planned_state(policy.MIB)
+        with self.assertRaises(budgeting.MakeProbeError):
+            budget.admit_planned_state(1)
+        budget = self.budget()
+        budget.plan(policy.ORIGINAL_LIMITS["states"])
+        budget.plan(1)
+        self.assertEqual(budget.states, policy.ORIGINAL_LIMITS["states"] + 1)
+        with self.assertRaises(budgeting.MakeProbeError):
+            budget.plan(1, pending=budget.limits.pending + 1)
+        for category in ("snapshot", "output"):
+            budget = self.budget()
+            budget.runs = policy.ORIGINAL_LIMITS["runs"]
+            with mock.patch.object(subprocess, "Popen") as process, self.assertRaises(budgeting.MakeProbeError):
+                budget.run(["/inert"], env={}, category=category,
+                           output_limit=getattr(budget.limits, category + "_bytes") + 1)
+            process.assert_not_called()
+            self.assertEqual(budget.runs, policy.ORIGINAL_LIMITS["runs"] + 1)
+        budget = self.budget()
+        before = budget.started, budget.deadline
+        with mock.patch.object(time, "monotonic", return_value=3700.0), self.assertRaises(budgeting.MakeProbeError):
+            budget.charge("control", 0)
+        self.assertEqual((budget.started, budget.deadline), before)
+        self.assertTrue(budget.failed)
+
+    def test_actual_source_caps_and_resumption_keep_original_units_after_cumulative_crossing(self):
+        self.assertIsNotNone(QUOTA_MODEL, "requires the inspected accounting runner")
+        budget = self.budget()
+        budget.bytes.update(
+            control=budget.limits.control_bytes + 1,
+            event=budget.limits.event_bytes + 1, sandbox=budget.limits.sandbox_bytes + 1,
+        )
+        prior = {"processes_used": budget.limits.descendants + 1, "syscalls_used": budget.limits.syscalls + 1,
+                 "observations_used": budget.limits.observation_count + 1}
+        session, config, _, controls = QUOTA_MODEL.native_model(budget, prior=prior, retain_controls=True)
+        for key, expected in (
+            ("descendant_limit", budget.limits.descendants), ("syscall_limit", budget.limits.syscalls),
+            ("write_limit", budget.limits.sandbox_bytes), ("observation_count", budget.limits.observation_count),
+            ("file_limit", budget.limits.file_bytes), ("observation_limit", budget.limits.file_bytes),
+            ("creation_limit", budget.limits.created_files), ("process_limit", budget.limits.processes),
+            ("memory_limit", budget.limits.address_space_bytes),
+        ):
+            self.assertEqual(config[key], expected)
+        before = dict(budget.bytes)
+        grants = controls["resume"]()
+        self.assertEqual(grants, {name: config[name] for name in grants})
+        self.assertEqual(budget.bytes, before)
+        self.assertEqual((budget.started, budget.deadline), (100.0, 3700.0))
+        for field, number in (
+            ("processes", budget.limits.descendants + 1), ("syscalls", budget.limits.syscalls + 1),
+            ("written_bytes", budget.limits.sandbox_bytes + 1),
+            ("observations", budget.limits.observation_count + 1),
+            ("observation_bytes", budget.limits.file_bytes + 1),
+            ("created_files", budget.limits.created_files + 1),
+            ("live_process_peak", budget.limits.processes + 1),
+            ("memory_peak", budget.limits.address_space_bytes + 1),
+        ):
+            with self.subTest(field=field), self.assertRaises(budgeting.MakeProbeError):
+                QUOTA_MODEL.native_model(self.budget(), counters={field: number})
+
+    def test_actual_variants_cohort_does_not_use_the_cumulative_state_sentinel(self):
+        self.assertIsNotNone(SOURCE_PROBING, "requires the inspected accounting runner")
+        for size in (2, policy.ORIGINAL_LIMITS["states"] + 1):
+            budget = self.budget()
+            budget.states = policy.ORIGINAL_LIMITS["states"] + 10
+            calls = []
+            session = SimpleNamespace(budget=budget, make=lambda target, **kw: calls.append(kw) or kw)
+            if size == 2:
+                result = SOURCE_PROBING.ProbeSession.variants.__wrapped__(session, "all", [()] * size)
+                self.assertEqual(len(result), 2)
+            else:
+                with self.assertRaises(budgeting.MakeProbeError):
+                    SOURCE_PROBING.ProbeSession.variants.__wrapped__(session, "all", [()] * size)
+                self.assertEqual(calls, [])
+
+    def test_bounded_registry_final_observation_and_full_duration_progress_fit_existing_artifacts(self):
+        budget = self.budget()
+        budget.plan(1)
+        budget.runs = 1
+        budget.session_started = True
+        session = self.session(budget)
+        registry = policy.AccountingRegistry(budget)
+        total = 0
+        for number in range(1, 720):
+            budget.charge("control", 65536)
+            value = registry.observe(policy.counter_snapshot(budget, session), number * 5)
+            progress = {
+                "phase": "public-report", "counters": policy.counter_snapshot(budget, session),
+                "accounting": policy.accounting_progress(value),
+                "semantics": "Observed cumulative counters and funded VM peaks; not an atomic grant or physical RSS.",
+            }
+            policy.validate_report_progress(progress)
+            total += len(policy.encoded({"scope": "12345/report", "kind": "progress", "data": progress})) + 1
+            self.assertEqual(len(registry.records), len(policy.ACCOUNTING_COUNTERS))
+        budget.close()
+        final = registry.observe(policy.counter_snapshot(budget, session), 3600, final=True)
+        policy.validate_accounting(final, policy.counter_snapshot(budget, session), final=True, fixed=True)
+        self.assertEqual(final["records"]["control_bytes"]["first_observed"]["sequence"], 513)
+        self.assertLess(total + len(policy.encoded(final)), policy.PROGRESS_BYTES)
+        self.assertLess(len(policy.encoded(final)), policy.ERROR_BYTES)
+        self.assertEqual(final["records"]["total_bytes"]["latest"], sum(budget.bytes.values()))
+        with self.assertRaises(policy.GuardError):
+            registry.observe(policy.counter_snapshot(budget, session), 3600, final=True)
+
+    def test_registry_fails_closed_on_missing_decreasing_malformed_overflow_or_changed_snapshots(self):
+        for fault in ("unknown", "negative", "bool", "float", "infinite", "nan", "overflow",
+                      "decrease", "missing-session", "quota", "alias", "time", "clock"):
+            with self.subTest(fault=fault):
+                budget = self.budget()
+                session = self.session(budget)
+                registry = policy.AccountingRegistry(budget)
+                budget.charge("control", 10)
+                registry.observe(policy.counter_snapshot(budget, session), 0)
+                data = policy.counter_snapshot(budget, session)
+                if fault == "unknown":
+                    budget.bytes["foreign"] = 1
+                elif fault in ("negative", "bool", "float", "infinite", "nan", "overflow"):
+                    budget.bytes["control"] = {
+                        "negative": -1, "bool": True, "float": 11.0, "infinite": float("inf"),
+                        "nan": float("nan"), "overflow": policy.POLICY_SENTINEL + 1,
+                    }[fault]
+                elif fault == "decrease":
+                    budget.bytes["control"] = 9
+                elif fault == "quota":
+                    data["budget"]["quotas"]["runs"]["diagnostic"] -= 1
+                elif fault == "alias":
+                    data["budget"]["observation_alias"]["declared"] = True
+                elif fault == "clock":
+                    budget.started += 1
+                elapsed = -1 if fault == "time" else 1
+                with self.assertRaises(policy.GuardError):
+                    registry.observe(
+                        data if fault in ("quota", "alias") else policy.counter_snapshot(
+                            budget, None if fault == "missing-session" else session,
+                        ), elapsed,
+                    )
+        for session in (None, self.session(self.budget())):
+            budget = self.budget()
+            with self.assertRaises(policy.GuardError):
+                policy.AccountingRegistry(budget).observe(policy.counter_snapshot(budget, session), 1, final=True)
+
+    def test_explicit_alias_quotas_and_unknown_ledger_keys_are_observed_without_normalization(self):
+        limits = budgeting.Limits(entries=8, observations=None, control_bytes=7)
+        budget = worker.calibration_budget(budgeting.Limits, budgeting.ProbeBudget, 3700, limits=limits)[0]
+        snapshot = policy.counter_snapshot(budget)
+        self.assertEqual(snapshot["budget"]["observation_alias"], {"declared": None, "entries": 8, "effective": 8})
+        self.assertEqual(snapshot["budget"]["quotas"]["observations"], {"original": 8, "diagnostic": 8})
+        budget.charge("control", 7)
+        with self.assertRaises(budgeting.MakeProbeError):
+            budget.charge("control", 1)
+        self.assertEqual(budget.bytes, {"control": 7})
+        unusual = self.budget()
+        unusual.charge("file", 1)
+        self.assertEqual(unusual.bytes, {"file": 1})
+        with self.assertRaises(policy.GuardError):
+            policy.counter_snapshot(unusual)
+
+    def test_missing_final_or_replayed_crossing_cannot_become_report_completion(self):
+        valid = self.report_phase()["worker"]
+        for mutation in ("missing", "not-final", "unknown", "value", "crossing"):
+            value = copy.deepcopy(valid)
+            if mutation == "missing":
+                value["counters"]["accounting"] = None
+            elif mutation == "not-final":
+                value["counters"]["accounting"]["final"] = False
+            elif mutation == "unknown":
+                value["counters"]["accounting"]["records"]["unknown"] = {}
+            elif mutation == "value":
+                value["counters"]["accounting"]["records"]["control_bytes"]["latest"] -= 1
+            else:
+                value["counters"]["accounting"]["records"]["control_bytes"]["first_observed"] = None
+            with self.subTest(mutation=mutation), self.assertRaises(policy.GuardError):
+                policy.validate_report_worker(value, self.binding(), 3700.0)
+
+    def test_actual_sampler_and_protocol_reject_counter_replay_decrease_or_missing_crossing(self):
+        budget = self.budget()
+        sampler = worker.Sampler("12345/report")
+        sampler.budget, sampler.session, sampler.phase = budget, self.session(budget), "public-report"
+        budget.charge("control", budget.limits.control_bytes)
+        initial = sampler.snapshot()
+        initial["accounting"] = policy.accounting_progress(initial["accounting"])
+        budget.charge("control", 1)
+        with mock.patch.object(time, "monotonic", return_value=101.0):
+            crossing = sampler.snapshot()
+        crossing["accounting"] = policy.accounting_progress(crossing["accounting"])
+        def parser():
+            value = supervisor.Protocol("12345/report", policy.OUTPUT_BYTES,
+                                        report_binding=self.binding(), deadline=3700.0)
+            value.feed(policy.encoded({"scope": "12345/report", "kind": "ready", "data": {}}) + b"\n")
+            value.feed(policy.encoded({"scope": "12345/report", "kind": "progress", "data": initial}) + b"\n")
+            return value
+        frame = policy.encoded({"scope": "12345/report", "kind": "progress", "data": crossing}) + b"\n"
+        value = parser()
+        value.feed(frame)
+        self.assertEqual(set(value.accounting_crossings), {"control_bytes"})
+        with self.assertRaises(policy.GuardError):
+            value.feed(frame)
+        for fault in ("missing", "decrease", "quota", "time"):
+            changed = copy.deepcopy(crossing)
+            if fault == "missing":
+                changed["accounting"]["first_observed"].clear()
+            elif fault == "decrease":
+                budget.bytes["control"] = budget.limits.control_bytes - 1
+                changed["counters"] = policy.counter_snapshot(budget, sampler.session)
+                changed["accounting"]["first_observed"].clear()
+            elif fault == "quota":
+                changed["counters"]["budget"]["quotas"]["runs"]["diagnostic"] = 4096
+            else:
+                changed["accounting"]["elapsed_seconds"] = -1
+            with self.subTest(fault=fault), self.assertRaises(policy.GuardError):
+                parser().feed(policy.encoded({"scope": "12345/report", "kind": "progress", "data": changed}) + b"\n")
+        neutral = json.loads(json.dumps(crossing, sort_keys=True))
+        parser().feed(policy.encoded({"scope": "12345/report", "kind": "progress", "data": neutral}) + b"\n")
+
+    def test_old_quota_and_raised_limits_restorations_fail_the_new_behavior_oracle(self):
+        self.assertIsNotNone(OLD_BUDGET_CHARGE, "requires the inspected accounting runner")
+        def oracle():
+            budget = self.budget()
+            budget.charge("snapshot", policy.ORIGINAL_LIMITS["snapshot_bytes"] + 1)
+            self.assertEqual(budget.bytes["snapshot"], policy.ORIGINAL_LIMITS["snapshot_bytes"] + 1)
+        oracle()
+        with mock.patch.object(budgeting.ProbeBudget, "charge", OLD_BUDGET_CHARGE), self.assertRaises(budgeting.MakeProbeError):
+            oracle()
+        self.assertIsNotNone(OLD_CALIBRATION_FACTORY)
+        with self.assertRaises((policy.GuardError, budgeting.MakeProbeError, AssertionError)):
+            budget, limits, _, _ = OLD_CALIBRATION_FACTORY(budgeting.Limits, budgeting.ProbeBudget, 3700.0)
+            self.assertIs(type(limits), budgeting.Limits)
+            self.assertEqual(dataclasses.asdict(limits), policy.ORIGINAL_LIMITS)
+        oracle()
 
 
 if __name__ == "__main__":

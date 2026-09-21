@@ -352,21 +352,38 @@ class Sampler:
         self.budget = None
         self.session = None
         self.failure = None
+        self.accounting = None
+        self.sample_lock = threading.Lock()
         self.phase = "candidate-import"
         self.stop = threading.Event()
         self.thread = threading.Thread(target=self.run, name="diagnostic-sampler", daemon=True)
 
-    def snapshot(self):
-        return {
-            "phase": self.phase,
-            "counters": policy.counter_snapshot(self.budget, self.session),
-            "semantics": "Observed cumulative counters and funded VM peaks; not an atomic grant or physical RSS.",
-        }
+    def snapshot(self, *, final=False):
+        with self.sample_lock:
+            counters = policy.counter_snapshot(self.budget, self.session)
+            accounting = None
+            if self.budget is not None:
+                if self.accounting is None:
+                    self.accounting = policy.AccountingRegistry(self.budget)
+                if self.accounting.budget is not self.budget:
+                    raise policy.GuardError("sampler cannot replace its issued accounting budget")
+                accounting = self.accounting.observe(
+                    counters, time.monotonic() - self.budget.started, final=final,
+                )
+            elif final:
+                raise policy.GuardError("final accounting snapshot has no issued budget")
+            return {
+                "phase": self.phase, "counters": counters, "accounting": accounting,
+                "semantics": "Observed cumulative counters and funded VM peaks; not an atomic grant or physical RSS.",
+            }
 
     def run(self):
         try:
             while not self.stop.wait(policy.SAMPLE_SECONDS):
-                kernel.emit(self.scope, "progress", self.snapshot())
+                sample = self.snapshot()
+                if sample["accounting"] is not None:
+                    sample["accounting"] = policy.accounting_progress(sample["accounting"])
+                kernel.emit(self.scope, "progress", sample)
         except BaseException as error:
             self.failure = error
 
@@ -379,40 +396,61 @@ class Sampler:
             raise self.failure
 
 
-def calibration_budget(limits_type, budget_type, deadline):
+_OMITTED_LIMITS = object()
+
+
+def calibration_budget(limits_type, budget_type, deadline, *, limits=_OMITTED_LIMITS):
     original_limits = limits_type()
     original = dataclasses.asdict(original_limits)
     classified = policy.profile_manifest(original, observation_count=original_limits.observation_count)
-    profile_type = dataclasses.make_dataclass(
-        "HostedDiagnosticLimits",
-        [(name, int, dataclasses.field(default=policy.diagnostic_limit(name))) for name in policy.RELAXED],
-        bases=(limits_type,), frozen=True,
-    )
+    omitted = limits is _OMITTED_LIMITS
+    if omitted:
+        limits = original_limits
+    if type(limits) is not limits_type:
+        raise policy.GuardError("diagnostic requires the original Limits type and explicit input provenance")
+    limits_type.__post_init__(limits)
+    if (
+        type(deadline) not in (int, float) or not math.isfinite(deadline)
+        or not 0 < deadline - time.monotonic() <= policy.GRAPH_SECONDS
+    ):
+        raise policy.GuardError("diagnostic lacks its original absolute deadline")
+    started = deadline - policy.GRAPH_SECONDS
 
     @dataclasses.dataclass(kw_only=True)
     class ClockBudget(budget_type):
         original_deadline: dataclasses.InitVar[float]
 
         def __post_init__(self, original_deadline):
-            self.started = original_deadline - self.limits.seconds
+            self.started = original_deadline - policy.GRAPH_SECONDS
 
-    limits = profile_type()
-    if type(limits.observation_count) is not int or limits.observation_count != original_limits.observation_count:
-        raise policy.GuardError("diagnostic observations changed the original None/entries contract")
+        def cumulative_limit(self, name):
+            if omitted and name in policy.RELAXED:
+                return policy.POLICY_SENTINEL
+            return super().cumulative_limit(name)
+
+    if type(limits.observation_count) is not int or limits.observation_count != (
+        limits.entries if limits.observations is None else limits.observations
+    ):
+        raise policy.GuardError("diagnostic changed the original observation alias")
     budget = ClockBudget(limits=limits, original_deadline=deadline)
     if (
-        budget.deadline != deadline or dataclasses.asdict(limits_type()) != original
+        budget.limits is not limits or budget.started != started
+        or budget.deadline != started + limits.seconds or budget.deadline > deadline
+        or budget.deadline <= time.monotonic() or dataclasses.asdict(limits_type()) != original
         or limits_type().observation_count != classified["observations"]["original_effective"]
-        or dataclasses.asdict(limits) != {
-            name: classified[name]["diagnostic"] for name in original
-        }
-        or type(deadline) not in (int, float) or not math.isfinite(deadline)
-        or not 0 < deadline - time.monotonic() <= limits.seconds
-        or any(getattr(type(budget), name) is not getattr(budget_type, name) for name in (
-            "run", "charge", "remaining", "plan", "admit_planned_state", "read_bytes", "close",
-        ))
+        or omitted and dataclasses.asdict(limits) != original
+        or any(budget.cumulative_limit(name) != (
+            policy.POLICY_SENTINEL if omitted and name in policy.RELAXED
+            else limits.observation_count if name == "observations" else getattr(limits, name)
+        ) for name in original)
+        or any(
+            next(base.__dict__[name] for base in type(budget).__mro__ if name in base.__dict__) is not value
+            for name, value in vars(budget_type).items()
+            if not name.startswith("__") and name != "cumulative_limit"
+            and (callable(value) or isinstance(value, (staticmethod, classmethod, property)))
+        )
     ):
-        raise policy.GuardError("original clock/default policy was not preserved")
+        raise policy.GuardError("original hard limits, methods, explicit policy or clock were not preserved")
     return budget, limits, original, classified
 
 
@@ -473,7 +511,7 @@ def report_error_record(primary, measurement, sampler, observer, binding, second
         "cleanup": None if measurement is None else measurement.cleanup,
         "summary": None if measurement is None else measurement.summary,
         "serialized_bytes": None if measurement is None else measurement.serialized_bytes,
-        "counters": None, "secondary": list(secondary),
+        "counters": None, "accounting": None, "secondary": list(secondary),
         "source_cleanup_failures": policy.source_cleanup_count(primary),
         "observation_failure": observation_failure.unavailable("binding-not-ready"),
         "budget_admission": observation_failure.unavailable("binding-not-ready"),
@@ -482,19 +520,26 @@ def report_error_record(primary, measurement, sampler, observer, binding, second
         record["states"]["completed"] = False
         record["secondary"][:0] = measurement.secondary
     for stage, name, collect in (
-        ("counter-publication", "counters", lambda: sampler.snapshot()["counters"]),
+        ("counter-publication", "snapshot", sampler.snapshot),
         ("observation-publication", "observation_failure",
          lambda: observation_failure.validate_fact(observer.capture(primary), admission=False)),
         ("admission-publication", "budget_admission",
          lambda: observation_failure.validate_fact(observer.budget_admission(primary), admission=True)),
     ):
-        if observer is None and name != "counters":
+        if observer is None and name != "snapshot":
             continue
         try:
-            record[name] = collect()
+            value = collect()
+            if name == "snapshot":
+                record["counters"], record["accounting"] = value["counters"], value["accounting"]
+            else:
+                record[name] = value
         except BaseException as error:
             record["secondary"].append({"stage": stage, "error": policy.component_secondary_error(error)})
-            record[name] = None if name == "counters" else observation_failure.unavailable("collector-failed")
+            if name == "snapshot":
+                record["counters"] = record["accounting"] = None
+            else:
+                record[name] = observation_failure.unavailable("collector-failed")
     policy.validate_report_error(record, binding)
     return record
 
@@ -533,11 +578,13 @@ class ReportFailure:
                 policy.validate_report_error(self.record, binding)
                 value = dict(self.record)
             elif self.returned is not None:
-                policy.validate_report_result(self.returned, binding)
-                observed = {name: self.returned[name] for name in (
+                policy.validate_report_worker(self.returned, binding, config["deadline"])
+                report = self.returned["report"]
+                observed = {name: report[name] for name in (
                     "cleanup", "counters", "summary", "serialized_bytes",
                 )}
-                observed["states"] = {**self.returned["states"], "completed": False}
+                observed["states"] = {**report["states"], "completed": False}
+                observed["accounting"] = self.returned["counters"]["accounting"]
                 value = {**value, **observed}
         except BaseException as secondary:
             self.secondary.append({"stage": "error-recovery", "error": policy.component_secondary_error(secondary)})
@@ -617,14 +664,16 @@ def report(config, *, failure=None):
             primary_stage = "source-defaults"
             if (
                 budget.limits is not limits or dataclasses.asdict(Limits()) != original
+                or dataclasses.asdict(limits) != original
                 or Limits().observation_count != classified["observations"]["original_effective"]
                 or limits.observation_count != classified["observations"]["diagnostic_effective"]
                 or budget.deadline != config["deadline"]
+                or any(budget.cumulative_limit(name) != policy.POLICY_SENTINEL for name in policy.RELAXED)
             ):
                 raise policy.GuardError("report source defaults, shared policy or original clock changed")
             primary_stage = "counter-publication"
             returned = {
-                "report": result, "validation": validated, "counters": sampler.snapshot(),
+                "report": result, "validation": validated, "counters": sampler.snapshot(final=True),
                 **policy.ABSENT_WORKLOADS,
                 "timing": {"worker_started": started, "source_verified": imported,
                            "report_finished": ended, "finalized": time.monotonic()},
@@ -668,7 +717,7 @@ def main(config, *, failure=None):
         if result is None:
             return 1
         failure.stage = "result-publication"
-        failure.returned = result["report"]
+        failure.returned = result
         kernel.emit(config["scope"], "result", result)
         return 0
     if mode in {"component", "root", "graph", "verifier", "source-phase", "h1"}:

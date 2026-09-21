@@ -19,11 +19,11 @@ COMPONENT_WORKFLOW = ".github/workflows/issue180-toolchain-component-sizing-1.ym
 PREVIOUS_WORKFLOW = ".github/workflows/issue180-ci-baseline-20.yml"
 OUTPUT_PREFIX = "issue180-full-report-sizing-1-"
 BASE = "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"
-GRAPH = "d5337fc1db5b36f701328cad7c2444384dc88bb5"
-WORKLOAD_KIND = "full-public-report-control-measurement"
+GRAPH = "db50dc744fee3aa697fdc5df458474e101e25e25"
+WORKLOAD_KIND = "full-public-report-accounting-measurement"
 REPORT_API = "scripts.validation_ownership.graph_report.check"
 FIXTURE_VERSION = "one-make-two-checker-typed-intermediate-v1"
-PROFILE = "full-report-control-under-global-v1"
+PROFILE = "full-report-accounting-only-v1"
 COMPONENT_METHOD = "test_one_make_two_checker_typed_intermediate_component"
 COMPONENT_CASE = "scripts.validation_ownership.tests.test_toolchain_runtime.ModernToolchainTests"
 COMPONENT_TARGET = "expansion-modern-all"
@@ -69,7 +69,7 @@ ORIGINAL_LIMITS = {
     "process_output_bytes": MIB, "address_space_bytes": 512 * MIB,
     "syscalls": 2_000_000, "observations": None,
 }
-UNCHANGED_CUMULATIVE = {
+RELAXED = {
     "runs": "Cumulative subprocess work; external deadline/PID containment remains.",
     "states": "Cumulative attempted states; the graph's fixed per-target 512-context guard remains.",
     "descendants": "Cumulative guest creations; live guest and external cgroup PID limits remain.",
@@ -83,9 +83,7 @@ UNCHANGED_CUMULATIVE = {
     "pending_bytes": "Cumulative requests/plans; the separate original 1 MiB whole-record and aggregate-plan admissions remain.",
     "sandbox_bytes": "Cumulative writes; individual file and external filesystem bounds remain.",
     "observations": "Cumulative attempted observation work; the original entries cap still bounds every capsule and inventory.",
-}
-RELAXED = {
-    "control_bytes": "Cumulative control traffic bounded by the unchanged original aggregate; not a size estimate.",
+    "control_bytes": "Cumulative control accounting; original file/frame/capsule admission remains hard.",
 }
 RETAINED = {
     "seconds": "One original-duration absolute graph deadline, also independently enforced outside the worker.",
@@ -96,12 +94,21 @@ RETAINED = {
     "file_bytes": "Genuine file/message/decoded-frame admission and guest RLIMIT_FSIZE boundary.",
     "process_output_bytes": "Genuine per-process captured-output boundary.",
     "address_space_bytes": "Original funded guest VM pool and independent regex-worker AS bound.",
-    **UNCHANGED_CUMULATIVE,
 }
-CONTROL_CEILING = ORIGINAL_LIMITS["total_bytes"]
 BYTE_CATEGORIES = ("snapshot", "output", "event", "mapping", "cache", "pending", "control", "sandbox")
 SESSION_COUNTERS = ("processes_used", "syscalls_used", "observations_used", "files_created")
 SESSION_PEAKS = ("pending_commands_peak", "live_process_peak", "memory_peak")
+ACCOUNTING_COUNTERS = (
+    *(name + "_bytes" for name in BYTE_CATEGORIES), "total_bytes", "runs", "states",
+    "descendants", "syscalls", "observations", "created_files", "planned_state_bytes",
+    "pending_commands_peak", "live_process_peak", "memory_peak",
+)
+HARD_COUNTER_LIMITS = {
+    "created_files": "created_files", "planned_state_bytes": None,
+    "pending_commands_peak": "pending", "live_process_peak": "processes",
+    "memory_peak": "address_space_bytes",
+}
+ACCOUNTING_SEMANTICS = "Sampled cumulative values and peaks; first-observed is not an admission instruction or request."
 ABSENT_WORKLOADS = {
     "root_check_attempts": 0, "graph_check_attempts": 0, "component_attempts": 0,
     "verifier_attempts": 0, "h1_attempts": 0,
@@ -182,8 +189,10 @@ def profile_manifest(original, *, observation_count):
     result = {
         name: {
             "original": value,
-            "diagnostic": CONTROL_CEILING if name in RELAXED else value,
-            "classification": "aggregate-derived cumulative policy" if name in RELAXED else "unchanged original limit",
+            "diagnostic": value,
+            "original_quota": observation_count if name == "observations" else value if name in RELAXED else None,
+            "diagnostic_quota": POLICY_SENTINEL if name in RELAXED else None,
+            "classification": "separated cumulative quota; original hard Limits" if name in RELAXED else "unchanged original hard limit",
             "reason": (RELAXED if name in RELAXED else RETAINED)[name],
         }
         for name, value in original.items()
@@ -241,7 +250,7 @@ def choose_envelope(facts):
 
 
 def diagnostic_limit(name):
-    return CONTROL_CEILING if name == "control_bytes" else ORIGINAL_LIMITS[name]
+    return POLICY_SENTINEL if name in RELAXED else ORIGINAL_LIMITS[name]
 
 
 def _component_fields(value, names):
@@ -274,23 +283,34 @@ def validate_component_cleanup(value, *, complete=False):
 def counter_snapshot(budget, session=None):
     if budget is None:
         return {"budget": None, "session": None}
+    if type(budget.bytes) is not dict:
+        raise GuardError("actual byte ledger is not a closed mapping")
     amounts = budget.bytes.copy()
-    if not amounts.keys() <= set(BYTE_CATEGORIES):
-        raise GuardError("unknown observed accounting category")
+    if not amounts.keys() <= set(BYTE_CATEGORIES) or any(
+        not _component_integer(value) for value in amounts.values()
+    ) or sum(amounts.values()) > POLICY_SENTINEL:
+        raise GuardError("unknown, malformed or overflowing observed accounting category")
     categories = {}
+    quotas = counter_quotas(budget)
     for name in BYTE_CATEGORIES:
         amount = amounts.get(name, 0)
-        limit = getattr(budget.limits, name + "_bytes")
+        original = quotas[name + "_bytes"]["original"]
+        limit = quotas[name + "_bytes"]["diagnostic"]
         categories[name] = {
-            "charged": amount, "original_cap": ORIGINAL_LIMITS[name + "_bytes"],
+            "charged": amount, "original_cap": original,
             "diagnostic_cap": limit, "remaining": limit - amount,
-            "exceeds_original": amount > ORIGINAL_LIMITS[name + "_bytes"],
+            "exceeds_original": amount > original,
         }
     result = {
         "budget": {
             "categories": categories, "present_categories": sorted(amounts), "total": sum(amounts.values()),
-            "total_cap": budget.limits.total_bytes, "runs": budget.runs, "states": budget.states,
+            "total_cap": quotas["total_bytes"]["diagnostic"], "runs": budget.runs, "states": budget.states,
             "planned_state_bytes": budget.planned_state_bytes, "failed": budget.failed, "closed": budget.closed,
+            "quotas": quotas,
+            "observation_alias": {
+                "declared": budget.limits.observations, "entries": budget.limits.entries,
+                "effective": budget.limits.observation_count,
+            },
         },
         "session": None,
     }
@@ -307,6 +327,69 @@ def counter_snapshot(budget, session=None):
     return result
 
 
+def original_counter_quota(name):
+    if name == "observations":
+        return ORIGINAL_LIMITS["entries"]
+    if name in HARD_COUNTER_LIMITS:
+        field = HARD_COUNTER_LIMITS[name]
+        return MIB if field is None else ORIGINAL_LIMITS[field]
+    return ORIGINAL_LIMITS[name]
+
+
+def counter_quotas(budget):
+    result = {}
+    for name in ACCOUNTING_COUNTERS:
+        if name in HARD_COUNTER_LIMITS:
+            field = HARD_COUNTER_LIMITS[name]
+            original = MIB if field is None else getattr(budget.limits, field)
+            diagnostic = original
+        else:
+            original = budget.limits.observation_count if name == "observations" else getattr(budget.limits, name)
+            diagnostic = budget.cumulative_limit(name)
+        result[name] = {"original": original, "diagnostic": diagnostic}
+    validate_counter_quotas(result)
+    return result
+
+
+def validate_counter_quotas(value, *, fixed=False):
+    if type(value) is not dict or value.keys() != set(ACCOUNTING_COUNTERS):
+        raise GuardError("accounting quotas differ from the closed counter registry")
+    for name, row in value.items():
+        _component_fields(row, "original diagnostic")
+        maximum = original_counter_quota(name)
+        if (
+            not _component_integer(row["original"], maximum, 1)
+            or not _component_integer(row["diagnostic"], minimum=1)
+            or name == "planned_state_bytes" and row["original"] != MIB
+            or name in HARD_COUNTER_LIMITS and row["diagnostic"] != row["original"]
+            or name in RELAXED and row["diagnostic"] > row["original"] and row["diagnostic"] != POLICY_SENTINEL
+            or fixed and (
+                row["original"] != maximum
+                or row["diagnostic"] != (POLICY_SENTINEL if name in RELAXED else maximum)
+            )
+        ):
+            raise GuardError("accounting quota enlarged a hard unit or is not the admitted finite policy")
+    return value
+
+
+def accounting_values(value):
+    validate_component_counters(value)
+    budget, session = value["budget"], value["session"]
+    if budget is None:
+        raise GuardError("accounting sample has no actual budget")
+    return {
+        **{name + "_bytes": budget["categories"][name]["charged"] for name in BYTE_CATEGORIES},
+        "total_bytes": budget["total"], "runs": budget["runs"], "states": budget["states"],
+        "planned_state_bytes": budget["planned_state_bytes"],
+        **{name: None if session is None else session[field] for name, field in (
+            ("descendants", "processes_used"), ("syscalls", "syscalls_used"),
+            ("observations", "observations_used"), ("created_files", "files_created"),
+            ("pending_commands_peak", "pending_commands_peak"),
+            ("live_process_peak", "live_process_peak"), ("memory_peak", "memory_peak"),
+        )},
+    }
+
+
 def validate_component_counters(value, *, complete=False):
     _component_fields(value, "budget session")
     budget, session = value["budget"], value["session"]
@@ -315,15 +398,26 @@ def validate_component_counters(value, *, complete=False):
             raise GuardError("component counters lack the actual budget")
         return value
     _component_fields(
-        budget, "categories present_categories total total_cap runs states planned_state_bytes failed closed",
+        budget, "categories present_categories total total_cap runs states planned_state_bytes failed closed quotas observation_alias",
     )
+    validate_counter_quotas(budget["quotas"])
+    alias = budget["observation_alias"]
+    _component_fields(alias, "declared entries effective")
+    if (
+        not _component_integer(alias["entries"], ORIGINAL_LIMITS["entries"], 1)
+        or alias["declared"] is not None and not _component_integer(alias["declared"], ORIGINAL_LIMITS["entries"], 1)
+        or not _component_integer(alias["effective"], ORIGINAL_LIMITS["entries"], 1)
+        or alias["effective"] != (alias["entries"] if alias["declared"] is None else alias["declared"])
+        or alias["effective"] != budget["quotas"]["observations"]["original"]
+    ):
+        raise GuardError("accounting observation alias differs from the actual hard Limits")
     if (
         type(budget["categories"]) is not dict or budget["categories"].keys() != set(BYTE_CATEGORIES)
         or type(budget["present_categories"]) is not list
         or any(type(name) is not str or name not in BYTE_CATEGORIES for name in budget["present_categories"])
         or len(set(budget["present_categories"])) != len(budget["present_categories"])
         or any(not _component_integer(budget[name]) for name in ("total", "total_cap", "runs", "states", "planned_state_bytes"))
-        or budget["total_cap"] != ORIGINAL_LIMITS["total_bytes"]
+        or budget["total_cap"] != budget["quotas"]["total_bytes"]["diagnostic"]
         or type(budget["failed"]) is not bool or type(budget["closed"]) is not bool
     ):
         raise GuardError("component budget counters are malformed")
@@ -332,8 +426,8 @@ def validate_component_counters(value, *, complete=False):
         _component_fields(row, "charged original_cap diagnostic_cap remaining exceeds_original")
         if (
             any(not _component_integer(row[key]) for key in ("charged", "original_cap", "diagnostic_cap", "remaining"))
-            or row["original_cap"] != ORIGINAL_LIMITS[name + "_bytes"]
-            or row["diagnostic_cap"] != diagnostic_limit(name + "_bytes")
+            or row["original_cap"] != budget["quotas"][name + "_bytes"]["original"]
+            or row["diagnostic_cap"] != budget["quotas"][name + "_bytes"]["diagnostic"]
             or row["remaining"] != row["diagnostic_cap"] - row["charged"]
             or type(row["exceeds_original"]) is not bool
             or row["exceeds_original"] != (row["charged"] > row["original_cap"])
@@ -353,21 +447,179 @@ def validate_component_counters(value, *, complete=False):
     if complete:
         if (
             budget["failed"] is not False or budget["closed"] is not True
-            or not 1 <= budget["runs"] <= ORIGINAL_LIMITS["runs"]
-            or not 1 <= budget["states"] <= ORIGINAL_LIMITS["states"]
+            or not 1 <= budget["runs"] <= budget["quotas"]["runs"]["diagnostic"]
+            or not 1 <= budget["states"] <= budget["quotas"]["states"]["diagnostic"]
             or budget["planned_state_bytes"] > MIB or session is None
             or any(session[name] != 0 for name in (
                 "pending_commands", "parked_capsules", "make_depth", "children", "waiters",
             ))
-            or any(session[name] > ORIGINAL_LIMITS[limit] for name, limit in (
+            or any(session[name] > budget["quotas"][limit]["diagnostic"] for name, limit in (
                 ("processes_used", "descendants"), ("syscalls_used", "syscalls"),
-                ("observations_used", "entries"), ("files_created", "created_files"),
-                ("pending_commands_peak", "pending"), ("live_process_peak", "processes"),
-                ("memory_peak", "address_space_bytes"),
+                ("observations_used", "observations"), ("files_created", "created_files"),
+                ("pending_commands_peak", "pending_commands_peak"), ("live_process_peak", "live_process_peak"),
+                ("memory_peak", "memory_peak"),
             ))
         ):
             raise GuardError("component counters are incomplete, open or exceed a retained boundary")
     return value
+
+
+class AccountingRegistry:
+    """One bounded sampled record per declared counter, never per charge."""
+
+    def __init__(self, budget):
+        self.budget, self.limits = budget, budget.limits
+        self.started, self.deadline = budget.started, budget.deadline
+        self.sequence = 0
+        self.elapsed = 0
+        self.failed = self.final = False
+        self.quotas = self.alias = None
+        self.records = {}
+
+    def observe(self, counters, elapsed, *, final=False):
+        try:
+            if (
+                self.failed or self.final or type(final) is not bool
+                or self.budget.limits is not self.limits or self.budget.started != self.started
+                or self.budget.deadline != self.deadline
+                or type(elapsed) not in (int, float) or not math.isfinite(elapsed)
+                or not self.elapsed <= elapsed <= self.deadline - self.started
+                or self.sequence >= POLICY_SENTINEL
+            ):
+                raise GuardError("accounting observation changed its lifetime or was replayed")
+            validate_component_counters(counters, complete=final)
+            values = accounting_values(counters)
+            quotas = counters["budget"]["quotas"]
+            alias = counters["budget"]["observation_alias"]
+            if self.quotas is not None and (quotas != self.quotas or alias != self.alias):
+                raise GuardError("accounting observation changed its issued quotas or alias")
+            sequence = self.sequence + 1
+            records = {}
+            for name in ACCOUNTING_COUNTERS:
+                value = values[name]
+                previous = self.records.get(name)
+                before = None if previous is None else previous["latest"]
+                if value is None and (final or before is not None) or (
+                    value is not None and before is not None and value < before
+                ):
+                    raise GuardError("accounting counter decreased or its required observation disappeared")
+                first = None if previous is None else previous["first_observed"]
+                exceeds = None if value is None else value > quotas[name]["original"]
+                if exceeds and first is None:
+                    first = {"sequence": sequence, "elapsed_seconds": elapsed, "value": value}
+                records[name] = {
+                    "latest": value, "high_water": value, "would_exceed": exceeds,
+                    "first_observed": first,
+                }
+            result = {
+                "version": 1, "sampling": ACCOUNTING_SEMANTICS, "sequence": sequence,
+                "elapsed_seconds": elapsed, "started": self.started, "deadline": self.deadline,
+                "final": final, "quotas": quotas, "observation_alias": alias, "records": records,
+            }
+            validate_accounting(result, counters, final=final)
+            self.sequence, self.elapsed, self.final = sequence, elapsed, final
+            self.quotas = parse_json(encoded(quotas))
+            self.alias = dict(alias)
+            self.records = parse_json(encoded(records))
+            return result
+        except BaseException:
+            self.failed = True
+            raise
+
+
+def _sample_time(value):
+    return type(value) in (int, float) and math.isfinite(value) and 0 <= value <= GRAPH_SECONDS
+
+
+def validate_accounting(value, counters, *, final=False, fixed=False):
+    _component_fields(value, (
+        "version sampling sequence elapsed_seconds started deadline final quotas observation_alias records"
+    ))
+    if (
+        type(value["version"]) is not int or value["version"] != 1
+        or value["sampling"] != ACCOUNTING_SEMANTICS
+        or not _component_integer(value["sequence"], minimum=1)
+        or not _sample_time(value["elapsed_seconds"])
+        or any(type(value[name]) not in (int, float) or not math.isfinite(value[name]) for name in ("started", "deadline"))
+        or not 0 < value["deadline"] - value["started"] <= GRAPH_SECONDS
+        or value["elapsed_seconds"] > value["deadline"] - value["started"]
+        or type(value["final"]) is not bool or final and value["final"] is not True
+    ):
+        raise GuardError("accounting sample lacks its finite original-lifetime identity")
+    validate_component_counters(counters, complete=final)
+    validate_counter_quotas(value["quotas"], fixed=fixed)
+    if counters["budget"] is None or value["quotas"] != counters["budget"]["quotas"] or (
+        value["observation_alias"] != counters["budget"]["observation_alias"]
+        or type(value["records"]) is not dict or value["records"].keys() != set(ACCOUNTING_COUNTERS)
+    ):
+        raise GuardError("accounting registry differs from the actual counter/alias snapshot")
+    observed = accounting_values(counters)
+    for name, row in value["records"].items():
+        _component_fields(row, "latest high_water would_exceed first_observed")
+        current = row["latest"]
+        if current is None:
+            if final or any(row[field] is not None for field in ("high_water", "would_exceed", "first_observed")):
+                raise GuardError("accounting observation is missing or invents an unavailable value")
+        elif (
+            not _component_integer(current) or not _component_integer(row["high_water"])
+            or row["high_water"] != current or type(row["would_exceed"]) is not bool
+            or row["would_exceed"] != (current > value["quotas"][name]["original"])
+        ):
+            raise GuardError("accounting value/high-water/exceedance is malformed")
+        if current != observed[name] or type(current) is not type(observed[name]):
+            raise GuardError("accounting latest value differs from its actual counter")
+        first = row["first_observed"]
+        if row["would_exceed"] is True:
+            _component_fields(first, "sequence elapsed_seconds value")
+            if (
+                not _component_integer(first["sequence"], value["sequence"], 1)
+                or not _sample_time(first["elapsed_seconds"]) or first["elapsed_seconds"] > value["elapsed_seconds"]
+                or not _component_integer(first["value"], current, value["quotas"][name]["original"] + 1)
+                or first["sequence"] == value["sequence"] and (
+                    first["value"] != current or first["elapsed_seconds"] != value["elapsed_seconds"]
+                )
+            ):
+                raise GuardError("first-observed crossing is not a bounded sampled observation")
+        elif first is not None:
+            raise GuardError("accounting sample invents a quota crossing")
+    return value
+
+
+def accounting_progress(value):
+    return {
+        "sequence": value["sequence"], "elapsed_seconds": value["elapsed_seconds"],
+        "first_observed": {
+            name: row["first_observed"] for name, row in value["records"].items()
+            if row["first_observed"] is not None and row["first_observed"]["sequence"] == value["sequence"]
+        },
+        "sampling": ACCOUNTING_SEMANTICS,
+    }
+
+
+def validate_accounting_progress(value, counters):
+    if value is None:
+        if counters["budget"] is not None:
+            raise GuardError("progress omitted its accounting observation")
+        return
+    _component_fields(value, "sequence elapsed_seconds first_observed sampling")
+    if (
+        not _component_integer(value["sequence"], minimum=1) or not _sample_time(value["elapsed_seconds"])
+        or value["sampling"] != ACCOUNTING_SEMANTICS or type(value["first_observed"]) is not dict
+        or not value["first_observed"].keys() <= set(ACCOUNTING_COUNTERS)
+    ):
+        raise GuardError("progress accounting record is not bounded and sampled")
+    observed = accounting_values(counters)
+    for name, row in value["first_observed"].items():
+        _component_fields(row, "sequence elapsed_seconds value")
+        if (
+            type(row["sequence"]) is not int or row["sequence"] != value["sequence"]
+            or not _sample_time(row["elapsed_seconds"]) or row["elapsed_seconds"] != value["elapsed_seconds"]
+            or observed[name] is None or not _component_integer(
+                row["value"], observed[name], counters["budget"]["quotas"][name]["original"] + 1,
+            )
+            or row["value"] != observed[name]
+        ):
+            raise GuardError("progress crossing is not from its actual sampled counter")
 
 
 def validate_component_observation(value):
@@ -928,6 +1180,7 @@ def validate_report_result(value, binding):
     validate_report_states(value["states"], complete=True)
     validate_report_summary(value["summary"], binding)
     validate_component_counters(value["counters"], complete=True)
+    validate_counter_quotas(value["counters"]["budget"]["quotas"], fixed=True)
     validate_report_cleanup(value["cleanup"], complete=True)
     if not _component_integer(value["serialized_bytes"], minimum=1):
         raise GuardError("report has no actual source-serialized output size")
@@ -949,7 +1202,7 @@ def validate_report_start(value, binding, deadline):
 
 
 def validate_report_progress(value, *, complete=False):
-    _component_fields(value, "phase counters semantics")
+    _component_fields(value, "phase counters accounting semantics")
     if (
         type(value["phase"]) is not str or value["phase"] not in {
             "candidate-import", "public-report", "report-serialization", "report-finalize", "completed-report",
@@ -959,6 +1212,10 @@ def validate_report_progress(value, *, complete=False):
     ):
         raise GuardError("report sampler state is not its bounded numeric projection")
     validate_component_counters(value["counters"], complete=complete)
+    if complete:
+        validate_accounting(value["accounting"], value["counters"], final=True, fixed=True)
+    else:
+        validate_accounting_progress(value["accounting"], value["counters"])
     return value
 
 
@@ -979,7 +1236,7 @@ def validate_report_error(value, binding):
     else:
         import observation_failure
     _component_fields(value, (
-        "binding stage error states cleanup counters summary serialized_bytes secondary "
+        "binding stage error states cleanup counters accounting summary serialized_bytes secondary "
         "source_cleanup_failures observation_failure budget_admission"
     ))
     validate_report_binding(value["binding"])
@@ -998,6 +1255,8 @@ def validate_report_error(value, binding):
         validate_report_cleanup(value["cleanup"])
     if value["counters"] is not None:
         validate_component_counters(value["counters"])
+    if value["accounting"] is not None:
+        validate_accounting(value["accounting"], value["counters"])
     if value["summary"] is not None:
         validate_report_summary(value["summary"], binding)
     if value["serialized_bytes"] is not None and not _component_integer(value["serialized_bytes"], minimum=1):
@@ -1015,7 +1274,7 @@ def validate_report_error(value, binding):
 def unavailable_report_error(binding, error, *, stage, source_cleanup_failures=None):
     value = {
         "binding": binding, "stage": stage, "error": error, "states": None,
-        "cleanup": None, "counters": None, "summary": None, "serialized_bytes": None,
+        "cleanup": None, "counters": None, "accounting": None, "summary": None, "serialized_bytes": None,
         "secondary": [], "source_cleanup_failures": source_cleanup_failures,
         "observation_failure": {"status": "unavailable", "reason": "binding-not-ready"},
         "budget_admission": {"status": "unavailable", "reason": "binding-not-ready"},
@@ -1051,6 +1310,7 @@ def validate_result_publication_failure(value, result, binding, deadline):
     expected = {
         "states": {**observed["states"], "completed": False},
         **{name: observed[name] for name in ("cleanup", "counters", "summary", "serialized_bytes")},
+        "accounting": result["counters"]["accounting"],
     }
     if value["stage"] != "result-publication" or any(
         encoded(value[name]) != encoded(wanted) for name, wanted in expected.items()
@@ -1140,6 +1400,12 @@ def validate_report_worker(value, binding, deadline):
     if any(type(number) not in (int, float) or not math.isfinite(number) or not 0 <= number <= deadline
            for number in timing.values()) or [timing[name] for name in fields] != sorted(timing.values()):
         raise GuardError("report timing regressed or escaped the original deadline")
+    accounting = value["counters"]["accounting"]
+    if (
+        accounting["deadline"] != deadline or accounting["started"] != deadline - GRAPH_SECONDS
+        or accounting["elapsed_seconds"] > timing["finalized"] - accounting["started"]
+    ):
+        raise GuardError("final accounting snapshot lost the original report clock")
     return checked
 
 

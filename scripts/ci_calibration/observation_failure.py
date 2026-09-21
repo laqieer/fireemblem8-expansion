@@ -54,7 +54,7 @@ def validate_fact(value, *, admission):
             "requested", "charged_before", "issued_cap", "prospective_category", "remaining_category",
             "category_shortfall", "total_cap", "original_category_cap",
         )) or (
-            value["original_category_cap"] != policy.ORIGINAL_LIMITS[value["category"] + "_bytes"]
+            not 1 <= value["original_category_cap"] <= policy.ORIGINAL_LIMITS[value["category"] + "_bytes"]
             or value["issued_cap"] < 1
             or value["prospective_category"] != value["charged_before"] + value["requested"]
             or value["remaining_category"] != value["issued_cap"] - value["charged_before"]
@@ -64,7 +64,7 @@ def validate_fact(value, *, admission):
             or type(value["diagnostic_override"]) is not bool
             or value["diagnostic_override"] != (value["issued_cap"] != value["original_category_cap"])
             or value["total_at_admission"] is not None or value["total_predicate"] is not None
-            or value["total_cap"] != policy.ORIGINAL_LIMITS["total_bytes"]
+            or value["total_cap"] < 1
             or value["semantics"] != (
                 "Refusal locals and later collection are distinct; aggregate expression was not retained."
             )
@@ -143,15 +143,18 @@ class Observer:
         if not scalar(requested) or not scalar(cap, positive=True) or not scalar(used) or used < requested:
             return invalid("malformed-admission-scalars")
         charged = used - requested
-        if cap != getattr(self.budget.limits, category + "_bytes"):
+        if cap != self.budget.cumulative_limit(category + "_bytes"):
             return invalid("admission-cap-changed")
         amounts = self.budget.bytes.copy()
+        total_cap = self.budget.cumulative_limit("total_bytes")
+        original_cap = getattr(self.budget.limits, category + "_bytes")
         if (
             not amounts.keys() <= set(policy.BYTE_CATEGORIES)
             or any(not scalar(number) for number in amounts.values())
             or amounts.get(category, 0) != charged or charged > cap
-            or not scalar(self.budget.limits.total_bytes, positive=True)
-            or sum(amounts.values()) > self.budget.limits.total_bytes
+            or not scalar(total_cap, positive=True)
+            or not scalar(original_cap, positive=True)
+            or sum(amounts.values()) > total_cap
             or type(self.budget.closed) is not bool
             or type(self.budget.failed) is not bool or not self.budget.failed
             or not scalar(self.budget.runs) or not scalar(self.budget.states)
@@ -163,9 +166,9 @@ class Observer:
             "prospective_category": used, "remaining_category": cap - charged,
             "category_exhausted": used > cap, "category_shortfall": max(0, used - cap),
             "total_at_admission": None, "total_predicate": None,
-            "total_cap": self.budget.limits.total_bytes,
-            "original_category_cap": policy.ORIGINAL_LIMITS[category + "_bytes"],
-            "diagnostic_override": cap != policy.ORIGINAL_LIMITS[category + "_bytes"],
+            "total_cap": total_cap,
+            "original_category_cap": original_cap,
+            "diagnostic_override": cap != original_cap,
             "collected": {
                 "category_charged": amounts.get(category, 0), "total_charged": sum(amounts.values()),
                 "runs": self.budget.runs, "states": self.budget.states, "closed": self.budget.closed,
