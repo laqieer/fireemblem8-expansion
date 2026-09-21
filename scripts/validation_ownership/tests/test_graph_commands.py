@@ -2,15 +2,23 @@ from __future__ import annotations
 
 import hashlib
 import json
+import builtins
+from contextlib import contextmanager
 from dataclasses import replace
+import fnmatch
+import io
 import os
 from pathlib import Path
+import re
 import secrets
 import shlex
 import shutil
 import subprocess
+from threading import get_ident
+from types import SimpleNamespace
 import unittest
 from unittest import mock
+import weakref
 
 from scripts.bash_parser import (
     BashToken, normalize_bash_script_commands, parse_bash_script_commands, tokenize_bash_command,
@@ -24,11 +32,340 @@ from scripts.validation_ownership.graph_commands import (
     asset_discovery_command, python_command,
 )
 from scripts.validation_ownership import make_probe
+from scripts.validation_ownership import graph_commands
 from scripts.validation_ownership.make_probe import Command, ProbeSession
 from scripts.validation_ownership.graph_probe import run_probe
 
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+class CommandSemanticsTests(unittest.TestCase):
+    """Inert API compositions; no session setup, subprocess or native execution."""
+
+    def session(self):
+        session = object.__new__(ProbeSession)
+        session.base, session.tree = Path("/model"), Path("/model/repo")
+        session.owner_thread = get_ident()
+        session.snapshot = SimpleNamespace(files={}, digest="model-snapshot")
+        session.budget = SimpleNamespace(remaining=lambda: None, charge=lambda *args: None)
+        session._namespace_epoch = 1
+        session._native_context_commands = {}
+        session._issued_context_commands = weakref.WeakSet()
+        session._live_dispatches, session._command_dispatches = [], []
+        session._issued_dispatches = weakref.WeakSet()
+        session.published_sources = {}
+        session._toolchain = SimpleNamespace(commands={}, require_step=lambda command: None)
+        session._header_runtime_kind = lambda command: None
+        session._directories = session._output_paths = lambda paths: tuple(paths)
+        session.source_owners = lambda paths: ()
+        session._metadata_matches = lambda metadata: metadata == ()
+        return session
+
+    def commands(self, session, command, *, contract=None):
+        class Patterns:
+            def __init__(self, budget, patterns):
+                self.patterns = patterns
+
+            def fullmatch(self, value):
+                return tuple(index for index, pattern in enumerate(self.patterns)
+                             if re.fullmatch(pattern, value, re.DOTALL))
+
+        contract = contract or {
+            "id": "generic-semantics-fixture", "command_regex": re.escape(command), "input_files": [],
+        }
+        with mock.patch.object(graph_commands, "CommandPatterns", Patterns):
+            return MakeCommands(session, {"fixture": contract})
+
+    @contextmanager
+    def dispatch(self, session, environment):
+        context = make_probe._LiveDispatch(
+            "modeled-native-dispatch", 1, ("/bin/sh", "-c", "modeled"),
+            "/repo", tuple(sorted(environment.items())), False, ("expansion", None, None),
+            session.snapshot, session.tree, session._namespace_epoch,
+        )
+        session._issued_dispatches.add(context)
+        session._live_dispatches.append(context)
+        try:
+            yield context
+        finally:
+            session._live_dispatches.pop()
+            session._issued_dispatches.discard(context)
+
+    @contextmanager
+    def consuming(self, session, command, context):
+        session._command_dispatches.append((command, context))
+        try:
+            yield session._command_environment(command)
+        finally:
+            session._command_dispatches.pop()
+
+    def execute(self, command, environment, *, redirects=()):
+        sinks = {"stdout": bytearray(), "stderr": bytearray(), "null": bytearray()}
+        descriptors, operations = {1: "stdout", 2: "stderr"}, []
+
+        def dup2(source, destination):
+            self.assertEqual((source, destination), (1, 2))
+            descriptors[destination] = descriptors[source]
+            operations.append(("dup2", source, destination))
+
+        def write(descriptor, data):
+            operations.append(("write", descriptor, bytes(data)))
+            if descriptors[descriptor] != "null":
+                sinks[descriptors[descriptor]].extend(data)
+            return len(data)
+
+        class Stream:
+            def __init__(self, descriptor):
+                self.descriptor, self.pending = descriptor, bytearray()
+
+            def write(self, value):
+                self.pending.extend(value.encode())
+                return len(value)
+
+            def flush(self):
+                if self.pending:
+                    write(self.descriptor, self.pending)
+                    self.pending.clear()
+
+        model_sys = SimpleNamespace(stdout=Stream(1), stderr=Stream(2), argv=[], path=[])
+        model_os = SimpleNamespace(environ=dict(environment), dup2=dup2, write=write)
+        modules = {"sys": model_sys, "os": model_os, "io": io, "json": json}
+
+        def importer(name, *args, **kwargs):
+            if name not in modules:
+                raise AssertionError("unmodeled producer import: " + name)
+            return modules[name]
+
+        def print_value(*values, sep=" ", end="\n", file=None, flush=False):
+            stream = model_sys.stdout if file is None else file
+            stream.write(sep.join(str(value) for value in values) + end)
+            if flush:
+                stream.flush()
+
+        for redirect in redirects:
+            if redirect == "stdout":
+                dup2(1, 2)
+            else:
+                self.assertEqual(redirect, "null")
+                descriptors[2] = "null"
+        namespace = {"__builtins__": {
+            "__import__": importer, "print": print_value, "exec": builtins.exec,
+            "str": str, "bytes": bytes,
+        }}
+        exec(command.argv[command.argv.index("-c") + 1], namespace)
+        model_sys.stdout.flush()
+        model_sys.stderr.flush()
+        return bytes(sinks["stdout"]), bytes(sinks["stderr"]), operations
+
+    def test_generic_adapter_uses_each_issued_environment_and_keeps_helpers_canonical(self):
+        program = (
+            "import json,os;print(json.dumps({name:os.environ.get(name,'absent') "
+            "for name in ('SWITCH','FE8_ITEM_ID_CAP','SOURCE_DATE_EPOCH')}))"
+        )
+        command = "python3 -c " + shlex.quote(program)
+        session = self.session()
+        commands = self.commands(session, command)
+        for value in ("first", "second", "first"):
+            original = {**ENVIRONMENT, "SWITCH": value, "FE8_ITEM_ID_CAP": "271",
+                        "SOURCE_DATE_EPOCH": "123", "PYTHON": "python3"}
+            with self.dispatch(session, original) as context:
+                registered = commands[command]
+                with self.consuming(session, registered, context) as environment:
+                    self.assertEqual(environment, original)
+                    self.assertEqual(json.loads(self.execute(registered, environment)[0]), {
+                        "SWITCH": value, "FE8_ITEM_ID_CAP": "271", "SOURCE_DATE_EPOCH": "123",
+                    })
+                canonical = session._command_environment(registered)
+                self.assertEqual(json.loads(self.execute(registered, canonical)[0]), {
+                    "SWITCH": "absent", "FE8_ITEM_ID_CAP": "absent", "SOURCE_DATE_EPOCH": "0",
+                })
+        plain = python_command(session, program)
+        with self.dispatch(session, original) as context, self.consuming(session, plain, context) as environment:
+            self.assertNotIn("SWITCH", environment)
+
+    def test_generic_registration_rebinds_source_epoch_but_not_an_old_handle(self):
+        command = "python3 -c 'print(1)'"
+        session = self.session()
+        commands = self.commands(session, command)
+        with self.dispatch(session, ENVIRONMENT) as context:
+            previous = commands[command]
+            with self.consuming(session, previous, context) as environment:
+                self.assertEqual(environment, ENVIRONMENT)
+        session.snapshot = SimpleNamespace(files={}, digest="second-model-snapshot")
+        session.tree, session._namespace_epoch = Path("/model/other"), 2
+        with self.dispatch(session, ENVIRONMENT) as context:
+            current = commands[command]
+            with self.consuming(session, current, context) as environment:
+                self.assertEqual(environment, ENVIRONMENT)
+            with self.assertRaises(MakeProbeError), self.consuming(session, previous, context):
+                pass
+
+    def test_real_command_cache_boundary_includes_the_effective_environment(self):
+        class CacheMiss(Exception):
+            pass
+
+        class Cache(dict):
+            def __contains__(self, key):
+                self.last_key = key
+                if not super().__contains__(key):
+                    raise CacheMiss
+                return True
+
+        command = "python3 -c 'print(1)'"
+        session = self.session()
+        session.cache = Cache()
+        commands = self.commands(session, command)
+        keys = []
+        for value in ("first", "second"):
+            original = {**ENVIRONMENT, "SWITCH": value}
+            with self.dispatch(session, original) as context:
+                registered = commands[command]
+                with self.consuming(session, registered, context):
+                    with self.assertRaises(CacheMiss):
+                        session._command(registered)
+                    key = session.cache.last_key
+                    keys.append(key)
+                    result = SimpleNamespace(metadata=(), stdout=value.encode())
+                    session.cache[key] = [result]
+                    self.assertIs(session._command(registered), result)
+        self.assertNotEqual(keys[0], keys[1])
+        session.snapshot = SimpleNamespace(files={}, digest="different-source-snapshot")
+        session._namespace_epoch += 1
+        with self.dispatch(session, original) as context:
+            registered = commands[command]
+            with self.consuming(session, registered, context), self.assertRaises(CacheMiss):
+                session._command(registered)
+            self.assertNotEqual(session.cache.last_key, keys[-1])
+
+    def test_generic_startup_controls_reject_even_after_a_cached_registration(self):
+        command = "python3 -c 'print(1)'"
+        for name, value in (
+            ("LD_PRELOAD", "/foreign.so"), ("LD_LIBRARY_PATH", "/foreign"),
+            ("MALLOC_TRACE", "/foreign"), ("GLIBC_TUNABLES", "foreign"),
+            ("GCONV_PATH", "/foreign"), ("LOCPATH", "/foreign"), ("NLSPATH", "/foreign"),
+            ("BASH_ENV", "/foreign"), ("ENV", "/foreign"), ("SHELLOPTS", "xtrace"),
+            ("BASHOPTS", "expand_aliases"), ("BASH_FUNC_foreign%%", "() { :; }"),
+            ("PYTHONPATH", "/foreign"), ("PYTHONHOME", "/foreign"),
+            ("PYTHONSTARTUP", "/foreign"), ("PYTHONUNBUFFERED", "1"),
+            ("PYTHONDONTWRITEBYTECODE", "0"), ("PATH", "/foreign"),
+        ):
+            with self.subTest(name=name):
+                session = self.session()
+                commands = self.commands(session, command)
+                commands[command]
+                with self.dispatch(session, {**ENVIRONMENT, name: value}), self.assertRaises(MakeProbeError):
+                    commands[command]
+
+    def test_generic_redirects_apply_before_real_two_stream_writes(self):
+        program = (
+            "import os,sys;print('err-first',file=sys.stderr,flush=True);"
+            "print('out',flush=True);os.write(2,b'raw-err\\n');print('last',flush=True)"
+        )
+        prefix = "python3 -c " + shlex.quote(program)
+        for suffix, expected, count in (
+            ("", (b"out\nlast\n", b"err-first\nraw-err\n"), 0),
+            (" 2>&1", (b"err-first\nout\nraw-err\nlast\n", b""), 1),
+            (" 2>&1 2>&1", (b"err-first\nout\nraw-err\nlast\n", b""), 2),
+        ):
+            command = prefix + suffix
+            session = self.session()
+            commands = self.commands(session, command)
+            for _ in range(2):
+                stdout, stderr, operations = self.execute(commands[command], ENVIRONMENT)
+                with self.subTest(suffix=suffix):
+                    self.assertEqual((stdout, stderr), expected)
+                    self.assertEqual(operations[:count], [("dup2", 1, 2)] * count)
+        for suffix, redirects, expected in (
+            (" 2>/dev/null", ("null",), (b"out\nlast\n", b"")),
+            (" 2>&1 2>/dev/null", ("stdout", "null"), (b"out\nlast\n", b"")),
+            (" 2>/dev/null 2>&1", ("null", "stdout"), (b"err-first\nout\nraw-err\nlast\n", b"")),
+        ):
+            session = self.session()
+            ordinary = python_command(session, program)
+            self.assertEqual(self.execute(ordinary, ENVIRONMENT, redirects=redirects)[:2], expected)
+            with self.subTest(suffix=suffix), self.assertRaisesRegex(MakeProbeError, "stderr discard"):
+                self.commands(session, prefix + suffix)[prefix + suffix]
+
+    def test_literal_words_preserve_quotes_escapes_and_reject_active_roles(self):
+        for raw, value in (
+            ("'*.txt'", "*.txt"), ('"*.txt"', "*.txt"), (r"\*.txt", "*.txt"),
+            ("'*'.txt", "*.txt"), ("''", ""), ("'a b'", "a b"),
+            ("'$NAME'", "$NAME"), (r"\$NAME", "$NAME"), (r'"\$NAME"', "$NAME"),
+            (r'"\`name\`"', "`name`"), (r'"a\q"', r"a\q"), (r"a\ b", "a b"),
+            ("'a'\"b\"c", "abc"),
+        ):
+            with self.subTest(raw=raw):
+                self.assertEqual(graph_commands._simple_words(tokenize_bash_command(raw), "fixture"), [value])
+        for raw in ("*.txt", "?.txt", "[ab].txt", "$NAME", '"$NAME"', '"${NAME}"',
+                    '"$(printf value)"', "`value`", "~", "{a,b}", "'literal'$NAME"):
+            with self.subTest(raw=raw), self.assertRaises(MakeProbeError):
+                graph_commands._simple_words(tokenize_bash_command(raw), "fixture")
+        for command in ("find texts -name '*.txt", 'find texts -name "*.txt', "find texts -name \\"):
+            with self.assertRaises(MakeProbeError):
+                graph_commands._shell_tokens(command, "fixture")
+        with self.assertRaises(MakeProbeError):
+            graph_commands._simple_words((BashToken("*.txt", False),), "fixture")
+
+    def test_assignment_values_keep_literal_roles(self):
+        program = 'import os;print(os.environ["FE8_ITEM_ID_CAP"])'
+        for value in ("'$CAP'", r"\$CAP", r'"\$CAP"'):
+            command = "FE8_ITEM_ID_CAP=" + value + " python3 -c " + shlex.quote(program)
+            session = self.session()
+            registered = self.commands(session, command)[command]
+            self.assertEqual(self.execute(registered, ENVIRONMENT)[:2], (b"$CAP\n", b""))
+        for value in ("$CAP", '"$CAP"', "`value`"):
+            command = "FE8_ITEM_ID_CAP=" + value + " python3 -c " + shlex.quote(program)
+            with self.assertRaises(MakeProbeError):
+                self.commands(self.session(), command)[command]
+        session = self.session()
+        for cap in ("271", "512"):
+            command = f"FE8_ITEM_ID_CAP={cap} python3 -c " + shlex.quote(program)
+            with self.dispatch(session, {**ENVIRONMENT, "FE8_ITEM_ID_CAP": "original"}) as context:
+                registered = self.commands(session, command)[command]
+                with self.consuming(session, registered, context) as environment:
+                    self.assertEqual(environment["FE8_ITEM_ID_CAP"], "original")
+                    self.assertEqual(self.execute(registered, environment)[:2], ((cap + "\n").encode(), b""))
+
+    def test_find_rejects_unproved_globs_for_zero_one_and_multiple_cwd_matches(self):
+        contracts = json.loads((ROOT / ".github/validation-ownership-make-dynamics.json").read_bytes())["contracts"]
+        for identity, root, extension, tail in (
+            ("legacy-text-source-discovery", "texts", "txt", ""),
+            ("asset-tool-source-discovery", "scripts/assets", "py", " -print"),
+        ):
+            contract = next(item for item in contracts if item["id"] == identity)
+            pattern = "*." + extension
+            for cwd in ((), ("one." + extension,), ("one." + extension, "two." + extension)):
+                session = self.session()
+                session.snapshot.files = {path: b"" for path in (
+                    *cwd, root + "/one." + extension, root + "/two." + extension, root + "/skip.bin",
+                )}
+                expanded = [path for path in cwd if fnmatch.fnmatchcase(path, pattern)] or [pattern]
+                ordinary = None if len(expanded) != 1 else [
+                    name for name in ("one." + extension, "two." + extension)
+                    if fnmatch.fnmatchcase(name, expanded[0])
+                ]
+                self.assertEqual(ordinary, {
+                    0: ["one." + extension, "two." + extension],
+                    1: ["one." + extension], 2: None,
+                }[len(cwd)])
+                command = f"find {root} -type f -name {pattern}{tail}"
+                commands = self.commands(session, command, contract=contract)
+                with self.subTest(identity=identity, cwd=cwd), self.assertRaises(MakeProbeError):
+                    commands[command]
+                for literal in ("'" + pattern + "'", '"' + pattern + '"'):
+                    safe = f"find {root} -type f -name {literal}{tail}"
+                    registered = commands[safe]
+                    self.assertEqual(registered.argv[-2:], (root, pattern))
+                    self.assertEqual(set(registered.sources), {
+                        root + "/one." + extension, root + "/two." + extension, root + "/skip.bin",
+                    })
+                escaped = f"find {root} -type f -name \\{pattern}{tail}"
+                self.assertEqual(
+                    self.commands(session, escaped, contract={
+                        **contract, "command_regex": re.escape(escaped),
+                    })[escaped].argv[-2:], (root, pattern),
+                )
 
 
 class GraphCommandTests(unittest.TestCase):
@@ -283,10 +620,189 @@ class GraphCommandTests(unittest.TestCase):
             capture_output=True, timeout=15,
         )
 
-    def generic_registration(self, probe, command, *, identity="generic-lexical-fixture", inputs=()):
-        import re
+    def generic_commands(self, probe, command, *, identity="generic-lexical-fixture", inputs=()):
         contract = {"id": identity, "command_regex": re.escape(command), "input_files": list(inputs)}
-        return MakeCommands(probe, {"fixture": contract})[command]
+        return MakeCommands(probe, {"fixture": contract})
+
+    def generic_registration(self, probe, command, **options):
+        return self.generic_commands(probe, command, **options)[command]
+
+    def test_live_generic_python_preserves_original_environment_and_cache_receipts(self):
+        body = (
+            "import json,os;print(json.dumps({name:os.environ.get(name,'absent') "
+            "for name in ('SWITCH','FE8_ITEM_ID_CAP','SOURCE_DATE_EPOCH')},sort_keys=True))"
+        )
+        command = "python3 -c " + shlex.quote(body)
+        self.add("Makefile", f"RESULT := $(shell {command})\n$(info $(RESULT))\nall: ;\n")
+        with self.session() as probe:
+            commands = self.generic_commands(probe, command)
+            direct = probe.command(python_command(probe, body))
+            self.assertEqual(json.loads(direct.stdout), {
+                "SWITCH": "absent", "FE8_ITEM_ID_CAP": "absent", "SOURCE_DATE_EPOCH": "0",
+            })
+            results = []
+            for value in ("first", "second", "first"):
+                inputs = {"SWITCH": value, "FE8_ITEM_ID_CAP": "271", "SOURCE_DATE_EPOCH": "123"}
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "--no-print-directory", "-s", "-f", "Makefile", "all"],
+                    cwd=self.root, env={**ENVIRONMENT, **inputs},
+                    capture_output=True, check=True, timeout=15,
+                )
+                observed = probe.make(
+                    "all", variables=("RESULT",), commands=commands,
+                    assignments=tuple(("environment", name, content) for name, content in inputs.items()),
+                )
+                actual = json.loads(observed.semantics["domains"]["RESULT"]["value"])
+                self.assertEqual(actual, inputs)
+                self.assertEqual(actual, json.loads(ordinary.stdout))
+                dispatch, = observed.semantics["native_dispatches"]
+                receipt, = observed.semantics["dynamic_commands"]
+                self.assertEqual(receipt["command"]["environment"], dispatch["environment"])
+                self.assertEqual(receipt["output_sha256"], hashlib.sha256(ordinary.stdout).hexdigest())
+                results.append(receipt["output_sha256"])
+                self.assertEqual(probe.command(commands[command]).stdout, direct.stdout)
+            self.assertNotEqual(results[0], results[1])
+            self.assertEqual(results[0], results[2])
+        self.assertIsNone(probe.base)
+        self.assertFalse(probe.budget.children)
+        self.assertFalse(probe._issued_context_commands)
+
+    def test_live_generic_script_and_module_keep_actual_recipe_exports(self):
+        body = (
+            "import json,os\n"
+            "print(json.dumps({name:os.environ.get(name,'absent') "
+            "for name in ('SWITCH','FE8_ITEM_ID_CAP','PYTHON')},sort_keys=True))\n"
+        )
+        self.add("fixture.py", body)
+        for command in ("python3 fixture.py", "python3 -m fixture"):
+            self.add("Makefile", (
+                "export PYTHON := python3\nall: first second\n"
+                "first: export SWITCH := first\nfirst: export FE8_ITEM_ID_CAP := 271\n"
+                "second: export SWITCH := second\nsecond: export FE8_ITEM_ID_CAP := 512\n"
+                f"first second:\n\t+@{command}\n"
+            ))
+            for supplied in ((), (("command-line", "SWITCH", "command-line"),)):
+                with self.subTest(command=command, supplied=supplied):
+                    ordinary = subprocess.run(
+                        ["/usr/bin/make", "--no-print-directory", "-s", "-f", "Makefile", "all",
+                         *(name + "=" + value for _, name, value in supplied)],
+                        cwd=self.root, env=ENVIRONMENT, capture_output=True, check=True, timeout=15,
+                    )
+                    expected = [json.loads(line) for line in ordinary.stdout.splitlines()]
+                    self.assertEqual(expected, [
+                        {"SWITCH": "command-line" if supplied else "first",
+                         "FE8_ITEM_ID_CAP": "271", "PYTHON": "python3"},
+                        {"SWITCH": "command-line" if supplied else "second",
+                         "FE8_ITEM_ID_CAP": "512", "PYTHON": "python3"},
+                    ])
+                    with self.session() as probe:
+                        commands = self.generic_commands(probe, command, inputs=("fixture.py",))
+                        observed = probe.make("all", commands=commands, assignments=supplied)
+                        dispatches = observed.semantics["native_dispatches"]
+                        self.assertEqual([item["job"]["target"] for item in dispatches], ["first", "second"])
+                        receipts = observed.semantics["dynamic_commands"]
+                        self.assertEqual(len(receipts), 2)
+                        for dispatch, value in zip(dispatches, expected):
+                            receipt, = [item for item in receipts
+                                        if item["command"]["environment"] == dispatch["environment"]]
+                            self.assertEqual({name: dispatch["environment"][name] for name in value}, value)
+                            output = (json.dumps(value, sort_keys=True) + "\n").encode()
+                            self.assertEqual(receipt["output_sha256"], hashlib.sha256(output).hexdigest())
+                            self.assertEqual(receipt["command"]["inputs"], [
+                                ("fixture.py", "100644", hashlib.sha256(body.encode()).hexdigest()),
+                            ])
+                    self.assertIsNone(probe.base)
+                    self.assertFalse(probe.budget.children)
+
+    def test_live_generic_registration_tracks_selected_source_views_and_restoration(self):
+        command = "python3 fixture.py"
+        self.add("Makefile", f"RESULT := $(shell {command})\nall: ;\n")
+        old_body = "import os\nprint(os.environ['SWITCH']+':old')\n"
+        new_body = "import os\nprint(os.environ['SWITCH']+':new')\n"
+        self.add("fixture.py", old_body)
+        budget = ProbeBudget()
+        old_loader = self.capture_loader(budget)
+        self.add("fixture.py", new_body)
+        current_loader = self.capture_loader(budget)
+        with ProbeSession(current_loader, scratch_root=self.root / "build/scratch", budget=budget) as probe:
+            commands = self.generic_commands(probe, command, inputs=("fixture.py",))
+
+            def observe(body, expected):
+                result = probe.make(
+                    "all", variables=("RESULT",), commands=commands,
+                    assignments=(("environment", "SWITCH", "selected"),),
+                )
+                self.assertEqual(result.semantics["domains"]["RESULT"]["value"], expected)
+                receipt, = result.semantics["dynamic_commands"]
+                self.assertEqual(receipt["command"]["environment"]["SWITCH"], "selected")
+                self.assertEqual(receipt["command"]["inputs"], [
+                    ("fixture.py", "100644", hashlib.sha256(body.encode()).hexdigest()),
+                ])
+                self.assertEqual(receipt["output_sha256"], hashlib.sha256((expected + "\n").encode()).hexdigest())
+
+            observe(new_body, "selected:new")
+            with probe.select_view(old_loader):
+                observe(old_body, "selected:old")
+            observe(new_body, "selected:new")
+        self.assertIsNone(probe.base)
+        self.assertFalse(probe.budget.children)
+        self.assertFalse(probe._issued_context_commands)
+
+    def test_live_generic_python_rejects_original_startup_controls(self):
+        command = "python3 -c 'print(1)'"
+        self.add("Makefile", f"RESULT := $(shell {command})\nall: ;\n")
+        with self.session() as probe:
+            commands = self.generic_commands(probe, command)
+            commands[command]
+            with mock.patch.object(probe, "command", side_effect=AssertionError("producer must not start")):
+                with self.assertRaisesRegex(MakeProbeError, "unsupported startup controls"):
+                    probe.make(
+                        "all", commands=commands,
+                        assignments=(("environment", "PYTHONPATH", "/unsupported-input"),),
+                    )
+        self.assertIsNone(probe.base)
+        self.assertFalse(probe.budget.children)
+
+    def test_live_registered_python_stderr_merge_supplies_the_complete_make_value(self):
+        for name in ("scripts/__init__.py", "scripts/generated_data/__init__.py",
+                     "scripts/generated_data/chapterobjectives/__init__.py"):
+            self.add(name, "")
+        self.add("scripts/generated_data/chapterobjectives/enabled.py", (
+            "import json,os,sys\n"
+            "with open(sys.argv[sys.argv.index('--source')+1]) as source:\n"
+            " selected=json.load(source)['selected']\n"
+            "print('warn',file=sys.stderr,flush=True)\n"
+            "print(selected,flush=True)\n"
+            "os.write(2,b'tail\\n')\n"
+        ))
+        self.add("src/data/chapter_objectives.json", '{"selected":"selected"}\n')
+        command = (
+            'python3 -m scripts.generated_data.chapterobjectives.enabled '
+            '--source "src/data/chapter_objectives.json" 2>&1'
+        )
+        contract = next(item for item in self.contracts.values()
+                        if item["id"] == "generated-chapter-objectives-enablement")
+        self.add("Makefile", (
+            f"FIRST := $(shell {command})\nSECOND := $(shell {command})\n"
+            "all: $(FIRST)\nwarn selected tail: ;\n"
+        ))
+        ordinary = self.shell_argv(command)
+        self.assertEqual((ordinary.returncode, ordinary.stdout, ordinary.stderr),
+                         (0, b"warn\nselected\ntail\n", b""))
+        with self.session() as probe:
+            commands = MakeCommands(probe, {contract["expression"]: contract})
+            direct = probe.command(commands[command])
+            self.assertEqual((direct.stdout, direct.stderr), (ordinary.stdout, ordinary.stderr))
+            observed = probe.make("all", variables=("FIRST", "SECOND"), commands=commands)
+            for name in ("FIRST", "SECOND"):
+                self.assertEqual(observed.semantics["domains"][name]["value"], "warn selected tail")
+            self.assertEqual([item["name"] for item in observed.semantics["files"][0]["prerequisites"]],
+                             ["warn", "selected", "tail"])
+            self.assertEqual(len(observed.events), 2)
+            for receipt in observed.semantics["dynamic_commands"]:
+                self.assertEqual(receipt["output_sha256"], hashlib.sha256(ordinary.stdout).hexdigest())
+        self.assertIsNone(probe.base)
+        self.assertFalse(probe.budget.children)
 
     def test_shared_tokens_preserve_assignment_and_io_number_roles(self):
         for source, assigned in (
@@ -440,7 +956,7 @@ class GraphCommandTests(unittest.TestCase):
 
     def test_generic_fd_literals_and_real_redirections_remain_distinct(self):
         program = "python3 -c 'import json,sys;print(json.dumps(sys.argv[1:]))'"
-        for suffix in ("'2>&1'", r"2\>\&1", "'2>&1' 2>/dev/null", "'2>/dev/null' 2>&1"):
+        for suffix in ("'2>&1'", r"2\>\&1", "'2>&1' 2>&1", "'2>/dev/null' 2>&1"):
             with self.subTest(suffix=suffix):
                 command = program + " " + suffix
                 ordinary = self.shell_argv(command)
@@ -448,8 +964,11 @@ class GraphCommandTests(unittest.TestCase):
                 with self.session() as probe:
                     actual = probe.command(self.generic_registration(probe, command))
                 self.assertEqual(actual.stdout, ordinary.stdout)
-        program = "python3 -c 'import json,sys;print(json.dumps(sys.argv[1:]))'"
-        for suffix in ("2>&1", "2>/dev/null", "2> '/dev/null'", "2>&1 2>/dev/null", "2>/dev/null 2>&1"):
+        program = (
+            "python3 -c 'import os,sys;print(\"err-first\",file=sys.stderr,flush=True);"
+            "print(\"out\",flush=True);os.write(2,b\"raw-err\\n\");print(\"last\",flush=True)'"
+        )
+        for suffix in ("", "2>&1", "2>&1 2>&1"):
             with self.subTest(suffix=suffix):
                 command = program + " " + suffix
                 ordinary = self.shell_argv(command)
@@ -457,6 +976,19 @@ class GraphCommandTests(unittest.TestCase):
                 with self.session() as probe:
                     actual = probe.command(self.generic_registration(probe, command))
                 self.assertEqual((actual.stdout, actual.stderr), (ordinary.stdout, ordinary.stderr))
+        for suffix in ("2>/dev/null", "2> '/dev/null'", "2>&1 2>/dev/null", "2>/dev/null 2>&1"):
+            command = program + " " + suffix
+            ordinary = self.shell_argv(command)
+            expected = b"err-first\nout\nraw-err\nlast\n" if suffix.endswith(" 2>&1") else b"out\nlast\n"
+            self.assertEqual((ordinary.returncode, ordinary.stdout, ordinary.stderr), (0, expected, b""))
+            self.add("Makefile", f"VALUE := $(shell {command})\nall: ;\n")
+            with self.subTest(suffix=suffix), self.session() as probe:
+                commands = self.generic_commands(probe, command)
+                with self.assertRaisesRegex(MakeProbeError, "stderr discard"):
+                    commands[command]
+                with mock.patch.object(probe, "command", side_effect=AssertionError("producer must not start")):
+                    with self.assertRaisesRegex(MakeProbeError, "stderr discard"):
+                        probe.make("all", commands=commands)
         for suffix in ("'2'>/dev/null", r"\2>/dev/null", "2 >/dev/null", "2>&1>elsewhere", "2>>/dev/null"):
             with self.session() as probe:
                 with self.assertRaisesRegex(MakeProbeError, "unconsumed active shell syntax"):
@@ -935,6 +1467,61 @@ class GraphCommandTests(unittest.TestCase):
                             commands[command + tail]
                 self.assertIsNone(probe.base)
                 self.assertFalse(probe.budget.children)
+
+    def test_live_find_rejects_active_cwd_globs_and_preserves_literal_spellings(self):
+        for root, extension, tail in (("texts", "txt", ""), ("scripts/assets", "py", " -print")):
+            self.add(f"{root}/one.{extension}", "first\n")
+            self.add(f"{root}/two.{extension}", "second\n")
+            self.add(f"{root}/ignored.bin", "not selected\n")
+            pattern = "*." + extension
+            for count in range(3):
+                if count:
+                    self.add(("one" if count == 1 else "two") + "." + extension, "cwd match\n")
+                command = f"find {root} -type f -name {pattern}{tail}"
+                ordinary = self.shell_argv(command)
+                with self.subTest(extension=extension, cwd_matches=count):
+                    if count == 2:
+                        self.assertNotEqual(ordinary.returncode, 0)
+                        self.assertTrue(ordinary.stderr)
+                    else:
+                        self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+                        expected = [f"{root}/one.{extension}"]
+                        if count == 0:
+                            expected.append(f"{root}/two.{extension}")
+                        self.assertEqual(ordinary.stdout.decode().splitlines(), expected)
+                    self.add("Makefile", f"FOUND := $(shell {command})\nall: ;\n")
+                    with self.session() as probe:
+                        commands = MakeCommands(probe, self.contracts)
+                        self.assertIn(command, commands)
+                        with self.assertRaisesRegex(MakeProbeError, "active shell expansion"):
+                            probe.make("all", variables=("FOUND",), commands=commands)
+                    self.assertIsNone(probe.base)
+                    self.assertFalse(probe.budget.children)
+                    for spelling in ("'" + pattern + "'", '"' + pattern + '"', "\\" + pattern):
+                        literal = f"find {root} -type f -name {spelling}{tail}"
+                        expected = self.shell_argv(literal)
+                        self.assertEqual(expected.returncode, 0, expected.stderr)
+                        self.assertEqual(expected.stdout.decode().splitlines(),
+                                         [f"{root}/one.{extension}", f"{root}/two.{extension}"])
+                        self.add("Makefile", f"FOUND := $(shell {literal})\nall: ;\n")
+                        with self.session() as probe:
+                            # The sealed registry's source uses quotes; an exact fixture also
+                            # admits the equivalent escaped spelling for a shell dispatch.
+                            identity = ("legacy-text-source-discovery" if extension == "txt"
+                                        else "asset-tool-source-discovery")
+                            contract = next(item for item in self.contracts.values() if item["id"] == identity)
+                            commands = MakeCommands(probe, {"fixture": {
+                                **contract, "command_regex": (
+                                    "(?:" + contract["command_regex"] + "|" + re.escape(literal) + ")"
+                                ),
+                            }})
+                            direct = probe.command(commands[literal])
+                            self.assertEqual(direct.stdout, expected.stdout)
+                            observed = probe.make("all", variables=("FOUND",), commands=commands)
+                            self.assertEqual(observed.semantics["domains"]["FOUND"]["value"],
+                                             " ".join(expected.stdout.decode().splitlines()))
+                        self.assertIsNone(probe.base)
+                        self.assertFalse(probe.budget.children)
 
     def test_registered_find_matches_real_find_with_nested_unicode_and_multiple_batches(self):
         descriptors = set(os.listdir("/proc/self/fd"))
