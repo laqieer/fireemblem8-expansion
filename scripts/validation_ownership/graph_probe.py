@@ -3114,7 +3114,7 @@ def selected_names(expressions, definitions, observed_values, *, unresolved=None
             if value != declarations[0]:
                 return False
         value = declarations[0]
-        spans = list(_make_expression_spans(value))
+        spans = list(_make_expression_spans(value, budget=budget))
         if len(spans) != 1 or spans[0][:2] != (0, len(value)):
             return False
         operation = re.fullmatch(r"(?:subst|patsubst)[ \t]+([^$]*)", spans[0][2], re.S)

@@ -276,6 +276,123 @@ class GraphSemanticApiTests(unittest.TestCase):
                 ("$($(A))$($(A))",), {"A": ["SAFE", "$(MISSING)"]}, {}, budget=ProbeBudget(),
             )
 
+    @staticmethod
+    def constant_selector_declaration(depth, operation="subst", *, braces=False):
+        opening, closing = ("{", "}") if braces else ("(", ")")
+        pattern = opening * depth + "x" + closing * depth
+        return "$" + opening + operation + " " + pattern + ",FLAGS," + pattern + closing
+
+    def test_selector_constant_fallback_matches_the_scanner_depth_boundary(self):
+        for operation in ("subst", "patsubst"):
+            for braces in (False, True):
+                for depth in (2, 511, 512):
+                    declaration = self.constant_selector_declaration(depth, operation, braces=braces)
+                    for select in (False, True):
+                        budget, unresolved = ProbeBudget(), []
+                        with self.subTest(operation=operation, braces=braces, depth=depth, select=select):
+                            def observe():
+                                if select:
+                                    return graph_probe.selected_names(
+                                        ("$($(NAME))",), {"NAME": [declaration]}, {"NAME": {"FLAGS"}},
+                                        unresolved=unresolved, budget=budget,
+                                    )
+                                return list(graph_probe._make_expression_spans(declaration, budget=budget))
+
+                            if depth == 512:
+                                with self.assertRaisesRegex(MakeProbeError, "reference depth bound"):
+                                    observe()
+                                self.assertTrue(budget.failed)
+                                with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
+                                    graph_probe.selected_names(
+                                        ("$($(NAME))",), {"NAME": ["FLAGS"]}, {}, budget=budget,
+                                    )
+                            else:
+                                result = observe()
+                                self.assertEqual(result, {"FLAGS"} if select else [
+                                    (0, len(declaration), declaration[2:-1]),
+                                ])
+                                self.assertFalse(budget.failed)
+                            self.assertEqual(unresolved, [])
+                            self.assertEqual((budget.runs, budget.states), (0, 0))
+
+    def test_selector_constant_fallback_admits_scanning_from_remaining_cache(self):
+        declaration = self.constant_selector_declaration(32)
+
+        def select(budget):
+            return graph_probe.selected_names(
+                ("$($(NAME))",), {"NAME": [declaration]}, {"NAME": {"FLAGS"}}, budget=budget,
+            )
+
+        measured = ProbeBudget()
+        self.assertEqual(select(measured), {"FLAGS"})
+        needed = measured.bytes["cache"]
+        for prior in (0, 1):
+            budget = ProbeBudget(Limits(cache_bytes=needed))
+            budget.charge("cache", prior)
+            with self.subTest(prior=prior):
+                if prior:
+                    with self.assertRaisesRegex(MakeProbeError, "cache byte"):
+                        select(budget)
+                    self.assertTrue(budget.failed)
+                else:
+                    self.assertEqual(select(budget), {"FLAGS"})
+                    self.assertEqual(budget.bytes["cache"], needed)
+                    self.assertFalse(budget.failed)
+                self.assertLessEqual(budget.bytes["cache"], needed)
+        budget = ProbeBudget(Limits(cache_bytes=4096))
+        with self.assertRaisesRegex(MakeProbeError, "cache byte"):
+            select(budget)
+        self.assertTrue(budget.failed)
+        self.assertEqual((budget.runs, budget.states), (0, 0))
+
+    def test_selector_constant_fallback_checks_deadline_during_scanning(self):
+        declaration = self.constant_selector_declaration(32)
+        budget = ProbeBudget()
+        remaining, checkpoints = budget.remaining, 0
+
+        def expire_after_work():
+            nonlocal checkpoints
+            checkpoints += 1
+            if checkpoints == 128:
+                budget.started -= budget.limits.seconds
+            return remaining()
+
+        with patch.object(budget, "remaining", side_effect=expire_after_work):
+            with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
+                graph_probe.selected_names(
+                    ("$($(NAME))",), {"NAME": [declaration]}, {"NAME": {"FLAGS"}}, budget=budget,
+                )
+        self.assertEqual(checkpoints, 128)
+        self.assertTrue(budget.failed)
+        self.assertEqual((budget.runs, budget.states), (0, 0))
+
+    def test_selector_constant_fallback_preserves_closed_and_staged_syntax(self):
+        expressions = ("$($(NAME))", "${${NAME}}", "$(call $(NAME))")
+        graph_probe._require_staged_reference_contract(expressions)
+        for operation in ("subst", "patsubst"):
+            declaration = self.constant_selector_declaration(2, operation)
+            budget = ProbeBudget()
+            self.assertEqual(graph_probe.selected_names(
+                expressions, {"NAME": [declaration, declaration]}, {"NAME": {"FLAGS"}}, budget=budget,
+            ), {"FLAGS"})
+            self.assertFalse(budget.failed)
+        for declarations in (
+            ["$(sort FLAGS)"],
+            ["$(subst x,FLAGS,$(INPUT))"],
+            ["$$(subst x,FLAGS,x)"],
+            ["prefix$(subst x,FLAGS,x)"],
+            ["$(subst x,FLAGS,x"],
+            ["$(subst x,FLAGS,x)", "$(subst y,FLAGS,y)"],
+        ):
+            budget = ProbeBudget()
+            with self.subTest(declarations=declarations), self.assertRaises(graph_probe._UnresolvedName):
+                graph_probe.selected_names(
+                    expressions, {"NAME": declarations}, {"NAME": {"FLAGS"}}, budget=budget,
+                )
+            self.assertFalse(budget.failed)
+        with self.assertRaisesRegex(MakeProbeError, "emitted-reference transformation"):
+            graph_probe._require_staged_reference_contract(("$(subst x,FLAGS,x)",))
+
     def test_literal_binding_module_consumers_share_reference_parity(self):
         for count in range(1, 6):
             sources = {

@@ -1324,6 +1324,11 @@ name, input-file byte, 512-choice/reference-depth and aggregate cache/deadline
 bounds apply. Resource refusal is not downgraded to an unused unresolved
 selector. Memo entries are local to one definitions/observations context and
 its active-reference ancestry; incomplete alternatives never enter the cache.
+The observed-constant `subst`/`patsubst` fallback scans its declaration under
+that same budget. Its outer expression counts toward the existing 512-entry
+scanner depth: 511 nested literal delimiters fit, while 512 refuse even if
+the observed selected name is short. Fallback depth, cache and deadline
+failures remain hard errors, not unresolved alternatives or cached successes.
 When secondary expansion or eval is involved, the existing native variable
 pages also capture literal post-parse definitions without expanding their
 bodies. The graph census retains immediate and deferred forms and closes their
