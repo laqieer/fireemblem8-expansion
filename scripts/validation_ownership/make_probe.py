@@ -2265,6 +2265,7 @@ class ProbeSession:
                     or values["syscalls"] > config["syscall_limit"]
                     or values["live_process_peak"] > config["process_limit"]
                     or values["memory_peak"] > config["memory_limit"]
+                    or values["observation_bytes"] > config["observation_limit"]
                     or values["observation_bytes"] < 128*values["observations"]
                 )
             ):

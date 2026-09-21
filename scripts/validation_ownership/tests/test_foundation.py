@@ -14437,6 +14437,7 @@ class CumulativeQuotaPolicyTests(unittest.TestCase):
         for values in (
             {"processes": 4}, {"syscalls": 10}, {"written_bytes": 65},
             {"observations": 5, "observation_bytes": 640},
+            {"observation_bytes": 65537},
             {"created_files": limits.created_files + 1},
             {"live_process_peak": limits.processes + 1},
             {"memory_peak": limits.address_space_bytes + 1},
@@ -14447,6 +14448,16 @@ class CumulativeQuotaPolicyTests(unittest.TestCase):
                 ), 1 << 40))
                 with self.assertRaises(MakeProbeError):
                     self.native_model(budget, counters=values)
+
+    def test_failed_observation_admission_preserves_actual_attempted_bytes(self):
+        limits = Limits(file_bytes=32768, control_bytes=65536)
+        budget = self.budget(limits, control_bytes=1 << 40, total_bytes=1 << 40)
+        with self.assertRaisesRegex(MakeProbeError, "modeled observation admission"):
+            self.native_model(budget, counters={
+                "ok": False, "error": "modeled observation admission",
+                "observation_bytes": 65537,
+            })
+        self.assertGreaterEqual(budget.bytes["control"], 65537)
 
     def test_resumption_retains_issued_caps_and_settles_real_cumulative_deltas(self):
         names = {
