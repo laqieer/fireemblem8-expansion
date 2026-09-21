@@ -292,6 +292,12 @@ class ProbeBudget:
     def deadline(self) -> float:
         return self.started + self.limits.seconds
 
+    def cumulative_limit(self, name: str) -> int | float | None:
+        """Read a work quota without changing the original unit-admission limits."""
+        if name == "observations":
+            return self.limits.observation_count
+        return getattr(self.limits, name, None)
+
     def remaining(self) -> float:
         remaining = self.deadline - time.monotonic()
         if self.failed or self.closed or remaining <= 0:
@@ -310,13 +316,13 @@ class ProbeBudget:
 
     def charge(self, category: str, size: int):
         self.remaining()
-        cap = getattr(self.limits, f"{category}_bytes", None)
+        cap = self.cumulative_limit(f"{category}_bytes")
         if cap is None or isinstance(size, bool) or not isinstance(size, int) or size < 0:
             self.reject("invalid byte-accounting request")
         if category == "pending" and size > MAX_PENDING_RECORD_BYTES:
             self.reject("pending record exceeds 1048576-byte admission limit")
         used = self.bytes.get(category, 0) + size
-        if used > cap or sum(self.bytes.values()) + size > self.limits.total_bytes:
+        if used > cap or sum(self.bytes.values()) + size > self.cumulative_limit("total_bytes"):
             self.reject(f"aggregate {category} byte budget exhausted")
         self.bytes[category] = used
 
@@ -336,7 +342,7 @@ class ProbeBudget:
             isinstance(states, bool)
             or not isinstance(states, int)
             or states < 1
-            or self.states + states > self.limits.states
+            or self.states + states > self.cumulative_limit("states")
             or pending < 1
             or pending > self.limits.pending
         ):
@@ -425,10 +431,10 @@ class ProbeBudget:
         self.remaining()
         if (
             self.session_started or self.producer_waiters or self._outcome is not None
-            or self.children or self.runs >= self.limits.runs
+            or self.children or self.runs >= self.cumulative_limit("runs")
             or type(output_limit) is not int or not 4 * _lifecycle._FRAME_BYTES < output_limit <= _OUTCOME_MAX
             or output_limit > self.limits.process_output_bytes
-            or self.bytes.get("output", 0) + output_limit > self.limits.output_bytes
+            or self.bytes.get("output", 0) + output_limit > self.cumulative_limit("output_bytes")
             or self._outcome_entries + _OUTCOME_ENTRIES > self.limits.entries
         ):
             self.reject("outcome requires one unspent bare-budget reservation")
@@ -472,7 +478,7 @@ class ProbeBudget:
         if (producer_channel is None) != (producer_handler is None):
             self.reject("incomplete private producer channel")
         self.runs += 1
-        if self.runs > self.limits.runs:
+        if self.runs > self.cumulative_limit("runs"):
             self.reject("aggregate process-launch budget exhausted")
         if privileged:
             if (
@@ -660,9 +666,9 @@ class ProbeBudget:
         ):
             self.reject("outcome requires its single-use exact guarded bare-budget launch")
         if (
-            self.runs >= self.limits.runs or limit > self.limits.process_output_bytes
-            or self.bytes.get("output", 0) + limit > self.limits.output_bytes
-            or sum(self.bytes.values()) + limit > self.limits.total_bytes
+            self.runs >= self.cumulative_limit("runs") or limit > self.limits.process_output_bytes
+            or self.bytes.get("output", 0) + limit > self.cumulative_limit("output_bytes")
+            or sum(self.bytes.values()) + limit > self.cumulative_limit("total_bytes")
         ):
             self.reject("outcome stream reservation exceeds remaining budget")
         outcome._spent = True
@@ -684,7 +690,7 @@ class ProbeBudget:
                     "--outcome-v1", outcome._token, "--", *argv,
                 ]
                 self.charge("pending", sum(len(os.fsencode(arg)) + 1 for arg in launcher))
-                if sum(self.bytes.values()) + limit > self.limits.total_bytes:
+                if sum(self.bytes.values()) + limit > self.cumulative_limit("total_bytes"):
                     self.reject("outcome aggregate stream headroom exhausted before launch")
                 child = subprocess.Popen(
                     launcher, cwd=cwd, env=env, stdin=subprocess.PIPE,

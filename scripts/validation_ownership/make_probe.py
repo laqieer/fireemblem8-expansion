@@ -2037,8 +2037,8 @@ class ProbeSession:
         )
         file_remaining = min(
             self.budget.limits.file_bytes,
-            self.budget.limits.event_bytes - self.budget.bytes.get("event", 0),
-            self.budget.limits.control_bytes - self.budget.bytes.get("control", 0),
+            self.budget.cumulative_limit("event_bytes") - self.budget.bytes.get("event", 0),
+            self.budget.cumulative_limit("control_bytes") - self.budget.bytes.get("control", 0),
         )
         if file_remaining <= 0:
             self.budget.reject("aggregate channel file budget exhausted")
@@ -2074,17 +2074,27 @@ class ProbeSession:
             "file_limit": file_remaining,
             "memory_limit": self.budget.limits.address_space_bytes - sum(item["memory"] for item in self.parked_capsules),
             "process_limit": self.budget.limits.processes - sum(item["processes"] for item in self.parked_capsules),
-            "descendant_limit": self.budget.limits.descendants - self.processes_used,
-            "syscall_limit": self.budget.limits.syscalls - self.syscalls_used,
-            "write_limit": self.budget.limits.sandbox_bytes - self.budget.bytes.get("sandbox", 0),
+            "descendant_limit": min(
+                self.budget.limits.descendants,
+                self.budget.cumulative_limit("descendants") - self.processes_used,
+            ),
+            "syscall_limit": min(
+                self.budget.limits.syscalls,
+                self.budget.cumulative_limit("syscalls") - self.syscalls_used,
+            ),
+            "write_limit": min(
+                self.budget.limits.sandbox_bytes,
+                self.budget.cumulative_limit("sandbox_bytes") - self.budget.bytes.get("sandbox", 0),
+            ),
             "creation_limit": self.budget.limits.created_files - self.files_created,
             "observation_count": min(
                 self.budget.limits.entries,
-                self.budget.limits.observation_count - self.observations_used,
+                self.budget.limits.observation_count,
+                self.budget.cumulative_limit("observations") - self.observations_used,
             ),
             "observation_limit": min(
                 self.budget.limits.file_bytes,
-                self.budget.limits.control_bytes - self.budget.bytes.get("control", 0),
+                self.budget.cumulative_limit("control_bytes") - self.budget.bytes.get("control", 0),
             ),
         }
         if file_cleanup_owner is not None and (
@@ -2245,14 +2255,17 @@ class ProbeSession:
                 "created": self.files_created + values["created_files"] - settled["created_files"],
             }
             if (
-                prospective["observations"] > self.budget.limits.observation_count
+                prospective["observations"] > self.budget.cumulative_limit("observations")
                 or values["observations"] > config["observation_count"]
                 or not failed and (
-                    prospective["processes"] > self.budget.limits.descendants
-                    or prospective["syscalls"] > self.budget.limits.syscalls
+                    prospective["processes"] > self.budget.cumulative_limit("descendants")
+                    or prospective["syscalls"] > self.budget.cumulative_limit("syscalls")
                     or prospective["created"] > self.budget.limits.created_files
+                    or values["processes"] > config["descendant_limit"]
+                    or values["syscalls"] > config["syscall_limit"]
                     or values["live_process_peak"] > config["process_limit"]
                     or values["memory_peak"] > config["memory_limit"]
+                    or values["observation_bytes"] > config["observation_limit"]
                     or values["observation_bytes"] < 128*values["observations"]
                 )
             ):
@@ -2267,22 +2280,24 @@ class ProbeSession:
             self.memory_peak = max(
                 self.memory_peak, values["memory_peak"] + sum(item["memory"] for item in self.parked_capsules),
             )
+            if values["written_bytes"] > config["write_limit"]:
+                self.budget.reject("aggregate sandbox byte budget exhausted")
             self.budget.charge("sandbox", values["written_bytes"] - settled["written_bytes"])
             self.budget.charge("control", values["observation_bytes"] - settled["observation_bytes"])
             settled.update(values)
 
         def grants(extra_control=0):
             available = {
-                "descendant_limit": (settled["processes"], self.budget.limits.descendants - self.processes_used),
-                "syscall_limit": (settled["syscalls"], self.budget.limits.syscalls - self.syscalls_used),
-                "write_limit": (settled["written_bytes"], self.budget.limits.sandbox_bytes - self.budget.bytes.get("sandbox", 0)),
+                "descendant_limit": (settled["processes"], self.budget.cumulative_limit("descendants") - self.processes_used),
+                "syscall_limit": (settled["syscalls"], self.budget.cumulative_limit("syscalls") - self.syscalls_used),
+                "write_limit": (settled["written_bytes"], self.budget.cumulative_limit("sandbox_bytes") - self.budget.bytes.get("sandbox", 0)),
                 "creation_limit": (settled["created_files"], self.budget.limits.created_files - self.files_created),
                 "observation_count": (
-                    settled["observations"], self.budget.limits.observation_count - self.observations_used,
+                    settled["observations"], self.budget.cumulative_limit("observations") - self.observations_used,
                 ),
                 "observation_limit": (
                     settled["observation_bytes"],
-                    self.budget.limits.control_bytes - self.budget.bytes.get("control", 0) - extra_control,
+                    self.budget.cumulative_limit("control_bytes") - self.budget.bytes.get("control", 0) - extra_control,
                 ),
             }
             if any(left < 0 for _, left in available.values()):
@@ -2635,7 +2650,7 @@ class ProbeSession:
                 observed["metadata"], config["observation_count"],
                 decoded_limit=min(
                     self.budget.limits.file_bytes,
-                    self.budget.limits.control_bytes - self.budget.bytes.get("control", 0),
+                    self.budget.cumulative_limit("control_bytes") - self.budget.bytes.get("control", 0),
                 ),
                 runtime_paths=set(config["runtime_files"]) | set(config["runtime_parents"]),
                 runtime_absent=config["runtime_absent"],
@@ -4975,7 +4990,10 @@ class ProbeSession:
         # executes. There are no hidden executor queues or unbounded futures.
         planned = []
         for state in states:
-            if len(planned) >= self.budget.limits.states - self.budget.states:
+            if len(planned) >= min(
+                self.budget.limits.states,
+                self.budget.cumulative_limit("states") - self.budget.states,
+            ):
                 self.budget.reject("variant states exceed aggregate bound before launch")
             self.budget.admit_planned_state(len(encoded(state)))
             planned.append(tuple(tuple(item) for item in state))
