@@ -3805,6 +3805,38 @@ expiry. A valid past Delete must still satisfy every proof and strict UTC
 timestamp rule. The old history-time comparison admits the expired controls;
 neither sleeping nor changing the machine clock is needed.
 
+### Typed toolchain sidecar and comparator boundary
+
+This is part of **TC-WORKFLOW-GATE-OWNERSHIP-001**, not another case or
+permission. Follow the [typed intermediate component procedure](#typed-intermediate-component-procedure)
+for **TC-WORKFLOW-OWNERSHIP-MODERN-TOOLCHAIN-001** before interpreting native
+toolchain equality. The existing class/module routing covers the added tests.
+
+For source-only evidence, run only the named inert classes below with the
+review environment's process/foreign/OS/filesystem-effect traps. Inspect
+imports and fixtures first; do not substitute the whole native-bearing module.
+Require the two original temporary-name models to produce equal complete
+semantic role forms while their raw occurrences remain different. Changing a
+non-role argument/order/environment, executable/stat/SDK/source input,
+stdin/status/output or completed assembly digest must remain meaningful.
+Only two parsed role slots may change; raw `ProcessOutput.runtime_probes`
+must not change.
+
+Exercise original shared-return object/byte-reference binding, same-object
+mutation, copied/forged/replayed/stale step and recipe values, cumulative
+admission refusal, and cleanup. Confirm one raw archive entry per newly
+acknowledged occurrence, no entry for a missing acknowledgement and no second
+entry for a repeated acknowledgement. Replacing a returned raw sidecar must
+change original-namespace execution binding without changing semantic
+identity. Historical archive data may survive a view switch but must not
+revive any result capability; session cleanup removes owned archive references.
+
+No change to `_stable_native_context`, `_semantic`, native dispatches,
+producer hashing, Make/source interpretation, SDK/budget/bootstrap policy or
+public raw reporting is permitted. A component's one returned Make does not
+establish equality between two returned pages or the affordability of an
+original root, full report, resource census or H1. Those remain separate gates.
+
 ### Bounded outcome custody prerequisite (O1–O6)
 
 This subsection belongs to **TC-WORKFLOW-GATE-OWNERSHIP-001**, under the
@@ -5866,6 +5898,103 @@ each native case only in its existing process suite without `TestCase` aliases.
 No budget, CI job/command count, case ID, source-phase permission or allocation17
 changes. Actual ARM/sed is exercised by the following separate controls;
 complete per-pass source authority is not inferred from component success.
+
+Run the pure HeaderV3/shared-return controls without native setup:
+
+```sh
+python3 -B -m unittest \
+  scripts.validation_ownership.tests.test_header_pipeline.HeaderReceiptInertTests -v
+```
+
+They use the real parser, authenticator, guard reservation/commit methods,
+immutable views, private fingerprint and `ProbeSession` issue/claim/retire
+methods under inert dependencies. Require valid complete, conditional-short,
+repeated-occurrence and report-array-permuted transcripts. Omission,
+insertion, resequencing, payload/count/digest repair with the original tag,
+foreign completion fields, decimal terminals and malformed rows must reject.
+The retained version-1 parser must reproduce the original repaired-count
+omission acceptance as the restoration negative.
+
+Require exact fingerprint vectors for every scalar/container tag, Unicode
+surrogates, signed zero, list/tuple equivalence, dictionary-order neutrality,
+aliases, cycles, unsupported subclasses, integer/float domains and cumulative
+work exhaustion. Exercise exact owner/object/thread/job/view/epoch binding,
+copy/replay/purpose/mutation failures, original result values after claim,
+retirement, pre-growth row and terminal boundaries, retained failed charges,
+single-count transfer, and key-reference release. Immutable runtime rows must
+retain ordinary JSON/index/equality behavior, return themselves from
+copy/deepcopy, reject every ordinary mutator/reinitialization, and contain only
+the existing eight semantic keys. These controls are protocol and custody
+evidence only; they do not qualify a native sed/libselinux execution.
+
+The [HR1-HR5 correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5737364905)
+uses that same inert selector and case ID. Keep all ordinary/native routes
+separate and unchanged. From a clean checkout:
+
+1. Fingerprint a 10,000-element array and a disordered 10,000-key dictionary.
+   Observe allocation growth between actual admissions: arrays retain only
+   ancestor/index frames, while dictionaries pre-admit key references and
+   sorting scratch separately. Require unchanged F2b vectors, alias work and
+   dictionary-order neutrality. Python allocation tracing is not RSS evidence.
+2. Deny calculation capacity, including for an escape-heavy Unicode scope.
+   Require zero encoder calls before refusal. Reject subclassed, non-ASCII
+   and oversized wire values before slicing/copying/decoding; deny decode
+   capacity before constructing a large terminal payload slice. Observe
+   actual calculation/decode allocations under their representation grants.
+3. Inject failures before and after attempted/accessed insertion and at
+   reservation retirement, for rows and terminals. Retain spent authority
+   through every attempted publication; allow conservative overcount, never
+   refund. A later row's encoding/hash failure cannot sign an earlier prefix.
+4. Replace issued stdout and stderr independently with distinct equal bytes.
+   Both claims reject; unchanged claims retain the original byte references
+   through subsequent completed/report mutations.
+5. Exercise the actual supervisor control flow with process, signal, resource
+   and filesystem effects replaced by inert boundaries. Early errors and
+   nonzero statuses release the verifier before report construction; success
+   signs before release. Signing/publication faults still clean up.
+
+Retain actual-helper pre-fix failures and restore the affected helper in each
+targeted control to recover rejection failures. Restore the correction and
+require green results without changing limits, formats or selectors. These
+controls launch no candidate, compiler, SDK, sed or native supervisor process;
+the separate native qualification remains an independently allocated step.
+
+The [coherent-forgery case preparation](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5737416238)
+adds no execution allocation. Only after a separate exact-head authorization,
+use the existing small Linux x86-64/GNU Make4.3/ARM GCC/C SDK/sed fixture and
+run these two selectors in this order, stopping on the first failure:
+
+```sh
+python3 -B -m unittest -f -v \
+  scripts.validation_ownership.tests.test_header_pipeline.ArmHeaderPipelineTests.test_actual_arm_sdk_and_sed_keep_five_original_dispatches \
+  scripts.validation_ownership.tests.test_header_pipeline.ArmHeaderPipelineTests.test_actual_kernel_completion_rejects_repaired_forgery
+```
+
+The positive retains its ordinary-Make comparison and one confined Make.
+The negative uses one confined Make only. Completion of both therefore means
+three Make calls across two independent fixture/session lifetimes; do not
+substitute the full native class, add an ordinary negative run, or retry.
+
+For the positive, require the original five dispatches, actual ARM/SDK inputs,
+sed observations and final output agreement. For the negative, intercept
+exactly one actual returned filter report with a coherent version-2/status-0
+completion and nonempty contiguous rows. Duplicate one actual row under the
+next sequence, repair the public count/ordered manifest and conservatively
+increase observation accounting within the original public residual grants.
+Keep the actual tag, scope, binding, status and every original payload.
+Insufficient count/byte/file capacity fails the case; it never widens a limit.
+One-row and legitimate repeated-path transcripts remain supported.
+
+Require the genuine header authentication error to propagate through
+`_sandbox_run` to the Make caller before filter capability issue/claim,
+output materialization/capture, cache retention or semantic-view publication.
+Earlier directory/ARM-scan effects and the private empty filter-output
+preallocation are not claimed absent. Require normal owned cleanup afterward.
+Never inspect a private key/signer/config or retain/print raw reports, tags,
+environments or streams. The test-local transform is checked separately by
+`HeaderReceiptInertTests`, including acceptance when only MAC verification
+is removed; those model controls are not native results. The existing case,
+class/module mapping and all broader native selectors remain unchanged.
 
 For the actual ARM/SDK/sed header pipeline, run:
 
@@ -9824,6 +9953,335 @@ loss stays unavailable, not reconstructed. Unsupported/locked fault branches,
 historical readonly assertions and modeled records cannot be relabeled as
 seven real kernel outcomes. Original source before/after checks cover the
 helper and subject in the same checkout; no source snapshot ledger is added.
+
+### Typed intermediate component procedure
+
+This extension retains **TC-WORKFLOW-OWNERSHIP-MODERN-TOOLCHAIN-001** and its
+existing ownership selectors. The confirmed bounded preimage contains two
+complete checker records in the **first returned Make**, differing only at
+the paired cc1 output and assembler input names. The second Make failed SDK
+admission; its exact row/bound and root20's exact operand difference were not
+retained. Do not invent either or rerun that spent pair as an automatic step.
+
+1. On the exact candidate, first run the inspected pure/inert selectors:
+
+   ```sh
+   python3 -B -m unittest \
+     scripts.validation_ownership.tests.test_toolchain_runtime.ToolchainProtocolDataTests \
+     scripts.validation_ownership.tests.test_toolchain_runtime.ToolchainIntermediateInertTests \
+     scripts.validation_ownership.tests.test_toolchain_runtime.ToolchainCustodyInertTests \
+     scripts.validation_ownership.tests.test_toolchain_runtime.ToolchainCorrectionInertTests \
+     scripts.validation_ownership.tests.test_header_pipeline.HeaderReceiptInertTests -v
+   ```
+
+   Use inert native/foreign/process/namespace/privilege/file-effect boundaries
+   during implementation/review. These controls invoke actual parser,
+   state-machine, syscall-hook, shared-return, controller, archive and binding
+   APIs with explicitly synthetic effects. They are not native receipts, SDK
+   discovery, memory/RSS sizing or execution permission. Preserve the original
+   bad-model acceptances, the corrected refusals, targeted enforcement
+   removal/restoration and semantics-preserving neutral controls.
+
+2. **Only after a separate native allocation**, use the existing small
+   `ModernToolchainTests` fixture and select exactly:
+
+   ```sh
+   python3 -B -m unittest \
+     scripts.validation_ownership.tests.test_toolchain_runtime.ModernToolchainTests.test_one_make_two_checker_typed_intermediate_component -v
+   ```
+
+   This method makes **one** direct Make observation with two internal original
+   checker invocations. It does not run the ordinary Make oracle, a second
+   page, another source variant, `run_probe`, a root/census or H1. Disclose the
+   fixture's preexisting `src/query.c`, copied genuine headers, initially absent
+   generated header parents, no text producer and empty final target. That
+   source/graph is deliberately smaller than the ordinary repository root.
+
+3. Require two genuinely acknowledged raw recipe envelopes in producer order,
+   bound to the actual two native jobs and five stage envelopes each. Require
+   version-2 consumed launches and exactly one complete version-1 compile
+   receipt. Inspect real creator/writer/reader process/birth/exec identities,
+   exclusive creation, regular `0600` identity/link count, actual write-close-
+   exit/sealed hash, returned sequential read/hash/offset-close-exit, successful
+   unlink/path absence/nlink zero and driver exit. The original empty output
+   directory check and all ownership cleanup remain required.
+
+4. Require distinct raw namespace/launch bindings and raw occurrences. Do not
+   force random filenames or use randomness as the only control. If names
+   differ, retain their exact grammar-derived operand differences. Require
+   equal actual completed assembly extent/digest before expecting one exact
+   deduplicated semantic checker record. A real content difference is a stop,
+   not a fingerprint to normalize. All other meaningful command fields and
+   native dispatch records must remain intact.
+
+5. Allocate native enforcement controls separately, one selected method at a
+   time: `test_native_intermediate_creation_status_fault_cannot_complete`,
+   `test_native_intermediate_actor_fault_reaches_its_owned_stop_guard`,
+   `test_native_intermediate_object_fault_reaches_its_pin_guard`,
+   `test_native_intermediate_returned_content_fault_reaches_its_reader_guard`,
+   `test_native_intermediate_writer_terminal_barrier_cannot_be_skipped`,
+   `test_native_intermediate_unlink_fault_reaches_its_retirement_guard`,
+   `test_native_copied_step_result_is_not_completion_authority`, and
+   `test_native_changed_non_role_result_cannot_reach_semantic_projection`.
+   Each uses the existing fixture/runtime mutation mechanism and one attempted
+   Make. Stop-derived fault injection is labelled as such; it does not
+   manufacture a real adversarial kernel observation.
+
+   The separately selected
+   `test_native_intermediate_guard_removal_and_restoration` makes twelve
+   attempted observations: six fault-plus-removal arms and six restored arms.
+   It is not covered by the one-Make positive allocation. A restored arm must
+   reach its named new guard; an earlier SDK, setup or independent permission
+   failure is not evidence for that guard. Removing a guard must fail the
+   corresponding regression even if another later independent gate still
+   prevents final success. Retain all diagnostics and do not silently widen
+   flags, modes, I/O forms, paths, compiler profiles or limits on a failed arm.
+
+Actual compiler/syscall compatibility remains unknown until the exact native
+qualifier runs. In particular, the closed explicit-close/sequential-I/O,
+creation/writer mode and existing option-arity requirements are not inferred
+from the model. The three mechanism-owned FD peak and cumulative native/
+parent allocation and work costs need genuine qualification; pure traces are
+not RSS or a full-root capacity certificate. Header's separately owned native
+procedure, bootstrap, source-phase integration and final delivery gates remain
+independent. No ROM/save/configuration/localization or gameplay compatibility
+change is introduced.
+
+#### Namespace and mutation-causality corrections
+
+The first separately allocated component attempt on
+`a8e71c107de8f6eefacb29b81e6a130018a3a152` is **spent and closed**: one
+confined Make was attempted, and the selected method failed after 7.325 seconds
+with `toolchain intermediate used an unsupported I/O or mutation form`.
+Make did not return; no complete checker pair, content equality or native
+acceptance was established. The syscall, actor, phase and operands were not
+retained. Do not infer seek, fcntl or another operation from that message.
+Context teardown reported no secondary error, but the final `assert_clean`
+was not reached and is not accepted evidence.
+
+At this same terminal refusal point, a bounded error suffix now reports the
+actual syscall number, authenticated driver/writer/reader role, closed tracker
+phase and owned-slot status. Only known fcntl commands and bounded SETFD/SETFL
+flag bits are retained; pointer-bearing or other arguments are not recorded.
+Unknown forms use finite categories. No paths, PIDs, arbitrary registers,
+buffers, environment or content enter the diagnostic. Its at-most-256-byte
+ASCII message has a 4 KiB pre-growth workspace reservation; failed admission
+or diagnostic allocation retains the original refusal as the primary error
+and does not refund consumed accounting. Earlier independent denials,
+including the existing seek/alias guard, remain unchanged. This is attribution,
+not permission or compiler-profile expansion.
+
+Source/inert review cannot retrospectively attribute that first run. A future
+discriminator run requires independent exact-head review and a **new separate
+bounded allocation**. Do not rerun the native selector, enforcement matrix,
+root/report/resource or H1 automatically.
+
+The separately allocated discriminator attempt on
+`558ab8c60209cfe4e7b768475762b2668282d293` is also **spent and closed**.
+Its one Make attempt failed after 8.080 seconds before Make returned, with
+`[syscall=89 role=writer phase=writer-exec owned=no op=other]`.
+This identifies a readlink **entry attempt** on this x86-64 policy. The
+pathname and kernel return were not retained; neither `EINVAL` nor a
+successful readlink is claimed. The earlier first attempt remains
+unattributed, and neither attempt reached the final `assert_clean`.
+
+The tracker now preserves the general policy's already-admitted pathname
+readlink/readlinkat metadata family (89/267) only for the exact authenticated
+actor and canonical absolute pathname of its already-created, pinned regular
+intermediate. The supported `readlinkat` context is `AT_FDCWD`; relative,
+empty, alternate-dirfd and aliased intermediate spellings reject. Entry and
+exit bind the same stopped path arguments, namespace root, tracker phase and
+full pinned entry/object identity. Negative query outcomes remain metadata
+failures, not failed file I/O or successful intermediate facts; unexpected
+nonnegative link results reject. No I/O role, descriptor, content digest or
+creation/write/read/retirement transition is acquired or advanced.
+
+The existing metadata observer and request/buffer accounting are retained;
+the tracker adds only bounded request/revalidation admission and no buffer
+capture, resolver or metadata channel. Inert tests exercise both forms with
+explicitly **MODEL** regular-file outcomes, original observer records,
+actor/path/root/dirfd/alias/type/replacement/content and admission failures.
+These are not evidence of the unretained native kernel return. Fcntl
+mutation, seek, vector, mapping, descriptor-alias and all other unsupported
+forms remain denied. Independent exact review and another separately frozen
+native allocation are required before any third Make attempt.
+
+The next separately frozen attempt on
+`39ee7cf5972920106b1900803ebd2130d992153e` is **spent and closed**.
+One Make attempt failed after 6.500 seconds at
+`toolchain writer changed its requested mode`, before Make returned.
+Readlink is no longer the first refusal, but the actual writer flags and mode
+were not retained. Do not call `0666`, an unused argument, or any other value
+an observation. No checker pair, final `assert_clean` or component acceptance
+was obtained; context teardown reported no secondary error.
+
+At that unchanged writer-mode refusal, a bounded error suffix now names the
+actual open/openat form, authenticated writer/fixed phase, already validated
+flag bits and whether `O_CREAT` makes the mode meaningful. Exact mode values
+are shown only in the ordinary `0000`-`0777` permission domain; unused,
+unknown and out-of-domain values use fixed labels, never raw registers or
+pointers. No path, PID, environment, content, SDK value or key is emitted.
+Formatting receives a 4 KiB pre-growth reservation; diagnostic admission or
+allocation failure preserves the original primary refusal and does not refund
+accounting. The mode/flag predicates and accepted forms are unchanged.
+Inert `0600`/`0666`/unused-argument examples are MODEL controls only.
+Independent review and a new separate allocation are required before another
+native discriminator; this diagnostic is not a compatibility allowance.
+
+The separately allocated writer discriminator on
+`6ac727246a63e08f3c867ddc7304b1e5e1dacd33` is **spent and closed**.
+One Make attempt failed after 6.452 seconds before the writer syscall, with
+`[syscall=257 form=openat role=writer phase=writer-exec flags=0x241 create=yes mode=0o666]`.
+These are actual `O_WRONLY|O_CREAT|O_TRUNC` entry arguments, not a successful
+open or changed actual inode mode. Older attempts keep their unretained mode
+values; no pair, final `assert_clean` or component acceptance is inferred.
+
+The amended contract admits requested `0600` **or** `0666` only for the
+writer's `O_CREAT` open of its already-created, pinned, single-link empty
+regular object. Both native and raw-receipt validation enforce this together.
+The actual inode/entry and regular `0600` mode must agree before and after;
+the writer cannot use `O_CREAT` to create, replace or repair an object.
+Initial driver exclusive creation still requests and creates `0600`.
+Non-`O_CREAT` behavior, other requested modes/flags and every remaining proof,
+resource and permission boundary are unchanged.
+
+In inert controls, exercise both requests through actual entry/leave and the
+receipt parser. Retain exact requested mode/flags in raw receipts, and require
+equal content-bound semantics with actual mode `0600`. Reject absent,
+replaced/new, actual-`0666`, linked/symlink, nonempty, foreign-actor and
+unsupported request/flag models without a fixup. Restore the old native
+predicate and the old parser independently and require `0666` positives to
+fail again. Post-open states in these tests are explicitly MODEL, not the
+unobserved kernel outcome. Independent exact review and a new separate native
+allocation remain required; no automatic next Make/root/report/resource/H1
+or delivery action is granted.
+
+The next separately allocated attempt on
+`6f2f22e21f49c9427795304ef46d6733bcdff64b` is **spent and closed**.
+One Make attempt failed after 6.221 seconds with
+`[syscall=9 role=writer phase=writer-open owned=yes op=other]`.
+This identifies mmap and the old tracker classification, **not** an actual
+intermediate-backed mapping. Its hint/FD/flags were not retained. The unchanged
+general policy had already accepted the request before the tracker and rejects
+mutable `/work` backing independently. Do not infer anonymous versus immutable
+runtime-file backing, a returned mapping, a completed pair or `assert_clean`.
+
+Tracker ownership now uses syscall ABI descriptor operands, never numeric
+coincidence with an address, size, PID, flag or ignored argument. Scalar
+first-FD operations retain their existing guards; file-backed mmap uses `r8`,
+while anonymous mmap ignores that argument. `dup2`/`dup3` destinations remain
+protected, but `dup`'s ignored second register is not a destination. Path-based
+and `*at` operations still use the existing resolved path/context; an ignored
+dirfd on an absolute nonprivate path does not acquire intermediate ownership.
+No mapping, alias or other syscall permission is added.
+
+Use actual inert entry/leave controls with owned FD zero and nonzero: MODEL
+anonymous/immutable-runtime mappings and address/size/scalar requests with
+collisions must retain general resource accounting and leave private proof
+state unchanged. Genuine intermediate/alias mappings must refuse at the
+existing generic guard before the MODEL kernel callback. Real read/write/
+close/stat/fcntl, alias/stale/foreign and dup-destination controls remain
+required. Restoring the old indiscriminate `rdi` comparison must recover the
+collision failures. These models cannot identify the unretained real mmap
+arguments. Independent review and a new bounded allocation remain required;
+there is no automatic next native/root/report/resource/H1 or delivery action.
+
+The separately allocated ABI-corrected attempt on
+`d0899f4b328ca4335a849748b0455ddd27fbe29d` is **spent and closed**.
+One Make attempt failed after 6.318 seconds with no supervisor result:
+`write_report -> tracker.emit -> intermediate_record -> _decode_intermediate`
+exhausted aggregate metadata-observation admission. Source control flow
+requires zero status and complete tracker phase before this emission path;
+that is not an accepted receipt, returned Make/checker pair, content equality
+or final `assert_clean`. Exact native charged totals/issued bounds were not
+retained. Do not invent a calibrated deficit or full-root fit.
+
+The corrected producer uses the common typed launch/roles/schema/object/
+content/order/retirement/issued-limit validator directly on its admitted
+record, then performs one bounded encoding. It does not reparse a duplicate
+full graph. The parent hostile-wire parser retains every strict check.
+In source/inert controls, derive admission thresholds from the actual complete
+MODEL record and each separately charged traversal, validation, encoding and
+publication representation. Require exact new-path admission to pass, one
+below and cumulative exhaustion to refuse before the relevant growth or
+publication, and reinstating the original producer to fail the derived
+boundary. Apply the same schema/identity/content/retirement adversaries to
+producer and parser. Exact raw wire and semantic output, neutral ordering,
+count/byte publication and failure cleanup remain required.
+MODEL cost comparisons are not native RSS, the unretained native limit, or a
+root/report/resource/H1 certificate. No limit increase/refund/reset or native
+retry is authorized; independent exact review and a new allocation remain
+required before another actual attempt.
+
+The separately allocated direct-emission attempt on
+`bdd627e400d10709d12c65cca488447bdb77230e` is **spent and closed**.
+One Make attempt failed after 6.383 seconds in parent `prepare_native`'s
+full-accessed-list control reservation. Native emission was no longer the
+first failure, but Make/pair/final `assert_clean` acceptance was not obtained.
+The actual request, charged/remaining totals and stage number were not retained.
+
+Before parent admission changes, inventory the complete shared-budget
+prepare/issue/claim/reverification/step/recipe/acknowledgement path, including
+original full-report F2b, all real envelopes and retained references. The
+completion parser scans borrowed observations but decodes only selected record
+prefixes: fund actual scans, strict string bounds, selected decoded graphs,
+path components, containers/reference sorting and optional header-search
+validation before allocation, not an encoder/copy of every unrelated string.
+Keep `records()`'s signature/raw output, complete F2b and every later
+verification/output/context/copy/replay obligation unchanged.
+
+Use two full MODEL recipes on one budget, with a large unrelated borrowed
+observation. Derive the exact shared cost through acknowledgement, require one
+below to refuse before the second archive publication, and reinstate the old
+whole-list preparation charge to recover the failure. Check selected-decoder
+pre-growth admission and that unselected-report mutation still fails F2b at
+claim/seal. Compare output fields/raw envelopes/semantics against the model
+without that observation. Report the exact remaining legitimate-work refusal
+for larger models instead of enlarging the cap or skipping proof.
+MODEL ledgers are not native counters/RSS or a guaranteed fit. No subsequent
+native/root/report/resource/H1 or delivery allocation follows automatically.
+
+The live descriptor control must model the supervisor's actual view:
+`<config.root>/work/cc*.s`, not the tracee's guest `/work/cc*.s`. Require the
+exact host-root spelling with the same object to pass, while foreign/escaped/
+deleted spellings and replaced FD/workspace identities reject. Inspect the
+returned raw receipt and confirm its path is still the original guest string.
+This correction grants no new path or alias.
+
+Before any expected regression-failure assertion, prepare and compile all
+source/function mutations. The existing nine-arm enforcement selector now
+preflights its whole plan; the six stop-fault removal arms also prepare outside
+their failure assertions. Missing or ambiguous AST targets, transform failures
+and syntax errors are preparation failures, never credited mutations.
+`Policy.leave` is selected explicitly for stdin-byte enforcement, distinct
+from `_ToolchainIntermediate.leave`. The inode, stdin, launch and target
+controls must report the actual boundary reached.
+
+The launch removal uses the original otherwise valid v2 `consume_launch`
+body and disables only issued-set membership for a real typed token whose
+original record/context remains bound. Missing, copied, forged and replayed
+tokens remain independent refusals. The native mutation must cross the valid
+launch boundary; a zero-run v1/schema refusal is not evidence for removal.
+The raw-record identity removal keeps the actual rows and disables only their
+image-identity comparison in `records()`, using the version-query stage to
+isolate that condition. Compile-stage role/image and intermediate actor
+binding remain independently enforced; returning an empty record set does
+not remove those requirements and is not an admissible mutation control.
+
+`test_captured_driver_changes_and_actual_target_result_adversary_never_succeed`
+retains its driver-identity control. Its post-seal foreign-target substitution
+must now assert copied/unissued custody rejection, original `arm-none-eabi`
+bytes and **zero returned aggregates**; do not unpack or fabricate a result.
+The separate
+`test_original_bound_foreign_target_stops_before_later_stages` changes the
+trusted test completion at the original issuance boundary, before the shared
+record freezes it. That labelled fault must produce the original target-error
+status/stderr and stop after stages 0/1. Removing only the execute target gate
+must expose an attempted stage 2 at the inert/native dispatch witness.
+The independent aggregate verifier still checks original target values; it
+must not be deleted to obtain a false final success. This additional native
+selector requires its own one-Make allocation and has not been allocated by
+code preparation.
 
 ### Interactions and save compatibility
 

@@ -3203,6 +3203,10 @@
           "evidence": "scripts/validation_ownership/tests/test_header_pipeline.py"
         },
         {
+          "command": "python3 -B -m unittest scripts.validation_ownership.tests.test_header_pipeline.HeaderReceiptInertTests -v",
+          "evidence": "scripts/validation_ownership/tests/test_header_pipeline.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_read_epochs -v",
           "evidence": "scripts/validation_ownership/tests/test_read_epochs.py"
         },

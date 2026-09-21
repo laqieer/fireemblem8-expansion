@@ -198,6 +198,178 @@ the native configuration is serialized. A caller-created dictionary cannot
 grant the SDK or kernel-input profile. Full original source-read-phase
 authority remains separate and unimplemented.
 
+The filter launch alone is version 2 and carries a fresh key in the private
+trusted configuration. Before candidate execution, the supervisor reserves
+one terminal observation and its exact maximum wire size plus separately
+accounted slot, encoder and hash workspace. Each actual row similarly reserves
+one count, its closed-schema maximum and construction workspace before row
+allocation. Successful publication transfers each private reservation once,
+without a second count or refund; a partial encode, hash or transfer cannot
+sign a prefix. The manifest is streamed in sequence order and retains no
+second ordered row list. Its maximum is derived from the issued observation
+count, file limit, exact profile shapes, scope and binding—not from an
+assumption that every allowed path executes.
+The size calculators themselves admit encoder/container workspace before
+building templates, including the worst escaped extent of the exact scope.
+Nested authentication checks each full wire string's exact type, ASCII and
+extent before making a payload slice. It separately admits the slice, bytes,
+decoded text/Unicode and parser nodes counted without copying the input.
+These are representation reservations, not an assumption that wire bytes
+equal Python heap bytes.
+
+During publication the spent marker remains present through both set
+insertions and retires last. Its overlap with the published entries is
+pre-admitted. An interrupted construction or transfer prevents completion;
+partial publication may conservatively overcount but never refunds authority.
+Failed/nonzero supervisor paths release the owned verifier before report
+construction. A successful path signs first, releases that reference, then
+constructs the report; later publication failure still runs cleanup.
+
+After the parent validates a successful report, the shared private
+native-return seam fingerprints the complete parsed report with exact builtin
+value tags, bounded big-endian lengths, signed fixed-width integers, finite
+IEEE binary64 values, exact Unicode code points, ordered arrays and
+lexicographically sorted exact string keys. Lists and tuples have the same
+value encoding; aliases are revisited, while cycles, subclasses, bool-as-int,
+nonfinite values and out-of-domain integers reject. Every issue and claim pays
+its own traversal, sorting, hash and retained-reference work from existing
+budgets. No whole-report JSON encoding, new limit or opaque report capability
+is introduced. Its closed purpose dispatch covers authenticated header
+completion and the typed toolchain completion described below.
+Traversal retains ancestor/index frames and selects one child at a time,
+not a width-sized collection of pending actions. Dictionary key references
+and sorting scratch receive separate pre-growth admission. The exact private
+fingerprint format, including repeated alias work and Unicode code points,
+is unchanged. Claim also requires the originally issued immutable stdout
+and stderr references: replacing either with distinct equal bytes rejects.
+
+### Typed private compiler intermediate and raw evidence
+
+The original five-stage GCC checker uses a version-2 launch and validator
+together; the execution route rejects version 1 rather than accepting a
+successful compile without proof. `records()` still returns the original
+execution and stdin rows. Stage four alone owns a closed intermediate tracker.
+A successful compile requires one version-1 `toolchain-intermediate:` record;
+other stages and failed compile results cannot carry a successful record.
+
+The tracker binds the actual owned process, pidfd, fresh birth and verified
+exec, not just numeric PIDs or filenames. It follows successful exclusive
+driver creation, creator close, the cc1 output open/write/close/zero-exit,
+completed-file sealing, assembler input open/sequential returned bytes/close/
+zero-exit, and the driver's successful unlink/absence/nlink-zero/zero-exit.
+Mode, object identity, offsets, extent, content and ordering must agree.
+An `O_CREAT` writer open of the already-created, pinned, single-link empty
+regular intermediate may request `0600` or `0666`; it is not initial creation.
+The same actual inode/entry must remain exactly `0600` before and after the
+open. Driver exclusive creation still requires requested and actual `0600`,
+and the non-`O_CREAT` writer rule remains unchanged. Missing, replaced,
+permissive-mode, nonempty, symlink or multiple-link objects do not receive this
+compatibility. Native and receipt validators apply the same narrow request
+rule. Raw flags/requested mode are retained verbatim; semantic mode reflects
+the proved actual inode, not the ignored existing-file creation argument.
+The tracee alone is chrooted. A `/proc/<pid>/fd/<fd>` link read by the
+supervisor is compared with the exact trusted-root pathname
+`<config.root>/work/<created-name>`, in that same namespace. The directory pin,
+entry identity and actual FD identity are still independently checked.
+Foreign roots, root-prefix lookalikes, escaped spellings, replacement objects
+and deleted names do not pass that equality. Raw argv and receipt paths
+remain the original canonical guest `/work/...` strings; no prefix filter or
+general path normalizer is introduced.
+Only grammar-derived operands identify the roles. A mention of the complete
+intermediate path in any other argument or execution environment rejects;
+child `-isystem`, when present, must equal the parent's admitted selection.
+Unsupported vector, positioned, seek, descriptor-alias or mutation forms
+refuse. The existing path-family gate remains permission, not creation proof.
+
+There are **three peak mechanism-owned descriptors**: a directory pin, one
+readable file pin, and at most one transient bounded fdinfo reader. The latter
+is closed before another mechanism acquisition. Content checks use `pread`
+chunks of at most 64 KiB on the original pin. Returned reader bytes are hashed
+at their stopped addresses using aligned eight-byte peeks, one word and one
+selected slice at a time; no whole reader buffer is copied. Requested work,
+aligned peeks, fixed word/hash/ctypes workspace, chunk allocations and
+verification repetitions are cumulatively admitted under the original limits
+and deadline. Tracker/record construction and emitted wire have separate
+pre-growth reservations. This neither enlarges shipping limits nor refunds a
+short read, failed verification or failed publication. Cleanup attempts each
+remaining owned handle once, does not retry an uncertain raw descriptor, and
+never unlinks to manufacture successful retirement.
+
+Native receipt emission validates its already-admitted builtin record directly,
+using the same launch, operand-role and typed receipt validator as the hostile
+wire parser. A bounded pre-encoding walk counts JSON nodes/depth and exact
+escaped ASCII extent without constructing the wire. Fixed traversal scratch,
+per-node/text work, container/key-sort/validator workspace and overlapping
+encoder text/bytes/prefix/publication representations are admitted before
+growth. The producer encodes once; it does not decode another graph just to
+validate its own record. The parent still performs the complete strict
+ASCII/duplicate-key/shape/canonical/type/bound wire parse and the common typed
+validation. Repeated work remains charged, and count/byte publication and
+failure cleanup remain unchanged. This removes duplicate representation work,
+not a quota or validation requirement.
+
+The **one ProbeSession native-return registry** issues and claims the closed
+`toolchain-step-v2` purpose. It binds original immutable stdout/stderr
+references and status, the full private F2b report fingerprint, the consumed
+launch, owner thread, job, source snapshot/tree and namespace epoch. Step
+sealing rechecks those original facts, not a subsequently modified completion
+object. Identity-issued, one-use step and recipe capabilities are separate
+from the shared native-return registry. They cannot be copied, reconstructed
+from JSON, reused after consumption or carried into a different view.
+Mutable native-report references are released after step sealing; accepted
+primitive/immutable facts, not another full report graph, remain.
+
+`ProcessOutput.toolchain_receipts` is an appended default-empty tuple of
+canonical stage-envelope bytes. Its `runtime_probes` remains raw. Only a
+consumed successful recipe may create the semantic copy containing the
+versioned, content-bound role summary and **exactly two** typed operand
+references. All other arguments/order, environment, executable/stat/SDK/source
+identity, stdin, status/output, publication and header-kernel facts retain
+their existing meaning. Varying actual assembly contents still changes
+identity. Cache exclusions and exact semantic comparison are unchanged.
+
+Each new successful publication acknowledgement archives one canonical raw
+recipe occurrence, including the actual producer slot/job and the digest of
+its complete acknowledged semantic record. A repeated acknowledgement does
+not append another occurrence. `MakeObservation.toolchain_receipts` preserves
+the current Make's ordered occurrences even when exact semantic deduplication
+collapses equal checker records. While the session is active,
+`session.toolchain_receipts(scope)` returns the immutable data for an
+acknowledged scope; omitting the scope returns all retained occurrences.
+Unknown scopes and inactive sessions reject. View expiry invalidates result
+capabilities, not historical archive data; session cleanup clears the archive.
+External byte copies remain inert evidence, never execution authority.
+
+The raw-sidecar digest participates only in original-namespace
+**execution/source binding**, not in `semantics`, `semantic_digest`, producer
+authority or the public reporter. No automatic raw publisher is added.
+Admission includes envelope traversal, decoding, encoding, registry and
+archive representations, not just wire byte counts.
+Parent completion preparation distinguishes borrowed observations from decoded
+records. Every original entry still pays strict type/UTF-8/extent and repeated
+scan/prefix work; only selected exec/stdin and applicable ARM-header JSON rows
+fund their actual payload slices, decoded graphs, path-resolution, reference
+arrays and sorting. Header-search validation funds its real maps, tuples,
+path components and traversal. Unrelated strings are not copied or encoded by
+that parser. They are not discarded: complete-report F2b issue/claim/seal
+fingerprints and all subsequent envelopes, bindings and acknowledgement work
+remain independently charged and unchanged. This representation correction
+does not imply that every valid larger completion fits the shared control cap.
+
+The focused procedures are
+[the existing toolchain case](test-cases/workflow-governance.md#typed-intermediate-component-procedure)
+and [the gate case](test-cases/workflow-governance.md#typed-toolchain-sidecar-and-comparator-boundary).
+Pure/inert checks establish data, state and custody behavior only. The
+one-Make/two-checker qualifier and native fault/restoration methods are
+prepared for **separate explicit execution allocation**. Actual compiler
+options, creation modes, syscall/close/offset behavior, physical cleanup and
+resource affordability remain unqualified until that evidence exists.
+Unsupported real forms must fail rather than widening this contract.
+This component is not a full original-root/report/resource/H1 result and does
+not repair the separately unretained SDK-admission failure. There is no
+gameplay flag or ROM/RAM, save, localization, generated-game-data, archival,
+bootstrap, header-protocol, Make/source-interpretation or SDK policy change.
+
 An opt-in original read trace uses the actual GNU4.3 entry/return ABI and four
 x86-64 hardware execution-breakpoint slots. The runtime ELF, decoded control
 flow, globals, real source fopen call sites and stopped process/frame are

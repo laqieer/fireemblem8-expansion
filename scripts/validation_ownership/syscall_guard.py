@@ -19,14 +19,15 @@ import re
 import resource
 import signal
 import stat
+import sys
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 if __package__:
     from .authority import _event_command, _read_events, encoded, parse_json
-    from .lifecycle import finish_cleanup
+    from .lifecycle import cleanup_scope, finish_cleanup
     from .metadata_transport import encode_metadata_transport
     from . import private_install as install_protocol
     from . import header_effects
@@ -46,7 +47,7 @@ if __package__:
     )
 else:
     from authority import _event_command, _read_events, encoded, parse_json
-    from lifecycle import finish_cleanup
+    from lifecycle import cleanup_scope, finish_cleanup
     from metadata_transport import encode_metadata_transport
     import private_install as install_protocol
     import header_effects
@@ -277,6 +278,9 @@ class Process:
     toolchain_exec: tuple | None = None
     toolchain_status: int | None = None
     toolchain_status_queried: bool = False
+    toolchain_birth_sequence: int | None = None
+    toolchain_exec_sequence: int | None = None
+    toolchain_pending: tuple | None = None
 
     def clone(self):
         return Process(
@@ -316,6 +320,727 @@ class _PendingInstall:
                 os.close(descriptor)
 
 
+_TOOLCHAIN_WORD_SCRATCH = 8192
+_TOOLCHAIN_FILE_CHUNK = 65536
+_TOOLCHAIN_TRACKER_STORAGE = 8192 + 1024 * toolchain_runtime.INTERMEDIATE_NODE_LIMIT
+
+
+def _toolchain_representation():
+    if (
+        sys.implementation.name != "cpython" or ctypes.sizeof(ctypes.c_long) != 8
+        or sys.getsizeof({}) > 128 or sys.getsizeof([]) > 128
+        or sys.getsizeof((None,) * 8) > 128 or sys.getsizeof(b"") > 64
+        or sys.getsizeof((1 << 64) - 1) > 64
+        or sys.getsizeof(ctypes.c_ulong(0)) > 256 or sys.getsizeof(ctypes.c_void_p(0)) > 256
+        or sys.getsizeof(hashlib.sha256()) > 512 or sys.getsizeof(memoryview(b"")) > 256
+    ):
+        raise Violation("unsupported toolchain proof representation")
+
+
+def _toolchain_memory_digest(tracker, pid, address, requested, returned, digest):
+    if (
+        any(type(value) is not int for value in (address, requested, returned))
+        or not 0 <= returned <= requested <= SYSCALL_MEMORY_LIMIT
+        or not 0 <= address < 1 << 64 or requested and not address
+        or address + requested > 1 << 64
+    ):
+        raise Violation("toolchain read exceeds its stopped-memory interval")
+    leading = address & 7
+    aligned = ((leading + requested + 7) // 8) * 8 if requested else 0
+    # One machine word/int, word bytes, <=8-byte slice, ctypes temporaries,
+    # digest state and loop scalars coexist; no requested-sized buffer exists.
+    tracker.reserve(requested + aligned + _TOOLCHAIN_WORD_SCRATCH)
+    start, stop = address & ~7, address + returned
+    for cursor in range(start, stop if returned else start, 8):
+        tracker.deadline()
+        word = ptrace(PEEKDATA, pid, cursor) & ((1 << 64) - 1)
+        first, last = max(address - cursor, 0), min(stop - cursor, 8)
+        digest.update(word.to_bytes(8, "little")[first:last])
+    return returned
+
+
+class _ToolchainIntermediate:
+    """One launch's stopped actor/object proof; its bytes are not a capability."""
+
+    def __init__(self, policy):
+        _toolchain_representation()
+        self.policy = policy
+        self.profile = policy.toolchain
+        self.limits = toolchain_runtime.IntermediateLimits(**{
+            name: policy.config[name] for name in (
+                "file_limit", "observation_count", "observation_limit", "write_limit",
+                "creation_limit", "process_limit", "memory_limit", "syscall_limit", "deadline",
+            )
+        })
+        self.workspace_fd = self.file_fd = self.fdinfo_fd = -1
+        self.phase = "unarmed"
+        self.failed = False
+        self.birth_sequence = self.order = 0
+        self.path = self.name = self.record = self.roles = None
+        self.executions, self.actors = [], []
+        self.descriptors = [None, None, None]
+        self.written = self.read_bytes = self.write_calls = self.read_calls = 0
+        self.reader_digest = None
+        self.eof = False
+
+    def deadline(self):
+        if self.phase == "closed":
+            raise Violation("toolchain proof has already released its owned lifetime")
+        if time.monotonic() >= self.limits.deadline:
+            raise Violation("toolchain proof exhausted its original deadline")
+
+    def reserve(self, size):
+        self.deadline()
+        if type(size) is not int or not 0 <= size < 1 << 64:
+            raise Violation("toolchain proof has an invalid work reservation")
+        self.policy.charge_metadata(size)
+        if self.policy.observation_bytes > self.limits.observation_limit:
+            raise Violation("toolchain proof exceeded its original issued observation bound")
+
+    def tick(self):
+        self.reserve(1024)
+        self.order += 1
+        if self.order >= 1 << 64:
+            raise Violation("toolchain transition counter overflow")
+        return self.order
+
+    def birth(self, pid, state):
+        self.reserve(1024)
+        if (
+            self.policy.processes.get(pid) is not state or state.pidfd < 0
+            or state.toolchain_birth_sequence is not None
+        ):
+            raise Violation("toolchain process birth is not newly owned")
+        self.birth_sequence += 1
+        if self.birth_sequence >= 1 << 64:
+            raise Violation("toolchain process birth overflow")
+        state.toolchain_birth_sequence = self.birth_sequence
+
+    def actor(self, pid, state, sequence=None):
+        sequence = state.toolchain_exec_sequence if sequence is None else sequence
+        if (
+            type(sequence) is not int or not 1 <= sequence <= len(self.actors)
+            or self.policy.processes.get(pid) is not state
+            or self.actors[sequence - 1][0] != pid
+            or self.actors[sequence - 1][1] is not state
+            or self.actors[sequence - 1][2:] != (state.pidfd, state.toolchain_birth_sequence)
+            or state.pidfd < 0 or state.toolchain_exec_sequence != sequence
+        ):
+            raise Violation("toolchain operation has a foreign process/exec/birth owner")
+        return sequence
+
+    def phase_is(self, *phases):
+        if self.failed or self.phase not in phases:
+            raise Violation("toolchain transition is outside its closed completion order")
+
+    def workspace(self):
+        self.reserve(1024)
+        expected = tuple(self.profile["workspace"])
+        path = Path(self.policy.config["root"]) / "work"
+        if (
+            self.workspace_fd < 0
+            or install_protocol.directory_identity(os.fstat(self.workspace_fd)) != expected
+            or install_protocol.directory_identity(path.stat(follow_symlinks=False)) != expected
+        ):
+            raise Violation("toolchain workspace no longer names its original pin")
+
+    def object_identity(self, *, absent=False):
+        self.workspace()
+        self.reserve(2048)
+        if self.file_fd < 0:
+            raise Violation("toolchain object lacks its original readable pin")
+        identity = publication_identity(os.fstat(self.file_fd))
+        if absent:
+            try:
+                os.stat(self.name, dir_fd=self.workspace_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                return identity
+            raise Violation("toolchain retirement left its original directory entry")
+        entry = publication_identity(os.stat(
+            self.name, dir_fd=self.workspace_fd, follow_symlinks=False,
+        ))
+        if (
+            identity != entry or identity[2] != stat.S_IFREG | 0o600 or identity[6] != 1
+            or identity[:3] != tuple(self.record["creation"]["identity"][:3])
+            or not 0 <= identity[3] <= self.limits.file_limit
+        ):
+            raise Violation("toolchain object changed identity, mode, link or extent")
+        return identity
+
+    def descriptor(self, pid, state, descriptor, access):
+        self.actor(pid, state)
+        identity = self.object_identity()
+        self.reserve(8192 + 64 * (len(self.policy.config["root"]) + len(self.path)))
+        if not 0 <= descriptor < 128:
+            raise Violation("toolchain descriptor is outside its native bound")
+        expected_path = str(Path(self.policy.config["root"]) / self.path.lstrip("/"))
+        if (
+            os.readlink(f"/proc/{pid}/fd/{descriptor}") != expected_path
+            or publication_identity(os.stat(f"/proc/{pid}/fd/{descriptor}")) != identity
+        ):
+            raise Violation("toolchain descriptor no longer names its pinned object")
+        if self.fdinfo_fd >= 0:
+            raise Violation("toolchain fdinfo reader overlaps another descriptor acquisition")
+        self.reserve(4097 + 16384)
+        self.fdinfo_fd = os.open(
+            f"/proc/{pid}/fdinfo/{descriptor}", os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+        )
+        def release():
+            descriptor, self.fdinfo_fd = self.fdinfo_fd, -1
+            os.close(descriptor)
+        with cleanup_scope([release]):
+            data = os.read(self.fdinfo_fd, 4097)
+            if len(data) > 4096:
+                raise Violation("toolchain descriptor metadata exceeds its bound")
+            positions = re.findall(rb"^pos:\s+([0-9]+)$", data, re.MULTILINE)
+            flags = re.findall(rb"^flags:\s+([0-7]+)$", data, re.MULTILINE)
+            if len(positions) != 1 or len(flags) != 1:
+                raise Violation("toolchain descriptor lacks one offset and flags record")
+            position, opened = int(positions[0]), int(flags[0], 8)
+            if (
+                position >= 1 << 64 or opened >= 1 << 64
+                or opened & os.O_ACCMODE != access or opened & (os.O_APPEND | os.O_PATH)
+            ):
+                raise Violation("toolchain descriptor changed offset or access flags")
+            return identity, position
+
+    def file_digest(self, expected):
+        self.reserve(expected[3] + _TOOLCHAIN_WORD_SCRATCH)
+        digest = hashlib.sha256()
+        offset = 0
+        if self.object_identity() != expected:
+            raise Violation("toolchain content measurement started on a changed object")
+        while offset < expected[3]:
+            count = min(_TOOLCHAIN_FILE_CHUNK, expected[3] - offset)
+            self.reserve(count + 256)
+            chunk = os.pread(self.file_fd, count, offset)
+            if not chunk or len(chunk) > count:
+                raise Violation("toolchain pinned content read is incomplete")
+            digest.update(chunk)
+            offset += len(chunk)
+            del chunk
+        if self.object_identity() != expected:
+            raise Violation("toolchain object changed during pinned content measurement")
+        return digest.hexdigest()
+
+    def note_path(self, state, path):
+        if state.kernel_call in {8, 17, 18, 19, 20, 32, 33, 292}:
+            raise Violation("toolchain intermediate used an unsupported I/O or descriptor alias")
+        if state.toolchain_pending is not None and state.toolchain_pending[0] != "path":
+            raise Violation("toolchain path use overlaps a pending operation")
+        state.toolchain_pending = ("path", path, state.path_context)
+
+    def exec_row(self, pid, state, path, identity, arguments, environment):
+        self.reserve(8192)
+        self.reserve(toolchain_runtime._json_cost((arguments, environment)))
+        row = {
+            "stage": "compile", "sequence": len(self.executions) + 1, "path": path,
+            "identity": list(identity), "argv": arguments, "environment": environment,
+        }
+        try:
+            roles = toolchain_runtime.compile_operand_roles(
+                (*self.executions, row), self.profile, self.policy.config["argv"], complete=False,
+            )
+        except toolchain_runtime.MakeProbeError as error:
+            raise Violation(str(error)) from error
+        return row, roles
+
+    def exec_entry(self, pid, state):
+        if (
+            state.toolchain_exec_sequence is not None
+            or state.toolchain_birth_sequence is None
+            or self.policy.processes.get(pid) is not state or state.pidfd < 0
+            or state.toolchain_exec is None or len(self.executions) >= 3
+        ):
+            raise Violation("toolchain exec does not have a fresh owned actor")
+        sequence = len(self.executions) + 1
+        self.phase_is(("unarmed", "creator-closed", "sealed")[sequence - 1])
+        if self.path is not None and self.path in state.fds.values():
+            raise Violation("toolchain exec inherited an intermediate descriptor")
+        image = self.profile["images"][sequence - 1]
+        arguments, environment = state.toolchain_exec
+        row, roles = self.exec_row(pid, state, image[0], image[1:], arguments, environment)
+        if sequence > 1 and roles.output.value != self.path:
+            raise Violation("toolchain exec operand is not the actually created object")
+        state.toolchain_pending = ("exec", row, roles)
+
+    def executed(self, pid, state, row, wire):
+        pending = state.toolchain_pending
+        if pending is None or pending[0] != "exec" or row != pending[1]:
+            raise Violation("toolchain actual exec differs from its stopped-entry roles")
+        sequence = row["sequence"]
+        if self.policy.processes.get(pid) is not state or state.pidfd < 0:
+            raise Violation("toolchain actual exec lost its owned process")
+        self.reserve(8192 + len(wire))
+        if sequence == 1:
+            self.phase_is("unarmed")
+            toolchain_runtime.verify_workspace(
+                Path(self.policy.config["root"]) / "work", self.profile["workspace"],
+            )
+            self.workspace_fd = os.open(
+                Path(self.policy.config["root"]) / "work",
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+            )
+            self.workspace()
+            launch = self.policy.config["toolchain_runtime"]
+            self.record = {
+                "version": 1, "scope": launch["scope"], "binding": launch["binding"],
+                "stage": "compile", "role": "stage4-assembly", "path": None,
+                "workspace": list(self.profile["workspace"]), "actors": [],
+            }
+            self.phase = "armed"
+        elif sequence == 2:
+            self.phase_is("creator-closed")
+            self.phase = "writer-exec"
+        else:
+            self.phase_is("sealed")
+            self.phase = "reader-exec"
+        self.roles = pending[2]
+        self.executions.append(row)
+        state.toolchain_exec_sequence = sequence
+        self.actors.append((pid, state, state.pidfd, state.toolchain_birth_sequence))
+        self.record["actors"].append({
+            "exec_sequence": sequence, "pid": pid, "birth_sequence": state.toolchain_birth_sequence,
+            "exec_record_sha256": hashlib.sha256(wire).hexdigest(),
+        })
+        state.toolchain_pending = None
+
+    def _unsupported_operation(self, number, sequence, owned, registers):
+        message = "toolchain intermediate used an unsupported I/O or mutation form"
+        try:
+            self.reserve(4096)
+            number = number if type(number) is int and 0 <= number < 1 << 64 else "unknown"
+            role = (
+                ("driver", "writer", "reader")[sequence - 1]
+                if type(sequence) is int and 1 <= sequence <= 3 else "unknown"
+            )
+            phase = self.phase if type(self.phase) is str and self.phase in (
+                "unarmed", "armed", "created", "creator-closed", "writer-exec",
+                "opening", "writer-open", "writing", "closing", "writer-closed",
+                "writer-exited", "sealed", "reader-exec", "reader-open", "reading",
+                "reader-closed", "reader-exited", "unlinking", "retired",
+                "finalizing", "complete", "emitting", "emitted", "failed", "closed",
+            ) else "unknown"
+            slot = "yes" if owned is True else "no" if owned is False else "unknown"
+            operation = "other"
+            if number == 72:
+                command = registers.rsi
+                if type(command) is not int or command not in (0, 1, 2, 3, 4, 5, 6, 7, 1030, 1031, 1032):
+                    operation = "fcntl command=unknown"
+                else:
+                    flags = "not-recorded"
+                    if command in (2, 4):
+                        bits = registers.rdx
+                        mask = 1 if command == 2 else (
+                            os.O_APPEND | os.O_NONBLOCK | os.O_ASYNC | os.O_DIRECT | os.O_NOATIME
+                        )
+                        flags = (
+                            f"0x{bits:x}" if type(bits) is int and 0 <= bits <= mask and not bits & ~mask
+                            else "unknown"
+                        )
+                    operation = f"fcntl command={command} flags={flags}"
+            return Violation(
+                f"{message} [syscall={number} role={role} phase={phase} owned={slot} op={operation}]"
+            )
+        except (Violation, MemoryError) as error:
+            raise Violation(message) from error
+
+    def enter(self, pid, state, r):
+        n = r.orig_rax
+        # Path/dirfd operations are bound by note_path, not by scalar equality.
+        if n in {0, 1, 3, 5, 8, 16, 17, 18, 19, 20, 32, 33, 72, 73, 74, 75,
+                 77, 78, 81, 91, 93, 138, 217, 232, 233, 281, 292}:
+            descriptor = r.rdi
+        elif n == 9 and not r.r10 & MAP_ANONYMOUS:
+            descriptor = signed(r.r8)
+        else:
+            descriptor = None
+        touched = state.toolchain_pending
+        if n == 59:
+            self.exec_entry(pid, state)
+            return
+        if self.failed:
+            state.toolchain_pending = None
+            return
+        if n in {56, 57, 58, 435}:
+            self.actor(pid, state, 1)
+            if self.path is not None and self.path in state.fds.values():
+                raise Violation("toolchain fork inherited an open intermediate")
+            return
+        slot = state.toolchain_exec_sequence
+        if slot is not None:
+            self.actor(pid, state)
+        owned = descriptor is not None and slot is not None and self.descriptors[slot - 1] == descriptor
+        if n in {32, 33, 292} and (
+            owned or n in {33, 292} and self.path is not None and state.fds.get(r.rsi) == self.path
+        ):
+            raise Violation("toolchain intermediate descriptor alias is unsupported")
+        if n == 3 and owned:
+            self.actor(pid, state)
+            self.phase_is({1: "created", 2: "writer-open", 3: "reader-open"}[slot])
+            _, position = self.descriptor(pid, state, descriptor, {1: os.O_RDWR, 2: os.O_WRONLY, 3: os.O_RDONLY}[slot])
+            if position != (0 if slot == 1 else self.written if slot == 2 else self.read_bytes):
+                raise Violation("toolchain close changed the sequential offset")
+            self.phase = "closing"
+            state.toolchain_pending = ("close", slot, descriptor, self.policy.calls)
+            return
+        if touched is None and not owned:
+            return
+        sequence = self.actor(pid, state)
+        if n in {2, 257}:
+            self.phase_is("armed", "writer-exec", "reader-exec")
+            if touched is None or touched[0] != "path":
+                raise Violation("toolchain open lost its actual pathname")
+            path, context = touched[1:]
+            if (
+                context is None or context[0] != path or not path.startswith("/work/")
+                or str(PurePosixPath(path).parent) != "/work"
+            ):
+                raise Violation("toolchain open used a noncanonical or aliased pathname")
+            flags, mode = (r.rdx, r.r10) if n == 257 else (r.rsi, r.rdx)
+            try:
+                if sequence == 1:
+                    self.phase_is("armed")
+                    toolchain_runtime._flags(
+                        flags, "creation", os.O_RDWR, os.O_CREAT | os.O_EXCL,
+                        os.O_TRUNC | os.O_CLOEXEC | os.O_NOFOLLOW | getattr(os, "O_LARGEFILE", 0),
+                    )
+                    if mode != 0o600:
+                        raise Violation("toolchain creation changed its requested mode")
+                    self.workspace()
+                    try:
+                        os.stat(PurePosixPath(path).name, dir_fd=self.workspace_fd, follow_symlinks=False)
+                    except FileNotFoundError:
+                        pass
+                    else:
+                        raise Violation("toolchain creation did not start with an absent entry")
+                elif sequence == 2:
+                    self.phase_is("writer-exec")
+                    toolchain_runtime._flags(
+                        flags, "writer", os.O_WRONLY, 0,
+                        os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC | os.O_NOFOLLOW | getattr(os, "O_LARGEFILE", 0),
+                    )
+                    if mode not in ((0o600, 0o666) if flags & os.O_CREAT else (0,)):
+                        message = "toolchain writer changed its requested mode"
+                        try:
+                            self.reserve(4096)
+                            form = "open" if n == 2 else "openat"
+                            meaningful = bool(flags & os.O_CREAT)
+                            if not meaningful:
+                                mode_label = "unused"
+                            elif type(mode) is not int:
+                                mode_label = "unknown"
+                            elif 0 <= mode <= 0o777:
+                                mode_label = f"0o{mode:03o}"
+                            else:
+                                mode_label = "out-of-domain"
+                            failure = Violation(
+                                f"{message} [syscall={n} form={form} role=writer phase=writer-exec "
+                                f"flags=0x{flags:x} create={'yes' if meaningful else 'no'} mode={mode_label}]"
+                            )
+                        except (Violation, MemoryError) as error:
+                            raise Violation(message) from error
+                        raise failure
+                else:
+                    self.phase_is("reader-exec")
+                    toolchain_runtime._flags(
+                        flags, "reader", os.O_RDONLY, 0,
+                        os.O_CLOEXEC | os.O_NOFOLLOW | getattr(os, "O_LARGEFILE", 0),
+                    )
+            except toolchain_runtime.MakeProbeError as error:
+                raise Violation(str(error)) from error
+            if sequence > 1:
+                if path != self.path:
+                    raise Violation("toolchain actor opened a different intermediate")
+                identity = self.object_identity()
+                expected = (
+                    tuple(self.record["creation"]["identity"]) if sequence == 2
+                    else tuple(self.record["writer"]["completed"]["identity"])
+                )
+                if sequence == 2 and identity[3] != 0 or sequence == 3 and identity != expected:
+                    raise Violation("toolchain open crossed its empty/sealed object boundary")
+            self.phase = "opening"
+            state.toolchain_pending = ("open", sequence, path, flags, mode, self.policy.calls, n)
+        elif n in {0, 1} and owned:
+            self.phase_is("reader-open" if n == 0 else "writer-open")
+            if sequence != (3 if n == 0 else 2):
+                raise Violation("toolchain I/O has the wrong actor")
+            identity, position = self.descriptor(
+                pid, state, descriptor, os.O_RDONLY if n == 0 else os.O_WRONLY,
+            )
+            if position != (self.read_bytes if n == 0 else self.written):
+                raise Violation("toolchain I/O is not contiguous from offset zero")
+            if n == 0 and identity != tuple(self.record["writer"]["completed"]["identity"]):
+                raise Violation("toolchain reader changed the sealed identity")
+            if not 0 <= r.rdx <= (SYSCALL_MEMORY_LIMIT if n == 0 else self.limits.write_limit):
+                raise Violation("toolchain I/O request exceeds its closed memory bound")
+            self.reserve(r.rdx + _TOOLCHAIN_WORD_SCRATCH)
+            self.phase = "reading" if n == 0 else "writing"
+            state.toolchain_pending = ("read" if n == 0 else "write", descriptor, r.rsi, r.rdx, position)
+        elif n in {87, 263}:
+            self.actor(pid, state, 1)
+            self.phase_is("reader-exited")
+            if any(value is not None for value in self.descriptors):
+                raise Violation("toolchain retirement has an open candidate descriptor")
+            if touched is None or touched[1] != self.path or touched[2][0] != self.path or n == 263 and r.rdx:
+                raise Violation("toolchain unlink lost its exact pathname or form")
+            identity = self.object_identity()
+            completed = self.record["writer"]["completed"]
+            if identity != tuple(completed["identity"]) or self.file_digest(identity) != completed["sha256"]:
+                raise Violation("toolchain retirement changed the sealed content")
+            self.phase = "unlinking"
+            state.toolchain_pending = ("unlink", identity, self.policy.calls, n)
+        elif n in {89, 267}:
+            requested = r.rdx if n == 89 else r.r10
+            self.reserve(requested + _TOOLCHAIN_WORD_SCRATCH)
+            if (
+                touched is None or touched[0] != "path" or touched[1] != self.path
+                or touched[2] != (self.path, -100, None)
+                or n == 267 and ctypes.c_int(r.rdi).value != -100
+            ):
+                raise Violation("toolchain readlink metadata lacks its exact created pathname")
+            identity = self.object_identity()
+            state.toolchain_pending = (
+                "readlink", sequence, n, r.rdi if n == 89 else r.rsi, requested,
+                touched[2], identity, self.phase, self.policy.config["root"],
+            )
+        elif n in {4, 5, 6, 21, 262, 269, 332, 439} or n == 72 and r.rsi in {1, 3}:
+            state.toolchain_pending = None
+        else:
+            raise self._unsupported_operation(n, sequence, owned, r)
+
+    def leave(self, pid, state, r):
+        pending, state.toolchain_pending = state.toolchain_pending, None
+        if pending is None:
+            return
+        result = signed(r.rax)
+        if pending[0] == "readlink":
+            _, sequence, number, address, requested, context, identity, phase, root = pending
+            self.actor(pid, state, sequence)
+            self.reserve(_TOOLCHAIN_WORD_SCRATCH)
+            if (
+                r.orig_rax != number or (r.rdi if number == 89 else r.rsi) != address
+                or (r.rdx if number == 89 else r.r10) != requested
+                or number == 267 and ctypes.c_int(r.rdi).value != -100
+                or self.policy.config["root"] != root or self.phase != phase
+                or state.path_context != context
+            ):
+                raise Violation("toolchain readlink metadata changed its stopped context")
+            path = self.policy.path(pid, state, address, -100, follow_final=False)
+            if path != self.path or state.path_context != context or self.object_identity() != identity:
+                raise Violation("toolchain readlink metadata changed its pinned entry or object")
+            if result >= 0:
+                raise Violation("toolchain regular intermediate returned unexpected readlink success")
+            return
+        if result < 0:
+            self.failed = True
+            self.phase = "failed"
+            return
+        operation = pending[0]
+        if operation == "exec":
+            raise Violation("toolchain exec returned without its actual image event")
+        sequence = self.actor(pid, state)
+        if operation == "open":
+            _, role, path, flags, mode, call, number = pending
+            if role != sequence or not 0 <= result < 128:
+                raise Violation("toolchain open returned a foreign descriptor")
+            if role == 1:
+                self.path, self.name = path, PurePosixPath(path).name
+                self.record["path"] = path
+                self.reserve(4096)
+                self.file_fd = os.open(
+                    self.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=self.workspace_fd,
+                )
+                identity = publication_identity(os.fstat(self.file_fd))
+                self.record["creation"] = {
+                    "order": self.tick(), "syscall_sequence": call, "syscall": "open" if number == 2 else "openat",
+                    "exec_sequence": 1, "pid": pid, "fd": result, "flags": flags,
+                    "requested_mode": mode, "result": result, "identity": list(identity),
+                }
+                if identity[2] != stat.S_IFREG | 0o600 or identity[3] or identity[6] != 1:
+                    raise Violation("toolchain exclusive creation did not create one empty regular file")
+                self.phase = "created"
+            else:
+                identity = self.object_identity()
+                operand = self.roles.output if role == 2 else self.roles.input
+                opened = {
+                    "order": self.tick(), "syscall_sequence": call, "syscall": "open" if number == 2 else "openat",
+                    "fd": result, "flags": flags, "result": result, "identity": list(identity),
+                }
+                if role == 2:
+                    opened["requested_mode"] = mode
+                self.record["writer" if role == 2 else "reader"] = {
+                    "exec_sequence": role, "pid": pid,
+                    "operand": {
+                        "kind": operand.kind, "argv_index": operand.argv_index,
+                        **({"option": "-o"} if role == 2 else {}),
+                    },
+                    "open": opened,
+                }
+                if role == 3:
+                    if identity != tuple(self.record["writer"]["completed"]["identity"]):
+                        raise Violation("toolchain reader opened a different sealed object")
+                    self.reader_digest = hashlib.sha256()
+                self.phase = "writer-open" if role == 2 else "reader-open"
+            identity, position = self.descriptor(
+                pid, state, result, {1: os.O_RDWR, 2: os.O_WRONLY, 3: os.O_RDONLY}[role],
+            )
+            if position or role != 3 and identity[3]:
+                raise Violation("toolchain opened object has an unexpected starting offset or extent")
+            self.descriptors[role - 1] = result
+        elif operation in {"read", "write"}:
+            _, descriptor, address, requested, position = pending
+            if result > requested:
+                raise Violation("toolchain I/O returned more than requested")
+            identity, offset = self.descriptor(
+                pid, state, descriptor, os.O_RDONLY if operation == "read" else os.O_WRONLY,
+            )
+            if offset != position + result:
+                raise Violation("toolchain I/O changed its actual sequential offset")
+            if operation == "write":
+                self.written += result
+                self.write_calls += 1
+                if self.written > self.limits.write_limit or identity[3] != self.written:
+                    raise Violation("toolchain successful writes differ from the file extent")
+                self.phase = "writer-open"
+            else:
+                completed = self.record["writer"]["completed"]
+                if identity != tuple(completed["identity"]) or self.read_bytes + result > completed["extent"]:
+                    raise Violation("toolchain read escaped the completed content")
+                self.read_bytes += _toolchain_memory_digest(
+                    self, pid, address, requested, result, self.reader_digest,
+                )
+                self.read_calls += 1
+                self.eof |= requested > 0 and result == 0
+                self.phase = "reader-open"
+        elif operation == "close":
+            _, role, descriptor, call = pending
+            if result != 0 or role != sequence or self.descriptors[role - 1] != descriptor:
+                raise Violation("toolchain close did not close its exact actor descriptor")
+            self.descriptors[role - 1] = None
+            order = self.tick()
+            if role == 1:
+                self.record["creator_close"] = {
+                    "order": order, "syscall_sequence": call, "syscall": "close", "result": 0,
+                }
+                self.phase = "creator-closed"
+            elif role == 2:
+                self.record["writer"]["completed"] = {
+                    "close_order": order, "close_syscall_sequence": call, "close_result": 0,
+                    "write_calls": self.write_calls, "written_bytes": self.written,
+                }
+                self.phase = "writer-closed"
+            else:
+                completed = self.record["writer"]["completed"]
+                identity = self.object_identity()
+                digest = self.reader_digest.hexdigest()
+                if (
+                    self.read_bytes != completed["extent"] or digest != completed["sha256"]
+                    or identity != tuple(completed["identity"]) or not self.read_calls
+                ):
+                    raise Violation("toolchain reader did not consume exactly the sealed content")
+                self.record["reader"]["completed"] = {
+                    "order": order, "close_syscall_sequence": call, "close_result": 0,
+                    "read_calls": self.read_calls, "read_bytes": self.read_bytes, "extent": self.read_bytes,
+                    "sha256": digest, "eof_observed": self.eof, "identity": list(identity),
+                }
+                self.phase = "reader-closed"
+        elif operation == "unlink":
+            _, before, call, number = pending
+            if result != 0:
+                raise Violation("toolchain unlink did not succeed")
+            after = self.object_identity(absent=True)
+            if not toolchain_runtime._retirement_progression(before, after):
+                raise Violation("toolchain unlink did not retire the exact pinned object")
+            self.record["retirement"] = {
+                "order": self.tick(), "syscall_sequence": call, "syscall": "unlink" if number == 87 else "unlinkat",
+                "exec_sequence": 1, "pid": pid, "result": 0,
+                "before_identity": list(before), "after_identity": list(after), "path_absent": True,
+            }
+            self.phase = "retired"
+
+    def exited(self, pid, state, result):
+        if (
+            self.policy.processes.get(pid) is not state or state.pidfd < 0
+            or type(state.toolchain_birth_sequence) is not int
+            or not 1 <= state.toolchain_birth_sequence <= self.birth_sequence
+        ):
+            raise Violation("toolchain terminal event has a foreign process birth")
+        if result != 0:
+            self.failed = True
+            self.phase = "failed"
+            return
+        sequence = self.actor(pid, state)
+        if self.failed:
+            if sequence == 1:
+                raise Violation("toolchain driver claimed success after an incomplete actor")
+            return
+        if state.toolchain_pending is not None or self.descriptors[sequence - 1] is not None:
+            raise Violation("toolchain actor exited with outstanding intermediate I/O")
+        if sequence == 2:
+            self.phase_is("writer-closed")
+            writer = self.record["writer"]
+            writer["exit"] = {"order": self.tick(), "result": 0}
+            self.phase = "writer-exited"
+            identity = self.object_identity()
+            if identity[3] != self.written or not self.write_calls:
+                raise Violation("toolchain writer exited without its actual completed writes")
+            digest = self.file_digest(identity)
+            writer["completed"].update({
+                "order": self.tick(), "extent": self.written, "sha256": digest, "identity": list(identity),
+            })
+            self.phase = "sealed"
+        elif sequence == 3:
+            self.phase_is("reader-closed")
+            self.record["reader"]["exit"] = {"order": self.tick(), "result": 0}
+            self.phase = "reader-exited"
+        else:
+            self.phase_is("retired")
+            if (
+                len(self.actors) != 3 or any(fd is not None for fd in self.descriptors)
+                or set(self.policy.processes) != {pid}
+            ):
+                raise Violation("toolchain driver omitted a completed actor")
+            self.record["driver_exit"] = {"order": self.tick(), "result": 0}
+            self.record["complete"] = True
+            self.phase = "finalizing"
+            self.release_pins()
+            self.phase = "complete"
+
+    def emit(self, status):
+        if status != 0:
+            return
+        self.phase_is("complete")
+        self.phase = "emitting"
+        try:
+            wire = toolchain_runtime.encode_intermediate_record(
+                self.record, profile=self.profile, launch=self.policy.config["toolchain_runtime"],
+                executions=self.executions, returncode=0, limits=self.limits, reserve=self.reserve,
+            )
+        except toolchain_runtime.MakeProbeError as error:
+            raise Violation(str(error)) from error
+        self.policy.observe("accessed", wire)
+        self.phase = "emitted"
+
+    def release_pins(self):
+        descriptors = self.fdinfo_fd, self.file_fd, self.workspace_fd
+        self.fdinfo_fd = self.file_fd = self.workspace_fd = -1
+        finish_cleanup([
+            lambda descriptor=descriptor: os.close(descriptor)
+            for descriptor in descriptors if descriptor >= 0
+        ])
+
+    def close(self):
+        try:
+            self.release_pins()
+        finally:
+            self.executions.clear()
+            self.actors.clear()
+            self.descriptors.clear()
+            self.reader_digest = self.record = self.roles = None
+            self.phase = "closed"
+
+
 class Policy:
     def __init__(self, config):
         self.config = config
@@ -332,7 +1057,7 @@ class Policy:
             self.toolchain = toolchain_runtime.validate_launch(config)
             if self.toolchain is not None:
                 toolchain_runtime.verify_workspace(Path(config["root"]) / "work", self.toolchain["workspace"])
-            header_protocol.validate_launch(config)
+            self.header_runtime = header_protocol.validate_launch(config)
         except ChannelError as error:
             raise Violation(str(error)) from error
         try:
@@ -383,6 +1108,13 @@ class Policy:
         self.filter_kernel = None if dependency is None else dependency.get("filter_kernel")
         self.kernel_streams = {}
         self.kernel_sequence = 0
+        self.kernel_has_first_statfs = False
+        self.kernel_manifest = None
+        self.kernel_row_limit = None
+        self.kernel_terminal_limit = None
+        self.kernel_terminal_reservation = None
+        if self.filter_kernel is not None:
+            self.reserve_header_completion()
         self.header_roots, self.header_entries, self.header_files, self.header_verified = {}, {}, {}, {}
         self.toolchain_inputs = {} if self.toolchain is None else {
             "/repo/" + row[0]: row for row in self.toolchain["inputs"]
@@ -390,6 +1122,9 @@ class Policy:
         self.toolchain_stdin = bytearray()
         self.toolchain_eof = False
         self.toolchain_temporaries = {}
+        self.toolchain_intermediate = None
+        if self.toolchain is not None and self.toolchain["stage"] == 4:
+            self.toolchain_intermediate = self.reserve_toolchain_intermediate()
         if dependency and "header_search" in dependency:
             try:
                 self.header_roots, self.header_entries, self.header_files = arm_headers.validate_search(
@@ -508,6 +1243,112 @@ class Policy:
             ):
                 raise Violation("aggregate filesystem-observation budget exhausted")
             attempted.add(value)
+
+    def reserve_toolchain_intermediate(self):
+        if self.toolchain is None or self.toolchain["stage"] != 4:
+            raise Violation("toolchain proof is only issued for stage four")
+        self.charge_metadata(
+            _TOOLCHAIN_TRACKER_STORAGE + 4 * toolchain_runtime.INTERMEDIATE_RECORD_LIMIT,
+        )
+        self.reserve_observation("accessed", "toolchain-intermediate-reservation")
+        return _ToolchainIntermediate(self)
+
+    def reserve_header_completion(self):
+        if type(self.header_runtime) is not header_protocol._FilterLaunch:
+            raise Violation("sed header runtime lacks its private completion verifier")
+        def reserve_workspace(size):
+            if self.observation_bytes + size > self.config["observation_limit"]:
+                raise Violation("header calculation workspace exceeds observation authority")
+            self.observation_bytes += size
+        try:
+            row_limit = header_protocol.row_wire_limit(
+                self.filter_kernel,
+                count_limit=self.config["observation_count"],
+                file_limit=self.config["file_limit"],
+                reserve=reserve_workspace,
+            )
+            terminal_limit = header_protocol.terminal_wire_limit(
+                self.header_runtime.scope, self.header_runtime.binding,
+                count_limit=self.config["observation_count"],
+                reserve=reserve_workspace,
+            )
+        except ChannelError as error:
+            raise Violation(str(error)) from error
+        charge = (
+            terminal_limit + 128
+            + header_protocol.terminal_private_reservation(terminal_limit)
+        )
+        attempted = self.observation_attempts["accessed"]
+        if (
+            sum(map(len, self.observation_attempts.values())) >= self.config["observation_count"]
+            or self.observation_bytes + charge > self.config["observation_limit"]
+        ):
+            raise Violation("header completion reservation exceeds observation authority")
+        reservation = object()
+        self.observation_bytes += charge
+        attempted.add(reservation)
+        self.kernel_row_limit = row_limit
+        self.kernel_terminal_limit = terminal_limit
+        self.kernel_terminal_reservation = reservation
+        self.kernel_transfer_pending = False
+        self.kernel_manifest = hashlib.sha256()
+        self.kernel_manifest.update(b"[")
+
+    def reserve_header_row(self):
+        if self.kernel_transfer_pending:
+            raise Violation("header observation has an unfinished transfer")
+        charge = (
+            self.kernel_row_limit + 128
+            + header_protocol.row_private_reservation(self.kernel_row_limit)
+        )
+        attempted = self.observation_attempts["accessed"]
+        if (
+            sum(map(len, self.observation_attempts.values())) >= self.config["observation_count"]
+            or self.observation_bytes + charge > self.config["observation_limit"]
+        ):
+            raise Violation("header kernel row exceeds reserved observation authority")
+        reservation = object()
+        self.observation_bytes += charge
+        self.kernel_transfer_pending = True
+        attempted.add(reservation)
+        return reservation
+
+    def commit_header_observation(self, reservation, value, limit):
+        self.kernel_transfer_pending = True
+        if (
+            type(reservation) is not object or reservation not in self.observation_attempts["accessed"]
+            or type(value) is not str or len(value) > limit or not value.isascii()
+            or value in self.accessed
+        ):
+            raise Violation("header observation transfer is malformed or repeated")
+        self.observation_attempts["accessed"].add(value)
+        self.accessed.add(value)
+        self.observation_attempts["accessed"].remove(reservation)
+        self.kernel_transfer_pending = False
+
+    def header_completion(self, main_status):
+        try:
+            if (
+                type(main_status) is not int or main_status != 0 or self.kernel_streams
+                or not self.kernel_sequence or not self.kernel_has_first_statfs
+                or self.kernel_terminal_reservation is None or self.kernel_manifest is None
+                or self.kernel_transfer_pending
+            ):
+                raise Violation("successful sed runtime lacks a complete header transcript")
+            manifest = self.kernel_manifest.copy()
+            manifest.update(b"]")
+            record = header_protocol.completion(
+                self.header_runtime.scope, self.header_runtime.binding,
+                self.header_runtime.receipt_key, self.kernel_sequence, manifest.hexdigest(),
+            )
+            value = header_protocol.KERNEL_END + encoded(record).decode("ascii")
+            self.commit_header_observation(
+                self.kernel_terminal_reservation, value, self.kernel_terminal_limit,
+            )
+            self.kernel_terminal_reservation = None
+        finally:
+            self.header_runtime = None
+            self.kernel_manifest = None
 
     def observe(self, name, value):
         self.reserve_observation(name, value)
@@ -1869,12 +2710,31 @@ class Policy:
         return True
 
     def kernel_record(self, operation, path, result, *, data=None, count=None, digest=None, eof=None):
+        try:
+            header_protocol.validate_row_values(
+                self.filter_kernel, self.kernel_sequence + 1, operation, path, result,
+                data, count, digest, eof,
+                count_limit=self.config["observation_count"] - 1,
+                file_limit=self.config["file_limit"],
+            )
+        except ChannelError as error:
+            raise Violation(str(error)) from error
+        reservation = self.reserve_header_row()
         self.kernel_sequence += 1
         row = {
             "sequence": self.kernel_sequence, "operation": operation, "path": path,
             "result": result, "data": data, "bytes": count, "sha256": digest, "eof": eof,
         }
-        self.observe("accessed", header_protocol.KERNEL_PREFIX + encoded(row).decode("ascii"))
+        wire = encoded(row)
+        value = header_protocol.KERNEL_PREFIX + wire.decode("ascii")
+        if len(value) > self.kernel_row_limit:
+            raise Violation("header kernel row exceeded its admitted schema shape")
+        if self.kernel_sequence != 1:
+            self.kernel_manifest.update(b",")
+        self.kernel_manifest.update(wire)
+        if operation == "statfs" and path == header_protocol.STATFS_PATHS[0]:
+            self.kernel_has_first_statfs = True
+        self.commit_header_observation(reservation, value, self.kernel_row_limit)
 
     def header_runtime_access(self, state, path, operation, mode, *, source=False):
         if not source and any(
@@ -1970,6 +2830,8 @@ class Policy:
             self.toolchain_temporaries[path] = identity
         elif self.toolchain_temporaries[path] is not None and operation != "metadata":
             raise Violation("toolchain temporary disappeared before its actual compiler operation")
+        if self.toolchain_intermediate is not None:
+            self.toolchain_intermediate.note_path(state, path)
 
     def dependency_runtime_access(self, state, path, operation):
         full = Path(self.config["root"]) / path.lstrip("/")
@@ -2216,6 +3078,11 @@ class Policy:
             raise Violation("cross-process signal target denied")
 
     def entry(self, pid, state, r):
+        if (
+            self.toolchain is not None and self.toolchain["stage"] == 4
+            and state.toolchain_pending is not None
+        ):
+            raise Violation("toolchain syscall overlaps an unfinished proof operation")
         self.calls += 1
         if self.calls > self.config["syscall_limit"]:
             raise Violation("aggregate syscall budget exhausted")
@@ -2704,8 +3571,12 @@ class Policy:
             raise Violation(f"unadmitted syscall {n}")
         if self.written > self.config["write_limit"]:
             raise Violation("aggregate capsule storage budget exhausted")
+        if self.toolchain is not None and self.toolchain["stage"] == 4:
+            self.toolchain_intermediate.enter(pid, state, r)
 
     def leave(self, pid, state, r):
+        if self.toolchain is not None and self.toolchain["stage"] == 4:
+            self.toolchain_intermediate.leave(pid, state, r)
         state.dependency_stop = None
         result = signed(r.rax)
         self.finish_metadata(pid, state, result)
@@ -2958,6 +3829,8 @@ def supervise(config, drop_privileges):
             try:
                 if config["mode"] == "make":
                     policy.retire_job(stopped, state)
+                if policy.toolchain is not None and policy.toolchain["stage"] == 4:
+                    policy.toolchain_intermediate.exited(stopped, state, code)
             finally:
                 del processes[stopped]
                 state.close()
@@ -2999,6 +3872,8 @@ def supervise(config, drop_privileges):
             if not already_stopped:
                 record.pidfd = os.pidfd_open(child.value)
             processes[child.value] = record
+            if policy.toolchain is not None and policy.toolchain["stage"] == 4:
+                policy.toolchain_intermediate.birth(child.value, record)
             policy.require_fresh_process(child.value)
             if not state.process_reservation:
                 raise Violation("unreserved process creation")
@@ -3025,12 +3900,24 @@ def supervise(config, drop_privileges):
                         raise Violation("toolchain execution lost its actual argument observation")
                     info = os.stat(f"/proc/{stopped}/exe")
                     arguments, environment = state.toolchain_exec
-                    policy.observe("accessed", toolchain_runtime.EXEC_PREFIX + encoded({
+                    identity = [
+                        info.st_dev, info.st_ino, info.st_mode, info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+                    ]
+                    row = {
                         "stage": toolchain_runtime.STAGES[policy.toolchain["stage"]],
                         "sequence": len(policy.executed), "path": state.exec_path,
-                        "identity": [info.st_dev, info.st_ino, info.st_mode, info.st_size, info.st_mtime_ns, info.st_ctime_ns],
+                        "identity": identity,
                         "argv": arguments, "environment": environment,
-                    }).decode("ascii"))
+                    }
+                    if policy.toolchain["stage"] == 4:
+                        row, _ = policy.toolchain_intermediate.exec_row(
+                            stopped, state, state.exec_path, identity, arguments, environment,
+                        )
+                        row["sequence"] = len(policy.executed)
+                    wire = encoded(row)
+                    policy.observe("accessed", toolchain_runtime.EXEC_PREFIX + wire.decode("ascii"))
+                    if policy.toolchain["stage"] == 4:
+                        policy.toolchain_intermediate.executed(stopped, state, row, wire)
                     state.toolchain_exec = None
                 state.exec_path = None
             if state.bootstrap:
@@ -3405,6 +4292,8 @@ def supervise(config, drop_privileges):
         waited, status = os.waitpid(pid, 0)
         if waited != pid or not os.WIFSTOPPED(status):
             raise Violation("sandbox child did not enter traced confinement")
+        if policy.toolchain is not None and policy.toolchain["stage"] == 4:
+            policy.toolchain_intermediate.birth(pid, processes[pid])
         policy.pin_private_install_parents()
         for mapping in Path(f"/proc/{pid}/maps").read_text().splitlines():
             if mapping.endswith("[heap]"):
@@ -3471,15 +4360,18 @@ def supervise(config, drop_privileges):
                     processes.clear()
         def write_report():
             nonlocal result
+            try:
+                if error is None and policy.filter_kernel is not None and main_status == 0:
+                    policy.header_completion(main_status)
+            finally:
+                policy.header_runtime = None
+            if error is None and policy.toolchain is not None and policy.toolchain["stage"] == 4:
+                policy.toolchain_intermediate.emit(main_status)
             if error is None and policy.toolchain is not None and policy.toolchain["stdin"]:
                 policy.observe("accessed", toolchain_runtime.INPUT_PREFIX + encoded({
                     "stage": toolchain_runtime.STAGES[policy.toolchain["stage"]],
                     "stdin": bytes(policy.toolchain_stdin).decode("utf-8", "strict"), "eof": policy.toolchain_eof,
                 }).decode("ascii"))
-            if error is None and policy.filter_kernel is not None:
-                if policy.kernel_streams:
-                    raise Violation("successful sed runtime retained unclosed kernel inputs")
-                policy.observe("accessed", header_protocol.KERNEL_END + str(policy.kernel_sequence))
             result = {
                 "ok": error is None,
                 "returncode": main_status,
@@ -3539,6 +4431,9 @@ def supervise(config, drop_privileges):
                     raise
         finish_cleanup([
             reap_owned, policy.close_private_install_parents, finish_channel, write_report,
+            lambda: setattr(policy, "header_runtime", None),
+            *([] if policy.toolchain is None or policy.toolchain["stage"] != 4
+              else [policy.toolchain_intermediate.close]),
             *([] if policy.directory_installs is None else [policy.directory_installs.close]),
             *([] if policy.read_trace is None else [policy.read_trace.close]),
             *([] if channel is None else [channel.close]),
