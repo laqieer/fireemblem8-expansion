@@ -17,7 +17,7 @@ from typing import NamedTuple
 from pathlib import PurePosixPath
 
 from .authority import ENVIRONMENT, _event_command, encoded, relative_path
-from .budget import MakeProbeError, ProbeBudget
+from .budget import Limits, MakeProbeError, ProbeBudget
 from .graph_commands import MakeCommands
 from .graph_commands import _normalized_shell_commands
 from .make_probe import _NamespaceUnavailable
@@ -480,9 +480,7 @@ class _MakeSourceMode:
         def literal(text):
             return None if "$" in text.replace("$$", "") else text.replace("$$", "$")
 
-        spans = list(_make_expression_spans(expression))
-        spans.extend((match.start(), match.end(), match["short"])
-                     for match in REFERENCE.finditer(expression) if match["short"] is not None)
+        spans = list(_make_expression_spans(expression, short=True))
         values, previous = {""}, 0
         for start, stop, body in sorted(spans, key=lambda item: (item[0], -item[1])):
             if start < previous:
@@ -1022,8 +1020,7 @@ class _MakeSourceMode:
             self.checkpoint()
             name, value, finished, local, binding = pending.pop()
             if automatic and not finished:
-                scoped = frozenset(next(item for item in match.groups() if item is not None)
-                                   for match in SCOPED.finditer(value))
+                scoped = frozenset(_scoped_references(value))
                 if scoped - local and self.budget is not None:
                     self.budget.charge("cache", len(encoded(sorted(scoped - local))))
                 local |= scoped
@@ -1386,7 +1383,7 @@ class _MakeSourceMode:
             or operator not in {"=", ":=", "::=", "+="}
             or next(computed_selectors(assignment["target"]), None) is not None
             or name in INVOCATION_CONTROL_READS | SOURCE_HISTORY_CONTROLS | {"MAKELEVEL"}
-            or SCOPED.search(assignment["value"]) is not None
+            or any(_scoped_references(assignment["value"]))
         ):
             raise MakeProbeError("unproven original scoped assignment context: " + name)
         effects = []
@@ -1608,7 +1605,7 @@ def _phase_recipe_text(mode, line, target):
         command = command.replace(spelling, directory + "/")
     command = command.replace("$(@D)", directory).replace("${@D}", directory)
     command = command.replace("$(@)", target).replace("${@}", target).replace("$@", target)
-    if SCOPED.search(command):
+    if any(_scoped_references(command)):
         return None
     try:
         return mode.literal_text(command)
@@ -1990,28 +1987,45 @@ class _UnresolvedName(ValueError):
     pass
 
 
-def _make_expression_spans(line, *, staged=False, require_complete=False, strict_dollars=False):
+def _make_expression_spans(
+    line, *, staged=False, require_complete=False, strict_dollars=False, short=False, budget=None,
+):
     stack = []
     index = 0
     while index < len(line):
+        if budget is not None:
+            budget.remaining()
         if line[index:index + 2] == "$$":
             index += 1 if staged else 2
             continue
         if line[index:index + 2] in {"$(", "${"}:
+            if budget is not None:
+                if len(stack) >= 512:
+                    budget.reject("Make expression exceeds the existing reference depth bound")
+                budget.charge("cache", 64)
             stack.append((index + 2, ")" if line[index + 1] == "(" else "}"))
             index += 2
             continue
         if stack and line[index] == stack[-1][1]:
             start, _ = stack.pop()
             if start is not None:
+                if budget is not None:
+                    budget.charge("cache", 64 + 12 * (index - start))
                 yield start - 2, index + 1, line[start:index]
         elif stack and line[index] == ("(" if stack[-1][1] == ")" else "{"):
+            if budget is not None:
+                if len(stack) >= 512:
+                    budget.reject("Make expression exceeds the existing reference depth bound")
+                budget.charge("cache", 64)
             stack.append((None, stack[-1][1]))
-        elif (staged or strict_dollars) and line[index] == "$":
+        elif line[index] == "$":
             token = line[index:index + 2]
-            if not REFERENCE.fullmatch(token) and not SCOPED.fullmatch(token):
+            if REFERENCE.fullmatch(token) or SCOPED.fullmatch(token):
+                if short:
+                    yield index, index + 2, token[1:]
+                index += 1
+            elif staged or strict_dollars:
                 raise _UnresolvedName("incomplete or unsupported dollar token")
-            index += 1
         index += 1
     if (staged or require_complete) and stack:
         raise _UnresolvedName("incomplete dollar-bearing Make expression")
@@ -2020,6 +2034,13 @@ def _make_expression_spans(line, *, staged=False, require_complete=False, strict
 def make_expressions(line):
     for _, _, body in _make_expression_spans(line):
         yield body
+
+
+def _scoped_references(line):
+    for _, _, body in _make_expression_spans(line, short=True):
+        name = _make_reference_base(body)
+        if SCOPED.fullmatch("$(" + name + ")"):
+            yield name
 
 
 def _without_literal_metadata(expression):
@@ -2403,16 +2424,10 @@ def _join_make_text(parts, budget):
 def _resolve_make_text(expression, resolve, budget):
     try:
         spans = []
-        for span in _make_expression_spans(expression, require_complete=True):
+        for span in _make_expression_spans(expression, require_complete=True, short=True):
             if budget is not None:
                 budget.charge("cache", len(encoded(span)))
             spans.append(span)
-        for match in REFERENCE.finditer(expression):
-            if match["short"] is not None:
-                span = match.start(), match.end(), match["short"]
-                if budget is not None:
-                    budget.charge("cache", len(encoded(span)))
-                spans.append(span)
     except _UnresolvedName:
         return None
 
@@ -2622,6 +2637,9 @@ class _TemplateModeProof:
             result = _join_make_text((result[:match.start()], value, result[match.end():]), self.session.budget)
         return None if "$" in result else result
 
+    def retain_call(self, mode, expression, macro, words):
+        pass
+
     def __call__(self, mode, expression):
         self.session.budget.remaining()
         if mode.posix is None or not mode.original_namespace_valid:
@@ -2686,6 +2704,7 @@ class _TemplateModeProof:
                     ):
                         return False
         self.session.budget.charge("cache", len(encoded((mode.site, mode.version, mode.posix, macro_name, words))))
+        self.retain_call(mode, expression, macro, words)
         return True
 
 
@@ -2831,6 +2850,8 @@ def _prepare_rule_templates(
         pure.add(name)
 
     def read_globals(names):
+        if phase is not None:
+            raise MakeProbeError("original per-pass templates cannot query terminal Make values")
         pending = sorted(set(names) - set(globals_seen))
         for offset in range(0, len(pending), 512):
             actual = session.make(
@@ -2876,6 +2897,15 @@ def _prepare_rule_templates(
         macro_name = DEFINE.match(strip_comment(macro.text))[1]
         if assignments.get(macro_name):
             raise MakeProbeError("rule-template macro has an additional assignment history")
+        if phase is not None:
+            original = template_mode.original_call(caller_site, ordered[position][2].text)
+            if original.macro_name != macro_name or original.macro.value != macro.body:
+                raise MakeProbeError("rule-template caller differs from its original source definition")
+            replacements[path, index] = original.units
+            graph_inputs.update(original.inputs)
+            scoped.update(original.scoped)
+            omitted.add((macro_path, macro_index))
+            continue
         read_globals((macro_name,))
         actual_macro = globals_seen[macro_name]
         if (
@@ -2929,23 +2959,19 @@ def _prepare_rule_templates(
             # This is the proved reference IR, never a Makefile executed by the
             # probe. GNU Make already supplied the actual graph/recipe result.
             proved_header = target_text + ":" + prerequisite_text
-            source_rule = (
-                None if phase is None else units.mode_state.source_rule(
-                    proved_header, literal=True, site=caller_site,
-                )
-            )
             instantiated.append(MakeSourceUnit(
-                proved_header, native_literal_header=True, source_rule=source_rule, site=caller_site,
+                proved_header, native_literal_header=True, site=caller_site,
             ))
             instantiated.extend(
-                MakeSourceUnit(recipe.replace("$$", "$"), source_rule=source_rule,
-                               recipe_ordinal=ordinal, site=caller_site)
+                MakeSourceUnit(recipe.replace("$$", "$"), recipe_ordinal=ordinal, site=caller_site)
                 for ordinal, recipe in enumerate(recipe_texts, 1)
             )
             scoped.add("1")
         replacements[path, index] = instantiated
         omitted.add((macro_path, macro_index))
         scoped.add(variable)
+    if phase is not None:
+        template_mode.require_complete()
     prepared, prepared_known = [], set()
     for position, (path, index, unit) in enumerate(ordered):
         replacement_units = [] if (path, index) in omitted else replacements.get((path, index), (unit,))
@@ -3030,18 +3056,63 @@ def _make_reference_base(body, *, call=False):
     return body[:end]
 
 
-def computed_selectors(line):
-    for body in make_expressions(line):
+def computed_selectors(line, *, budget=None):
+    for _, _, body in _make_expression_spans(line, budget=budget):
         call = re.match(r"call[ \t]+", body)
         head = _make_reference_base(body[call.end():] if call else body, call=bool(call))
         if "$" in head:
             yield head
 
 
-def selected_names(expressions, definitions, observed_values, *, unresolved=None):
+def selected_names(expressions, definitions, observed_values, *, unresolved=None, budget=None):
+    if budget is not None:
+        budget.remaining()
+    completed = {}
+
+    def checkpoint():
+        if budget is not None:
+            budget.remaining()
+
+    def refuse(message):
+        if budget is not None:
+            budget.reject(message)
+        raise MakeProbeError(message)
+
+    def admit(size):
+        if budget is not None:
+            budget.charge("cache", size)
+
+    def scan(value):
+        checkpoint()
+        limit = Limits.file_bytes if budget is None else budget.limits.file_bytes
+        if len(value) > limit:
+            refuse("computed selector exceeds the existing input byte bound")
+        # Admit Unicode/encoding workspace before scanning or retaining spans.
+        admit(64 + 12 * len(value))
+        if not value.isascii() and len(value.encode("utf-8")) > limit:
+            refuse("computed selector exceeds the existing input byte bound")
+
+    def bounded_value(parts):
+        checkpoint()
+        size = sum(len(part) for part in parts)
+        if size > 128:
+            refuse("computed selector exceeds the public Make name length bound")
+        admit(64 + 12 * size)
+        return "".join(parts)
+
+    def retain(destination, value):
+        checkpoint()
+        if value not in destination:
+            if len(destination) >= 512:
+                refuse("computed selector exceeds the existing bounded context plan")
+            admit(64)
+            destination.add(value)
+
     def native_constant(declarations):
-        if len(set(declarations)) != 1:
-            return False
+        for value in declarations:
+            checkpoint()
+            if value != declarations[0]:
+                return False
         value = declarations[0]
         spans = list(_make_expression_spans(value))
         if len(spans) != 1 or spans[0][:2] != (0, len(value)):
@@ -3050,44 +3121,65 @@ def selected_names(expressions, definitions, observed_values, *, unresolved=None
         return operation is not None
 
     def expand(template, active):
-        matches = list(NAME_PART.finditer(template))
+        scan(template)
         values, offset = {""}, 0
-        for match in matches:
+        for match in NAME_PART.finditer(template):
+            checkpoint()
             literal = template[offset:match.start()]
             if "$" in literal:
                 raise _UnresolvedName("computed selector contains an unsupported name expression")
             name = match[1] or match[2]
             if name in active:
                 raise _UnresolvedName("computed selector has a cyclic name definition")
-            declarations = definitions.get(name)
-            choices = set(observed_values.get(name, ()))
-            if declarations:
-                if any(value is None for value in declarations):
-                    raise _UnresolvedName("computed selector has an unresolved source definition")
-                try:
+            if len(name) > 128:
+                refuse("computed selector exceeds the public Make name length bound")
+            if len(active) >= 512:
+                refuse("computed selector exceeds the existing reference depth bound")
+            admit(64 + 12 * len(name) + 8 * len(active))
+            key = name, active
+            choices = completed.get(key)
+            if choices is None:
+                declarations = definitions.get(name)
+                choices = set()
+                for value in observed_values.get(name, ()):
+                    retain(choices, bounded_value((value,)))
+                if declarations:
                     for value in declarations:
-                        choices.update(expand(value, active | {name}))
-                except _UnresolvedName:
-                    if not choices or not native_constant(declarations):
-                        raise
-            elif not choices:
-                raise _UnresolvedName("computed selector lacks a closed literal or finite name definition")
+                        checkpoint()
+                        if value is None:
+                            raise _UnresolvedName("computed selector has an unresolved source definition")
+                    admit(256 + 64 * (len(active) + 1))
+                    nested = active | {name}
+                    try:
+                        for value in declarations:
+                            for choice in expand(value, nested):
+                                retain(choices, choice)
+                    except _UnresolvedName:
+                        if not choices or not native_constant(declarations):
+                            raise
+                elif not choices:
+                    raise _UnresolvedName("computed selector lacks a closed literal or finite name definition")
+                admit(256 + 64 * len(choices))
+                completed[key] = choices = frozenset(choices)
             combined = set()
             for prefix in values:
                 for choice in choices:
-                    combined.add(prefix + literal + choice)
-                    if len(combined) > 512:
-                        raise _UnresolvedName("computed selector exceeds the existing bounded context plan")
+                    retain(combined, bounded_value((prefix, literal, choice)))
             values, offset = combined, match.end()
         if "$" in template[offset:]:
             raise _UnresolvedName("computed selector contains an unsupported name expression")
-        return {value + template[offset:] for value in values}
+        suffix = template[offset:]
+        combined = set()
+        for value in values:
+            retain(combined, bounded_value((value, suffix)))
+        return combined
 
     selected = set()
     for expression in expressions:
-        for selector in computed_selectors(expression):
+        scan(expression)
+        for selector in computed_selectors(expression, budget=budget):
             try:
-                values = expand(selector, set())
+                values = expand(selector, frozenset())
                 if not values or any(
                     not re.fullmatch(IDENTIFIER, name) and not SCOPED.fullmatch("$(" + name + ")")
                     for name in values
@@ -3098,7 +3190,8 @@ def selected_names(expressions, definitions, observed_values, *, unresolved=None
                     raise
                 unresolved.append(error)
                 continue
-            selected.update(values)
+            for value in values:
+                retain(selected, value)
     return selected
 
 
@@ -3173,10 +3266,18 @@ def split_inline_recipe(line):
 
 def references(line):
     line = _prune_and(line)
-    names = {next(value for value in match.groups() if value is not None)
-             for pattern in (REFERENCE, SCOPED) for match in pattern.finditer(line)}
+    names = set()
+    for start, stop, body in _make_expression_spans(line, short=True):
+        name = _make_reference_base(body)
+        if re.fullmatch(IDENTIFIER, name) or SCOPED.fullmatch("$(" + name + ")"):
+            names.add(name)
+        else:
+            function = _make_function(line[start:stop])
+            if function is not None and function[0] == "call":
+                name = _make_reference_base(function[1][0].lstrip(MAKE_SPACE), call=True)
+                if re.fullmatch(IDENTIFIER, name):
+                    names.add(name)
     names.update(name for _, _, name in _literal_metadata(line))
-    names.update(CALL.findall(line))
     conditional = CONDITIONAL.match(line)
     if conditional:
         names.add(conditional.group(1))
@@ -3462,7 +3563,7 @@ def source_census(
             name = (forwarded[1] or forwarded[2]) if forwarded else function[1][0].strip(MAKE_SPACE)
             if not re.fullmatch(IDENTIFIER, name):
                 try:
-                    names = selected_names(["$(" + name + ")"], definitions, observed_values)
+                    names = selected_names(["$(" + name + ")"], definitions, observed_values, budget=budget)
                 except _UnresolvedName:
                     return False
             else:
@@ -3612,18 +3713,24 @@ def source_census(
             actual_dependencies = execution_dependencies.setdefault(name, set())
             extend_known(actual_dependencies, set().union(*(references(value) for value in executing)))
             errors = []
-            extend_known(dependencies[name], selected_names(values, definitions, observed_values, unresolved=errors))
+            extend_known(dependencies[name], selected_names(
+                values, definitions, observed_values, unresolved=errors, budget=budget,
+            ))
             if errors:
                 unresolved.add(name)
             errors = []
-            extend_known(actual_dependencies, selected_names(executing, definitions, observed_values, unresolved=errors))
+            extend_known(actual_dependencies, selected_names(
+                executing, definitions, observed_values, unresolved=errors, budget=budget,
+            ))
             if errors:
                 unresolved_execution.add(name)
         executing = [_without_literal_metadata(value) for value in consumed_expressions]
         extend_known(execution_roots, set().union(*(references(value) for value in executing)))
         root_errors = []
         for destination, values in ((graph, graph_expressions), (stage_roots, stage_sinks), (execution_roots, executing)):
-            extend_known(destination, selected_names(values, definitions, observed_values, unresolved=root_errors))
+            extend_known(destination, selected_names(
+                values, definitions, observed_values, unresolved=root_errors, budget=budget,
+            ))
         extend_known(consumed, closure(execution_roots, execution_dependencies))
         extend_known(graph, deferred_evals & consumed)
         extend_known(stage_roots, deferred_evals & consumed)
@@ -3749,7 +3856,7 @@ def _certify_literal_bindings(
             if function and function[1] in {"file", "wildcard", "realpath", "eval", "guile"}:
                 raise MakeProbeError("literal binding module has an opaque program/data/universe consumer")
         try:
-            names.update(selected_names((expression,), definitions, observed_values))
+            names.update(selected_names((expression,), definitions, observed_values, budget=budget))
         except _UnresolvedName as error:
             raise MakeProbeError("literal binding module has an unresolved possible consumer") from error
     if set(writes) & names:
@@ -4017,7 +4124,7 @@ def _graph_definitions(session, target, state, commands, observation, usage, *, 
             required.update(found)
             continue
         try:
-            found.update(selected_names(forms, definitions, literals))
+            found.update(selected_names(forms, definitions, literals, budget=session.budget))
         except _UnresolvedName as error:
             raise MakeProbeError("unresolved staged Make selector: " + str(error)) from error
         if found - required:
@@ -4077,6 +4184,7 @@ def _recipe_domains(session, target, state, commands, observation, usage, observ
         names.update(closure(selected_names(
             executing,
             usage["definitions"], usage["observed_values"],
+            budget=session.budget,
         ), usage["execution_dependencies"]))
     except _UnresolvedName as error:
         raise MakeProbeError(str(error)) from error
@@ -4246,14 +4354,11 @@ def run_probe(
                 origins = ["command-line"]
                 if name in environment and name in usage["defaults"]:
                     origins.append("environment")
-                explicit_context = tuple(sorted(
-                    item for item in state if item[1] != name
-                    and domains[item[1]]["kind"] == "explicit"
-                    and len(domains[item[1]]["values"]) > 1
-                ))
-                domain_context = (name, tuple(choices), tuple(origins), explicit_context)
+                remaining_context = tuple(sorted(item for item in state if item[1] != name))
+                domain_context = (name, tuple(choices), tuple(origins), remaining_context)
                 if domain_context in planned_domains:
                     continue
+                session.budget.charge("cache", len(encoded(domain_context)))
                 planned_domains.add(domain_context)
                 for origin in origins:
                     for value in choices:

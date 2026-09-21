@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 import secrets
 import shutil
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -19,6 +20,287 @@ from scripts.validation_ownership.tests.test_foundation import _PendingTrafficLi
 
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+class GraphSemanticApiTests(unittest.TestCase):
+    """Pure parser/planner controls; observations below are models, not native authority."""
+
+    def plan(self, source, domains=None, *, environment=(), budget=None):
+        domains = {} if domains is None else domains
+        budget = ProbeBudget() if budget is None else budget
+        loaded = {"Makefile": source.encode()}
+        loader = SimpleNamespace()
+        session = SimpleNamespace(loader=loader, snapshot=object(), budget=budget)
+        observed = []
+
+        def make(target, *, variables=(), definitions=(), assignments=(), **options):
+            budget.plan(1)
+            observed.append(tuple(sorted(assignments)))
+            mode = _MakeSourceMode(
+                definitions={name: value for _, name, value in assignments},
+                forced=frozenset(name for origin, name, _ in assignments if origin == "command-line"),
+                budget=budget,
+                original_input=lambda name: {"origin": "undefined", "flavor": "undefined", "value": ""},
+                original_execution=lambda *args: None,
+            )
+            mode.bind_invocation(target)
+            units = tuple(make_source_units(source, mode=mode, source_path="Makefile"))
+            stream = graph_probe._SourceUnitStream(
+                tuple(("Makefile", index, unit) for index, unit in enumerate(units)),
+                frozenset(range(len(units))), read_sources=("Makefile",), mode_state=mode,
+            )
+
+            def metadata(name):
+                binding, = mode.binding(name)
+                value = mode.exact_reference(name)
+                self.assertIsNotNone(value, "model requires an exact literal value")
+                return {"origin": binding.origin, "flavor": binding.flavor, "value": value}
+
+            values = {name: metadata(name) for name in variables}
+            raw = {name: metadata(name) for name in definitions}
+            prerequisites, recipes = [], []
+            for unit in units:
+                if unit.active is False:
+                    continue
+                rule = unit.source_rule
+                if rule is not None and rule.targets is not None and target in rule.targets:
+                    if not unit.text.startswith("\t"):
+                        self.assertIsNotNone(rule.prerequisites)
+                        prerequisites.extend({"name": name, "order_only": False} for name in rule.prerequisites)
+                    _, inline = graph_probe.split_inline_recipe(unit.text)
+                    if inline.strip():
+                        recipes.append(inline)
+                    elif unit.text.startswith("\t"):
+                        recipes.append(unit.text[1:])
+            return SimpleNamespace(
+                stream=stream,
+                semantics={
+                    "domains": values, "dynamic_commands": [], "native_dispatches": [],
+                    "definitions": {"global": raw, "files": [{"target": target, "variables": raw}]},
+                    "files": [{
+                        "target": target, "source": "Makefile", "recipe": "\n".join(recipes),
+                        "prerequisites": prerequisites, "variables": values,
+                    }],
+                },
+            )
+
+        session.make = make
+        with patch.object(graph_probe, "MakeCommands", return_value={}), \
+             patch.object(graph_probe, "_loaded_sources", return_value=loaded), \
+             patch.object(graph_probe, "_prepare_rule_templates",
+                          side_effect=lambda *args, **options: (args[4].stream, set(), set())):
+            result = graph_probe.run_probe(
+                loader, {"all"}, domains, {}, session=session,
+                declared_external_names=set(domains), environment_names=set(environment),
+            )
+        self.assertFalse(budget.children)
+        self.assertFalse(budget.producer_waiters)
+        return result["all"], observed
+
+    def test_reference_parity_covers_ordinary_short_scoped_and_nested_reads(self):
+        for spelling, names in (
+            ("(PAYLOAD)", {"PAYLOAD"}), ("{PAYLOAD:%=%}", {"PAYLOAD"}),
+            ("P", {"P"}), ("@", {"@"}), ("(@D)", {"@D"}),
+            ("(call PAYLOAD,$(ARG))", {"PAYLOAD", "ARG"}),
+            ("(origin PAYLOAD)", {"PAYLOAD"}),
+            ("(OUTER:$(PATTERN)=${REPLACEMENT})", {"OUTER", "PATTERN", "REPLACEMENT"}),
+        ):
+            for count in range(1, 6):
+                with self.subTest(spelling=spelling, dollars=count):
+                    expression = "$" * count + spelling
+                    nested = graph_probe.references(spelling) if count % 2 == 0 else names
+                    self.assertEqual(graph_probe.references(expression), nested)
+        self.assertEqual(graph_probe.references("$(and ,$$$(UNREAD))"), set())
+        self.assertEqual(graph_probe.references("$$$($(SELECTOR))"), {"SELECTOR"})
+
+    def test_active_odd_dollar_inputs_cannot_escape_actual_planner_sealing(self):
+        for count in range(1, 6):
+            source = "all:\n\t@printf '%s' '" + "$" * count + "(UNSEALED)'\n"
+            with self.subTest(dollars=count):
+                if count % 2:
+                    with self.assertRaisesRegex(MakeProbeError, "unsealed undefined.*UNSEALED"):
+                        self.plan(source)
+                else:
+                    result, observed = self.plan(source)
+                    self.assertEqual(result["variable_census"]["ambient_undefined"], [])
+                    self.assertEqual(len(result["record"]["variants"]), 1)
+
+    @staticmethod
+    def states(result):
+        return {tuple(sorted(tuple(item) for item in variant["state"])) for variant in result["record"]["variants"]}
+
+    def test_fallback_joint_origin_state_is_observed(self):
+        source = (
+            "A ?= a\nB ?= b\n"
+            "ifeq ($(origin A)/$(origin B),command line/command line)\nall: extra\nendif\n"
+            "all: ;\nextra: ;\n"
+        )
+        result, _ = self.plan(source, {name: {"kind": "tracked-fallback"} for name in ("A", "B")})
+        joint = (("command-line", "A", "a"), ("command-line", "B", "b"))
+        self.assertEqual(self.states(result), {(), joint[:1], joint[1:], joint})
+        selected, = [variant for variant in result["record"]["variants"] if tuple(map(tuple, variant["state"])) == joint]
+        self.assertEqual(selected["record"]["files"][0]["prerequisites"], [{"name": "extra", "order_only": False}])
+        self.assertEqual(result["prerequisite_domain_census"]["enumerated"], ["A", "B"])
+
+    def test_fallback_flavor_and_override_precedence_keep_complete_contexts(self):
+        for prefix, extra in (("", True), ("override ", False)):
+            source = (
+                prefix + "A := a\nB := b\n"
+                "ifeq ($(flavor A)/$(flavor B),recursive/recursive)\nall: extra\nendif\nall: ;\nextra: ;\n"
+            )
+            with self.subTest(prefix=prefix):
+                result, _ = self.plan(source, {name: {"kind": "tracked-fallback"} for name in ("A", "B")})
+                self.assertEqual(len(self.states(result)), 4)
+                joint, = [variant for variant in result["record"]["variants"] if len(variant["state"]) == 2]
+                self.assertEqual(bool(joint["record"]["files"][0]["prerequisites"]), extra)
+                self.assertEqual(joint["record"]["domains"]["A"]["origin"], "command line" if extra else "override")
+                self.assertEqual(joint["record"]["domains"]["A"]["flavor"], "recursive" if extra else "simple")
+
+    def test_mixed_domains_keep_environment_and_singleton_explicit_interactions(self):
+        source = (
+            "A ?= a\nB ?= b\n"
+            "ifeq ($(origin A)/$(origin B),environment/command line)\nall: extra\nendif\nall: ;\nextra: ;\n"
+        )
+        for choices in (["b"], ["b", "other"]):
+            with self.subTest(choices=choices):
+                result, _ = self.plan(source, {
+                    "A": {"kind": "tracked-fallback"}, "B": {"kind": "explicit", "values": choices},
+                }, environment={"A"})
+                self.assertEqual(len(self.states(result)), 3 * (len(choices) + 1))
+                expected = (("environment", "A", "a"), ("command-line", "B", "b"))
+                self.assertIn(tuple(sorted(expected)), self.states(result))
+                self.assertTrue(any(
+                    variant["record"]["files"][0]["prerequisites"] for variant in result["record"]["variants"]
+                ))
+
+    def test_independent_fallbacks_preserve_all_states_and_equal_graphs(self):
+        result, _ = self.plan(
+            "A ?= a\nB ?= b\nall: $(A) $(B)\na b: ;\n",
+            {name: {"kind": "tracked-fallback"} for name in ("A", "B")},
+        )
+        self.assertEqual(len(self.states(result)), 4)
+        for variant in result["record"]["variants"]:
+            self.assertEqual(variant["record"]["files"][0]["prerequisites"], [
+                {"name": "a", "order_only": False}, {"name": "b", "order_only": False},
+            ])
+
+    def test_wide_fallback_plan_refuses_instead_of_claiming_singleton_coverage(self):
+        names = [f"VALUE_{index}" for index in range(6)]
+        source = "".join(name + " ?= input\n" for name in names)
+        source += "all: " + " ".join("$(" + name + ")" for name in names) + "\ninput: ;\n"
+        budget = ProbeBudget(Limits(states=8))
+        with self.assertRaisesRegex(MakeProbeError, "bounded context plan"):
+            self.plan(source, {name: {"kind": "tracked-fallback"} for name in names}, budget=budget)
+        self.assertLessEqual(budget.states, 8)
+        self.assertFalse(budget.children)
+
+    @staticmethod
+    def doubling(depth):
+        values = {"V0": ["x"]}
+        values.update({f"V{index}": [f"$(V{index - 1})$(V{index - 1})"] for index in range(1, depth + 1)})
+        return values
+
+    def test_single_choice_selector_doubling_stops_at_the_public_name_bound(self):
+        budget = ProbeBudget()
+        self.assertEqual(graph_probe.selected_names(
+            ("$($(V7))",), self.doubling(7), {}, budget=budget,
+        ), {"x" * 128})
+        with self.assertRaisesRegex(MakeProbeError, "name.*bound"):
+            graph_probe.selected_names(("$($(V8))",), self.doubling(8), {}, budget=budget)
+        self.assertTrue(budget.failed)
+        self.assertEqual((budget.runs, budget.states), (0, 0))
+
+    def test_unused_selector_still_has_bounded_source_census_admission(self):
+        values = self.doubling(8)
+        source = "".join(name + " = " + bodies[0] + "\n" for name, bodies in values.items())
+        source += "UNUSED = $($(V8))\nall: ;\n"
+        budget = ProbeBudget()
+        with self.assertRaisesRegex(MakeProbeError, "name.*bound"):
+            source_census({"Makefile": source.encode()}, budget=budget)
+        self.assertEqual((budget.runs, budget.states), (0, 0))
+
+    def test_selector_cardinality_cycles_and_context_local_memo(self):
+        for width in (9, 10):
+            budget = ProbeBudget()
+            expression = "$(" + "$(CHOICE)" * width + ")"
+            with self.subTest(width=width):
+                if width == 9:
+                    values = graph_probe.selected_names((expression,), {"CHOICE": ["a", "b"]}, {}, budget=budget)
+                    self.assertEqual(len(values), 512)
+                    self.assertTrue(all(len(value) == 9 for value in values))
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "bounded context plan"):
+                        graph_probe.selected_names((expression,), {"CHOICE": ["a", "b"]}, {}, budget=budget)
+        for value in ("FIRST", "SECOND"):
+            self.assertEqual(graph_probe.selected_names(
+                ("$($(SELECTOR))",), {"SELECTOR": [value]}, {}, budget=ProbeBudget(),
+            ), {value})
+        with self.assertRaisesRegex(graph_probe._UnresolvedName, "cyclic"):
+            graph_probe.selected_names(
+                ("$($(A))",), {"A": ["$(B)"], "B": ["$(A)"]}, {}, budget=ProbeBudget(),
+            )
+
+    def test_selector_deadline_and_bytes_are_admitted_before_expansion(self):
+        for expired in (False, True):
+            budget = ProbeBudget(Limits(cache_bytes=64))
+            if expired:
+                budget.started -= budget.limits.seconds
+            with self.subTest(expired=expired), self.assertRaises(MakeProbeError):
+                graph_probe.selected_names(("$($(V6))",), self.doubling(6), {}, budget=budget)
+            self.assertTrue(budget.failed)
+            self.assertEqual(budget.bytes, {})
+            self.assertEqual((budget.runs, budget.states), (0, 0))
+
+    def test_selector_input_depth_and_completed_memo_stay_bounded(self):
+        budget = ProbeBudget(Limits(file_bytes=32))
+        with self.assertRaisesRegex(MakeProbeError, "input byte bound"):
+            graph_probe.selected_names(("$(" + "X" * 33 + ")",), {}, {}, budget=budget)
+        budget = ProbeBudget()
+        with self.assertRaisesRegex(MakeProbeError, "reference depth bound"):
+            graph_probe.selected_names(("$(" * 513 + "X" + ")" * 513,), {}, {}, budget=budget)
+        values = {"V0": [""]}
+        values.update({f"V{index}": [f"$(V{index - 1})$(V{index - 1})"] for index in range(1, 11)})
+        budget = ProbeBudget(Limits(cache_bytes=32 * 1024))
+        self.assertEqual(graph_probe.selected_names(
+            ("$(KEPT$(V10))",), values, {}, budget=budget,
+        ), {"KEPT"})
+        self.assertGreater(budget.bytes.get("cache", 0), 0)
+        self.assertLessEqual(budget.bytes.get("cache", 0), 32 * 1024)
+        self.assertEqual((budget.runs, budget.states), (0, 0))
+        with self.assertRaisesRegex(MakeProbeError, "cache byte"):
+            graph_probe.selected_names(
+                ("$(KEPT$(V10))",), values, {}, budget=ProbeBudget(Limits(cache_bytes=16 * 1024)),
+            )
+        with self.assertRaisesRegex(graph_probe._UnresolvedName, "closed literal"):
+            graph_probe.selected_names(
+                ("$($(A))$($(A))",), {"A": ["SAFE", "$(MISSING)"]}, {}, budget=ProbeBudget(),
+            )
+
+    def test_literal_binding_module_consumers_share_reference_parity(self):
+        for count in range(1, 6):
+            sources = {
+                "Makefile": (
+                    "include data.mk\nPAYLOAD = $(GENERATED)\nall:\n"
+                    "\t@printf '%s' '" + "$" * count + "(PAYLOAD)'\n"
+                ).encode(),
+                "data.mk": b"GENERATED := stable\n",
+            }
+            budget = ProbeBudget()
+            stream = graph_probe._source_units(
+                sources, budget=budget,
+                original_input=lambda name: {"origin": "undefined", "flavor": "undefined", "value": ""},
+                literal_modules=(graph_probe._LiteralBindingModule(
+                    "data.mk", (("GENERATED", "stable"),), (),
+                ),),
+            )
+            with self.subTest(dollars=count):
+                if count % 2:
+                    with self.assertRaisesRegex(MakeProbeError, "original candidate consumer"):
+                        source_census(sources, reference_units=stream, budget=budget)
+                else:
+                    self.assertEqual(source_census(
+                        sources, reference_units=stream, budget=budget,
+                    )["literal_binding_modules"], ("data.mk",))
 
 
 class AuthoritativeMakeProbeTests(unittest.TestCase):
@@ -3485,15 +3767,70 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.add("Makefile", "INNER = two\nOUTER = $(INNER)\nall:\n\t@echo $(OUTER)\n")
         self.assertNotEqual(self.observe()["all"]["record"], first)
 
-    def test_live_sized_112_name_fixture_runs_real_cli_states_not_registry_backfill(self):
-        domains = {"VALUE_" + str(index): {"kind": "tracked-fallback"} for index in range(112)}
-        self.add("Makefile", "".join(name + " ?= input\n" for name in domains)
-                 + "all: " + " ".join("$(" + name + ")" for name in domains) + "\ninput: ;\n")
-        result = self.observe(domains)["all"]
-        states = result["record"]["variants"]
-        self.assertEqual(len(states), 113)
-        self.assertEqual({state["state"][0][1] for state in states if state["state"]}, set(domains))
-        self.assertEqual(set(result["prerequisite_domain_census"]["enumerated"]), set(domains))
+    def test_independent_native_fallbacks_keep_every_assignment_origin(self):
+        domains = {name: {"kind": "tracked-fallback"} for name in ("A", "B")}
+        self.add("Makefile", "A ?= a\nB ?= b\nall: $(A) $(B)\na b: ;\n")
+        result = self.observe(domains, environment_names={"A", "B"})["all"]
+        states = GraphSemanticApiTests.states(result)
+        expected = set()
+        for left in (None, "environment", "command-line"):
+            for right in (None, "environment", "command-line"):
+                expected.add(tuple(sorted(
+                    (origin, name, value)
+                    for origin, name, value in ((left, "A", "a"), (right, "B", "b")) if origin is not None
+                )))
+        self.assertEqual(states, expected)
+        for variant in result["record"]["variants"]:
+            self.assertEqual(variant["record"]["files"][0]["prerequisites"], [
+                {"name": "a", "order_only": False}, {"name": "b", "order_only": False},
+            ])
+        self.assertEqual(result["prerequisite_domain_census"]["enumerated"], ["A", "B"])
+
+    def test_native_fallback_origin_flavor_and_precedence_interactions(self):
+        for declarations, expression, expected in (
+            ("A ?= a\nB ?= b\n", "$(origin A)/$(origin B)", "command line/command line"),
+            ("A := a\nB := b\n", "$(flavor A)/$(flavor B)", "recursive/recursive"),
+            ("override A := a\nB := b\n", "$(flavor A)/$(flavor B)", "recursive/recursive"),
+        ):
+            self.add("Makefile", (
+                declarations + "SELECTED := base\nifeq (" + expression + "," + expected + ")\n"
+                "SELECTED := extra\nendif\nall: $(SELECTED)\n\t@printf '%s\\n' '$(SELECTED)'\nbase extra: ;\n"
+            ))
+            with self.subTest(declarations=declarations):
+                result = self.observe({name: {"kind": "tracked-fallback"} for name in ("A", "B")})["all"]
+                self.assertEqual(len(GraphSemanticApiTests.states(result)), 4)
+                outcomes = set()
+                for variant in result["record"]["variants"]:
+                    ordinary = self.ordinary(*(name + "=" + value for _, name, value in variant["state"])).decode().strip()
+                    self.assertEqual(variant["record"]["files"][0]["prerequisites"], [
+                        {"name": ordinary, "order_only": False},
+                    ])
+                    outcomes.add(ordinary)
+                self.assertEqual(outcomes, {"base"} if declarations.startswith("override") else {"base", "extra"})
+
+    def test_native_mixed_fallback_and_explicit_domains_keep_joint_environment_state(self):
+        self.add("Makefile", (
+            "A ?= a\nB ?= b\nSELECTED := base\n"
+            "ifeq ($(origin A)/$(origin B),environment/command line)\nSELECTED := extra\nendif\n"
+            "all: $(SELECTED)\n\t@printf '%s\\n' '$(SELECTED)'\nbase extra: ;\n"
+        ))
+        for choices in (["b"], ["b", "other"]):
+            with self.subTest(choices=choices):
+                result = self.observe({
+                    "A": {"kind": "tracked-fallback"}, "B": {"kind": "explicit", "values": choices},
+                }, environment_names={"A"})["all"]
+                self.assertEqual(len(GraphSemanticApiTests.states(result)), 3 * (len(choices) + 1))
+                outcomes = set()
+                for variant in result["record"]["variants"]:
+                    ordinary = self.ordinary(
+                        *(name + "=" + value for origin, name, value in variant["state"] if origin == "command-line"),
+                        environment={name: value for origin, name, value in variant["state"] if origin == "environment"},
+                    ).decode().strip()
+                    self.assertEqual(variant["record"]["files"][0]["prerequisites"], [
+                        {"name": ordinary, "order_only": False},
+                    ])
+                    outcomes.add(ordinary)
+                self.assertEqual(outcomes, {"base", "extra"})
 
     def test_explicit_cross_branch_combinations_are_observed(self):
         self.add("Makefile", (
