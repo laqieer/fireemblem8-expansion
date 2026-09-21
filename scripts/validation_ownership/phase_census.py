@@ -890,8 +890,8 @@ def _check_deferred_namespace(phase, stream, usage, causes, snapshot_checks):
                 storage += 12 * len(value)
         available = min(
             budget.limits.file_bytes,
-            budget.limits.cache_bytes - budget.bytes.get("cache", 0),
-            budget.limits.total_bytes - sum(budget.bytes.values()),
+            budget.cumulative_limit("cache_bytes") - budget.bytes.get("cache", 0),
+            budget.cumulative_limit("total_bytes") - sum(budget.bytes.values()),
         )
         if count > budget.limits.observation_count or storage > available:
             attribution_overflow = True

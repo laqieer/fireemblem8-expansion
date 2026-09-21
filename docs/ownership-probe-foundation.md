@@ -1309,6 +1309,31 @@ the convenience owner that constructs one budget and passes it through every
 stage. This is explicit trusted-caller API binding, not a global budget service
 or a defense against arbitrary Python object mutation.
 
+`ProbeBudget.cumulative_limit(name)` separates report-wide work quotas from
+the existing per-operation bounds in `budget.limits`. Ordinary budgets return
+the same effective values as before, including the `observations=None`
+alias to `entries`; no production defaults, flags or supported profiles change.
+Byte charges, their aggregate, run/state totals and native cumulative work use
+this query without resetting or refunding counters.
+
+The original `Limits` still bounds each snapshot/output stream, pending
+record and pre-assembly, variant cohort, input inventory, native capsule,
+live process pool and funded VM. A capsule's initial work allowances are
+clipped to those original unit bounds as well as remaining cumulative credit;
+resumption never increases the allowance issued to that capsule. Direct host
+source/observation cardinalities continue to use the original effective
+observation count. Created-file/output-tree ownership bounds remain hard.
+Explicit stricter effective limits retain their meaning.
+
+This narrow trusted-caller seam permits a separately reviewed, externally
+contained diagnostic to observe cumulative demand without enlarging those
+unit bounds or replacing accounting methods. It is not a public bypass mode
+and supplies neither a resource-policy recommendation nor current acceptance
+evidence. `CumulativeQuotaPolicyTests` exercises ordinary and injected quota
+behavior through the actual admission, initial native configuration and
+resumption APIs with effect-trapped IO; native/full-report qualification stays
+separate.
+
 The registry helper requires that same active owner:
 `probe_generated_registry(loader, command=command, session=probe)`.
 There is no optional/sessionless path or helper-level `scratch_root` argument.

@@ -10329,6 +10329,34 @@ class ObservationAllowanceTests(unittest.TestCase):
         self.assertEqual(session.observations_used, 0)
         self.assertTrue(session.budget.closed)
 
+    def test_cumulative_policy_keeps_each_real_capsule_bound_after_global_crossing(self):
+        class MeasuredBudget(ProbeBudget):
+            def cumulative_limit(self, name):
+                return 1 << 40 if name == "observations" else super().cumulative_limit(name)
+
+        names = self.sources()
+        budget = MeasuredBudget(Limits(entries=64, observations=64, seconds=30, runs=64))
+        clock = budget.started, budget.deadline
+        with self.session(budget=budget) as session, self.capture(session) as records:
+            for expected in (32, 64, 96, 128):
+                self.read_sources(session, names[:32])
+                self.assertEqual(session.observations_used, expected)
+            self.assertEqual([row["count"] for row in records["launches"]], [64] * 4)
+            self.assertTrue(all(row["ok"] for row in records["reports"]))
+            self.assertEqual((budget.started, budget.deadline), clock)
+            self.assertEqual((budget.limits.entries, budget.limits.observation_count), (64, 64))
+        self.assertEqual(session.observations_used, 128)
+        self.fixture.assert_clean(session)
+
+        budget = MeasuredBudget(Limits(entries=64, observations=64, seconds=30, runs=64))
+        with self.session(budget=budget) as session, self.capture(session) as records:
+            with self.assertRaisesRegex(MakeProbeError, "filesystem-observation"):
+                self.read_sources(session, names[:33], metadata=True)
+            self.assertEqual(records["launches"][0]["count"], 64)
+            self.assertFalse(records["reports"][0]["ok"])
+            self.assertTrue(budget.failed)
+        self.fixture.assert_clean(session)
+
     def test_cache_and_selected_views_share_the_same_explicit_allowance(self):
         command = self.fixture.observation_command_fixture()
         names = self.fixture.observation_reservoir()
@@ -14098,6 +14126,367 @@ class NullMountFixtureInertTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 oracle()
         oracle()
+
+
+class CumulativeQuotaPolicyTests(unittest.TestCase):
+    """Actual admission APIs with modeled native IO; no process or descriptor effects."""
+
+    @staticmethod
+    def budget(limits=None, **quotas):
+        class PolicyBudget(ProbeBudget):
+            def cumulative_limit(self, name):
+                return quotas.get(name, super().cumulative_limit(name))
+        return PolicyBudget(Limits() if limits is None else limits)
+
+    def native_model(self, budget, *, prior=None, counters=None, retain_controls=False):
+        import inspect
+        from scripts.validation_ownership import make_probe as probing
+
+        session = object.__new__(ProbeSession)
+        session.budget = budget
+        session.base = Path("/inert/cumulative-quota")
+        session.tree = session.base / "repo"
+        session.loader = SimpleNamespace(entries={})
+        session.snapshot = SimpleNamespace(files={}, gitlink_roots={}, absent_paths=())
+        session.runtime_root = None
+        session.runtime_inputs = ()
+        session.runtime_dispatch = ()
+        session.make_runtime = ()
+        session.python_version = list(sys.version_info[:2])
+        session.sudo_drop = False
+        session.launcher = NAMESPACE_LAUNCHER
+        session.serial = 0
+        session.parked_capsules = []
+        session.processes_used = session.syscalls_used = session.observations_used = 0
+        session.files_created = session.live_process_peak = session.memory_peak = 0
+        for name, value in (prior or {}).items():
+            setattr(session, name, value)
+        observed = {
+            "ok": True, "returncode": 0, "error": None,
+            "consumed": [], "code_consumed": [], "accessed": [],
+            "processes": 1, "syscalls": 2, "written_bytes": 0, "created_files": 0,
+            "memory_peak": 1, "observation_bytes": 128, "live_process_peak": 1,
+            "observations": 1, "metadata": encode_metadata_transport([]), "events": [],
+        }
+        observed.update(counters or {})
+        files, launches, cleaned, controls = {}, [], [], {}
+
+        def write(path, payload):
+            files[path] = payload
+            return len(payload)
+
+        def read(path, category):
+            data = encoded(observed)
+            if len(data) > budget.limits.file_bytes:
+                budget.reject("modeled native report exceeds unchanged file bound")
+            budget.charge(category, len(data))
+            return data
+
+        def launch(argv, **keywords):
+            config = json.loads(files[Path(argv[-1])])
+            launches.append(config)
+            if retain_controls:
+                frame = sys._getframe(1)
+                for _ in range(12):
+                    if frame.f_code is ProbeSession._sandbox_run.__code__:
+                        break
+                    frame = frame.f_back
+                else:
+                    self.fail("actual sandbox admission frame is unavailable")
+                for value in tuple(frame.f_locals.values()):
+                    if not inspect.isfunction(value):
+                        continue
+                    parameters = tuple(inspect.signature(value).parameters.values())
+                    if (
+                        len(parameters) == 1 and parameters[0].default == 0
+                        and parameters[0].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+                    ):
+                        self.assertNotIn("resume", controls)
+                        controls["resume"] = value
+                    elif (
+                        len(parameters) == 2
+                        and parameters[0].default is inspect.Parameter.empty
+                        and parameters[1].kind is inspect.Parameter.KEYWORD_ONLY
+                        and parameters[1].default is False
+                    ):
+                        self.assertNotIn("settle", controls)
+                        controls["settle"] = value
+                frame = None
+                self.assertEqual(set(controls), {"resume", "settle"})
+            files[Path(config["report"])] = encoded(observed)
+            self.assertIsNone(keywords["producer_channel"])
+            self.assertIsNone(keywords["producer_handler"])
+            self.assertFalse(keywords["privileged"])
+            return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+        @contextmanager
+        def cleanup(actions):
+            try:
+                yield
+            finally:
+                for action in actions:
+                    action()
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(Path, "write_bytes", write))
+            stack.enter_context(patch.object(Path, "unlink", lambda path, **kw: cleaned.append(path)))
+            stack.enter_context(patch.object(Path, "is_file", lambda path: path in files))
+            stack.enter_context(patch.object(probing, "_remove_owned_tree", lambda path: cleaned.append(path)))
+            stack.enter_context(patch.object(probing, "cleanup_scope", cleanup))
+            stack.enter_context(patch.object(probing.os, "getuid", return_value=1000))
+            stack.enter_context(patch.object(probing.os, "getgid", return_value=1000))
+            stack.enter_context(patch.object(budget, "run", launch))
+            stack.enter_context(patch.object(budget, "read_bytes", read))
+            result = session._sandbox_run(
+                session.base / "root", mode="command", argv=["/usr/bin/true"],
+                environment=ENVIRONMENT, mounts=[session._mount(session.tree, "/repo")],
+            )
+        self.assertEqual(len(launches), 1)
+        self.assertEqual(set(cleaned), {
+            session.base / "report-1.json", session.base / "launch-1.json",
+            session.base / "producer-1",
+        })
+        if retain_controls:
+            return session, launches[0], result, controls
+        return session, launches[0], result
+
+    def test_default_queries_and_observation_alias_preserve_effective_limits(self):
+        for options in ({}, {"entries": 8}, {"entries": 8, "observations": 5}):
+            with self.subTest(options=options):
+                limits = Limits(**options)
+                budget = ProbeBudget(limits)
+                self.assertIs(budget.limits, limits)
+                for definition in fields(limits):
+                    expected = limits.observation_count if definition.name == "observations" else getattr(
+                        limits, definition.name,
+                    )
+                    self.assertEqual(budget.cumulative_limit(definition.name), expected)
+                self.assertIsNone(budget.cumulative_limit("not_a_limit"))
+
+    def test_cumulative_bytes_cross_quotas_without_changing_the_unit_limits(self):
+        categories = ("snapshot", "output", "event", "mapping", "cache", "pending", "control", "sandbox")
+        for category in categories:
+            name = category + "_bytes"
+            limits = Limits(**{name: 7, "total_bytes": 11})
+            normal = ProbeBudget(limits)
+            normal.charge(category, 7)
+            with self.assertRaises(MakeProbeError):
+                normal.charge(category, 1)
+            self.assertEqual(normal.bytes, {category: 7})
+            measured = self.budget(limits, **{name: 64, "total_bytes": 64})
+            measured.charge(category, 7)
+            measured.charge(category, 8)
+            self.assertEqual(measured.bytes, {category: 15})
+            self.assertEqual(getattr(measured.limits, name), 7)
+            self.assertEqual(measured.limits.total_bytes, 11)
+            self.assertFalse(measured.failed)
+            for method in ("charge", "plan", "remaining", "run", "close", "admit_planned_state"):
+                self.assertIs(getattr(type(measured), method), getattr(ProbeBudget, method))
+
+    def test_stricter_ordinary_and_explicit_policy_quotas_remain_terminal(self):
+        for budget in (
+            ProbeBudget(Limits(control_bytes=3)),
+            self.budget(Limits(control_bytes=7), control_bytes=3),
+            self.budget(Limits(control_bytes=7), control_bytes=3, total_bytes=64),
+        ):
+            budget.charge("control", 3)
+            with self.assertRaises(MakeProbeError):
+                budget.charge("control", 1)
+            self.assertEqual(budget.bytes, {"control": 3})
+            self.assertTrue(budget.failed)
+            with self.assertRaises(MakeProbeError):
+                budget.charge("control", 0)
+
+    def test_pending_record_and_plan_bounds_survive_large_cumulative_allowances(self):
+        for operation in ("record", "plan"):
+            budget = self.budget(pending_bytes=8 * MAX_PENDING_RECORD_BYTES, total_bytes=16 * MAX_PENDING_RECORD_BYTES)
+            if operation == "record":
+                budget.charge("pending", MAX_PENDING_RECORD_BYTES)
+                budget.charge("pending", MAX_PENDING_RECORD_BYTES)
+                before = dict(budget.bytes)
+                with self.assertRaisesRegex(MakeProbeError, "pending record"):
+                    budget.charge("pending", MAX_PENDING_RECORD_BYTES + 1)
+                self.assertEqual(budget.bytes, before)
+            else:
+                budget.admit_planned_state(MAX_PLANNED_STATE_BYTES)
+                before = dict(budget.bytes)
+                with self.assertRaisesRegex(MakeProbeError, "planned-state"):
+                    budget.admit_planned_state(1)
+                self.assertEqual(budget.bytes, before)
+                self.assertEqual(budget.planned_state_bytes, MAX_PLANNED_STATE_BYTES)
+
+    def test_state_totals_do_not_enlarge_pending_or_variant_cohorts(self):
+        budget = self.budget(Limits(states=2, pending=1), states=8)
+        budget.plan(2)
+        budget.plan(2)
+        self.assertEqual(budget.states, 4)
+        with self.assertRaises(MakeProbeError):
+            budget.plan(1, pending=2)
+        for count in (2, 3):
+            budget = self.budget(Limits(states=2), states=64)
+            budget.states = 10
+            launched = []
+            session = SimpleNamespace(budget=budget, make=lambda target, **kw: launched.append(kw) or kw)
+            if count == 3:
+                with self.assertRaisesRegex(MakeProbeError, "variant states"):
+                    ProbeSession.variants.__wrapped__(session, "all", [()] * count)
+                self.assertEqual(launched, [])
+            else:
+                result = ProbeSession.variants.__wrapped__(session, "all", [()] * count)
+                self.assertEqual(len(result), count)
+                self.assertEqual(len(launched), count)
+            self.assertLessEqual(budget.planned_state_bytes, 2 * len(encoded(())))
+
+    def test_run_and_explicit_stream_caps_remain_independent(self):
+        for category in ("snapshot", "output"):
+            limit_name = category + "_bytes"
+            limits = Limits(**{limit_name: 7, "runs": 1})
+            budget = self.budget(limits, **{limit_name: 64, "runs": 64, "total_bytes": 1024})
+            budget.runs = 3
+            with patch("subprocess.Popen", side_effect=AssertionError("unexpected process")) as launch:
+                with self.assertRaisesRegex(MakeProbeError, "process stream"):
+                    budget.run(["/inert/program"], env={}, category=category, output_limit=8)
+                launch.assert_not_called()
+            self.assertEqual(budget.runs, 4)
+
+    def test_launch_totals_use_cumulative_policy_without_executing_a_child(self):
+        stopped = RuntimeError("modeled launch boundary")
+        for measured in (False, True):
+            budget = self.budget(Limits(runs=1), runs=4) if measured else ProbeBudget(Limits(runs=1))
+            budget.runs = 1
+            clock = budget.started, budget.deadline
+            with patch("signal.pthread_sigmask", return_value=set()), patch(
+                "subprocess.Popen", side_effect=stopped,
+            ) as launch:
+                if measured:
+                    with self.assertRaises(RuntimeError) as error:
+                        budget.run(["/inert/program"], env={}, output_limit=7)
+                    self.assertIs(error.exception, stopped)
+                    self.assertEqual(launch.call_count, 1)
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "process-launch"):
+                        budget.run(["/inert/program"], env={}, output_limit=7)
+                    launch.assert_not_called()
+            self.assertEqual(budget.runs, 2)
+            self.assertEqual((budget.started, budget.deadline), clock)
+            self.assertFalse(budget.children)
+            self.assertTrue(budget.failed)
+
+    def test_deadline_closed_and_invalid_requests_are_not_soft_quotas(self):
+        for state in ("closed", "expired"):
+            budget = self.budget(control_bytes=1 << 62, total_bytes=1 << 62)
+            if state == "closed":
+                budget.closed = True
+            else:
+                budget.started -= budget.limits.seconds + 1
+            with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
+                budget.charge("control", 1)
+            self.assertEqual(budget.bytes, {})
+        for category, value in (("missing", 1), ("control", True), ("control", -1), ("control", 1.5)):
+            budget = self.budget(control_bytes=1 << 62, total_bytes=1 << 62)
+            with self.assertRaisesRegex(MakeProbeError, "invalid"):
+                budget.charge(category, value)
+            self.assertEqual(budget.bytes, {})
+
+    def test_initial_native_caps_keep_original_units_after_global_quotas_are_crossed(self):
+        limits = Limits(
+            entries=8, observations=4, descendants=3, syscalls=9,
+            sandbox_bytes=64, control_bytes=65536, file_bytes=32768,
+        )
+        large = 1 << 40
+        budget = self.budget(limits, **dict.fromkeys((
+            "observations", "descendants", "syscalls", "sandbox_bytes",
+            "control_bytes", "event_bytes", "total_bytes",
+        ), large))
+        budget.bytes.update(control=70000, event=limits.event_bytes + 1, sandbox=128)
+        prior = {"processes_used": 8, "syscalls_used": 12, "observations_used": 9}
+        session, config, _ = self.native_model(budget, prior=prior)
+        self.assertEqual(
+            tuple(config[name] for name in (
+                "descendant_limit", "syscall_limit", "write_limit", "observation_count",
+                "file_limit", "observation_limit", "creation_limit", "process_limit", "memory_limit",
+            )),
+            (3, 9, 64, 4, 32768, 32768, limits.created_files, limits.processes, limits.address_space_bytes),
+        )
+        self.assertEqual((session.processes_used, session.syscalls_used, session.observations_used), (9, 14, 10))
+        self.assertGreater(budget.bytes["control"], 70000)
+        self.assertEqual(asdict(budget.limits), asdict(limits))
+        self.assertFalse(budget.failed)
+
+    def test_ordinary_native_initial_grants_preserve_prior_work_and_alias(self):
+        for observation in (None, 4):
+            limits = Limits(
+                entries=8, observations=observation, descendants=3, syscalls=9,
+                sandbox_bytes=64, control_bytes=65536, file_bytes=32768,
+            )
+            budget = ProbeBudget(limits)
+            budget.bytes.update(control=128, sandbox=16)
+            _, config, _ = self.native_model(
+                budget, prior={"processes_used": 1, "syscalls_used": 3, "observations_used": 1},
+            )
+            self.assertEqual(config["descendant_limit"], 2)
+            self.assertEqual(config["syscall_limit"], 6)
+            self.assertEqual(config["write_limit"], 48)
+            self.assertEqual(config["observation_count"], limits.observation_count - 1)
+
+    def test_native_positive_overclaims_cannot_use_surplus_global_credit(self):
+        limits = Limits(
+            entries=8, observations=4, descendants=3, syscalls=9,
+            sandbox_bytes=64, control_bytes=65536, file_bytes=32768,
+        )
+        for values in (
+            {"processes": 4}, {"syscalls": 10}, {"written_bytes": 65},
+            {"observations": 5, "observation_bytes": 640},
+            {"created_files": limits.created_files + 1},
+            {"live_process_peak": limits.processes + 1},
+            {"memory_peak": limits.address_space_bytes + 1},
+        ):
+            with self.subTest(values=values):
+                budget = self.budget(limits, **dict.fromkeys((
+                    "descendants", "syscalls", "observations", "sandbox_bytes", "control_bytes", "total_bytes",
+                ), 1 << 40))
+                with self.assertRaises(MakeProbeError):
+                    self.native_model(budget, counters=values)
+
+    def test_resumption_retains_issued_caps_and_settles_real_cumulative_deltas(self):
+        names = {
+            "processes", "syscalls", "written_bytes", "created_files",
+            "observation_bytes", "observations", "live_process_peak", "memory_peak",
+        }
+        limits = Limits(descendants=3, syscalls=9, sandbox_bytes=64, observations=4)
+        for measured in (False, True):
+            budget = self.budget(limits, **dict.fromkeys((
+                "descendants", "syscalls", "sandbox_bytes", "observations", "control_bytes",
+            ), 1 << 40)) if measured else ProbeBudget(limits)
+            session, config, _, controls = self.native_model(
+                budget, prior={"processes_used": 1, "syscalls_used": 2, "observations_used": 1},
+                retain_controls=True,
+            )
+            values = dict.fromkeys(names, 0)
+            values.update(processes=1, syscalls=2, observations=1, observation_bytes=128,
+                          written_bytes=0, live_process_peak=1, memory_peak=1)
+            self.assertEqual((session.processes_used, session.syscalls_used, session.observations_used), (2, 4, 2))
+            self.assertEqual(budget.bytes["sandbox"], 0)
+            before = dict(budget.bytes)
+            controls["settle"](values)
+            self.assertEqual(budget.bytes, before)
+            if measured:
+                session.processes_used += 7
+                session.syscalls_used += 17
+                session.observations_used += 9
+                budget.charge("sandbox", 80)
+                grant = controls["resume"]()
+                self.assertEqual(grant, {key: config[key] for key in grant})
+            else:
+                grants = controls["resume"]()
+                self.assertEqual(grants["descendant_limit"], 2)
+                self.assertEqual(grants["syscall_limit"], 7)
+                self.assertEqual(grants["observation_count"], 3)
+            before = dict(budget.bytes)
+            controls["settle"](values)
+            self.assertEqual(budget.bytes, before)
+            with self.assertRaisesRegex(MakeProbeError, "nonmonotonic"):
+                controls["settle"]({**values, "syscalls": 1})
 
 
 if __name__ == "__main__":
