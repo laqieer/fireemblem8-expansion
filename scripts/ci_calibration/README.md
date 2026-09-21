@@ -2,7 +2,15 @@
 
 **Preparation only; never merge this branch. No native execution, workflow
 launch, retry or production resource-policy decision is allocated here.**
-Current freeze:
+Current preparation-only rebind freeze:
+[5767524609](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5767524609).
+This is one normal child of accepted telemetry harness
+`e4034683d4fc68871847c58a2130d954c03370fc`. Only the fixed source/workflow
+binding, README, derived identity expectations and exact lineage/inventory
+guards change. The accounting policy and all workload, failure, cleanup and
+physical mechanisms stay unchanged.
+
+Accounting implementation freeze:
 [5763493659](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5763493659),
 implementing the approved accounting-only contract
 [5760898805](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5760898805)
@@ -10,8 +18,9 @@ after the quota/admission separation
 [5761682432](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5761682432).
 Accounting preparation `ae3fd7a9589e50903fbc88a8df72baaaea2d0423` is a normal
 child of reviewed harness `4dad318411d6e191d79db1a3570d611f5464afad`.
-The telemetry correction is one normal child ofae3; that recovery reference
-is a staging checkpoint, not acceptance or a new execution allocation.
+The telemetry correction is e403, a normal child ofae3, and is independently
+accepted within its correction scope. Its acceptance is not a native
+qualification or execution allocation.
 
 ## Telemetry publication and permanent-loss correction
 
@@ -46,12 +55,20 @@ populated/missing/restored states, collection/finalization/publication fault
 combinations, exact ae3 restorations and neutral local/data ordering controls.
 No real thread, native source, process or privileged workload is launched.
 
-**The preparation source is `db50dc744fee3aa697fdc5df458474e101e25e25`,
-and is NOT native-ready.** Its reviewed cumulative query/caps are integrated,
-but null-stderr support and remaining source-review corrections are still
-open. Main must bind the final corrected reviewed source before a separately
-approved launch. This harness change neither edits nor accepts those source
-corrections, standalone H1, or native resource fit.
+**The preparation source is `b6c47bc9300cf5d66244f161f81abe5d81d5a20b`.**
+BASE remains `ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`. Main normally
+integrated the reviewed3944 stderr/DEL/initial-stop corrections with the
+graph, source-pin, native cleanup and cumulative-query corrections. The one
+`handle_stop` conflict retains early terminal status/rejection and the
+stderr primary inside the pre-close try; Main's focused combined evidence
+covers that integration, not a native run by this harness.
+
+The last disjoint report/schema/oracle/H1/CI/docs source review is still
+active. Any substantive finding that changes this subject requires a new
+exact rebind. Native regression qualification, complete real report/verifier,
+shipping/H1 and all delivery gates remain open. This preparation identity
+does not hide future findings or authorize reuse of earlier native evidence;
+a separate prospective scope must allocate any launch.
 
 The original full-report scope is
 [5759600529](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5759600529).

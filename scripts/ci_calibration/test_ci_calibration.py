@@ -534,7 +534,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.REPORT_ACCOUNTING_SHA}",
+            f"{'a' * 40} {supervisor.REPORT_TELEMETRY_SHA}",
+            f"{supervisor.REPORT_TELEMETRY_SHA} {supervisor.REPORT_ACCOUNTING_SHA}",
             f"{supervisor.REPORT_ACCOUNTING_SHA} {supervisor.REPORT_FINALIZATION_SHA}",
             f"{supervisor.REPORT_FINALIZATION_SHA} {supervisor.REPORT_ERROR_SHA}",
             f"{supervisor.REPORT_ERROR_SHA} {supervisor.REPORT_PREPARATION_SHA}",
@@ -652,6 +653,19 @@ class CalibrationControls(Inert):
         ):
             with self.subTest(bad=bad[:64]), self.assertRaises(policy.GuardError):
                 supervisor.validate_report_error_inventory(bad)
+
+    def test_source_rebind_inventory_is_exact_and_cannot_change_workload_or_physical_code(self):
+        data = b"".join(b"M\0" + name.encode() + b"\0" for name in sorted(supervisor.SOURCE_REBIND_PATHS))
+        supervisor.validate_source_rebind_inventory(data)
+        for changed in (
+            b"", data[:-1], data + data, data.replace(b"M\0", b"A\0", 1),
+            data.replace(b"M\0", b"D\0", 1), data.split(b"\0", 2)[2],
+            data + b"M\0scripts/ci_calibration/worker.py\0",
+            data + b"M\0scripts/ci_calibration/kernel.py\0",
+            data + b"M\0scripts/validation_ownership/budget.py\0",
+        ):
+            with self.subTest(changed=changed[:64]), self.assertRaises(policy.GuardError):
+                supervisor.validate_source_rebind_inventory(changed)
 
     def test_complete_diff_binding_preserves_additions_deletions_and_both_rename_sides(self):
         changes = self.changes()
