@@ -1,6 +1,13 @@
-"""Scalar-only attribution of the pinned native observation rejection."""
+"""Bounded numeric failures and registered source-code locations."""
 
 from __future__ import annotations
+
+from importlib.machinery import ModuleSpec, SourceFileLoader
+from pathlib import Path
+import re
+import sys
+import types
+import weakref
 
 if __package__:
     from . import policy
@@ -9,6 +16,374 @@ else:
 
 
 NATIVE_REJECTION = "aggregate filesystem-observation budget exhausted"
+SOURCE_ROOT = Path("/repo")
+SOURCE_PACKAGE = "scripts.validation_ownership"
+LOCATION_REASONS = frozenset({
+    "binding-not-ready", "source-binding-invalid", "source-file-unowned", "source-module-unowned",
+    "source-code-unbound", "public-call-unobserved", "no-source-trace", "cyclic-exception-chain",
+    "exception-chain-bound", "trace-frame-bound", "registration-bound", "invalid-code-location",
+    "location-size-bound", "locator-failed",
+})
+
+
+def location_unavailable(reason, *, references_closed=None):
+    if reason not in LOCATION_REASONS:
+        raise policy.GuardError("unknown location unavailability reason")
+    return {
+        "version": 1, "source_revision": policy.GRAPH, "root": "/repo", "api": policy.REPORT_API,
+        "authority": False, "status": "unavailable", "reason": reason, "locations": [],
+        "references_closed": references_closed,
+    }
+
+
+def validate_locations(value, binding):
+    policy._component_fields(value, (
+        "version source_revision root api authority status reason locations references_closed"
+    ))
+    if (
+        type(value["version"]) is not int or value["version"] != 1
+        or value["source_revision"] != binding["source_revision"] or value["root"] != "/repo"
+        or value["api"] != binding["api"] or value["authority"] is not False
+        or type(value["status"]) is not str or value["status"] not in {"observed", "unavailable"}
+        or value["references_closed"] is not None and type(value["references_closed"]) is not bool
+        or type(value["locations"]) is not list
+    ):
+        raise policy.GuardError("source location evidence is foreign or not a closed diagnostic record")
+    if value["status"] == "unavailable":
+        if type(value["reason"]) is not str or value["reason"] not in LOCATION_REASONS or value["locations"]:
+            raise policy.GuardError("unavailable source location invented an observation")
+    else:
+        if value["reason"] is not None or value["references_closed"] is not True or not 1 <= len(value["locations"]) <= 32:
+            raise policy.GuardError("source locations are incomplete or exceed the error-chain bound")
+        for index, row in enumerate(value["locations"]):
+            policy._component_fields(row, "exception relation file code first_line line offset")
+            if (
+                type(row["exception"]) is not int or row["exception"] != index
+                or type(row["relation"]) is not str
+                or row["relation"] not in ({"primary"} if index == 0 else {"cause", "context"})
+                or type(row["file"]) is not str or not row["file"].startswith("scripts/validation_ownership/")
+                or not row["file"].endswith(".py") or policy._root_path(row["file"]) != row["file"]
+                or type(row["code"]) is not str
+                or re.fullmatch(r"(?:[A-Za-z_][A-Za-z0-9_]{0,127}|<(?:lambda|listcomp|dictcomp|setcomp|genexpr)>)", row["code"]) is None
+                or any(not policy._component_integer(row[name], policy.ORIGINAL_LIMITS["file_bytes"], 1)
+                       for name in ("first_line", "line"))
+                or not policy._component_integer(row["offset"], policy.ORIGINAL_LIMITS["file_bytes"])
+            ):
+                raise policy.GuardError("source location contains an unbound identity or non-scalar position")
+    if len(policy.encoded(value)) > policy.ERROR_BYTES:
+        raise policy.GuardError("source location evidence exceeds the existing error record bound")
+    return value
+
+
+class _LocationUnavailable(policy.GuardError):
+    def __init__(self, reason):
+        self.reason = reason
+        super().__init__(reason)
+
+
+def _instance_fields(value, expected):
+    if type(expected) is not type or type(value) is not expected:
+        raise _LocationUnavailable("source-binding-invalid")
+    ancestry = type.__getattribute__(expected, "__mro__")
+    if len(ancestry) > 32:
+        raise _LocationUnavailable("source-binding-invalid")
+    for owner in ancestry:
+        descriptor = type.__getattribute__(owner, "__dict__").get("__dict__")
+        if descriptor is not None:
+            if type(descriptor) is not types.GetSetDescriptorType:
+                raise _LocationUnavailable("source-binding-invalid")
+            fields = descriptor.__get__(value, expected)
+            if type(fields) is not dict:
+                raise _LocationUnavailable("source-binding-invalid")
+            return fields
+    raise _LocationUnavailable("source-binding-invalid")
+
+
+class _SourceLocations:
+    def __init__(self):
+        self.codes, self.modules, self.seen, self.registered = {}, {}, set(), {}
+        self.entries = self.entry_type = self.call = self.call_globals = None
+        self.work = 0
+
+    def account(self, amount=1):
+        self.work += amount
+        if self.work > policy.ORIGINAL_LIMITS["entries"]:
+            raise _LocationUnavailable("registration-bound")
+
+    def public_call(self, api, session_type):
+        if (
+            type(api) is not types.SimpleNamespace or api.session is not session_type
+            or type(api.module) is not types.ModuleType or type(api.check) is not types.FunctionType
+        ):
+            raise _LocationUnavailable("source-binding-invalid")
+        namespace = types.ModuleType.__getattribute__(api.module, "__dict__")
+        if (
+            type(namespace.get("__name__")) is not str
+            or namespace["__name__"] != SOURCE_PACKAGE + ".graph_report"
+            or namespace.get("check") is not api.check or api.check.__globals__ is not namespace
+        ):
+            raise _LocationUnavailable("source-binding-invalid")
+        self.call, self.call_globals = api.check.__code__, namespace
+
+    def freeze(self, api, session_type):
+        self.public_call(api, session_type)
+        if type(sys.modules) is not dict:
+            raise _LocationUnavailable("source-module-unowned")
+        self.account(len(sys.modules))
+        self.module(self.call_globals)
+        for module in list(sys.modules.values()):
+            if type(module) is not types.ModuleType:
+                continue
+            namespace = types.ModuleType.__getattribute__(module, "__dict__")
+            name, filename = namespace.get("__name__"), namespace.get("__file__")
+            if (
+                type(name) is str and name.startswith(SOURCE_PACKAGE + ".")
+                and type(filename) is str and filename.startswith("/repo/")
+            ):
+                self.module(namespace)
+        return {
+            identity: (weakref.ref(code), weakref.ref(sys.modules[namespace["__name__"]]), relative)
+            for identity, (code, namespace, relative) in self.codes.items()
+        }
+
+    def require_registered(self, code, namespace, relative):
+        registered = self.registered.get(id(code))
+        module = None if registered is None else registered[1]()
+        if (
+            registered is None or registered[0]() is not code or type(module) is not types.ModuleType
+            or types.ModuleType.__getattribute__(module, "__dict__") is not namespace
+            or registered[2] != relative
+        ):
+            raise _LocationUnavailable("source-code-unbound")
+
+    def bind(self, observer, measurement):
+        if (
+            measurement is None or measurement.api is None or measurement.session_valid is not True
+            or measurement.root != SOURCE_ROOT or measurement.budget is not observer.budget
+            or type(measurement.session) is not observer.session_type
+            or type(sys.modules) is not dict
+        ):
+            raise _LocationUnavailable("binding-not-ready")
+        try:
+            policy.validate_report_binding(measurement.binding)
+        except policy.GuardError as error:
+            raise _LocationUnavailable("source-binding-invalid") from error
+        api = measurement.api
+        self.public_call(api, observer.session_type)
+        session = _instance_fields(measurement.session, observer.session_type)
+        loader = _instance_fields(session.get("loader"), api.loader)
+        entries = loader.get("entries")
+        captured = _instance_fields(entries, api.entries)
+        capture = captured.get("capture")
+        if (
+            session.get("budget") is not observer.budget or loader.get("budget") is not observer.budget
+            or captured.get("budget") is not observer.budget
+            or type(loader.get("root")) is not type(SOURCE_ROOT) or loader["root"] != SOURCE_ROOT
+            or type(loader.get("revision")) is not str or loader["revision"] != policy.GRAPH
+            or type(capture) is not tuple or len(capture) != 2
+            or type(capture[0]) is not type(SOURCE_ROOT) or capture[0] != SOURCE_ROOT
+            or type(capture[1]) is not str or capture[1] != policy.GRAPH
+            or not isinstance(entries, dict) or dict.__len__(entries) > policy.ORIGINAL_LIMITS["entries"]
+        ):
+            raise _LocationUnavailable("source-binding-invalid")
+        authority = sys.modules.get(SOURCE_PACKAGE + ".authority")
+        if type(authority) is not types.ModuleType:
+            raise _LocationUnavailable("source-binding-invalid")
+        namespace = types.ModuleType.__getattribute__(authority, "__dict__")
+        if namespace.get("AuthorityLoader") is not api.loader or namespace.get("GitTreeEntries") is not api.entries:
+            raise _LocationUnavailable("source-binding-invalid")
+        self.entry_type, self.entries = namespace.get("GitTreeEntry"), entries
+        if type(self.entry_type) is not type:
+            raise _LocationUnavailable("source-binding-invalid")
+        relative = self.module(self.call_globals)
+        self.module(namespace)
+        if id(self.call) not in self.codes:
+            raise _LocationUnavailable("source-code-unbound")
+        self.require_registered(self.call, self.call_globals, relative)
+
+    def file(self, path):
+        if type(path) is not str or not path.startswith("/repo/"):
+            raise _LocationUnavailable("source-file-unowned")
+        relative = path[len("/repo/"):]
+        try:
+            policy._root_path(relative)
+        except policy.GuardError as error:
+            raise _LocationUnavailable("source-file-unowned") from error
+        if not relative.startswith("scripts/validation_ownership/") or not relative.endswith(".py"):
+            raise _LocationUnavailable("source-file-unowned")
+        if self.entries is None:
+            return relative
+        entry = dict.get(self.entries, relative)
+        fields = _instance_fields(entry, self.entry_type)
+        if (
+            type(fields.get("path")) is not str or fields["path"] != relative
+            or type(fields.get("mode")) is not str or fields["mode"] not in {"100644", "100755"}
+            or type(fields.get("object_type")) is not str or fields["object_type"] != "blob"
+            or "git_dir" not in fields or fields["git_dir"] is not None
+            or type(fields.get("object_id")) is not str
+            or re.fullmatch(r"[0-9a-f]{40}", fields["object_id"]) is None
+        ):
+            raise _LocationUnavailable("source-file-unowned")
+        return relative
+
+    def module(self, namespace):
+        if type(namespace) is not dict:
+            raise _LocationUnavailable("source-module-unowned")
+        name = namespace.get("__name__")
+        if type(name) is not str or not name.startswith(SOURCE_PACKAGE + ".") or (
+            re.fullmatch(r"scripts\.validation_ownership(?:\.[A-Za-z_][A-Za-z0-9_]*)+", name) is None
+        ):
+            raise _LocationUnavailable("source-module-unowned")
+        previous = self.modules.get(name)
+        if previous is not None:
+            if previous[0] is not namespace:
+                raise _LocationUnavailable("source-module-unowned")
+            return previous[1]
+        module = sys.modules.get(name)
+        if type(module) is not types.ModuleType or types.ModuleType.__getattribute__(module, "__dict__") is not namespace:
+            raise _LocationUnavailable("source-module-unowned")
+        filename = namespace.get("__file__")
+        relative = self.file(filename)
+        expected = name.replace(".", "/")
+        if relative not in {expected + ".py", expected + "/__init__.py"}:
+            raise _LocationUnavailable("source-module-unowned")
+        spec = _instance_fields(namespace.get("__spec__"), ModuleSpec)
+        loader = namespace.get("__loader__")
+        loading = _instance_fields(loader, SourceFileLoader)
+        if (
+            type(spec.get("name")) is not str or spec["name"] != name
+            or type(spec.get("origin")) is not str or spec["origin"] != filename or spec.get("loader") is not loader
+            or type(loading.get("name")) is not str or loading["name"] != name
+            or type(loading.get("path")) is not str or loading["path"] != filename
+            or type(namespace.get("__package__")) is not str
+            or namespace["__package__"] != (name if relative.endswith("/__init__.py") else name.rsplit(".", 1)[0])
+        ):
+            raise _LocationUnavailable("source-module-unowned")
+        self.modules[name] = namespace, relative
+        self.account(len(namespace))
+        pending = list(namespace.values())
+        while pending:
+            member = pending.pop()
+            identity = id(member)
+            if identity in self.seen:
+                continue
+            if type(member) is types.FunctionType:
+                if member.__globals__ is not namespace or type(member.__module__) is not str or member.__module__ != name:
+                    continue
+                self.seen.add(identity)
+                if member.__code__.co_filename == filename:
+                    self.register_code(member.__code__, namespace, filename, relative)
+                wrapped = member.__dict__.get("__wrapped__")
+                if wrapped is not None:
+                    if type(wrapped) is not types.FunctionType:
+                        raise _LocationUnavailable("source-code-unbound")
+                    self.account()
+                    pending.append(wrapped)
+            elif type(member) is type:
+                fields = type.__getattribute__(member, "__dict__")
+                if type(fields.get("__module__")) is not str or fields["__module__"] != name:
+                    continue
+                self.seen.add(identity)
+                self.account(len(fields))
+                pending.extend(fields.values())
+            elif type(member) in (staticmethod, classmethod):
+                self.seen.add(identity)
+                self.account()
+                pending.append(member.__func__)
+            elif type(member) is property:
+                self.seen.add(identity)
+                values = [value for value in (member.fget, member.fset, member.fdel) if value is not None]
+                self.account(len(values))
+                pending.extend(values)
+        return relative
+
+    def register_code(self, code, namespace, filename, relative):
+        pending = [code]
+        while pending:
+            current = pending.pop()
+            if type(current) is not types.CodeType or current.co_filename != filename:
+                raise _LocationUnavailable("source-code-unbound")
+            previous = self.codes.get(id(current))
+            if previous is not None:
+                if previous[0] is not current or previous[1] is not namespace or previous[2] != relative:
+                    raise _LocationUnavailable("source-code-unbound")
+                continue
+            self.account(1 + len(current.co_consts))
+            self.codes[id(current)] = current, namespace, relative
+            pending.extend(value for value in current.co_consts if type(value) is types.CodeType)
+
+    def project(self, error):
+        current, relation = error, "primary"
+        seen, locations = set(), []
+        frames, scope_seen = 0, False
+        while current is not None:
+            if id(current) in seen:
+                raise _LocationUnavailable("cyclic-exception-chain")
+            if len(seen) >= 32:
+                raise _LocationUnavailable("exception-chain-bound")
+            seen.add(id(current))
+            trace = BaseException.__dict__["__traceback__"].__get__(current, BaseException)
+            leaf = None
+            while trace is not None:
+                if type(trace) is not types.TracebackType or frames >= 256:
+                    raise _LocationUnavailable("trace-frame-bound")
+                frames += 1
+                frame = trace.tb_frame
+                code, namespace = frame.f_code, frame.f_globals
+                if code is self.call and namespace is self.call_globals:
+                    scope_seen = True
+                leaf = code, namespace, trace.tb_lineno, trace.tb_lasti
+                trace = trace.tb_next
+                frame = None
+            if leaf is None:
+                raise _LocationUnavailable("no-source-trace")
+            code, namespace, line, offset = leaf
+            relative = self.module(namespace)
+            owned = self.codes.get(id(code))
+            if owned is None or owned[0] is not code or owned[1] is not namespace or owned[2] != relative:
+                raise _LocationUnavailable("source-code-unbound")
+            self.require_registered(code, namespace, relative)
+            if (
+                not policy._component_integer(line, policy.ORIGINAL_LIMITS["file_bytes"], 1)
+                or not policy._component_integer(code.co_firstlineno, policy.ORIGINAL_LIMITS["file_bytes"], 1)
+                or not policy._component_integer(offset, policy.ORIGINAL_LIMITS["file_bytes"])
+                or not offset < len(code.co_code) <= policy.ORIGINAL_LIMITS["file_bytes"]
+                or not any(start <= offset < end and actual == line for start, end, actual in code.co_lines())
+            ):
+                raise _LocationUnavailable("invalid-code-location")
+            locations.append({
+                "exception": len(locations), "relation": relation, "file": relative, "code": code.co_name,
+                "first_line": code.co_firstlineno, "line": line, "offset": offset,
+            })
+            cause = BaseException.__dict__["__cause__"].__get__(current, BaseException)
+            current = cause if cause is not None else BaseException.__dict__["__context__"].__get__(current, BaseException)
+            relation = "cause" if cause is not None else "context"
+        if not scope_seen:
+            raise _LocationUnavailable("public-call-unobserved")
+        result = {
+            **location_unavailable("binding-not-ready"), "status": "observed", "reason": None,
+            "locations": locations, "references_closed": True,
+        }
+        if len(policy.encoded(result)) > policy.ERROR_BYTES:
+            raise _LocationUnavailable("location-size-bound")
+        return result
+
+    def close(self):
+        first = None
+        for name in ("codes", "modules", "seen", "registered"):
+            try:
+                getattr(self, name).clear()
+            except BaseException as error:
+                if first is None:
+                    first = error
+        for name in ("entries", "entry_type", "call", "call_globals"):
+            try:
+                setattr(self, name, None)
+            except BaseException as error:
+                if first is None:
+                    first = error
+        if first is not None:
+            raise first
 
 
 def unavailable(reason):
@@ -126,6 +501,48 @@ class Observer:
         charge = getattr(type(budget), "charge", None)
         self.charge_code = getattr(charge, "__code__", None)
         self.budget_error = getattr(charge, "__globals__", {}).get("MakeProbeError")
+
+    def register_locations(self, api):
+        if "location_codes" in vars(self):
+            raise policy.GuardError("source location registration is single-use")
+        locations = _SourceLocations()
+        self.location_codes, self.location_reason = {}, "binding-not-ready"
+        self.location_references_closed = None
+        secondary = []
+        try:
+            self.location_codes = locations.freeze(api, self.session_type)
+            self.location_reason = None
+        except _LocationUnavailable as error:
+            self.location_reason = error.reason
+        except BaseException as error:
+            self.location_reason = "locator-failed"
+            secondary.append({"stage": "location-publication", "error": policy.component_secondary_error(error)})
+        finally:
+            try:
+                locations.close()
+                self.location_references_closed = True
+            except BaseException as error:
+                self.location_codes.clear()
+                self.location_reason = "locator-failed"
+                secondary.append({"stage": "location-publication", "error": policy.component_secondary_error(error)})
+        return secondary
+
+    def source_locations(self, error, measurement):
+        locations = _SourceLocations()
+        locations.registered = getattr(self, "location_codes", {})
+        try:
+            try:
+                reason = getattr(self, "location_reason", "binding-not-ready")
+                if reason is not None:
+                    raise _LocationUnavailable(reason)
+                locations.bind(self, measurement)
+                value = locations.project(error)
+            except _LocationUnavailable as unavailable_error:
+                value = location_unavailable(unavailable_error.reason)
+        finally:
+            locations.close()
+        value["references_closed"] = getattr(self, "location_references_closed", None)
+        return validate_locations(value, {"source_revision": policy.GRAPH, "api": policy.REPORT_API})
 
     def _admission_frame(self, error, values):
         if values.get("self") is not self.budget:

@@ -539,6 +539,7 @@ def report_error_record(primary, measurement, sampler, observer, binding, second
         "source_cleanup_failures": policy.source_cleanup_count(primary),
         "observation_failure": observation_failure.unavailable("binding-not-ready"),
         "budget_admission": observation_failure.unavailable("binding-not-ready"),
+        "source_locations": observation_failure.location_unavailable("binding-not-ready"),
     }
     if measurement is not None:
         record["states"]["completed"] = False
@@ -549,6 +550,8 @@ def report_error_record(primary, measurement, sampler, observer, binding, second
          lambda: observation_failure.validate_fact(observer.capture(primary), admission=False)),
         ("admission-publication", "budget_admission",
          lambda: observation_failure.validate_fact(observer.budget_admission(primary), admission=True)),
+        ("location-publication", "source_locations",
+         lambda: observation_failure.validate_locations(observer.source_locations(primary, measurement), binding)),
     ):
         if observer is None and name != "snapshot":
             continue
@@ -562,6 +565,8 @@ def report_error_record(primary, measurement, sampler, observer, binding, second
             record["secondary"].append({"stage": stage, "error": policy.component_secondary_error(error)})
             if name == "snapshot":
                 record["counters"] = record["accounting"] = None
+            elif name == "source_locations":
+                record[name] = observation_failure.location_unavailable("locator-failed")
             else:
                 record[name] = observation_failure.unavailable("collector-failed")
     policy.validate_report_error(record, binding)
@@ -671,6 +676,7 @@ def report(config, *, failure=None):
             "binding": binding, "limits": classified, "deadline": budget.deadline, "check_attempts": 0,
         })
         primary_stage = "check"
+        secondary.extend(observer.register_locations(root_stage.candidate_api()))
         result = measurement.run()
         validated = policy.validate_report_result(result, binding)
         sampler.phase = "completed-report"
@@ -683,6 +689,9 @@ def report(config, *, failure=None):
         primary, closing_stage = finish_report(sampler, budget, primary, secondary)
         if closing_stage is not None:
             primary_stage = closing_stage
+    if primary is None and secondary:
+        primary = policy.GuardError("source location registration failed")
+        primary_stage = "location-publication"
     if primary is None:
         try:
             primary_stage = "source-defaults"

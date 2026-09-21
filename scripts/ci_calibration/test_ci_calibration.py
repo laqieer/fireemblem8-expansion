@@ -534,7 +534,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.REPORT_TELEMETRY_SHA}",
+            f"{'a' * 40} {supervisor.REPORT_REBIND_SHA}",
+            f"{supervisor.REPORT_REBIND_SHA} {supervisor.REPORT_TELEMETRY_SHA}",
             f"{supervisor.REPORT_TELEMETRY_SHA} {supervisor.REPORT_ACCOUNTING_SHA}",
             f"{supervisor.REPORT_ACCOUNTING_SHA} {supervisor.REPORT_FINALIZATION_SHA}",
             f"{supervisor.REPORT_FINALIZATION_SHA} {supervisor.REPORT_ERROR_SHA}",
@@ -623,7 +624,7 @@ class CalibrationControls(Inert):
 
     def test_new_inventory_preserves_every_old_workflow_and_only_admits_normal_modifications(self):
         data = b"".join(
-            (b"A" if path == policy.WORKFLOW else b"M") + b"\0" + path.encode() + b"\0"
+            (b"A" if path == policy.FULL_REPORT_WORKFLOW else b"M") + b"\0" + path.encode() + b"\0"
             for path in sorted(supervisor.REPORT_PATHS)
         )
         supervisor.validate_report_inventory(data)
@@ -666,6 +667,28 @@ class CalibrationControls(Inert):
         ):
             with self.subTest(changed=changed[:64]), self.assertRaises(policy.GuardError):
                 supervisor.validate_source_rebind_inventory(changed)
+
+    def test_localization_inventory_and_event_cannot_reopen_the_spent_workflow(self):
+        data = b"".join(
+            (b"A" if name == policy.WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
+            for name in sorted(supervisor.LOCALIZATION_PATHS)
+        )
+        supervisor.validate_localization_inventory(data)
+        for changed in (
+            b"", data[:-1], data + data, data.replace(b"A\0", b"M\0"),
+            data.replace(b"M\0scripts/ci_calibration/observation_failure.py\0", b""),
+            data + b"M\0" + policy.FULL_REPORT_WORKFLOW.encode() + b"\0",
+            data + b"M\0scripts/ci_calibration/root_stage.py\0",
+            data + b"M\0scripts/ci_calibration/entry.py\0",
+            data + b"M\0scripts/validation_ownership/graph_report.py\0",
+        ):
+            with self.subTest(changed=changed[:64]), self.assertRaises(policy.GuardError):
+                supervisor.validate_localization_inventory(changed)
+        with self.assertRaises(policy.GuardError):
+            policy.validate_event(
+                {**self.event(), "ref": "refs/heads/calibration/issue-180-full-report-sizing-1"},
+                **self.authorization(),
+            )
 
     def test_complete_diff_binding_preserves_additions_deletions_and_both_rename_sides(self):
         changes = self.changes()
@@ -791,6 +814,7 @@ class CalibrationControls(Inert):
             "states": {**dict.fromkeys(policy.REPORT_STATES, 0), "completed": False},
             "cleanup": None, "counters": None, "accounting": None, "secondary": [], "source_cleanup_failures": 0,
             "summary": None, "serialized_bytes": None,
+            "source_locations": observation_failure.location_unavailable("binding-not-ready"),
             "observation_failure": observation_failure.unavailable("binding-not-ready"),
             "budget_admission": observation_failure.unavailable("binding-not-ready"),
         }

@@ -1124,6 +1124,7 @@ class RootStageControls(Inert):
         observer = SimpleNamespace(
             capture=mock.Mock(side_effect=OSError("private native collector")),
             budget_admission=mock.Mock(return_value={"status": "observed", "raw": "private"}),
+            source_locations=mock.Mock(return_value=observation_failure.location_unavailable("binding-not-ready")),
         )
         record = worker.report_error_record(first, None, sampler, observer, self.binding(), [])
         policy.validate_report_error(record, self.binding())
@@ -1328,6 +1329,60 @@ class RootStageControls(Inert):
                 if fault == "prereturn":
                     self.assertIsNone(value.stored["scope.json"]["report_attempted"])
                     self.assertIsNone(value.stored["scope.json"]["report_returned"])
+
+    def test_locator_faults_compose_with_source_all_closes_and_executable_publication_recovery(self):
+        for locator, publication in itertools.product(
+            ("register", "project"), (None, "publication", "publication-after"),
+        ):
+            faults = ["source", "sampler-close", "budget-close-before"]
+            if publication is not None:
+                faults.append(publication)
+            owner, method = (
+                (observation_failure._SourceLocations, "freeze") if locator == "register"
+                else (observation_failure.Observer, "source_locations")
+            )
+            with self.subTest(locator=locator, publication=publication), \
+                 mock.patch.object(owner, method, side_effect=ValueError("private locator")):
+                value = self.composition(*faults, use_worker=True, executable=WORKER_MAIN)
+            parser, records = self.consume_executable(value)
+            self.assertTrue(parser.failed)
+            self.assertFalse(parser.finished)
+            failure = [row["data"] for row in records if row["kind"] == "error"][-1]
+            self.assertEqual(failure["error"]["chain"][0]["type"], "SourceError")
+            self.assertEqual(failure["source_locations"]["reason"], "locator-failed")
+            self.assertEqual(failure["source_cleanup_failures"], 0)
+            self.assertIsNotNone(failure["counters"])
+            expected = ["sampler-close", "budget-close", "location-publication"]
+            if publication is not None:
+                expected.append("error-publication")
+            self.assertCountEqual([row["stage"] for row in failure["secondary"]], expected)
+            self.assertEqual(value.events[-2:], ["sampler-close", "budget-close"])
+            self.assertNotIn(b"private", value.wire)
+        with mock.patch.object(observation_failure._SourceLocations, "freeze",
+                               side_effect=ValueError("private locator")):
+            value = self.composition(use_worker=True, executable=WORKER_MAIN)
+        parser, records = self.consume_executable(value)
+        self.assertTrue(parser.failed)
+        self.assertFalse(parser.finished)
+        failure, = [row["data"] for row in records if row["kind"] == "error"]
+        self.assertEqual(failure["stage"], "location-publication")
+        self.assertEqual(failure["states"]["check_returned"], 1)
+        self.assertFalse(failure["states"]["completed"])
+        with mock.patch.object(observation_failure._SourceLocations, "freeze",
+                               side_effect=ValueError("private locator")):
+            value = self.composition(
+                "source", "sampler-close", "budget-close-before", "record-collection",
+                use_worker=True, executable=WORKER_MAIN,
+            )
+        parser, records = self.consume_executable(value)
+        self.assertTrue(parser.failed)
+        failure, = [row["data"] for row in records if row["kind"] == "error"]
+        self.assertEqual(failure["error"]["chain"][0]["type"], "SourceError")
+        self.assertCountEqual([row["stage"] for row in failure["secondary"]],
+                              ["location-publication", "sampler-close", "budget-close", "error-publication"])
+        self.assertIsNone(failure["counters"])
+        self.assertIsNone(failure["source_locations"]["references_closed"])
+        self.assertFalse(parser.finished)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,89 @@
-# Contained accounting-only full-report preparation
+# Contained report-failure localization preparation
 
 **Preparation only; never merge this branch. No native execution, workflow
 launch, retry or production resource-policy decision is allocated here.**
+Current localization freeze:
+[5768163036](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5768163036).
+This is a normal child of `4cc7c1635927d9ce8785704ed4780a9c18b6b592` on the
+new `calibration/issue-180-report-localization-1` branch, with one new fixed
+first-owner-push workflow. The old full-report-sizing-1 workflow and every
+earlier allocation stay unchanged and closed.
+
+Run35658150803 is spent
+([closure5768120451](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5768120451)).
+It qualified seven containment controls and attempted one public check, but
+returned no report and never serialized one. The first error was only
+MakeProbeError type/errno metadata; neither admission/native-rejection
+observer found a matching refusal. Logs add no cause. Legitimate cumulative
+control/cache crossings do not establish a quota failure, and the partial
+prefix is not a shipping-resource point. No source fix or quota increase is
+inferred from those counters.
+
+## Bounded source-code location observation
+
+The existing failure Observer now projects at most one actual raising-code
+location per primary/cause/context exception in the bounded chain. A location
+contains only the selected repository-relative Python file, code name,
+first source line, actual traceback line and bytecode offset. No error
+arguments/messages, source/SDK/argv/environment/key content, frame locals or
+raw traceback is exported. The record explicitly states `authority=false`:
+this is diagnostic location evidence, not semantic authority or qualification.
+
+Binding uses the original report measurement, exact b6 revision and `/repo`,
+the original issued budget/session/loader capture and regular superproject
+Git entries. The original public check must actually occur in the error
+chain. Relevant already-loaded source modules must have the admitted source
+file, original module namespace and ordinary source-loader/spec identities.
+Immediately before the unchanged measurement, the worker consults the
+existing candidate-API getter to register its original loaded code; the
+measurement independently resolves that same cached API. No candidate
+callable, source read/compilation or source execution is used to manufacture
+code identities.
+
+Registration walks actual function objects, ordinary class dictionaries,
+static/class/property function objects and original `__wrapped__` functions,
+then their actual nested code objects before the check. It never invokes a
+candidate descriptor. The bounded registration retains only weak code/module
+identities, not source namespaces or frames. A traceback code object must be
+that original registered object in that original module namespace, and its
+line/offset must agree with its actual code line table. Late-created code is
+not admitted even when installed in an owned module with a matching filename.
+Late-loaded, generated/unbound or foreign raising code is unavailable, not
+replaced with a convenient caller. This runtime association does not replace
+the report's independent source/authority checks.
+
+Registration work uses the existing entries capacity; exception/frame walks
+reuse the existing32/256 bounds; source paths/code positions and final
+metadata use existing file/error capacities. Cycles, truncation, malformed
+bindings, absent public-call evidence, foreign files/modules/code or overflow
+produce a closed unavailable record. Inspection-owned maps and source
+references are withdrawn independently after projection. Unexpected locator
+or withdrawal failure adds bounded secondary metadata and leaves locations
+unavailable without replacing the original error or erasing accounting and
+execution-cleanup evidence. Registration faults are retained before fallible
+error-record formatting; they also prevent a successful report from being
+published as a completed diagnostic. An uncertain earlier withdrawal stays
+unknown after a later collector closes successfully.
+
+Only the diagnostic error transport, observer, coupled tests/docs and the new
+workflow/lineage inventory change. The public report/CURRENT+BASE/lifecycle/
+source phases/serializer, fourteen query overrides, nineteen counters,
+all hard limits, original clock, first-error/all-close/AT/FR behavior,
+physical algorithms and five bounded artifacts remain the same. There is
+no alternate workload, tracing platform, source hash ledger or automatic retry.
+
+The inspected localization runner preserves all111 prior methods/675 subtests
+and exercises actual raised direct/nested/method/wrapped errors through the
+Observer and Protocol. Foreign/dynamic/unbound/bad-membership cases, cycles,
+bounds, locator/withdrawal/publication fault combinations,
+missing-location/incorrect-binding/late-registration restorations and neutral
+record ordering or function aliases are inert controls only.
+Independent review and a separate one-shot allocation must precede any
+owner-created localization push. The active final source review and all
+real report/verifier/H1/delivery requirements remain open.
+
+## Historical source-rebind preparation (closed allocation)
+
 Current preparation-only rebind freeze:
 [5767524609](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5767524609).
 This is one normal child of accepted telemetry harness

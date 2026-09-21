@@ -13,11 +13,12 @@ import traceback
 
 
 REPOSITORY = "laqieer/fireemblem8-expansion"
-BRANCH = "calibration/issue-180-full-report-sizing-1"
-WORKFLOW = ".github/workflows/issue180-full-report-sizing-1.yml"
+BRANCH = "calibration/issue-180-report-localization-1"
+WORKFLOW = ".github/workflows/issue180-report-localization-1.yml"
+FULL_REPORT_WORKFLOW = ".github/workflows/issue180-full-report-sizing-1.yml"
 COMPONENT_WORKFLOW = ".github/workflows/issue180-toolchain-component-sizing-1.yml"
 PREVIOUS_WORKFLOW = ".github/workflows/issue180-ci-baseline-20.yml"
-OUTPUT_PREFIX = "issue180-full-report-sizing-1-"
+OUTPUT_PREFIX = "issue180-report-localization-1-"
 BASE = "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"
 GRAPH = "b6c47bc9300cf5d66244f161f81abe5d81d5a20b"
 WORKLOAD_KIND = "full-public-report-accounting-measurement"
@@ -124,6 +125,7 @@ REPORT_ERROR_STAGES = frozenset({
     "constructor-reference", "report-reference", "serialization-reference",
     "sampler-close", "budget-close", "error-publication", "counter-publication",
     "observation-publication", "admission-publication", "source-defaults",
+    "location-publication",
 })
 
 
@@ -1237,7 +1239,7 @@ def validate_report_error(value, binding):
         import observation_failure
     _component_fields(value, (
         "binding stage error states cleanup counters accounting summary serialized_bytes secondary "
-        "source_cleanup_failures observation_failure budget_admission"
+        "source_cleanup_failures observation_failure budget_admission source_locations"
     ))
     validate_report_binding(value["binding"])
     if value["binding"] != binding:
@@ -1268,16 +1270,28 @@ def validate_report_error(value, binding):
     validate_report_secondaries(value["secondary"])
     observation_failure.validate_fact(value["observation_failure"], admission=False)
     observation_failure.validate_fact(value["budget_admission"], admission=True)
+    observation_failure.validate_locations(value["source_locations"], binding)
+    if value["source_locations"]["status"] == "observed" and (
+        value["states"] is None or value["states"]["check_attempts"] != 1
+        or value["states"]["session_constructed"] != 1
+        or value["error"]["complete"] and len(value["source_locations"]["locations"]) != len(value["error"]["chain"])
+    ):
+        raise GuardError("source locations lost their actual public call or complete exception sequence")
     return value
 
 
 def unavailable_report_error(binding, error, *, stage, source_cleanup_failures=None):
+    if __package__:
+        from . import observation_failure
+    else:
+        import observation_failure
     value = {
         "binding": binding, "stage": stage, "error": error, "states": None,
         "cleanup": None, "counters": None, "accounting": None, "summary": None, "serialized_bytes": None,
         "secondary": [], "source_cleanup_failures": source_cleanup_failures,
         "observation_failure": {"status": "unavailable", "reason": "binding-not-ready"},
         "budget_admission": {"status": "unavailable", "reason": "binding-not-ready"},
+        "source_locations": observation_failure.location_unavailable("binding-not-ready"),
     }
     return validate_report_error(value, binding)
 

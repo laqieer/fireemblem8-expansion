@@ -3,7 +3,11 @@
 import errno
 import copy
 import io
-from types import SimpleNamespace
+from contextlib import contextmanager
+from importlib.machinery import ModuleSpec, SourceFileLoader
+from pathlib import Path
+import sys
+from types import ModuleType, SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -12,6 +16,7 @@ from scripts.ci_calibration.test_ci_calibration import Inert, budgeting
 
 
 PREIMAGE_SOURCE_CLEANUP_COUNT = None
+PREIMAGE_REPORT_ERROR_RECORD = None
 
 
 class FrameFixture:
@@ -353,6 +358,7 @@ class ObservationFailureControls(Inert):
             "states": {**dict.fromkeys(policy.REPORT_STATES, 0), "check_attempts": 1, "completed": False},
             "cleanup": None, "counters": None, "accounting": None, "secondary": [], "source_cleanup_failures": 0,
             "summary": None, "serialized_bytes": None,
+            "source_locations": observation_failure.location_unavailable("binding-not-ready"),
             "budget_admission": observer.budget_admission(error),
             "observation_failure": observer.capture(error),
         }
@@ -407,6 +413,510 @@ class ObservationFailureControls(Inert):
         self.assertNotIn(b"private", policy.encoded(policy.component_error_record(first)))
         first.cleanup_errors = {"raw": "private"}
         self.assertIsNone(policy.source_cleanup_count(first))
+
+
+class LocationControls(Inert):
+    @contextmanager
+    def fixture(self, kind="direct", *, callback=None, depth=0):
+        package = "scripts.validation_ownership"
+        def module(name, code):
+            value = ModuleType(package + "." + name)
+            path = "/repo/scripts/validation_ownership/" + name + ".py"
+            value.__file__, value.__package__ = path, package
+            value.__loader__ = SourceFileLoader(value.__name__, path)
+            value.__spec__ = ModuleSpec(value.__name__, value.__loader__, origin=path)
+            exec(compile(code, path, "exec"), value.__dict__)
+            return value
+        authority = module("authority", """
+class GitTreeEntry:
+    pass
+class GitTreeEntries(dict):
+    pass
+class AuthorityLoader:
+    pass
+""")
+        probing = module("make_probe", """
+class ProbeSession:
+    def _sandbox_run(self):
+        raise RuntimeError("native method is not a fixture operation")
+""")
+        graph = module("graph_report", """
+class ModelError(RuntimeError):
+    pass
+class WrappedError(RuntimeError):
+    pass
+touched = []
+class Descriptor:
+    def __get__(self, instance, owner):
+        touched.append("descriptor")
+        raise RuntimeError("private descriptor execution")
+class Work:
+    descriptor = Descriptor()
+    @property
+    def property(self):
+        touched.append("property")
+        raise RuntimeError("private property execution")
+    def method(self):
+        raise ModelError("private method source SDK argv environment")
+    @staticmethod
+    def static():
+        raise ModelError("private static source")
+    @classmethod
+    def class_method(cls):
+        raise ModelError("private class source")
+def direct():
+    raise ModelError("private source SDK argv environment key")
+def outer():
+    def nested():
+        raise ModelError("private nested source")
+    return nested()
+def decorate(function):
+    def guarded():
+        return function()
+    guarded.__wrapped__ = function
+    return guarded
+@decorate
+def decorated():
+    raise ModelError("private decorated source")
+def recursive(depth):
+    if depth:
+        return recursive(depth - 1)
+    direct()
+def check(kind="direct", callback=None, depth=0):
+    if kind == "direct":
+        direct()
+    elif kind == "nested":
+        outer()
+    elif kind == "method":
+        Work().method()
+    elif kind == "static":
+        Work.static()
+    elif kind == "class":
+        Work.class_method()
+    elif kind == "decorated":
+        decorated()
+    elif kind == "wrapped":
+        try:
+            direct()
+        except ModelError as error:
+            raise WrappedError("private wrapper") from error
+    elif kind == "dynamic":
+        exec("raise ModelError('private dynamic source')")
+    elif kind == "dynamic-bound":
+        exec(compile("def generated():\\n    raise ModelError('private dynamic source')", __file__, "exec"), globals())
+        generated()
+    elif kind == "foreign":
+        callback()
+    elif kind == "recursive":
+        recursive(depth)
+""")
+        budget = self.budget()
+        entries = authority.GitTreeEntries()
+        entries.budget, entries.capture = budget, (Path("/repo"), policy.GRAPH)
+        for value in (authority, probing, graph):
+            relative = value.__file__.removeprefix("/repo/")
+            entry = authority.GitTreeEntry()
+            entry.path, entry.mode, entry.object_type = relative, "100644", "blob"
+            entry.object_id, entry.git_dir = "a" * 40, None
+            entries[relative] = entry
+        loader = authority.AuthorityLoader()
+        loader.root, loader.revision, loader.entries, loader.budget = Path("/repo"), policy.GRAPH, entries, budget
+        session = probing.ProbeSession()
+        session.budget, session.loader = budget, loader
+        api = SimpleNamespace(
+            module=graph, check=graph.check, session=probing.ProbeSession,
+            loader=authority.AuthorityLoader, entries=authority.GitTreeEntries,
+        )
+        measurement = SimpleNamespace(
+            api=api, root=Path("/repo"), budget=budget, session=session, session_valid=True, binding=self.binding(),
+            states={**dict.fromkeys(policy.REPORT_STATES, 0), "check_attempts": 1,
+                    "session_attempts": 1, "session_constructed": 1, "completed": False},
+            cleanup=None, summary=None, serialized_bytes=None, secondary=[],
+        )
+        observer = observation_failure.Observer(probing.ProbeSession, budget)
+        first = None
+        with mock.patch.dict(sys.modules, {value.__name__: value for value in (authority, probing, graph)}):
+            self.assertEqual(observer.register_locations(api), [])
+            try:
+                graph.check(kind, callback, depth)
+            except BaseException as error:
+                first = error
+            self.assertIsNotNone(first)
+            yield SimpleNamespace(
+                graph=graph, authority=authority, probing=probing, entries=entries, loader=loader,
+                session=session, budget=budget, measurement=measurement, observer=observer, error=first,
+            )
+
+    def wire(self, value):
+        sampler = SimpleNamespace(snapshot=lambda: {
+            "counters": policy.counter_snapshot(value.budget), "accounting": None,
+        })
+        record = worker.report_error_record(
+            value.error, value.measurement, sampler, value.observer, self.binding(), getattr(value, "secondary", []),
+        )
+        data = io.BytesIO()
+        with mock.patch.object(kernel, "sys", SimpleNamespace(stdout=SimpleNamespace(buffer=data))):
+            kernel.emit("12345/report", "error", record)
+        parser = supervisor.Protocol("12345/report", policy.OUTPUT_BYTES, report_binding=self.binding(), deadline=3700.0)
+        row, = parser.feed(data.getvalue())
+        self.assertTrue(parser.failed)
+        self.assertFalse(parser.finished)
+        self.assertNotIn(b"private", data.getvalue())
+        self.assertNotIn(b'"message"', data.getvalue())
+        self.assertNotIn(b'"frames"', data.getvalue())
+        return row["data"]
+
+    def test_actual_direct_nested_methods_wrapped_and_decorated_locations_reach_protocol(self):
+        for kind in ("direct", "nested", "method", "static", "class", "decorated", "wrapped"):
+            with self.subTest(kind=kind), self.fixture(kind) as value:
+                projected = self.wire(value)["source_locations"]
+                self.assertEqual(projected["status"], "observed")
+                self.assertTrue(projected["references_closed"])
+                self.assertFalse(projected["authority"])
+                current = value.error
+                for index, row in enumerate(projected["locations"]):
+                    trace = current.__traceback__
+                    while trace.tb_next is not None:
+                        trace = trace.tb_next
+                    self.assertEqual(row, {
+                        "exception": index, "relation": "primary" if index == 0 else "cause",
+                        "file": trace.tb_frame.f_code.co_filename.removeprefix("/repo/"),
+                        "code": trace.tb_frame.f_code.co_name,
+                        "first_line": trace.tb_frame.f_code.co_firstlineno,
+                        "line": trace.tb_lineno, "offset": trace.tb_lasti,
+                    })
+                    current = current.__cause__
+                self.assertIsNone(current)
+                self.assertEqual(value.graph.touched, [])
+                self.assertEqual(value.observer.location_codes, {})
+                self.assertLess(len(policy.encoded(projected)), policy.ERROR_BYTES)
+
+    def test_foreign_dynamic_unraised_and_outside_public_call_stay_unavailable(self):
+        def foreign():
+            raise RuntimeError("private foreign source")
+        for kind in ("foreign", "dynamic", "dynamic-bound"):
+            with self.subTest(kind=kind), self.fixture(kind, callback=foreign) as value:
+                projected = self.wire(value)["source_locations"]
+                self.assertEqual(projected["status"], "unavailable")
+                self.assertEqual(projected["locations"], [])
+                self.assertTrue(projected["references_closed"])
+        with self.fixture() as value:
+            value.error = RuntimeError("private unraised error")
+            self.assertEqual(self.wire(value)["source_locations"]["reason"], "no-source-trace")
+        with self.fixture() as value:
+            try:
+                value.graph.direct()
+            except BaseException as error:
+                value.error = error
+            self.assertEqual(self.wire(value)["source_locations"]["reason"], "public-call-unobserved")
+
+    def test_late_code_registration_restoration_breaks_dynamic_rejection_and_original_aliases_are_neutral(self):
+        with self.fixture("dynamic-bound") as value:
+            with self.assertRaises(policy.GuardError):
+                value.observer.register_locations(value.measurement.api)
+            self.assertEqual(self.wire(value)["source_locations"]["reason"], "source-code-unbound")
+        with self.fixture("dynamic-bound") as value, mock.patch.object(
+            observation_failure._SourceLocations, "require_registered", return_value=None,
+        ):
+            self.assertEqual(self.wire(value)["source_locations"]["status"], "observed")
+        with self.fixture() as value:
+            value.graph.harmless_alias = value.graph.direct
+            self.assertEqual(self.wire(value)["source_locations"]["status"], "observed")
+
+    def test_exception_slot_inspection_does_not_invoke_candidate_descriptors(self):
+        with self.fixture() as value:
+            touched = []
+            def descriptor(instance):
+                touched.append(True)
+                raise AssertionError("candidate descriptor executed")
+            for name in ("__traceback__", "__cause__", "__context__"):
+                setattr(value.graph.ModelError, name, property(descriptor))
+            projected = value.observer.source_locations(value.error, value.measurement)
+            self.assertEqual(projected["status"], "observed")
+            self.assertEqual(touched, [])
+            self.assertEqual(value.observer.location_codes, {})
+
+    def test_wrong_root_revision_inventory_module_and_code_identity_do_not_borrow_a_location(self):
+        for fault in ("root", "revision", "capture", "budget", "entry-budget", "missing-file", "symlink",
+                      "gitlink", "missing-owner", "origin", "loader", "module-alias", "call", "code"):
+            with self.subTest(fault=fault), self.fixture() as value:
+                if fault == "root":
+                    value.measurement.root = Path("/foreign")
+                elif fault == "revision":
+                    value.loader.revision = policy.BASE
+                elif fault == "capture":
+                    value.entries.capture = (Path("/repo"), policy.BASE)
+                elif fault == "budget":
+                    value.session.budget = object()
+                elif fault == "entry-budget":
+                    value.entries.budget = object()
+                elif fault == "missing-file":
+                    del value.entries["scripts/validation_ownership/graph_report.py"]
+                elif fault == "symlink":
+                    value.entries["scripts/validation_ownership/graph_report.py"].mode = "120000"
+                elif fault == "gitlink":
+                    value.entries["scripts/validation_ownership/graph_report.py"].git_dir = Path("/private/sdk")
+                elif fault == "missing-owner":
+                    del value.entries["scripts/validation_ownership/graph_report.py"].git_dir
+                elif fault == "origin":
+                    value.graph.__spec__.origin = "/foreign/source.py"
+                elif fault == "loader":
+                    class NoDescriptor:
+                        def __getattribute__(self, name):
+                            raise AssertionError("candidate descriptor executed")
+                    value.graph.__loader__ = NoDescriptor()
+                elif fault == "module-alias":
+                    sys.modules[value.graph.__name__] = ModuleType(value.graph.__name__)
+                elif fault == "call":
+                    value.graph.check = value.graph.direct
+                else:
+                    original = value.graph.direct
+                    value.graph.direct = type(original)(
+                        original.__code__.replace(co_name="replacement"), original.__globals__, "replacement",
+                    )
+                projected = self.wire(value)["source_locations"]
+                self.assertEqual(projected["status"], "unavailable")
+                self.assertEqual(projected["locations"], [])
+
+    def test_cycles_and_bounded_trace_chain_registration_or_output_fail_without_partial_success(self):
+        for fault in ("cycle", "chain", "trace", "registry", "output"):
+            with self.subTest(fault=fault), self.fixture("recursive" if fault == "trace" else "direct",
+                                                       depth=270 if fault == "trace" else 0) as value:
+                if fault == "cycle":
+                    value.error.__cause__ = value.error
+                elif fault in ("chain", "output"):
+                    current = value.error
+                    for _ in range(33 if fault == "chain" else 6):
+                        try:
+                            value.graph.check()
+                        except BaseException as following:
+                            current.__cause__ = following
+                            current = following
+                elif fault == "registry":
+                    value.graph.__dict__.update({f"extra_{index}": None for index in range(policy.ORIGINAL_LIMITS["entries"])})
+                with mock.patch.object(policy, "ERROR_BYTES", 512 if fault == "output" else policy.ERROR_BYTES):
+                    projected = value.observer.source_locations(value.error, value.measurement)
+                self.assertEqual(projected["status"], "unavailable")
+                self.assertEqual(projected["locations"], [])
+                self.assertTrue(projected["references_closed"])
+                self.assertIn(projected["reason"], {
+                    "cyclic-exception-chain", "exception-chain-bound", "trace-frame-bound",
+                    "registration-bound", "location-size-bound",
+                })
+
+    def test_exact_exception_and_trace_limits_remain_observed_and_one_over_is_unavailable(self):
+        for count in (31, 32, 33):
+            with self.subTest(exceptions=count), self.fixture() as value:
+                current = value.error
+                for _ in range(count - 1):
+                    try:
+                        value.graph.check()
+                    except BaseException as following:
+                        current.__cause__ = following
+                        current = following
+                projected = self.wire(value)["source_locations"]
+                self.assertEqual(projected["status"], "observed" if count <= 32 else "unavailable")
+                self.assertEqual(len(projected["locations"]), count if count <= 32 else 0)
+        for count in (255, 256, 257):
+            with self.subTest(frames=count), self.fixture("recursive", depth=count - 4) as value:
+                trace, actual = value.error.__traceback__, 0
+                while trace is not None:
+                    actual += 1
+                    trace = trace.tb_next
+                self.assertEqual(actual, count)
+                projected = self.wire(value)["source_locations"]
+                self.assertEqual(projected["status"], "observed" if count <= 256 else "unavailable")
+                if count > 256:
+                    self.assertEqual(projected["reason"], "trace-frame-bound")
+
+    def test_exact_registration_capacity_and_one_below_cannot_silently_drop_code(self):
+        with self.fixture() as value:
+            registry = observation_failure._SourceLocations()
+            registry.freeze(value.measurement.api, value.probing.ProbeSession)
+            needed = registry.work
+            registry.close()
+            self.assertGreater(needed, 0)
+            self.assertLess(needed, policy.ORIGINAL_LIMITS["entries"])
+            for cap in (needed, needed - 1):
+                with self.subTest(cap=cap), mock.patch.dict(policy.ORIGINAL_LIMITS, {"entries": cap}):
+                    observer = observation_failure.Observer(value.probing.ProbeSession, value.budget)
+                    self.assertEqual(observer.register_locations(value.measurement.api), [])
+                    projected = observer.source_locations(value.error, value.measurement)
+                    self.assertEqual(projected["status"], "observed" if cap == needed else "unavailable")
+                    if cap < needed:
+                        self.assertEqual(projected["reason"], "registration-bound")
+                    self.assertEqual(observer.location_codes, {})
+
+    def test_registration_faults_preserve_all_known_secondaries_and_do_not_claim_earlier_withdrawal(self):
+        original = observation_failure._SourceLocations
+        for freeze_failed, clear_failed in ((True, False), (False, True), (True, True)):
+            instances, attempts = [], []
+            class Closing(dict):
+                def clear(self):
+                    attempts.append("codes")
+                    super().clear()
+                    if clear_failed:
+                        raise OSError(errno.EIO, "private earlier withdrawal")
+            class Registry(original):
+                def __init__(self):
+                    super().__init__()
+                    self.codes = Closing()
+                    instances.append(self)
+                def freeze(self, api, session_type):
+                    result = super().freeze(api, session_type)
+                    if freeze_failed:
+                        raise ValueError("private earlier registration")
+                    return result
+            with self.subTest(freeze=freeze_failed, close=clear_failed), self.fixture() as value:
+                value.observer = observation_failure.Observer(value.probing.ProbeSession, value.budget)
+                with mock.patch.object(observation_failure, "_SourceLocations", Registry):
+                    value.secondary = value.observer.register_locations(value.measurement.api)
+                record = self.wire(value)
+                self.assertEqual(record["error"]["chain"][0]["type"], type(value.error).__name__)
+                self.assertEqual(record["source_locations"]["reason"], "locator-failed")
+                self.assertIs(record["source_locations"]["references_closed"], None if clear_failed else True)
+                self.assertEqual([row["error"]["chain"][0]["type"] for row in record["secondary"]],
+                                 (["ValueError"] if freeze_failed else []) + (["OSError"] if clear_failed else []))
+                self.assertEqual(attempts, ["codes"])
+                instance, = instances
+                self.assertFalse(instance.codes)
+                self.assertFalse(instance.modules)
+                self.assertFalse(instance.seen)
+                self.assertFalse(instance.registered)
+                for name in ("entries", "entry_type", "call", "call_globals"):
+                    self.assertIsNone(getattr(instance, name))
+
+    def test_locator_failure_does_not_erase_primary_accounting_or_independent_cleanup_metadata(self):
+        with self.fixture() as value:
+            first = value.error
+            value.measurement.secondary = [{
+                "stage": "budget-close", "error": policy.component_secondary_error(OSError(errno.EIO, "private close")),
+            }]
+            with mock.patch.object(value.observer, "source_locations", side_effect=ValueError("private locator")):
+                record = self.wire(value)
+            self.assertIs(value.error, first)
+            self.assertEqual(record["error"]["chain"][0]["type"], type(first).__name__)
+            self.assertEqual([row["stage"] for row in record["secondary"]], ["budget-close", "location-publication"])
+            self.assertIsNotNone(record["counters"])
+            self.assertEqual(record["source_locations"]["reason"], "locator-failed")
+            self.assertIsNone(record["source_locations"]["references_closed"])
+
+    def test_every_owned_location_reference_is_withdrawn_even_when_one_clear_fails(self):
+        original = observation_failure._SourceLocations
+        for failed in (None, "codes", "modules", "seen", "registered"):
+            for when in ("before", "after"):
+                events, instances = [], []
+                class Clearing(dict):
+                    def __init__(self, name, values=()):
+                        super().__init__(values)
+                        self.name = name
+                    def clear(self):
+                        events.append(self.name)
+                        if self.name == failed and when == "before":
+                            raise OSError(errno.EIO, "private withdrawal")
+                        super().clear()
+                        if self.name == failed and when == "after":
+                            raise OSError(errno.EIO, "private withdrawal")
+                class ClearingSet(set):
+                    def clear(self):
+                        events.append("seen")
+                        if failed == "seen" and when == "before":
+                            raise OSError(errno.EIO, "private withdrawal")
+                        super().clear()
+                        if failed == "seen" and when == "after":
+                            raise OSError(errno.EIO, "private withdrawal")
+                class Registry(original):
+                    def __init__(self):
+                        super().__init__()
+                        self.codes, self.modules = Clearing("codes"), Clearing("modules")
+                        self.seen = ClearingSet()
+                        instances.append(self)
+                with self.subTest(failed=failed, when=when), self.fixture() as value, \
+                     mock.patch.object(observation_failure, "_SourceLocations", Registry):
+                    value.observer.location_codes = Clearing("registered", value.observer.location_codes)
+                    record = self.wire(value)
+                    self.assertEqual(events, ["codes", "modules", "seen", "registered"])
+                    instance, = instances
+                    for name in ("entries", "entry_type", "call", "call_globals"):
+                        self.assertIsNone(getattr(instance, name))
+                    if failed != "seen" or when != "before":
+                        self.assertFalse(instance.seen)
+                    if failed is None:
+                        self.assertEqual(record["source_locations"]["status"], "observed")
+                    else:
+                        self.assertEqual(record["source_locations"]["reason"], "locator-failed")
+                        self.assertEqual(record["error"]["chain"][0]["type"], type(value.error).__name__)
+
+    def test_original_error_collector_restoration_reproduces_missing_location_transport(self):
+        self.assertIsNotNone(PREIMAGE_REPORT_ERROR_RECORD, "requires the inspected localization runner")
+        with self.fixture() as value:
+            self.assertEqual(self.wire(value)["source_locations"]["status"], "observed")
+        with self.fixture() as value, mock.patch.object(
+            worker, "report_error_record", PREIMAGE_REPORT_ERROR_RECORD,
+        ), self.assertRaises(policy.GuardError):
+            self.wire(value)
+
+    def test_missing_location_or_wrong_binding_restoration_breaks_the_wire_oracle_and_neutral_order_passes(self):
+        with self.fixture("wrapped") as value:
+            record = self.wire(value)
+            policy.validate_report_error(record, self.binding())
+            for change in ("missing", "revision", "root", "authority", "position", "extra", "partial", "uncalled"):
+                mutated = copy.deepcopy(record)
+                if change == "missing":
+                    del mutated["source_locations"]
+                elif change == "revision":
+                    mutated["source_locations"]["source_revision"] = policy.BASE
+                elif change == "root":
+                    mutated["source_locations"]["root"] = "/foreign"
+                elif change == "authority":
+                    mutated["source_locations"]["authority"] = True
+                elif change == "position":
+                    mutated["source_locations"]["locations"][0]["offset"] = True
+                elif change == "partial":
+                    mutated["source_locations"]["locations"].pop()
+                elif change == "uncalled":
+                    mutated["states"]["check_attempts"] = 0
+                    mutated["states"]["session_attempts"] = 0
+                    mutated["states"]["session_constructed"] = 0
+                else:
+                    mutated["source_locations"]["locations"][0]["message"] = "private"
+                with self.subTest(change=change), self.assertRaises(policy.GuardError):
+                    policy.validate_report_error(mutated, self.binding())
+            neutral = dict(reversed(list(record.items())))
+            neutral["source_locations"] = dict(reversed(list(record["source_locations"].items())))
+            self.assertEqual(policy.validate_report_error(neutral, self.binding()), record)
+
+    def test_observed_locations_survive_the_real_publication_fallback_and_cannot_be_changed_or_replayed(self):
+        with self.fixture("wrapped") as value:
+            record = self.wire(value)
+            failure = worker.ReportFailure()
+            failure.capture(value.error, "check")
+            failure.record = record
+            failure.secondary.append({
+                "stage": "error-publication", "error": policy.component_secondary_error(OSError(errno.EIO, "private write")),
+            })
+            following = failure.fallback(
+                {"scope": "12345/report", "report_binding": self.binding()}, value.error,
+            )
+            parser = supervisor.Protocol("12345/report", policy.OUTPUT_BYTES,
+                                         report_binding=self.binding(), deadline=3700.0)
+            def send(data):
+                return parser.feed(policy.encoded({"scope": "12345/report", "kind": "error", "data": data}) + b"\n")
+            first, = send(record)
+            updated, = send(following)
+            self.assertIs(first["data"], updated["data"])
+            self.assertEqual(updated["data"]["source_locations"], record["source_locations"])
+            self.assertEqual(updated["data"]["error"], record["error"])
+            self.assertTrue(parser.failed)
+            self.assertFalse(parser.finished)
+            with self.assertRaises(policy.GuardError):
+                send(following)
+            for field in ("line", "offset", "code"):
+                changed = copy.deepcopy(following)
+                row = changed["source_locations"]["locations"][0]
+                row[field] = "replacement" if field == "code" else row[field] + 1
+                with self.subTest(field=field), self.assertRaises(policy.GuardError):
+                    policy.merge_report_failure(record, changed, self.binding())
 
 
 if __name__ == "__main__":
