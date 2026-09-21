@@ -51,6 +51,8 @@ from .producer_channel import (
     ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
     publication_identity, validate_publication_confirmation,
     validate_dispatch_context, validate_job_context,
+    stderr_effects as validate_stderr_effects, stderr_encoded, stderr_launch_binding,
+    validate_stderr_inputs, validate_stderr_launch, validate_stderr_receipt,
 )
 
 
@@ -107,12 +109,26 @@ class Command:
     publication_policy: str = "replace"
     runtime_tool: RuntimeTool | None = None
     stdout_transform: str | None = None
+    stderr_effects: tuple[str, ...] = ()
 
     def __post_init__(self):
         if type(self.publication_policy) is not str or self.publication_policy not in PUBLICATION_POLICIES:
             raise MakeProbeError("unsupported Command publication policy")
         if self.publication_policy != "replace" and not self.outputs:
             raise MakeProbeError("content-only publication requires declared outputs")
+        if self.stderr_effects != ():
+            try:
+                if type(self.stderr_effects) is not tuple or type(self.argv) is not tuple or not self.argv:
+                    raise ChannelError("stderr effects require an immutable declaration")
+                validate_stderr_effects(self.stderr_effects, len(self.argv) + 3)
+                if (
+                    type(self) is not Command or self.argv[0] != "/usr/bin/python3"
+                    or self.outputs or self.native_tool is not None or self.runtime_tool is not None
+                    or self.dependency_only is not False or self.stdout_transform is not None
+                ):
+                    raise ChannelError("stderr effects require an ordinary output-free Python command")
+            except ChannelError as error:
+                raise MakeProbeError(str(error)) from error
 
 
 class _PrivateInstallLaunch:
@@ -120,6 +136,10 @@ class _PrivateInstallLaunch:
 
 
 class _HeaderRuntimeLaunch:
+    pass
+
+
+class _StderrLaunch:
     pass
 
 
@@ -390,6 +410,7 @@ class ProcessOutput:
     runtime_probes: tuple[dict, ...] = ()
     returncode: int = 0
     toolchain_receipts: tuple[bytes, ...] = ()
+    stderr_setup: bytes | None = None
 
 
 @dataclass(frozen=True)
@@ -417,6 +438,7 @@ class MakeObservation:
     source_effects: dict | None = None
     source_journal: dict | None = None
     toolchain_receipts: tuple[bytes, ...] = ()
+    stderr_setups: tuple[bytes, ...] = ()
 
 
 class _NamespaceUnavailable(MakeProbeError):
@@ -936,6 +958,8 @@ class ProbeSession:
         self._command_dispatches = []
         self._native_context_commands = {}
         self._issued_context_commands = weakref.WeakSet()
+        self._stderr_launches = {}
+        self._issued_stderr_launches = weakref.WeakSet()
         self._header_pipelines = {}
         self._header_commands = {}
         self._issued_header_steps = weakref.WeakSet()
@@ -1544,6 +1568,8 @@ class ProbeSession:
             self._command_dispatches.clear()
             self._native_context_commands.clear()
             self._issued_context_commands.clear()
+            self._stderr_launches.clear()
+            self._issued_stderr_launches.clear()
             self._header_pipelines.clear()
             self._header_commands.clear()
             self._issued_header_steps.clear()
@@ -1984,6 +2010,7 @@ class ProbeSession:
         producer_handler=None, publication_observer=None, publication_allowed=True,
         dependency=None, observe_recipe_dispatch=False, private_install=None,
         header_runtime=None, toolchain_launch=None,
+        stderr_launch=None,
         observe_read_epochs=False,
         observe_source_phases=False, source_phase_observer=None,
         observe_source_journal=False, source_journal_observer=None,
@@ -2087,6 +2114,16 @@ class ProbeSession:
                 self.budget.limits.control_bytes - self.budget.bytes.get("control", 0),
             ),
         }
+        if stderr_launch is not None:
+            config["stderr_setup"] = self._consume_stderr_launch(stderr_launch, config)
+            if (
+                private_install is not None or header_runtime is not None or toolchain_launch is not None
+                or dependency is not None or metadata_validation or producer_handler is not None
+                or publication_observer is not None or observe_recipe_dispatch
+                or observe_read_epochs or observe_source_phases or observe_source_journal
+                or file_cleanup_owner is not None
+            ):
+                raise MakeProbeError("stderr setup cannot borrow another native profile")
         if file_cleanup_owner is not None and (
             type(file_cleanup_owner) is not file_ownership.FileOwnership
             or file_cleanup_owner.session is not self or file_cleanup_owner.tree != self.tree
@@ -2606,6 +2643,8 @@ class ProbeSession:
                 "memory_peak", "observation_bytes", "live_process_peak", "observations",
                 "metadata", "events",
             } | ({"rendezvous"} if channel is not None else set()) | (
+                {"stderr_setup"} if stderr_launch is not None else set()
+            ) | (
                 {"executed"} if dependency is not None else set()
             ) | (
                 {"read_trace"} if observe_read_epochs and observed.get("ok") is True
@@ -2653,6 +2692,11 @@ class ProbeSession:
             settle({name: observed[name] for name in counter_names}, failed=observed["ok"] is not True)
             if result.returncode or observed["ok"] is not True:
                 raise MakeProbeError(f"confined {mode} probe rejected: {observed['error']}; {result.stderr!r}")
+            if stderr_launch is not None:
+                try:
+                    validate_stderr_receipt(observed["stderr_setup"], config["stderr_setup"])
+                except ChannelError as error:
+                    raise MakeProbeError(str(error)) from error
             if dependency is not None and observed["executed"] != (
                 dependency["executables"][:len(observed["executed"])]
                 if needs_toolchain and observed["returncode"] else dependency["executables"]
@@ -2750,10 +2794,11 @@ class ProbeSession:
 
     @staticmethod
     def _install_command_binding(command):
-        return encoded((
+        values = (
             command.argv, command.code, command.sources, command.directories, command.outputs,
             command.dependency_only, command.publication_policy, command.stdout_transform,
-        ))
+        )
+        return encoded(values if not command.stderr_effects else (*values, command.stderr_effects))
 
     @terminal_failure
     def _private_install_command(self, command, destinations):
@@ -3007,6 +3052,110 @@ class ProbeSession:
         self._native_context_commands[key] = record
         self._issued_context_commands.add(record)
         return command
+
+    def _require_stderr_context(self, command):
+        self.budget.remaining()
+        Command.__post_init__(command)
+        record = self._native_context_commands.get(id(command))
+        if (
+            self.base is None or self.snapshot is None
+            or not command.stderr_effects or type(record) is not _ContextCommand
+            or record not in self._issued_context_commands or record.command() is not command
+            or record.snapshot is not self.snapshot or record.tree != self.tree
+            or record.epoch != self._namespace_epoch or record.binding != self._install_command_binding(command)
+            or get_ident() != self.owner_thread
+            or id(command) in self._private_install_commands or id(command) in self._header_commands
+            or id(command) in self._toolchain.commands
+        ):
+            raise MakeProbeError("stderr command is unissued, changed, stale or combines authority")
+        return record
+
+    def _stderr_dispatch(self, command):
+        if self._command_dispatches and self._command_dispatches[-1][0] is command:
+            context = self._require_live_dispatch()
+            if self._command_dispatches[-1][1] is not context:
+                raise MakeProbeError("stderr command differs from its consuming dispatch")
+            return context
+        return None
+
+    def _stderr_context_binding(self, command, code, sources):
+        record = self._require_stderr_context(command)
+        dispatch = self._stderr_dispatch(command)
+        data = (
+            self.snapshot.digest, str(self.tree), self._namespace_epoch,
+            record.binding.decode("ascii"), tuple(self.source_owners(set(code) | set(sources))),
+            None if dispatch is None else (
+                dispatch.scope, dispatch.sequence, dispatch.arguments, dispatch.cwd,
+                dispatch.environment, dispatch.rebuilding, dispatch.job,
+            ),
+        )
+        return hashlib.sha256(stderr_encoded(data, lambda size: self.budget.charge("control", size))).hexdigest()
+
+    def _stderr_launch(self, command, root, argv, environment, mounts, code, sources, directories):
+        permission = self._require_stderr_context(command)
+        output = self.base / f"command-{self.serial + 1}" / "output"
+        if (
+            root != self.base / f"command-root-{self.serial + 1}"
+            or tuple(argv) != (command.argv[0], "-I", "-S", "-B", *command.argv[1:])
+            or environment != self._command_environment(command)
+            or tuple(code) != tuple(sorted(set(command.code)))
+            or tuple(sources) != (self.sources(command.sources) if command.sources else ())
+            or tuple(directories) != self._directories(command.directories)
+            or mounts != [
+                self._mount(self.tree, "/repo"), self._mount(Path("/usr"), "/usr", executable=True),
+                self._mount(output, "/work", writable=True),
+                self._mount(Path("/dev/null"), "/dev/null", writable=True),
+            ]
+        ):
+            raise MakeProbeError("stderr launch differs from its actual command/workspace authority")
+        config = {
+            "root": str(root), "mode": "command", "argv": list(argv), "environment": environment,
+            "mounts": mounts, "code": list(code), "sources": list(sources),
+            "enumerations": list(directories), "executables": ["/usr/bin/python3"],
+        }
+        try:
+            validate_stderr_inputs(config)
+        except ChannelError as error:
+            raise MakeProbeError(str(error)) from error
+        value = {
+            "version": 1, "scope": root.name, "nonce": secrets.token_hex(16),
+            "context": self._stderr_context_binding(command, code, sources),
+            "effects": list(command.stderr_effects),
+        }
+        reserve = lambda size: self.budget.charge("control", size)
+        value["binding"] = stderr_launch_binding(config, value, reserve)
+        validate_stderr_launch(value, config, reserve)
+        wire = stderr_encoded(value, lambda size: self.budget.charge("cache", size))
+        token = _StderrLaunch()
+        record = (token, command, permission, self._stderr_dispatch(command), root, wire)
+        self.budget.charge("cache", sys.getsizeof(record) + sys.getsizeof(token))
+        self._stderr_launches[id(token)] = record
+        self._issued_stderr_launches.add(token)
+        return token
+
+    def _consume_stderr_launch(self, token, config):
+        record = self._stderr_launches.pop(id(token), None)
+        if (
+            type(token) is not _StderrLaunch or token not in self._issued_stderr_launches
+            or record is None or record[0] is not token
+        ):
+            raise MakeProbeError("stderr launch is foreign, stale or already consumed")
+        self._issued_stderr_launches.discard(token)
+        _, command, permission, dispatch, root, wire = record
+        if (
+            self._require_stderr_context(command) is not permission
+            or self._stderr_dispatch(command) is not dispatch or str(root) != config["root"]
+        ):
+            raise MakeProbeError("stderr launch changed its command, caller or view")
+        self.budget.charge("control", len(wire))
+        value = parse_json(wire, "issued stderr setup")
+        if value["context"] != self._stderr_context_binding(command, config["code"], config["sources"]):
+            raise MakeProbeError("stderr launch changed its actual code/source/caller binding")
+        try:
+            validate_stderr_launch(value, config, lambda size: self.budget.charge("control", size))
+        except ChannelError as error:
+            raise MakeProbeError(str(error)) from error
+        return value
 
     def _published_record(self, path):
         if path not in self.published_sources or path not in self.published_versions:
@@ -3619,6 +3768,10 @@ class ProbeSession:
         if not isinstance(command, Command):
             raise MakeProbeError("registered command requires a typed Command")
         Command.__post_init__(command)
+        if command.stderr_effects:
+            self._require_stderr_context(command)
+            if compiler is not None or native is not None:
+                raise MakeProbeError("stderr setup cannot combine compiler/native execution")
         if id(command) in self._toolchain.commands:
             if compiler is not None or native is not None:
                 raise MakeProbeError("toolchain recipe cannot combine native authority")
@@ -3725,13 +3878,14 @@ class ProbeSession:
             self.snapshot.digest, command, None if native is None else native.digest,
             runtime_digest, code, sources, published_inputs, tuple(sorted(environment.items())),
         )
-        if toolchain_step is None and key in self.cache and not outputs:
+        if toolchain_step is None and not command.stderr_effects and key in self.cache and not outputs:
             for cached in self.cache[key]:
                 if self._metadata_matches(cached.metadata):
                     return cached
         self.budget.charge("pending", len(encoded([
             command.argv, code, sources, directories, outputs, command.publication_policy, runtime_digest,
             command.stdout_transform,
+            *([command.stderr_effects] if command.stderr_effects else []),
         ])))
         input_identities = tuple(self.source_owners(set(code) | set(sources)))
         work = self.base / f"command-{self.serial + 1}"
@@ -3866,6 +4020,11 @@ class ProbeSession:
                     code=code, sources=sources, directories=directories, executables=compiler, dependency=dependency,
                 )
             completed = observed = native_result = None
+            stderr_launch = None
+            if command.stderr_effects:
+                stderr_launch = self._stderr_launch(
+                    command, root, argv, environment, command_mounts, code, sources, directories,
+                )
             try:
                 completed, observed = self._sandbox_run(
                     root, mode="command" if compiler is None else "compile", argv=argv,
@@ -3876,6 +4035,7 @@ class ProbeSession:
                     **({"private_install": install_launch} if install_launch is not None else {}),
                     **({"header_runtime": header_launch} if header_launch is not None else {}),
                     **({"toolchain_launch": toolchain_launch} if toolchain_launch is not None else {}),
+                    **({"stderr_launch": stderr_launch} if stderr_launch is not None else {}),
                 )
                 if header_kind == "filter":
                     native_result = self._claim_native_return(
@@ -3886,6 +4046,9 @@ class ProbeSession:
                         toolchain_runtime.NATIVE_PURPOSE, toolchain_launch, completed, observed,
                     )
             finally:
+                if stderr_launch is not None:
+                    self._stderr_launches.pop(id(stderr_launch), None)
+                    self._issued_stderr_launches.discard(stderr_launch)
                 if header_launch is not None:
                     self._retire_native_return(
                         header_protocol.FILTER_PURPOSE, header_launch, completed, observed,
@@ -3987,6 +4150,10 @@ class ProbeSession:
                 runtime_sources,
                 runtime_probes,
                 returncode,
+                stderr_setup=(
+                    stderr_encoded(observed["stderr_setup"], lambda size: self.budget.charge("cache", size))
+                    if command.stderr_effects else None
+                ),
             )
             self.budget.charge(
                 "cache", len(native_stdout) + len(native_stderr)
@@ -4008,7 +4175,7 @@ class ProbeSession:
                 self.budget.charge("cache", len(encoded(result.runtime_sources)))
             if result.runtime_probes and header_kind != "filter":
                 self.budget.charge("cache", len(encoded(result.runtime_probes)))
-            if not outputs and toolchain_step is None:
+            if not outputs and toolchain_step is None and not command.stderr_effects:
                 self.cache.setdefault(key, []).append(result)
             if toolchain_step is not None:
                 result = self._toolchain.seal_step_result(
@@ -4354,6 +4521,7 @@ class ProbeSession:
         header_steps = {}
         receipt_directories = {}
         command_results = {}
+        stderr_setups = []
         generated_paths = self.generated_paths
         file_owner = self._file_owner()
         generated_directories = self.generated_directories
@@ -4636,6 +4804,11 @@ class ProbeSession:
                 finally:
                     self._command_dispatches.pop()
                 inputs = result.consumed
+                if registration.stderr_effects:
+                    if type(result.stderr_setup) is not bytes:
+                        raise MakeProbeError("stderr producer lost its validated setup receipt")
+                    self.budget.charge("cache", struct.calcsize("P"))
+                    stderr_setups.append(result.stderr_setup)
                 identity = {
                     "argv": list(registration.argv), "directories": sorted(set(registration.directories)),
                     "inputs": list(result.input_identities),
@@ -4643,6 +4816,8 @@ class ProbeSession:
                 }
                 if id(registration) in self._native_context_commands:
                     identity["environment"] = environment
+                if registration.stderr_effects:
+                    identity["stderr_effects"] = list(registration.stderr_effects)
                 if registration.dependency_only or toolchain_recipe:
                     identity["dependency_only"] = True
                     identity["executed"] = list(result.executed)
@@ -4690,6 +4865,7 @@ class ProbeSession:
                     registration.publication_policy,
                     None if registration.runtime_tool is None else registration.runtime_tool.digest,
                     registration.stdout_transform,
+                    *([registration.stderr_effects] if registration.stderr_effects else []),
                 ])).hexdigest()
                 key = f"{sequence - 1:016x}"
                 self.budget.charge("mapping", len(command.encode("utf-8")) + len(result.stdout) + len(encoded(record)))
@@ -4949,6 +5125,8 @@ class ProbeSession:
                     source_phases.validate_capture(phases, observed["read_trace"])
                 except ChannelError as error:
                     raise MakeProbeError(str(error)) from error
+            if stderr_setups:
+                self.budget.charge("cache", struct.calcsize("P") * len(stderr_setups))
             observation = MakeObservation(
                 target, semantics, execution, hashlib.sha256(semantic_bytes).hexdigest(),
                 completed.stdout, completed.stderr, tuple(events),
@@ -4959,6 +5137,7 @@ class ProbeSession:
                 observed.get("source_effects"),
                 None if journal is None else journal.payload,
                 self.toolchain_receipts(dispatch_scope) if dispatch_scope in self._toolchain_receipt_archive else (),
+                tuple(stderr_setups),
             )
             if namespace_capture is not None:
                 namespace_capture.native_complete = True

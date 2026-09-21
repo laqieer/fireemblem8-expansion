@@ -1,19 +1,23 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import builtins
 from contextlib import contextmanager
 from dataclasses import replace
+import errno
 import fnmatch
 import io
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import secrets
 import shlex
 import shutil
 import subprocess
+import stat
+import struct
 from threading import get_ident
 from types import SimpleNamespace
 import unittest
@@ -33,6 +37,7 @@ from scripts.validation_ownership.graph_commands import (
 )
 from scripts.validation_ownership import make_probe
 from scripts.validation_ownership import graph_commands
+from scripts.validation_ownership import producer_channel, syscall_guard, lifecycle
 from scripts.validation_ownership.make_probe import Command, ProbeSession
 from scripts.validation_ownership.graph_probe import run_probe
 
@@ -46,6 +51,7 @@ class CommandSemanticsTests(unittest.TestCase):
     def session(self):
         session = object.__new__(ProbeSession)
         session.base, session.tree = Path("/model"), Path("/model/repo")
+        session.serial = 0
         session.owner_thread = get_ident()
         session.snapshot = SimpleNamespace(files={}, digest="model-snapshot")
         session.budget = SimpleNamespace(remaining=lambda: None, charge=lambda *args: None)
@@ -54,6 +60,10 @@ class CommandSemanticsTests(unittest.TestCase):
         session._issued_context_commands = weakref.WeakSet()
         session._live_dispatches, session._command_dispatches = [], []
         session._issued_dispatches = weakref.WeakSet()
+        session._private_install_commands = {}
+        session._header_commands = {}
+        session._stderr_launches = {}
+        session._issued_stderr_launches = weakref.WeakSet()
         session.published_sources = {}
         session._toolchain = SimpleNamespace(commands={}, require_step=lambda command: None)
         session._header_runtime_kind = lambda command: None
@@ -100,7 +110,7 @@ class CommandSemanticsTests(unittest.TestCase):
         finally:
             session._command_dispatches.pop()
 
-    def execute(self, command, environment, *, redirects=()):
+    def execute(self, command, environment, *, redirects=(), prepare_modules=None):
         sinks = {"stdout": bytearray(), "stderr": bytearray(), "null": bytearray()}
         descriptors, operations = {1: "stdout", 2: "stderr"}, []
 
@@ -131,6 +141,8 @@ class CommandSemanticsTests(unittest.TestCase):
         model_sys = SimpleNamespace(stdout=Stream(1), stderr=Stream(2), argv=[], path=[])
         model_os = SimpleNamespace(environ=dict(environment), dup2=dup2, write=write)
         modules = {"sys": model_sys, "os": model_os, "io": io, "json": json}
+        if prepare_modules is not None:
+            modules.update(prepare_modules(model_os))
 
         def importer(name, *args, **kwargs):
             if name not in modules:
@@ -143,7 +155,7 @@ class CommandSemanticsTests(unittest.TestCase):
             if flush:
                 stream.flush()
 
-        for redirect in redirects:
+        for redirect in (redirects or command.stderr_effects):
             if redirect == "stdout":
                 dup2(1, 2)
             else:
@@ -284,8 +296,9 @@ class CommandSemanticsTests(unittest.TestCase):
             session = self.session()
             ordinary = python_command(session, program)
             self.assertEqual(self.execute(ordinary, ENVIRONMENT, redirects=redirects)[:2], expected)
-            with self.subTest(suffix=suffix), self.assertRaisesRegex(MakeProbeError, "stderr discard"):
-                self.commands(session, prefix + suffix)[prefix + suffix]
+            with self.subTest(suffix=suffix):
+                registered = self.commands(session, prefix + suffix)[prefix + suffix]
+                self.assertEqual(self.execute(registered, ENVIRONMENT)[:2], expected)
 
     def test_literal_words_preserve_quotes_escapes_and_reject_active_roles(self):
         for raw, value in (
@@ -366,6 +379,699 @@ class CommandSemanticsTests(unittest.TestCase):
                         **contract, "command_regex": re.escape(escaped),
                     })[escaped].argv[-2:], (root, pattern),
                 )
+
+
+class _StderrModel:
+    """In-memory kernel boundary for the real bootstrap and parent policy."""
+
+    def __init__(self, effects):
+        root_flags = producer_channel.STDERR_ROOT_FLAGS
+        path_flags = os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC
+        null = (2, 103, stat.S_IFCHR | 0o666, 0, 0, os.makedev(1, 3), path_flags, 20, os.ST_NOSUID | os.ST_NOEXEC)
+        self.references = {
+            "/": (1, 101, stat.S_IFDIR | 0o755, 0, 0, 0, root_flags, 10, 0),
+            "/dev": (2, 102, stat.S_IFDIR | 0o755, 0, 0, 0, root_flags, 20, os.ST_NOSUID | os.ST_NOEXEC),
+            "/dev/null": null,
+            "/model/capsule/dev/null": (*null[:7], 30, null[8] | os.ST_NODEV),
+        }
+        self.tables = {}
+        for pid in (99, 11):
+            self.tables[pid] = {}
+            for fd, row in (
+                (0, (*null[:6], os.O_RDWR | producer_channel.STDERR_LARGEFILE, *null[7:])),
+                (1, (3, 201, stat.S_IFIFO | 0o600, 1001, 1002, 0, os.O_WRONLY, 40, 0)),
+                (2, (3, 202, stat.S_IFIFO | 0o600, 1001, 1002, 0, os.O_WRONLY, 40, 0)),
+            ):
+                self.install(pid, fd, row)
+        if "null" in effects:
+            self.install(11, 3, self.references["/"])
+        self.parent = {"uid": [0] * 4, "gid": [0] * 4, "groups": [0], "caps": [255] * 5, "nnp": 0}
+        self.child = {"uid": [1001] * 4, "gid": [1002] * 4, "groups": [], "caps": [0] * 5, "nnp": 1}
+        self.operations, self.attempts = [], []
+        self.streams = {201: bytearray(), 202: bytearray()}
+        self.failure = None
+        self.errno = 0
+        self.tracee = False
+        self.config = {
+            "root": "/model/capsule", "mode": "command",
+            "argv": ["/usr/bin/python3", "-I", "-S", "-B", "-c", "pass"],
+            "environment": dict(ENVIRONMENT), "code": [], "sources": [], "enumerations": [],
+            "executables": ["/usr/bin/python3"], "mounts": [
+                {"source": source, "target": target, "writable": writable, "executable": executable}
+                for source, target, writable, executable in (
+                    ("/model/tree", "/repo", False, False), ("/usr", "/usr", False, True),
+                    ("/model/work", "/work", True, False), ("/dev/null", "/dev/null", True, False),
+                )
+            ],
+            "sudo_drop": True, "runner_uid": 1001, "runner_gid": 1002,
+            "syscall_limit": 1000, "write_limit": 1024,
+            "observation_limit": 8 * 1024 * 1024, "observation_count": 4096,
+        }
+        value = {"version": 1, "scope": "capsule", "nonce": "01" * 16, "context": "23" * 32, "effects": list(effects)}
+        value["binding"] = producer_channel.stderr_launch_binding(self.config, value, lambda size: None)
+        self.config["stderr_setup"] = value
+        self.policy = object.__new__(syscall_guard.Policy)
+        self.policy.config = self.config
+        self.policy.mode = "command"
+        self.policy.toolchain = self.policy.read_trace = self.policy.filter_kernel = None
+        self.policy.private_install = None
+        self.policy.kernel_streams = {}
+        self.policy.calls = self.policy.written = self.policy.observation_bytes = 0
+        self.policy.observation_attempts = {name: set() for name in ("consumed", "code_consumed", "accessed")}
+        self.policy.observer = lambda *args: False
+        self.policy.runtime_metadata = lambda *args, **kwargs: False
+        self.policy.finish_metadata = lambda *args: None
+        self.state = syscall_guard.Process("command")
+        self.policy.processes = {11: self.state}
+
+    def install(self, pid, descriptor, row):
+        description = SimpleNamespace(identity=tuple(row[:6]), flags=row[6] & ~os.O_CLOEXEC, tail=tuple(row[7:]))
+        self.tables[pid][descriptor] = (description, bool(row[6] & os.O_CLOEXEC))
+
+    def fd(self, pid, descriptor):
+        description, cloexec = self.tables[pid][descriptor]
+        return (*description.identity, description.flags | (os.O_CLOEXEC if cloexec else 0), *description.tail)
+
+    def open(self, path, flags, mode=0o777, *, dir_fd=None):
+        if dir_fd is not None:
+            return self.call(257, dir_fd, path.encode(), flags, mode)
+        if self.tracee or path not in self.references:
+            raise AssertionError("unmodeled absolute open: " + str(path))
+        descriptor = next(fd for fd in range(3, 128) if fd not in self.tables[99])
+        row = self.references[path]
+        self.install(99, descriptor, (*row[:6], flags, *row[7:]))
+        return descriptor
+
+    def close(self, descriptor):
+        if self.tracee:
+            return self.call(3, descriptor)
+        del self.tables[99][descriptor]
+
+    def dup2(self, source, destination):
+        return self.call(33, source, destination)
+
+    def syscall(self, number, directory, name, how, size):
+        try:
+            return self.call(number, directory, name, how, size)
+        except OSError as error:
+            self.errno = error.errno
+            return -1
+
+    def call(self, number, a=0, b=0, c=0, d=0):
+        registers = SimpleNamespace(orig_rax=number, rdi=a, rsi=b, rdx=c, r10=d, r8=0, rip=0, rax=0)
+        self.state.kernel_call = number
+        self.policy.entry(11, self.state, registers)
+        pending = self.policy.stderr_setup.pending
+        operation = pending[0] if pending else str(number)
+        self.attempts.append((operation, a))
+        if self.failure is not None and self.failure(operation, a):
+            result = -errno.EACCES
+        elif number in (257, 437):
+            descriptor = next(fd for fd in range(3, 128) if fd not in self.tables[11])
+            row = self.references["/dev" if number == 257 else "/dev/null"]
+            flags = c if number == 257 else struct.unpack("<QQQ", c)[0] | producer_channel.STDERR_LARGEFILE
+            self.install(11, descriptor, (*row[:6], flags, *row[7:]))
+            result = descriptor
+        elif number == 33:
+            self.tables[11][b] = (self.tables[11][a][0], False)
+            result = b
+        elif number == 3:
+            del self.tables[11][a]
+            result = 0
+        elif number == 72:
+            result = self.tables[11][a][0].flags if b == 3 else int(self.tables[11][a][1])
+        elif number == 0:
+            result = -errno.EBADF if self.tables[11][a][0].flags & 3 == os.O_WRONLY else 0
+        elif number == 1:
+            identity = self.tables[11][a][0].identity
+            if stat.S_ISFIFO(identity[2]):
+                self.streams[identity[1]].extend(b)
+            result = len(b)
+        elif number in (60, 231):
+            result = 0
+        else:
+            raise AssertionError("unmodeled syscall: " + str(number))
+        registers.rax = result & ((1 << 64) - 1)
+        self.policy.leave(11, self.state, registers)
+        self.state.kernel_call = None
+        self.operations.append((operation, a, result))
+        if result < 0:
+            raise OSError(-result, "modeled kernel refusal")
+        return result
+
+    def read_file(self, path, *args, **kwargs):
+        parts = str(path).split("/")
+        pid = int(parts[2])
+        if parts[3] == "fdinfo":
+            row = self.fd(pid, int(parts[4]))
+            data = f"flags:\t{row[6]:o}\nmnt_id:\t{row[7]}\n".encode()
+        elif parts[3] == "status":
+            value = self.parent if pid == 99 else self.child
+            data = (
+                "Uid:\t" + " ".join(map(str, value["uid"])) + "\n"
+                "Gid:\t" + " ".join(map(str, value["gid"])) + "\n"
+                "Groups:\t" + " ".join(map(str, value["groups"])) + "\n"
+                + "".join(name + ":\t" + format(number, "016x") + "\n" for name, number in zip(
+                    ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb"), value["caps"],
+                ))
+                + "NoNewPrivs:\t" + str(value["nnp"]) + "\n"
+            ).encode()
+        else:
+            raise AssertionError("unmodeled parent read: " + str(path))
+        return io.BytesIO(data)
+
+    def path_row(self, path):
+        parts = str(path).split("/")
+        row = self.fd(int(parts[2]), int(parts[4]))
+        if len(parts) == 6:
+            if parts[5] != "null" or row[:6] != self.references["/dev"][:6]:
+                raise AssertionError("unmodeled dirfd-relative metadata")
+            row = self.references["/dev/null"]
+        return row
+
+    def stat(self, path, **kwargs):
+        row = self.path_row(path)
+        return SimpleNamespace(**dict(zip(("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_rdev"), row)))
+
+    def statvfs(self, path):
+        return SimpleNamespace(f_flag=self.path_row(path)[8])
+
+    @contextmanager
+    def scandir(self, path):
+        pid = int(str(path).split("/")[2])
+        yield iter(SimpleNamespace(name=str(fd)) for fd in tuple(self.tables[pid]))
+
+    @contextmanager
+    def active(self):
+        fake_os = SimpleNamespace(
+            **{name: getattr(os, name) for name in (
+                "O_PATH", "O_DIRECTORY", "O_NOFOLLOW", "O_CLOEXEC", "O_WRONLY", "O_RDWR",
+                "ST_NODEV", "ST_NOSUID", "ST_NOEXEC", "makedev",
+            )},
+            open=self.open, close=self.close, dup2=self.dup2, stat=self.stat,
+            statvfs=self.statvfs,
+            getpid=lambda: 99, scandir=self.scandir,
+        )
+        fake_ctypes = SimpleNamespace(
+            c_long=lambda value: value, c_int=lambda value: value, c_char_p=lambda value: value,
+            c_size_t=lambda value: value,
+            c_longlong=lambda value: SimpleNamespace(value=value - (1 << 64) if value >= 1 << 63 else value),
+            set_errno=lambda value: setattr(self, "errno", value), get_errno=lambda: self.errno,
+        )
+        signals = SimpleNamespace(
+            SIG_BLOCK=0, SIG_SETMASK=1, pthread_sigmask=lambda *args: set(),
+            sigpending=lambda: set(), sigtimedwait=lambda *args: None,
+        )
+        with mock.patch.object(syscall_guard, "os", fake_os), \
+             mock.patch.object(syscall_guard, "ctypes", fake_ctypes), \
+             mock.patch.object(syscall_guard, "LIBC", SimpleNamespace(syscall=self.syscall)), \
+             mock.patch.object(syscall_guard, "open", self.read_file, create=True), \
+             mock.patch.object(syscall_guard, "cstring", lambda pid, address: address.decode()), \
+             mock.patch.object(syscall_guard, "memory", lambda pid, address, count: address[:count]), \
+             mock.patch.object(lifecycle, "signal", signals):
+            self.policy.stderr_setup = syscall_guard._StderrSetup(self.policy)
+            self.tracee = True
+            yield self
+
+    def run(self):
+        setup = self.policy.stderr_setup
+        setup.begin(11, self.state)
+        syscall_guard._stderr_bootstrap(setup.effects, 3 if "null" in setup.effects else None)
+        self.state.fds[2] = setup.executed(11, self.state)
+        self.state.bootstrap = False
+        return setup.receipt()
+
+
+class StderrSetupTests(unittest.TestCase):
+    session = CommandSemanticsTests.session
+    commands = CommandSemanticsTests.commands
+    dispatch = CommandSemanticsTests.dispatch
+    consuming = CommandSemanticsTests.consuming
+    execute = CommandSemanticsTests.execute
+
+    def test_actual_supervisor_child_branch_drops_then_traces_sets_up_and_execs(self):
+        tree = ast.parse((ROOT / "scripts/validation_ownership/syscall_guard.py").read_bytes())
+        supervisor = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "supervise")
+        fork = next(node for node in supervisor.body if isinstance(node, ast.Assign)
+                    and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Attribute)
+                    and node.value.func.attr == "fork")
+        pid_name = fork.targets[0].id
+        child = next(node for node in supervisor.body if isinstance(node, ast.If)
+                     and isinstance(node.test, ast.Compare) and isinstance(node.test.left, ast.Name)
+                     and node.test.left.id == pid_name and isinstance(node.test.comparators[0], ast.Constant)
+                     and node.test.comparators[0].value == 0)
+        with _StderrModel(("null", "stdout")).active() as model:
+            events = []
+            model.child = dict(model.parent)
+            model.config.update(file_limit=65536, memory_limit=1024 * 1024, deadline=100)
+            root_open = model.open
+            def opening(path, flags, mode=0o777, **options):
+                if path == "/":
+                    self.assertEqual((flags, mode), (producer_channel.STDERR_ROOT_FLAGS, 0))
+                    self.assertEqual(set(model.tables[11]), {0, 1, 2})
+                    model.install(11, 3, model.references["/"])
+                    events.append("root-pin")
+                    return 3
+                return root_open(path, flags, mode, **options)
+            def closerange(start, stop):
+                self.assertEqual((start, stop), (3, 65536))
+                for fd in tuple(model.tables[11]):
+                    if fd >= start:
+                        del model.tables[11][fd]
+                events.append("withdraw-inherited")
+            def drop():
+                events.append("drop")
+                model.child = {"uid": [1001] * 4, "gid": [1002] * 4,
+                               "groups": [], "caps": [0] * 5, "nnp": 1}
+            def tracing(dropper):
+                dropper()
+                events.append("traced-stop")
+                model.policy.stderr_setup.begin(11, model.state)
+            def execution(path, argv, environment):
+                self.assertEqual((path, argv, environment),
+                                 (model.config["argv"][0], model.config["argv"], model.config["environment"]))
+                model.policy.stderr_setup.executed(11, model.state)
+                self.assertEqual(set(model.tables[11]), {0, 1, 2})
+                events.append("exec")
+            fake_os = SimpleNamespace(**syscall_guard.os.__dict__)
+            fake_os.open, fake_os.closerange, fake_os.execve = opening, closerange, execution
+            fake_os.chroot = lambda path: events.append("chroot")
+            fake_os.chdir = lambda path: events.append("chdir")
+            fake_os.umask = lambda mask: events.append("umask")
+            fake_os.write = lambda *args: self.fail("bootstrap failed before exec")
+            fake_os._exit = lambda status: self.fail("bootstrap exited before exec")
+            resource_model = SimpleNamespace(
+                RLIMIT_CORE=0, RLIMIT_NOFILE=1, RLIMIT_FSIZE=2, RLIMIT_AS=3, RLIMIT_STACK=4, RLIMIT_CPU=5,
+                setrlimit=lambda *args: events.append("limit"),
+            )
+            namespace = {
+                **syscall_guard.__dict__, pid_name: 0, "policy": model.policy, "config": model.config,
+                "os": fake_os, "resource": resource_model, "time": SimpleNamespace(monotonic=lambda: 0),
+                "math": SimpleNamespace(ceil=lambda number: int(number)), "STACK_LIMIT": 16 * 1024 * 1024,
+                "trace_me": tracing, "drop_privileges": drop,
+            }
+            exec(compile(ast.Module(body=[child], type_ignores=[]), "actual_supervisor_child", "exec"), namespace)
+            self.assertEqual(events[:4], ["withdraw-inherited", "root-pin", "chroot", "chdir"])
+            self.assertLess(events.index("drop"), events.index("traced-stop"))
+            self.assertEqual(events[-1], "exec")
+            self.assertTrue(model.policy.stderr_setup.retired)
+
+    def test_null_writes_still_hit_the_original_policy_write_bound(self):
+        with _StderrModel(("null",)).active() as model:
+            model.run()
+            with self.assertRaisesRegex(syscall_guard.Violation, "write budget"):
+                model.call(1, 2, b"x" * 1025, 1025)
+            self.assertEqual(model.policy.written, 1025)
+            self.assertEqual(model.streams, {201: bytearray(), 202: bytearray()})
+
+    def test_parent_observation_faults_retire_pins_and_multiple_close_errors_keep_primary(self):
+        for operation in ("read", "stat", "mount"):
+            model = _StderrModel(("null",))
+            failure = OSError(errno.EIO, "modeled parent observation")
+            def refuse(*args, **kwargs):
+                raise failure
+            if operation == "read":
+                model.read_file = refuse
+            elif operation == "stat":
+                model.stat = refuse
+            else:
+                model.statvfs = refuse
+            with self.subTest(operation=operation), self.assertRaises(OSError) as caught:
+                with model.active():
+                    self.fail("failed parent observation reached bootstrap")
+            self.assertIs(caught.exception, failure)
+            self.assertEqual(set(model.tables[99]), {0, 1, 2})
+        with _StderrModel(("null", "stdout")).active() as model:
+            setup = model.policy.stderr_setup
+            setup.begin(11, model.state)
+            model.failure = lambda operation, fd: operation in {"open-null", "cleanup"}
+            with self.assertRaises(OSError) as caught:
+                syscall_guard._stderr_bootstrap(setup.effects, 3)
+            self.assertEqual(caught.exception.errno, errno.EACCES)
+            self.assertIn("open-null", setup.failed)
+            self.assertEqual([fd for operation, fd in model.attempts if operation == "cleanup"], [4, 3])
+            self.assertEqual(len(caught.exception.cleanup_errors), 2)
+            self.assertFalse(setup.retired)
+
+    def test_effectful_commands_skip_both_cache_boundaries_but_plain_commands_reuse(self):
+        class MemoryPath(PurePosixPath):
+            def mkdir(self, *args, **kwargs):
+                pass
+
+        session = self.session()
+        session.base = MemoryPath("/model")
+        session.serial = 0
+        session.cache = {}
+        session.budget.limits = SimpleNamespace(entries=4096, file_bytes=16 * 1024 * 1024)
+        session._new_root = lambda name: None
+        session._private_install_launch = lambda *args: None
+        session._capture_outputs = lambda *args: ()
+        session._mount = lambda source, target, writable=False, executable=False: {
+            "source": str(source), "target": target, "writable": writable, "executable": executable,
+        }
+        calls = []
+        def sandbox(root, **options):
+            session.serial += 1
+            calls.append(options)
+            observed = {"consumed": [], "code_consumed": [], "accessed": [], "metadata": ()}
+            if "stderr_launch" in options:
+                config = {
+                    "root": str(root), "mode": options["mode"], "argv": options["argv"],
+                    "environment": options["environment"], "mounts": options["mounts"],
+                    "code": list(options["code"]), "sources": list(options["sources"]),
+                    "enumerations": list(options["directories"]), "executables": ["/usr/bin/python3"],
+                }
+                spec = session._consume_stderr_launch(options["stderr_launch"], config)
+                model = _StderrModel(tuple(spec["effects"]))
+                model.references[str(root / "dev/null")] = model.references.pop("/model/capsule/dev/null")
+                model.config.update(config, stderr_setup=spec)
+                with model.active():
+                    observed["stderr_setup"] = model.run()
+            return SimpleNamespace(stdout=b"1\n", stderr=b"", returncode=0), observed
+        session._sandbox_run = sandbox
+        with mock.patch.object(make_probe, "_remove_owned_tree", lambda path: None), \
+             mock.patch.object(lifecycle, "signal", SimpleNamespace(
+                 SIG_BLOCK=0, SIG_SETMASK=1, pthread_sigmask=lambda *args: set(), sigpending=lambda: set(),
+             )):
+            effectful = python_command(session, "print(1)", stderr_effects=("null",))
+            first, second = session._command(effectful), session._command(effectful)
+            self.assertEqual((first.stdout, second.stdout), (b"1\n", b"1\n"))
+            self.assertEqual(len(calls), 2)
+            self.assertFalse(session.cache)
+            self.assertNotEqual(first.stderr_setup, second.stderr_setup)
+            plain = python_command(session, "print(1)")
+            cached = session._command(plain)
+            self.assertIs(session._command(plain), cached)
+            self.assertEqual(len(calls), 3)
+            self.assertTrue(session.cache)
+
+    def test_closed_wire_admission_counts_actual_ascii_encoding_before_growth(self):
+        for value in (None, True, -15, ["stdout", "null"], {"key": "a\\b\n\"日本語\U0001f600"}):
+            charges = []
+            encoded_value = producer_channel.stderr_encoded(value, charges.append)
+            self.assertEqual(len(encoded_value), producer_channel.stderr_json_size(value))
+            self.assertEqual(sum(charges), 2 * len(encoded_value))
+        def refuse(size):
+            raise MakeProbeError("model byte admission")
+        with mock.patch.object(producer_channel.json, "dumps", side_effect=AssertionError("encoded before admission")):
+            with self.assertRaisesRegex(MakeProbeError, "model byte admission"):
+                producer_channel.stderr_encoded({"field": "value"}, refuse)
+        cycle = []
+        cycle.append(cycle)
+        with self.assertRaises(producer_channel.ChannelError):
+            producer_channel.stderr_json_size(cycle)
+
+    def test_bad_credentials_extra_pins_and_unclosed_authority_refuse_exec(self):
+        for changed in ("uid", "groups", "caps", "nnp", "extra", "root", "state"):
+            with self.subTest(changed=changed), _StderrModel(("null",)).active() as model:
+                if changed in ("uid", "groups", "caps", "nnp"):
+                    model.child[changed] = {
+                        "uid": [0] * 4, "groups": [1002], "caps": [0, 0, 1, 0, 0], "nnp": 0,
+                    }[changed]
+                elif changed == "extra":
+                    model.install(11, 9, model.references["/"])
+                elif changed == "root":
+                    model.install(11, 3, model.references["/dev"])
+                state = syscall_guard.Process("command") if changed == "state" else model.state
+                with self.assertRaises(syscall_guard.Violation):
+                    model.policy.stderr_setup.begin(11, state)
+        with _StderrModel(("null",)).active() as model:
+            setup = model.policy.stderr_setup
+            setup.begin(11, model.state)
+            with self.assertRaises(syscall_guard.Violation):
+                setup.executed(11, model.state)
+
+    def test_real_item_cap_contracts_construct_the_required_ordered_null_plan(self):
+        contracts = json.loads((ROOT / ".github/validation-ownership-make-dynamics.json").read_bytes())["contracts"]
+        def item_modules(model_os):
+            tree = ast.parse((ROOT / "scripts/generated_data/idspace.py").read_bytes())
+            selected = []
+            names = {
+                "ITEM_DEFAULT_CAP", "ITEM_TECHNICAL_MAX", "ITEM_EXPANSION_FIRST", "ITEM_CAP_ENV",
+                "CapError", "Evidence", "Domain", "domain_by_key", "resolve_item_id_cap", "validate_domain_cap",
+            }
+            for node in tree.body:
+                if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name in names:
+                    selected.append(node)
+                elif isinstance(node, ast.Assign):
+                    targets = {target.id for target in node.targets if isinstance(target, ast.Name)}
+                    if targets & names:
+                        selected.append(node)
+                    elif "DOMAINS" in targets:
+                        node.value.elts = [
+                            value for value in node.value.elts if any(
+                                keyword.arg == "key" and isinstance(keyword.value, ast.Constant)
+                                and keyword.value.value == "item" for keyword in value.keywords
+                            )
+                        ]
+                        self.assertEqual(len(node.value.elts), 1)
+                        selected.append(node)
+            namespace = {"__name__": "inert_item_domain", "os": model_os}
+            exec(compile(ast.Module(body=selected, type_ignores=[]), "inert_item_domain", "exec"), namespace)
+            module = SimpleNamespace(**namespace)
+            return {"scripts.generated_data.idspace": SimpleNamespace(generated_data=SimpleNamespace(idspace=module))}
+        for cap, expected in (("", "0xCD"), ("0xCD", "0xCD"), ("0xCE", "0xCE")):
+            command = (
+                "FE8_ITEM_ID_CAP='" + cap + "' python3 -c "
+                "\"import scripts.generated_data.idspace as i; print('0x%02X' % i.resolve_item_id_cap())\" 2>/dev/null"
+            )
+            contract = next(item for item in contracts if item["id"] == "generated-item-cap-resolution")
+            session = self.session()
+            registered = self.commands(session, command, contract=contract)[command]
+            self.assertEqual(registered.stderr_effects, ("null",))
+            with self.dispatch(session, {**ENVIRONMENT, "FE8_ITEM_ID_CAP": "0xFF"}) as live:
+                registered = self.commands(session, command, contract=contract)[command]
+                with self.consuming(session, registered, live) as environment:
+                    self.assertEqual(environment["FE8_ITEM_ID_CAP"], "0xFF")
+                    self.assertEqual(self.execute(
+                        registered, environment, prepare_modules=item_modules,
+                    )[:2], ((expected + "\n").encode(), b""))
+        command = (
+            "python3 -c \"import scripts.generated_data.idspace as i; "
+            "print('0x%02X' % i.ITEM_DEFAULT_CAP)\" 2>/dev/null"
+        )
+        contract = next(item for item in contracts if item["id"] == "generated-item-default-cap")
+        session = self.session()
+        registered = self.commands(session, command, contract=contract)[command]
+        self.assertEqual(registered.stderr_effects, ("null",))
+        self.assertEqual(self.execute(
+            registered, {**ENVIRONMENT, "FE8_ITEM_ID_CAP": "0xCE"}, prepare_modules=item_modules,
+        )[:2], (b"0xCD\n", b""))
+
+    def test_actual_bootstrap_order_streams_full_flags_and_null_write_accounting(self):
+        for effects in (("stdout",), ("null",), ("stdout", "null"), ("null", "stdout"),
+                        ("stdout", "stdout"), ("null", "null"), ("null", "stdout", "null")):
+            with self.subTest(effects=effects), _StderrModel(effects).active() as model:
+                receipt = model.run()
+                producer_channel.validate_stderr_receipt(receipt, model.config["stderr_setup"])
+                self.assertEqual([row[0] for row in receipt["operations"]],
+                                 list(producer_channel.stderr_operations(effects)))
+                self.assertEqual(set(model.tables[11]), {0, 1, 2})
+                self.assertTrue(model.policy.stderr_setup.retired)
+                flags = model.call(72, 2, 3)
+                self.assertEqual(flags, os.O_WRONLY | (producer_channel.STDERR_LARGEFILE if effects[-1] == "null" else 0))
+                self.assertEqual(model.call(72, 2, 1), 0)
+                with self.assertRaises(OSError) as caught:
+                    model.call(0, 2, 0, 1)
+                self.assertEqual(caught.exception.errno, errno.EBADF)
+                for descriptor, value in ((2, b"startup\n"), (1, b"out\n"), (2, b"raw\n"), (1, b"last\n")):
+                    model.call(1, descriptor, value, len(value))
+                self.assertEqual(bytes(model.streams[201]),
+                                 b"out\nlast\n" if effects[-1] == "null" else b"startup\nout\nraw\nlast\n")
+                self.assertEqual(bytes(model.streams[202]), b"")
+                self.assertEqual(model.policy.written, len(b"startup\nout\nraw\nlast\n"))
+                self.assertGreater(model.policy.calls, len(receipt["operations"]))
+                with self.assertRaisesRegex(syscall_guard.Violation, "unadmitted syscall 437"):
+                    model.call(437, -1, b"null", producer_channel.STDERR_OPEN_HOW, 24)
+
+    def test_every_kernel_effect_failure_preserves_first_cause_and_attempts_all_owned_closes(self):
+        for failed in ("open-dev", "open-null", "dup-null", "close-null", "close-dev", "close-root", "dup-stdout"):
+            effects = ("stdout", "null", "stdout")
+            with self.subTest(failed=failed), _StderrModel(effects).active() as model:
+                setup = model.policy.stderr_setup
+                setup.begin(11, model.state)
+                fired = []
+                def failure(operation, descriptor):
+                    if operation == failed and not fired:
+                        fired.append(descriptor)
+                        return True
+                    return False
+                model.failure = failure
+                with self.assertRaises(OSError) as caught:
+                    syscall_guard._stderr_bootstrap(effects, 3)
+                self.assertEqual(caught.exception.errno, errno.EACCES)
+                self.assertTrue(fired)
+                self.assertIn(failed, setup.failed)
+                for descriptor in setup.opened:
+                    self.assertTrue(any(
+                        fd == descriptor and (operation == "cleanup" or operation.startswith("close-"))
+                        for operation, fd in model.attempts
+                    ))
+                self.assertFalse(setup.retired)
+                with self.assertRaises(syscall_guard.Violation):
+                    setup.executed(11, model.state)
+                model.tables[11].clear()
+                self.assertFalse(model.tables[11])
+
+    def test_overwritten_failure_and_parent_observed_wrong_flags_or_objects_never_exec(self):
+        with _StderrModel(("null", "stdout")).active() as model:
+            setup = model.policy.stderr_setup
+            setup.begin(11, model.state)
+            model.failure = lambda operation, fd: operation == "open-null"
+            with self.assertRaises(OSError):
+                syscall_guard._stderr_bootstrap(setup.effects, 3)
+            self.assertNotIn("dup-stdout", [row[0] for row in model.operations])
+            self.assertFalse(setup.opened)
+        for kind in ("flags", "inode", "device", "mount"):
+            with self.subTest(kind=kind), _StderrModel(("null",)).active() as model:
+                setup = model.policy.stderr_setup
+                setup.begin(11, model.state)
+                original = model.install
+                def changed(pid, fd, row):
+                    if pid == 11 and fd == 5:
+                        row = list(row)
+                        index = {"flags": 6, "inode": 1, "device": 5, "mount": 7}[kind]
+                        row[index] = row[index] | os.O_NOFOLLOW if kind == "flags" else row[index] + 1
+                    original(pid, fd, row)
+                model.install = changed
+                with self.assertRaises(syscall_guard.Violation):
+                    syscall_guard._stderr_bootstrap(setup.effects, 3)
+                self.assertFalse(setup.retired)
+
+    def test_closed_openat2_abi_actor_and_pin_usage(self):
+        for change in ("size", "flags", "resolve", "mode", "path", "dirfd", "pid"):
+            with self.subTest(change=change), _StderrModel(("null",)).active() as model:
+                setup = model.policy.stderr_setup
+                setup.begin(11, model.state)
+                directory = model.open("dev", producer_channel.STDERR_ROOT_FLAGS, 0, dir_fd=3)
+                values = [producer_channel.STDERR_NULL_FLAGS, 0, 12]
+                if change in ("flags", "mode", "resolve"):
+                    index = {"flags": 0, "mode": 1, "resolve": 2}[change]
+                    values[index] |= os.O_NOFOLLOW if change == "flags" else 1
+                registers = SimpleNamespace(
+                    orig_rax=437, rdi=directory + (change == "dirfd"),
+                    rsi=b"elsewhere" if change == "path" else b"null",
+                    rdx=struct.pack("<QQQ", *values), r10=25 if change == "size" else 24,
+                )
+                with self.assertRaises(syscall_guard.Violation):
+                    setup.enter(12 if change == "pid" else 11, model.state, registers)
+        for number in (0, 5, 72, 81, 56, 59):
+            with self.subTest(number=number), _StderrModel(("null",)).active() as model:
+                model.policy.stderr_setup.begin(11, model.state)
+                with self.assertRaises(syscall_guard.Violation):
+                    model.call(number, 3)
+
+    def test_complete_receipt_refuses_dropped_reordered_or_forged_kernel_facts(self):
+        with _StderrModel(("null", "stdout")).active() as model:
+            receipt = model.run()
+            spec = model.config["stderr_setup"]
+            for changed in (
+                {**receipt, "complete": False}, {**receipt, "binding": "ff" * 32},
+                {**receipt, "nonce": "ff" * 16}, {**receipt, "effects": ["stdout", "null"]},
+                {**receipt, "operations": receipt["operations"][1:]},
+                {**receipt, "operations": list(reversed(receipt["operations"]))},
+                {**receipt, "final": [*receipt["final"], [3, list(model.references["/"])]]},
+                {**receipt, "credentials": {**receipt["credentials"], "caps": [0, 0, 1, 0, 0]}},
+                {**receipt, "unexpected": True},
+            ):
+                with self.assertRaises(producer_channel.ChannelError):
+                    producer_channel.validate_stderr_receipt(changed, spec)
+
+    def test_issued_launch_is_exact_one_use_and_changed_context_or_config_rejects(self):
+        for fault in (None, "copy", "replay", "effects", "environment", "root", "epoch", "binding",
+                      "dispatch", "inputs", "closed", "foreign"):
+            with self.subTest(fault=fault):
+                session = self.session()
+                command = python_command(session, "print(1)", stderr_effects=("null",))
+                root = Path("/model/command-root-1")
+                argv = [command.argv[0], "-I", "-S", "-B", *command.argv[1:]]
+                environment = {**ENVIRONMENT, "SOURCE_DATE_EPOCH": "0", "TMPDIR": "/work"}
+                mounts = [
+                    session._mount(session.tree, "/repo"), session._mount(Path("/usr"), "/usr", executable=True),
+                    session._mount(Path("/model/command-1/output"), "/work", writable=True),
+                    session._mount(Path("/dev/null"), "/dev/null", writable=True),
+                ]
+                token = session._stderr_launch(command, root, argv, environment, mounts, (), (), ())
+                config = {
+                    "root": str(root), "mode": "command", "argv": argv, "environment": environment,
+                    "code": [], "sources": [], "enumerations": [], "executables": [argv[0]], "mounts": mounts,
+                }
+                if fault == "copy":
+                    token = type(token)()
+                elif fault == "replay":
+                    session._consume_stderr_launch(token, config)
+                elif fault == "effects":
+                    object.__setattr__(command, "stderr_effects", ("stdout",))
+                elif fault == "environment":
+                    config["environment"] = {**environment, "SWITCH": "other"}
+                elif fault == "root":
+                    config["root"] = "/model/foreign"
+                elif fault == "epoch":
+                    session._namespace_epoch += 1
+                elif fault == "binding":
+                    session._native_context_command(command)
+                elif fault == "inputs":
+                    session.source_owners = lambda paths: (("changed", "100644", "00" * 32),)
+                elif fault == "closed":
+                    session.base = None
+                elif fault == "foreign":
+                    session = self.session()
+                elif fault == "dispatch":
+                    with self.dispatch(session, ENVIRONMENT) as live:
+                        with self.consuming(session, command, live), self.assertRaises(MakeProbeError):
+                            session._consume_stderr_launch(token, config)
+                    continue
+                if fault is None:
+                    result = session._consume_stderr_launch(token, config)
+                    self.assertEqual(result["effects"], ["null"])
+                    self.assertFalse(session._stderr_launches)
+                    self.assertFalse(session._issued_stderr_launches)
+                else:
+                    with self.assertRaises(MakeProbeError):
+                        session._consume_stderr_launch(token, config)
+
+    def test_issuance_cannot_substitute_a_different_command_or_workspace(self):
+        for changed in ("argv", "environment", "code", "sources", "directories", "mounts", "root"):
+            with self.subTest(changed=changed):
+                session = self.session()
+                command = python_command(session, "print(1)", stderr_effects=("null",))
+                root = Path("/model/command-root-1")
+                values = {
+                    "argv": [command.argv[0], "-I", "-S", "-B", *command.argv[1:]],
+                    "environment": session._command_environment(command),
+                    "code": (), "sources": (), "directories": (),
+                    "mounts": [
+                        session._mount(session.tree, "/repo"), session._mount(Path("/usr"), "/usr", executable=True),
+                        session._mount(Path("/model/command-1/output"), "/work", writable=True),
+                        session._mount(Path("/dev/null"), "/dev/null", writable=True),
+                    ],
+                }
+                if changed == "root":
+                    root = Path("/model/foreign")
+                elif changed == "argv":
+                    values["argv"] = [*values["argv"], "other"]
+                elif changed == "environment":
+                    values["environment"] = {**values["environment"], "SWITCH": "unissued"}
+                elif changed == "mounts":
+                    values["mounts"][2]["source"] = "/foreign"
+                else:
+                    values[changed] = ("foreign",)
+                with self.assertRaises(MakeProbeError):
+                    session._stderr_launch(command, root, **values)
+                self.assertFalse(session._stderr_launches)
+                self.assertFalse(session._issued_stderr_launches)
+
+    def test_incompatible_roles_and_unissued_effects_reject_before_execution(self):
+        for options in (
+            {"outputs": ("new",)}, {"dependency_only": True}, {"runtime_tool": object()},
+            {"native_tool": object()}, {"stdout_transform": "dirname"}, {"stderr_effects": ["null"]},
+            {"stderr_effects": ("other",)}, {"stderr_effects": ("null",) * 1024},
+        ):
+            with self.subTest(options=options), self.assertRaises(MakeProbeError):
+                Command(("/usr/bin/python3", "-c", "pass"), **{"stderr_effects": ("null",), **options})
+        session = self.session()
+        with self.assertRaises(MakeProbeError):
+            session._require_stderr_context(Command(("/usr/bin/python3", "-c", "pass"), stderr_effects=("null",)))
 
 
 class GraphCommandTests(unittest.TestCase):
@@ -984,11 +1690,13 @@ class GraphCommandTests(unittest.TestCase):
             self.add("Makefile", f"VALUE := $(shell {command})\nall: ;\n")
             with self.subTest(suffix=suffix), self.session() as probe:
                 commands = self.generic_commands(probe, command)
-                with self.assertRaisesRegex(MakeProbeError, "stderr discard"):
-                    commands[command]
-                with mock.patch.object(probe, "command", side_effect=AssertionError("producer must not start")):
-                    with self.assertRaisesRegex(MakeProbeError, "stderr discard"):
-                        probe.make("all", commands=commands)
+                output = probe.command(commands[command])
+                self.assertEqual((output.stdout, output.stderr), (expected, b""))
+                self.assertTrue(json.loads(output.stderr_setup)["complete"])
+                observed = probe.make("all", variables=("VALUE",), commands=commands)
+                self.assertEqual(observed.semantics["domains"]["VALUE"]["value"],
+                                 " ".join(expected.decode().splitlines()))
+                self.assertEqual(len(observed.stderr_setups), 1)
         for suffix in ("'2'>/dev/null", r"\2>/dev/null", "2 >/dev/null", "2>&1>elsewhere", "2>>/dev/null"):
             with self.session() as probe:
                 with self.assertRaisesRegex(MakeProbeError, "unconsumed active shell syntax"):
@@ -1011,6 +1719,141 @@ class GraphCommandTests(unittest.TestCase):
                 with self.subTest(identity=identity, tail=tail), self.session() as probe:
                     with self.assertRaisesRegex(MakeProbeError, "unconsumed active shell syntax"):
                         self.generic_registration(probe, command + tail, identity=identity, inputs=inputs)
+
+    def test_live_real_item_cap_queries_use_the_original_make_declarations(self):
+        for name in ("scripts/generated_data/__init__.py", "scripts/generated_data/idspace.py",
+                     "scripts/generated_data/consumer_census.py"):
+            self.add_repo_file(name)
+        if (ROOT / "scripts/__init__.py").is_file():
+            self.add_repo_file("scripts/__init__.py")
+        names = ("GENERATED_DATA__SQ", "GENERATED_DATA_ITEM_CAP_SHELL_ARG",
+                 "GENERATED_DATA_ITEM_CAP", "GENERATED_DATA_ITEM_DEFAULT_CAP")
+        declarations = [
+            line for line in (ROOT / "generated_data.mk").read_text().splitlines()
+            if line.split(" :=", 1)[0] in names
+        ]
+        self.assertEqual(len(declarations), 4)
+        self.add("Makefile", "PYTHON := python3\n" + "\n".join(declarations)
+                 + "\n$(info $(GENERATED_DATA_ITEM_CAP) $(GENERATED_DATA_ITEM_DEFAULT_CAP))\nall: ;\n")
+        budget = ProbeBudget()
+        loader = self.capture_loader(budget)
+        selected = {name: item for name, item in self.contracts.items()
+                    if item["id"] in {"generated-item-cap-resolution", "generated-item-default-cap"}}
+        with ProbeSession(loader, scratch_root=self.root / "build/scratch", budget=budget) as probe:
+            commands = MakeCommands(probe, selected)
+            for origin, cap, expected in (
+                ("environment", "", "0xCD"), ("environment", "0xCE", "0xCE"),
+                ("command-line", "0xCD", "0xCD"), ("command-line", "0xCE", "0xCE"),
+            ):
+                with self.subTest(origin=origin, cap=cap):
+                    ordinary = subprocess.run(
+                        ["/usr/bin/make", "--no-print-directory", "-s", "all",
+                         *([f"FE8_ITEM_ID_CAP={cap}"] if origin == "command-line" else [])],
+                        cwd=self.root,
+                        env={**ENVIRONMENT, **({"FE8_ITEM_ID_CAP": cap} if origin == "environment" else {})},
+                        capture_output=True, check=True, timeout=15,
+                    )
+                    self.assertEqual(ordinary.stdout, f"{expected} 0xCD\n".encode())
+                    result = probe.make(
+                        "all", variables=names[2:], commands=commands,
+                        assignments=((origin, "FE8_ITEM_ID_CAP", cap),),
+                    )
+                    self.assertEqual(result.semantics["domains"][names[2]]["value"], expected)
+                    self.assertEqual(result.semantics["domains"][names[3]]["value"], "0xCD")
+                    self.assertEqual(result.stdout, ordinary.stdout)
+                    self.assertEqual(len(result.stderr_setups), 2)
+                    for wire in result.stderr_setups:
+                        receipt = json.loads(wire)
+                        self.assertTrue(receipt["complete"])
+                        self.assertEqual(receipt["effects"], ["null"])
+                        self.assertEqual([row[0] for row in receipt["final"]], [0, 1, 2])
+                    self.assertTrue(all(
+                        record["command"]["stderr_effects"] == ["null"]
+                        for record in result.semantics["dynamic_commands"]
+                    ))
+        self.assertIsNone(probe.base)
+        self.assertFalse(probe.budget.children)
+        self.assertFalse(probe._stderr_launches)
+        self.assertFalse(probe._issued_stderr_launches)
+
+    def test_native_stderr_full_descriptor_semantics_match_ordinary_shell(self):
+        body = (
+            "import errno,fcntl,json,os,stat,sys\n"
+            "state={'flags':fcntl.fcntl(2,fcntl.F_GETFL),'fdflags':fcntl.fcntl(2,fcntl.F_GETFD),"
+            "'type':stat.S_IFMT(os.fstat(2).st_mode),'tty':os.isatty(2)}\n"
+            "try: os.read(2,1)\n"
+            "except OSError as error: state['read_error']=error.errno\n"
+            "else: state['read_error']=0\n"
+            "try: state['seek']=os.lseek(2,0,os.SEEK_SET)\n"
+            "except OSError as error: state['seek_error']=error.errno\n"
+            "print(json.dumps(state,sort_keys=True),flush=True)\n"
+            "print('warn',file=sys.stderr,flush=True)\n"
+            "os.write(2,b'raw\\n')\n"
+            "print('last',flush=True)\n"
+        )
+        for suffix in ("2>&1", "2>/dev/null", "2>&1 2>/dev/null",
+                       "2>/dev/null 2>&1", "2>/dev/null 2>/dev/null"):
+            command = "python3 -c " + shlex.quote(body) + " " + suffix
+            ordinary = self.shell_argv(command)
+            self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+            with self.subTest(suffix=suffix), self.session() as probe:
+                commands = self.generic_commands(probe, command)
+                first = probe.command(commands[command])
+                second = probe.command(commands[command])
+                self.assertEqual((first.stdout, first.stderr), (ordinary.stdout, ordinary.stderr))
+                self.assertEqual((second.stdout, second.stderr), (ordinary.stdout, ordinary.stderr))
+                self.assertNotEqual(first.stderr_setup, second.stderr_setup)
+                self.assertFalse(probe.cache)
+                descriptor = json.loads(first.stdout.splitlines()[0])
+                self.assertEqual(descriptor["flags"], json.loads(ordinary.stdout.splitlines()[0])["flags"])
+                self.assertEqual(descriptor["read_error"], errno.EBADF)
+                self.assertEqual(descriptor["fdflags"], 0)
+            self.assertFalse(probe.budget.children)
+
+    def test_native_stderr_startup_and_nonzero_failures_do_not_become_empty_success(self):
+        for body in (")", "import os;os.write(2,b'before-exit\\n');raise SystemExit(7)"):
+            for effects in (("null",), ("stdout",)):
+                with self.subTest(body=body, effects=effects), self.session() as probe:
+                    command = probe._native_context_command(Command(
+                        ("/usr/bin/python3", "-c", body), stderr_effects=effects,
+                    ))
+                    captured = []
+                    run = probe.budget.run
+                    def observe(*args, **kwargs):
+                        result = run(*args, **kwargs)
+                        captured.append(result)
+                        return result
+                    with mock.patch.object(probe.budget, "run", observe), self.assertRaises(MakeProbeError):
+                        probe.command(command)
+                    self.assertEqual(len(captured), 1)
+                    self.assertNotEqual(captured[0].returncode, 0)
+                    self.assertEqual(captured[0].stderr, b"")
+                    if effects == ("null",):
+                        self.assertEqual(captured[0].stdout, b"")
+                    else:
+                        self.assertIn(b"SyntaxError" if body == ")" else b"before-exit", captured[0].stdout)
+                self.assertFalse(probe.budget.children)
+
+    def test_native_stderr_keeps_nodev_unknown_fd_and_postbootstrap_openat2_guards(self):
+        body = (
+            "import errno,os\n"
+            "try: os.open('/dev/null',os.O_WRONLY)\n"
+            "except OSError as error: print(error.errno)\n"
+            "else: raise AssertionError('NODEV null path became writable')\n"
+        )
+        with self.session() as probe:
+            result = probe.command(python_command(probe, body, stderr_effects=("null",)))
+            self.assertEqual(result.stdout, (str(errno.EACCES) + "\n").encode())
+        self.assertFalse(probe.budget.children)
+        for body in (
+            "import os;os.fstat(3)",
+            "import os;os.open('/proc/self/fd/3',os.O_RDONLY)",
+            "import ctypes;ctypes.CDLL(None).syscall(437,-1,-1,-1,-1)",
+        ):
+            with self.subTest(body=body), self.session() as probe:
+                with self.assertRaises(MakeProbeError):
+                    probe.command(python_command(probe, body, stderr_effects=("null",)))
+            self.assertFalse(probe.budget.children)
 
     def shell_decodings(self, command):
         normalized = normalize_bash_script_commands(command, "fixture")

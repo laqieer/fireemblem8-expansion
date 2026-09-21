@@ -171,16 +171,48 @@ digest. A previous view's handle cannot supply current live authority.
 Standalone `python_command(...)` and auxiliary registration-time executions
 remain canonical, even while another producer is being registered.
 
-The adapter applies each admitted `2>&1` with a real descriptor duplication
-before producer code runs. Flushed stdout/stderr and descriptor-level writes
-therefore share the original stream order; separately captured byte strings are
-never concatenated afterward. Generic Python `2>/dev/null` is explicitly
-unsupported, including when a later redirect would overwrite it: the generic
-capsule has no issued null-device transition under its existing `NODEV` mount
-policy. Such a command fails before producer execution, never succeeds with
-discarded evidence. The separately typed compiler-directory query's established
-stderr suppression is unchanged. The committed chapter-objectives enablement
-registration still supports its required `2>&1`.
+`Command.stderr_effects` is a closed ordered tuple of `"stdout"`/`"null"`;
+the shared Python factory accepts it explicitly and defaults to `()`. Only
+ordinary isolated Python commands with no outputs or other native, compiler,
+runtime-tool, header or private-install authority can use it. The graph adapter
+passes the original parsed effects, including duplicates. Both real parse-time
+item-cap queries retain their required `2>/dev/null`, and chapter-objectives
+enablement retains its `2>&1`; the Make declarations and registry are unchanged.
+
+A one-use launch binds the exact command, environment, code, source view/epoch,
+workspace, consuming dispatch and ordered plan. Setup runs in the existing
+traced bootstrap, after permanent privilege drop and before the interpreter's
+first exec. `"stdout"` performs `dup2(1,2)`. `"null"` performs a fixed no-follow
+`dev`/`null` lookup through a bootstrap-only original-root pin, opening the real
+null character device 1:3 with write-only access. The leaf uses exactly the
+24-byte Linux x86-64 `openat2` ABI with `O_WRONLY|O_CLOEXEC`, zero mode and
+`RESOLVE_NO_SYMLINKS|RESOLVE_BENEATH`. Resolution flags do not leave an extra
+`O_NOFOLLOW` status bit visible to the producer. Inherited read-write stdin,
+regular files and draining pipes are not substitutes.
+
+The parent observes every operation, full descriptor flags/object/mount
+identity, permanently dropped caller, ordered outcome and actual close. All
+private pins must be gone at first exec, leaving exactly `{0,1,2}`. The narrow
+bootstrap permission cannot authorize another path, actor, fork, premature
+exec, syscall shape or post-bootstrap `openat2`. The candidate's `/dev/null`
+mount remains `NODEV`; its pathname cannot acquire the bootstrap's device
+permission. No mount, watchdog, outer capture or toolchain authority changes.
+
+The validated parent receipt is retained as immutable `ProcessOutput.stderr_setup`
+bytes; live observations retain their receipts in `MakeObservation.stderr_setups`.
+The logical ordered effects participate in command/provenance identity without
+making ephemeral kernel FD identities into graph-semantic differences.
+Effectful commands bypass both cache lookup and insertion, so reuse cannot hide
+a newly failing open. All work, writes to null, control observations and receipt
+storage remain charged; the default no-effects cache is unchanged.
+
+Flushed and raw descriptor writes therefore follow the actual original stream
+order, including startup diagnostics. No captured streams are concatenated or
+filtered afterward. Failed intermediate redirects are not erased by a later
+operation. Setup, cleanup, source, permission and resource failures prevent
+successful publication; generic nonzero exit behavior remains a failure.
+The separately typed compiler-directory query's established suppression is
+unchanged.
 
 Argv-only adapters accept only words proved literal from their original raw
 shell tokens, including assignment values and redirect operands. Single quotes,
@@ -194,7 +226,7 @@ literal find pattern. Registry matching still independently requires one
 authorized command form; these rules do not authorize new commands.
 
 The focused API/effect-model controls are
-`test_graph_commands.CommandSemanticsTests`. Genuine producer regressions in
+`test_graph_commands.CommandSemanticsTests` and `StderrSetupTests`. Genuine producer regressions in
 `GraphCommandTests` compare original Make environments, recipe exports, cache
 receipts, two-stream ordering and cwd glob effects with ordinary execution.
 These belong to the existing
@@ -204,9 +236,10 @@ and [`TC-PROBE-PYTHON-PRODUCERS-001`](test-cases/workflow-governance.md#tc-probe
 procedures, not a new registry. They require the existing bounded native
 allocation before execution; inert controls are not native acceptance.
 Dependencies are the shared shell tokens, issued context, command cache and
-producer receipt APIs. No source-planner, native containment, budget, gameplay,
-save, generated game-data, modern/archival profile or localization contract
-changes, and no additional feature interactions, are introduced.
+producer receipt APIs. Only the closed bootstrap stderr capability is added;
+source planners, mount restrictions, watchdog/lifetime policy and default
+budgets remain unchanged. No gameplay, save, generated game-data,
+modern/archival profile or localization contract changes are introduced.
 
 Generated-dependency registrations validate their exact named option set before
 lookup, order selector arguments by the declared module signature rather than

@@ -453,6 +453,7 @@ class MakeCommands:
                 registration.runtime_tool.mode, registration.runtime_tool.digest,
             ),
             registration.stdout_transform,
+            *([registration.stderr_effects] if registration.stderr_effects else []),
         ])))
         self.registrations[command] = registration
         return registration
@@ -740,13 +741,7 @@ class MakeCommands:
                 f"graph domain needs a typed command adapter: {contract['id']}: {command!r}"
             )
         _python_environment(self.session, tokens[0])
-        if "null" in redirections:
-            raise MakeProbeError("registered Python stderr discard lacks admitted null-device authority")
         prefix = "import os;os.environ.update(" + repr(environment) + ");"
-        for redirect in redirections:
-            if redirect != "stdout":
-                raise MakeProbeError("registered Python has an unsupported stderr effect")
-            prefix += "os.dup2(1,2);"
         if stdin is not None:
             prefix += "import io;sys.stdin=io.StringIO(" + repr(stdin) + ");"
         arguments = tokens[1:]
@@ -801,6 +796,8 @@ class MakeCommands:
         ]
         if contract["id"] == "modern-expansion-config-resolution":
             sources.append("config.mk")
-        return self.session._native_context_command(python_command(
+        registration = python_command(
             self.session, body, sources=tuple(sorted(set(sources))), code=python_code,
-        ))
+            stderr_effects=redirections,
+        )
+        return registration if redirections else self.session._native_context_command(registration)
