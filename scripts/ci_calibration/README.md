@@ -8,8 +8,43 @@ implementing the approved accounting-only contract
 [5760898805](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5760898805)
 after the quota/admission separation
 [5761682432](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5761682432).
-This is a normal child of reviewed harness
-`4dad318411d6e191d79db1a3570d611f5464afad`, not a new execution allocation.
+Accounting preparation `ae3fd7a9589e50903fbc88a8df72baaaea2d0423` is a normal
+child of reviewed harness `4dad318411d6e191d79db1a3570d611f5464afad`.
+The telemetry correction is one normal child ofae3; that recovery reference
+is a staging checkpoint, not acceptance or a new execution allocation.
+
+## Telemetry publication and permanent-loss correction
+
+Freeze:
+[5765718320](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5765718320).
+Exact review found an initial-publication race (AT1) and a lost-budget
+availability gap (AT2), not a quota-policy gap. No source, workflow, hard
+limit, fourteen-query policy, nineteen-counter registry extent, original
+clock or physical mechanism changes are made for this correction.
+
+The sampler captures one budget reference and, only when that budget exists,
+one session reference for the entire observation. Counter capture, registry
+construction/identity and elapsed time use that same pair. A concurrent first
+publication cannot attach an old unavailable snapshot to the newly published
+budget. No publication wait, added lock, clock reset or suppressed collector
+error is used.
+
+Initial unavailable observations remain valid only before a budget has been
+observed. Once established, missing/replaced budget or registry references,
+lost session counters, malformed collection or missing accounting are latched
+as incomplete. Restoring the original references cannot restore completion.
+The receiver separately latches missing accounting/counter combinations and
+rejects later progress or a restored final result. A properly bound failure
+envelope can still report the error and explicit unknowns; it is not a
+successful progress sample. Existing first-error, all-close and publication
+recovery behavior remains in force.
+
+The correction procedure uses the handoff's inspected inert runner. It retains
+the previous101 methods/619 subtests and adds deterministic publication at
+each relevant read boundary, actual sampler->Protocol->phase acceptance,
+populated/missing/restored states, collection/finalization/publication fault
+combinations, exact ae3 restorations and neutral local/data ordering controls.
+No real thread, native source, process or privileged workload is launched.
 
 **The preparation source is `db50dc744fee3aa697fdc5df458474e101e25e25`,
 and is NOT native-ready.** Its reviewed cumulative query/caps are integrated,

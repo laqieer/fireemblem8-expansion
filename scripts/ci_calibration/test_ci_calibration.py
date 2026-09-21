@@ -35,6 +35,8 @@ REPO = Path(__file__).resolve().parents[2]
 WORKFLOW_TEXT = (REPO / policy.WORKFLOW).read_text()
 SUPERVISOR_AST = ast.parse((REPO / "scripts/ci_calibration/supervisor.py").read_text())
 QUOTA_MODEL = SOURCE_PROBING = OLD_BUDGET_CHARGE = OLD_CALIBRATION_FACTORY = None
+OLD_TELEMETRY_SNAPSHOT = OLD_TELEMETRY_PROTOCOL = None
+WORKER_AST = ast.parse((REPO / "scripts/ci_calibration/worker.py").read_text())
 
 
 class Inert(unittest.TestCase):
@@ -532,7 +534,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.REPORT_FINALIZATION_SHA}",
+            f"{'a' * 40} {supervisor.REPORT_ACCOUNTING_SHA}",
+            f"{supervisor.REPORT_ACCOUNTING_SHA} {supervisor.REPORT_FINALIZATION_SHA}",
             f"{supervisor.REPORT_FINALIZATION_SHA} {supervisor.REPORT_ERROR_SHA}",
             f"{supervisor.REPORT_ERROR_SHA} {supervisor.REPORT_PREPARATION_SHA}",
             f"{supervisor.REPORT_PREPARATION_SHA} {supervisor.REPORT_BASE_SHA}",
@@ -1321,6 +1324,307 @@ class AccountingControls(Inert):
             self.assertIs(type(limits), budgeting.Limits)
             self.assertEqual(dataclasses.asdict(limits), policy.ORIGINAL_LIMITS)
         oracle()
+
+
+class TelemetryControls(Inert):
+    def issued(self):
+        budget = self.budget()
+        budget.plan(1)
+        budget.runs = 28
+        budget.session_started = True
+        budget.charge("control", 104697218)
+        budget.close()
+        return budget, self.session(budget)
+
+    def frame(self, kind, value):
+        return policy.encoded({"scope": "12345/report", "kind": kind, "data": value}) + b"\n"
+
+    def receiver(self, cls=None):
+        parser = (supervisor.Protocol if cls is None else cls)(
+            "12345/report", policy.OUTPUT_BYTES, report_binding=self.binding(), deadline=3700.0,
+        )
+        parser.feed(self.frame("ready", {}))
+        parser.feed(self.frame("report-start", {
+            "binding": self.binding(), "limits": policy.profile_manifest(policy.ORIGINAL_LIMITS, observation_count=32768),
+            "deadline": 3700.0, "check_attempts": 0,
+        }))
+        return parser
+
+    def progress(self, sample):
+        return {**sample, "accounting": None if sample["accounting"] is None else
+                policy.accounting_progress(sample["accounting"])}
+
+    def result(self, final):
+        result = self.report_phase()["worker"]
+        self.assertEqual(result["report"]["counters"], final["counters"])
+        result["counters"] = final
+        policy.validate_report_worker(result, self.binding(), 3700.0)
+        return result
+
+    def publication(self, boundary):
+        issued, session = self.issued()
+        reads, captured = {"budget": 0, "session": 0}, []
+        class Sample(worker.Sampler):
+            def __getattribute__(self, name):
+                values = object.__getattribute__(self, "__dict__")
+                if name in reads and values.get("armed"):
+                    reads[name] += 1
+                    if name == "budget" and boundary == "before-budget" and reads[name] == 1:
+                        self.budget, self.session = issued, session
+                    current = object.__getattribute__(self, name)
+                    if name == "budget" and boundary == "after-budget" and reads[name] == 1:
+                        self.budget, self.session = issued, session
+                    if name == "session" and boundary == "after-session" and reads[name] == 1:
+                        self.session = session
+                    return current
+                return object.__getattribute__(self, name)
+        sampler = Sample("12345/report")
+        if boundary in {"after-session", "after-populated-counters", "registry", "clock"}:
+            sampler.budget = issued
+        sampler.armed = True
+        original_snapshot, registry = policy.counter_snapshot, policy.AccountingRegistry
+        def snapshot(budget, selected=None):
+            captured.append((budget, selected))
+            value = original_snapshot(budget, selected)
+            if boundary == "after-empty-counters":
+                sampler.budget, sampler.session = issued, session
+            elif boundary == "after-populated-counters":
+                sampler.session = session
+            return value
+        def construct(budget):
+            self.assertIs(budget, issued)
+            if boundary == "registry":
+                sampler.session = session
+            return registry(budget)
+        def clock():
+            if boundary == "clock":
+                sampler.session = session
+            return 111.0
+        wire = io.BytesIO()
+        with mock.patch.object(policy, "counter_snapshot", side_effect=snapshot), \
+             mock.patch.object(policy, "AccountingRegistry", side_effect=construct), \
+             mock.patch.object(time, "monotonic", side_effect=clock), \
+             mock.patch.object(sampler.stop, "wait", side_effect=[False, True]), \
+             mock.patch.object(kernel, "sys", SimpleNamespace(stdout=SimpleNamespace(buffer=wire))):
+            sampler.run()
+        sampler.armed = False
+        return SimpleNamespace(sampler=sampler, budget=issued, session=session, captured=captured, reads=reads, wire=wire.getvalue())
+
+    def test_one_captured_pair_survives_every_initial_publication_read_boundary(self):
+        for boundary in ("before-budget", "after-budget", "after-empty-counters", "after-session",
+                         "after-populated-counters", "registry", "clock"):
+            with self.subTest(boundary=boundary):
+                value = self.publication(boundary)
+                self.assertIsNone(value.sampler.failure)
+                self.assertIsNone(value.sampler.collection_failure)
+                self.assertEqual(value.reads["budget"], 1)
+                self.assertEqual(value.reads["session"], 0 if value.captured[0][0] is None else 1)
+                self.assertEqual(len(value.captured), 1)
+                parser = self.receiver()
+                initial, = parser.feed(value.wire)
+                captured_budget, captured_session = value.captured[0]
+                if captured_budget is None:
+                    self.assertEqual(initial["data"]["counters"], {"budget": None, "session": None})
+                    self.assertIsNone(initial["data"]["accounting"])
+                    self.assertIsNone(value.sampler.accounting)
+                else:
+                    self.assertIs(value.sampler.accounting.budget, captured_budget)
+                    self.assertEqual(initial["data"]["counters"], policy.counter_snapshot(captured_budget, captured_session))
+                value.sampler.phase = "completed-report"
+                with mock.patch.object(time, "monotonic", return_value=111.0):
+                    final = value.sampler.snapshot(final=True)
+                result = self.result(final)
+                parser.feed(self.frame("result", result))
+                self.assertTrue(parser.finished)
+                self.assertFalse(parser.failed)
+                self.assertIsNone(parser.accounting_failure)
+                self.assertTrue(supervisor.validate_report_phase(
+                    {**self.report_phase(), "worker": result}, self.binding(),
+                )["complete_repository_report"])
+                self.assertEqual((value.budget.started, value.budget.deadline), (100.0, 3700.0))
+
+    def test_initial_unavailability_is_valid_but_budget_registry_or_session_loss_is_permanent(self):
+        for reference in ("budget", "accounting", "session"):
+            with self.subTest(reference=reference):
+                budget, session = self.issued()
+                sampler = worker.Sampler("12345/report")
+                initial = sampler.snapshot()
+                self.assertEqual(initial["counters"], {"budget": None, "session": None})
+                self.assertIsNone(initial["accounting"])
+                sampler.budget, sampler.session = budget, session
+                populated = sampler.snapshot()
+                registry = sampler.accounting
+                previous = getattr(sampler, reference)
+                setattr(sampler, reference, None)
+                with self.assertRaises(policy.GuardError) as missing:
+                    sampler.snapshot()
+                self.assertIs(sampler.collection_failure, missing.exception)
+                self.assertIs(sampler.failure, missing.exception)
+                setattr(sampler, reference, previous)
+                with self.assertRaises(policy.GuardError) as restored:
+                    sampler.snapshot(final=True)
+                self.assertIs(restored.exception, missing.exception)
+                self.assertIs(sampler.accounting, registry)
+                self.assertEqual(populated["accounting"]["sequence"], 1)
+                with mock.patch.object(sampler.thread, "join"), \
+                     mock.patch.object(sampler.thread, "is_alive", return_value=False):
+                    first, stage = worker.finish_report(sampler, budget, None, [])
+                self.assertIs(first, missing.exception)
+                self.assertEqual(stage, "sampler-close")
+                self.assertTrue(budget.closed)
+
+    def test_missing_counter_or_registry_collection_never_recovers_to_a_final_sample(self):
+        for fault in ("none-counters", "no-budget", "no-session", "missing-accounting", "none-accounting"):
+            with self.subTest(fault=fault):
+                budget, session = self.issued()
+                sampler = worker.Sampler("12345/report")
+                sampler.budget, sampler.session = budget, session
+                sampler.snapshot()
+                if fault == "none-counters":
+                    change = mock.patch.object(policy, "counter_snapshot", return_value=None)
+                elif fault == "no-budget":
+                    change = mock.patch.object(policy, "counter_snapshot", return_value={"budget": None, "session": None})
+                elif fault == "no-session":
+                    actual = policy.counter_snapshot(budget)
+                    change = mock.patch.object(policy, "counter_snapshot", return_value=actual)
+                elif fault == "missing-accounting":
+                    change = mock.patch.object(sampler, "accounting", None)
+                else:
+                    change = mock.patch.object(sampler.accounting, "observe", return_value=None)
+                with change:
+                    with self.assertRaises((policy.GuardError, TypeError, AttributeError)) as missing:
+                        sampler.snapshot()
+                with self.assertRaises(BaseException) as restored:
+                    sampler.snapshot(final=True)
+                self.assertIs(restored.exception, missing.exception)
+
+    def test_receiver_latches_each_missing_combination_and_rejects_restored_phase_success(self):
+        budget, session = self.issued()
+        sampler = worker.Sampler("12345/report")
+        sampler.budget, sampler.session, sampler.phase = budget, session, "public-report"
+        with mock.patch.object(time, "monotonic", return_value=111.0):
+            initial = self.progress(sampler.snapshot())
+            sampler.phase = "completed-report"
+            result = self.result(sampler.snapshot(final=True))
+        for fault in ("both-null", "accounting-null", "counter-null", "missing-accounting", "missing-counter",
+                      "budget-null", "session-null", "accounting-empty"):
+            with self.subTest(fault=fault):
+                parser = self.receiver()
+                parser.feed(self.frame("progress", initial))
+                missing = copy.deepcopy(initial)
+                if fault == "both-null":
+                    missing.update(counters={"budget": None, "session": None}, accounting=None)
+                elif fault == "accounting-null":
+                    missing["accounting"] = None
+                elif fault == "counter-null":
+                    missing["counters"] = None
+                elif fault == "missing-accounting":
+                    del missing["accounting"]
+                elif fault == "missing-counter":
+                    del missing["counters"]
+                elif fault == "budget-null":
+                    missing["counters"] = {"budget": None, "session": None}
+                elif fault == "session-null":
+                    missing["counters"]["session"] = None
+                    missing["accounting"] = {**missing["accounting"], "sequence": 2, "first_observed": {}}
+                else:
+                    missing["accounting"] = {}
+                phase = {**self.report_phase(), "worker": None}
+                with self.assertRaises(BaseException) as lost:
+                    parser.feed(self.frame("progress", missing))
+                phase["first_cause"] = {"type": "protocol", "error": policy.component_secondary_error(lost.exception)}
+                self.assertIs(parser.accounting_failure, lost.exception)
+                with self.assertRaises(BaseException) as restored:
+                    parser.feed(self.frame("result", result))
+                self.assertIs(restored.exception, lost.exception)
+                self.assertFalse(parser.finished)
+                self.assertIsNone(parser.report_result)
+                with self.assertRaises(policy.GuardError):
+                    supervisor.validate_report_phase(phase, self.binding())
+                failure = policy.unavailable_report_error(
+                    self.binding(), policy.component_secondary_error(lost.exception), stage="counter-publication",
+                )
+                parser.feed(self.frame("error", failure))
+                self.assertTrue(parser.failed)
+                self.assertFalse(parser.finished)
+
+    def test_receiver_accepts_only_genuine_initial_unavailability_and_neutral_order(self):
+        budget, session = self.issued()
+        sampler = worker.Sampler("12345/report")
+        parser = self.receiver()
+        empty = sampler.snapshot()
+        for _ in range(2):
+            parser.feed(self.frame("progress", empty))
+        sampler.budget, sampler.session, sampler.phase = budget, session, "public-report"
+        with mock.patch.object(time, "monotonic", return_value=111.0):
+            initial = self.progress(sampler.snapshot())
+            sampler.phase = "completed-report"
+            result = self.result(sampler.snapshot(final=True))
+        initial = json.loads(json.dumps(initial, sort_keys=True))
+        parser.feed(self.frame("progress", initial))
+        parser.feed(self.frame("result", result))
+        self.assertTrue(parser.finished)
+        self.assertIsNone(parser.accounting_failure)
+        self.assertTrue(supervisor.validate_report_phase(
+            {**self.report_phase(), "worker": result}, self.binding(),
+        )["complete_repository_report"])
+
+    def test_exact_old_sampler_restoration_recovers_the_false_initial_failure(self):
+        self.assertIsNotNone(OLD_TELEMETRY_SNAPSHOT, "requires the inspected telemetry runner")
+        self.assertIsNone(self.publication("after-empty-counters").sampler.failure)
+        with mock.patch.object(worker.Sampler, "snapshot", OLD_TELEMETRY_SNAPSHOT):
+            broken = self.publication("after-empty-counters")
+        self.assertIsInstance(broken.sampler.failure, policy.GuardError)
+        self.assertTrue(broken.sampler.accounting.failed)
+        self.assertEqual(broken.wire, b"")
+        self.assertIsNone(self.publication("after-empty-counters").sampler.failure)
+
+    def test_neutral_local_reference_renaming_preserves_coherent_publication(self):
+        sampler = next(node for node in WORKER_AST.body if isinstance(node, ast.ClassDef) and node.name == "Sampler")
+        original = next(node for node in sampler.body if isinstance(node, ast.FunctionDef) and node.name == "snapshot")
+        class Rename(ast.NodeTransformer):
+            def visit_Name(self, node):
+                node.id = {"budget": "issued", "session": "captured"}.get(node.id, node.id)
+                return node
+        tree = ast.Module(body=[Rename().visit(copy.deepcopy(original))], type_ignores=[])
+        ast.fix_missing_locations(tree)
+        namespace = dict(vars(worker))
+        exec(compile(tree, "<inert-neutral-sampler>", "exec"), namespace)
+        with mock.patch.object(worker.Sampler, "snapshot", namespace["snapshot"]):
+            value = self.publication("after-empty-counters")
+            self.assertIsNone(value.sampler.failure)
+            self.assertIsNone(value.sampler.accounting)
+            self.assertEqual(value.reads["budget"], 1)
+            self.assertEqual(value.captured, [(None, None)])
+
+    def test_exact_old_sender_and_receiver_restoration_recovers_false_phase_completion(self):
+        self.assertIsNotNone(OLD_TELEMETRY_SNAPSHOT)
+        self.assertIsNotNone(OLD_TELEMETRY_PROTOCOL)
+        budget, session = self.issued()
+        sampler = worker.Sampler("12345/report")
+        sampler.budget, sampler.session, sampler.phase = budget, session, "public-report"
+        with mock.patch.object(worker.Sampler, "snapshot", OLD_TELEMETRY_SNAPSHOT), \
+             mock.patch.object(time, "monotonic", return_value=111.0):
+            initial = self.progress(sampler.snapshot())
+            sampler.budget = None
+            missing = sampler.snapshot()
+            sampler.budget, sampler.phase = budget, "completed-report"
+            result = self.result(sampler.snapshot(final=True))
+        old = self.receiver(OLD_TELEMETRY_PROTOCOL)
+        for kind, value in (("progress", initial), ("progress", missing), ("result", result)):
+            old.feed(self.frame(kind, value))
+        self.assertTrue(old.finished)
+        self.assertFalse(old.failed)
+        self.assertTrue(supervisor.validate_report_phase(
+            {**self.report_phase(), "worker": result}, self.binding(),
+        )["complete_repository_report"])
+        fixed = self.receiver()
+        fixed.feed(self.frame("progress", initial))
+        with self.assertRaises(policy.GuardError):
+            fixed.feed(self.frame("progress", missing))
+        with self.assertRaises(policy.GuardError):
+            fixed.feed(self.frame("result", result))
+        self.assertFalse(fixed.finished)
 
 
 if __name__ == "__main__":

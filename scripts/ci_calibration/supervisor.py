@@ -42,6 +42,7 @@ REPORT_BASE_SHA = "d7172b7f6adf5cb43c005ba6cb7dc31142cc812b"
 REPORT_PREPARATION_SHA = "246bad229efe8674ece41b0b91af89fcc4cb4585"
 REPORT_ERROR_SHA = "c8f2fdeac66f5c50ed4859396765ec12f6f462d0"
 REPORT_FINALIZATION_SHA = "4dad318411d6e191d79db1a3570d611f5464afad"
+REPORT_ACCOUNTING_SHA = "ae3fd7a9589e50903fbc88a8df72baaaea2d0423"
 COMPONENT_PATHS = frozenset({
     policy.COMPONENT_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "worker.py", "root_stage.py", "supervisor.py", "observation_failure.py", "README.md",
@@ -62,7 +63,8 @@ ACCOUNTING_PATHS = REPORT_PATHS
 
 def validate_harness_lineage(lines, head):
     if lines != [
-        f"{head} {REPORT_FINALIZATION_SHA}",
+        f"{head} {REPORT_ACCOUNTING_SHA}",
+        f"{REPORT_ACCOUNTING_SHA} {REPORT_FINALIZATION_SHA}",
         f"{REPORT_FINALIZATION_SHA} {REPORT_ERROR_SHA}",
         f"{REPORT_ERROR_SHA} {REPORT_PREPARATION_SHA}",
         f"{REPORT_PREPARATION_SHA} {REPORT_BASE_SHA}",
@@ -74,7 +76,7 @@ def validate_harness_lineage(lines, head):
         f"{RETAINED_HARNESS_SHA} {PREPARATION_SHA}",
         f"{PREPARATION_SHA} {policy.BASE}",
     ]:
-        raise policy.GuardError("diagnostic requires its exact normal accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
+        raise policy.GuardError("diagnostic requires its exact normal telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
 
 
 def validate_correction_inventory(data):
@@ -491,6 +493,7 @@ class Protocol:
         self.accounting_elapsed = 0
         self.accounting_values = self.accounting_quotas = None
         self.accounting_crossings = {}
+        self.accounting_failure = None
         if report_binding is not None:
             policy.validate_report_binding(report_binding)
             if scope != report_binding["run_id"] + "/report" or (
@@ -508,7 +511,24 @@ class Protocol:
             raise OutputLimitExceeded("external combined stdout/stderr bound exceeded")
 
     def observe_accounting(self, value, counters, *, final=False):
+        if self.accounting_failure is not None:
+            raise self.accounting_failure
+        try:
+            self._observe_accounting(value, counters, final=final)
+        except BaseException as error:
+            raise self._accounting_error(error)
+
+    def _accounting_error(self, error):
+        if self.accounting_failure is None:
+            self.accounting_failure = error
+        self.finished = False
+        return self.accounting_failure
+
+    def _observe_accounting(self, value, counters, *, final=False):
+        policy.validate_component_counters(counters)
         if value is None:
+            if final or self.accounting_values is not None or counters["budget"] is not None:
+                raise policy.GuardError("established or required accounting observation disappeared")
             return
         sequence, elapsed = value["sequence"], value["elapsed_seconds"]
         observed = policy.accounting_values(counters)
@@ -583,12 +603,22 @@ class Protocol:
                 elif kind == "result":
                     if not self.report_started or self.failed:
                         raise policy.GuardError("report result precedes invocation or follows a failure")
-                    policy.validate_report_worker(value, self.report_binding, self.deadline)
-                    self.observe_accounting(value["counters"]["accounting"], value["counters"]["counters"], final=True)
+                    if self.accounting_failure is not None:
+                        raise self.accounting_failure
+                    try:
+                        policy.validate_report_worker(value, self.report_binding, self.deadline)
+                        self.observe_accounting(value["counters"]["accounting"], value["counters"]["counters"], final=True)
+                    except BaseException as error:
+                        raise self._accounting_error(error)
                     self.report_result = value
                 elif kind == "progress":
-                    policy.validate_report_progress(value)
-                    self.observe_accounting(value["accounting"], value["counters"])
+                    if self.accounting_failure is not None:
+                        raise self.accounting_failure
+                    try:
+                        policy.validate_report_progress(value)
+                        self.observe_accounting(value["accounting"], value["counters"])
+                    except BaseException as error:
+                        raise self._accounting_error(error)
                 elif kind == "error":
                     if value.keys() == {"chain", "frames"} and not self.ready and not self.failed:
                         value = policy.project_entry_failure(value, self.report_binding)
@@ -915,7 +945,7 @@ class Owner:
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
         validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=11", "HEAD").decode().splitlines(),
+            git(self.harness, "rev-list", "--parents", "--max-count=12", "HEAD").decode().splitlines(),
             self.scope["harness_sha"],
         )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
@@ -959,7 +989,10 @@ class Owner:
             self.harness, "diff", "--name-status", "-z", REPORT_ERROR_SHA, REPORT_FINALIZATION_SHA,
         ))
         validate_accounting_inventory(git(
-            self.harness, "diff", "--name-status", "-z", REPORT_FINALIZATION_SHA, "HEAD",
+            self.harness, "diff", "--name-status", "-z", REPORT_FINALIZATION_SHA, REPORT_ACCOUNTING_SHA,
+        ))
+        validate_report_error_inventory(git(
+            self.harness, "diff", "--name-status", "-z", REPORT_ACCOUNTING_SHA, "HEAD",
         ))
         validate_accounting_workflow(
             git(self.harness, "show", REPORT_FINALIZATION_SHA + ":" + policy.WORKFLOW),

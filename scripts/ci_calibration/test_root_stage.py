@@ -216,6 +216,14 @@ class RootStageControls(Inert):
             return actual_import(name, *args, **kwargs)
         def sampler_close(value):
             events.append("sampler-close")
+            if "telemetry-loss" in faults:
+                value.snapshot()
+                original = value.budget
+                value.budget = None
+                with self.assertRaises(policy.GuardError):
+                    value.snapshot()
+                value.budget = original
+                raise value.failure
             if "sampler-close" in faults:
                 raise errors["sampler-close"]
         original_close = budget.close
@@ -563,6 +571,51 @@ class RootStageControls(Inert):
                     self.assertIsNone(record["accounting"])
                 self.assertEqual(value.events[-2:], ["sampler-close", "budget-close"])
                 self.assertNotIn(b"private", value.wire)
+
+    def test_established_telemetry_loss_survives_source_close_and_publication_fault_combinations(self):
+        for source, closing, publication in itertools.product(
+            (False, True), (None, "budget-close-before", "budget-close-after"),
+            (None, "publication", "publication-after", "publication-always"),
+        ):
+            faults = ["telemetry-loss"]
+            if source:
+                faults.append("source")
+            if closing:
+                faults.append(closing)
+            if publication:
+                faults.append(publication)
+            with self.subTest(faults=faults):
+                value = self.composition(*faults, use_worker=True, executable=WORKER_MAIN)
+                self.assertEqual(value.exit_code, 1)
+                self.assertIsNone(value.failure)
+                parser, rows = self.consume_executable(value)
+                self.assertFalse(parser.finished)
+                self.assertFalse(any(row["kind"] == "result" for row in rows))
+                self.assertEqual(value.events[-2:], ["sampler-close", "budget-close"])
+                if publication == "publication-always":
+                    self.assertFalse(parser.failed)
+                    self.assertFalse(any(row["kind"] == "error" for row in rows))
+                    self.assertTrue(value.stderr)
+                else:
+                    self.assertTrue(parser.failed)
+                    record = [row["data"] for row in rows if row["kind"] == "error"][-1]
+                    self.assertEqual(record["error"]["chain"][0]["type"], "SourceError" if source else "GuardError")
+                    self.assertIsNone(record["accounting"])
+                    self.assertIsNone(record["counters"])
+                    stages = [row["stage"] for row in record["secondary"]]
+                    if source:
+                        self.assertIn("sampler-close", stages)
+                    if closing:
+                        self.assertIn("budget-close", stages)
+                    if publication:
+                        self.assertIn("error-publication", stages)
+                    phase = {**self.report_phase(), "worker": None,
+                             "first_cause": {"type": "worker-error", "error": record}}
+                    self.assertTrue(supervisor.report_retention(phase))
+                    with self.assertRaises(policy.GuardError):
+                        supervisor.validate_report_phase(phase, self.binding())
+                self.assertNotIn(b"private", value.wire)
+                self.assertNotIn("private", value.stderr)
 
     def test_executable_fallback_delivers_primary_publication_and_cleanup_secondaries(self):
         for faults in (

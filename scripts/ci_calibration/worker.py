@@ -353,6 +353,8 @@ class Sampler:
         self.session = None
         self.failure = None
         self.accounting = None
+        self.established_budget = None
+        self.collection_failure = None
         self.sample_lock = threading.Lock()
         self.phase = "candidate-import"
         self.stop = threading.Event()
@@ -360,22 +362,43 @@ class Sampler:
 
     def snapshot(self, *, final=False):
         with self.sample_lock:
-            counters = policy.counter_snapshot(self.budget, self.session)
-            accounting = None
-            if self.budget is not None:
-                if self.accounting is None:
-                    self.accounting = policy.AccountingRegistry(self.budget)
-                if self.accounting.budget is not self.budget:
-                    raise policy.GuardError("sampler cannot replace its issued accounting budget")
-                accounting = self.accounting.observe(
-                    counters, time.monotonic() - self.budget.started, final=final,
-                )
-            elif final:
-                raise policy.GuardError("final accounting snapshot has no issued budget")
-            return {
-                "phase": self.phase, "counters": counters, "accounting": accounting,
-                "semantics": "Observed cumulative counters and funded VM peaks; not an atomic grant or physical RSS.",
-            }
+            if self.collection_failure is not None:
+                raise self.collection_failure
+            try:
+                budget = self.budget
+                session = None if budget is None else self.session
+                if self.established_budget is not None and (
+                    budget is not self.established_budget or self.accounting is None
+                ):
+                    raise policy.GuardError("established accounting budget or registry disappeared")
+                counters = policy.counter_snapshot(budget, session)
+                policy.validate_component_counters(counters, complete=final)
+                accounting = None
+                if budget is not None:
+                    if self.established_budget is None:
+                        self.established_budget = budget
+                        self.accounting = policy.AccountingRegistry(budget)
+                    if self.accounting.budget is not budget:
+                        raise policy.GuardError("sampler cannot replace its issued accounting budget")
+                    accounting = self.accounting.observe(
+                        counters, time.monotonic() - budget.started, final=final,
+                    )
+                    policy.validate_accounting(accounting, counters, final=final)
+                elif final:
+                    raise policy.GuardError("final accounting snapshot has no issued budget")
+                return {
+                    "phase": self.phase, "counters": counters, "accounting": accounting,
+                    "semantics": "Observed cumulative counters and funded VM peaks; not an atomic grant or physical RSS.",
+                }
+            except BaseException as error:
+                self.collection_failure = error
+                if self.failure is None:
+                    self.failure = error
+                try:
+                    if self.accounting is not None:
+                        self.accounting.failed = True
+                finally:
+                    raise error
 
     def run(self):
         try:
@@ -385,7 +408,8 @@ class Sampler:
                     sample["accounting"] = policy.accounting_progress(sample["accounting"])
                 kernel.emit(self.scope, "progress", sample)
         except BaseException as error:
-            self.failure = error
+            if self.failure is None:
+                self.failure = error
 
     def close(self):
         self.stop.set()
