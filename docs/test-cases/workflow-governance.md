@@ -3793,6 +3793,76 @@ game behavior needs a compensating change.
   the existing pinned host Python environment, and the manual-handoff
   contract unchanged. No token, ROM, emulator, or remote workflow is required.
 
+### Original-read, domain and command regression controls
+
+These controls extend this existing case; they do not introduce a new registry
+or certify the complete report. Use a clean exact candidate checkout and the
+host prerequisites above. No game, save, localization or archival profile is
+changed. Run the explicit inert classes rather than discovering their entire
+native-bearing modules:
+
+```sh
+python3 -B -m unittest \
+  scripts.validation_ownership.tests.test_make_probe.GraphSemanticApiTests \
+  scripts.validation_ownership.tests.test_phase_census.OriginalTemplateApiTests \
+  scripts.validation_ownership.tests.test_graph_commands.CommandSemanticsTests \
+  scripts.validation_ownership.tests.test_read_epochs.SourcePinLifetimeTests -v
+```
+
+1. Exercise ordinary, braced, short, nested and scoped Make references with
+   one through five dollar prefixes, including shell-quoted recipe text.
+   Active odd-prefix universe aliases and unsealed reads must reject; escaped
+   even-prefix literals and unused lazy bodies remain distinct. Restoring the
+   former reference traversal must recover the missed active reads.
+2. Keep `TABLES=early` and `TABLES=late` in their original read passes and
+   instantiate the same template at each original caller site. Require the
+   first graph reader to remain `CONFIG_early`, the final reader to remain
+   `CONFIG_late`, and no terminal query to supply earlier-pass authority.
+   Repeated sites, real empty input and renamed equivalent templates remain
+   supported; missing original facts and header injection reject. The old
+   terminal-value preparation is the negative control.
+3. Combine tracked-fallback inputs whose joint command-line origins change
+   the graph. Exercise flavor, override precedence, environment and mixed
+   explicit domains too. Inspect complete assignment/origin states and parsed
+   prerequisites, not merely a list of enumerated names. An over-bound plan
+   must fail rather than sample singletons or claim independence. This is not
+   proof that every larger real repository plan fits the unchanged bound.
+4. Use only bounded selector doubling, cardinality and declaration-fallback
+   models. Require pre-allocation byte/work/depth admission, the original
+   shared deadline and completed context-local memoization. Check both sides
+   of the scanner depth boundary and remaining-cache boundary, including the
+   constant fallback; an exhausted budget stays failed. Do not attempt an OOM
+   or a one-gigabyte expansion. Each original-helper restoration must expose
+   the corresponding missing admission, with neutral renaming still green.
+5. Repeat a generic Python producer under distinct issued Make environments
+   and current/old/restored source views. Actual values and receipts must
+   follow the environment/view rather than reuse a stale context; standalone
+   helpers remain canonical and unsupported startup controls reject.
+   Use flushed stdout, stderr and raw fd2 writes to distinguish ordered merges
+   from post-run concatenation. Unimplemented redirections must refuse
+   explicitly; such refusal is not full support for a required repository
+   command. Test quoted/escaped find patterns against zero, one and multiple
+   cwd glob matches; unproved active shell expansion must not become a
+   different literal command.
+6. Model a checked source pin whose close releases the descriptor before
+   raising. Ownership must be withdrawn before that close, without a source
+   exit/goal event on failure. Reuse the integer for a foreign modeled owner
+   and run cleanup repeatedly: the foreign resource must survive. Repeat
+   with multiple pending pins and earlier/secondary failures; attempt every
+   known close once, preserve the primary, and keep all source identity,
+   status, path and stream checks. Restoring either old retirement path must
+   reproduce the foreign-resource loss.
+
+The real `PhaseCensusTests`, `AuthoritativeMakeProbeTests` and
+`GraphCommandTests` selectors separately exercise two-pass include remakes,
+ordinary/native origin and flavor comparisons, live exports, source-view
+reuse, two-stream descriptor effects and quoted filesystem discovery. Run
+those only in the supported bounded native/CI environment and retain their
+actual source, count, output, original-limit and cleanup evidence. The inert
+controls above do not replace them. All native fixtures remove only their
+owned roots after closure; modeled source pins never operate on real caller
+descriptors.
+
 ### Lifecycle time controls
 
 Run `python3 -m unittest scripts.validation_ownership.tests.test_reporter.ArtifactLifecycleTests -v`.
