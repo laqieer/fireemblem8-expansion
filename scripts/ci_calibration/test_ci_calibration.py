@@ -535,7 +535,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.REPORT_CODE_METADATA_SHA}",
+            f"{'a' * 40} {supervisor.CORRECTED_REPORT_SHA}",
+            f"{supervisor.CORRECTED_REPORT_SHA} {supervisor.REPORT_CODE_METADATA_SHA}",
             f"{supervisor.REPORT_CODE_METADATA_SHA} {supervisor.REPORT_REGISTRATION_SHA}",
             f"{supervisor.REPORT_REGISTRATION_SHA} {supervisor.REPORT_LOCALIZATION_SHA}",
             f"{supervisor.REPORT_LOCALIZATION_SHA} {supervisor.REPORT_REBIND_SHA}",
@@ -711,7 +712,7 @@ class CalibrationControls(Inert):
 
     def test_corrected_report_inventory_is_exact_and_preserves_all_spent_mechanisms(self):
         data = b"".join(
-            (b"A" if name == policy.WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
+            (b"A" if name == policy.CORRECTED_REPORT_WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
             for name in sorted(supervisor.CORRECTED_REPORT_PATHS)
         )
         supervisor.validate_corrected_report_inventory(data)
@@ -783,6 +784,62 @@ class CalibrationControls(Inert):
         self.assertNotEqual(altered, inputs.historical_after)
         with self.assertRaises(policy.GuardError):
             supervisor.validate_accounting_workflow(inputs.historical_before, altered)
+
+    def test_python_report_inventory_cannot_edit_sizing2_or_accepted_mechanisms(self):
+        data = b"".join(
+            (b"A" if name == policy.WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
+            for name in sorted(supervisor.PYTHON_REPORT_PATHS)
+        )
+        supervisor.validate_python_report_inventory(data)
+        for changed in (
+            b"", data[:-1], data + data, data.replace(b"A\0", b"M\0"),
+            data.replace(b"M\0", b"A\0", 1), data.split(b"\0", 2)[2],
+            data + b"M\0" + policy.CORRECTED_REPORT_WORKFLOW.encode() + b"\0",
+            data + b"M\0scripts/ci_calibration/worker.py\0",
+            data + b"M\0scripts/ci_calibration/observation_failure.py\0",
+            data + b"M\0scripts/ci_calibration/root_stage.py\0",
+            data + b"M\0scripts/ci_calibration/kernel.py\0",
+            data + b"M\0scripts/validation_ownership/make_probe.py\0",
+        ):
+            with self.subTest(changed=changed[:64]), self.assertRaises(policy.GuardError):
+                supervisor.validate_python_report_inventory(changed)
+        with self.assertRaises(policy.GuardError):
+            supervisor.validate_corrected_report_inventory(data)
+
+    def test_python_corrected_binding_rejects_sizing2_without_changing_retention(self):
+        self.assertIsNotNone(CORRECTED_SOURCE_INPUTS, "requires the inspected Python-corrected runner")
+        inputs = CORRECTED_SOURCE_INPUTS
+        self.assertEqual(inputs.contract["previous_source"], policy.CORRECTED_REPORT_SOURCE)
+        current = policy.changed_path_binding(policy.changed_path_set(inputs.diff))
+        with mock.patch.object(policy, "GRAPH", policy.CORRECTED_REPORT_SOURCE):
+            prior = policy.changed_path_binding(policy.changed_path_set(inputs.python_previous_diff))
+        self.assertNotEqual(current["sha256"], prior["sha256"])
+        self.assertIsNone(inputs.contract["actual_attempt_path_value"])
+        self.assertTrue(inputs.contract["strict_lifecycle_path_guard_preserved"])
+        self.assertTrue(inputs.contract["captured_dispatch_image_expression_preserved"])
+        with self.assertRaises(policy.GuardError):
+            policy.validate_report_binding({**self.binding(), "source_revision": policy.CORRECTED_REPORT_SOURCE})
+        with self.assertRaises(policy.GuardError):
+            policy.validate_event({**self.event(), "ref": "refs/heads/calibration/issue-180-full-report-sizing-2"},
+                                  **self.authorization())
+        for failed in (True, None, False):
+            with self.subTest(failed=failed):
+                phase = self.report_phase()
+                report = phase["worker"]["report"]
+                error = policy.unavailable_report_error(
+                    self.binding(), policy.component_secondary_error(RuntimeError("private inert failure")),
+                    stage="check", source_cleanup_failures=0,
+                )
+                error["cleanup"] = report["cleanup"]
+                error["counters"] = None if failed is None else copy.deepcopy(report["counters"])
+                if failed is not None:
+                    error["counters"]["budget"]["failed"] = failed
+                policy.validate_report_error(error, self.binding())
+                phase.update(worker=None, returncode=1, report_returned=False, report_completed=False,
+                             first_cause={"type": "worker-error", "error": error})
+                self.assertIs(supervisor.report_retention(phase), failed is not False)
+                with self.assertRaises(policy.GuardError):
+                    supervisor.validate_report_phase(phase, self.binding())
 
     def test_complete_diff_binding_preserves_additions_deletions_and_both_rename_sides(self):
         changes = self.changes()

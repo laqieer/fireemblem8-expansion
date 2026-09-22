@@ -1,9 +1,55 @@
-# Contained corrected full-report preparation 2
+# Contained Python-corrected full-report preparation 3
 
 **Preparation only; never merge this branch. No native execution, workflow
 launch, retry or production resource-policy decision is allocated here.**
 
 Current freeze:
+[5770974148](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5770974148).
+This is one normal child of sizing-2 harness
+`6c2bc38fe17ada38a21ec6698373c725fd8f32fe`, on
+`calibration/issue-180-full-report-sizing-3`, with one new fixed
+first-owner-push workflow. Selected source is
+`6d2725d89df70c30954daade3cca7abc6d3171d4`; BASE remains
+`ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`.
+Every spent workflow, source binding and allocation stays unchanged.
+
+Run35676418640 is spent and closed
+([5770178195](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5770178195)).
+It reached the original unqualified-Python PATH compatibility guard without
+returning or serializing the full report. Its actual captured PATH value
+was not exported and is not inferred here. Recorded inner cleanup and
+process emptiness did not authorize outer cleanup: `cleanup_confirmed=false`
+remains the result, because the unchanged retention rule conservatively
+retains on a failed report-budget latch. This preparation does not waive or
+reinterpret that rule.
+
+Main's accepted captured-runtime lookup correction and existing tester
+procedure are integrated in source6d. Parsed immutable evidence verifies the
+same complete 123-path diff (55 added, 68 modified), 11042 tracked paths,
+graph/schema/oracle/registries, eight-entry runtime inventory and 21 unchanged
+API/default/constructor/report/lifecycle definitions. The shared dispatch-path
+helper preserves the original image-selection expression; the strict
+lifecycle PATH guard remains. New lookup/helper code metadata is inspected
+without executing the source and fits the unchanged locator entry/file
+bounds. Those inspection objects are not installed as runtime identities or
+treated as native execution evidence.
+
+All accepted report/serializer/locator/accounting/telemetry/AT/FR/cleanup and
+physical mechanisms are reused unchanged. Full CURRENT/BASE/native source/
+Make/generator/lifecycle scope, one budget/session/original deadline, fourteen
+query overrides, nineteen real counters, every hard limit, all seven fresh
+qualifiers and five bounded artifact files remain mandatory. No guessed PATH,
+environment rewrite, source patch, quota ladder or reduced workload is added.
+
+The inspected preparation runner preserves all 147 methods / 882 subtests and
+adds only new binding/inventory/retention controls. Same-reviewer exact follow-up
+and Main's separate prospective allocation must precede any push or launch.
+Native/full-report/verifier/resource/H1/shipping and all final CI/merge/master/
+closure gates remain open.
+
+## Historical corrected full-report preparation 2 (closed allocation)
+
+Earlier freeze:
 [5769695055](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5769695055).
 This is one normal child of accepted harness
 `4360e557a843f0feee214918bc0d9320127d5817`, on the new
