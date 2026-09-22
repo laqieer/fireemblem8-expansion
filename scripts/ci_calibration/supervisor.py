@@ -52,6 +52,7 @@ CORRECTED_REPORT_SHA = "6c2bc38fe17ada38a21ec6698373c725fd8f32fe"
 PYTHON_REPORT_SHA = "440cbb613857c7802d19ce7dc55b03dd29941b04"
 PARTIAL_ANCHOR_SHA = "43feaf98a048390a36b1b380e97f7b8b64ce8b69"
 TRACELESS_ANCHOR_SHA = "3d1e5ac5416be38906148a87ee20bf44dbb63dbd"
+ORIGINAL_IMPORT_SHA = "64e2e9ccaff88ca7ccdfcb1dc750fb35ea057af9"
 COMPONENT_PATHS = frozenset({
     policy.COMPONENT_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "worker.py", "root_stage.py", "supervisor.py", "observation_failure.py", "README.md",
@@ -97,11 +98,16 @@ PARTIAL_ANCHOR_PATHS = frozenset({
 })
 TRACELESS_ANCHOR_PATHS = (PARTIAL_ANCHOR_PATHS - {policy.PARTIAL_ANCHOR_WORKFLOW}) | {policy.TRACELESS_ANCHOR_WORKFLOW}
 ORIGINAL_IMPORT_PATHS = (COMPONENT_PATHS - {policy.COMPONENT_WORKFLOW}) | {policy.WORKFLOW}
+IMPORT_RELEASE_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
+    "observation_failure.py", "root_stage.py", "worker.py", "supervisor.py",
+    "test_ci_calibration.py", "test_root_stage.py", "README.md",
+))
 
 
 def validate_harness_lineage(lines, head):
     if lines != [
-        f"{head} {TRACELESS_ANCHOR_SHA}",
+        f"{head} {ORIGINAL_IMPORT_SHA}",
+        f"{ORIGINAL_IMPORT_SHA} {TRACELESS_ANCHOR_SHA}",
         f"{TRACELESS_ANCHOR_SHA} {PARTIAL_ANCHOR_SHA}",
         f"{PARTIAL_ANCHOR_SHA} {PYTHON_REPORT_SHA}",
         f"{PYTHON_REPORT_SHA} {CORRECTED_REPORT_SHA}",
@@ -123,7 +129,7 @@ def validate_harness_lineage(lines, head):
         f"{RETAINED_HARNESS_SHA} {PREPARATION_SHA}",
         f"{PREPARATION_SHA} {policy.BASE}",
     ]:
-        raise policy.GuardError("diagnostic requires its exact normal original-import/traceless/partial-anchor/Python-corrected/corrected-report/code-metadata/registration/localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
+        raise policy.GuardError("diagnostic requires its exact normal import-release/original-import/traceless/partial-anchor/Python-corrected/corrected-report/code-metadata/registration/localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
 
 
 def validate_correction_inventory(data):
@@ -326,6 +332,21 @@ def validate_original_import_inventory(data):
         or any(kind != (b"A" if name == workflow else b"M") for kind, name in changes)
     ):
         raise policy.GuardError("original-import observation changed a spent workflow or unallocated surface")
+
+
+def validate_import_release_inventory(data):
+    if type(data) is not bytes:
+        raise policy.GuardError("import-release inventory is not a Git byte record")
+    rows = data.split(b"\0")
+    if len(rows) < 3 or len(rows) % 2 != 1 or rows[-1] != b"":
+        raise policy.GuardError("import-release correction requires its complete fixed inventory")
+    changes = list(zip(rows[:-1:2], rows[1:-1:2]))
+    allowed = {name.encode("ascii") for name in IMPORT_RELEASE_PATHS}
+    if (
+        {name for _, name in changes} != allowed or len(changes) != len(allowed)
+        or any(kind != b"M" for kind, name in changes)
+    ):
+        raise policy.GuardError("import-release correction changed a workflow or unallocated surface")
 
 
 def apparmor_text(name):
@@ -1123,7 +1144,7 @@ class Owner:
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
         validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=21", "HEAD").decode().splitlines(),
+            git(self.harness, "rev-list", "--parents", "--max-count=22", "HEAD").decode().splitlines(),
             self.scope["harness_sha"],
         )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
@@ -1202,7 +1223,10 @@ class Owner:
             self.harness, "diff", "--name-status", "-z", PARTIAL_ANCHOR_SHA, TRACELESS_ANCHOR_SHA,
         ))
         validate_original_import_inventory(git(
-            self.harness, "diff", "--name-status", "-z", TRACELESS_ANCHOR_SHA, "HEAD",
+            self.harness, "diff", "--name-status", "-z", TRACELESS_ANCHOR_SHA, ORIGINAL_IMPORT_SHA,
+        ))
+        validate_import_release_inventory(git(
+            self.harness, "diff", "--name-status", "-z", ORIGINAL_IMPORT_SHA, "HEAD",
         ))
         validate_accounting_workflow(
             git(self.harness, "show", REPORT_FINALIZATION_SHA + ":" + policy.FULL_REPORT_WORKFLOW),

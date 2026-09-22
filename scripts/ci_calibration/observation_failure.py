@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import builtins
+import copy
 import hashlib
 import importlib._bootstrap as _bootstrap
 from importlib.machinery import ModuleSpec, SourceFileLoader
@@ -1101,6 +1102,8 @@ class Observer:
         charge = getattr(type(budget), "charge", None)
         self.charge_code = getattr(charge, "__code__", None)
         self.budget_error = getattr(charge, "__globals__", {}).get("MakeProbeError")
+        self.import_release_attempted = self.import_release_reported = False
+        self.import_release_error = None
 
     def register_locations(self, api):
         if "location_codes" in vars(self):
@@ -1150,13 +1153,36 @@ class Observer:
         }
 
     def close_imports(self, measurement):
+        if self.import_release_attempted:
+            if self.import_release_error is not None:
+                raise _LocationUnavailable("import-restoration-unavailable")
+            return
+        self.import_release_attempted = True
         try:
-            imports = getattr(self, "imports", None)
-            if imports is not None:
-                imports.close()
-        finally:
-            if measurement is not None and measurement.cleanup is not None:
-                measurement.cleanup.update(self.import_cleanup())
+            try:
+                imports = getattr(self, "imports", None)
+                if imports is not None:
+                    imports.close()
+            finally:
+                if measurement is not None and measurement.cleanup is not None:
+                    measurement.cleanup.update(self.import_cleanup())
+        except BaseException as error:
+            self.import_release_error = policy.component_secondary_error(error)
+            raise
+
+    def finish_imports(self, measurement):
+        """Transfer one release failure, not permission to retry or cleanup credit."""
+        if not self.import_release_attempted:
+            try:
+                self.close_imports(measurement)
+            except BaseException:
+                if self.import_release_error is None:
+                    raise
+        if self.import_release_error is not None and not self.import_release_reported:
+            closing = {"stage": "import-reference", "error": copy.deepcopy(self.import_release_error)}
+            self.import_release_reported = True
+            return closing
+        return None
 
     def source_locations(self, error, measurement):
         locations = _SourceLocations()

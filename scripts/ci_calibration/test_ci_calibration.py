@@ -537,7 +537,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.TRACELESS_ANCHOR_SHA}",
+            f"{'a' * 40} {supervisor.ORIGINAL_IMPORT_SHA}",
+            f"{supervisor.ORIGINAL_IMPORT_SHA} {supervisor.TRACELESS_ANCHOR_SHA}",
             f"{supervisor.TRACELESS_ANCHOR_SHA} {supervisor.PARTIAL_ANCHOR_SHA}",
             f"{supervisor.PARTIAL_ANCHOR_SHA} {supervisor.PYTHON_REPORT_SHA}",
             f"{supervisor.PYTHON_REPORT_SHA} {supervisor.CORRECTED_REPORT_SHA}",
@@ -927,6 +928,29 @@ class CalibrationControls(Inert):
         with self.assertRaises(policy.GuardError):
             supervisor.validate_report_phase(phase, self.binding())
 
+    def test_import_release_inventory_preserves_original_observer_endpoint_and_workflow(self):
+        data = b"".join(b"M\0" + path.encode() + b"\0" for path in sorted(supervisor.IMPORT_RELEASE_PATHS))
+        supervisor.validate_import_release_inventory(data)
+        for changed in (
+            b"", data[:-1], data + data, data.split(b"\0", 2)[2],
+            data.replace(b"M\0", b"A\0", 1), data.replace(b"M\0", b"D\0", 1),
+            data + b"M\0" + policy.WORKFLOW.encode() + b"\0",
+            data + b"M\0scripts/ci_calibration/policy.py\0",
+            data + b"M\0scripts/ci_calibration/entry.py\0",
+            data + b"M\0scripts/ci_calibration/kernel.py\0",
+            data + b"M\0scripts/validation_ownership/graph_report.py\0",
+        ):
+            with self.subTest(changed=changed[:64]), self.assertRaises(policy.GuardError):
+                supervisor.validate_import_release_inventory(changed)
+        original = b"".join(
+            (b"A" if path == policy.WORKFLOW else b"M") + b"\0" + path.encode() + b"\0"
+            for path in sorted(supervisor.ORIGINAL_IMPORT_PATHS)
+        )
+        supervisor.validate_original_import_inventory(original)
+        with self.assertRaises(policy.GuardError):
+            supervisor.validate_import_release_inventory(original)
+        with self.assertRaises(policy.GuardError):
+            supervisor.validate_original_import_inventory(data)
     def test_complete_diff_binding_preserves_additions_deletions_and_both_rename_sides(self):
         changes = self.changes()
         binding = policy.changed_path_binding(changes)

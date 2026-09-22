@@ -62,6 +62,12 @@ class ReportMeasurement:
             self.import_failed = True
             self.secondary.append({"stage": stage, "error": policy.component_secondary_error(error)})
 
+    def release_imports(self):
+        closing = self.observer.finish_imports(self)
+        if closing is not None:
+            self.secondary.append(closing)
+            self.import_failed = True
+
     def fail(self, stage, error):
         if stage not in policy.REPORT_ERROR_STAGES:
             raise policy.GuardError("unknown report failure stage")
@@ -198,7 +204,7 @@ class ReportMeasurement:
             finally:
                 self.withdraw(original)
                 if self.first is None or local_observer:
-                    self.observe_imports(lambda: self.observer.close_imports(self), "import-reference")
+                    self.observe_imports(self.release_imports, "import-reference")
                 imports = getattr(self.observer, "imports", None)
                 if imports is not None:
                     self.secondary.extend(imports.secondary)

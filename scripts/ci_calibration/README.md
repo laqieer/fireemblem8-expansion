@@ -4,9 +4,20 @@
 execution, push, workflow launch, retry or resource-policy decision is
 allocated by this change.**
 
-Frozen scope:
+Release correction freeze:
+[5776301898](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5776301898).
+This is a normal child of rejected `64e2e9ccaff88ca7ccdfcb1dc750fb35ea057af9`
+on the same unpushed branch and unchanged workflow. OI-REVIEW-001 reproduced
+one actual failed retirement reported twice after a successful check and
+serializer. The observer now owns a single bounded release outcome; adapter
+and worker transfer that particular failure once without retrying uncertain
+retirement or deduplicating stage names. Failed closure stays unconfirmed,
+and genuinely independent failures remain separate. Neither import authority
+nor any original source operation changes.
+
+Original frozen scope:
 [5774853564](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5774853564).
-This is one normal child of `3d1e5ac5416be38906148a87ee20bf44dbb63dbd`, on
+The original preparation was one normal child of `3d1e5ac5416be38906148a87ee20bf44dbb63dbd`, on
 `calibration/issue-180-original-import-localization-1`, with exactly one new
 fixed first-owner/run-1/attempt-1 workflow. Source remains
 `6d2725d89df70c30954daade3cca7abc6d3171d4`; BASE remains
@@ -92,6 +103,14 @@ states after each case.
    neutral changes retain real positions. A source-shaped three-error chain
    keeps its explanatory note unknown while the newly attested lazy raise
    becomes a raising anchor, never a borrowed caller location.
+5. Let both original check and serializer succeed, then fault the original
+   `old_slots.clear` retirement before and after its effect. Exercise ordinary
+   publication, whole-record construction loss and after-write recovery.
+   Each of these six OI-REVIEW-001 cases must show one real retirement attempt,
+   one `import-reference` outcome, false completion, unconfirmed release and
+   conservative retention. The exact `64e2` preimage publishes two outcomes
+   for that one attempt. Retain no-fault and original-source-failure controls,
+   distinct same-stage errors and neutral metadata ordering.
 
 `OriginalImportControls`, the coupled `RootStageControls` and parsed policy/
 lineage controls automate these assertions. There is no subjective manual

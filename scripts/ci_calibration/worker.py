@@ -729,11 +729,12 @@ def report(config, *, failure=None):
             finally:
                 if observer is not None:
                     try:
-                        observer.close_imports(measurement)
+                        closing = observer.finish_imports(measurement)
                     except BaseException as error:
                         closing = {
                             "stage": "import-reference", "error": policy.component_secondary_error(error),
                         }
+                    if closing is not None:
                         failure.retain_secondaries([*failure.known_secondary, closing])
                         if failure.record is not None:
                             failure.record["secondary"].append(closing)

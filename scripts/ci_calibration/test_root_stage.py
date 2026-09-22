@@ -26,6 +26,7 @@ WORKER_MAIN = ast.Module(body=[WORKER_TREE.body[-1]], type_ignores=[])
 ENTRY_MAIN = ast.Module(body=[ast.parse(Path(entry.__file__).read_text()).body[-1]], type_ignores=[])
 PREIMAGE_WORKER_MAIN = PREIMAGE_PROTOCOL = None
 FINALIZATION_PREIMAGE_FAILURE = FINALIZATION_PREIMAGE_REPORT = FINALIZATION_PREIMAGE_PROTOCOL = None
+IMPORT_RELEASE_PREIMAGE = None
 
 
 class RootStageControls(Inert):
@@ -1089,6 +1090,140 @@ class RootStageControls(Inert):
                         # Fixture containment after an explicitly unconfirmed
                         # release; never used as diagnostic cleanup credit.
                         original(value.measurements[0].observer.imports)
+
+    def release_outcome_case(self, when, publication=None, *, source=False, distinct_errno=None):
+        original_close = observation_failure._OriginalImports.close
+        original_collect = root_stage.ReportMeasurement.collect
+        attempts = []
+        release_error = OSError(errno.EIO, "private original retirement")
+
+        class Clearing(dict):
+            def clear(self):
+                attempts.append("release")
+                if when == "before":
+                    raise release_error
+                super().clear()
+                if when == "after":
+                    raise release_error
+
+        def close(imports):
+            if not imports.release_attempted:
+                imports.old_slots = Clearing(imports.old_slots)
+            return original_close(imports)
+
+        def collect(measurement):
+            original_collect(measurement)
+            if distinct_errno is not None:
+                def independent():
+                    attempts.append("independent")
+                    raise OSError(distinct_errno, "private independent reference")
+                measurement.observe_imports(independent, "import-reference")
+
+        faults = (() if not source else ("source",)) + (() if publication is None else (publication,))
+        with mock.patch.object(observation_failure._OriginalImports, "close", close), \
+             mock.patch.object(root_stage.ReportMeasurement, "collect", collect):
+            value = self.composition(*faults, use_worker=True, executable=WORKER_MAIN)
+        parser, rows = self.consume_executable(value)
+        self.assertEqual(value.exit_code, 1)
+        self.assertIsNone(value.failure)
+        self.assertTrue(parser.failed)
+        self.assertFalse(parser.finished)
+        record = [row["data"] for row in rows if row["kind"] == "error"][-1]
+        references = [row for row in record["secondary"] if row["stage"] == "import-reference"]
+        self.assertEqual(attempts.count("release"), 1)
+        measurement, = value.measurements
+        self.assertEqual(measurement.states["check_attempts"], 1)
+        self.assertEqual(measurement.states["check_returned"], 0 if source else 1)
+        self.assertEqual(measurement.states["serialization_returned"], 0 if source else 1)
+        self.assertFalse(measurement.states["completed"])
+        if source:
+            self.assertIs(measurement.first, value.errors["source"])
+        else:
+            self.assertEqual(len(value.calls), 1)
+            self.assertEqual(len(value.serialized), 1)
+        self.assertIsNone(measurement.raw_report)
+        self.assertIsNone(measurement.raw_serialization)
+        self.assertIsNone(measurement.cleanup["source_imports_released"])
+        self.assertTrue(measurement.cleanup["source_imports_restored"])
+        for field in ("active", "bound", "observer", "measurement", "get_hook", "compile_hook", "clock"):
+            self.assertIsNone(getattr(measurement.observer.imports, field))
+        self.assertEqual(value.events[-2:], ["sampler-close", "budget-close"])
+        self.assertNotIn(b"private", value.wire)
+        phase = {
+            "mode": "report", "first_cause": {"type": "worker-error", "error": record},
+            "empty_before_outer_cleanup": True, "empty": True,
+            "watchdog_reaped": True, "lifetime_writer_closed": True,
+        }
+        self.assertTrue(supervisor.report_retention(phase))
+        return SimpleNamespace(
+            value=value, record=record, references=references, attempts=attempts,
+            observer=measurement.observer,
+        )
+
+    def test_successful_check_and_serializer_publish_one_unconfirmed_release_outcome(self):
+        for when, publication in itertools.product(
+            ("before", "after"), (None, "record-collection", "publication-after"),
+        ):
+            with self.subTest(when=when, publication=publication):
+                result = self.release_outcome_case(when, publication)
+                closing, = result.references
+                self.assertEqual(closing["error"]["chain"][0], {"type": "OSError", "errno": errno.EIO})
+                self.assertTrue(result.observer.import_release_attempted)
+                self.assertTrue(result.observer.import_release_reported)
+                self.assertIsNone(result.observer.finish_imports(result.value.measurements[0]))
+                with self.assertRaises(observation_failure._LocationUnavailable):
+                    result.observer.close_imports(result.value.measurements[0])
+                self.assertEqual(result.attempts, ["release"])
+                self.assertIsNone(result.observer.import_cleanup()["source_imports_released"])
+
+    def test_exact64e2_preimage_duplicates_the_same_successful_report_retirement(self):
+        self.assertIsNotNone(IMPORT_RELEASE_PREIMAGE, "requires the inspected release-correction runner")
+        for when, publication in itertools.product(
+            ("before", "after"), (None, "record-collection", "publication-after"),
+        ):
+            with self.subTest(when=when, publication=publication), \
+                 mock.patch.object(root_stage.ReportMeasurement, "run", IMPORT_RELEASE_PREIMAGE["run"]), \
+                 mock.patch.object(observation_failure.Observer, "close_imports", IMPORT_RELEASE_PREIMAGE["close_imports"]), \
+                 mock.patch.object(worker, "report", IMPORT_RELEASE_PREIMAGE["report"]):
+                result = self.release_outcome_case(when, publication)
+                self.assertEqual(
+                    [row["error"]["chain"][0]["type"] for row in result.references],
+                    ["OSError", "_LocationUnavailable"],
+                )
+                with self.assertRaises(AssertionError):
+                    self.assertEqual(len(result.references), 1)
+                self.assertEqual(result.attempts, ["release"])
+
+    def test_distinct_same_stage_reference_failures_survive_even_identical_projection(self):
+        for number, when, publication in itertools.product(
+            (errno.EIO, errno.ENOMEM), ("before", "after"),
+            (None, "record-collection", "record-mutation", "publication-after"),
+        ):
+            with self.subTest(number=number, when=when, publication=publication):
+                result = self.release_outcome_case(when, publication, distinct_errno=number)
+                self.assertEqual(result.attempts, ["independent", "release"])
+                self.assertEqual(len(result.references), 2)
+                self.assertEqual(
+                    [row["error"]["chain"][0] for row in result.references],
+                    [{"type": "OSError", "errno": number}, {"type": "OSError", "errno": errno.EIO}],
+                )
+                if number == errno.EIO:
+                    self.assertEqual(result.references[0], result.references[1])
+
+    def test_neutral_release_metadata_order_and_original_source_errors_keep_one_outcome(self):
+        original = policy.component_secondary_error
+        def reorder(error):
+            return dict(reversed(list(original(error).items())))
+        for source, when, publication in itertools.product(
+            (False, True), ("before", "after"), (None, "record-collection", "publication-after"),
+        ):
+            with self.subTest(source=source, when=when, publication=publication), \
+                 mock.patch.object(policy, "component_secondary_error", reorder):
+                result = self.release_outcome_case(when, publication, source=source)
+                self.assertEqual(len(result.references), 1)
+                self.assertEqual(result.references[0]["error"]["chain"][0], {"type": "OSError", "errno": errno.EIO})
+                self.assertEqual(result.record["error"]["chain"][0]["type"], "SourceError" if source else "GuardError")
+                policy.validate_report_error(dict(reversed(list(result.record.items()))), self.binding())
 
     def test_constructor_failures_with_collectors_teardown_and_reference_faults_keep_uncertainty(self):
         for constructor, collector, reference, teardown in itertools.product(
