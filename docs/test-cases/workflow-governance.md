@@ -3887,6 +3887,12 @@ localization or archival behavior.
    without being closed. Restore the former caller-FIFO withdrawal and require
    the preservation control to fail. Real ordinary/restricted backend and all
    seven mode results still require the existing bounded native qualification.
+   Run
+   `tests.workflows.test_ownership_probe.ProbeExecutionOwnershipTests.test_native_null_fixture_requires_explicit_semantic_admission`
+   to verify the helper's parsed graph route: it has one explicit native owner
+   set, not prefix-only admission. Removing its exact include or the competing
+   prefix exclusion must fail, while selector reordering remains neutral.
+   A new adjacent helper path must still fail until explicitly classified.
 3. Run the producer stderr inert controls with the real two item-cap query
    strings. The issued plan must retain each ordered merge/discard operation,
    exact environment/source-view binding and one-use launch authority.

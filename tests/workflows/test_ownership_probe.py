@@ -1,5 +1,7 @@
 """Keep the complete native probe suite in one required, parallel CI owner."""
 
+import ast
+import copy
 import importlib
 import json
 import shlex
@@ -56,6 +58,79 @@ class PlanCollector:
 
 
 class ProbeExecutionOwnershipTests(unittest.TestCase):
+    def test_native_null_fixture_requires_explicit_semantic_admission(self):
+        names = {"_selector_matches", "_path_rule_matches", "_path_admission"}
+        source = ROOT / "scripts/validation_ownership/reporter.py"
+        parsed = ast.parse(source.read_text(encoding="utf-8"))
+        functions = [
+            node for node in parsed.body if isinstance(node, ast.FunctionDef) and node.name in names
+        ]
+        self.assertEqual({node.name for node in functions}, names)
+        namespace = {"OwnershipError": ValueError}
+        module = ast.Module(body=[
+            ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0),
+            *functions,
+        ], type_ignores=[])
+        exec(compile(ast.fix_missing_locations(module), str(source), "exec"), namespace)
+        graph = json.loads((ROOT / ".github/validation-ownership-graph.json").read_text())
+        helper = "scripts/validation_ownership/tests/null_mount_fixture.py"
+        sources = {
+            "initial-graph-cohort": set(), "generated-source-registry": set(),
+            "verifier-runtime-registry": set(),
+        }
+
+        def admitted(value, path):
+            matches = [
+                rule for rule in value["path_rules"]
+                if namespace["_path_rule_matches"](rule, path, set())
+            ]
+            self.assertEqual(len(matches), 1)
+            rule = matches[0]
+            self.assertEqual(rule["surface"], "surface.host")
+            self.assertEqual(namespace["_path_admission"](path, rule, sources), "exact-ownership-rule")
+            owners = {
+                (edge["type"], edge["target"]) for edge in value["edges"]
+                if edge["source"] == rule["surface"] and edge["type"] != "depends-on"
+            }
+            self.assertEqual(owners, {
+                ("owns-test", "owner.host-build"), ("adversarial-control", "owner.host-workflow"),
+            })
+
+        self.assertTrue((ROOT / helper).is_file())
+        admitted(graph, helper)
+        neutral = copy.deepcopy(graph)
+        for rule in neutral["path_rules"]:
+            rule["include"].reverse()
+            rule["exclude"].reverse()
+        admitted(neutral, helper)
+
+        for rule_id, role in (("paths.ownership-native", "include"), ("paths.ownership", "exclude")):
+            changed = copy.deepcopy(graph)
+            rule = next(rule for rule in changed["path_rules"] if rule["id"] == rule_id)
+            rule[role] = [selector for selector in rule[role] if selector.get("path") != helper]
+            with self.subTest(rule=rule_id), self.assertRaises(AssertionError):
+                admitted(changed, helper)
+
+        original = copy.deepcopy(graph)
+        for rule in original["path_rules"]:
+            for role in ("include", "exclude"):
+                rule[role] = [selector for selector in rule[role] if selector.get("path") != helper]
+        prefix_rule, = [
+            rule for rule in original["path_rules"]
+            if namespace["_path_rule_matches"](rule, helper, set())
+        ]
+        with self.assertRaisesRegex(ValueError, "lacks semantic admission"):
+            namespace["_path_admission"](helper, prefix_rule, sources)
+
+        unknown = "scripts/validation_ownership/tests/new_unclassified_fixture.py"
+        matching = [
+            rule for rule in graph["path_rules"]
+            if namespace["_path_rule_matches"](rule, unknown, set())
+        ]
+        self.assertEqual(len(matching), 1)
+        with self.assertRaisesRegex(ValueError, "lacks semantic admission"):
+            namespace["_path_admission"](unknown, matching[0], sources)
+
     def owner_step(self, text):
         owners = []
         for name, job in topology._job_blocks(text).items():

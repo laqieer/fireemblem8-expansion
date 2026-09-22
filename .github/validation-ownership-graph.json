@@ -1972,6 +1972,10 @@
       "exclude": [
         {
           "kind": "exact",
+          "path": "scripts/validation_ownership/tests/null_mount_fixture.py"
+        },
+        {
+          "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_foundation.py"
         },
         {
@@ -2044,6 +2048,10 @@
       "id": "paths.ownership-native",
       "surface": "surface.host",
       "include": [
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/null_mount_fixture.py"
+        },
         {
           "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_foundation.py"
