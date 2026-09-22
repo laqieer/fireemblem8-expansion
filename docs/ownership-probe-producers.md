@@ -162,6 +162,33 @@ uncontrolled unqualified-Python lookup, and noncanonical Python startup inputs
 reject rather than being silently scrubbed. The Make variable `PYTHON` itself
 is not a Python interpreter startup control.
 
+Live generic Python lookup is proved from the existing captured runtime, not
+from equality with one `PATH` string. The original `python3` word is searched
+in its real order; only a resolution to the existing `/usr/bin/python3`
+dispatch is admitted. Recorded stock aliases and parent facts must agree with
+the session-owned Make image, and that exact canonical dispatch object must
+match the session's trusted interceptor image and permissions. Matching a
+basename or interceptor bytes at another pathname is not sufficient.
+The query reads only owned captured backing, never host `PATH`, `which`, or
+live host symlink resolution. It grants no additional native dispatch path.
+
+This permits the original Makefile's supported empty-toolchain `/bin` prefix
+when the actual capture proves `/bin -> /usr/bin`, including equivalent
+duplicates. It does not guess that alias from its spelling. Empty/relative
+components, an unknown or shadowing candidate before the proved result, missing
+capture/parent/object facts, changed backing and stale source dispatches reject.
+Unvisited later candidates cannot replace a result already proved first.
+For a direct original absolute invocation, the authenticated original argv
+retains that role even when the event key normalizes its spelling; absolute
+program text is never supplied merely to bypass a check. The actual environment
+is neither rewritten nor replaced and still participates in cache/receipts.
+
+The lifecycle checker's independent controlled-`PATH` rule is unchanged.
+It shares only the loader/shell startup rejection seam with the generic
+adapter, which must separately obtain captured lookup proof. No Makefile,
+runtime declaration, program registry, budget, mount, permission or cleanup
+retention policy is changed by this compatibility correction.
+
 Each lookup reconstructs an issued generic registration, including after source
 view/epoch changes. The existing capability checks the command binding, source
 snapshot, tree, epoch and exact consuming dispatch. The execution cache includes

@@ -118,7 +118,7 @@ def _checker_dispatch(arguments, *, cwd, source_root, snapshot):
     return ("/usr/bin/python3", program, mode, actual_root, parsed.revision)
 
 
-def _startup_environment(dispatch, arguments, *, shell):
+def _startup_controls(dispatch, *, shell):
     environment = dispatch.get("environment")
     if not isinstance(environment, dict):
         raise MakeProbeError("lifecycle dispatch lacks its captured startup environment")
@@ -135,6 +135,11 @@ def _startup_environment(dispatch, arguments, *, shell):
     }
     if shell and shell_controls:
         raise MakeProbeError("lifecycle dispatch has unsupported shell startup controls: " + ", ".join(sorted(shell_controls)))
+    return environment
+
+
+def _startup_environment(dispatch, arguments, *, shell):
+    environment = _startup_controls(dispatch, shell=shell)
     if arguments[0] == "python3" and environment.get("PATH") != ENVIRONMENT["PATH"]:
         raise MakeProbeError("lifecycle unqualified checker lacks its captured controlled PATH")
 
