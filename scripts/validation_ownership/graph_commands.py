@@ -16,7 +16,7 @@ from . import arm_headers, header_effects, toolchain_runtime
 from .authority import ENVIRONMENT, encoded, parse_json, relative_path
 from .budget import MakeProbeError, text
 from .make_probe import Command, ProbeSession
-from .graph_lifecycle import _startup_environment
+from .graph_lifecycle import _startup_controls
 from .graph_regex import CommandPatterns
 from .python_commands import GENERATED_DEPENDENCY_MODULES, generated_dependency_command
 
@@ -288,10 +288,12 @@ def _python_environment(session, program):
         return
     context = session._require_live_dispatch()
     environment = dict(context.environment)
-    _startup_environment(
-        {"environment": environment}, (program,),
+    _startup_controls(
+        {"environment": environment},
         shell=context.arguments[0] in {"/bin/sh", "/bin/bash"},
     )
+    if session._prove_python_lookup(program) != PYTHON:
+        raise MakeProbeError("registered Python lookup selected a different interpreter")
     controls = {
         name for name, value in environment.items()
         if name.startswith("PYTHON") and name != "PYTHON"

@@ -1962,6 +1962,166 @@ class ProbeSession:
         finally:
             os.close(directory)
 
+    def _runtime_dispatch_paths(self):
+        return (set(ALIASES) | {
+            item.canonical for item in self.runtime_inputs if item.path in self.runtime_dispatch
+        }) - {
+            item.canonical for item in self.runtime_inputs
+            if item.data is None and item.aliases and item.canonical in ALIASES
+        }
+
+    def _prove_python_lookup(self, program):
+        """Resolve only the existing Python dispatch through this live captured image."""
+        context = self._require_live_dispatch()
+        expected = "/usr/bin/python3"
+        if (
+            self.base is None or get_ident() != self.owner_thread or context.cwd != "/repo"
+            or program not in {"python3", expected} or not context.arguments
+        ):
+            raise MakeProbeError("Python lookup lacks its current owning dispatch")
+        original = program
+        if context.arguments[0] not in {"/bin/sh", "/bin/bash"}:
+            original = context.arguments[0]
+            if original not in {"python3", expected} or (
+                original != program and not (original == expected and program == "python3")
+            ):
+                raise MakeProbeError("Python lookup differs from its original executable argument")
+        environment = dict(context.environment)
+        if original == "python3":
+            path = environment.get("PATH")
+            if type(path) is not str or len(path) > 65536 or path.count(":") >= 1024:
+                raise MakeProbeError("Python lookup lacks a bounded original PATH")
+            directories = path.split(":")
+            for directory in directories:
+                if not directory.startswith("/") or len(directory) + len("/python3") > 4096:
+                    raise MakeProbeError("Python lookup has an empty/relative or excessive PATH component")
+                relative_path(directory[1:])
+            candidates = (directory + "/python3" for directory in directories)
+        else:
+            candidates = (original,)
+        inputs = tuple(self.runtime_inputs)
+        requested = tuple(self.runtime_paths)
+        if (
+            len(inputs) != len(requested) or any(type(path) is not str for path in requested)
+            or len(set(requested)) != len(requested)
+            or any(type(item) is not RuntimeInput for item in inputs)
+            or any(type(item.path) is not str for item in inputs)
+            or {item.path for item in inputs} != set(requested)
+        ):
+            raise MakeProbeError("Python lookup has missing or changed runtime capture facts")
+        aliases, parents = {}, {}
+        for item in inputs:
+            self.budget.remaining()
+            if (
+                type(item.path) is not str or not item.path.startswith("/") or type(item.canonical) is not str
+                or type(item.parents) is not tuple or type(item.aliases) is not tuple
+                or any(type(row) is not tuple or len(row) != 2 or type(row[0]) is not str
+                       or type(row[1]) is not bool for row in item.parents)
+                or any(type(row) is not tuple or len(row) != 2 or any(type(value) is not str for value in row)
+                       for row in item.aliases)
+                or item.data is None and item.mode is not None
+                or item.data is not None and (
+                    type(item.data) is not bytes or type(item.mode) is not int or not 0 <= item.mode <= 0o777
+                )
+            ):
+                raise MakeProbeError("Python lookup has malformed captured runtime input")
+            relative_path(item.path[1:])
+            declared = dict(item.parents)
+            if (
+                len(declared) != len(item.parents)
+                or set(declared) != {parent.as_posix() for parent in PurePosixPath(item.path).parents}
+                or any(type(present) is not bool for present in declared.values())
+            ):
+                raise MakeProbeError("Python lookup lost captured parent authority")
+            for parent, present in declared.items():
+                if parent in parents and parents[parent] != present:
+                    raise MakeProbeError("Python lookup has contradictory captured parents")
+                parents[parent] = present
+            canonical = item.path
+            for alias, destination in item.aliases:
+                if (
+                    alias not in STOCK_RUNTIME_ALIASES or declared.get(alias) is not True
+                    or destination != str(PurePosixPath(STOCK_RUNTIME_ALIASES[alias]).relative_to(
+                        PurePosixPath(alias).parent,
+                    ))
+                    or alias in aliases and aliases[alias] != destination
+                    or not canonical.startswith(alias + "/")
+                ):
+                    raise MakeProbeError("Python lookup has unproved captured alias facts")
+                aliases[alias] = destination
+                canonical = str(PurePosixPath(alias).parent / destination / canonical[len(alias) + 1:])
+            if canonical != item.canonical:
+                raise MakeProbeError("Python lookup capture changed its canonical object")
+        scope = context.scope.split("/")
+        if (
+            len(scope) != 2 or scope[0] != self.base.name
+            or re.fullmatch(r"make-root-[1-9][0-9]*", scope[1]) is None
+            or self.runtime_root is not None and self.runtime_root != self.base / "runtime"
+            or bool(inputs) != (self.runtime_root is not None)
+        ):
+            raise MakeProbeError("Python lookup has a stale or foreign captured image")
+        image = self.runtime_root if self.runtime_root is not None else self.base / scope[1]
+        captured_root = self.runtime_root
+        observed = []
+        owner = os.getuid()
+        def identity(info):
+            return (
+                info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+                info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+            )
+        def observe(path, *, directory=False, link=None):
+            info = path.lstat()
+            if (
+                info.st_uid != owner or info.st_mode & 0o7000
+                or (not stat.S_ISLNK(info.st_mode) and info.st_mode & 0o022)
+                or directory and not stat.S_ISDIR(info.st_mode)
+                or link is not None and (not stat.S_ISLNK(info.st_mode) or path.readlink().as_posix() != link)
+            ):
+                raise MakeProbeError("Python lookup captured parent/object authority changed")
+            record = identity(info)
+            self.budget.charge("control", len(encoded((str(path), record, link))))
+            observed.append((path, record, link))
+            return info
+        try:
+            observe(self.base, directory=True)
+            observe(image, directory=True)
+            for candidate in candidates:
+                self.budget.remaining()
+                for alias, destination in sorted(aliases.items(), key=lambda row: -len(row[0])):
+                    if candidate.startswith(alias + "/"):
+                        observe(image / alias.lstrip("/"), link=destination)
+                        candidate = str(PurePosixPath(alias).parent / destination / candidate[len(alias) + 1:])
+                if candidate != expected:
+                    raise MakeProbeError("original Python lookup has an unproved or shadowing earlier candidate")
+                if candidate not in self._runtime_dispatch_paths():
+                    raise MakeProbeError("Python lookup lacks its declared captured dispatch object")
+                for parent in reversed(PurePosixPath(candidate).parents):
+                    if parent.as_posix() != "/":
+                        observe(image / parent.as_posix().lstrip("/"), directory=True)
+                target = image / candidate.lstrip("/")
+                info = observe(target)
+                reference = self.base / "interceptor"
+                reference_info = observe(reference)
+                if (
+                    not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o555
+                    or not stat.S_ISREG(reference_info.st_mode) or not reference_info.st_mode & 0o111
+                    or self.budget.read_bytes(target, "control") != self.budget.read_bytes(reference, "control")
+                ):
+                    raise MakeProbeError("Python lookup captured executable object changed")
+                for path, before, link in observed:
+                    if identity(path.lstat()) != before or link is not None and path.readlink().as_posix() != link:
+                        raise MakeProbeError("Python lookup runtime facts changed during proof")
+                if (
+                    self._require_live_dispatch() is not context or self.runtime_root != captured_root
+                    or sorted(self.runtime_inputs, key=lambda item: item.path) != sorted(inputs, key=lambda item: item.path)
+                    or set(self.runtime_paths) != set(requested)
+                ):
+                    raise MakeProbeError("Python lookup lost its live capture/view binding")
+                return expected
+        except OSError as error:
+            raise MakeProbeError("Python lookup captured image is unavailable or changed") from error
+        raise MakeProbeError("original Python lookup has no proven executable")
+
     def _new_root(self, name, *, make=False):
         root = self.base / name
         root.mkdir()
@@ -1981,12 +2141,7 @@ class ProbeSession:
                 (root / target.lstrip("/")).chmod(0o555)
             shutil.copyfile(self.base / "observer.so", _mkdir_target(root, "/lib/vo-observer.so"))
             (root / "lib/vo-observer.so").chmod(0o555)
-            for target in sorted((set(ALIASES) | {
-                item.canonical for item in self.runtime_inputs if item.path in self.runtime_dispatch
-            }) - {
-                item.canonical for item in self.runtime_inputs
-                if item.data is None and item.aliases and item.canonical in ALIASES
-            }):
+            for target in sorted(self._runtime_dispatch_paths()):
                 shutil.copyfile(self.base / "interceptor", _mkdir_target(root, target))
                 (root / target.lstrip("/")).chmod(0o555)
             for item in self.runtime_inputs:

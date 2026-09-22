@@ -38,6 +38,7 @@ from scripts.validation_ownership.graph_commands import (
 )
 from scripts.validation_ownership import make_probe
 from scripts.validation_ownership import graph_commands
+from scripts.validation_ownership import graph_lifecycle
 from scripts.validation_ownership import producer_channel, syscall_guard, lifecycle
 from scripts.validation_ownership.make_probe import Command, ProbeSession
 from scripts.validation_ownership.graph_probe import run_probe
@@ -46,16 +47,103 @@ from scripts.validation_ownership.graph_probe import run_probe
 ROOT = Path(__file__).resolve().parents[3]
 
 
+class _LookupImagePath:
+    def __init__(self, path, image):
+        self.value = PurePosixPath(path)
+        self.image = image
+
+    def __str__(self):
+        return self.value.as_posix()
+
+    def __fspath__(self):
+        return str(self)
+
+    def __hash__(self):
+        return hash(self.value)
+
+    def __eq__(self, other):
+        return self.value == PurePosixPath(str(other))
+
+    @property
+    def name(self):
+        return self.value.name
+
+    def __truediv__(self, name):
+        return type(self)(PurePosixPath(str(self)) / name, self.image)
+
+    def lstat(self):
+        self.image.operations.append(("stat", str(self)))
+        if str(self) not in self.image.entries:
+            raise FileNotFoundError(str(self))
+        return self.image.entries[str(self)]["info"]
+
+    def readlink(self):
+        self.image.operations.append(("readlink", str(self)))
+        return PurePosixPath(self.image.entries[str(self)]["link"])
+
+
+class _PythonLookupImage:
+    """Owned-image/capture model; never searches or reads the host runtime."""
+
+    def __init__(self):
+        self.entries, self.operations = {}, []
+        self.on_read = None
+        self.add("/model", stat.S_IFDIR | 0o700)
+        self.add("/model/repo", stat.S_IFDIR | 0o755)
+        self.add("/model/interceptor", stat.S_IFREG | 0o755, data=b"issued-interceptor")
+        self.make_image("/model/make-root-1")
+
+    def path(self, value):
+        return _LookupImagePath(value, self)
+
+    def add(self, name, mode, *, data=b"", link=None):
+        info = SimpleNamespace(
+            st_dev=1, st_ino=len(self.entries) + 100, st_mode=mode,
+            st_uid=1001, st_gid=1001, st_size=len(data), st_mtime_ns=1, st_ctime_ns=1,
+        )
+        self.entries[name] = {"info": info, "data": data, "link": link}
+
+    def make_image(self, root, *, alias=False):
+        for suffix in ("", "/usr", "/usr/bin"):
+            self.add(root + suffix, stat.S_IFDIR | 0o755)
+        self.add(root + "/bin", stat.S_IFLNK | 0o777 if alias else stat.S_IFDIR | 0o755,
+                 link="usr/bin" if alias else None)
+        self.add(root + "/usr/bin/python3", stat.S_IFREG | 0o555, data=b"issued-interceptor")
+
+    def read_bytes(self, path, category):
+        if category != "control" or str(path) not in self.entries:
+            raise AssertionError("unmodeled capture read: " + str(path))
+        self.operations.append(("read", str(path)))
+        result = self.entries[str(path)]["data"]
+        if self.on_read is not None:
+            self.on_read(path)
+        return result
+
+    def capture_alias(self, session):
+        self.make_image("/model/runtime", alias=True)
+        session.runtime_root = self.path("/model/runtime")
+        session.runtime_paths = ("/bin/env",)
+        session.runtime_inputs = (make_probe.RuntimeInput(
+            "/bin/env", b"captured-env", 0o755, (("/bin", True), ("/", True)),
+            "/usr/bin/env", (("/bin", "usr/bin"),),
+        ),)
+        session.runtime_dispatch = ("/bin/env",)
+
+
 class CommandSemanticsTests(unittest.TestCase):
     """Inert API compositions; no session setup, subprocess or native execution."""
 
     def session(self):
         session = object.__new__(ProbeSession)
-        session.base, session.tree = Path("/model"), Path("/model/repo")
+        image = _PythonLookupImage()
+        session.base, session.tree = image.path("/model"), image.path("/model/repo")
+        session._lookup_image = image
+        session.runtime_root = None
+        session.runtime_inputs = session.runtime_paths = session.runtime_dispatch = ()
         session.serial = 0
         session.owner_thread = get_ident()
         session.snapshot = SimpleNamespace(files={}, digest="model-snapshot")
-        session.budget = SimpleNamespace(remaining=lambda: None, charge=lambda *args: None)
+        session.budget = SimpleNamespace(remaining=lambda: None, charge=lambda *args: None, read_bytes=image.read_bytes)
         session._namespace_epoch = 1
         session._native_context_commands = {}
         session._issued_context_commands = weakref.WeakSet()
@@ -89,16 +177,17 @@ class CommandSemanticsTests(unittest.TestCase):
             return MakeCommands(session, {"fixture": contract})
 
     @contextmanager
-    def dispatch(self, session, environment):
+    def dispatch(self, session, environment, *, arguments=("/bin/sh", "-c", "modeled")):
         context = make_probe._LiveDispatch(
-            "modeled-native-dispatch", 1, ("/bin/sh", "-c", "modeled"),
+            "model/make-root-1", 1, arguments,
             "/repo", tuple(sorted(environment.items())), False, ("expansion", None, None),
             session.snapshot, session.tree, session._namespace_epoch,
         )
         session._issued_dispatches.add(context)
         session._live_dispatches.append(context)
         try:
-            yield context
+            with mock.patch.object(make_probe.os, "getuid", return_value=1001):
+                yield context
         finally:
             session._live_dispatches.pop()
             session._issued_dispatches.discard(context)
@@ -380,6 +469,181 @@ class CommandSemanticsTests(unittest.TestCase):
                         **contract, "command_regex": re.escape(escaped),
                     })[escaped].argv[-2:], (root, pattern),
                 )
+
+
+class PythonLookupTests(unittest.TestCase):
+    session = CommandSemanticsTests.session
+    commands = CommandSemanticsTests.commands
+    dispatch = CommandSemanticsTests.dispatch
+    consuming = CommandSemanticsTests.consuming
+    execute = CommandSemanticsTests.execute
+
+    def test_captured_alias_and_duplicate_paths_keep_actual_environment_and_factory(self):
+        body = "import os;print(os.environ['PATH']);print(os.environ['VALUE'])"
+        command = "python3 -c " + shlex.quote(body)
+        for path in ("/usr/bin:/bin", "/bin:/usr/bin:/bin", "/bin:/bin:/usr/bin", "/usr/bin:/usr/bin"):
+            with self.subTest(path=path):
+                session = self.session()
+                session._lookup_image.capture_alias(session)
+                commands = self.commands(session, command)
+                for value in ("first", "second"):
+                    original = {**ENVIRONMENT, "PATH": path, "VALUE": value}
+                    with self.dispatch(session, original) as live:
+                        registration = commands[command]
+                        with self.consuming(session, registration, live) as environment:
+                            self.assertEqual(environment, original)
+                            self.assertEqual(self.execute(registration, environment)[:2],
+                                             ((path + "\n" + value + "\n").encode(), b""))
+                self.assertIn(("read", "/model/runtime/usr/bin/python3"), session._lookup_image.operations)
+                self.assertTrue(all(path.startswith("/model/") or path == "/model"
+                                    for _, path in session._lookup_image.operations))
+
+    def test_unknown_shadowing_empty_and_relative_lookup_is_not_substituted(self):
+        command = "python3 -c 'print(1)'"
+        for path in (
+            "", ":/usr/bin", "/usr/bin:", "bin:/usr/bin", "./bin:/usr/bin",
+            "/usr/bin/../bin", "/unknown:/usr/bin", "/usr/include/shadow:/usr/bin",
+        ):
+            with self.subTest(path=path):
+                session = self.session()
+                session._lookup_image.capture_alias(session)
+                shadow = make_probe.RuntimeInput(
+                    "/usr/include/shadow/python3", b"other-interpreter", 0o755,
+                    (("/usr/include/shadow", True), ("/usr/include", True), ("/usr", True), ("/", True)),
+                    "/usr/include/shadow/python3",
+                )
+                session.runtime_inputs += (shadow,)
+                session.runtime_paths += (shadow.path,)
+                session._lookup_image.add("/model/runtime/usr/include/shadow/python3",
+                                          stat.S_IFREG | 0o755, data=shadow.data)
+                with self.dispatch(session, {**ENVIRONMENT, "PATH": path}), self.assertRaises(MakeProbeError):
+                    self.commands(session, command)[command]
+                with self.dispatch(session, {**ENVIRONMENT, "PATH": "/usr/bin:/usr/include/shadow"}):
+                    self.assertEqual(self.commands(session, command)[command].argv[0], "/usr/bin/python3")
+        session = self.session()
+        session._lookup_image.capture_alias(session)
+        with self.dispatch(session, {**ENVIRONMENT, "PATH": "/usr/bin:/unknown"}):
+            self.assertEqual(self.commands(session, command)[command].argv[0], "/usr/bin/python3")
+
+    def test_absolute_python_still_requires_its_object_but_not_unused_path_lookup(self):
+        command = "/usr/bin/python3 -c 'print(1)'"
+        session = self.session()
+        with self.dispatch(session, {**ENVIRONMENT, "PATH": "relative:"}):
+            registration = self.commands(session, command)[command]
+            self.assertEqual(registration.argv[0], "/usr/bin/python3")
+        session._lookup_image.entries["/model/make-root-1/usr/bin/python3"]["data"] = b"substituted"
+        with self.dispatch(session, ENVIRONMENT), self.assertRaises(MakeProbeError):
+            self.commands(session, command)[command]
+
+    def test_original_direct_absolute_argv_is_not_reclassified_as_a_path_lookup(self):
+        command = "python3 -c 'print(1)'"
+        session = self.session()
+        with self.dispatch(session, {**ENVIRONMENT, "PATH": "/shadow:/usr/bin"},
+                           arguments=("/usr/bin/python3", "-c", "print(1)")):
+            self.assertEqual(self.commands(session, command)[command].argv[0], "/usr/bin/python3")
+        for original in ("python3", "/foreign/python3", "/usr/bin/find"):
+            with self.subTest(original=original), self.dispatch(
+                session, {**ENVIRONMENT, "PATH": "/shadow:/usr/bin"},
+                arguments=(original, "-c", "print(1)"),
+            ), self.assertRaises(MakeProbeError):
+                self.commands(session, command)[command]
+
+    def test_alias_parent_image_and_current_dispatch_facts_cannot_be_missing_or_changed(self):
+        command = "python3 -c 'print(1)'"
+        for fault in ("alias", "parent", "missing", "canonical", "image-link", "image-bytes",
+                      "image-mode", "directory-mode", "image-owner", "image-missing",
+                      "stale", "view", "scope", "during"):
+            with self.subTest(fault=fault):
+                session = self.session()
+                image = session._lookup_image
+                image.capture_alias(session)
+                item, = session.runtime_inputs
+                if fault == "alias":
+                    session.runtime_inputs = (replace(item, aliases=()),)
+                elif fault == "parent":
+                    session.runtime_inputs = (replace(item, parents=(("/bin", False), ("/", True))),)
+                elif fault == "missing":
+                    session.runtime_inputs = ()
+                elif fault == "canonical":
+                    session.runtime_inputs = (replace(item, canonical="/elsewhere/env"),)
+                elif fault == "image-link":
+                    image.entries["/model/runtime/bin"]["link"] = "elsewhere"
+                elif fault == "image-bytes":
+                    image.entries["/model/runtime/usr/bin/python3"]["data"] = b"foreign"
+                elif fault == "image-mode":
+                    image.entries["/model/runtime/usr/bin/python3"]["info"].st_mode = stat.S_IFREG | 0o644
+                elif fault == "directory-mode":
+                    image.entries["/model/runtime/usr/bin"]["info"].st_mode |= 0o002
+                elif fault == "image-owner":
+                    image.entries["/model/runtime/usr/bin/python3"]["info"].st_uid = 1002
+                elif fault == "image-missing":
+                    del image.entries["/model/runtime/usr/bin/python3"]
+                elif fault == "during":
+                    image.on_read = lambda path: setattr(session, "_namespace_epoch", 2)
+                with self.dispatch(session, {**ENVIRONMENT, "PATH": "/bin:/usr/bin:/bin"}) as live:
+                    if fault == "stale":
+                        session._namespace_epoch += 1
+                    elif fault == "view":
+                        session.snapshot = SimpleNamespace(files={}, digest="other-view")
+                    elif fault == "scope":
+                        object.__setattr__(live, "scope", "foreign/make-root-1")
+                    with self.assertRaises(MakeProbeError):
+                        self.commands(session, command)[command]
+
+    def test_equivalent_capture_order_is_neutral_and_missing_alias_is_not_guessed(self):
+        command = "python3 -c 'print(1)'"
+        session = self.session()
+        with self.dispatch(session, {**ENVIRONMENT, "PATH": "/bin:/usr/bin:/bin"}), self.assertRaises(MakeProbeError):
+            self.commands(session, command)[command]
+        session._lookup_image.capture_alias(session)
+        item, = session.runtime_inputs
+        companion = make_probe.RuntimeInput(
+            "/usr/bin/env", item.data, item.mode, (("/usr/bin", True), ("/usr", True), ("/", True)),
+            "/usr/bin/env",
+        )
+        for records in ((item, companion), (companion, replace(item, parents=tuple(reversed(item.parents))))):
+            session.runtime_inputs = records
+            session.runtime_paths = tuple(record.path for record in records)
+            session.runtime_dispatch = session.runtime_paths
+            with self.dispatch(session, {**ENVIRONMENT, "PATH": "/bin:/usr/bin:/bin"}):
+                self.assertEqual(self.commands(session, command)[command].argv[0], "/usr/bin/python3")
+        missing = make_probe.RuntimeInput(
+            "/bin/python3", None, None, (("/bin", True), ("/", True)),
+            "/usr/bin/python3", (("/bin", "usr/bin"),),
+        )
+        session.runtime_inputs += (missing,)
+        session.runtime_paths += (missing.path,)
+        with self.dispatch(session, {**ENVIRONMENT, "PATH": "/bin:/usr/bin"}), self.assertRaises(MakeProbeError):
+            self.commands(session, command)[command]
+
+    def test_checker_specific_path_policy_and_shared_startup_controls_stay_strict(self):
+        path = "/bin:/usr/bin:/bin"
+        with self.assertRaisesRegex(MakeProbeError, "controlled PATH"):
+            graph_lifecycle._startup_environment({"environment": {**ENVIRONMENT, "PATH": path}},
+                                                 ("python3",), shell=True)
+        graph_lifecycle._startup_environment({"environment": ENVIRONMENT}, ("python3",), shell=True)
+        command = "python3 -c 'print(1)'"
+        for name, value in (("LD_PRELOAD", "/foreign.so"), ("BASH_ENV", "/startup"),
+                            ("PYTHONPATH", "/foreign"), ("PYTHONHOME", "/foreign")):
+            session = self.session()
+            session._lookup_image.capture_alias(session)
+            environment = {**ENVIRONMENT, "PATH": path, name: value}
+            with self.subTest(name=name), self.dispatch(session, environment), self.assertRaises(MakeProbeError):
+                self.commands(session, command)[command]
+
+    def test_lookup_does_not_consult_host_search_or_live_host_resolution(self):
+        command = "python3 -c 'print(1)' 2>/dev/null"
+        session = self.session()
+        session._lookup_image.capture_alias(session)
+        def forbidden(*args, **kwargs):
+            raise AssertionError("host executable lookup is not captured authority")
+        with mock.patch.object(Path, "resolve", forbidden), \
+             mock.patch.object(make_probe, "_trusted_runtime_path", forbidden, create=True), \
+             mock.patch.object(graph_commands, "shutil", SimpleNamespace(which=forbidden), create=True), \
+             self.dispatch(session, {**ENVIRONMENT, "PATH": "/bin:/usr/bin:/bin"}):
+            registration = self.commands(session, command)[command]
+            self.assertEqual(registration.stderr_effects, ("null",))
+            self.assertEqual(registration.argv[0], "/usr/bin/python3")
 
 
 class _StderrModel:
@@ -1563,6 +1827,61 @@ class GraphCommandTests(unittest.TestCase):
 
     def generic_registration(self, probe, command, **options):
         return self.generic_commands(probe, command, **options)[command]
+
+    def test_live_python_lookup_matches_original_make_export_and_keeps_receipt_environment(self):
+        body = "import json,os;print(json.dumps({'path':os.environ['PATH'],'value':os.environ['VALUE']},sort_keys=True))"
+        ordinary = "python3 -c " + shlex.quote(body)
+        absolute = "/usr/bin/python3 -c " + shlex.quote(body)
+        declaration = next(line for line in (ROOT / "Makefile").read_text().splitlines()
+                           if line.startswith("export PATH :="))
+        for command, toolchain in ((ordinary, ""), (absolute, "/usr/include/uncaptured-toolchain")):
+            self.add("Makefile", f"TOOLCHAIN := {toolchain}\n{declaration}\nall:\n\t+@{command}\n")
+            expected = subprocess.run(
+                ["/usr/bin/make", "--no-print-directory", "-s", "all"], cwd=self.root,
+                env={**ENVIRONMENT, "VALUE": "original"}, capture_output=True, check=True, timeout=15,
+            )
+            with self.subTest(command=command), self.session(runtime_files=("/bin/env", "/usr/bin/env")) as probe:
+                contract = {
+                    "id": "original-python-lookup-fixture", "input_files": [],
+                    "command_regex": "(?:" + re.escape(ordinary) + "|" + re.escape(absolute) + ")",
+                }
+                commands = MakeCommands(probe, {"fixture": contract})
+                result = probe.make("all", commands=commands, assignments=(("environment", "VALUE", "original"),))
+                self.assertEqual(result.stdout, expected.stdout)
+                actual = json.loads(result.stdout)
+                dispatch, = result.semantics["native_dispatches"]
+                receipt, = result.semantics["dynamic_commands"]
+                self.assertEqual(actual["path"], dispatch["environment"]["PATH"])
+                self.assertEqual(receipt["command"]["environment"], dispatch["environment"])
+                self.assertEqual(actual["value"], "original")
+                self.assertNotEqual(actual["path"], ENVIRONMENT["PATH"])
+            self.assertIsNone(probe.base)
+            self.assertFalse(probe.budget.children)
+
+    def test_live_python_lookup_refuses_owned_shadow_and_changed_captured_image(self):
+        command = "FE8_ITEM_ID_CAP=271 python3 -c 'print(1)'"
+        self.add("shadow/bin/python3", "#!/bin/sh\nprintf 'shadow\\n'\n", "100755")
+        self.add("Makefile", (
+            "TOOLCHAIN := $(CURDIR)/shadow\nexport PATH := $(TOOLCHAIN)/bin:$(PATH)\n"
+            "all:\n\t+@" + command + "\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "--no-print-directory", "-s", "all"], cwd=self.root, env=ENVIRONMENT,
+            capture_output=True, check=True, timeout=15,
+        )
+        self.assertEqual(ordinary.stdout, b"shadow\n")
+        with self.session(runtime_files=("/bin/env",)) as probe:
+            with self.assertRaisesRegex(MakeProbeError, "Python lookup"):
+                probe.make("all", commands=self.generic_commands(probe, command))
+        self.assertFalse(probe.budget.children)
+        self.add("Makefile", (
+            "TOOLCHAIN :=\nexport PATH := $(TOOLCHAIN)/bin:$(PATH)\nall:\n\t+@" + command + "\n"
+        ))
+        with self.session(runtime_files=("/bin/env",)) as probe:
+            (probe.runtime_root / "usr/bin/python3").chmod(0o755)
+            with self.assertRaisesRegex(MakeProbeError, "Python lookup"):
+                probe.make("all", commands=self.generic_commands(probe, command))
+        self.assertFalse(probe.budget.children)
 
     def test_live_generic_python_preserves_original_environment_and_cache_receipts(self):
         body = (
