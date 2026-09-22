@@ -1,9 +1,55 @@
-# Contained partial source-anchor preparation
+# Contained traceless-chain source-anchor preparation
 
 **Preparation only; never merge this branch. No native execution, workflow
 launch, retry or production resource-policy decision is allocated here.**
 
 Current freeze:
+[5772396764](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5772396764).
+This is a normal child of `43feaf98a048390a36b1b380e97f7b8b64ce8b69` on
+`calibration/issue-180-report-localization-3`, with one new fixed first-owner
+workflow. Source6d/BASEec and every spent workflow/allocation stay unchanged.
+Run35695568912 is spent and closed. Its underlying source cause and the
+identity of any traceback-less member remain unknown.
+
+Before edits, actual raised source errors with an unraised explanatory cause
+or an explicitly cleared cause reproduced `unavailable/no-source-trace` with
+empty anchors through the original Observer and Protocol. An intact control
+retained its complete observed location. This is a diagnostic limitation,
+not evidence of a source guard failure or a new native diagnosis.
+
+The existing version-2 projector now continues its one bounded exception walk
+across a node with no traceback. That node still consumes an exception index
+but contributes no frame, position or anchor. Other independently registered
+raising/caller anchors keep their original indices and relations. The whole
+sequence remains `unavailable/no-source-trace`, `locations=[]`, `authority=false`;
+it cannot claim complete location or report success.
+
+Original public-call scope must still occur in a retained traceback. If
+clearing members removes all such scope evidence, no anchors are published,
+even if another source frame is registered. All-missing chains remain empty.
+Cycles, foreign binding/code, malformed metadata and total bounds still reject
+qualified anchors. Complete observations and `source-code-unbound` retain
+their prior meanings. A complete error-type chain with `no-source-trace` may
+not carry an anchor for every index, regardless of roles.
+
+Registration/import/class admission, first-source binding, line/offset
+identity, privacy, reference withdrawal, primary/secondary handling,
+accounting/cleanup/retention and physical mechanisms are unchanged. The same
+32-exception/256-total-frame/entry-work/total `ERROR_BYTES` bounds apply; no
+scope stub, source preload, quota change or missing-member location is added.
+Full CURRENT/BASE/source/lifecycle/serializer scope, one budget/session/clock,
+14 queries/19 counters, seven fresh qualifiers and five artifacts remain.
+
+The inspected runner preserves all 161 methods / 983 subtests and adds actual
+wire, first/middle/last missing, all-missing, scope/cycle/bound/foreign,
+publication/withdrawal/retention, old-abort restoration and neutral controls.
+Same-reviewer exact follow-up and Main's separate allocation precede any
+launch. Underlying cause, full report/verifier/native/H1/CI and delivery gates
+remain open.
+
+## Historical partial-anchor preparation (closed allocation)
+
+Earlier freeze:
 [5771617787](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5771617787).
 This is a normal child of `440cbb613857c7802d19ce7dc55b03dd29941b04` on
 `calibration/issue-180-report-localization-2`, with one new fixed first-owner

@@ -24,6 +24,7 @@ PREIMAGE_REPORT_ERROR_RECORD = None
 PREIMAGE_REGISTRATION_MODULE = None
 PREIMAGE_CODE_METHODS = None
 PREIMAGE_ANCHOR_PROJECT = None
+PREIMAGE_TRACELESS_PROJECT = None
 
 
 class FrameFixture:
@@ -2050,6 +2051,286 @@ def source_boundary():
         self.assertEqual(error["cleanup"]["budget_closed"], True)
         self.assertCountEqual([row["stage"] for row in error["secondary"]],
                               ["sampler-close", "budget-close", "error-publication"])
+
+
+class TracelessAnchorControls(Inert):
+    wire = LocationControls.wire
+    entrypoint_case = PartialAnchorControls.entrypoint_case
+
+    @staticmethod
+    def nodes(error):
+        result = []
+        while error is not None:
+            result.append(error)
+            error = error.__cause__ if error.__cause__ is not None else error.__context__
+        return result
+
+    @contextmanager
+    def fixture(self, kind="wrapped-late", *, missing=(1,), execute=True, **kwargs):
+        with PartialAnchorControls.fixture(self, kind, execute=False, **kwargs) as value:
+            original = value.invoke
+            def invoke():
+                error = original()
+                nodes = self.nodes(error)
+                for index in missing:
+                    nodes[index].__traceback__ = None
+                return error
+            value.invoke = invoke
+            if execute:
+                self.assertEqual(value.observer.register_locations(value.measurement.api), [])
+                invoke()
+            yield value
+
+    def assert_partial(self, value, indices, relations=None):
+        first = value.error
+        record = self.wire(value)
+        location = record["source_locations"]
+        self.assertIs(value.error, first)
+        self.assertEqual(location["status"], "unavailable")
+        self.assertEqual(location["reason"], "no-source-trace")
+        self.assertEqual(location["locations"], [])
+        self.assertFalse(location["authority"])
+        self.assertTrue(location["references_closed"])
+        self.assertEqual([row["exception"] for row in location["anchors"]], indices)
+        if relations is not None:
+            self.assertEqual([row["relation"] for row in location["anchors"]], relations)
+        nodes = self.nodes(value.error)
+        for row in location["anchors"]:
+            trace = nodes[row["exception"]].__traceback__
+            self.assertIsNotNone(trace)
+            matches = []
+            while trace is not None:
+                code = trace.tb_frame.f_code
+                if (code.co_filename.removeprefix("/repo/"), code.co_name, trace.tb_lineno, trace.tb_lasti) == (
+                    row["file"], row["code"], row["line"], row["offset"],
+                ):
+                    matches.append("registered-raising-frame" if trace.tb_next is None else "registered-caller")
+                trace = trace.tb_next
+            self.assertEqual(matches, [row["role"]])
+        self.assertEqual(value.observer.location_codes, {})
+        return record
+
+    def test_raised_source_with_unraised_or_cleared_cause_retains_only_real_other_anchor(self):
+        for kind in ("unraised", "cleared"):
+            with self.subTest(kind=kind), LocationControls.fixture(self, "wrapped" if kind == "cleared" else "direct") as value:
+                if kind == "unraised":
+                    value.error.__cause__ = RuntimeError("private explanatory cause")
+                else:
+                    value.error.__cause__.__traceback__ = None
+                record = self.assert_partial(value, [0], ["primary"])
+                self.assertEqual(record["source_locations"]["anchors"][0]["role"], "registered-raising-frame")
+
+    def test_cleared_first_middle_last_and_all_missing_keep_indices_and_scope_honest(self):
+        for missing, expected in (
+            ((0,), [1, 2]), ((1,), [0, 2]), ((2,), [0, 1]),
+            ((0, 2), [1]), ((1, 2), [0]), ((0, 1, 2), []),
+        ):
+            with self.subTest(missing=missing), self.fixture(missing=missing) as value:
+                self.assert_partial(value, expected)
+        with self.fixture(missing=(0, 1)) as value:
+            record = self.wire(value)
+            self.assertEqual(record["source_locations"]["reason"], "public-call-unobserved")
+            self.assertEqual(record["source_locations"]["anchors"], [])
+
+    def test_unraised_first_or_middle_and_context_links_do_not_borrow_missing_member_lines(self):
+        with LocationControls.fixture(self) as value:
+            first = RuntimeError("private unraised primary")
+            first.__cause__ = value.error
+            value.error = first
+            self.assert_partial(value, [1], ["cause"])
+        with LocationControls.fixture(self, "wrapped") as value:
+            inner = value.error.__cause__
+            middle = RuntimeError("private unraised middle")
+            middle.__cause__ = inner
+            value.error.__cause__ = None
+            value.error.__context__ = middle
+            self.assert_partial(value, [0, 2], ["primary", "cause"])
+
+    def test_missing_trace_cannot_hide_foreign_cycle_scope_or_replacement_rejection(self):
+        for fault in ("cycle", "foreign-root", "foreign-file", "foreign-leaf", "replaced-caller", "no-scope", "malformed"):
+            with self.subTest(fault=fault), self.fixture() as value:
+                if fault == "cycle":
+                    self.nodes(value.error)[-1].__cause__ = value.error
+                elif fault == "foreign-root":
+                    value.measurement.root = Path("/foreign")
+                elif fault == "foreign-file":
+                    value.entries["scripts/validation_ownership/graph_report.py"].mode = "120000"
+                elif fault == "foreign-leaf":
+                    def foreign():
+                        raise RuntimeError("private foreign")
+                    try:
+                        foreign()
+                    except BaseException as error:
+                        self.nodes(value.error)[-1].__cause__ = error
+                elif fault == "replaced-caller":
+                    value.probe.run_probe = type(value.probe.run_probe)(
+                        value.probe.run_probe.__code__.replace(co_name="replacement"), value.probe.__dict__,
+                    )
+                elif fault == "no-scope":
+                    try:
+                        value.phase.analyze()
+                    except BaseException as error:
+                        error.__cause__ = RuntimeError("private unraised")
+                        value.error = error
+                else:
+                    class Bad(str):
+                        def __eq__(self, other):
+                            raise AssertionError("metadata callback")
+                    value.phase.analyze.__code__ = value.phase.analyze.__code__.replace(
+                        co_filename=Bad(value.phase.__file__),
+                    )
+                record = self.wire(value)
+                self.assertEqual(record["source_locations"]["status"], "unavailable")
+                self.assertEqual(record["source_locations"]["anchors"], [])
+                self.assertTrue(record["source_locations"]["references_closed"])
+
+    def test_missing_nodes_count_toward_total_exception_frame_and_envelope_bounds(self):
+        for count in (32, 33):
+            with self.subTest(count=count), LocationControls.fixture(self) as value:
+                current = value.error
+                for _ in range(count - 1):
+                    following = RuntimeError("private explanatory")
+                    current.__cause__ = following
+                    current = following
+                record = self.wire(value)
+                self.assertEqual(record["source_locations"]["reason"],
+                                 "no-source-trace" if count == 32 else "exception-chain-bound")
+                self.assertEqual(len(record["source_locations"]["anchors"]), 1 if count == 32 else 0)
+        for frames in (256, 257):
+            with self.subTest(frames=frames), PartialAnchorControls.fixture(self, depth=frames - 4) as value:
+                value.error.__cause__ = RuntimeError("private unraised")
+                record = self.wire(value)
+                self.assertEqual(record["source_locations"]["reason"],
+                                 "no-source-trace" if frames == 256 else "trace-frame-bound")
+                self.assertEqual(bool(record["source_locations"]["anchors"]), frames == 256)
+        with self.fixture() as value:
+            size = len(policy.encoded(self.wire(value)["source_locations"]))
+        for bound in (size, size - 1):
+            with self.subTest(bound=bound), self.fixture() as value, mock.patch.object(policy, "ERROR_BYTES", bound):
+                location = value.observer.source_locations(value.error, value.measurement)
+                self.assertEqual(bool(location["anchors"]), bound == size)
+                self.assertEqual(location["reason"], "no-source-trace" if bound == size else "location-size-bound")
+        with self.fixture() as value:
+            value.phase.__dict__.update({f"extra_{index}": None for index in range(policy.ORIGINAL_LIMITS["entries"])})
+            record = self.wire(value)
+            self.assertEqual(record["source_locations"]["reason"], "registration-bound")
+            self.assertEqual(record["source_locations"]["anchors"], [])
+
+    def test_traceless_wire_rejects_complete_coverage_claims_mutations_and_accepts_neutral_order(self):
+        with self.fixture(missing=(2,)) as value:
+            value.graph.harmless_alias = value.graph.check
+            record = self.assert_partial(value, [0, 1])
+            policy.validate_report_error(json_order(record), self.binding())
+            for fault in ("covers-missing", "out-of-range", "duplicate", "relation", "observed", "unclosed", "foreign"):
+                changed = copy.deepcopy(record)
+                location = changed["source_locations"]
+                if fault == "covers-missing":
+                    location["anchors"].append({**location["anchors"][0], "exception": 2,
+                                                "relation": "cause", "role": "registered-caller"})
+                elif fault == "out-of-range":
+                    location["anchors"][-1]["exception"] = 3
+                elif fault == "duplicate":
+                    location["anchors"][-1]["exception"] = 0
+                elif fault == "relation":
+                    location["anchors"][0]["relation"] = "context"
+                elif fault == "observed":
+                    location.update(status="observed", reason=None)
+                elif fault == "unclosed":
+                    location["references_closed"] = None
+                else:
+                    location["source_revision"] = policy.BASE
+                with self.subTest(fault=fault), self.assertRaises(policy.GuardError):
+                    parser = supervisor.Protocol("12345/report", policy.OUTPUT_BYTES,
+                                                 report_binding=self.binding(), deadline=3700.0)
+                    parser.feed(policy.encoded({"scope": "12345/report", "kind": "error", "data": changed}) + b"\n")
+
+    def test_old_abort_restoration_loses_bound_anchors_and_complete_locations_are_unchanged(self):
+        self.assertIsNotNone(PREIMAGE_TRACELESS_PROJECT, "requires inspected traceless runner")
+        with self.fixture() as value:
+            self.assertTrue(self.assert_partial(value, [0, 2])["source_locations"]["anchors"])
+        with mock.patch.object(observation_failure._SourceLocations, "project", PREIMAGE_TRACELESS_PROJECT):
+            with self.fixture() as value:
+                old = self.wire(value)["source_locations"]
+                self.assertEqual(old["reason"], "no-source-trace")
+                self.assertEqual(old["anchors"], [])
+            with LocationControls.fixture(self) as value:
+                complete = self.wire(value)["source_locations"]
+                self.assertEqual(complete["status"], "observed")
+                self.assertEqual(complete["anchors"], [])
+        with PartialAnchorControls.fixture(self) as value:
+            unbound = self.wire(value)["source_locations"]
+            self.assertEqual(unbound["reason"], "source-code-unbound")
+            self.assertTrue(unbound["anchors"])
+
+    def test_actual_traceless_entrypoint_publication_faults_and_retention_keep_first_source(self):
+        for faults in (
+            (), ("publication-before",), ("publication-after",),
+            ("sampler-close", "budget-close-before", "publication-after"),
+            ("sampler-close", "budget-close-after", "publication-after"),
+            ("locator", "publication-after"), ("formatter", "publication-before"),
+            ("record",), ("record", "publication-before"), ("publication-always",),
+        ):
+            with self.subTest(faults=faults):
+                value = self.entrypoint_case(*faults)
+                self.assertEqual(value.code, 1)
+                self.assertFalse(value.parser.finished)
+                errors = [row["data"] for row in value.rows if row["kind"] == "error"]
+                if "publication-always" in faults or {"record", "publication-before"} <= set(faults):
+                    self.assertEqual(errors, [])
+                    self.assertFalse(value.parser.failed)
+                    self.assertTrue(value.stderr)
+                    continue
+                error = errors[-1]
+                self.assertTrue(value.parser.failed)
+                if "formatter" not in faults:
+                    self.assertEqual(error["error"]["chain"][0]["type"], type(value.first).__name__)
+                if "record" not in faults and "locator" not in faults:
+                    self.assertEqual(error["source_locations"]["reason"], "no-source-trace")
+                    self.assertEqual([row["exception"] for row in error["source_locations"]["anchors"]], [0, 2])
+                    self.assertIsNotNone(error["counters"])
+                    self.assertIsNotNone(error["cleanup"])
+                else:
+                    self.assertEqual(error["source_locations"]["anchors"], [])
+                phase = {"mode": "report", "worker": None, "first_cause": {"type": "worker-error", "error": error},
+                         "empty": True, "empty_before_outer_cleanup": True, "watchdog_reaped": True,
+                         "lifetime_writer_closed": True}
+                if not faults:
+                    self.assertFalse(supervisor.report_retention(phase))
+                    error["counters"]["budget"]["failed"] = True
+                    self.assertTrue(supervisor.report_retention(phase))
+
+    def test_traceless_withdrawal_failures_never_publish_qualified_anchors(self):
+        original = observation_failure._SourceLocations
+        for when in ("before", "after"):
+            attempts, instances = [], []
+            class Clearing(dict):
+                def clear(self):
+                    attempts.append("codes")
+                    if when == "before":
+                        raise OSError(errno.EIO, "private withdrawal")
+                    super().clear()
+                    raise OSError(errno.EIO, "private withdrawal")
+            class Registry(original):
+                def __init__(self):
+                    super().__init__()
+                    self.codes = Clearing()
+                    instances.append(self)
+            with self.subTest(when=when), self.fixture() as value, \
+                 mock.patch.object(observation_failure, "_SourceLocations", Registry):
+                first = value.error
+                record = self.wire(value)
+                self.assertIs(value.error, first)
+                self.assertEqual(record["source_locations"]["anchors"], [])
+                self.assertIsNone(record["source_locations"]["references_closed"])
+                self.assertEqual(record["secondary"][-1]["stage"], "location-publication")
+                self.assertIsNotNone(record["counters"])
+                self.assertEqual(attempts, ["codes"])
+                instance, = instances
+                self.assertFalse(instance.modules)
+                self.assertFalse(instance.seen)
+                self.assertFalse(instance.registered)
+                for name in ("entries", "entry_type", "call", "call_globals"):
+                    self.assertIsNone(getattr(instance, name))
 
 
 def json_order(value):

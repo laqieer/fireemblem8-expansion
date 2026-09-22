@@ -50,6 +50,7 @@ REPORT_REGISTRATION_SHA = "1e6a767673e96f546bf9f2bc70b2e312e2fd0105"
 REPORT_CODE_METADATA_SHA = "4360e557a843f0feee214918bc0d9320127d5817"
 CORRECTED_REPORT_SHA = "6c2bc38fe17ada38a21ec6698373c725fd8f32fe"
 PYTHON_REPORT_SHA = "440cbb613857c7802d19ce7dc55b03dd29941b04"
+PARTIAL_ANCHOR_SHA = "43feaf98a048390a36b1b380e97f7b8b64ce8b69"
 COMPONENT_PATHS = frozenset({
     policy.COMPONENT_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "worker.py", "root_stage.py", "supervisor.py", "observation_failure.py", "README.md",
@@ -88,16 +89,18 @@ CORRECTED_REPORT_PATHS = frozenset({
 })
 PYTHON_REPORT_PATHS = (CORRECTED_REPORT_PATHS - {policy.CORRECTED_REPORT_WORKFLOW}) | {policy.PYTHON_REPORT_WORKFLOW}
 PARTIAL_ANCHOR_PATHS = frozenset({
-    policy.WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
+    policy.PARTIAL_ANCHOR_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "observation_failure.py", "policy.py", "supervisor.py", "README.md",
         "test_ci_calibration.py", "test_observation_failure.py",
     )),
 })
+TRACELESS_ANCHOR_PATHS = (PARTIAL_ANCHOR_PATHS - {policy.PARTIAL_ANCHOR_WORKFLOW}) | {policy.WORKFLOW}
 
 
 def validate_harness_lineage(lines, head):
     if lines != [
-        f"{head} {PYTHON_REPORT_SHA}",
+        f"{head} {PARTIAL_ANCHOR_SHA}",
+        f"{PARTIAL_ANCHOR_SHA} {PYTHON_REPORT_SHA}",
         f"{PYTHON_REPORT_SHA} {CORRECTED_REPORT_SHA}",
         f"{CORRECTED_REPORT_SHA} {REPORT_CODE_METADATA_SHA}",
         f"{REPORT_CODE_METADATA_SHA} {REPORT_REGISTRATION_SHA}",
@@ -117,7 +120,7 @@ def validate_harness_lineage(lines, head):
         f"{RETAINED_HARNESS_SHA} {PREPARATION_SHA}",
         f"{PREPARATION_SHA} {policy.BASE}",
     ]:
-        raise policy.GuardError("diagnostic requires its exact normal partial-anchor/Python-corrected/corrected-report/code-metadata/registration/localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
+        raise policy.GuardError("diagnostic requires its exact normal traceless/partial-anchor/Python-corrected/corrected-report/code-metadata/registration/localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
 
 
 def validate_correction_inventory(data):
@@ -278,7 +281,7 @@ def validate_partial_anchor_inventory(data):
     if len(rows) < 3 or len(rows) % 2 != 1 or rows[-1] != b"":
         raise policy.GuardError("partial-anchor preparation requires its complete fixed inventory")
     changes = list(zip(rows[:-1:2], rows[1:-1:2]))
-    workflow = policy.WORKFLOW.encode("ascii")
+    workflow = policy.PARTIAL_ANCHOR_WORKFLOW.encode("ascii")
     allowed = {name.encode("ascii") for name in PARTIAL_ANCHOR_PATHS}
     if (
         (b"A", workflow) not in changes
@@ -286,6 +289,23 @@ def validate_partial_anchor_inventory(data):
         or any(kind != (b"A" if name == workflow else b"M") for kind, name in changes)
     ):
         raise policy.GuardError("partial anchors changed a spent workflow or unallocated mechanism")
+
+
+def validate_traceless_anchor_inventory(data):
+    if type(data) is not bytes:
+        raise policy.GuardError("traceless-anchor inventory is not a Git byte record")
+    rows = data.split(b"\0")
+    if len(rows) < 3 or len(rows) % 2 != 1 or rows[-1] != b"":
+        raise policy.GuardError("traceless anchors require their complete fixed inventory")
+    changes = list(zip(rows[:-1:2], rows[1:-1:2]))
+    workflow = policy.WORKFLOW.encode("ascii")
+    allowed = {name.encode("ascii") for name in TRACELESS_ANCHOR_PATHS}
+    if (
+        (b"A", workflow) not in changes
+        or {name for _, name in changes} != allowed or len(changes) != len(allowed)
+        or any(kind != (b"A" if name == workflow else b"M") for kind, name in changes)
+    ):
+        raise policy.GuardError("traceless anchors changed a spent workflow or unallocated mechanism")
 
 
 def apparmor_text(name):
@@ -1083,13 +1103,14 @@ class Owner:
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
         validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=19", "HEAD").decode().splitlines(),
+            git(self.harness, "rev-list", "--parents", "--max-count=20", "HEAD").decode().splitlines(),
             self.scope["harness_sha"],
         )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
         if any(
             name and name.decode() not in {
-                policy.WORKFLOW, policy.PYTHON_REPORT_WORKFLOW, policy.CORRECTED_REPORT_WORKFLOW,
+                policy.WORKFLOW, policy.PARTIAL_ANCHOR_WORKFLOW,
+                policy.PYTHON_REPORT_WORKFLOW, policy.CORRECTED_REPORT_WORKFLOW,
                 policy.LOCALIZATION_WORKFLOW, policy.FULL_REPORT_WORKFLOW,
                 policy.COMPONENT_WORKFLOW, policy.PREVIOUS_WORKFLOW,
             }
@@ -1155,7 +1176,10 @@ class Owner:
             self.harness, "diff", "--name-status", "-z", CORRECTED_REPORT_SHA, PYTHON_REPORT_SHA,
         ))
         validate_partial_anchor_inventory(git(
-            self.harness, "diff", "--name-status", "-z", PYTHON_REPORT_SHA, "HEAD",
+            self.harness, "diff", "--name-status", "-z", PYTHON_REPORT_SHA, PARTIAL_ANCHOR_SHA,
+        ))
+        validate_traceless_anchor_inventory(git(
+            self.harness, "diff", "--name-status", "-z", PARTIAL_ANCHOR_SHA, "HEAD",
         ))
         validate_accounting_workflow(
             git(self.harness, "show", REPORT_FINALIZATION_SHA + ":" + policy.FULL_REPORT_WORKFLOW),

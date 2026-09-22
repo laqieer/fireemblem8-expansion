@@ -535,7 +535,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.PYTHON_REPORT_SHA}",
+            f"{'a' * 40} {supervisor.PARTIAL_ANCHOR_SHA}",
+            f"{supervisor.PARTIAL_ANCHOR_SHA} {supervisor.PYTHON_REPORT_SHA}",
             f"{supervisor.PYTHON_REPORT_SHA} {supervisor.CORRECTED_REPORT_SHA}",
             f"{supervisor.CORRECTED_REPORT_SHA} {supervisor.REPORT_CODE_METADATA_SHA}",
             f"{supervisor.REPORT_CODE_METADATA_SHA} {supervisor.REPORT_REGISTRATION_SHA}",
@@ -844,7 +845,7 @@ class CalibrationControls(Inert):
 
     def test_partial_anchor_inventory_and_event_cannot_reopen_spent_sizing3(self):
         data = b"".join(
-            (b"A" if name == policy.WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
+            (b"A" if name == policy.PARTIAL_ANCHOR_WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
             for name in sorted(supervisor.PARTIAL_ANCHOR_PATHS)
         )
         supervisor.validate_partial_anchor_inventory(data)
@@ -861,6 +862,27 @@ class CalibrationControls(Inert):
                 supervisor.validate_partial_anchor_inventory(changed)
         with self.assertRaises(policy.GuardError):
             policy.validate_event({**self.event(), "ref": "refs/heads/calibration/issue-180-full-report-sizing-3"},
+                                  **self.authorization())
+
+    def test_traceless_inventory_and_event_cannot_reopen_spent_partial_anchors(self):
+        data = b"".join(
+            (b"A" if name == policy.WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
+            for name in sorted(supervisor.TRACELESS_ANCHOR_PATHS)
+        )
+        supervisor.validate_traceless_anchor_inventory(data)
+        for changed in (
+            b"", data[:-1], data + data, data.replace(b"A\0", b"M\0"),
+            data.replace(b"M\0", b"A\0", 1), data.split(b"\0", 2)[2],
+            data + b"M\0" + policy.PARTIAL_ANCHOR_WORKFLOW.encode() + b"\0",
+            data + b"M\0scripts/ci_calibration/worker.py\0",
+            data + b"M\0scripts/ci_calibration/root_stage.py\0",
+            data + b"M\0scripts/ci_calibration/kernel.py\0",
+            data + b"M\0scripts/validation_ownership/phase_census.py\0",
+        ):
+            with self.subTest(changed=changed[:64]), self.assertRaises(policy.GuardError):
+                supervisor.validate_traceless_anchor_inventory(changed)
+        with self.assertRaises(policy.GuardError):
+            policy.validate_event({**self.event(), "ref": "refs/heads/calibration/issue-180-report-localization-2"},
                                   **self.authorization())
 
     def test_complete_diff_binding_preserves_additions_deletions_and_both_rename_sides(self):

@@ -54,7 +54,10 @@ def validate_locations(value, binding):
     if value["status"] == "unavailable":
         if type(value["reason"]) is not str or value["reason"] not in LOCATION_REASONS or value["locations"]:
             raise policy.GuardError("unavailable source location invented an observation")
-        if value["anchors"] and (value["reason"] != "source-code-unbound" or value["references_closed"] is not True):
+        if value["anchors"] and (
+            value["reason"] not in {"source-code-unbound", "no-source-trace"}
+            or value["references_closed"] is not True
+        ):
             raise policy.GuardError("partial anchors lack a closed original-code observation")
     else:
         if (
@@ -394,6 +397,7 @@ class _SourceLocations:
         current, relation = error, "primary"
         seen, locations, candidates = set(), [], []
         frames, scope_seen, incomplete, foreign_candidate = 0, False, False, False
+        missing_trace = False
         while current is not None:
             if id(current) in seen:
                 raise _LocationUnavailable("cyclic-exception-chain")
@@ -427,32 +431,33 @@ class _SourceLocations:
                 trace = trace.tb_next
                 frame = None
             if leaf is None:
-                raise _LocationUnavailable("no-source-trace")
-            code, namespace, line, offset = leaf
-            _location_code(code)
-            relative = self.module(namespace)
-            filename = namespace.get("__file__")
-            if type(filename) is not str or code.co_filename != filename:
-                raise _LocationUnavailable("source-code-unbound")
-            fields = position(code, line, offset)
-            owned = self.codes.get(id(code))
-            try:
-                if owned is None or owned[0] is not code or owned[1] is not namespace or owned[2] != relative:
-                    raise _LocationUnavailable("source-code-unbound")
-                self.require_registered(code, namespace, relative)
-            except _LocationUnavailable as unavailable:
-                if unavailable.reason != "source-code-unbound":
-                    raise
-                incomplete = True
+                incomplete = missing_trace = True
             else:
-                locations.append({"exception": index, "relation": relation, "file": relative, **fields})
+                code, namespace, line, offset = leaf
+                _location_code(code)
+                relative = self.module(namespace)
+                filename = namespace.get("__file__")
+                if type(filename) is not str or code.co_filename != filename:
+                    raise _LocationUnavailable("source-code-unbound")
+                fields = position(code, line, offset)
+                owned = self.codes.get(id(code))
+                try:
+                    if owned is None or owned[0] is not code or owned[1] is not namespace or owned[2] != relative:
+                        raise _LocationUnavailable("source-code-unbound")
+                    self.require_registered(code, namespace, relative)
+                except _LocationUnavailable as unavailable:
+                    if unavailable.reason != "source-code-unbound":
+                        raise
+                    incomplete = True
+                else:
+                    locations.append({"exception": index, "relation": relation, "file": relative, **fields})
             if candidate is not None:
                 candidates.append(candidate)
             cause = BaseException.__dict__["__cause__"].__get__(current, BaseException)
             current = cause if cause is not None else BaseException.__dict__["__context__"].__get__(current, BaseException)
             relation = "cause" if cause is not None else "context"
         if not scope_seen:
-            raise _LocationUnavailable("public-call-unobserved")
+            raise _LocationUnavailable("public-call-unobserved" if frames else "no-source-trace")
         if incomplete:
             if foreign_candidate:
                 raise _LocationUnavailable("source-code-unbound")
@@ -471,7 +476,8 @@ class _SourceLocations:
                     "exception": index, "relation": relation, "role": role,
                     "file": relative, **position(code, line, offset),
                 })
-            result = {**location_unavailable("source-code-unbound", references_closed=True), "anchors": anchors}
+            reason = "no-source-trace" if missing_trace else "source-code-unbound"
+            result = {**location_unavailable(reason, references_closed=True), "anchors": anchors}
         else:
             result = {
                 **location_unavailable("binding-not-ready"), "status": "observed", "reason": None,

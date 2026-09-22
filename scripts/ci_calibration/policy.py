@@ -13,8 +13,9 @@ import traceback
 
 
 REPOSITORY = "laqieer/fireemblem8-expansion"
-BRANCH = "calibration/issue-180-report-localization-2"
-WORKFLOW = ".github/workflows/issue180-report-localization-2.yml"
+BRANCH = "calibration/issue-180-report-localization-3"
+WORKFLOW = ".github/workflows/issue180-report-localization-3.yml"
+PARTIAL_ANCHOR_WORKFLOW = ".github/workflows/issue180-report-localization-2.yml"
 PYTHON_REPORT_WORKFLOW = ".github/workflows/issue180-full-report-sizing-3.yml"
 CORRECTED_REPORT_WORKFLOW = ".github/workflows/issue180-full-report-sizing-2.yml"
 CORRECTED_REPORT_SOURCE = "29e892d0cbc53976adc994d910af8b3dd5b337ed"
@@ -23,7 +24,7 @@ LOCALIZATION_SOURCE = "b6c47bc9300cf5d66244f161f81abe5d81d5a20b"
 FULL_REPORT_WORKFLOW = ".github/workflows/issue180-full-report-sizing-1.yml"
 COMPONENT_WORKFLOW = ".github/workflows/issue180-toolchain-component-sizing-1.yml"
 PREVIOUS_WORKFLOW = ".github/workflows/issue180-ci-baseline-20.yml"
-OUTPUT_PREFIX = "issue180-report-localization-2-"
+OUTPUT_PREFIX = "issue180-report-localization-3-"
 BASE = "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"
 GRAPH = "6d2725d89df70c30954daade3cca7abc6d3171d4"
 WORKLOAD_KIND = "full-public-report-accounting-measurement"
@@ -1288,7 +1289,8 @@ def validate_report_error(value, binding):
         raise GuardError("source locations lost their actual public call or complete exception sequence")
     if value["error"]["complete"] and locations["anchors"] and (
         len(locations["anchors"]) == len(value["error"]["chain"])
-        and all(row["role"] == "registered-raising-frame" for row in locations["anchors"])
+        and (locations["reason"] == "no-source-trace"
+             or all(row["role"] == "registered-raising-frame" for row in locations["anchors"]))
     ):
         raise GuardError("partial anchors cannot claim a completely observed raising sequence")
     return value
