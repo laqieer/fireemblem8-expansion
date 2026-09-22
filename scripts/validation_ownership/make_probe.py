@@ -384,6 +384,26 @@ class RuntimeInput:
     aliases: tuple[tuple[str, str], ...] = ()
 
 
+@dataclass(frozen=True, slots=True, eq=False)
+class _RuntimeCapture:
+    base: Path
+    budget: ProbeBudget
+    deadline: float
+    thread: int
+    inputs: tuple
+    paths: tuple
+    dispatch: tuple
+    facts: tuple
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class _RuntimeImage:
+    capture: _RuntimeCapture
+    root: Path
+    base_identity: tuple
+    objects: object
+
+
 @dataclass(frozen=True)
 class RuntimeTool:
     """A session-issued root-owned runtime executable and captured content identity."""
@@ -468,6 +488,7 @@ class _NamespaceCapture:
     native_complete: bool = False
     closed: bool = False
     valid: bool = True
+    runtime: _RuntimeImage | None = None
 
 
 @dataclass(frozen=True)
@@ -477,6 +498,7 @@ class _SealedNamespace:
     request: tuple
     stamps: object
     mutations: tuple
+    runtime: _RuntimeImage | None = None
 
 
 def _namespace_identity(info):
@@ -940,6 +962,7 @@ class ProbeSession:
         self.runtime_inputs = ()
         self.runtime_dispatch = ()
         self.runtime_root = None
+        self._runtime_image = None
         self.serial = 0
         self.processes_used = 0
         self.live_process_peak = 0
@@ -990,9 +1013,9 @@ class ProbeSession:
         self._namespace_tokens.clear()
         self._toolchain.expire_results()
 
-    def _namespace_directory(self, name):
+    def _namespace_directory(self, name, *, root=None):
         flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME
-        descriptor = os.open(self.tree, flags)
+        descriptor = os.open(self.tree if root is None else root, flags)
         try:
             if name != ".":
                 for component in relative_path(name).split("/"):
@@ -1074,6 +1097,7 @@ class ProbeSession:
         )
 
     def _begin_namespace(self, target, makefile, assignments):
+        runtime = self._require_runtime_image(self._runtime_image)
         if (
             set(self.published_sources) != set(self._namespace_publications)
             or set(self.published_versions) != set(self._namespace_publications)
@@ -1105,7 +1129,7 @@ class ProbeSession:
                 os.close(descriptor)
         request = target, makefile, tuple(assignments)
         self.budget.charge("cache", len(encoded(request)))
-        capture = _NamespaceCapture(image, self._namespace_epoch, request, stamps, [])
+        capture = _NamespaceCapture(image, self._namespace_epoch, request, stamps, [], runtime=runtime)
         self._namespace_pending[id(capture)] = capture, None
         self._namespace_frames.append(capture)
         return capture
@@ -1223,8 +1247,10 @@ class ProbeSession:
             or not capture.closed or not capture.native_complete or not capture.valid
         ):
             raise MakeProbeError("incomplete original namespace capture cannot issue authority")
+        self._require_runtime_image(capture.runtime)
         capture = _SealedNamespace(
             capture.image, capture.epoch, capture.request, MappingProxyType(capture.stamps), tuple(capture.mutations),
+            capture.runtime,
         )
         token = _OriginalNamespace()
         key = id(observation)
@@ -1254,25 +1280,33 @@ class ProbeSession:
         return record[1]
 
     def _require_namespace(self, token):
-        self.budget.remaining()
-        if get_ident() != self.owner_thread or self.base is None or self.snapshot is None:
-            raise MakeProbeError("original namespace has no active owning session")
-        record = self._namespace_tokens.get(id(token))
-        if record is None or record[1] is not token or record[0]() is None:
-            raise MakeProbeError("original namespace token is forged or expired")
-        _, _, capture, context = record
-        if (
-            capture.epoch != self._namespace_epoch or capture.image.snapshot is not self.snapshot
-            or capture.image.tree != self.tree
-            or self._namespace_observation_context(record[0]()) != context
-        ):
-            raise MakeProbeError("original namespace view/lifetime/observation changed")
+        def binding():
+            self.budget.remaining()
+            if get_ident() != self.owner_thread or self.base is None or self.snapshot is None:
+                raise MakeProbeError("original namespace has no active owning session")
+            record = self._namespace_tokens.get(id(token))
+            if record is None or record[1] is not token or record[0]() is None:
+                raise MakeProbeError("original namespace token is forged or expired")
+            _, _, capture, context = record
+            if (
+                capture.epoch != self._namespace_epoch or capture.image.snapshot is not self.snapshot
+                or capture.image.tree != self.tree
+                or self._namespace_observation_context(record[0]()) != context
+            ):
+                raise MakeProbeError("original namespace view/lifetime/observation changed")
+            return record
+
+        record = binding()
+        capture = record[2]
         descriptor = self._namespace_directory(".")
         try:
             if _namespace_identity(os.fstat(descriptor)) != capture.image.directories["."]:
                 raise MakeProbeError("original namespace source-root mapping changed")
         finally:
             os.close(descriptor)
+        self._require_runtime_image(capture.runtime)
+        if binding() is not record:
+            raise MakeProbeError("original namespace changed during custody validation")
         return capture
 
     def _retain_source_phases(self, observation, images, capture, journal=None):
@@ -1376,9 +1410,34 @@ class ProbeSession:
         capture = self._require_namespace(token)
         return self._wildcard_image(
             capture.image, patterns, lambda directory: self._invariant_directory(capture, directory),
+            observation=self._namespace_tokens[id(token)][0](),
         )
 
-    def _wildcard_image(self, image, patterns, directory_lookup):
+    def _original_runtime_wildcard(self, observation, pattern):
+        if "*" in pattern:
+            raise _NamespaceUnavailable("original runtime wildcard requires an exact pathname")
+        try:
+            relative_path(pattern[1:])
+        except MakeProbeError as error:
+            raise _NamespaceUnavailable("unsupported original runtime path spelling") from error
+        if observation is None:
+            raise _NamespaceUnavailable("original runtime wildcard lacks its original observation")
+        record = self._namespace_issued.get(id(observation))
+        if record is None or record[0]() is not observation:
+            raise MakeProbeError("original runtime wildcard requires an issued native observation")
+        if observation.source_phases is not None or observation.source_journal is not None:
+            self._source_phase_images(observation)
+        runtime = self._require_namespace(record[1]).runtime
+        if runtime is not None:
+            for path, data, _, _, canonical, _ in runtime.capture.facts:
+                self.budget.remaining()
+                if pattern in {path, canonical}:
+                    return pattern if data is not None else ""
+                if data is None and any(pattern.startswith(name + "/") for name in (path, canonical)):
+                    return ""
+        raise _NamespaceUnavailable("original runtime wildcard path was not captured")
+
+    def _wildcard_image(self, image, patterns, directory_lookup, *, observation=None):
         if not isinstance(patterns, str) or any(character in patterns for character in "$\\?[]~\0"):
             raise _NamespaceUnavailable("unsupported original wildcard pattern grammar")
         result = []
@@ -1386,6 +1445,12 @@ class ProbeSession:
             self.budget.remaining()
             pattern = match[0]
             self.budget.charge("cache", len(encoded(pattern)))
+            if pattern.startswith("/"):
+                value = self._original_runtime_wildcard(observation, pattern)
+                if value:
+                    self.budget.charge("cache", len(encoded(value)) + 1)
+                    result.append(value)
+                continue
             raw_basename = pattern.rsplit("/", 1)[-1].encode("utf-8")
             if _star_name(raw_basename, b".") or _star_name(raw_basename, b".."):
                 # scandir's materialized members do not represent GNU's logical entries.
@@ -1439,7 +1504,8 @@ class ProbeSession:
                 self.base, self.created = _scratch_directory(self.loader, self.scratch_root)
             finally:
                 signal.pthread_sigmask(signal.SIG_SETMASK, mask)
-            self._tools()
+            runtime_capture = self._tools()
+            self._require_runtime_capture(runtime_capture)
             self.snapshot = Snapshot(self.loader, self.budget)
             self.tree = self.base / "tree"
             self.tree.mkdir()
@@ -1448,8 +1514,11 @@ class ProbeSession:
                 self.budget.remaining()
                 (self.tree / name).mkdir(parents=True, exist_ok=True)
             self._compile_interceptor()
-            if self.runtime_inputs:
+            self._require_runtime_capture(runtime_capture)
+            if runtime_capture.inputs:
                 self.runtime_root = self._new_root("runtime", make=True)
+                self._runtime_image = self._capture_runtime_image(runtime_capture)
+                self._require_runtime_image(self._runtime_image)
             return self
         except BaseException:
             self.__exit__(*sys.exc_info())
@@ -1592,6 +1661,7 @@ class ProbeSession:
             self.runtime_inputs = ()
             self.runtime_dispatch = ()
             self.runtime_root = None
+            self._runtime_image = None
             self.snapshot = None
             self.loader.live_modes.clear()
             for loader, snapshot, tree, cache, mappings, tools in self._views:
@@ -1652,6 +1722,8 @@ class ProbeSession:
         finish_cleanup([owner.release_handles for owner in self._file_owners.values() if owner.retained])
 
     def _tools(self):
+        requested = self.runtime_paths
+        owner = self.base, self.budget, self.budget.deadline, self.owner_thread
         for path in ("/usr/bin/make", "/usr/bin/unshare", "/usr/bin/python3", "/usr/bin/cc"):
             if not Path(path).is_file():
                 raise MakeProbeError(f"missing required ownership probe tool: {path}")
@@ -1660,7 +1732,7 @@ class ProbeSession:
             raise MakeProbeError("native observation ABI requires GNU Make 4.3")
         self.make_runtime = _make_runtime(self.budget)
         reserved = {path for path, _ in self.make_runtime} | set(ALIASES) | {"/lib/vo-observer.so"}
-        if self.runtime_paths:
+        if requested:
             reserved.update(str(_trusted_runtime_path(path)) for path, _ in self.make_runtime)
             reserved.update(
                 target + path.removeprefix(alias)
@@ -1668,7 +1740,7 @@ class ProbeSession:
                 if path.startswith(alias + "/")
             )
         captured, dispatch = [], []
-        for path in self.runtime_paths:
+        for path in requested:
             item = _capture_runtime_input(path, self.budget)
             stock_dispatch_alias = bool(item.aliases) and item.canonical in ALIASES
             intercepted = item.data is not None and (
@@ -1700,6 +1772,10 @@ class ProbeSession:
                 dispatch.append(path)
         self.runtime_inputs = tuple(captured)
         self.runtime_dispatch = tuple(dispatch)
+        self.budget.charge("cache", 256 + 128 * len(captured))
+        capture = _RuntimeCapture(
+            *owner, self.runtime_inputs, requested, self.runtime_dispatch, self._runtime_input_facts(),
+        )
         python = self.budget.run(
             ["/usr/bin/python3", "-I", "-S", "-B", "-c",
              "import sys; print('%d.%d' % sys.version_info[:2])"],
@@ -1723,6 +1799,7 @@ class ProbeSession:
             if privileged.returncode:
                 raise MakeProbeError(f"required namespaces unavailable: {privileged.stderr!r}")
             self.sudo_drop = True
+        return capture
 
     def runtime_tool(self, path):
         """Issue one exact captured system executable for a typed confined command."""
@@ -1970,6 +2047,202 @@ class ProbeSession:
             if item.data is None and item.aliases and item.canonical in ALIASES
         }
 
+    def _runtime_input_facts(self):
+        inputs = self.runtime_inputs
+        if type(inputs) is not tuple or len(inputs) > self.budget.limits.pending:
+            raise MakeProbeError("original runtime capture exceeds its input bound")
+        self.budget.charge("control", 128 + 128 * len(inputs))
+        facts = []
+        for item in inputs:
+            self.budget.remaining()
+            if (
+                type(item) is not RuntimeInput
+                or type(item.path) is not str or type(item.canonical) is not str
+                or len(item.path) > 4096 or len(item.canonical) > 4096
+                or type(item.parents) is not tuple or len(item.parents) > 2048
+                or any(type(row) is not tuple or len(row) != 2 or type(row[0]) is not str
+                       or len(row[0]) > 4096 or type(row[1]) is not bool for row in item.parents)
+                or type(item.aliases) is not tuple or len(item.aliases) > len(STOCK_RUNTIME_ALIASES)
+                or any(type(row) is not tuple or len(row) != 2 or any(type(value) is not str for value in row)
+                       for row in item.aliases)
+                or item.data is None and item.mode is not None
+                or item.data is not None and (
+                    type(item.data) is not bytes or len(item.data) > self.budget.limits.file_bytes
+                    or type(item.mode) is not int or not 0 <= item.mode <= 0o777
+                )
+            ):
+                raise MakeProbeError("original runtime capture facts changed or are malformed")
+            facts.append((item.path, item.data, item.mode, item.parents, item.canonical, item.aliases))
+        return tuple(facts)
+
+    def _runtime_object(self, root, name, *, read_alias=False):
+        self.budget.charge("control", 128 + len(encoded(name)))
+        descriptor = None
+        try:
+            parent = "." if name == "." else PurePosixPath(name).parent.as_posix()
+            descriptor = self._namespace_directory(parent, root=root)
+            before = _namespace_stamp(os.fstat(descriptor))
+            info = os.fstat(descriptor) if name == "." else os.stat(
+                PurePosixPath(name).name, dir_fd=descriptor, follow_symlinks=False,
+            )
+            link = (
+                os.readlink(PurePosixPath(name).name, dir_fd=descriptor)
+                if read_alias and stat.S_ISLNK(info.st_mode) else None
+            )
+            if _namespace_stamp(os.fstat(descriptor)) != before:
+                raise MakeProbeError("original runtime parent changed during lookup")
+            return (*_namespace_stamp(info), info.st_size, info.st_nlink), link
+        except FileNotFoundError:
+            return None
+        except OSError as error:
+            raise MakeProbeError("original runtime owned image is unavailable") from error
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+
+    def _require_runtime_capture(self, capture):
+        self.budget.remaining()
+        if (
+            type(capture) is not _RuntimeCapture or self.base is None or self.base != capture.base
+            or self.budget is not capture.budget or self.budget.deadline != capture.deadline
+            or self.owner_thread != capture.thread or get_ident() != capture.thread
+            or self.runtime_inputs is not capture.inputs or self.runtime_paths is not capture.paths
+            or self.runtime_dispatch is not capture.dispatch or self._runtime_input_facts() != capture.facts
+        ):
+            raise MakeProbeError("original runtime image lost its capture/budget/owner binding")
+
+    def _capture_runtime_image(self, capture):
+        self.budget.remaining()
+        if (
+            self._runtime_image is not None or self.base is None
+            or get_ident() != self.owner_thread or self.runtime_root != self.base / "runtime"
+            or not self.runtime_inputs or type(self.runtime_paths) is not tuple
+            or type(self.runtime_dispatch) is not tuple
+        ):
+            raise MakeProbeError("original runtime image requires its initial owned materialization")
+        self._require_runtime_capture(capture)
+        facts = capture.facts
+        if tuple(item[0] for item in facts) != capture.paths:
+            raise MakeProbeError("original runtime image differs from its captured requests")
+        expected = {}
+
+        def admit(name, kind, mode=None, link=None, size=None):
+            if name != ".":
+                relative_path(name)
+            value = kind, mode, link, size
+            if name in expected:
+                if expected[name] != value:
+                    raise MakeProbeError("original runtime image has contradictory capture facts")
+                return
+            self.budget.charge("cache", 128 + len(encoded((name, value))))
+            expected[name] = value
+
+        admit(".", "directory")
+        for path, data, mode, parents, canonical, aliases in facts:
+            if not path.startswith("/") or not canonical.startswith("/"):
+                raise MakeProbeError("original runtime capture is not absolute")
+            relative_path(path[1:])
+            relative_path(canonical[1:])
+            self.budget.charge("control", 128 + sum(128 + 12 * len(parent) for parent, _ in parents))
+            declared = dict(parents)
+            if (
+                len(declared) != len(parents)
+                or set(declared) != {parent.as_posix() for parent in PurePosixPath(path).parents}
+                or declared.get("/") is not True or data is not None and not all(declared.values())
+            ):
+                raise MakeProbeError("original runtime capture lost its parent facts")
+            resolved = path
+            for alias, destination in aliases:
+                target = STOCK_RUNTIME_ALIASES.get(alias)
+                if (
+                    target is None or declared.get(alias) is not True
+                    or destination != str(PurePosixPath(target).relative_to(PurePosixPath(alias).parent))
+                    or not resolved.startswith(alias + "/")
+                ):
+                    raise MakeProbeError("original runtime capture has an unproved alias")
+                resolved = target + resolved[len(alias):]
+                admit(alias[1:], "alias", link=destination)
+                for parent in (PurePosixPath(target), *PurePosixPath(target).parents):
+                    admit(parent.as_posix().lstrip("/") or ".", "directory")
+            if resolved != canonical:
+                raise MakeProbeError("original runtime capture changed its canonical path")
+            for parent, present in parents:
+                if parent in dict(aliases):
+                    continue
+                for alias, _ in aliases:
+                    if parent.startswith(alias + "/"):
+                        parent = STOCK_RUNTIME_ALIASES[alias] + parent[len(alias):]
+                admit(parent.lstrip("/") or ".", "directory" if present else "absent")
+            intercepted = path in self.runtime_dispatch
+            admit(canonical[1:], "absent" if data is None else "file",
+                  mode=0o555 if intercepted else mode, size=None if data is None or intercepted else len(data))
+        base = self.base.lstat()
+        if not stat.S_ISDIR(base.st_mode) or base.st_uid != os.getuid() or base.st_mode & 0o7022:
+            raise MakeProbeError("original runtime base is not privately owned")
+        objects = {}
+        for name in sorted(expected, key=lambda value: (value.count("/"), value)):
+            value = self._runtime_object(self.runtime_root, name, read_alias=True)
+            kind, mode, link, size = expected[name]
+            if kind == "absent":
+                if value is not None:
+                    raise MakeProbeError("original runtime absence was not materialized")
+            else:
+                if value is None:
+                    raise MakeProbeError("original runtime object was not materialized")
+                identity, actual_link = value
+                actual_mode = identity[2]
+                if (
+                    identity[3] != base.st_uid or actual_mode & 0o7000
+                    or not stat.S_ISLNK(actual_mode) and actual_mode & 0o022
+                    or kind == "directory" and not stat.S_ISDIR(actual_mode)
+                    or kind == "file" and (
+                        not stat.S_ISREG(actual_mode) or stat.S_IMODE(actual_mode) != mode
+                        or size is not None and identity[7] != size
+                    )
+                    or kind == "alias" and (not stat.S_ISLNK(actual_mode) or actual_link != link)
+                ):
+                    raise MakeProbeError("original runtime materialization differs from capture")
+            self.budget.charge("cache", 128 + len(encoded((name, value))))
+            objects[name] = value
+        self.budget.charge("cache", 256)
+        return _RuntimeImage(
+            capture, self.runtime_root, _namespace_identity(base), MappingProxyType(objects),
+        )
+
+    def _require_runtime_image(self, image):
+        self.budget.remaining()
+        if (
+            image is None and self._runtime_image is None and not self.runtime_inputs
+            and not self.runtime_paths and not self.runtime_dispatch and self.runtime_root is None
+        ):
+            return None
+        def require_binding():
+            self.budget.remaining()
+            if (
+                type(image) is not _RuntimeImage or image is not self._runtime_image
+                or self.runtime_root != image.root
+            ):
+                raise MakeProbeError("original runtime image lost its capture/budget/owner binding")
+            self._require_runtime_capture(image.capture)
+
+        require_binding()
+        try:
+            # Recheck custody after the leaf checks too; no live host file is consulted.
+            for _ in range(2):
+                if _namespace_identity(self.base.lstat()) != image.base_identity:
+                    raise MakeProbeError("original runtime base custody changed")
+                for name, expected in image.objects.items():
+                    self.budget.remaining()
+                    actual = self._runtime_object(image.root, name)
+                    # An unchanged symlink inode/stamp retains its captured text
+                    # without readlink changing metadata seen by native Make.
+                    if (None if actual is None else actual[0]) != (None if expected is None else expected[0]):
+                        raise MakeProbeError("original runtime owned backing changed")
+        except OSError as error:
+            raise MakeProbeError("original runtime base is unavailable") from error
+        require_binding()
+        return image
+
     def _prove_python_lookup(self, program):
         """Resolve only the existing Python dispatch through this live captured image."""
         context = self._require_live_dispatch()
@@ -2173,6 +2446,10 @@ class ProbeSession:
         file_cleanup_owner=None,
     ):
         self.budget.remaining()
+        if mode == "make":
+            self._require_runtime_image(
+                self._namespace_frames[-1].runtime if self._namespace_frames else self._runtime_image,
+            )
         if (
             type(observe_source_journal) is not bool
             or observe_source_journal and (mode != "make" or not observe_source_phases or source_journal_observer is None)

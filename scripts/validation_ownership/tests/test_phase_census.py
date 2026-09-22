@@ -1,6 +1,7 @@
 """Every-pass obligations from actual native source/image/mutation history."""
 
 import copy
+from contextlib import contextmanager
 from dataclasses import asdict, replace
 import gc
 from pathlib import Path, PurePosixPath
@@ -55,7 +56,7 @@ class OriginalTemplateApiTests(unittest.TestCase):
             })
 
         session.make = terminal_make
-        session._wildcard_image = lambda image, pattern, directory: (
+        session._wildcard_image = lambda image, pattern, directory, **kwargs: (
             wildcard[pattern] if isinstance(wildcard, dict) else wildcard
         )
         proof = SimpleNamespace(
@@ -253,6 +254,125 @@ class OriginalTemplateApiTests(unittest.TestCase):
         self.assertEqual((budget.runs, budget.states), (0, 0))
 
 
+class OriginalRuntimeWildcardSourceApiTests(unittest.TestCase):
+    """Original source/lookup composition; capture and native completion are modeled."""
+
+    @contextmanager
+    def source(self, source, *, present=True, item=None):
+        fixture = foundation.OriginalRuntimeWildcardApiTests()
+        item = fixture.item(present=present) if item is None else item
+        with fixture.runtime((item,), sources={"modern.mk": source.encode(), "src/a.c": b"x"}) as case:
+            part = SimpleNamespace(
+                number=1, exec=1, exit_seq=3, inputs=(SimpleNamespace(parent=None, variables=()),),
+                visits=(SimpleNamespace(
+                    number=1, name="/repo/modern.mk", resolved="/repo/modern.mk", parent=None,
+                    error=0, opens=(), source=SimpleNamespace(data=source.encode(), mode=0o644),
+                ),),
+            )
+            case.session._source_pass_archives[id(case.observation)] = SimpleNamespace(
+                scope="modeled/all", passes=(part,),
+            )
+            proof = phase_census.OriginalSourceProof(case.session, case.observation)
+            original = phase_census.SourcePass(proof, part, case.image, (), "all", (), {}, "modern.mk")
+            mode = graph_probe._MakeSourceMode(
+                budget=case.session.budget, original_input=original.input,
+                original_execution=original.record_execution, original_wildcard=original.wildcard,
+                template_mode=original.template_mode(), namespace=frozenset(original.namespace),
+            )
+            mode.bind_invocation("all")
+            mode.assign("PREFIX", "=", "arm-none-eabi-")
+            mode.assign("EXE", ":=", "")
+            yield case, original, mode
+
+    @staticmethod
+    def program(name="INCLUDE", *, wildcard="/usr/include/newlib/stdlib.h"):
+        return (
+            f"ifneq ($(wildcard {wildcard}),)\n{name} := /usr/include/newlib\n"
+            f"else\n{name} :=\nendif\nFLAGS := $(if $({name}),-isystem \"$({name})\")\n"
+            "RUNTIME := \\\n\t-first \\\n\t-second\nall: ;\n"
+        )
+
+    def test_captured_present_and_absent_keep_branch_and_continuation_mode(self):
+        for present in (True, False):
+            source = self.program()
+            with self.subTest(present=present), self.source(source, present=present) as (_, original, mode):
+                units = tuple(graph_probe.make_source_units(source, mode=mode, source_path="modern.mk"))
+                self.assertTrue(units)
+                self.assertIs(mode.posix, False)
+                self.assertTrue(mode.original_namespace_valid)
+                self.assertIsNone(mode.first_uncertainty)
+                self.assertEqual(mode.exact_reference("INCLUDE"), "/usr/include/newlib" if present else "")
+                self.assertEqual(mode.exact_reference("RUNTIME"), "-first -second")
+                self.assertTrue(original.patterns)
+                self.assertEqual(set(original.patterns), {("/usr/include/newlib/stdlib.h",
+                                                          "/usr/include/newlib/stdlib.h" if present else "")})
+
+    def test_unrequested_or_disconnected_lookup_recovers_the_mode_refusal(self):
+        for kind in ("unrequested", "disconnected"):
+            source = self.program(wildcard="/usr/include/newlib/other.h") if kind == "unrequested" else self.program()
+            with self.subTest(kind=kind), self.source(source) as (_, _, mode):
+                if kind == "disconnected":
+                    mode.original_wildcard = None
+                with self.assertRaises(MakeProbeError):
+                    tuple(graph_probe.make_source_units(source, mode=mode, source_path="modern.mk"))
+                self.assertIsNone(mode.posix)
+                self.assertFalse(mode.original_namespace_valid)
+                self.assertEqual(mode.first_uncertainty[2], "conditional-execution")
+
+    def test_relative_source_lazy_dead_branches_and_posix_are_unchanged(self):
+        for suffix, expected in (
+            ("LIVE := $(and ,$(eval .POSIX:))\n", False),
+            ("LIVE := $(if yes,safe,$(eval .POSIX:))\n", False),
+            (".POSIX:\nMODE_BARRIER := recorded\n", True),
+        ):
+            source = (
+                "FILES := $(wildcard src/*.c)\n"
+                "ifeq (no,yes)\nBAD := $(wildcard /unrequested/*)\n$(eval .POSIX:)\nendif\n"
+                + suffix + "RUNTIME := one  \\\n   two\nall: ;\n"
+            )
+            with self.subTest(suffix=suffix), self.source(source) as (_, original, mode):
+                tuple(graph_probe.make_source_units(source, mode=mode, source_path="modern.mk"))
+                self.assertIs(mode.posix, expected)
+                self.assertTrue(mode.original_namespace_valid)
+                self.assertEqual(mode.exact_reference("FILES"), "src/a.c")
+                self.assertEqual(mode.exact_reference("RUNTIME"), "one   two" if expected else "one two")
+                self.assertEqual(set(original.patterns), {("src/*.c", "src/a.c")})
+        for expression in ("$(eval .POSIX:)", "$(if $(sort unknown),safe,$(eval .POSIX:))"):
+            source = self.program() + "LIVE := " + expression + "\nVALUE := one  \\\n two\n"
+            with self.subTest(expression=expression), self.source(source) as (_, _, mode):
+                with self.assertRaises(MakeProbeError):
+                    tuple(graph_probe.make_source_units(source, mode=mode, source_path="modern.mk"))
+                self.assertFalse(mode.original_namespace_valid)
+
+    def test_runtime_lookup_cannot_refresh_changed_original_source_epoch(self):
+        source = self.program()
+        for change in ("epoch", "source-journal", "input", "runtime"):
+            with self.subTest(change=change), self.source(source) as (case, original, _):
+                if change == "epoch":
+                    case.session._namespace_epoch += 1
+                elif change == "source-journal":
+                    case.observation.source_journal["closed"] = False
+                elif change == "input":
+                    case.observation.read_trace["events"][0]["exec"] += 1
+                else:
+                    case.session.runtime_inputs = ()
+                with self.assertRaises(MakeProbeError):
+                    original.wildcard("/usr/include/newlib/stdlib.h")
+                self.assertFalse(original.patterns)
+
+    def test_neutral_binding_spelling_and_declaration_order_stay_green(self):
+        for source in (
+            self.program(),
+            "NEUTRAL := same\n" + self.program("RENAMED"),
+            self.program().replace("$(INCLUDE)", "${INCLUDE}") + "NEUTRAL := same\n",
+        ):
+            with self.subTest(source=source), self.source(source) as (_, _, mode):
+                tuple(graph_probe.make_source_units(source, mode=mode, source_path="modern.mk"))
+                self.assertIs(mode.posix, False)
+                self.assertTrue(mode.original_namespace_valid)
+                self.assertEqual(mode.exact_reference("RUNTIME"), "-first -second")
+
+
 class PhaseCensusTests(unittest.TestCase):
     def setUp(self):
         self.case = phases.SourcePhaseTests()
@@ -267,6 +387,32 @@ class PhaseCensusTests(unittest.TestCase):
             "all", variables=("HIDDEN", "FILES"), commands=self.case.commands(session),
             observe_source_journal=True, source_journal_mode=source_directories.MODE,
         )
+
+    def test_native_runtime_wildcard_keeps_original_modern_fragment_mode(self):
+        modern = (foundation.ROOT / "modern.mk").read_text()
+        fragment = modern[modern.index("MODERN_TOOLCHAIN_ROOT ?="):modern.index("MODERN_LAYOUT_FLAGS :=")]
+        self.fixture.add("Makefile", "PREFIX = arm-none-eabi-\nEXE :=\n" + fragment + "all: ;\n")
+        path = "/usr/include/newlib/stdlib.h"
+        with self.fixture.session(runtime_files=(path,)) as session:
+            observed = session.make(
+                "all", variables=("MODERN_NEWLIB_INCLUDE",),
+                observe_source_journal=True, source_journal_mode=source_directories.MODE,
+            )
+            captured, = session.runtime_inputs
+            expected = "/usr/include/newlib" if captured.data is not None else ""
+            self.assertEqual(observed.semantics["domains"]["MODERN_NEWLIB_INCLUDE"]["value"], expected)
+            runs = session.budget.runs
+            with patch.object(session, "make", side_effect=AssertionError("source lookup queried Make again")):
+                _, _, streams, _ = phase_census.analyze(session, observed, "all", (), {})
+            self.assertEqual(len(streams), 1)
+            self.assertIs(streams[0].mode_state.posix, False)
+            self.assertTrue(streams[0].mode_state.original_namespace_valid)
+            self.assertEqual(streams[0].mode_state.exact_reference("MODERN_NEWLIB_INCLUDE"), expected)
+            self.assertEqual(session.budget.runs, runs)
+            session._expire_namespaces()
+            with self.assertRaises(MakeProbeError):
+                phase_census.analyze(session, observed, "all", (), {})
+        self.fixture.assert_clean(session)
 
     def test_native_template_include_remake_retains_original_parameter_and_domain_reads(self):
         self.fixture.add("Makefile", (

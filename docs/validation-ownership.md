@@ -1866,6 +1866,37 @@ Inherited publications must retain their private issued identity. Tokens and
 sealed records cannot be recreated from ordinary data; view changes, expired
 observations, altered context or incomplete captures reject.
 
+Literal absolute runtime leaves use that same issued observation, not the
+repository-relative directory matcher. Tool setup freezes its actual capture
+before subsequent setup calls, and retains it locally through materialization,
+not by rereading mutable session declarations. The optional runtime image is
+bound before the session is exposed: original request/input/dispatch tuple identities,
+immutable input values, owned materialization and ancestor/stock-alias identities,
+budget, deadline and owning thread are retained. The existing namespace capture
+carries this image through actual Make admission and sealing. Lookup rechecks
+both bindings and owned custody; a source-pass lookup also retains its original
+source-image/journal lifetime before and after the lookup. Changed, missing,
+foreign or expired evidence is a refusal, not a new capture or an empty result.
+
+Only explicitly captured original/canonical names and descendants of a captured
+absent leaf qualify. A missing ancestor can prove the requested leaf absent;
+it does not admit an unrequested sibling or reverse alias. Absolute runtime
+globs, directory enumeration, escaping spellings and new execution rights remain
+unsupported. The lookup never reads a live system file, borrows a terminal Make
+value or starts another query. Owned-image checks reuse no-follow/no-atime
+directory custody without enumerating runtime directories. An unchanged captured
+symlink inode/stamp retains its original target text without a repeated
+`readlink` changing metadata visible to Make.
+
+This restores the already-admitted `/usr/include/newlib/stdlib.h` discovery in
+the original modern source. Both captured presence and captured absence leave
+the subsequent driver-flag condition and continuation mode provable. The
+conditional/effect/continuation guard itself is unchanged; removing the runtime
+connection reproduces the refusal. The
+[existing case's runtime-wildcard controls](test-cases/workflow-governance.md#original-source-runtime-wildcard-correction)
+separate memory-only API evidence from the required native comparisons and
+complete-report/resource/delivery gates.
+
 The [5696038608 CI correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5696038608)
 keeps namespace observation metadata-neutral. Root and component directory
 pins use `O_NOATIME` with the existing directory/no-follow/close-on-exec

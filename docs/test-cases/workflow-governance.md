@@ -3880,6 +3880,82 @@ rather than interpreter substitution. Change only the owned captured-image
 mode for its negative; never modify host runtime files. Source/inert lookup
 controls do not establish these native results or the failed run's exact PATH.
 
+### Original-source runtime-wildcard correction
+
+This extends **TC-WORKFLOW-GATE-OWNERSHIP-001** for #180 / PR #186 and the
+[frozen correction scope](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5783638346).
+The confirmed defect is the source interpreter's rejection of an already
+captured absolute runtime leaf, not a missing native permission. The unchanged
+modern fragment first loses its conditional-execution proof at driver-flag
+expansion and then refuses the mode-sensitive continuation. An assumed header
+state or a successful mocked lookup is not correction evidence.
+
+Use the clean source and host prerequisites of this case. The two explicit
+memory-only API classes are
+`test_foundation.OriginalRuntimeWildcardApiTests` and
+`test_phase_census.OriginalRuntimeWildcardSourceApiTests`, under
+`scripts.validation_ownership.tests`. They model only capture, native completion
+and owned objects; the actual issuer, runtime lookup, `OriginalSourceProof`,
+`SourcePass`, `SourceTemplates`, parser and budget APIs perform the checks.
+For a code-only allocation, inspect and AST-load only those selected bodies
+under process/import/filesystem/descriptor/signal traps. Do not discover their
+native-bearing modules or invoke session setup. Ordinary authorized host test
+runs may select those two classes explicitly with `python3 -B -m unittest`.
+
+1. Supply captured-present, captured-absent and absent-ancestor header records.
+   Through the actual new lookup and original source APIs, require the correct
+   include branch, normal parsing mode and valid original namespace for both
+   header states. Repeat over the unchanged selected `modern.mk` fragment.
+   Preserve the exact preimage; restoring the old lookup/phase methods or
+   removing only the absolute-runtime connection must recover the original
+   conditional-execution/continuation refusal. Neutral local/binding renaming,
+   braced references and independent declaration ordering must stay green.
+2. Check requested/canonical stock aliases and captured absent-prefix children.
+   Missing authority, unrequested existing or missing siblings, reverse aliases,
+   parent/glob/escape queries and executable escalation remain negative.
+   Compare the actual returned values and retained dispatch authority, not
+   source phrases. Keep relative source wildcards, skipped lazy/eval branches,
+   active unproved effects and actual `.POSIX` activation distinct.
+3. Change original input tuples/values, observation, source journal, view,
+   epoch, token, worker, budget, clock or retired owner; require refusal before
+   adopting a source result. Change owned leaf content identity/type/mode,
+   presence, parent, root, base or alias custody, including during lookup.
+   Reject unsupported no-atime custody rather than falling back. Verify exact
+   and one-byte-over control/cache/total admission plus stricter input/file
+   limits, a sticky exhausted budget and no new run/state or deadline.
+4. Under a **separately allocated native run**, select only:
+   `FoundationTests.test_original_runtime_wildcard_matches_native_capture_and_alias_absence`,
+   `FoundationTests.test_original_runtime_wildcard_rejects_launch_drift_and_changed_backing`,
+   and
+   `PhaseCensusTests.test_native_runtime_wildcard_keeps_original_modern_fragment_mode`.
+   The first two belong to `test_foundation`, the third to `test_phase_census`.
+   Compare actual contained Make values with the original lookup; require no
+   extra query. Observe genuine present `stdio.h`, uniquely absent include/tool
+   paths and their captured aliases/children. The original modern fragment
+   observes this host's actual newlib presence or absence, never an installed
+   or fabricated state. Replaying an expired phase or changing only owned
+   backing must fail. Drift between original capture and materialization cannot
+   be recaptured from mutable declarations; launch-time tuple drift must refuse
+   before another native run. Remove only the fixture's owned state using its existing cleanup.
+
+These native selectors are authored for independent allocation, not executed
+or certified by code-only preparation. A single host's newlib state does not
+prove the other native state; both states are required in the inert composition.
+The coupled existing
+`FoundationTests.test_runtime_inputs_metadata_uses_shared_guest_revalidation`
+still rejects old full metadata after an owned timestamp change and now also
+requires the next Make invocation to refuse, not reseed the original image.
+
+Dependencies are existing runtime capture/aliases, original source and namespace
+lifetimes, the full report/verifier and their budgets. There is no new independent
+issue dependency, path registry or feature flag. Unqualified evidence remains
+in conflict with admission. Game/ROM/RAM, saves, localization, generated content
+and modern debug/release/archival outputs are unchanged. Inert passes establish
+neither native authority nor full source/report/verifier demand, shipping
+budgets, H1, CI, merge, exact-master verification or closure. Keep those holds
+explicit. Revert or fix forward without widening authority if native
+qualification exposes a regression.
+
 ### Native ownership, stderr effects and cumulative accounting
 
 These are additional deterministic controls for
@@ -8704,7 +8780,12 @@ skip an authority check to satisfy these tests.
    flags/masks. Unchanged optional Make metadata and compatible registered
    observations must pass the same native comparison as source records.
    Changing an owned captured timestamp must invalidate the old full record
-   without validation changing atime. Different actual command-runtime
+   without validation changing atime. It must also invalidate the original
+   runtime-image binding: a later Make/source lookup cannot adopt that changed
+   backing as a fresh capture. The
+   [original-source runtime-wildcard controls](#original-source-runtime-wildcard-correction)
+   compare source-time values with the same actual native capture and preserve
+   the missing/unrequested, alias, owner/view and budget refusals. Different actual command-runtime
    inode/status results must reject reuse, not be replaced with the captured
    object's metadata.
 5. Confirm mandatory Make/interpreter/ELF closure and phase-bound loader
@@ -9893,6 +9974,15 @@ and copies genuine repository headers. Generated header-output parents
 start absent; it does not precreate message C or replace the original check
 with a benign command. Default release/AAPCS and focused debug/APCS-GNU
 inputs are supported.
+
+The header-discovery input remains the foundation's explicitly captured
+`/usr/include/newlib/stdlib.h`. Its source-time lookup must use the same issued
+owned runtime image and original observation as Make, not a current host
+existence check or assumed installed toolchain state. Run the separately
+allocated [runtime-wildcard selectors](#original-source-runtime-wildcard-correction)
+before interpreting a repaired source continuation as toolchain execution
+evidence. Their inert present/absent controls and narrow native fragment do not
+qualify the compiler prerequisite, full report/resource demand or H1.
 
 The setup-only null-mount controls below additionally require Linux x86-64
 with `mount_setattr`, actual independent nonzero invoking UID/GID, a clean

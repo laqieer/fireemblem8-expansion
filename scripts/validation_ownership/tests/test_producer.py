@@ -2958,11 +2958,12 @@ class ProducerTests(unittest.TestCase):
         from scripts.validation_ownership.make_probe import ProbeSession
         tools, routes = ProbeSession._tools, []
         def unavailable(session):
-            tools(session)
+            capture = tools(session)
             routes.append(session.sudo_drop)
             # Model only this optional comparison's missing prerequisite.
             # No capsule or credential transition is run under this value.
             session.sudo_drop = True
+            return capture
         case = ProducerTests("test_real_same_uid_sudo_keeps_static_make_and_live_remakes_channel_free")
         result = unittest.TestResult()
         with patch.object(ProbeSession, "_tools", unavailable):

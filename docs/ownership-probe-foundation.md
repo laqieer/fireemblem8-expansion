@@ -782,6 +782,31 @@ no limit or accounting meaning changes. `execution_digest` binds the runtime
 capture, while `semantic_digest` still reflects the actual observed owner.
 Omitting the argument preserves the default API and execution identity.
 
+Original source-time exact runtime wildcards share this capture and the
+session-issued original namespace observation. Tool setup freezes the issued
+tuples and their immutable values before subsequent setup calls. That original
+capture is retained locally through materialization, not reacquired from
+mutable session attributes. Before exposing the session, the private owned-image
+record binds it to materialized leaves/parents/stock aliases, owner, budget and deadline.
+Make admission, namespace sealing and lookup require that original binding
+and unchanged owned custody. Neither replacing the mutable session attributes
+nor restoring the same pathname can issue new original facts. Source-pass
+lookups also require their original source-image/journal and view epoch.
+These records are internal lifetime state, not a caller-provided path oracle.
+
+An exact captured original or canonical pathname returns its own spelling
+when present and the empty string when genuinely absent. Explicit absent
+prefix descendants remain absent; absent ancestor facts do not grant unrelated
+siblings, parent directory wildcards or a reverse stock alias. Runtime globbing,
+enumeration, writes and executable authority remain unchanged and denied where
+unadmitted. Only owned-image metadata is checked: no current host file lookup,
+recapture, extra Make process or terminal variable value decides the result.
+An owned backing change invalidates future Make/source authority rather than
+silently establishing a replacement capture. The ordinary metadata comparator
+still reports mismatched old syscall records; it does not refresh that authority.
+Relative source wildcard behavior, unknown-effect/continuation guards and all
+existing caller limits remain in force.
+
 Optional metadata uses the **same** complete syscall records and native
 comparison as [source metadata](#complete-metadata-and-static-reuse), including
 real status, flags/masks, inode, ownership, timestamps and returned buffers.

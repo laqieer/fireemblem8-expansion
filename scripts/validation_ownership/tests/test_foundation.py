@@ -20,12 +20,14 @@ import threading
 import time
 import unittest
 import venv
+import weakref
 from contextlib import ExitStack, contextmanager
 from dataclasses import FrozenInstanceError, asdict, dataclass, fields, replace
-from pathlib import Path
-from types import SimpleNamespace
+from pathlib import Path, PurePosixPath
+from types import MappingProxyType, SimpleNamespace
 from unittest.mock import Mock, patch
 
+from scripts.validation_ownership import make_probe
 from scripts.validation_ownership.authority import (
     AuthorityLoader, ENVIRONMENT, GitlinkSource, GitTreeEntries, GitTreeEntry, Snapshot, encoded, git_tree_entries,
     parse_json,
@@ -93,6 +95,7 @@ class FoundationTests(unittest.TestCase):
         self.assertFalse(session.runtime_inputs)
         self.assertFalse(session.runtime_dispatch)
         self.assertIsNone(session.runtime_root)
+        self.assertIsNone(session._runtime_image)
         self.assertFalse(session.budget.children)
         self.assertIsNone(session.snapshot)
         self.assertEqual(session.pending_commands, 0)
@@ -285,6 +288,70 @@ class FoundationTests(unittest.TestCase):
             for name in names:
                 self.assertFalse((session.tree / name / "optional.d").exists())
         self.assert_clean(session)
+
+    def test_original_runtime_wildcard_matches_native_capture_and_alias_absence(self):
+        present = "/usr/include/stdio.h"
+        absent = "/usr/include/ownership-original-" + self.directory.name
+        alias = "/bin/ownership-original-" + self.directory.name
+        self.assertTrue(Path(present).is_file())
+        self.assertFalse(Path(absent).exists())
+        self.assertFalse(Path(alias).exists())
+        self.assertEqual(Path("/bin").resolve(), Path("/usr/bin"))
+        paths = (present, absent, absent + "/child.h", alias, "/usr" + alias, "/usr" + alias + "/child")
+        names = tuple("VALUE_" + str(index) for index in range(len(paths)))
+        self.add("Makefile", "".join(f"{name} := $(wildcard {path})\n" for name, path in zip(names, paths)) + "all: ;\n")
+        with self.session(runtime_files=(present, absent, alias)) as session:
+            observed = session.make("all", variables=names)
+            token = session._original_namespace(observed, target="all", makefile="Makefile")
+            runs, deadline = session.budget.runs, session.budget.deadline
+            for name, path in zip(names, paths):
+                self.assertEqual(session._original_wildcard(token, path),
+                                 observed.semantics["domains"][name]["value"])
+            for path in (absent + "-other", "/usr/include/stdlib.h", "/usr/include/*", "/usr/include/../stdio.h"):
+                with self.assertRaises(make_probe._NamespaceUnavailable):
+                    session._original_wildcard(token, path)
+            self.assertEqual((session.budget.runs, session.budget.deadline), (runs, deadline))
+        self.assert_clean(session)
+
+    def test_original_runtime_wildcard_rejects_launch_drift_and_changed_backing(self):
+        path = "/usr/include/stdio.h"
+        self.assertTrue(Path(path).is_file())
+        self.add("Makefile", f"VALUE := $(wildcard {path})\nall: ;\n")
+        session = self.session(runtime_files=(path,))
+        materialize = session._new_root
+        def changed_materialization(*args, **kwargs):
+            root = materialize(*args, **kwargs)
+            if args == ("runtime",):
+                session.runtime_inputs = (replace(session.runtime_inputs[0]),)
+            return root
+        with patch.object(session, "_new_root", changed_materialization), self.assertRaisesRegex(
+            MakeProbeError, "original runtime image lost its capture",
+        ):
+            with session:
+                self.fail("materialization rebound mutable declarations instead of the original capture")
+        self.assert_clean(session)
+        for change in ("launch", "after"):
+            with self.subTest(change=change), self.session(runtime_files=(path,)) as session:
+                runs = session.budget.runs
+                if change == "launch":
+                    execute = session._sandbox_run
+                    def changed(*args, **kwargs):
+                        session.runtime_inputs = (replace(session.runtime_inputs[0]),)
+                        return execute(*args, **kwargs)
+                    with patch.object(session, "_sandbox_run", changed), self.assertRaisesRegex(
+                        MakeProbeError, "original runtime image lost its capture",
+                    ):
+                        session.make("all")
+                    self.assertEqual(session.budget.runs, runs)
+                else:
+                    observed = session.make("all")
+                    token = session._original_namespace(observed, target="all", makefile="Makefile")
+                    (session.runtime_root / path.lstrip("/")).chmod(0o600)
+                    runs = session.budget.runs
+                    with self.assertRaisesRegex(MakeProbeError, "original runtime owned backing changed"):
+                        session._original_wildcard(token, path)
+                    self.assertEqual(session.budget.runs, runs)
+            self.assert_clean(session)
 
     def test_runtime_inputs_read_only_exact_bytes_and_capture_limits(self):
         from scripts.validation_ownership.make_probe import _capture_runtime_input
@@ -533,10 +600,10 @@ class FoundationTests(unittest.TestCase):
             changed = owned.stat()
             self.assertFalse(session._metadata_matches(combined))
             self.assertEqual(owned.stat(), changed)
-            with patch.object(session, "_sandbox_run", record):
+            runs = session.budget.runs
+            with self.assertRaisesRegex(MakeProbeError, "original runtime owned backing changed"):
                 session.make("all", variables=("PRESENT",), commands={"python3 reader.py": command})
-            self.assertNotEqual(reports[-1]["metadata"], metadata)
-            self.assertTrue(session._metadata_matches(reports[-1]["metadata"]))
+            self.assertEqual(session.budget.runs, runs)
         self.assert_clean(session)
 
     def test_runtime_inputs_capture_full_optional_buffers_status_flags_and_masks(self):
@@ -9465,6 +9532,493 @@ print(json.dumps({"owned_descriptors":len(allocated),"reaped":len(reaped),"defer
             self.assertEqual(session.budget.runs, runs)
             self.assertTrue(session.budget.failed)
         self.assert_clean(session)
+
+
+class OriginalRuntimeWildcardApiTests(unittest.TestCase):
+    """Actual issuer/lookup APIs with modeled capture, completion and owned objects."""
+
+    @staticmethod
+    def item(path="/usr/include/newlib/stdlib.h", *, present=True, missing_parent=None, alias=False):
+        parents = tuple(
+            (str(parent), not (missing_parent and (
+                str(parent) == missing_parent or str(parent).startswith(missing_parent + "/")
+            ))) for parent in PurePosixPath(path).parents
+        )
+        return make_probe.RuntimeInput(
+            path, b"captured bytes" if present else None, 0o644 if present else None, parents,
+            "/usr" + path if alias else path, (("/bin", "usr/bin"),) if alias else (),
+        )
+
+    @contextmanager
+    def runtime(self, items=None, *, sources=None, dispatch=(), limits=None, seal=True, issue=True):
+        items = (self.item(),) if items is None else items
+        sources = {"Makefile": b"all: ;\n", "src/a.c": b"x"} if sources is None else sources
+        session = ProbeSession.__new__(ProbeSession)
+        session.budget = ProbeBudget(Limits(seconds=10) if limits is None else limits)
+        session.base, session.tree = Path("/modeled-owned/session"), Path("/modeled-owned/session/tree")
+        session.owner_thread = threading.get_ident()
+        session.snapshot = SimpleNamespace(files=sources, gitlink_roots=())
+        session.loader = SimpleNamespace(entries={name: SimpleNamespace(mode="100644") for name in sources})
+        session.runtime_inputs, session.runtime_paths = items, tuple(item.path for item in items)
+        session.runtime_dispatch = dispatch
+        session.runtime_root = session.base / "runtime" if items else None
+        session._runtime_image = None
+        session._namespace_epoch = 1
+        session._namespace_images, session._namespace_pending = {}, {}
+        session._namespace_issued, session._namespace_tokens, session._namespace_frames = {}, {}, []
+        session._source_phase_records, session._source_pass_archives = {}, {}
+        session.published_sources, session.published_versions, session._namespace_publications = {}, {}, {}
+        nodes, links, handles, operations = {}, {}, {}, []
+
+        def add(path, mode, size=0):
+            nodes[Path(path)] = SimpleNamespace(
+                st_dev=1, st_ino=len(nodes) + 1, st_mode=mode, st_uid=1000, st_gid=1000,
+                st_size=size, st_nlink=1, st_mtime_ns=1, st_ctime_ns=1,
+            )
+
+        add(session.base, stat.S_IFDIR | 0o700)
+        add(session.tree, stat.S_IFDIR | 0o755)
+        members = {".": []}
+        for name, data in sources.items():
+            for parent in reversed(PurePosixPath(name).parents):
+                if str(parent) != "." and str(parent) not in members:
+                    members[str(parent)] = []
+                    add(session.tree / str(parent), stat.S_IFDIR | 0o755)
+                    members[str(parent.parent)].append((parent.name, make_probe._namespace_identity(
+                        nodes[session.tree / str(parent)],
+                    )))
+            add(session.tree / name, stat.S_IFREG | 0o644, len(data))
+            members[str(PurePosixPath(name).parent)].append((
+                PurePosixPath(name).name, make_probe._namespace_identity(nodes[session.tree / name]),
+            ))
+        image = make_probe._NamespaceImage(
+            session.snapshot, session.tree,
+            MappingProxyType({name: tuple(sorted(values)) for name, values in members.items()}),
+            MappingProxyType({name: make_probe._namespace_identity(nodes[session.tree / name]) for name in members}),
+            frozenset(),
+        )
+        session._namespace_images[id(session.snapshot), session.tree] = image
+        if items:
+            add(session.runtime_root, stat.S_IFDIR | 0o755)
+        for item in items:
+            for parent, present in reversed(item.parents):
+                if present and parent != "/" and parent not in dict(item.aliases):
+                    if item.aliases and parent.startswith("/bin/"):
+                        parent = "/usr" + parent
+                    target = session.runtime_root / parent.lstrip("/")
+                    if target not in nodes:
+                        add(target, stat.S_IFDIR | 0o755)
+            for alias, destination in item.aliases:
+                for parent in ("usr", "usr/bin"):
+                    target = session.runtime_root / parent
+                    if target not in nodes:
+                        add(target, stat.S_IFDIR | 0o755)
+                target = session.runtime_root / alias.lstrip("/")
+                if target not in nodes:
+                    add(target, stat.S_IFLNK | 0o777, len(destination))
+                    links[target] = destination
+            if item.data is not None:
+                add(session.runtime_root / item.canonical.lstrip("/"),
+                    stat.S_IFREG | (0o555 if item.path in dispatch else item.mode), len(item.data))
+
+        def info(path):
+            path = Path(path)
+            self.assertTrue(path.is_relative_to(session.base), "lookup escaped modeled owned image")
+            operations.append(("stat", str(path)))
+            if path not in nodes:
+                raise FileNotFoundError(errno.ENOENT, "modeled absence", str(path))
+            return SimpleNamespace(**vars(nodes[path]))
+
+        def opening(path, flags, *, dir_fd=None):
+            self.assertEqual(flags & (os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME),
+                             os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME)
+            path = Path(path) if dir_fd is None else handles[dir_fd] / path
+            if not stat.S_ISDIR(info(path).st_mode):
+                raise NotADirectoryError(errno.ENOTDIR, "modeled non-directory")
+            descriptor = 10000 + len(operations)
+            self.assertNotIn(descriptor, handles)
+            handles[descriptor] = path
+            operations.append(("open", str(path)))
+            return descriptor
+
+        def stating(path, *, dir_fd, follow_symlinks):
+            self.assertFalse(follow_symlinks)
+            return info(handles[dir_fd] / path)
+
+        def readlink(path, *, dir_fd):
+            target = handles[dir_fd] / path
+            operations.append(("readlink", str(target)))
+            return links[target]
+
+        fake_os = SimpleNamespace(
+            **{name: getattr(os, name) for name in (
+                "O_RDONLY", "O_DIRECTORY", "O_NOFOLLOW", "O_CLOEXEC", "O_NOATIME",
+            )},
+            open=opening, fstat=lambda descriptor: info(handles[descriptor]),
+            stat=stating, close=lambda descriptor: handles.pop(descriptor),
+            readlink=readlink,
+            getuid=lambda: 1000,
+        )
+        session.budget.charge("cache", 256 + 128 * len(items))
+        runtime_capture = make_probe._RuntimeCapture(
+            session.base, session.budget, session.budget.deadline, session.owner_thread,
+            session.runtime_inputs, session.runtime_paths, session.runtime_dispatch,
+            tuple((item.path, item.data, item.mode, item.parents, item.canonical, item.aliases) for item in items),
+        )
+        with patch.object(make_probe, "os", fake_os), patch.object(Path, "lstat", info):
+            try:
+                capture = observation = token = None
+                if issue:
+                    if items:
+                        session._runtime_image = session._capture_runtime_image(runtime_capture)
+                    capture = session._begin_namespace("all", next(iter(sources)), ())
+                    observation = make_probe.MakeObservation(
+                        "all", {"domains": {}, "assignments": [], "published_sources": [], "native_dispatches": []},
+                        "modeled-execution-not-native", "modeled-semantics-not-native", b"", b"", (),
+                        read_trace={"events": [{"kind": "exec", "exec": 1, "seq": 1}]},
+                        source_effects={"events": []},
+                        source_journal={"closed": True, "scope": "modeled/all", "transactions": []},
+                    )
+                    capture.native_complete = True
+                    session._namespace_pending[id(capture)] = capture, observation
+                    session._end_namespace(capture)
+                    if seal:
+                        session._seal_namespace(capture, observation)
+                        session._retain_source_phases(observation, (image,), capture)
+                        token = session._original_namespace(observation, target="all", makefile=next(iter(sources)))
+                case = SimpleNamespace(
+                    session=session, observation=observation, token=token, capture=capture, image=image,
+                    nodes=nodes, links=links, operations=operations, handles=handles, runtime_capture=runtime_capture,
+                )
+                observation = None
+                yield case
+            finally:
+                self.assertFalse(handles, "modeled owned handle leaked")
+                self.assertFalse(session.budget.children)
+                self.assertFalse(session.budget.producer_waiters)
+                self.assertEqual((session.budget.runs, session.budget.states), (0, 0))
+
+    def lookup(self, case, pattern, *, observation=None):
+        return case.session._wildcard_image(
+            case.image, pattern, lambda directory: case.image.members.get(directory, ()),
+            observation=case.observation if observation is None else observation,
+        )
+
+    def test_present_absent_and_absent_ancestor_use_original_capture(self):
+        path = self.item().path
+        for present, missing_parent in ((True, None), (False, None), (False, "/usr/include/newlib")):
+            with self.subTest(present=present, missing_parent=missing_parent), self.runtime((
+                self.item(present=present, missing_parent=missing_parent),
+            )) as case:
+                self.assertEqual(self.lookup(case, path), path if present else "")
+                self.assertEqual(case.session._original_wildcard(case.token, path), path if present else "")
+                self.assertEqual(self.lookup(case, "src/*.c " + path + " src/*.c"),
+                                 "src/a.c " + (path + " " if present else "") + "src/a.c")
+                if not present:
+                    self.assertEqual(self.lookup(case, path + "/child.h"), "")
+                else:
+                    with self.assertRaises(make_probe._NamespaceUnavailable):
+                        self.lookup(case, path + "/child.h")
+
+    def test_only_requested_and_canonical_aliases_and_absent_prefixes_qualify(self):
+        for present in (True, False):
+            with self.subTest(present=present), self.runtime((
+                self.item("/bin/owned-tool", present=present, alias=True),
+            )) as case:
+                for path in ("/bin/owned-tool", "/usr/bin/owned-tool"):
+                    self.assertEqual(self.lookup(case, path), path if present else "")
+                    if not present:
+                        self.assertEqual(self.lookup(case, path + "/child"), "")
+                for path in ("/bin/owned-tool-other", "/usr/bin/owned-tool-other", "/bin", "/usr/bin"):
+                    with self.assertRaises(make_probe._NamespaceUnavailable):
+                        self.lookup(case, path)
+        with self.runtime((self.item("/usr/bin/only-canonical"), self.item("/bin/other", alias=True))) as case:
+            self.assertEqual(self.lookup(case, "/usr/bin/only-canonical"), "/usr/bin/only-canonical")
+            with self.assertRaises(make_probe._NamespaceUnavailable):
+                self.lookup(case, "/bin/only-canonical")
+        with self.runtime((self.item("/bin/mkdir", alias=True),), dispatch=("/bin/mkdir",)) as case:
+            dispatch = case.session.runtime_dispatch
+            self.assertEqual(self.lookup(case, "/bin/mkdir /usr/bin/mkdir"), "/bin/mkdir /usr/bin/mkdir")
+            self.assertIs(case.session.runtime_dispatch, dispatch)
+            self.assertEqual(case.nodes[case.session.runtime_root / "usr/bin/mkdir"].st_mode, stat.S_IFREG | 0o555)
+        with self.runtime((self.item(
+            "/bin/missing/tool", present=False, missing_parent="/bin/missing", alias=True,
+        ),)) as case:
+            self.assertEqual(self.lookup(case, "/bin/missing/tool /usr/bin/missing/tool/child"), "")
+            with self.assertRaises(make_probe._NamespaceUnavailable):
+                self.lookup(case, "/bin/missing/sibling")
+
+    def test_unrequested_glob_escape_and_missing_authority_are_not_empty_successes(self):
+        with self.runtime((self.item(present=False, missing_parent="/usr/include/newlib"),)) as case:
+            for pattern in (
+                "/usr/include/newlib/sibling.h", "/usr/include/stdlib.h", "/etc/passwd",
+                "/usr/include/newlib/stdlib.h-other", "/usr/include/newlib", "/", "//usr/include/newlib/stdlib.h",
+                "/usr/include/../include/newlib/stdlib.h", "/usr/include/./newlib/stdlib.h",
+                "/usr/include/newlib/*.h", "/usr/*/newlib/stdlib.h", "/usr/include/newlib/stdlib.?",
+                "/usr/include/newlib/[s]*", "/usr/include/newlib/stdlib.h/", "/bin/sh",
+            ):
+                with self.subTest(pattern=pattern), self.assertRaises(make_probe._NamespaceUnavailable):
+                    self.lookup(case, pattern)
+            with self.assertRaises(make_probe._NamespaceUnavailable):
+                case.session._wildcard_image(case.image, self.item().path, lambda name: self.fail(name))
+            with self.assertRaises(MakeProbeError):
+                self.lookup(case, self.item().path, observation=replace(case.observation))
+        with self.runtime(()) as case:
+            with self.assertRaises(make_probe._NamespaceUnavailable):
+                self.lookup(case, self.item().path)
+
+    def test_changed_capture_observation_owner_budget_and_view_refuse(self):
+        for change in ("inputs", "paths", "dispatch", "fact", "runtime", "image", "budget", "deadline",
+                       "clock-reset", "closed-budget",
+                       "owner", "retired", "view", "tree", "epoch", "observation", "source-phase", "token"):
+            with self.subTest(change=change), self.runtime() as case:
+                session = case.session
+                if change == "inputs":
+                    session.runtime_inputs = tuple(replace(item) for item in session.runtime_inputs)
+                elif change == "paths":
+                    session.runtime_paths = (*session.runtime_paths, "/usr/include/other")
+                elif change == "dispatch":
+                    session.runtime_dispatch = session.runtime_paths
+                elif change == "fact":
+                    object.__setattr__(session.runtime_inputs[0], "data", b"changed")
+                elif change == "runtime":
+                    session.runtime_root = session.base / "other"
+                elif change == "image":
+                    session._runtime_image = replace(session._runtime_image)
+                elif change == "budget":
+                    session.budget = ProbeBudget(session.budget.limits)
+                elif change == "deadline":
+                    session.budget.started -= 11
+                elif change == "clock-reset":
+                    session.budget.started += 1
+                elif change == "closed-budget":
+                    session.budget.closed = True
+                elif change == "owner":
+                    session.owner_thread += 1
+                elif change == "retired":
+                    session.base = None
+                elif change == "view":
+                    session.snapshot = SimpleNamespace(**vars(session.snapshot))
+                elif change == "tree":
+                    session.tree = session.tree.parent / "other-tree"
+                elif change == "epoch":
+                    session._namespace_epoch += 1
+                elif change == "observation":
+                    case.observation.semantics["assignments"].append(["environment", "OTHER", "value"])
+                elif change == "source-phase":
+                    case.observation.source_journal["closed"] = False
+                elif change == "token":
+                    session._namespace_tokens.clear()
+                with self.assertRaises(MakeProbeError):
+                    session._source_phase_images(case.observation)
+                with self.assertRaises(MakeProbeError):
+                    session._original_wildcard(case.token, self.item().path)
+
+    def test_foreign_tokens_workers_and_expired_observations_are_not_rebound(self):
+        with self.runtime() as case:
+            with self.assertRaises(MakeProbeError):
+                case.session._original_wildcard(make_probe._OriginalNamespace(), self.item().path)
+            with patch.object(make_probe, "get_ident", return_value=case.session.owner_thread + 1):
+                with self.assertRaises(MakeProbeError):
+                    self.lookup(case, self.item().path)
+                case.session.owner_thread += 1
+                with self.assertRaises(MakeProbeError):
+                    self.lookup(case, self.item().path)
+                case.session.owner_thread -= 1
+            with self.runtime() as other:
+                with self.assertRaises(MakeProbeError):
+                    other.session._original_wildcard(case.token, self.item().path)
+                with self.assertRaises(MakeProbeError):
+                    self.lookup(other, self.item().path, observation=case.observation)
+            reference = weakref.ref(case.observation)
+            case.observation = None
+            self.assertIsNone(reference())
+            self.assertFalse(case.session._namespace_issued)
+            self.assertFalse(case.session._namespace_tokens)
+            with self.assertRaises(MakeProbeError):
+                case.session._original_wildcard(case.token, self.item().path)
+
+    def test_initial_image_refuses_malformed_alias_parent_and_materialization(self):
+        for change in ("alias", "canonical", "parents", "parent-absence", "mode", "data-type",
+                       "alias-target", "leaf-type", "missing", "present-absence", "foreign-base"):
+            item = self.item("/bin/owned-tool", alias=True)
+            with self.subTest(change=change), self.runtime((item,), issue=False) as case:
+                session = case.session
+                leaf = session.runtime_root / item.canonical.lstrip("/")
+                if change == "alias":
+                    session.runtime_inputs = (replace(item, aliases=(("/bin", "../../outside"),)),)
+                elif change == "canonical":
+                    session.runtime_inputs = (replace(item, canonical="/outside/host"),)
+                elif change == "parents":
+                    session.runtime_inputs = (replace(item, parents=(("/", True),)),)
+                elif change == "parent-absence":
+                    session.runtime_inputs = (replace(item, parents=(("/bin", False), ("/", True))),)
+                elif change == "mode":
+                    session.runtime_inputs = (replace(item, mode=0o4777),)
+                elif change == "data-type":
+                    session.runtime_inputs = (replace(item, data=bytearray(item.data)),)
+                elif change == "alias-target":
+                    case.links[session.runtime_root / "bin"] = "../../outside"
+                elif change == "leaf-type":
+                    case.nodes[leaf].st_mode = stat.S_IFIFO | 0o644
+                elif change == "missing":
+                    del case.nodes[leaf]
+                elif change == "present-absence":
+                    session.runtime_inputs = (replace(item, data=None, mode=None),)
+                else:
+                    case.nodes[session.base].st_uid = 2000
+                with self.assertRaises(MakeProbeError):
+                    session._capture_runtime_image(case.runtime_capture)
+                self.assertIsNone(session._runtime_image)
+
+    def test_materialization_cannot_reacquire_changed_runtime_declarations(self):
+        with self.runtime(issue=False) as case:
+            session = case.session
+            session.runtime_inputs = tuple(replace(item) for item in session.runtime_inputs)
+            with self.assertRaises(MakeProbeError):
+                session._capture_runtime_image(case.runtime_capture)
+            self.assertFalse(case.operations)
+            self.assertIsNone(session._runtime_image)
+            session.runtime_inputs = case.runtime_capture.inputs
+            session._runtime_image = session._capture_runtime_image(case.runtime_capture)
+            session._require_runtime_image(session._runtime_image)
+
+    def test_materialization_and_lookup_keep_caller_input_and_file_bounds(self):
+        item = self.item()
+        for bound in (len(item.data), len(item.data) - 1):
+            with self.subTest(file_bytes=bound), self.runtime(
+                (item,), limits=Limits(seconds=10, file_bytes=bound), issue=False,
+            ) as case:
+                if bound == len(item.data):
+                    case.session._runtime_image = case.session._capture_runtime_image(case.runtime_capture)
+                    case.session._require_runtime_image(case.session._runtime_image)
+                else:
+                    with self.assertRaises(MakeProbeError):
+                        case.session._capture_runtime_image(case.runtime_capture)
+        items = item, self.item("/usr/include/another.h")
+        for bound in (2, 1):
+            with self.subTest(pending=bound), self.runtime(
+                items, limits=Limits(seconds=10, pending=bound), issue=False,
+            ) as case:
+                if bound == 2:
+                    case.session._runtime_image = case.session._capture_runtime_image(case.runtime_capture)
+                    case.session._require_runtime_image(case.session._runtime_image)
+                else:
+                    with self.assertRaises(MakeProbeError):
+                        case.session._capture_runtime_image(case.runtime_capture)
+
+    def test_custody_failure_and_mid_lookup_drift_never_refresh_authority(self):
+        for change in ("inputs", "epoch", "backing", "noatime"):
+            with self.subTest(change=change), self.runtime() as case:
+                session = case.session
+                read = make_probe.os.stat
+                fired = []
+
+                def drift(*args, **kwargs):
+                    value = read(*args, **kwargs)
+                    if not fired:
+                        fired.append(True)
+                        if change == "inputs":
+                            session.runtime_inputs = (replace(session.runtime_inputs[0]),)
+                        elif change == "epoch":
+                            session._namespace_epoch += 1
+                        else:
+                            case.nodes[session.runtime_root / "usr/include/newlib/stdlib.h"].st_ctime_ns += 1
+                    return value
+
+                if change == "noatime":
+                    opening = make_probe.os.open
+                    def deny(path, flags, **kwargs):
+                        if path == "usr":
+                            raise PermissionError(errno.EPERM, "modeled noatime denial")
+                        return opening(path, flags, **kwargs)
+                    owner, name, function = make_probe.os, "open", deny
+                else:
+                    owner, name, function = make_probe.os, "stat", drift
+                with patch.object(owner, name, function), self.assertRaises(MakeProbeError):
+                    self.lookup(case, self.item().path)
+                self.assertFalse(case.handles)
+        with self.runtime((self.item("/bin/owned-tool", alias=True),)) as case:
+            aliases = [operation for operation in case.operations if operation[0] == "readlink"]
+            self.assertTrue(aliases)
+            self.assertEqual(self.lookup(case, "/bin/owned-tool"), "/bin/owned-tool")
+            self.assertEqual([operation for operation in case.operations if operation[0] == "readlink"], aliases)
+            with self.assertRaises(MakeProbeError):
+                case.session._capture_runtime_image(case.runtime_capture)
+
+    def test_owned_leaf_parent_alias_and_custody_changes_refuse(self):
+        for change in ("leaf-mode", "leaf-type", "leaf-bytes", "leaf-replaced", "leaf-removed",
+                       "parent", "root", "base", "foreign-owner", "alias", "absence-created"):
+            items = (self.item(present=change != "absence-created"), self.item("/bin/owned-tool", alias=True))
+            with self.subTest(change=change), self.runtime(items) as case:
+                session = case.session
+                leaf = session.runtime_root / items[0].canonical.lstrip("/")
+                if change == "leaf-removed":
+                    del case.nodes[leaf]
+                elif change == "absence-created":
+                    case.nodes[leaf] = SimpleNamespace(**vars(case.nodes[session.runtime_root / "usr/bin/owned-tool"]))
+                else:
+                    target = {
+                        "parent": leaf.parent, "root": session.runtime_root, "base": session.base,
+                        "alias": session.runtime_root / "bin",
+                    }.get(change, leaf)
+                    field, value = {
+                        "leaf-mode": ("st_mode", stat.S_IFREG | 0o777),
+                        "leaf-type": ("st_mode", stat.S_IFLNK | 0o777),
+                        "leaf-bytes": ("st_ctime_ns", 2),
+                        "foreign-owner": ("st_uid", 2000),
+                    }.get(change, ("st_ino", 999))
+                    setattr(case.nodes[target], field, value)
+                    if change == "leaf-type":
+                        case.links[target] = "/outside/host"
+                    if change == "alias":
+                        case.links[target] = "../../outside"
+                with self.assertRaises(MakeProbeError):
+                    self.lookup(case, items[0].path)
+
+    def test_sealing_refuses_runtime_drift_and_incomplete_native_capture(self):
+        for change in ("backing", "inputs", "incomplete", "invalid"):
+            with self.subTest(change=change), self.runtime(seal=False) as case:
+                if change == "backing":
+                    case.nodes[case.session.runtime_root / "usr/include/newlib/stdlib.h"].st_ctime_ns += 1
+                elif change == "inputs":
+                    case.session.runtime_inputs = ()
+                elif change == "incomplete":
+                    case.capture.native_complete = False
+                else:
+                    case.capture.valid = False
+                with self.assertRaises(MakeProbeError):
+                    case.session._seal_namespace(case.capture, case.observation)
+                self.assertFalse(case.session._namespace_issued)
+
+    def test_lookup_respects_exact_control_cache_and_total_boundaries(self):
+        for category in ("control", "cache", "total"):
+            with self.runtime() as case:
+                before = dict(case.session.budget.bytes)
+                self.lookup(case, self.item().path)
+                delta = {
+                    name: used - before.get(name, 0) for name, used in case.session.budget.bytes.items()
+                }
+            for headroom in (0, -1):
+                with self.subTest(category=category, headroom=headroom), self.runtime() as case:
+                    budget = case.session.budget
+                    used = sum(budget.bytes.values()) if category == "total" else budget.bytes.get(category, 0)
+                    required = sum(delta.values()) if category == "total" else delta[category]
+                    budget.limits = replace(budget.limits, **{category + "_bytes": used + required + headroom})
+                    deadline = budget.deadline
+                    if headroom == 0:
+                        self.assertEqual(self.lookup(case, self.item().path), self.item().path)
+                        actual = sum(budget.bytes.values()) if category == "total" else budget.bytes[category]
+                        self.assertEqual(actual, used + required)
+                    else:
+                        with self.assertRaises(MakeProbeError):
+                            self.lookup(case, self.item().path)
+                        self.assertTrue(budget.failed)
+                        count = len(case.operations)
+                        with self.assertRaises(MakeProbeError):
+                            self.lookup(case, self.item().path)
+                        self.assertEqual(len(case.operations), count)
+                    self.assertEqual(budget.deadline, deadline)
 
 
 class NamespaceImageTests(unittest.TestCase):

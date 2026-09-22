@@ -533,7 +533,10 @@ class SourcePass:
                 if name == forbidden or name.startswith(forbidden + "/"):
                     raise _NamespaceUnavailable("phase namespace enters an unadmitted original object")
             return self.image.members.get(name, ())
-        value = self.session._wildcard_image(self.image, patterns, directory)
+        value = self.session._wildcard_image(
+            self.image, patterns, directory, observation=self.proof.observation,
+        )
+        self.proof.require_live()
         self.session.budget.charge("cache", len(encoded((self.part.number, patterns, value))))
         self.patterns.append((patterns, value))
         return value
