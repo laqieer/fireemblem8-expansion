@@ -10021,6 +10021,250 @@ class OriginalRuntimeWildcardApiTests(unittest.TestCase):
                     self.assertEqual(budget.deadline, deadline)
 
 
+class OriginalRuntimeCleanupApiTests(unittest.TestCase):
+    """Real custody/cleanup APIs; faults and containment operate on memory pins."""
+
+    def setUp(self):
+        self.fixture = OriginalRuntimeWildcardApiTests()
+        self.witnesses = []
+
+    @contextmanager
+    def ownership(self, case):
+        model = make_probe.os
+        opening, closing = model.open, model.close
+        acquired, attempts = [], []
+
+        def open_pin(*args, **kwargs):
+            descriptor = opening(*args, **kwargs)
+            acquired.append((descriptor, str(case.handles[descriptor].relative_to(case.session.base))))
+            return descriptor
+
+        def close_pin(descriptor):
+            path = case.handles.get(descriptor)
+            attempts.append((descriptor, None if path is None else str(path.relative_to(case.session.base))))
+            return closing(descriptor)
+
+        with patch.object(model, "open", open_pin), patch.object(model, "close", close_pin):
+            try:
+                yield acquired, attempts
+            finally:
+                self.witnesses.append({
+                    "acquired": tuple(acquired), "close_attempts": tuple(attempts),
+                    "live_before_containment": tuple(
+                        (descriptor, str(path.relative_to(case.session.base)))
+                        for descriptor, path in case.handles.items()
+                    ),
+                })
+                # Containment only: ambiguous failures are attempts, not successful closes.
+                for descriptor in tuple(case.handles):
+                    closing(descriptor)
+
+    def assert_all_attempted_once(self, acquired, attempts):
+        self.assertEqual(
+            {descriptor: sum(actual == descriptor for actual, _ in attempts) for descriptor, _ in acquired},
+            {descriptor: 1 for descriptor, _ in acquired},
+        )
+        self.assertEqual(len(attempts), len(acquired))
+
+    def assert_secondary(self, failure, secondary):
+        expected = f"after owned cleanup: {type(secondary).__name__}: {secondary}"
+        messages = []
+        while failure is not None:
+            errors = getattr(failure, "cleanup_errors", ())
+            self.assertTrue(set(errors) <= set(getattr(failure, "__notes__", ())))
+            messages.extend(errors)
+            failure = failure.__cause__
+        self.assertEqual(messages.count(expected), 1)
+
+    def test_lookup_retires_successor_without_retrying_ambiguous_predecessor(self):
+        for timing, number in (("before", errno.EINTR), ("after", errno.EINTR),
+                               ("reused", errno.EINTR), ("before", errno.ENOENT)):
+            with self.subTest(timing=timing, errno=number), self.fixture.runtime() as case, self.ownership(case) as (owned, attempts):
+                model, injected = make_probe.os, []
+                close = model.close
+                primary = OSError(number, "original predecessor retirement")
+                foreign = case.session.base / "foreign-pin"
+
+                def interrupted(descriptor):
+                    path = case.handles.get(descriptor)
+                    successor = case.session.runtime_root / "usr"
+                    if not injected and path == case.session.runtime_root and successor in case.handles.values():
+                        injected.append(descriptor)
+                        if timing == "before":
+                            attempts.append((descriptor, str(path.relative_to(case.session.base))))
+                        else:
+                            close(descriptor)
+                            if timing == "reused":
+                                case.handles[descriptor] = foreign
+                        raise primary
+                    return close(descriptor)
+
+                with patch.object(model, "close", interrupted), self.assertRaises(MakeProbeError) as caught:
+                    self.fixture.lookup(case, self.fixture.item().path)
+                self.assertEqual(len(injected), 1)
+                self.assertIs(caught.exception.__cause__, primary)
+                self.assert_all_attempted_once(owned, attempts)
+                self.assertNotIn(case.session.runtime_root / "usr", case.handles.values())
+                if timing == "before":
+                    self.assertEqual(case.handles[injected[0]], case.session.runtime_root)
+                elif timing == "reused":
+                    self.assertEqual(case.handles[injected[0]], foreign)
+                else:
+                    self.assertFalse(case.handles)
+
+    def test_custody_primary_and_distinct_close_secondary_survive(self):
+        for operation in ("fstat", "following-open"):
+            for timing in ("before", "after"):
+                with self.subTest(operation=operation, timing=timing), self.fixture.runtime() as case:
+                    with self.ownership(case) as (owned, attempts):
+                        model = make_probe.os
+                        opening, fstat, close = model.open, model.fstat, model.close
+                        primary = OSError(errno.EACCES, "original custody failure")
+                        secondary = OSError(errno.EIO, "secondary retirement failure")
+
+                        def failed_stat(descriptor):
+                            if case.handles[descriptor] == case.session.runtime_root:
+                                raise primary
+                            return fstat(descriptor)
+
+                        def failed_open(path, *args, **kwargs):
+                            if path == "usr":
+                                raise primary
+                            return opening(path, *args, **kwargs)
+
+                        def failed_close(descriptor):
+                            path = case.handles[descriptor]
+                            if timing == "after":
+                                close(descriptor)
+                            else:
+                                attempts.append((descriptor, str(path.relative_to(case.session.base))))
+                            raise secondary
+
+                        with patch.object(model, "fstat", failed_stat if operation == "fstat" else fstat), patch.object(
+                            model, "open", failed_open if operation == "following-open" else opening,
+                        ), patch.object(model, "close", failed_close), self.assertRaises(MakeProbeError) as caught:
+                            case.session._runtime_object(case.session.runtime_root, "." if operation == "fstat" else "usr/leaf")
+                        self.assertIs(caught.exception.__cause__, primary)
+                        self.assert_secondary(caught.exception, secondary)
+                        self.assert_all_attempted_once(owned, attempts)
+                        self.assertEqual(len(case.handles), int(timing == "before"))
+
+    def test_success_or_absence_cannot_return_when_final_close_fails(self):
+        for name in (".", "missing"):
+            for timing in ("before", "after"):
+                for kind in (OSError, FileNotFoundError, KeyboardInterrupt):
+                    with self.subTest(name=name, timing=timing, kind=kind.__name__), self.fixture.runtime() as case:
+                        with self.ownership(case) as (owned, attempts):
+                            model, close = make_probe.os, make_probe.os.close
+                            failure = kind(errno.ENOENT if kind is FileNotFoundError else errno.EIO, "final close fault")
+
+                            def failed_close(descriptor):
+                                path = case.handles[descriptor]
+                                if timing == "after":
+                                    close(descriptor)
+                                else:
+                                    attempts.append((descriptor, str(path.relative_to(case.session.base))))
+                                raise failure
+
+                            with patch.object(model, "close", failed_close), self.assertRaises(kind) as caught:
+                                case.session._runtime_object(case.session.runtime_root, name)
+                            self.assertIs(caught.exception, failure)
+                            self.assert_all_attempted_once(owned, attempts)
+                            self.assertEqual(len(case.handles), int(timing == "before"))
+
+    def test_missing_parent_with_failed_cleanup_is_not_proven_absence(self):
+        with self.fixture.runtime() as case, self.ownership(case) as (owned, attempts):
+            model, opening, close = make_probe.os, make_probe.os.open, make_probe.os.close
+            primary = FileNotFoundError(errno.ENOENT, "original missing parent")
+            secondary = OSError(errno.EIO, "missing-parent cleanup failed")
+
+            def missing(path, *args, **kwargs):
+                if path == "missing":
+                    raise primary
+                return opening(path, *args, **kwargs)
+
+            def failed_close(descriptor):
+                close(descriptor)
+                raise secondary
+
+            with patch.object(model, "open", missing), patch.object(model, "close", failed_close):
+                with self.assertRaises(MakeProbeError) as caught:
+                    case.session._runtime_object(case.session.runtime_root, "missing/leaf")
+            self.assertIs(caught.exception.__cause__, primary)
+            self.assert_secondary(caught.exception, secondary)
+            self.assert_all_attempted_once(owned, attempts)
+            self.assertFalse(case.handles)
+
+    def test_interrupt_and_multiple_retirements_cover_relative_and_runtime_roots(self):
+        for runtime in (False, True):
+            for timing in ("before", "after"):
+                with self.subTest(runtime=runtime, timing=timing), self.fixture.runtime() as case:
+                    with self.ownership(case) as (owned, attempts):
+                        model, close = make_probe.os, make_probe.os.close
+                        root = case.session.runtime_root if runtime else case.session.tree
+                        primary = KeyboardInterrupt("original retirement interruption")
+                        secondary = OSError(errno.EIO, "successor retirement failed")
+
+                        def interrupted(descriptor):
+                            path = case.handles[descriptor]
+                            if timing == "after":
+                                close(descriptor)
+                            else:
+                                attempts.append((descriptor, str(path.relative_to(case.session.base))))
+                            raise primary if path == root else secondary
+
+                        with patch.object(model, "close", interrupted), self.assertRaises(KeyboardInterrupt) as caught:
+                            case.session._namespace_directory("usr" if runtime else "src", root=root if runtime else None)
+                        self.assertIs(caught.exception, primary)
+                        self.assert_secondary(caught.exception, secondary)
+                        self.assertEqual(len(owned), 2)
+                        self.assert_all_attempted_once(owned, attempts)
+                        self.assertEqual(len(case.handles), 2 if timing == "before" else 0)
+
+    def test_directory_transfer_and_failure_paths_keep_all_pin_owners(self):
+        for runtime in (False, True):
+            for operation in ("transfer", "root-open", "following-open", "following-fstat", "invalid-path"):
+                with self.subTest(runtime=runtime, operation=operation), self.fixture.runtime() as case:
+                    with self.ownership(case) as (owned, attempts):
+                        model = make_probe.os
+                        opening, fstat = model.open, model.fstat
+                        root = case.session.runtime_root if runtime else case.session.tree
+                        name = "usr" if runtime else "src"
+                        primary = OSError(errno.EACCES, "original new-pin failure")
+
+                        def failed_open(path, *args, **kwargs):
+                            if path == (root if operation == "root-open" else name):
+                                raise primary
+                            return opening(path, *args, **kwargs)
+
+                        def failed_stat(descriptor):
+                            if case.handles[descriptor] == root / name:
+                                raise primary
+                            return fstat(descriptor)
+
+                        if operation == "transfer":
+                            descriptor = case.session._namespace_directory(name, root=root if runtime else None)
+                            self.assertEqual(case.handles[descriptor], root / name)
+                            self.assertNotIn(descriptor, [value for value, _ in attempts])
+                            model.close(descriptor)
+                        elif operation == "following-fstat":
+                            with patch.object(model, "fstat", failed_stat), self.assertRaises(MakeProbeError) as caught:
+                                case.session._runtime_object(root, name + "/leaf")
+                            self.assertIs(caught.exception.__cause__, primary)
+                        elif operation == "invalid-path":
+                            with self.assertRaises(MakeProbeError):
+                                case.session._namespace_directory("../outside", root=root if runtime else None)
+                        else:
+                            with patch.object(model, "open", failed_open), self.assertRaises(OSError) as caught:
+                                case.session._namespace_directory(name, root=root if runtime else None)
+                            self.assertIs(caught.exception, primary)
+                        self.assert_all_attempted_once(owned, attempts)
+                        self.assertFalse(case.handles)
+        with self.fixture.runtime() as case:
+            self.assertIsNone(case.session._runtime_object(case.session.runtime_root, "missing/leaf"))
+            self.assertIsNotNone(case.session._runtime_object(case.session.runtime_root, "."))
+
+
 class NamespaceImageTests(unittest.TestCase):
     def setUp(self):
         self.fixture = FoundationTests()

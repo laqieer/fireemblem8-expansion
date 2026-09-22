@@ -3946,6 +3946,37 @@ The coupled existing
 still rejects old full metadata after an owned timestamp change and now also
 requires the next Make invocation to refuse, not reseed the original image.
 
+The [cleanup follow-up scope](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5785450839)
+adds `test_foundation.OriginalRuntimeCleanupApiTests` to this same case, not a
+new registry. Under code-only preparation use inspected selected AST bodies
+with `/usr/bin/python3 -I -S -B` and unchanged effect/native/import/real-FD
+traps. Execute the actual `cleanup_scope`/`finish_cleanup` logic with a
+memory-only signal collaborator; never call real signal-bearing budget teardown.
+
+1. Inject predecessor close failure before and after effect, including numeric
+   reuse by a foreign modeled owner. Record acquired pins, every retirement
+   attempt and live pins **before** test-only containment. Each successor must
+   receive its own attempt exactly once; the ambiguous predecessor must not be
+   retried. Do not require that a before-effect failed close removed its pin.
+2. Inject root/successor open and fstat failures, then distinct close failures.
+   Preserve the original read/retirement cause and expose cleanup errors as
+   secondaries. Exercise successful and absent bodies whose final close fails,
+   a missing parent with failed cleanup, multiple failed retirements and
+   interruptions. None may return successful custody, lookup or absence.
+3. Repeat normal transfer and adversarial paths through repository-relative
+   callers. Restore the exact `21bc82ef3de56ee015f401d3b45d3b2e8d4473ee`
+   directory/runtime-object methods: both successor-attempt assertions and
+   the primary-read assertion must fail again. Neutral local renaming must
+   remain green. Preserve the original functional, resource, lazy, `.POSIX`,
+   namespace seam and exact6d preimage/mutation controls.
+
+Memory containment closes surviving model handles only after measurement and
+is never production cleanup evidence. The original native selectors and the
+coupled metadata-revocation/namespace-prerequisite fixtures remain unrun by
+this preparation. Corrected exact-head independent review must precede Main's
+integration or a new native allocation; passing models do not lift the source,
+native cleanup, report/verifier, shipping/resource, H1 or delivery holds.
+
 Dependencies are existing runtime capture/aliases, original source and namespace
 lifetimes, the full report/verifier and their budgets. There is no new independent
 issue dependency, path registry or feature flag. Unqualified evidence remains

@@ -807,6 +807,18 @@ still reports mismatched old syscall records; it does not refresh that authority
 Relative source wildcard behavior, unknown-effect/continuation guards and all
 existing caller limits remain in force.
 
+Directory custody owns each opened successor before retiring its predecessor.
+Each retiring pin is withdrawn before its one close attempt; an interrupted or
+otherwise uncertain close is never retried against a possibly reused number.
+All other acquired pins still receive independent retirement attempts.
+Runtime-object teardown uses the existing lifecycle cleanup discipline:
+the original custody/read failure remains primary with its original cause,
+and distinct cleanup failures remain in `cleanup_errors` and exception notes.
+A failed close cannot yield successful metadata, absence or lookup. A missing
+parent with failed teardown is not proof of absence. An all-attempt record is
+not a claim that an ambiguous failed close succeeded or that native cleanup
+has been qualified.
+
 Optional metadata uses the **same** complete syscall records and native
 comparison as [source metadata](#complete-metadata-and-static-reuse), including
 real status, flags/masks, inode, ownership, timestamps and returned buffers.

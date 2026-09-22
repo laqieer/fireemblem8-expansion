@@ -1023,11 +1023,15 @@ class ProbeSession:
                         component, flags,
                         dir_fd=descriptor,
                     )
-                    os.close(descriptor)
-                    descriptor = following
+                    previous, descriptor = descriptor, following
+                    try:
+                        os.close(previous)
+                    except OSError as error:
+                        raise MakeProbeError("original namespace directory retirement failed") from error
             return descriptor
-        except BaseException:
-            os.close(descriptor)
+        except BaseException as primary:
+            retiring, descriptor = descriptor, None
+            finish_cleanup([lambda: os.close(retiring)], primary=primary)
             raise
 
     def _capture_namespace_image(self, *, inherited=False):
@@ -2078,27 +2082,32 @@ class ProbeSession:
     def _runtime_object(self, root, name, *, read_alias=False):
         self.budget.charge("control", 128 + len(encoded(name)))
         descriptor = None
-        try:
-            parent = "." if name == "." else PurePosixPath(name).parent.as_posix()
-            descriptor = self._namespace_directory(parent, root=root)
-            before = _namespace_stamp(os.fstat(descriptor))
-            info = os.fstat(descriptor) if name == "." else os.stat(
-                PurePosixPath(name).name, dir_fd=descriptor, follow_symlinks=False,
-            )
-            link = (
-                os.readlink(PurePosixPath(name).name, dir_fd=descriptor)
-                if read_alias and stat.S_ISLNK(info.st_mode) else None
-            )
-            if _namespace_stamp(os.fstat(descriptor)) != before:
-                raise MakeProbeError("original runtime parent changed during lookup")
-            return (*_namespace_stamp(info), info.st_size, info.st_nlink), link
-        except FileNotFoundError:
-            return None
-        except OSError as error:
-            raise MakeProbeError("original runtime owned image is unavailable") from error
-        finally:
-            if descriptor is not None:
-                os.close(descriptor)
+
+        def retire():
+            nonlocal descriptor
+            retiring, descriptor = descriptor, None
+            if retiring is not None:
+                os.close(retiring)
+
+        with cleanup_scope([retire]):
+            try:
+                parent = "." if name == "." else PurePosixPath(name).parent.as_posix()
+                descriptor = self._namespace_directory(parent, root=root)
+                before = _namespace_stamp(os.fstat(descriptor))
+                info = os.fstat(descriptor) if name == "." else os.stat(
+                    PurePosixPath(name).name, dir_fd=descriptor, follow_symlinks=False,
+                )
+                link = (
+                    os.readlink(PurePosixPath(name).name, dir_fd=descriptor)
+                    if read_alias and stat.S_ISLNK(info.st_mode) else None
+                )
+                if _namespace_stamp(os.fstat(descriptor)) != before:
+                    raise MakeProbeError("original runtime parent changed during lookup")
+                return (*_namespace_stamp(info), info.st_size, info.st_nlink), link
+            except OSError as error:
+                if isinstance(error, FileNotFoundError) and not getattr(error, "cleanup_errors", ()):
+                    return None
+                raise MakeProbeError("original runtime owned image is unavailable") from error
 
     def _require_runtime_capture(self, capture):
         self.budget.remaining()

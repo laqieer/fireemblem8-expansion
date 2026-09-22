@@ -1888,6 +1888,15 @@ directory custody without enumerating runtime directories. An unchanged captured
 symlink inode/stamp retains its original target text without a repeated
 `readlink` changing metadata visible to Make.
 
+The shared directory walk acquires successor ownership before fallible
+predecessor retirement and never retries a withdrawn pin. Failed traversal
+attempts every remaining owned close independently. Runtime-object cleanup
+preserves the original wrapped custody cause and exposes cleanup secondaries
+through the existing lifecycle error/notes contract. Cleanup failure cannot
+become successful metadata or an empty wildcard, including after an otherwise
+valid absence result. These rules also preserve repository-directory callers;
+they do not relax lookup authority or assert that an ambiguous close succeeded.
+
 This restores the already-admitted `/usr/include/newlib/stdlib.h` discovery in
 the original modern source. Both captured presence and captured absence leave
 the subsequent driver-flag condition and continuation mode provable. The
