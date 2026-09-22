@@ -1,10 +1,12 @@
 import copy
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import json
 import shlex
 import unittest
-from pathlib import Path
+import weakref
+from pathlib import Path, PurePosixPath
 import tempfile
 import subprocess
 import tarfile
@@ -17,6 +19,179 @@ from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBud
 from scripts.validation_ownership.graph_report import check
 from .report_fixture import ReportFixture
 from . import report_fixture
+from . import test_reporter as reporter_tests
+
+
+class ExecutableDispositionApiTests(unittest.TestCase):
+    """Actual report/checker/proof composition over an in-memory artifact workspace."""
+
+    def setUp(self):
+        root = Path(__file__).resolve().parents[3]
+        self.graph = reporter.load_json(root / reporter.GRAPH_PATH)
+        self.schema = reporter.load_json(root / reporter.SCHEMA_PATH)
+        self.oracle = reporter.load_json(root / reporter.PROBE_ORACLE_PATH)
+        self.observed, self.moves = [], []
+
+    def validate_metadata(self, graph, *, comparison_only=False):
+        reporter._validate_json_schema(graph, self.schema, self.schema)
+        reporter._validate_lifecycle(
+            graph["artifact"], graph["lifecycle_events"],
+            {node["id"]: node for node in graph["nodes"] if node["kind"] == "evidence"},
+            {edge["id"] for edge in graph["edges"]}, comparison_only=comparison_only,
+        )
+
+    def compose(self, graph, *, fault=None):
+        self.validate_metadata(graph)
+        files, directories = {}, {"/owned"}
+        moves, observed = self.moves, self.observed
+        budget = ProbeBudget()
+
+        class MemoryPath(PurePosixPath):
+            def resolve(self, *, strict=False):
+                if strict and str(self) not in directories:
+                    raise FileNotFoundError(str(self))
+                return self
+
+            def is_file(self):
+                return str(self) in files
+
+            def is_symlink(self):
+                return False
+
+            def mkdir(self):
+                directories.add(str(self))
+
+            def write_bytes(self, data):
+                files[str(self)] = data
+                return len(data)
+
+            def replace(self, target):
+                target = MemoryPath(target)
+                files[str(target)] = files.pop(str(self))
+                moves.append((self.name, target.name))
+                return target
+
+        @contextmanager
+        def temporary(*, prefix, dir):
+            self.assertEqual(dir, MemoryPath("/owned"))
+            root = MemoryPath("/owned") / (prefix + str(len(moves)))
+            directories.add(str(root))
+            try:
+                yield str(root)
+            finally:
+                self.assertNotIn(str(root / "graph.backup"), files)
+                for path in list(files):
+                    if root in MemoryPath(path).parents:
+                        del files[path]
+
+        class Context:
+            pass
+
+        session, loader, snapshot = Context(), Context(), Context()
+        session.base, session.loader, session.snapshot, session.budget = MemoryPath("/owned"), loader, snapshot, budget
+        loader.root = MemoryPath("/source")
+        model = reporter_tests.ReportAuthorityApiTests.model(graph, self.oracle)
+        # Modeled native/source binding, not evidence of a real source capture.
+        binding = graph_lifecycle._Bindings(
+            weakref.ref(session), weakref.ref(loader), weakref.ref(snapshot), weakref.ref(model),
+            graph_lifecycle.encoded(graph), graph_lifecycle.encoded(model["authorities"]), (),
+        )
+        graph_lifecycle._issued.add(binding)
+        model["lifecycle_bindings"] = binding
+        actual_check = graph_lifecycle.check
+
+        def check(root, check_id, **arguments):
+            path = root / reporter.GRAPH_PATH
+            present = path.is_file()
+            outcome = "fail"
+            try:
+                if fault == "removal-pass" and not present:
+                    outcome = "pass"
+                    return 0
+                if fault == "restoration" and present and moves and moves[-1][0] == "graph.backup":
+                    corrupted = copy.deepcopy(graph)
+                    corrupted["artifact"]["owner"] = "changed"
+                    path.write_bytes(graph_lifecycle.encoded(corrupted))
+                result = actual_check(root, check_id, **arguments)
+                outcome = "pass"
+                return result
+            finally:
+                observed.append((check_id, present, outcome))
+
+        def read(path, category):
+            data = files[str(path)]
+            budget.charge(category, len(data))
+            return data
+
+        def schema_check(value, schema, root_schema, *, budget):
+            reporter._validate_json_schema(value, schema, root_schema, _pattern_started=budget.remaining)
+
+        try:
+            with mock.patch.object(graph_lifecycle, "Path", MemoryPath), \
+                 mock.patch.object(graph_lifecycle.tempfile, "TemporaryDirectory", temporary), \
+                 mock.patch.object(graph_lifecycle, "check", check), \
+                 mock.patch.object(budget, "read_bytes", read), \
+                 mock.patch.object(reporter, "validate_json_schema", schema_check), \
+                 mock.patch.object(reporter, "_load_test_case_registry",
+                                   return_value={graph["artifact"]["consistency_check"]: {}}):
+                result = reporter.build_report(
+                    graph, self.schema, self.oracle, loader, model["entries"], model=model, session=session,
+                )
+                result["artifact"]["executable_lifecycle"] = reporter.validate_executable_lifecycle(
+                    loader.root, graph, session=session, schema=self.schema, oracle=self.oracle, model=model,
+                )
+                return result
+        finally:
+            graph_lifecycle._issued.discard(binding)
+            self.assertEqual(files, {})
+            self.assertEqual((budget.runs, budget.states), (0, 0))
+            self.assertFalse(budget.children)
+
+    def test_graduate_credits_only_actual_removal_failure_and_restoration(self):
+        result = self.compose(self.graph)
+        proofs = result["artifact"]["executable_lifecycle"]
+        self.assertEqual(result["artifact"]["current_disposition"], "Graduate")
+        self.assertEqual(len(proofs), 3)
+        self.assertEqual(len(self.moves), 6)
+        self.assertEqual(result["measurement"]["false_negative_selections"], 0)
+        for proof in proofs:
+            self.assertEqual((proof["removal"], proof["restoration"]), ("fail", "pass"))
+        for check_id in (self.graph["artifact"]["executable_consumer"], self.graph["artifact"]["consistency_check"]):
+            self.assertEqual(
+                [(present, outcome) for route, present, outcome in self.observed if route == check_id],
+                [(True, "pass"), (False, "fail"), (True, "pass")] * 3,
+            )
+
+    def test_current_delete_pass_cannot_credit_fail_on_removal(self):
+        graph = copy.deepcopy(self.graph)
+        graph["artifact"]["history"][-1]["disposition"] = "Delete"
+        for event in graph["lifecycle_events"]:
+            if event["type"] == "deletion_proof":
+                event["semantic_result"] = "pass"
+        self.validate_metadata(graph)
+        with self.assertRaisesRegex(reporter.OwnershipError, "observed.*contradict"):
+            self.compose(graph)
+        self.assertEqual(len(self.moves), 2)
+        self.assertEqual([row[1:] for row in self.observed[-2:]], [(True, "pass")] * 2)
+        self.validate_metadata(graph, comparison_only=True)
+        graph["lifecycle_events"][1]["semantic_result"] = "fail"
+        with self.assertRaisesRegex(reporter.OwnershipError, "contradicts disposition"):
+            self.validate_metadata(graph, comparison_only=True)
+
+    def test_removal_and_restoration_failures_propagate_without_credit(self):
+        for fault, message in (("removal-pass", "removal did not fail"), ("restoration", "differs from")):
+            self.observed, self.moves = [], []
+            with self.subTest(fault=fault), self.assertRaisesRegex(reporter.OwnershipError, message):
+                self.compose(self.graph, fault=fault)
+            self.assertEqual(self.moves[-1][0], "graph.backup")
+
+    def test_historical_base_expiry_remains_comparison_only(self):
+        graph = copy.deepcopy(self.graph)
+        graph["artifact"]["expires_at"] = "2026-09-01T00:00:00Z"
+        self.validate_metadata(graph, comparison_only=True)
+        with self.assertRaisesRegex(reporter.OwnershipError, "expired artifact"):
+            self.validate_metadata(graph)
+        self.assertEqual(len(self.compose(self.graph)["artifact"]["executable_lifecycle"]), 3)
 
 
 class GraphReportTests(unittest.TestCase):

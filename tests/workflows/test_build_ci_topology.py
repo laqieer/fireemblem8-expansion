@@ -1528,8 +1528,11 @@ def _validation_step_has_scrubbed_environment(step: str) -> bool:
 
 
 def _step_name(step: str) -> str | None:
-    match = re.search(r"^    - name: (?P<name>.+)$", step, re.MULTILINE)
-    return match.group("name") if match is not None else None
+    try:
+        _, fields = verify._workflow_step_fields(step, "topology", 0)
+    except ValueError:
+        return None
+    return next((value for name, value, _ in fields if name == "name"), None)
 
 
 def _multiline_step_script(step: str) -> str:
@@ -1712,7 +1715,7 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
         ),
         _run_step_is_exact(
             steps[8],
-            "Run workflow-pilot reporter regression suite (issue #176)",
+            verify._WORKFLOW_PILOT_TEST_STEP_NAME,
             (WORKFLOW_PILOT_GATE,),
             if_expression=FULL_WORKER_STEP_CONDITION,
             env_lines=SCRUBBED_STEP_ENV,
@@ -2678,7 +2681,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     base_steps = [
         step
         for step in ownership_steps
-        if f"    - name: {VALIDATION_OWNERSHIP_BASE_STEP}\n" in step
+        if _step_name(step) == VALIDATION_OWNERSHIP_BASE_STEP
     ]
     if (
         len(base_steps) != 1
@@ -2696,7 +2699,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         "Validate validation ownership graph (issue #180)",
     ):
         matching = [
-            step for step in ownership_steps if f"    - name: {name}\n" in step
+            step for step in ownership_steps if _step_name(step) == name
         ]
         if (
             len(matching) != 1
@@ -2727,16 +2730,13 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         errors.append(
             "candidate host lost exact workflow-pilot Git authority hydration"
         )
-    hydration_index = jobs["host-tests"].find(
-        "Hydrate workflow-pilot Git authority"
-    )
-    reporter_index = jobs["host-tests"].find(
-        "Run workflow-pilot reporter regression suite (issue #176)"
-    )
+    host_names = [_step_name(step) for step in _step_blocks(jobs["host-tests"])]
+    hydration_positions = [index for index, name in enumerate(host_names) if name == "Hydrate workflow-pilot Git authority"]
+    reporter_positions = [index for index, name in enumerate(host_names) if name == verify._WORKFLOW_PILOT_TEST_STEP_NAME]
     if (
-        hydration_index < 0
-        or reporter_index < 0
-        or hydration_index >= reporter_index
+        len(hydration_positions) != 1
+        or len(reporter_positions) != 1
+        or hydration_positions[0] >= reporter_positions[0]
     ):
         errors.append(
             "workflow-pilot Git authority hydration must precede reporter tests"
@@ -2791,6 +2791,30 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             _remote_completion_errors(MAKEFILE.read_text(encoding="utf-8")),
             [],
         )
+
+    def test_decoded_step_name_forms_preserve_complete_topology_guard(self):
+        self.assertEqual(_errors(self.text, False), [])
+        original = verify._parse_workflow_structure_text(self.text)
+        for job_name, name in (
+            ("ownership-tests", VALIDATION_OWNERSHIP_BASE_STEP),
+            ("ownership-tests", verify._VALIDATION_OWNERSHIP_TEST_STEP_NAME),
+            ("ownership-tests", verify._VALIDATION_OWNERSHIP_CHECK_STEP_NAME),
+            ("host-tests", "Hydrate workflow-pilot Git authority"),
+            ("host-tests", verify._WORKFLOW_PILOT_TEST_STEP_NAME),
+        ):
+            selected, = [step for step in _step_blocks(_job_blocks(self.text)[job_name])
+                         if _step_name(step) == name]
+            header = selected.splitlines()[0]
+            scalars = ("'" + name.replace("'", "''") + "'", json.dumps(name))
+            if "#" not in name:
+                scalars += (name,)
+            for scalar in scalars:
+                changed_step = selected.replace(header, "    - name: " + scalar + " # harmless", 1)
+                changed = self.text.replace(selected, changed_step, 1)
+                with self.subTest(job=job_name, scalar=scalar):
+                    self.assertNotEqual(changed, self.text)
+                    self.assertEqual(verify._parse_workflow_structure_text(changed), original)
+                    self.assertEqual(_errors(changed, False), [])
 
     def test_custom_spell_profile_owner_rejects_missing_duplicate_disabled_and_wrong_mode(self):
         self.assertEqual(_custom_spell_profile_errors(self.text), [])
@@ -2932,10 +2956,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "Run gba-playtest host test suite",
                 "Run upstream-port tooling test suite",
                 "Run workflow contract test suite",
-                "Run workflow-pilot reporter regression suite (issue #176)",
+                verify._WORKFLOW_PILOT_TEST_STEP_NAME,
                 "Validate workflow-pilot baseline against checked-out Git history",
-                "Run localization host test suite (issue #18)",
-                "Run full-game localization width contract (issue #18)",
+                "Run localization host test suite (issue",
+                "Run full-game localization width contract (issue",
             ],
         )
         owned = (
@@ -3427,29 +3451,35 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 )
 
     def test_protected_pilot_steps_require_exact_scrubbed_environment(self):
+        self.assertEqual(_errors(self.text, False), [])
         steps = (
             (
+                "host-tests",
                 "Hydrate workflow-pilot Git authority",
                 SCRUBBED_STEP_ENV,
             ),
             (
-                "Run workflow-pilot reporter regression suite (issue #176)",
+                "host-tests",
+                verify._WORKFLOW_PILOT_TEST_STEP_NAME,
                 SCRUBBED_STEP_ENV,
             ),
             (
+                "host-tests",
                 "Validate workflow-pilot baseline against checked-out Git history",
                 SCRUBBED_STEP_ENV,
             ),
             (
+                "ownership-tests",
                 "Run validation ownership regression suite (issue #180)",
                 VALIDATION_OWNERSHIP_STEP_ENV,
             ),
             (
+                "ownership-tests",
                 "Validate validation ownership graph (issue #180)",
                 VALIDATION_OWNERSHIP_STEP_ENV,
             ),
         )
-        for name, expected_environment in steps:
+        for job_name, name, expected_environment in steps:
             env_block = (
                 "      env:\n"
                 + "\n".join(expected_environment)
@@ -3475,8 +3505,12 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 ),
             )
             for variant in variants:
-                with self.subTest(name=name, variant=variant):
-                    step_start = self.text.index(f"    - name: {name}\n")
+                with self.subTest(job=job_name, name=name, variant=variant):
+                    selected, = [
+                        step for step in _step_blocks(_job_blocks(self.text)[job_name])
+                        if _step_name(step) == name
+                    ]
+                    step_start = self.text.index(selected)
                     env_start = self.text.index("      env:\n", step_start)
                     run_start = self.text.index("      run:", env_start)
                     changed = (
@@ -3484,15 +3518,26 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         + variant
                         + self.text[run_start:]
                     )
+                    self.assertNotEqual(changed, self.text)
+                    errors = _errors(changed, False)
                     self.assertTrue(
                         any(
                             "protected pre-pilot step sequence differs" in error
                             or "lost exact workflow-pilot" in error
                             or "lost exact validation ownership" in error
                             or "changes its scrubbed environment" in error
-                            for error in _errors(changed, False)
+                            for error in errors
                         )
                     )
+                    for owner in (
+                        verify._VALIDATION_OWNERSHIP_TEST_STEP_NAME,
+                        verify._VALIDATION_OWNERSHIP_CHECK_STEP_NAME,
+                    ):
+                        message = f"validation ownership step {owner!r} changes its scrubbed environment"
+                        if owner == name:
+                            self.assertIn(message, errors)
+                        else:
+                            self.assertNotIn(message, errors)
 
     def test_workflow_pilot_authority_hydration_is_exact_and_ordered(self):
         self.assertEqual(hydrate_authority.GIT, "/usr/bin/git")

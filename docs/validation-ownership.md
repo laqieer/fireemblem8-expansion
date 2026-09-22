@@ -928,7 +928,20 @@ The graph stores identities, not copied commands. A single root-confined loader
 requires every graph, schema, probe, tester-case, manual, generated-data, Make,
 and workflow authority to be a Git-tracked regular blob. Recursive literal
 Make includes pass through that loader. Workflow jobs and steps remain bound
-to the existing strict Build workflow parser. Generated paths and owners come
+to the existing strict Build workflow parser. Name scalars share its closed,
+dependency-free YAML decoder: plain-scalar comments are not name data,
+single-quoted apostrophes and supported double-quoted escapes are decoded,
+and ambiguous, multiline, tagged or aliased names reject. Equivalent name
+quoting and trailing YAML comments preserve authority; run-script bytes are
+not normalized as YAML name data. The five graph-owned issue-number labels
+are quoted so their declared identities exist in parsed Build YAML.
+Original workflow, job, step and scalar text must pass the shared raw YAML
+character check before line splitting, comment removal or name decoding.
+Forbidden controls cannot disappear inside comments; supported printable
+Unicode and ordinary comment data remain valid. The mandatory topology guard
+also resolves coupled consumer names through the shared decoded step fields,
+while retaining exact environment checks and consumer ordering.
+Generated paths and owners come
 from registered table schemas. Symlinks, escapes, untracked includes,
 non-blob modes, target removal, registry drift, and workflow structural drift
 therefore fail without a second command or filename-derived owner registry.
@@ -949,6 +962,11 @@ fail-closed exclusion likewise invalidates every existing edge: exclusion
 authority is part of whole-tree admission even when no oracle probe names the
 new exclusion. Exclusion-list, selector-list, JSON whitespace, and object-key
 reordering with equal parsed semantics do not invalidate review.
+Path-rule `include` and `exclude` arrays are unordered any-match collections
+and are canonicalized only for declaration comparison. Changing selector
+membership still invalidates the affected surface's owners and exact-base
+oracle authority. Recipe, prerequisite, workflow-step and disposition-history
+order retain their existing meaning.
 The artifact's ownership/consumer/consistency/disposition record and lifecycle
 event authority are also part of this comparison. A valid change to either
 invalidates all existing owner edges, even if edge declarations themselves
@@ -1134,8 +1152,13 @@ or excuse an expired CURRENT. The public check uses its bounded
 session under the isolated launcher. Before any proof is credited, the
 validated CURRENT model must contain issued **verified dispatch bindings** for
 both declared roles. For each trigger, their shared artifact checker runs
-before removal, while the graph is absent, and after restoration. The result
-explicitly says `semantics: verified-dispatch-and-shared-checker` and names
+before removal, while the graph is absent, and after restoration. The observed
+outcomes must agree with the declared proof semantics and CURRENT disposition before
+it receives credit. The required graph's observed fail-on-removal/pass-on-
+restoration cannot certify a `Delete`/`pass` claim. Rejection retains the real
+shared-checker failure and restoration sequence; historical BASE metadata
+comparison remains separate and does not issue CURRENT proof credit.
+The result explicitly says `semantics: verified-dispatch-and-shared-checker` and names
 `verified_routes`; it does not claim the Make target or complete testcase ran
 inside the proof.
 

@@ -19,6 +19,7 @@ directly to reproduce it locally; see docs/upstream-porting.md.
 from __future__ import annotations
 
 import os
+import json
 import re
 import shlex
 import subprocess
@@ -1038,7 +1039,7 @@ _NON_GATE_STEP_NAMES = {
 }
 _DOCS_GOVERNANCE_STEP_NAME = "Check documentation (issues #7/#17)"
 _WORKFLOW_PILOT_TEST_STEP_NAME = (
-    "Run workflow-pilot reporter regression suite (issue #176)"
+    "Run workflow-pilot reporter regression suite (issue"
 )
 _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
     "Validate workflow-pilot baseline against checked-out Git history"
@@ -1066,20 +1067,20 @@ _FULL_MODE_ONLY_JOB_STEPS = {
     ("ownership-tests", _VALIDATION_OWNERSHIP_BASE_STEP_NAME),
     ("ownership-tests", _VALIDATION_OWNERSHIP_TEST_STEP_NAME),
     ("ownership-tests", _VALIDATION_OWNERSHIP_CHECK_STEP_NAME),
-    ("host-tests", "Run localization host test suite (issue #18)"),
-    ("host-tests", "Run full-game localization width contract (issue #18)"),
+    ("host-tests", "Run localization host test suite (issue"),
+    ("host-tests", "Run full-game localization width contract (issue"),
     ("build", "Verify checked-out revision"),
     ("build", "Check tracked artifacts"),
     ("build", _DOCS_GOVERNANCE_STEP_NAME),
     ("build", "Install dependencies"),
     ("build", "Build tools"),
-    ("build", "Run CodeQL alert regression suite (issue #84)"),
+    ("build", "Run CodeQL alert regression suite (issue"),
     ("build", "Check default build lane and quickstart legacy glue (issue #15)"),
     ("build", "Check generated-data tables for drift"),
     ("build", _CUSTOM_SPELL_PROFILE_STEP_NAME),
     ("build", "Build and verify modern target ROMs and linker"),
     ("build", "Boundary/serialization item-ID-expansion + content runtime gate (cap 0xCE)"),
-    ("build", "Build and verify all-locales/all-features map menu (issues #49/#168)"),
+    ("build", "Build and verify all-locales/all-features map menu (issues"),
 }
 _SCRUBBED_PILOT_ENV = (
     "BASH_ENV: ''",
@@ -1153,8 +1154,8 @@ _EXPECTED_STEP_ROLES = {
         ("gate", "Run workflow contract test suite"),
         ("gate", _WORKFLOW_PILOT_TEST_STEP_NAME),
         ("gate", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
-        ("gate", "Run localization host test suite (issue #18)"),
-        ("gate", "Run full-game localization width contract (issue #18)"),
+        ("gate", "Run localization host test suite (issue"),
+        ("gate", "Run full-game localization width contract (issue"),
     ),
     "ownership-tests": (
         ("setup", None),
@@ -1174,7 +1175,7 @@ _EXPECTED_STEP_ROLES = {
         ("standalone-gate", _DOCS_GOVERNANCE_STEP_NAME),
         ("setup", "Install dependencies"),
         ("setup", "Build tools"),
-        ("gate", "Run CodeQL alert regression suite (issue #84)"),
+        ("gate", "Run CodeQL alert regression suite (issue"),
         ("gate", "Check default build lane and quickstart legacy glue (issue #15)"),
         ("gate", "Check generated-data tables for drift"),
         ("gate", _CUSTOM_SPELL_PROFILE_STEP_NAME),
@@ -1187,7 +1188,7 @@ _EXPECTED_STEP_ROLES = {
         (
             "gate",
             "Build and verify all-locales/all-features map menu "
-            "(issues #49/#168)",
+            "(issues",
         ),
         ("publisher", "Create and verify patch artifact"),
         ("publisher", "Upload patch-only artifact"),
@@ -1307,7 +1308,21 @@ def _expand_workspace(argv, repository_root):
     ]
 
 
+def _validate_workflow_raw_characters(text, label):
+    for character in text:
+        codepoint = ord(character)
+        if not (
+            codepoint in (0x09, 0x0A, 0x0D, 0x85)
+            or 0x20 <= codepoint <= 0x7E
+            or 0xA0 <= codepoint <= 0xD7FF
+            or 0xE000 <= codepoint <= 0xFFFD
+            or 0x10000 <= codepoint <= 0x10FFFF
+        ):
+            raise ValueError(f"{label} contains unsupported raw YAML character U+{codepoint:04X}")
+
+
 def _workflow_job_entries(text):
+    _validate_workflow_raw_characters(text, "workflow")
     lines = text.splitlines(keepends=True)
     try:
         jobs_index = next(
@@ -1351,7 +1366,53 @@ def _workflow_job_entries(text):
     )
 
 
+def _workflow_name_scalar(raw, label):
+    _validate_workflow_raw_characters(raw, label)
+    value = raw.strip(" \t")
+    if not value or any(character in value for character in "\r\n\0"):
+        raise ValueError(f"{label} requires one nonempty scalar line")
+    if value.startswith('"'):
+        try:
+            name, stop = json.JSONDecoder().raw_decode(value)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"{label} uses unsupported quoted scalar syntax") from error
+        tail = value[stop:]
+    elif value.startswith("'"):
+        parts, index = [], 1
+        while index < len(value):
+            if value[index] != "'":
+                parts.append(value[index])
+                index += 1
+            elif value[index:index + 2] == "''":
+                parts.append("'")
+                index += 2
+            else:
+                break
+        else:
+            raise ValueError(f"{label} has an unterminated quoted scalar")
+        name, tail = "".join(parts), value[index + 1:]
+    else:
+        comment = next(
+            (index for index, character in enumerate(value) if character == "#" and index and value[index - 1] in " \t"),
+            len(value),
+        )
+        name = value[:comment].rstrip(" \t")
+        if (
+            not name or name[0] in "#&*!|>{}[],%@`"
+            or name[0] in "-?:" and (len(name) == 1 or name[1] in " \t")
+            or re.search(r":(?:[ \t]|$)", name)
+        ):
+            raise ValueError(f"{label} uses unsupported plain scalar syntax")
+        tail = ""
+    if tail and re.fullmatch(r"[ \t]+(?:#.*)?", tail) is None:
+        raise ValueError(f"{label} has content after its quoted scalar")
+    if not name or any(ord(character) < 32 or 0xD800 <= ord(character) <= 0xDFFF for character in name):
+        raise ValueError(f"{label} contains an empty or unsupported scalar value")
+    return name
+
+
 def _parse_workflow_context(text):
+    _validate_workflow_raw_characters(text, "workflow")
     lines = text.splitlines()
     direct = []
     for index, line in enumerate(lines):
@@ -1394,6 +1455,7 @@ def _parse_workflow_context(text):
             if line.strip() and not line.lstrip().startswith("#")
         ]
         if name == "name":
+            value = _workflow_name_scalar(value, "workflow name")
             if value != "Build CI" or nested:
                 raise ValueError(
                     "workflow name must be exactly 'Build CI'"
@@ -1477,6 +1539,7 @@ def _parse_job_mapping(lines, start, end, job_name, field):
 
 
 def _parse_job_context(job_name, body):
+    _validate_workflow_raw_characters(body, f"job {job_name!r}")
     lines = body.splitlines()
     direct = []
     for index, line in enumerate(lines):
@@ -1566,6 +1629,7 @@ def _parse_job_context(job_name, body):
             if line.strip() and not line.lstrip().startswith("#")
         ]
         if name == "name":
+            value = _workflow_name_scalar(value, f"job {job_name!r} name")
             expected = (
                 job_name
                 if job_name in {"event-identity", "event-router"}
@@ -1712,7 +1776,8 @@ def _literal_run_script(lines, start, end, value, step_label):
         script.append(line[8:] if line else "")
     return "\n".join(script) + "\n"
 
-def _parse_step(block, job_name, index):
+def _workflow_step_fields(block, job_name, index):
+    _validate_workflow_raw_characters(block, f"job {job_name!r} step {index}")
     lines = block.split("\n")
     first_index = next(
         (
@@ -1762,7 +1827,19 @@ def _parse_step(block, job_name, index):
         raise ValueError(
             f"{step_label} has unsupported direct fields: {', '.join(unknown)}"
         )
+    for field_index, (name, value, line_index) in enumerate(direct):
+        if name != "name":
+            continue
+        end = direct[field_index + 1][2] if field_index + 1 < len(direct) else len(lines)
+        if any(line.strip() and not line.lstrip().startswith("#") for line in lines[line_index + 1:end]):
+            raise ValueError(f"{step_label} name cannot contain nested values")
+        direct[field_index] = name, _workflow_name_scalar(value, step_label + " name"), line_index
+    return lines, direct
 
+
+def _parse_step(block, job_name, index):
+    lines, direct = _workflow_step_fields(block, job_name, index)
+    step_label = f"job {job_name!r} step {index}"
     values = {}
     literal_run_script = None
     for field_index, (name, raw_value, line_index) in enumerate(direct):
@@ -1801,7 +1878,7 @@ def _parse_step(block, job_name, index):
                     step_label,
                 )
         else:
-            scalar = value.strip()
+            scalar = raw_value if name == "name" else value.strip()
             if name == "uses":
                 scalar = scalar.split(" #", 1)[0].strip()
             if not scalar:

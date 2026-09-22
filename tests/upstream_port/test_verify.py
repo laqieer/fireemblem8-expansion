@@ -1,15 +1,18 @@
 import contextlib
 import inspect
 import io
+import json
 import os
 import re
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from scripts.upstream_port import cli, verify as verify_mod
+from scripts.validation_ownership import reporter
 from scripts.workflow_pilot import metadata_event
 from tests.workflows import test_build_ci_topology as topology_tests
 
@@ -22,9 +25,9 @@ UPSTREAM_PORTING_PATH = os.path.join(REPO_ROOT, "docs", "upstream-porting.md")
 # from verify.gates(). Its exact commands and position are asserted separately
 # below; localization remains part of the current 34-gate candidate mirror.
 _DOCS_GOVERNANCE_STEP_NAME = "Check documentation (issues #7/#17)"
-_CODEQL_ALERTS_STEP_NAME = "Run CodeQL alert regression suite (issue #84)"
-_LOCALIZATION_HOST_STEP_NAME = "Run localization host test suite (issue #18)"
-_GAME_LOCALIZATION_WIDTH_STEP_NAME = "Run full-game localization width contract (issue #18)"
+_CODEQL_ALERTS_STEP_NAME = "Run CodeQL alert regression suite (issue"
+_LOCALIZATION_HOST_STEP_NAME = "Run localization host test suite (issue"
+_GAME_LOCALIZATION_WIDTH_STEP_NAME = "Run full-game localization width contract (issue"
 _WORKFLOW_CONTRACT_STEP_NAME = "Run workflow contract test suite"
 _WORKFLOW_PILOT_TEST_STEP_NAME = verify_mod._WORKFLOW_PILOT_TEST_STEP_NAME
 _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
@@ -51,6 +54,163 @@ def _parse_workflow_gate_commands_text(text):
             text
         )
     ]
+
+
+class WorkflowNameAuthorityTests(unittest.TestCase):
+    """Independent YAML oracle belongs to host tests, never isolated ownership runtime."""
+
+    def setUp(self):
+        self.graph = reporter.load_json(Path(REPO_ROOT) / reporter.GRAPH_PATH)
+        self.workflow = Path(BUILD_WORKFLOW_PATH).read_text()
+
+    @staticmethod
+    def yaml_document(text):
+        import yaml
+
+        class UniqueLoader(yaml.BaseLoader):
+            pass
+
+        def mapping(loader, node, deep=False):
+            result = {}
+            for key, value in node.value:
+                name = loader.construct_object(key, deep=deep)
+                if name in result:
+                    raise ValueError("duplicate YAML mapping key")
+                result[name] = loader.construct_object(value, deep=deep)
+            return result
+
+        UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, mapping)
+        return yaml.load(text, Loader=UniqueLoader)
+
+    def test_graph_workflow_names_exist_in_independent_parsed_yaml(self):
+        parsed = self.yaml_document(self.workflow)
+        names = {(job, step["name"]) for job, value in parsed["jobs"].items()
+                 for step in value["steps"] if "name" in step}
+        jobs, steps = reporter._generic_workflow_authorities(self.workflow)
+        self.assertEqual(set(steps), names)
+        self.assertEqual(set(jobs), set(parsed["jobs"]))
+        for node in self.graph["nodes"]:
+            authority = node.get("authority", {})
+            if authority.get("kind") == "workflow-step":
+                self.assertIn((authority["job"], authority["step"]), names)
+        structure = verify_mod._parse_workflow_structure_text(self.workflow)
+        self.assertEqual(
+            {(job, name) for job, _, values in structure[2] for _, name, _ in values if name is not None},
+            names,
+        )
+
+    def test_workflow_comment_and_quote_only_edits_preserve_authority(self):
+        parsed = self.yaml_document(self.workflow)
+        original = reporter._generic_workflow_authorities(self.workflow)
+        for label in (
+            "Run upstream-port tooling test suite",
+            "Run validation ownership regression suite (issue #180)",
+        ):
+            line, = [line for line in self.workflow.splitlines() if "- name:" in line and label in line]
+            for replacement in (
+                line + " # nonsemantic audit annotation",
+                "    - name: " + json.dumps(label),
+                "    - name: '" + label + "' # harmless",
+            ):
+                changed = self.workflow.replace(line + "\n", replacement + "\n", 1)
+                with self.subTest(label=label, replacement=replacement):
+                    self.assertTrue(self.yaml_document(changed) == parsed, "parsed workflow changed")
+                    self.assertTrue(reporter._generic_workflow_authorities(changed) == original,
+                                    "equivalent workflow authority changed")
+                    self.assertEqual(
+                        verify_mod._parse_workflow_structure_text(changed),
+                        verify_mod._parse_workflow_structure_text(self.workflow),
+                    )
+
+    def test_workflow_scalar_grammar_and_nonleading_names_are_closed(self):
+        for scalar in ("plain#data # comment", "'literal # name' # comment",
+                       "'it''s named'", '"escaped \\u006eame"', '"a\\\\b"'):
+            text = "jobs:\n  example:\n    steps:\n    - id: item\n      name: " + scalar + "\n      run: echo ok\n"
+            parsed = self.yaml_document(text)["jobs"]["example"]["steps"][0]["name"]
+            with self.subTest(scalar=scalar):
+                self.assertEqual(set(reporter._generic_workflow_authorities(text)[1]), {("example", parsed)})
+        for scalar in ("*alias", "&anchor title", "!!str title", '"unfinished', "'unfinished",
+                       "|", ">", "{name: value}", "title: value", '"title"extra'):
+            text = "jobs:\n  example:\n    steps:\n    - name: " + scalar + "\n      run: echo ok\n"
+            with self.subTest(scalar=scalar), self.assertRaises(reporter.OwnershipError):
+                reporter._generic_workflow_authorities(text)
+        text = "jobs:\n  example:\n    steps:\n    - name: |\n        multiline\n      run: echo ok\n"
+        with self.assertRaises(reporter.OwnershipError):
+            reporter._generic_workflow_authorities(text)
+
+    def test_actual_workflow_owner_fingerprints_ignore_comments_not_renames(self):
+        evidence = {node["id"]: node for node in self.graph["nodes"]
+                    if node.get("authority", {}).get("kind") == "workflow-step"}
+        budget = reporter.ProbeBudget()
+
+        def resolve(text):
+            loader = SimpleNamespace(
+                entries={}, budget=budget, read_blob=lambda path, label: text.encode(),
+                read_json=lambda path, label: {"cases": []},
+            )
+            return reporter._validate_authorities(loader, evidence, [], strict_workflow=True)[0]
+
+        original = resolve(self.workflow)
+        label = "Run validation ownership regression suite (issue #180)"
+        line, = [line for line in self.workflow.splitlines() if "- name:" in line and label in line]
+        commented = self.workflow.replace(line + "\n", line + " # annotation\n", 1)
+        self.assertTrue(original == resolve(commented), "comment changed resolved fingerprints")
+        renamed = self.workflow.replace(label, label + " changed", 1)
+        with self.assertRaises(reporter.OwnershipError):
+            resolve(renamed)
+        self.assertEqual((budget.runs, budget.states), (0, 0))
+
+
+class WorkflowRawCharacterTests(unittest.TestCase):
+    """Raw YAML validity precedes scalar/comment normalization."""
+
+    def setUp(self):
+        self.workflow = Path(BUILD_WORKFLOW_PATH).read_text()
+
+    def test_complete_workflow_rejects_forbidden_raw_name_comments(self):
+        import yaml
+
+        name = "Run upstream-port tooling test suite"
+        marker = "    - name: " + name + "\n"
+        self.assertEqual(self.workflow.count(marker), 1)
+        for scalar in (name, "'" + name + "'", json.dumps(name)):
+            for codepoint in (0, 1, 8, 11, 12, 14, 31, 127, 128, 132, 134, 159,
+                              0xD800, 0xDFFF, 0xFFFE, 0xFFFF):
+                raw = scalar + " # invalid " + chr(codepoint)
+                changed = self.workflow.replace(marker, "    - name: " + raw + "\n", 1)
+                with self.subTest(scalar=scalar, codepoint=codepoint):
+                    with self.assertRaises(yaml.reader.ReaderError):
+                        WorkflowNameAuthorityTests.yaml_document(changed)
+                    with self.assertRaises(ValueError):
+                        verify_mod._parse_workflow_structure_text(changed)
+                    with self.assertRaises(reporter.OwnershipError):
+                        reporter._generic_workflow_authorities(changed)
+                    with self.assertRaises(ValueError):
+                        verify_mod._workflow_name_scalar(raw, "step name")
+
+    def test_printable_comments_unicode_and_escaped_names_remain_neutral(self):
+        name = "Run upstream-port tooling test suite"
+        marker = "    - name: " + name + "\n"
+        original_yaml = WorkflowNameAuthorityTests.yaml_document(self.workflow)
+        original_structure = verify_mod._parse_workflow_structure_text(self.workflow)
+        original_authority = reporter._generic_workflow_authorities(self.workflow)
+        for scalar in (name, "'" + name + "'", json.dumps(name), json.dumps(name).replace("upstream", r"\u0075pstream")):
+            for comment in (
+                "ordinary # printable ' \" data",
+                "tab\tcomment",
+                "Unicode " + "".join(chr(value) for value in (0xA0, 0x3A9, 0x4E2D, 0xD7FF, 0xE000, 0xFFFD, 0x10000, 0x10FFFF)),
+            ):
+                changed = self.workflow.replace(marker, "    - name: " + scalar + " # " + comment + "\n", 1)
+                with self.subTest(scalar=scalar, comment=comment):
+                    self.assertTrue(WorkflowNameAuthorityTests.yaml_document(changed) == original_yaml)
+                    self.assertEqual(verify_mod._parse_workflow_structure_text(changed), original_structure)
+                    self.assertTrue(reporter._generic_workflow_authorities(changed) == original_authority)
+        name = "caf\u00e9#data \u03a9 \u4e2d \U0001f600"
+        for scalar in (name, "'" + name + "'", json.dumps(name, ensure_ascii=False)):
+            text = "jobs:\n  example:\n    steps:\n    - name: " + scalar + "\n      run: echo ok\n"
+            with self.subTest(unicode_name=scalar):
+                self.assertEqual(WorkflowNameAuthorityTests.yaml_document(text)["jobs"]["example"]["steps"][0]["name"], name)
+                self.assertEqual(set(reporter._generic_workflow_authorities(text)[1]), {("example", name)})
 
 
 class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
@@ -95,7 +255,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         workflow_commands = dict(_parse_workflow_gate_commands())
         self.assertEqual(
             workflow_commands[
-                "Build and verify all-locales/all-features map menu (issues #49/#168)"
+                "Build and verify all-locales/all-features map menu (issues"
             ],
             gate.command,
         )
@@ -459,7 +619,11 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             "{working-directory: scripts}",
         )
         for step_name in mirrored_steps:
-            marker = f"    - name: {step_name}\n"
+            marker, = [
+                line + "\n" for line in workflow.splitlines()
+                if line.startswith("    - name: ")
+                and verify_mod._workflow_name_scalar(line.removeprefix("    - name: "), "step") == step_name
+            ]
             for variant in variants:
                 with self.subTest(step=step_name, variant=variant):
                     changed = workflow.replace(
