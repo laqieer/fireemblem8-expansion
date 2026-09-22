@@ -23,7 +23,7 @@ LOCATION_REASONS = frozenset({
     "source-code-unbound", "public-call-unobserved", "no-source-trace", "cyclic-exception-chain",
     "exception-chain-bound", "trace-frame-bound", "registration-bound", "invalid-code-location",
     "location-size-bound", "locator-failed", "cyclic-wrapper-chain", "wrapper-chain-bound",
-    "function-metadata-unavailable",
+    "function-metadata-unavailable", "code-metadata-unavailable", "source-metadata-unavailable",
 })
 
 
@@ -82,6 +82,27 @@ class _LocationUnavailable(policy.GuardError):
         super().__init__(reason)
 
 
+def _location_fields(fields):
+    # Mapping proxies here come only from ordinary type.__dict__ descriptors.
+    if type(fields) is not dict and type(fields) is not types.MappingProxyType:
+        raise _LocationUnavailable("source-metadata-unavailable")
+    if len(fields) > policy.ORIGINAL_LIMITS["entries"]:
+        raise _LocationUnavailable("registration-bound")
+    if any(type(key) is not str for key in fields):
+        raise _LocationUnavailable("source-metadata-unavailable")
+    return fields
+
+
+def _location_code(code):
+    if type(code) is not types.CodeType or (
+        type(code.co_filename) is not str or type(code.co_name) is not str
+        or type(code.co_consts) is not tuple or type(code.co_code) is not bytes
+        or type(code.co_linetable) is not bytes
+    ):
+        raise _LocationUnavailable("code-metadata-unavailable")
+    return code
+
+
 def _instance_fields(value, expected):
     if type(expected) is not type or type(value) is not expected:
         raise _LocationUnavailable("source-binding-invalid")
@@ -89,14 +110,14 @@ def _instance_fields(value, expected):
     if len(ancestry) > 32:
         raise _LocationUnavailable("source-binding-invalid")
     for owner in ancestry:
-        descriptor = type.__getattribute__(owner, "__dict__").get("__dict__")
+        descriptor = _location_fields(type.__getattribute__(owner, "__dict__")).get("__dict__")
         if descriptor is not None:
             if type(descriptor) is not types.GetSetDescriptorType:
                 raise _LocationUnavailable("source-binding-invalid")
             fields = descriptor.__get__(value, expected)
             if type(fields) is not dict:
                 raise _LocationUnavailable("source-binding-invalid")
-            return fields
+            return _location_fields(fields)
     raise _LocationUnavailable("source-binding-invalid")
 
 
@@ -117,7 +138,7 @@ class _SourceLocations:
             or type(api.module) is not types.ModuleType or type(api.check) is not types.FunctionType
         ):
             raise _LocationUnavailable("source-binding-invalid")
-        namespace = types.ModuleType.__getattribute__(api.module, "__dict__")
+        namespace = _location_fields(types.ModuleType.__getattribute__(api.module, "__dict__"))
         if (
             type(namespace.get("__name__")) is not str
             or namespace["__name__"] != SOURCE_PACKAGE + ".graph_report"
@@ -130,12 +151,13 @@ class _SourceLocations:
         self.public_call(api, session_type)
         if type(sys.modules) is not dict:
             raise _LocationUnavailable("source-module-unowned")
+        _location_fields(sys.modules)
         self.account(len(sys.modules))
         self.module(self.call_globals)
-        for module in list(sys.modules.values()):
-            if type(module) is not types.ModuleType:
+        for imported_name, module in list(sys.modules.items()):
+            if not imported_name.startswith(SOURCE_PACKAGE + ".") or type(module) is not types.ModuleType:
                 continue
-            namespace = types.ModuleType.__getattribute__(module, "__dict__")
+            namespace = _location_fields(types.ModuleType.__getattribute__(module, "__dict__"))
             name, filename = namespace.get("__name__"), namespace.get("__file__")
             if (
                 type(name) is str and name.startswith(SOURCE_PACKAGE + ".")
@@ -160,11 +182,13 @@ class _SourceLocations:
     def bind(self, observer, measurement):
         if (
             measurement is None or measurement.api is None or measurement.session_valid is not True
-            or measurement.root != SOURCE_ROOT or measurement.budget is not observer.budget
+            or type(measurement.root) is not type(SOURCE_ROOT) or measurement.root != SOURCE_ROOT
+            or measurement.budget is not observer.budget
             or type(measurement.session) is not observer.session_type
             or type(sys.modules) is not dict
         ):
             raise _LocationUnavailable("binding-not-ready")
+        _location_fields(sys.modules)
         try:
             policy.validate_report_binding(measurement.binding)
         except policy.GuardError as error:
@@ -187,10 +211,12 @@ class _SourceLocations:
             or not isinstance(entries, dict) or dict.__len__(entries) > policy.ORIGINAL_LIMITS["entries"]
         ):
             raise _LocationUnavailable("source-binding-invalid")
+        if any(type(key) is not str for key in dict.keys(entries)):
+            raise _LocationUnavailable("source-metadata-unavailable")
         authority = sys.modules.get(SOURCE_PACKAGE + ".authority")
         if type(authority) is not types.ModuleType:
             raise _LocationUnavailable("source-binding-invalid")
-        namespace = types.ModuleType.__getattribute__(authority, "__dict__")
+        namespace = _location_fields(types.ModuleType.__getattribute__(authority, "__dict__"))
         if namespace.get("AuthorityLoader") is not api.loader or namespace.get("GitTreeEntries") is not api.entries:
             raise _LocationUnavailable("source-binding-invalid")
         self.entry_type, self.entries = namespace.get("GitTreeEntry"), entries
@@ -230,6 +256,7 @@ class _SourceLocations:
     def module(self, namespace):
         if type(namespace) is not dict:
             raise _LocationUnavailable("source-module-unowned")
+        _location_fields(namespace)
         name = namespace.get("__name__")
         if type(name) is not str or not name.startswith(SOURCE_PACKAGE + ".") or (
             re.fullmatch(r"scripts\.validation_ownership(?:\.[A-Za-z_][A-Za-z0-9_]*)+", name) is None
@@ -271,13 +298,13 @@ class _SourceLocations:
             if type(member) is types.FunctionType:
                 self.register_function(member, namespace, filename, relative)
             elif type(member) is type:
-                fields = type.__getattribute__(member, "__dict__")
+                fields = _location_fields(type.__getattribute__(member, "__dict__"))
                 if type(fields.get("__module__")) is not str or fields["__module__"] != name:
                     continue
                 self.seen.add(identity)
                 self.account(len(fields))
                 pending.extend(fields.values())
-            elif type(member) in (staticmethod, classmethod):
+            elif type(member) is staticmethod or type(member) is classmethod:
                 self.seen.add(identity)
                 self.account()
                 pending.append(member.__func__)
@@ -289,6 +316,8 @@ class _SourceLocations:
         return relative
 
     def register_function(self, member, namespace, filename, relative):
+        if type(filename) is not str:
+            raise _LocationUnavailable("code-metadata-unavailable")
         chain = set()
         while member is not None:
             if type(member) is not types.FunctionType:
@@ -310,17 +339,20 @@ class _SourceLocations:
                 and member.__module__ == namespace["__name__"]
             ):
                 self.seen.add(identity)
-                if member.__code__.co_filename == filename:
-                    self.register_code(member.__code__, namespace, filename, relative)
+                code = _location_code(member.__code__)
+                if code.co_filename == filename:
+                    self.register_code(code, namespace, filename, relative)
             # Standard wrappers can have foreign globals; only each original
             # function's own identity can admit its code.
             member = dict.get(metadata, "__wrapped__")
 
     def register_code(self, code, namespace, filename, relative):
+        if type(filename) is not str:
+            raise _LocationUnavailable("code-metadata-unavailable")
         pending = [code]
         while pending:
-            current = pending.pop()
-            if type(current) is not types.CodeType or current.co_filename != filename:
+            current = _location_code(pending.pop())
+            if current.co_filename != filename:
                 raise _LocationUnavailable("source-code-unbound")
             previous = self.codes.get(id(current))
             if previous is not None:
@@ -357,6 +389,7 @@ class _SourceLocations:
             if leaf is None:
                 raise _LocationUnavailable("no-source-trace")
             code, namespace, line, offset = leaf
+            _location_code(code)
             relative = self.module(namespace)
             owned = self.codes.get(id(code))
             if owned is None or owned[0] is not code or owned[1] is not namespace or owned[2] != relative:

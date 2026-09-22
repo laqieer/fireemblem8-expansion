@@ -2,9 +2,13 @@
 
 **Preparation only; never merge this branch. No native execution, workflow
 launch, retry or production resource-policy decision is allocated here.**
-Current registration correction freeze:
+Current code-metadata correction freeze:
+[5769225768](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5769225768).
+This is a normal child of `1e6a767673e96f546bf9f2bc70b2e312e2fd0105`;
+it retains the closed LR1 and original dictionary-callback corrections.
+Earlier registration correction freeze:
 [5768979816](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5768979816).
-This correction is a normal child of
+That correction was a normal child of
 `1fdd209ed4c823dec55a01fb6790504090545579` on the same localization branch.
 Only the locator, its direct tests/docs and exact normal lineage/inventory
 change; the workflow, source binding, quotas and physical substrate do not.
@@ -58,6 +62,14 @@ charge all visited functions and attribute entries to the existing aggregate
 registration bound. Both registration and projection admit only exact builtin
 function-attribute dictionaries with exact string keys; subclass callbacks,
 colliding non-string keys and unsupported wrapper targets are never invoked.
+Code metadata is also checked before comparison, iteration or projection:
+filenames and code names must be exact strings, constants exact tuples, and
+bytecode/line tables exact bytes. A `str` subclass in `co_filename` is not
+normalized or compared; it is unavailable, including when installed after
+registration or inside nested code. The adjacent source metadata maps and
+ordinary class dictionaries require bounded exact string keys before lookup;
+only already-used ownership metadata is inspected, not a new reflection API.
+Type classification uses identity rather than overridable metaclass equality.
 It never invokes a candidate descriptor. The bounded registration retains
 only weak code/module identities, not source namespaces or frames. A traceback code object must be
 that original registered object in that original module namespace, and its
@@ -87,7 +99,7 @@ all hard limits, original clock, first-error/all-close/AT/FR behavior,
 physical algorithms and five bounded artifacts remain the same. There is
 no alternate workload, tracing platform, source hash ledger or automatic retry.
 
-The registration-correction runner preserves all 127 prior methods / 751 subtests
+The code-metadata correction runner preserves all 136 prior methods / 804 subtests
 and exercises actual raised direct/nested/method/wrapped errors through the
 Observer and Protocol, including standard contextmanager generators without
 aliases. Foreign/dynamic/unbound/bad-membership cases, wrapper cycles/depth,
@@ -96,6 +108,11 @@ bounds, locator/withdrawal/publication fault combinations,
 missing-location/incorrect-binding/late-registration restorations and neutral
 record ordering or function aliases remain inert controls only. Restoring the
 old module scanner reproduces both the missed original and metadata callbacks.
+Restoring the 1e6 code scanners reproduces the filename comparison callback and
+false file attribution. Additional callback tripwires cover the code fields and
+metadata keys consumed by this same locator, at registration and projection;
+ordinary strings and neutral ordering remain valid. These adversarial fixtures
+are not evidence that b6 installs such metadata or that it caused the spent run.
 Independent review and a separate one-shot allocation must precede any
 owner-created localization push. The final D source review completed with
 three Medium RA findings under separate correction; none is inferred to be

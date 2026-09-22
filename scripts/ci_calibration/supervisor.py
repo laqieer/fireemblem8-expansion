@@ -46,6 +46,7 @@ REPORT_ACCOUNTING_SHA = "ae3fd7a9589e50903fbc88a8df72baaaea2d0423"
 REPORT_TELEMETRY_SHA = "e4034683d4fc68871847c58a2130d954c03370fc"
 REPORT_REBIND_SHA = "4cc7c1635927d9ce8785704ed4780a9c18b6b592"
 REPORT_LOCALIZATION_SHA = "1fdd209ed4c823dec55a01fb6790504090545579"
+REPORT_REGISTRATION_SHA = "1e6a767673e96f546bf9f2bc70b2e312e2fd0105"
 COMPONENT_PATHS = frozenset({
     policy.COMPONENT_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "worker.py", "root_stage.py", "supervisor.py", "observation_failure.py", "README.md",
@@ -81,7 +82,8 @@ REGISTRATION_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
 
 def validate_harness_lineage(lines, head):
     if lines != [
-        f"{head} {REPORT_LOCALIZATION_SHA}",
+        f"{head} {REPORT_REGISTRATION_SHA}",
+        f"{REPORT_REGISTRATION_SHA} {REPORT_LOCALIZATION_SHA}",
         f"{REPORT_LOCALIZATION_SHA} {REPORT_REBIND_SHA}",
         f"{REPORT_REBIND_SHA} {REPORT_TELEMETRY_SHA}",
         f"{REPORT_TELEMETRY_SHA} {REPORT_ACCOUNTING_SHA}",
@@ -97,7 +99,7 @@ def validate_harness_lineage(lines, head):
         f"{RETAINED_HARNESS_SHA} {PREPARATION_SHA}",
         f"{PREPARATION_SHA} {policy.BASE}",
     ]:
-        raise policy.GuardError("diagnostic requires its exact normal registration/localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
+        raise policy.GuardError("diagnostic requires its exact normal code-metadata/registration/localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
 
 
 def validate_correction_inventory(data):
@@ -1012,7 +1014,7 @@ class Owner:
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
         validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=15", "HEAD").decode().splitlines(),
+            git(self.harness, "rev-list", "--parents", "--max-count=16", "HEAD").decode().splitlines(),
             self.scope["harness_sha"],
         )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
@@ -1070,7 +1072,10 @@ class Owner:
             self.harness, "diff", "--name-status", "-z", REPORT_REBIND_SHA, REPORT_LOCALIZATION_SHA,
         ))
         validate_registration_inventory(git(
-            self.harness, "diff", "--name-status", "-z", REPORT_LOCALIZATION_SHA, "HEAD",
+            self.harness, "diff", "--name-status", "-z", REPORT_LOCALIZATION_SHA, REPORT_REGISTRATION_SHA,
+        ))
+        validate_registration_inventory(git(
+            self.harness, "diff", "--name-status", "-z", REPORT_REGISTRATION_SHA, "HEAD",
         ))
         validate_accounting_workflow(
             git(self.harness, "show", REPORT_FINALIZATION_SHA + ":" + policy.FULL_REPORT_WORKFLOW),

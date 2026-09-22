@@ -3,12 +3,12 @@
 import errno
 import copy
 import io
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from functools import wraps
 from importlib.machinery import ModuleSpec, SourceFileLoader
 from pathlib import Path
 import sys
-from types import ModuleType, SimpleNamespace
+from types import CodeType, ModuleType, SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -19,6 +19,7 @@ from scripts.ci_calibration.test_ci_calibration import Inert, budgeting
 PREIMAGE_SOURCE_CLEANUP_COUNT = None
 PREIMAGE_REPORT_ERROR_RECORD = None
 PREIMAGE_REGISTRATION_MODULE = None
+PREIMAGE_CODE_METHODS = None
 
 
 class FrameFixture:
@@ -1220,6 +1221,279 @@ def check(kind="direct"):
                 self.register(value)
                 self.raise_check(value, "nested")
                 self.assert_observed(value)
+
+
+class CodeMetadataControls(Inert):
+    wire = LocationControls.wire
+    register = RegistrationControls.register
+    raise_check = RegistrationControls.raise_check
+
+    @staticmethod
+    def metadata_types(callbacks):
+        class Text(str):
+            def __eq__(self, other):
+                callbacks.append("equal")
+                return True
+            def __ne__(self, other):
+                callbacks.append("not-equal")
+                return False
+            def __hash__(self):
+                callbacks.append("hash")
+                return str.__hash__(self)
+            def __str__(self):
+                callbacks.append("coerce")
+                return str.__str__(self)
+        class Constants(tuple):
+            def __len__(self):
+                callbacks.append("length")
+                return tuple.__len__(self)
+            def __iter__(self):
+                callbacks.append("iterate")
+                return tuple.__iter__(self)
+            def __getitem__(self, key):
+                callbacks.append("getitem")
+                return tuple.__getitem__(self, key)
+        class Lines(bytes):
+            def __len__(self):
+                callbacks.append("length")
+                return bytes.__len__(self)
+            def __iter__(self):
+                callbacks.append("iterate")
+                return bytes.__iter__(self)
+        return Text, Constants, Lines
+
+    def alter_code(self, function, field, callbacks, *, nested=False):
+        text, constants, lines = self.metadata_types(callbacks)
+        outer = function.__code__
+        code = next(value for value in outer.co_consts if type(value) is CodeType) if nested else outer
+        changed = code.replace(**{field: {
+            "co_filename": lambda: text("/foreign/private-code.py"),
+            "co_name": lambda: text("private_code_name"),
+            "co_consts": lambda: constants(code.co_consts),
+            "co_linetable": lambda: lines(code.co_linetable),
+        }[field]()})
+        self.assertIs(type(getattr(changed, field)), {
+            "co_filename": text, "co_name": text, "co_consts": constants, "co_linetable": lines,
+        }[field])
+        function.__code__ = outer.replace(
+            co_consts=tuple(changed if value is code else value for value in outer.co_consts),
+        ) if nested else changed
+        self.assertEqual(callbacks, [])
+
+    def assert_unavailable(self, value, callbacks, reason="code-metadata-unavailable"):
+        first = value.error
+        record = self.wire(value)
+        self.assertEqual(callbacks, [])
+        self.assertIs(value.error, first)
+        self.assertEqual(record["error"]["chain"][0]["type"], type(first).__name__)
+        self.assertEqual(record["source_locations"]["status"], "unavailable")
+        self.assertEqual(record["source_locations"]["reason"], reason)
+        self.assertEqual(record["source_locations"]["locations"], [])
+        self.assertTrue(record["source_locations"]["references_closed"])
+        self.assertIsNotNone(record["counters"])
+        self.assertEqual(value.observer.location_codes, {})
+        return record
+
+    def test_exact_code_shapes_precede_root_and_nested_comparisons_on_both_passes(self):
+        for stage in ("registration", "projection"):
+            for nested in (False, True):
+                for field in ("co_filename", "co_name", "co_consts", "co_linetable"):
+                    with self.subTest(stage=stage, nested=nested, field=field), LocationControls.fixture(self) as value:
+                        callbacks = []
+                        function = value.graph.outer if nested else value.graph.direct
+                        if stage == "registration":
+                            value.observer = observation_failure.Observer(value.probing.ProbeSession, value.budget)
+                        self.alter_code(function, field, callbacks, nested=nested)
+                        if stage == "registration":
+                            self.register(value)
+                        self.assertEqual(callbacks, [])
+                        self.raise_check(value, "nested" if nested else "direct")
+                        self.assert_unavailable(value, callbacks)
+
+    def test_trace_leaf_metadata_is_checked_even_after_original_module_reference_restores(self):
+        for field in ("co_filename", "co_name", "co_consts", "co_linetable"):
+            with self.subTest(field=field), LocationControls.fixture(self) as value:
+                original = value.graph.direct.__code__
+                callbacks = []
+                self.alter_code(value.graph.direct, field, callbacks)
+                self.raise_check(value)
+                value.graph.direct.__code__ = original
+                self.assert_unavailable(value, callbacks)
+
+    def test_existing_string_and_capture_guards_reject_subclasses_before_comparison_or_hash(self):
+        for target in (
+            "module-name", "module-file", "package", "spec-name", "spec-origin", "loader-path",
+            "function-module", "entry-path", "entry-mode", "entry-kind", "entry-id", "revision", "capture",
+        ):
+            with self.subTest(target=target), LocationControls.fixture(self) as value:
+                callbacks = []
+                text, constants, _ = self.metadata_types(callbacks)
+                entry = value.entries["scripts/validation_ownership/graph_report.py"]
+                if target == "module-name":
+                    value.graph.__name__ = text(value.graph.__name__)
+                elif target == "module-file":
+                    value.graph.__file__ = text(value.graph.__file__)
+                elif target == "package":
+                    value.graph.__package__ = text(value.graph.__package__)
+                elif target in ("spec-name", "spec-origin"):
+                    field = "name" if target == "spec-name" else "origin"
+                    setattr(value.graph.__spec__, field, text(getattr(value.graph.__spec__, field)))
+                elif target == "loader-path":
+                    value.graph.__loader__.path = text(value.graph.__loader__.path)
+                elif target == "function-module":
+                    value.graph.direct.__module__ = text(value.graph.direct.__module__)
+                elif target.startswith("entry-"):
+                    field = {"entry-path": "path", "entry-mode": "mode", "entry-kind": "object_type", "entry-id": "object_id"}[target]
+                    setattr(entry, field, text(getattr(entry, field)))
+                elif target == "revision":
+                    value.loader.revision = text(value.loader.revision)
+                else:
+                    value.entries.capture = constants(value.entries.capture)
+                record = self.wire(value)
+                self.assertEqual(callbacks, [])
+                self.assertEqual(record["source_locations"]["status"], "unavailable")
+                self.assertEqual(record["source_locations"]["locations"], [])
+                self.assertTrue(record["source_locations"]["references_closed"])
+
+    def test_adjacent_metadata_keys_cannot_run_equality_during_original_ownership_lookup(self):
+        for stage in ("registration", "projection"):
+            for target in ("module", "spec", "loader", "instance", "entry", "entries", "class"):
+                with self.subTest(stage=stage, target=target), LocationControls.fixture(self) as value:
+                    callbacks = []
+                    entry_path = "scripts/validation_ownership/graph_report.py"
+                    mapping, key = {
+                        "module": (value.graph.__dict__, "__name__"),
+                        "spec": (value.graph.__spec__.__dict__, "origin"),
+                        "loader": (value.graph.__loader__.__dict__, "path"),
+                        "instance": (value.loader.__dict__, "revision"),
+                        "entry": (value.entries[entry_path].__dict__, "path"),
+                        "entries": (value.entries, entry_path),
+                        "class": (dict(value.graph.Work.__dict__), "__module__"),
+                    }[target]
+                    class Key:
+                        def __hash__(self):
+                            callbacks.append("hash")
+                            return hash(key)
+                        def __eq__(self, other):
+                            callbacks.append("equal")
+                            return False
+                    original = dict.pop(mapping, key)
+                    mapping[Key()] = None
+                    mapping[key] = original
+                    if target == "class":
+                        value.graph.Work = type("Work", (), mapping)
+                    callbacks.clear()
+                    if stage == "registration":
+                        value.observer = observation_failure.Observer(value.probing.ProbeSession, value.budget)
+                        self.register(value)
+                    self.assertEqual(callbacks, [])
+                    self.raise_check(value)
+                    self.assert_unavailable(value, callbacks, "source-metadata-unavailable")
+
+    def test_metadata_refusal_keeps_primary_cleanup_and_publication_recovery_facts(self):
+        for field in ("co_filename", "co_consts", "co_linetable"):
+            with self.subTest(field=field), LocationControls.fixture(self) as value:
+                callbacks = []
+                self.alter_code(value.graph.direct, field, callbacks)
+                self.raise_check(value)
+                first = value.error
+                first.cleanup_errors = ("private independent cleanup failure",)
+                value.measurement.secondary = [
+                    {"stage": stage, "error": policy.component_secondary_error(OSError(errno.EIO, "private close"))}
+                    for stage in ("sampler-close", "budget-close")
+                ]
+                record = self.assert_unavailable(value, callbacks)
+                self.assertEqual(record["source_cleanup_failures"], 1)
+                self.assertEqual([row["stage"] for row in record["secondary"]], ["sampler-close", "budget-close"])
+                failure = worker.ReportFailure()
+                failure.capture(first, "check")
+                failure.record = record
+                failure.secondary.append({
+                    "stage": "error-publication", "error": policy.component_secondary_error(OSError(errno.EIO, "private write")),
+                })
+                following = failure.fallback({"scope": "12345/report", "report_binding": self.binding()}, first)
+                parser = supervisor.Protocol("12345/report", policy.OUTPUT_BYTES,
+                                             report_binding=self.binding(), deadline=3700.0)
+                for data in (record, following):
+                    parser.feed(policy.encoded({"scope": "12345/report", "kind": "error", "data": data}) + b"\n")
+                self.assertTrue(parser.failed)
+                self.assertFalse(parser.finished)
+                self.assertEqual(parser.report_error["error"], record["error"])
+                self.assertEqual(parser.report_error["source_cleanup_failures"], 1)
+                self.assertEqual(parser.report_error["source_locations"], record["source_locations"])
+                self.assertEqual(callbacks, [])
+                self.assertNotIn(b"private", policy.encoded(parser.report_error))
+
+    def test_unsupported_member_types_never_invoke_metaclass_comparison(self):
+        for stage in ("registration", "projection"):
+            with self.subTest(stage=stage), LocationControls.fixture(self) as value:
+                callbacks = []
+                class Meta(type):
+                    def __eq__(self, other):
+                        callbacks.append("type-equal")
+                        return False
+                    def __ne__(self, other):
+                        callbacks.append("type-not-equal")
+                        return True
+                class Unsupported(metaclass=Meta):
+                    pass
+                value.graph.unrelated_member = Unsupported()
+                if stage == "registration":
+                    value.observer = observation_failure.Observer(value.probing.ProbeSession, value.budget)
+                    self.register(value)
+                self.assertEqual(self.wire(value)["source_locations"]["status"], "observed")
+                self.assertEqual(callbacks, [])
+                with self.assertRaises(observation_failure._LocationUnavailable):
+                    observation_failure._location_fields(value.graph.unrelated_member)
+                self.assertEqual(callbacks, [])
+
+    def test_restoring_exact_1e6_code_helpers_reproduces_callbacks_and_false_file_attribution(self):
+        self.assertIsNotNone(PREIMAGE_CODE_METHODS, "requires the inspected code-metadata runner")
+        with ExitStack() as restored:
+            for name, method in PREIMAGE_CODE_METHODS.items():
+                restored.enter_context(mock.patch.object(observation_failure._SourceLocations, name, method))
+            for stage in ("registration", "projection"):
+                with self.subTest(stage=stage), LocationControls.fixture(self) as value:
+                    callbacks = []
+                    self.alter_code(value.graph.direct, "co_filename", callbacks)
+                    if stage == "registration":
+                        value.observer = observation_failure.Observer(value.probing.ProbeSession, value.budget)
+                        self.register(value)
+                    self.assertEqual(callbacks, ["equal", "not-equal"] if stage == "registration" else [])
+                    self.raise_check(value)
+                    record = self.wire(value)
+                    self.assertEqual(callbacks, ["equal", "not-equal"] * (2 if stage == "registration" else 1))
+                    if stage == "registration":
+                        self.assertEqual(record["source_locations"]["status"], "observed")
+                        self.assertEqual(record["source_locations"]["locations"][0]["file"],
+                                         "scripts/validation_ownership/graph_report.py")
+                    else:
+                        self.assertEqual(record["source_locations"]["reason"], "source-code-unbound")
+                    self.assertTrue(record["source_locations"]["references_closed"])
+            with LocationControls.fixture(self) as value:
+                callbacks = []
+                self.alter_code(value.graph.direct, "co_consts", callbacks)
+                value.observer = observation_failure.Observer(value.probing.ProbeSession, value.budget)
+                self.register(value)
+                self.assertEqual(callbacks, ["length", "iterate"])
+                self.raise_check(value)
+                self.assertEqual(self.wire(value)["source_locations"]["status"], "observed")
+                self.assertEqual(callbacks, ["length", "iterate"] * 2)
+
+    def test_ordinary_strings_constant_tuples_and_neutral_code_names_remain_registered(self):
+        for field in ("co_filename", "co_name", "co_consts", "co_linetable", "co_code"):
+            with self.subTest(field=field), LocationControls.fixture(self) as value:
+                code = value.graph.direct.__code__
+                replacement = "equivalent_boundary" if field == "co_name" else getattr(code, field)
+                value.graph.direct.__code__ = code.replace(**{field: replacement})
+                value.observer = observation_failure.Observer(value.probing.ProbeSession, value.budget)
+                self.register(value)
+                self.raise_check(value)
+                record = self.wire(value)
+                self.assertEqual(record["source_locations"]["status"], "observed")
+                self.assertEqual(record["source_locations"]["locations"][0]["code"],
+                                 "equivalent_boundary" if field == "co_name" else "direct")
+                self.assertTrue(record["source_locations"]["references_closed"])
 
 
 if __name__ == "__main__":
