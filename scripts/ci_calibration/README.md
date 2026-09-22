@@ -3,9 +3,20 @@
 **Code-only preparation; never merge this diagnostic branch. No native
 execution, push, workflow launch, retry or resource-policy change is allocated.**
 
-Frozen scope:
+Complete-label correction freeze:
+[5780472444](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5780472444).
+This is a normal child of rejected `b7f4ca2d6b4d2d4777a8913ee7bd2cfec4e9695f`
+on the same unpushed branch and unchanged workflow. MSC-REVIEW-001 showed that
+the unescaped source path could borrow a selected prefix. Complete structural
+interpretations are now resolved **before** Git admission, including unbound
+alternatives and label syntax inside an opaque reason tail. A role with
+different possible boundaries is explicitly `ambiguous-label`, not guessed
+by first/last match or selected-path membership. Only an independently
+unambiguous other role may remain reported.
+
+Original frozen scope:
 [5778397979](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5778397979).
-This is one normal child of accepted
+The original preparation was one normal child of accepted
 `ed693cd52e1ad202c0f30d04e13e2582389fbd23`, on
 `calibration/issue-180-make-source-localization-1`, with one new fixed
 first-owner/run-1/attempt-1 workflow. Source6d and BASEec remain unchanged.
@@ -32,6 +43,13 @@ The builtin `BaseException.args` descriptor supplies an exact tuple/string;
 no `str`, `repr`, overridden attributes or candidate callbacks are used.
 Names, matching text, callers, code clones and traceless notes do not qualify.
 No measured line or bytecode offset substitutes for original code identity.
+
+Boundary detection uses two bounded linear scans and a constant number of
+suffix/offset witnesses, not an alternative Cartesian product. It does not
+ban punctuation: unambiguous complete colon, semicolon, Unicode, quote and
+DEL paths still reach ordinary-tree admission unchanged. A selected full path
+does not override a competing unbound structural interpretation. The source
+formatter is unchanged, and ignored tails are never exported.
 
 The decoder recognizes the unchanged guard's label grammar only:
 `path:start[-end] (logical index)`. Only canonical ordinary CURRENT Git blobs
@@ -191,6 +209,14 @@ states after each case.
    Refused context must not remove a verified Python anchor. The exacted693
    locator preserves its Python anchors but has no Make context; neutral
    reason/name text and metadata order do not alter the reported positions.
+7. For MSC-REVIEW-001, supply the two original complete-path ambiguity
+   witnesses and their role swaps through the unchanged collapse method,
+   without rewriting exception arguments. Include complete selected/unselected
+   paths, repeated delimiters and label-like reason tails. An ambiguous role
+   must not borrow a shorter selected prefix; keep another role only if its
+   own complete boundary is unique. The exact b7f4 decoder reproduces the
+   false attributions. Ordinary punctuation/Unicode, safe partial evidence,
+   all bounds, Python anchors, first cause and cleanup must remain intact.
 
 `OriginalImportControls`, the coupled `RootStageControls` and parsed policy/
 lineage controls automate these assertions. There is no subjective manual

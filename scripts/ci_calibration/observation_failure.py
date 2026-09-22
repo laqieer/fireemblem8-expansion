@@ -55,7 +55,7 @@ _IMPORT_BUILTINS = _SOURCE_TO_CODE.__globals__["__builtins__"]
 _CLOCK, _THREAD, _FRAME = time.monotonic, threading.get_ident, sys._getframe
 _BLOB_HASH = hashlib.sha1
 _MAKE_COLLAPSE_MESSAGE = "unproven GNU Make parsing-mode context changes continuation data"
-_MAKE_LABEL = re.compile(r"([^:;\x00-\x1f]+):([0-9]+)(?:-([0-9]+))? \(logical ([0-9]+)\)")
+_MAKE_LABEL_END = re.compile(r":([^:;()\s]+) \(logical ([^:;()\s]+)\)")
 _MAKE_CONTEXT_REASONS = frozenset({
     "guard-unobserved", "multiple-guards", "arguments-unavailable", "message-bound",
     "message-encoding", "message-format", "work-bound", "epoch-unavailable",
@@ -64,6 +64,7 @@ _MAKE_CONTEXT_REASONS = frozenset({
 _MAKE_SPAN_REASONS = frozenset({
     "not-reported", "unknown-source", "position-format", "position-range",
     "path-unbound", "path-format", "output-bound", "context-unavailable",
+    "ambiguous-label",
 })
 
 
@@ -154,25 +155,30 @@ def validate_make_context(value, locations):
     return value
 
 
-def _make_label_position(match):
-    if match is None:
-        return "position-format"
+def _make_label_position(text, candidate):
+    if type(candidate) is str:
+        return candidate
+    start, match = candidate
     try:
-        numbers = match.group(2), match.group(3), match.group(4)
+        lines = re.fullmatch(r"([0-9]+)(?:-([0-9]+))?", match.group(1))
+        logical = match.group(2)
+        if lines is None or re.fullmatch(r"[0-9]+", logical) is None:
+            return "position-format"
+        numbers = lines.group(1), lines.group(2), logical
         if any(value is not None and (len(value) > 8 or value.startswith("0")) for value in numbers):
             return "position-range"
-        start, end, logical = (None if value is None else int(value) for value in numbers)
-        end = start if end is None else end
-        if not all(1 <= value <= policy.ORIGINAL_LIMITS["file_bytes"] for value in (start, end, logical)) or start > end:
+        first, end, logical = (None if value is None else int(value) for value in numbers)
+        end = first if end is None else end
+        if not all(1 <= value <= policy.ORIGINAL_LIMITS["file_bytes"] for value in (first, end, logical)) or first > end:
             return "position-range"
-        return match.group(1), logical, start, end
+        return text[start:match.start()], logical, first, end
     finally:
-        match = None
+        text = candidate = match = None
 
 
 def _make_source_labels(arguments):
     """Decode reported labels only; this does not admit a path or establish provenance."""
-    text = match = None
+    text = match = previous = last = failure = uncertainty = candidate = None
     try:
         if type(arguments) is not tuple or len(arguments) != 1 or type(arguments[0]) is not str:
             return "arguments-unavailable", "arguments-unavailable"
@@ -189,28 +195,52 @@ def _make_source_labels(arguments):
         if not text.startswith(_MAKE_COLLAPSE_MESSAGE):
             return "message-format", "message-format"
         cursor = len(_MAKE_COLLAPSE_MESSAGE)
-        failure = uncertainty = "not-reported"
-        if text.startswith("; source ", cursor):
-            cursor += len("; source ")
-            end = text.find("; first uncertainty ", cursor)
-            end = len(text) if end < 0 else end
-            failure = _make_label_position(_MAKE_LABEL.fullmatch(text, cursor, end))
-            cursor = end
-        if cursor != len(text):
-            if not text.startswith("; first uncertainty ", cursor):
-                return "message-format", "message-format"
-            cursor += len("; first uncertainty ")
-            if text.startswith("<unknown source>: ", cursor):
-                uncertainty = "unknown-source"
+        if cursor == len(text):
+            return "not-reported", "not-reported"
+        # Two suffix witnesses suffice to distinguish zero, one or multiple
+        # uncertainty endings after any start. No path or Git lookup selects one.
+        for match in _MAKE_LABEL_END.finditer(text, cursor):
+            if text.startswith(": ", match.end()):
+                previous, last = last, match
+
+        def uncertainty_after(start):
+            unknown = text.startswith("<unknown source>: ", start)
+            present = last is not None and last.start() >= start
+            multiple = previous is not None and previous.start() >= start
+            if multiple or unknown and present:
+                return "ambiguous-label"
+            if unknown:
+                return "unknown-source"
+            return (start, last) if present else None
+
+        delimiter = "; first uncertainty "
+        if text.startswith(delimiter, cursor):
+            candidate = uncertainty_after(cursor + len(delimiter))
+            return "not-reported", _make_label_position(text, "position-format" if candidate is None else candidate)
+        if not text.startswith("; source ", cursor):
+            return "message-format", "message-format"
+        cursor += len("; source ")
+        for match in _MAKE_LABEL_END.finditer(text, cursor):
+            if match.end() == len(text):
+                candidate = "not-reported"
+            elif text.startswith(delimiter, match.end()):
+                candidate = uncertainty_after(match.end() + len(delimiter))
+                if candidate is None:
+                    continue
             else:
-                match = _MAKE_LABEL.match(text, cursor)
-                if match is None or not text.startswith(": ", match.end()):
-                    uncertainty = "position-format"
-                else:
-                    uncertainty = _make_label_position(match)
-        return failure, uncertainty
+                continue
+            if failure is None:
+                failure = (cursor, match)
+                uncertainty = candidate
+            else:
+                failure = "ambiguous-label"
+                if uncertainty != candidate:
+                    uncertainty = "ambiguous-label"
+        if failure is None:
+            return "position-format", "position-format"
+        return _make_label_position(text, failure), _make_label_position(text, uncertainty)
     finally:
-        arguments = text = match = None
+        arguments = text = match = previous = last = failure = uncertainty = candidate = None
 
 
 def location_unavailable(reason, *, references_closed=None):

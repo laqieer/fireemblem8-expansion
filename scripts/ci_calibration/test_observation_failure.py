@@ -33,6 +33,7 @@ PREIMAGE_LOCATION_OBSERVER = None
 IMPORT_COMPILE_AUDIT = None
 MAKE_CONTEXT_SOURCE = None
 MAKE_CONTEXT_PARENT_PROJECT = None
+MAKE_BOUNDARY_PREIMAGE = None
 
 
 class FrameFixture:
@@ -3758,6 +3759,202 @@ class MakeContextControls(Inert):
                     self.assertFalse(record["states"]["completed"])
                     self.assertTrue(record["cleanup"]["source_imports_restored"])
                     self.assertTrue(record["cleanup"]["source_imports_released"])
+
+    @contextmanager
+    def boundary_fixture(self, *, failure=("Makefile", 4, 7, 9), uncertainty=("generated_data.mk", 2, 3, 3),
+                         reason="private reason", name="PRIVATE_INPUT", selected=(), remove=(), unknown=False):
+        with self.fixture(failure=failure, uncertainty=uncertainty, unknown=unknown) as value:
+            for path in selected:
+                entry = value.authority.GitTreeEntry()
+                entry.path, entry.mode, entry.object_type = path, "100644", "blob"
+                entry.object_id, entry.git_dir = "e" * 40, None
+                value.entries[path] = entry
+            for path in remove:
+                value.entries.pop(path, None)
+            original = value.graph.AFTER_LOAD
+            def configure(module):
+                original(module)
+                if module.MODE.first_uncertainty is not None:
+                    module.MODE.first_uncertainty = (module.MODE.first_uncertainty[0], reason, name)
+            value.graph.AFTER_LOAD = configure
+            yield value
+
+    def boundary_wire(self, value):
+        record, retained = self.wire(value)
+        self.assertIs(value.error, value.original_failure)
+        self.assertEqual(value.compiles, 1)
+        self.assertEqual([row["role"] for row in record["source_locations"]["anchors"]],
+                         ["registered-raising-frame", "registered-raising-frame"])
+        self.assertFalse(record["states"]["completed"])
+        self.assertFalse(record["source_locations"]["authority"])
+        self.assertFalse(record["source_locations"]["context"]["authority"])
+        self.assertTrue(record["cleanup"]["source_imports_restored"])
+        self.assertTrue(record["cleanup"]["source_imports_released"])
+        self.assertFalse(retained)
+        self.assertNotIn(b"private", policy.encoded(record))
+        self.assertNotIn(b"PRIVATE_INPUT", policy.encoded(record))
+        return record
+
+    def test_complete_boundary_original_witnesses_and_role_swaps_do_not_borrow_prefixes(self):
+        paths = (
+            "Makefile:1 (logical 1): build/unselected.mk",
+            "Makefile:1 (logical 1); first uncertainty generated_data.mk:2 (logical 2): build/unselected.mk",
+        )
+        for role in ("failure", "first-uncertainty"):
+            for path in paths:
+                with self.subTest(role=role, path=path), self.boundary_fixture(
+                    **{("failure" if role == "failure" else "uncertainty"): (path, 4, 7, 9)},
+                ) as value:
+                    self.assertNotIn(path, value.entries)
+                    value.invoke()
+                    context = self.boundary_wire(value)["source_locations"]["context"]
+                    span, = [row for row in context["spans"] if row["role"] == role]
+                    self.assertEqual(span["status"], "unavailable")
+                    if role == "failure" and path == paths[0]:
+                        self.assertEqual(span["reason"], "path-unbound")
+                        self.assertEqual(context["spans"][1]["path"], "generated_data.mk")
+                        self.assertEqual(context["spans"][1]["start"], 3)
+                    else:
+                        self.assertEqual(span["reason"], "ambiguous-label")
+                    if path == paths[1]:
+                        self.assertTrue(all(row["status"] == "unavailable" for row in context["spans"]))
+
+    def test_complete_boundary_selection_cannot_choose_between_structural_interpretations(self):
+        path = "Makefile:1 (logical 1): build/unselected.mk"
+        for role in ("failure", "first-uncertainty"):
+            for full, prefix in ((False, False), (False, True), (True, False), (True, True)):
+                with self.subTest(role=role, full=full, prefix=prefix), self.boundary_fixture(
+                    **{("failure" if role == "failure" else "uncertainty"): (path, 4, 7, 9)},
+                    selected=(path,) if full else (), remove=() if prefix else ("Makefile",),
+                ) as value:
+                    value.invoke()
+                    context = self.boundary_wire(value)["source_locations"]["context"]
+                    span, = [row for row in context["spans"] if row["role"] == role]
+                    if role == "failure" and full:
+                        self.assertEqual(span, {
+                            "role": role, "status": "reported-selected-tree", "path": path,
+                            "logical": 4, "start": 7, "end": 9,
+                        })
+                    else:
+                        self.assertEqual(span["status"], "unavailable")
+                        self.assertEqual(span["reason"], "ambiguous-label" if role == "first-uncertainty" else "path-unbound")
+
+    def test_actual_unescaped_formatter_collisions_require_rolewise_ambiguity(self):
+        pairs = (
+            (
+                {"uncertainty": ("Makefile:1 (logical 1): build/unselected.mk", 4, 7, 9)},
+                {"uncertainty": ("Makefile", 1, 1, 1),
+                 "reason": "build/unselected.mk:7-9 (logical 4): private reason"},
+                ("first-uncertainty",),
+            ),
+            (
+                {"failure": ("Makefile:1 (logical 1); first uncertainty generated_data.mk:2 (logical 2): build/unselected.mk", 4, 7, 9)},
+                {"failure": ("Makefile", 1, 1, 1), "uncertainty": ("generated_data.mk", 2, 2, 2),
+                 "reason": "build/unselected.mk:7-9 (logical 4); first uncertainty generated_data.mk:3 (logical 2): private reason"},
+                ("failure", "first-uncertainty"),
+            ),
+        )
+        for first, second, ambiguous in pairs:
+            messages = []
+            with self.subTest(roles=ambiguous):
+                for arguments in (first, second):
+                    with self.boundary_fixture(**arguments) as value:
+                        value.invoke()
+                        messages.append(BaseException.__dict__["args"].__get__(value.error.__cause__, BaseException)[0])
+                        context = self.boundary_wire(value)["source_locations"]["context"]
+                        for role in ambiguous:
+                            span, = [row for row in context["spans"] if row["role"] == role]
+                            self.assertEqual(span["status"], "unavailable")
+                            self.assertEqual(span["reason"], "ambiguous-label")
+                self.assertEqual(messages[0], messages[1])
+                messages.clear()
+
+    def test_complete_boundary_opaque_tail_and_absence_are_real_alternatives(self):
+        cases = (
+            ("tail.mk:5 (logical 6): remaining", False, False, ("reported-selected-tree", "unavailable")),
+            ("tail.mk:5 (logical 6)", False, False, ("unavailable", "unavailable")),
+            ("tail.mk:5 (logical 6); first uncertainty other.mk:9 (logical 9): remaining",
+             False, False, ("unavailable", "unavailable")),
+            ("tail.mk:5 (logical 6): remaining", True, False, ("unavailable", "unavailable")),
+            ("tail.mk:5 (logical 6)", True, False, ("unavailable", "reported-selected-tree")),
+            ("tail.mk:5 (logical 6): remaining", False, True, ("reported-selected-tree", "unavailable")),
+        )
+        for reason, absent_failure, unknown, expected in cases:
+            with self.subTest(reason=reason, absent_failure=absent_failure, unknown=unknown), self.boundary_fixture(
+                failure=None if absent_failure else ("Makefile", 4, 7, 9),
+                reason=reason, name=None, unknown=unknown,
+            ) as value:
+                value.invoke()
+                context = self.boundary_wire(value)["source_locations"]["context"]
+                self.assertEqual(tuple(row["status"] for row in context["spans"]), expected)
+                for span in context["spans"]:
+                    self.assertNotIn("tail.mk", span.get("path", ""))
+
+    def test_complete_unambiguous_punctuation_and_repeated_markers_are_not_banned(self):
+        paths = (
+            "colon:part.mk", "semicolon;part.mk", "semi; first uncertainty path.mk",
+            "repeat; first uncertainty one; first uncertainty two.mk",
+            "words (logical text).mk", "tree/\u8cc7\u6599:\U0001f642;quoted\"-\x7f.mk",
+        )
+        for role in ("failure", "first-uncertainty"):
+            for path in paths:
+                with self.subTest(role=role, path=path), self.boundary_fixture(
+                    **{("failure" if role == "failure" else "uncertainty"): (path, 4, 7, 9)},
+                    selected=(path,),
+                ) as value:
+                    value.invoke()
+                    record = self.boundary_wire(value)
+                    context = record["source_locations"]["context"]
+                    span, = [row for row in context["spans"] if row["role"] == role]
+                    self.assertEqual(span, {
+                        "role": role, "status": "reported-selected-tree",
+                        "path": path, "logical": 4, "start": 7, "end": 9,
+                    })
+                    self.assertEqual(policy.validate_report_error(json_order(record), self.binding()), record)
+
+    def test_complete_boundary_exact_b7f4_preimage_recreates_both_false_attributions(self):
+        self.assertIsNotNone(MAKE_BOUNDARY_PREIMAGE, "requires exactb7f4 decoder preimage")
+        for role, path in (
+            ("first-uncertainty", "Makefile:1 (logical 1): build/unselected.mk"),
+            ("failure", "Makefile:1 (logical 1); first uncertainty generated_data.mk:2 (logical 2): build/unselected.mk"),
+        ):
+            with self.subTest(role=role), self.boundary_fixture(
+                **{("failure" if role == "failure" else "uncertainty"): (path, 4, 7, 9)},
+            ) as value:
+                value.invoke()
+                with mock.patch.object(observation_failure, "_make_source_labels", MAKE_BOUNDARY_PREIMAGE):
+                    context = self.boundary_wire(value)["source_locations"]["context"]
+                span, = [row for row in context["spans"] if row["role"] == role]
+                self.assertEqual(span["status"], "reported-selected-tree")
+                self.assertEqual((span["path"], span["logical"], span["start"], span["end"]), ("Makefile", 1, 1, 1))
+                with self.assertRaises(AssertionError):
+                    self.assertEqual(span["status"], "unavailable")
+
+    def test_many_boundary_candidates_remain_bounded_and_preserve_python_anchors(self):
+        for repetitions in (1, 8, 32, 128):
+            with self.subTest(repetitions=repetitions), self.boundary_fixture(
+                reason=("unbound.mk:1 (logical 1): " * repetitions) + "private ending", name=None,
+            ) as value:
+                value.invoke()
+                context = self.boundary_wire(value)["source_locations"]["context"]
+                self.assertEqual(context["spans"][0]["status"], "reported-selected-tree")
+                self.assertEqual(context["spans"][1]["reason"], "ambiguous-label")
+        with self.boundary_fixture(reason="x", name=None) as value:
+            value.invoke()
+            size = len(BaseException.__dict__["args"].__get__(value.error.__cause__, BaseException)[0]) - 1
+            self.boundary_wire(value)
+        limit = min(policy.ERROR_BYTES // 4, policy.ORIGINAL_LIMITS["file_bytes"] // 4,
+                    policy.ORIGINAL_LIMITS["entries"] // 2)
+        for over in (0, 1):
+            reason = "tail.mk:1 (logical 1): " + "x" * (limit - size - len("tail.mk:1 (logical 1): ") + over)
+            with self.subTest(over=over), self.boundary_fixture(reason=reason, name=None) as value:
+                value.invoke()
+                arguments = BaseException.__dict__["args"].__get__(value.error.__cause__, BaseException)
+                decoded = observation_failure._make_source_labels(arguments)
+                self.assertEqual(decoded[1], "message-bound" if over else "ambiguous-label")
+                record = self.boundary_wire(value)
+                self.assertEqual(len(record["source_locations"]["anchors"]), 2)
+                arguments = None
 
 
 def json_order(value):
