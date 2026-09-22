@@ -1,9 +1,68 @@
-# Contained Python-corrected full-report preparation 3
+# Contained partial source-anchor preparation
 
 **Preparation only; never merge this branch. No native execution, workflow
 launch, retry or production resource-policy decision is allocated here.**
 
 Current freeze:
+[5771617787](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5771617787).
+This is a normal child of `440cbb613857c7802d19ce7dc55b03dd29941b04` on
+`calibration/issue-180-report-localization-2`, with one new fixed first-owner
+workflow. Source `6d2725d89df70c30954daade3cca7abc6d3171d4` and BASE
+`ec1dc8553419c8833a687fd8d4a6521a4e29ff7a` remain unchanged.
+Every spent workflow and its immutable inventory endpoint stays closed.
+
+Run35686425684 is spent and closed
+([5771311802](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5771311802)).
+Its underlying three-error source cause is still unknown. The late-module and
+standard-ABCMeta coverage gaps were reproduced inertly; neither is asserted
+to have caused that native run. Resource counters do not diagnose the failure.
+
+The existing nested location envelope is version 2 with a required `anchors`
+list. Complete observations keep their original `locations` and empty anchors.
+An unregistered leaf remains `status=unavailable`, `reason=source-code-unbound`,
+`locations=[]`, `authority=false`. It may carry at most one independently
+revalidated original anchor per exception index:
+
+- `registered-raising-frame` is that node's already registered actual leaf.
+- `registered-caller` is an already registered caller, never a claim about the
+  missing raising location.
+
+Indices are strictly increasing and retain primary/cause/context relations.
+They come from the original bounded exception walk; complete error-type chains
+also constrain them at the receiving seam. As with the previous full locations,
+unavailable error-type metadata stays explicitly incomplete and supplies no
+report-completion claim. Nonempty anchors require the actual check/session
+state and confirmed reference withdrawal.
+
+The projector walks at most 32 exceptions and 256 total frames once, retaining
+only weak pre-check identities and scalar candidate positions. It revalidates
+root/revision/API/budget/session/loader/Git file/module/globals/code and actual
+line/offset before emission. It neither refreshes registration nor admits
+foreign, late or replaced code. Malformed/foreign bindings, cycles, absent
+public scope, unraised nodes, entry overflow or envelope overflow produce no
+qualified anchors. Existing entry-work and total `ERROR_BYTES` limits apply.
+No arguments/messages/locals/raw traceback/source/SDK/environment/keys escape.
+Independent close attempts and all first-primary/secondary/accounting/cleanup/
+publication safeguards remain; collector or withdrawal failures cannot publish
+anchors with unknown closure.
+
+Worker, Protocol, public report/serializer, imports, class admission, accounting,
+telemetry, original limits/clock, retention and physical mechanisms are unchanged.
+No preloading, importer/tracer platform, new workload, quota or predicted failure
+is introduced. Full CURRENT/BASE/source/lifecycle scope, 14 queries/19 counters,
+one budget/session, seven fresh qualifiers and five artifacts remain mandatory.
+
+Preparation preserves 149 methods / 897 subtests and adds the 14 triage shapes
+on the actual Observer/error-record/wire/Protocol path, plus schema, role/index,
+bound, close/publication, original-project restoration and neutral controls.
+Inert entrypoint compositions generate real fixture exceptions and use the
+actual observer, never preprojected anchor results. Exact independent follow-up
+and Main's separate one-shot allocation are required before any launch.
+Underlying cause, complete report/verifier/native/H1/CI and delivery gates stay open.
+
+## Historical Python-corrected full-report preparation 3 (closed allocation)
+
+Earlier freeze:
 [5770974148](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5770974148).
 This is one normal child of sizing-2 harness
 `6c2bc38fe17ada38a21ec6698373c725fd8f32fe`, on

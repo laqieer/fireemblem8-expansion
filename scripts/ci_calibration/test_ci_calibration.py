@@ -535,7 +535,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.CORRECTED_REPORT_SHA}",
+            f"{'a' * 40} {supervisor.PYTHON_REPORT_SHA}",
+            f"{supervisor.PYTHON_REPORT_SHA} {supervisor.CORRECTED_REPORT_SHA}",
             f"{supervisor.CORRECTED_REPORT_SHA} {supervisor.REPORT_CODE_METADATA_SHA}",
             f"{supervisor.REPORT_CODE_METADATA_SHA} {supervisor.REPORT_REGISTRATION_SHA}",
             f"{supervisor.REPORT_REGISTRATION_SHA} {supervisor.REPORT_LOCALIZATION_SHA}",
@@ -787,7 +788,7 @@ class CalibrationControls(Inert):
 
     def test_python_report_inventory_cannot_edit_sizing2_or_accepted_mechanisms(self):
         data = b"".join(
-            (b"A" if name == policy.WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
+            (b"A" if name == policy.PYTHON_REPORT_WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
             for name in sorted(supervisor.PYTHON_REPORT_PATHS)
         )
         supervisor.validate_python_report_inventory(data)
@@ -840,6 +841,27 @@ class CalibrationControls(Inert):
                 self.assertIs(supervisor.report_retention(phase), failed is not False)
                 with self.assertRaises(policy.GuardError):
                     supervisor.validate_report_phase(phase, self.binding())
+
+    def test_partial_anchor_inventory_and_event_cannot_reopen_spent_sizing3(self):
+        data = b"".join(
+            (b"A" if name == policy.WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
+            for name in sorted(supervisor.PARTIAL_ANCHOR_PATHS)
+        )
+        supervisor.validate_partial_anchor_inventory(data)
+        for changed in (
+            b"", data[:-1], data + data, data.replace(b"A\0", b"M\0"),
+            data.replace(b"M\0", b"A\0", 1), data.split(b"\0", 2)[2],
+            data + b"M\0" + policy.PYTHON_REPORT_WORKFLOW.encode() + b"\0",
+            data + b"M\0scripts/ci_calibration/worker.py\0",
+            data + b"M\0scripts/ci_calibration/root_stage.py\0",
+            data + b"M\0scripts/ci_calibration/kernel.py\0",
+            data + b"M\0scripts/validation_ownership/phase_census.py\0",
+        ):
+            with self.subTest(changed=changed[:64]), self.assertRaises(policy.GuardError):
+                supervisor.validate_partial_anchor_inventory(changed)
+        with self.assertRaises(policy.GuardError):
+            policy.validate_event({**self.event(), "ref": "refs/heads/calibration/issue-180-full-report-sizing-3"},
+                                  **self.authorization())
 
     def test_complete_diff_binding_preserves_additions_deletions_and_both_rename_sides(self):
         changes = self.changes()

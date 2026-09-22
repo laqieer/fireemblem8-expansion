@@ -31,37 +31,46 @@ def location_unavailable(reason, *, references_closed=None):
     if reason not in LOCATION_REASONS:
         raise policy.GuardError("unknown location unavailability reason")
     return {
-        "version": 1, "source_revision": policy.GRAPH, "root": "/repo", "api": policy.REPORT_API,
+        "version": 2, "source_revision": policy.GRAPH, "root": "/repo", "api": policy.REPORT_API,
         "authority": False, "status": "unavailable", "reason": reason, "locations": [],
-        "references_closed": references_closed,
+        "anchors": [], "references_closed": references_closed,
     }
 
 
 def validate_locations(value, binding):
     policy._component_fields(value, (
-        "version source_revision root api authority status reason locations references_closed"
+        "version source_revision root api authority status reason locations anchors references_closed"
     ))
     if (
-        type(value["version"]) is not int or value["version"] != 1
+        type(value["version"]) is not int or value["version"] != 2
         or value["source_revision"] != binding["source_revision"] or value["root"] != "/repo"
         or value["api"] != binding["api"] or value["authority"] is not False
         or type(value["status"]) is not str or value["status"] not in {"observed", "unavailable"}
         or value["references_closed"] is not None and type(value["references_closed"]) is not bool
-        or type(value["locations"]) is not list
+        or type(value["locations"]) is not list or type(value["anchors"]) is not list
+        or len(value["anchors"]) > 32
     ):
         raise policy.GuardError("source location evidence is foreign or not a closed diagnostic record")
     if value["status"] == "unavailable":
         if type(value["reason"]) is not str or value["reason"] not in LOCATION_REASONS or value["locations"]:
             raise policy.GuardError("unavailable source location invented an observation")
+        if value["anchors"] and (value["reason"] != "source-code-unbound" or value["references_closed"] is not True):
+            raise policy.GuardError("partial anchors lack a closed original-code observation")
     else:
-        if value["reason"] is not None or value["references_closed"] is not True or not 1 <= len(value["locations"]) <= 32:
+        if (
+            value["reason"] is not None or value["references_closed"] is not True
+            or not 1 <= len(value["locations"]) <= 32 or value["anchors"]
+        ):
             raise policy.GuardError("source locations are incomplete or exceed the error-chain bound")
-        for index, row in enumerate(value["locations"]):
-            policy._component_fields(row, "exception relation file code first_line line offset")
+    for anchored, rows in ((False, value["locations"]), (True, value["anchors"])):
+        previous = -1
+        for index, row in enumerate(rows):
+            policy._component_fields(row, "exception relation file code first_line line offset" + (" role" if anchored else ""))
             if (
-                type(row["exception"]) is not int or row["exception"] != index
+                not policy._component_integer(row["exception"], 31)
+                or (row["exception"] <= previous if anchored else row["exception"] != index)
                 or type(row["relation"]) is not str
-                or row["relation"] not in ({"primary"} if index == 0 else {"cause", "context"})
+                or row["relation"] not in ({"primary"} if row["exception"] == 0 else {"cause", "context"})
                 or type(row["file"]) is not str or not row["file"].startswith("scripts/validation_ownership/")
                 or not row["file"].endswith(".py") or policy._root_path(row["file"]) != row["file"]
                 or type(row["code"]) is not str
@@ -71,6 +80,11 @@ def validate_locations(value, binding):
                 or not policy._component_integer(row["offset"], policy.ORIGINAL_LIMITS["file_bytes"])
             ):
                 raise policy.GuardError("source location contains an unbound identity or non-scalar position")
+            if anchored and (type(row["role"]) is not str or row["role"] not in {
+                "registered-raising-frame", "registered-caller",
+            }):
+                raise policy.GuardError("partial source anchor has an unknown observation role")
+            previous = row["exception"]
     if len(policy.encoded(value)) > policy.ERROR_BYTES:
         raise policy.GuardError("source location evidence exceeds the existing error record bound")
     return value
@@ -364,17 +378,31 @@ class _SourceLocations:
             pending.extend(value for value in current.co_consts if type(value) is types.CodeType)
 
     def project(self, error):
+        def position(code, line, offset):
+            _location_code(code)
+            if (
+                re.fullmatch(r"(?:[A-Za-z_][A-Za-z0-9_]{0,127}|<(?:lambda|listcomp|dictcomp|setcomp|genexpr)>)", code.co_name) is None
+                or not policy._component_integer(line, policy.ORIGINAL_LIMITS["file_bytes"], 1)
+                or not policy._component_integer(code.co_firstlineno, policy.ORIGINAL_LIMITS["file_bytes"], 1)
+                or not policy._component_integer(offset, policy.ORIGINAL_LIMITS["file_bytes"])
+                or not offset < len(code.co_code) <= policy.ORIGINAL_LIMITS["file_bytes"]
+                or not any(start <= offset < end and actual == line for start, end, actual in code.co_lines())
+            ):
+                raise _LocationUnavailable("invalid-code-location")
+            return {"code": code.co_name, "first_line": code.co_firstlineno, "line": line, "offset": offset}
+
         current, relation = error, "primary"
-        seen, locations = set(), []
-        frames, scope_seen = 0, False
+        seen, locations, candidates = set(), [], []
+        frames, scope_seen, incomplete, foreign_candidate = 0, False, False, False
         while current is not None:
             if id(current) in seen:
                 raise _LocationUnavailable("cyclic-exception-chain")
             if len(seen) >= 32:
                 raise _LocationUnavailable("exception-chain-bound")
+            index = len(seen)
             seen.add(id(current))
             trace = BaseException.__dict__["__traceback__"].__get__(current, BaseException)
-            leaf = None
+            leaf = candidate = None
             while trace is not None:
                 if type(trace) is not types.TracebackType or frames >= 256:
                     raise _LocationUnavailable("trace-frame-bound")
@@ -383,6 +411,18 @@ class _SourceLocations:
                 code, namespace = frame.f_code, frame.f_globals
                 if code is self.call and namespace is self.call_globals:
                     scope_seen = True
+                registered = self.registered.get(id(code))
+                if registered is not None:
+                    module = registered[1]()
+                    if (
+                        registered[0]() is not code or type(module) is not types.ModuleType
+                        or types.ModuleType.__getattribute__(module, "__dict__") is not namespace
+                    ):
+                        foreign_candidate = True
+                    else:
+                        # Only weak identities and scalar positions survive this walk.
+                        candidate = (index, relation, registered, trace.tb_lineno, trace.tb_lasti,
+                                     "registered-raising-frame" if trace.tb_next is None else "registered-caller")
                 leaf = code, namespace, trace.tb_lineno, trace.tb_lasti
                 trace = trace.tb_next
                 frame = None
@@ -391,31 +431,52 @@ class _SourceLocations:
             code, namespace, line, offset = leaf
             _location_code(code)
             relative = self.module(namespace)
-            owned = self.codes.get(id(code))
-            if owned is None or owned[0] is not code or owned[1] is not namespace or owned[2] != relative:
+            filename = namespace.get("__file__")
+            if type(filename) is not str or code.co_filename != filename:
                 raise _LocationUnavailable("source-code-unbound")
-            self.require_registered(code, namespace, relative)
-            if (
-                not policy._component_integer(line, policy.ORIGINAL_LIMITS["file_bytes"], 1)
-                or not policy._component_integer(code.co_firstlineno, policy.ORIGINAL_LIMITS["file_bytes"], 1)
-                or not policy._component_integer(offset, policy.ORIGINAL_LIMITS["file_bytes"])
-                or not offset < len(code.co_code) <= policy.ORIGINAL_LIMITS["file_bytes"]
-                or not any(start <= offset < end and actual == line for start, end, actual in code.co_lines())
-            ):
-                raise _LocationUnavailable("invalid-code-location")
-            locations.append({
-                "exception": len(locations), "relation": relation, "file": relative, "code": code.co_name,
-                "first_line": code.co_firstlineno, "line": line, "offset": offset,
-            })
+            fields = position(code, line, offset)
+            owned = self.codes.get(id(code))
+            try:
+                if owned is None or owned[0] is not code or owned[1] is not namespace or owned[2] != relative:
+                    raise _LocationUnavailable("source-code-unbound")
+                self.require_registered(code, namespace, relative)
+            except _LocationUnavailable as unavailable:
+                if unavailable.reason != "source-code-unbound":
+                    raise
+                incomplete = True
+            else:
+                locations.append({"exception": index, "relation": relation, "file": relative, **fields})
+            if candidate is not None:
+                candidates.append(candidate)
             cause = BaseException.__dict__["__cause__"].__get__(current, BaseException)
             current = cause if cause is not None else BaseException.__dict__["__context__"].__get__(current, BaseException)
             relation = "cause" if cause is not None else "context"
         if not scope_seen:
             raise _LocationUnavailable("public-call-unobserved")
-        result = {
-            **location_unavailable("binding-not-ready"), "status": "observed", "reason": None,
-            "locations": locations, "references_closed": True,
-        }
+        if incomplete:
+            if foreign_candidate:
+                raise _LocationUnavailable("source-code-unbound")
+            anchors = []
+            for index, relation, registered, line, offset, role in candidates:
+                code, module = registered[0](), registered[1]()
+                if code is None or type(module) is not types.ModuleType:
+                    raise _LocationUnavailable("source-code-unbound")
+                namespace = types.ModuleType.__getattribute__(module, "__dict__")
+                relative = self.module(namespace)
+                owned = self.codes.get(id(code))
+                if owned is None or owned[0] is not code or owned[1] is not namespace or owned[2] != relative:
+                    raise _LocationUnavailable("source-code-unbound")
+                self.require_registered(code, namespace, relative)
+                anchors.append({
+                    "exception": index, "relation": relation, "role": role,
+                    "file": relative, **position(code, line, offset),
+                })
+            result = {**location_unavailable("source-code-unbound", references_closed=True), "anchors": anchors}
+        else:
+            result = {
+                **location_unavailable("binding-not-ready"), "status": "observed", "reason": None,
+                "locations": locations, "references_closed": True,
+            }
         if len(policy.encoded(result)) > policy.ERROR_BYTES:
             raise _LocationUnavailable("location-size-bound")
         return result
