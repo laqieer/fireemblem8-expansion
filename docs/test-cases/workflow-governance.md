@@ -3955,6 +3955,48 @@ expiry. A valid past Delete must still satisfy every proof and strict UTC
 timestamp rule. The old history-time comparison admits the expired controls;
 neither sleeping nor changing the machine clock is needed.
 
+### Executable disposition and semantic authority identities
+
+Run the explicit `ExecutableDispositionApiTests` and `ReportAuthorityApiTests`
+classes in `test_graph_report.py` and `test_reporter.py`, plus
+`WorkflowNameAuthorityTests` and `WorkflowRawCharacterTests` in
+`tests/upstream_port/test_verify.py`. Use the existing host environment for the
+independent YAML oracle; the production parser remains dependency-free under
+isolated/no-site startup. These controls model only artifact IO/native
+authorities, not a completed public report or trusted capture.
+
+1. For each declared lifecycle route, retain present/pass, removed/fail and
+   restored/pass observations. A CURRENT Graduate/fail declaration can receive
+   its matching proof. Changing it to Delete/pass must reject the contradiction
+   after restoration, even if the metadata alone is valid. Historical BASE
+   comparison stays separate. Unexpected removal success or changed restoration
+   bytes must also fail; restoring the former executable proof must recover
+   the contradictory credit as a negative control.
+2. Independently parse the complete Build YAML and require every graph job/step
+   identity to exist. Equivalent quotes and harmless trailing comments preserve
+   parsed commands and ownership; issue-number text intended as a label must
+   be quoted. Real renames and unsupported syntax reject. Inject forbidden raw
+   YAML characters into plain and quoted name comments: reject before splitting,
+   removing comments or decoding values, rather than normalizing invalid input
+   into valid authority. Printable Unicode/comments remain supported.
+3. Exercise the actual complete topology guard, including a clean positive,
+   its job-qualified decoded-name lookups and every protected-environment
+   mutation. All nine jobs, 34 mirrored commands, required contexts and
+   master-only build-once publisher remain intact. An unchanged command list
+   is not a substitute for this actual consumer check.
+4. Reverse include and exclude selector collections separately. Compare real
+   membership over every immutable tracked path under both generated-membership
+   extremes; unchanged membership must retain owner pairs without review
+   invalidation. A real membership change must invalidate its affected owners.
+   Recipe/prerequisite order and disposition history remain meaningful.
+   Restore the old comparison to recover permutation failures, then restore
+   corrected behavior.
+
+The in-memory proof workspaces reset after each control. No machine clock,
+shared fixture, generated output or semantic fingerprint is changed merely to
+make a negative pass. Full native, report/verifier, H1 and CI evidence remains
+required after these deterministic source/API controls.
+
 ### Typed toolchain sidecar and comparator boundary
 
 This is part of **TC-WORKFLOW-GATE-OWNERSHIP-001**, not another case or
