@@ -3838,6 +3838,13 @@ python3 -B -m unittest \
    and current/old/restored source views. Actual values and receipts must
    follow the environment/view rather than reuse a stale context; standalone
    helpers remain canonical and unsupported startup controls reject.
+   Use the original Makefile's toolchain-prefixed `PATH` and captured runtime
+   alias/parent/image facts to prove the original interpreter lookup. Equivalent
+   or duplicate directories are not blanket permission: empty, relative,
+   unknown, stale or shadowing lookup candidates must refuse when unproved.
+   Preserve the actual environment and absolute/unqualified argv distinction;
+   do not replace an unqualified name with an absolute one merely to skip
+   validation. The lifecycle checker's independent strict policy remains.
    Use flushed stdout, stderr and raw fd2 writes to distinguish ordered merges
    from post-run concatenation. Unimplemented redirections must refuse
    explicitly; such refusal is not full support for a required repository
@@ -3862,6 +3869,16 @@ actual source, count, output, original-limit and cleanup evidence. The inert
 controls above do not replace them. All native fixtures remove only their
 owned roots after closure; modeled source pins never operate on real caller
 descriptors.
+
+The focused native Python lookup selectors are
+`GraphCommandTests.test_live_python_lookup_matches_original_make_export_and_keeps_receipt_environment`
+and
+`GraphCommandTests.test_live_python_lookup_refuses_owned_shadow_and_changed_captured_image`.
+Compare the original Make export and real output/dispatch receipts, then place
+a harmless executable shadow only in the owned fixture and require refusal
+rather than interpreter substitution. Change only the owned captured-image
+mode for its negative; never modify host runtime files. Source/inert lookup
+controls do not establish these native results or the failed run's exact PATH.
 
 ### Native ownership, stderr effects and cumulative accounting
 
