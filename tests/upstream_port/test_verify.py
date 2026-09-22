@@ -161,6 +161,58 @@ class WorkflowNameAuthorityTests(unittest.TestCase):
         self.assertEqual((budget.runs, budget.states), (0, 0))
 
 
+class WorkflowRawCharacterTests(unittest.TestCase):
+    """Raw YAML validity precedes scalar/comment normalization."""
+
+    def setUp(self):
+        self.workflow = Path(BUILD_WORKFLOW_PATH).read_text()
+
+    def test_complete_workflow_rejects_forbidden_raw_name_comments(self):
+        import yaml
+
+        name = "Run upstream-port tooling test suite"
+        marker = "    - name: " + name + "\n"
+        self.assertEqual(self.workflow.count(marker), 1)
+        for scalar in (name, "'" + name + "'", json.dumps(name)):
+            for codepoint in (0, 1, 8, 11, 12, 14, 31, 127, 128, 132, 134, 159,
+                              0xD800, 0xDFFF, 0xFFFE, 0xFFFF):
+                raw = scalar + " # invalid " + chr(codepoint)
+                changed = self.workflow.replace(marker, "    - name: " + raw + "\n", 1)
+                with self.subTest(scalar=scalar, codepoint=codepoint):
+                    with self.assertRaises(yaml.reader.ReaderError):
+                        WorkflowNameAuthorityTests.yaml_document(changed)
+                    with self.assertRaises(ValueError):
+                        verify_mod._parse_workflow_structure_text(changed)
+                    with self.assertRaises(reporter.OwnershipError):
+                        reporter._generic_workflow_authorities(changed)
+                    with self.assertRaises(ValueError):
+                        verify_mod._workflow_name_scalar(raw, "step name")
+
+    def test_printable_comments_unicode_and_escaped_names_remain_neutral(self):
+        name = "Run upstream-port tooling test suite"
+        marker = "    - name: " + name + "\n"
+        original_yaml = WorkflowNameAuthorityTests.yaml_document(self.workflow)
+        original_structure = verify_mod._parse_workflow_structure_text(self.workflow)
+        original_authority = reporter._generic_workflow_authorities(self.workflow)
+        for scalar in (name, "'" + name + "'", json.dumps(name), json.dumps(name).replace("upstream", r"\u0075pstream")):
+            for comment in (
+                "ordinary # printable ' \" data",
+                "tab\tcomment",
+                "Unicode " + "".join(chr(value) for value in (0xA0, 0x3A9, 0x4E2D, 0xD7FF, 0xE000, 0xFFFD, 0x10000, 0x10FFFF)),
+            ):
+                changed = self.workflow.replace(marker, "    - name: " + scalar + " # " + comment + "\n", 1)
+                with self.subTest(scalar=scalar, comment=comment):
+                    self.assertTrue(WorkflowNameAuthorityTests.yaml_document(changed) == original_yaml)
+                    self.assertEqual(verify_mod._parse_workflow_structure_text(changed), original_structure)
+                    self.assertTrue(reporter._generic_workflow_authorities(changed) == original_authority)
+        name = "caf\u00e9#data \u03a9 \u4e2d \U0001f600"
+        for scalar in (name, "'" + name + "'", json.dumps(name, ensure_ascii=False)):
+            text = "jobs:\n  example:\n    steps:\n    - name: " + scalar + "\n      run: echo ok\n"
+            with self.subTest(unicode_name=scalar):
+                self.assertEqual(WorkflowNameAuthorityTests.yaml_document(text)["jobs"]["example"]["steps"][0]["name"], name)
+                self.assertEqual(set(reporter._generic_workflow_authorities(text)[1]), {("example", name)})
+
+
 class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
     """Assert verify.gates() is a literal, argv-identical, order-preserving
     mirror of the gate steps in .github/workflows/build.yml -- parsed from

@@ -1308,7 +1308,21 @@ def _expand_workspace(argv, repository_root):
     ]
 
 
+def _validate_workflow_raw_characters(text, label):
+    for character in text:
+        codepoint = ord(character)
+        if not (
+            codepoint in (0x09, 0x0A, 0x0D, 0x85)
+            or 0x20 <= codepoint <= 0x7E
+            or 0xA0 <= codepoint <= 0xD7FF
+            or 0xE000 <= codepoint <= 0xFFFD
+            or 0x10000 <= codepoint <= 0x10FFFF
+        ):
+            raise ValueError(f"{label} contains unsupported raw YAML character U+{codepoint:04X}")
+
+
 def _workflow_job_entries(text):
+    _validate_workflow_raw_characters(text, "workflow")
     lines = text.splitlines(keepends=True)
     try:
         jobs_index = next(
@@ -1353,6 +1367,7 @@ def _workflow_job_entries(text):
 
 
 def _workflow_name_scalar(raw, label):
+    _validate_workflow_raw_characters(raw, label)
     value = raw.strip(" \t")
     if not value or any(character in value for character in "\r\n\0"):
         raise ValueError(f"{label} requires one nonempty scalar line")
@@ -1397,6 +1412,7 @@ def _workflow_name_scalar(raw, label):
 
 
 def _parse_workflow_context(text):
+    _validate_workflow_raw_characters(text, "workflow")
     lines = text.splitlines()
     direct = []
     for index, line in enumerate(lines):
@@ -1523,6 +1539,7 @@ def _parse_job_mapping(lines, start, end, job_name, field):
 
 
 def _parse_job_context(job_name, body):
+    _validate_workflow_raw_characters(body, f"job {job_name!r}")
     lines = body.splitlines()
     direct = []
     for index, line in enumerate(lines):
@@ -1760,6 +1777,7 @@ def _literal_run_script(lines, start, end, value, step_label):
     return "\n".join(script) + "\n"
 
 def _workflow_step_fields(block, job_name, index):
+    _validate_workflow_raw_characters(block, f"job {job_name!r} step {index}")
     lines = block.split("\n")
     first_index = next(
         (

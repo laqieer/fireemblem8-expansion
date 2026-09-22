@@ -935,6 +935,12 @@ and ambiguous, multiline, tagged or aliased names reject. Equivalent name
 quoting and trailing YAML comments preserve authority; run-script bytes are
 not normalized as YAML name data. The five graph-owned issue-number labels
 are quoted so their declared identities exist in parsed Build YAML.
+Original workflow, job, step and scalar text must pass the shared raw YAML
+character check before line splitting, comment removal or name decoding.
+Forbidden controls cannot disappear inside comments; supported printable
+Unicode and ordinary comment data remain valid. The mandatory topology guard
+also resolves coupled consumer names through the shared decoded step fields,
+while retaining exact environment checks and consumer ordering.
 Generated paths and owners come
 from registered table schemas. Symlinks, escapes, untracked includes,
 non-blob modes, target removal, registry drift, and workflow structural drift
