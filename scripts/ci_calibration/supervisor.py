@@ -47,6 +47,7 @@ REPORT_TELEMETRY_SHA = "e4034683d4fc68871847c58a2130d954c03370fc"
 REPORT_REBIND_SHA = "4cc7c1635927d9ce8785704ed4780a9c18b6b592"
 REPORT_LOCALIZATION_SHA = "1fdd209ed4c823dec55a01fb6790504090545579"
 REPORT_REGISTRATION_SHA = "1e6a767673e96f546bf9f2bc70b2e312e2fd0105"
+REPORT_CODE_METADATA_SHA = "4360e557a843f0feee214918bc0d9320127d5817"
 COMPONENT_PATHS = frozenset({
     policy.COMPONENT_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "worker.py", "root_stage.py", "supervisor.py", "observation_failure.py", "README.md",
@@ -69,7 +70,7 @@ SOURCE_REBIND_PATHS = frozenset({
     )),
 })
 LOCALIZATION_PATHS = frozenset({
-    policy.WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
+    policy.LOCALIZATION_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "worker.py", "supervisor.py", "observation_failure.py", "README.md",
         "test_ci_calibration.py", "test_root_stage.py", "test_observation_failure.py",
     )),
@@ -78,11 +79,17 @@ REGISTRATION_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
     "observation_failure.py", "supervisor.py", "README.md",
     "test_ci_calibration.py", "test_observation_failure.py",
 ))
+CORRECTED_REPORT_PATHS = frozenset({
+    policy.WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
+        "policy.py", "supervisor.py", "README.md", "test_ci_calibration.py",
+    )),
+})
 
 
 def validate_harness_lineage(lines, head):
     if lines != [
-        f"{head} {REPORT_REGISTRATION_SHA}",
+        f"{head} {REPORT_CODE_METADATA_SHA}",
+        f"{REPORT_CODE_METADATA_SHA} {REPORT_REGISTRATION_SHA}",
         f"{REPORT_REGISTRATION_SHA} {REPORT_LOCALIZATION_SHA}",
         f"{REPORT_LOCALIZATION_SHA} {REPORT_REBIND_SHA}",
         f"{REPORT_REBIND_SHA} {REPORT_TELEMETRY_SHA}",
@@ -99,7 +106,7 @@ def validate_harness_lineage(lines, head):
         f"{RETAINED_HARNESS_SHA} {PREPARATION_SHA}",
         f"{PREPARATION_SHA} {policy.BASE}",
     ]:
-        raise policy.GuardError("diagnostic requires its exact normal code-metadata/registration/localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
+        raise policy.GuardError("diagnostic requires its exact normal corrected-report/code-metadata/registration/localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
 
 
 def validate_correction_inventory(data):
@@ -166,7 +173,7 @@ def validate_accounting_inventory(data):
 
 def validate_accounting_workflow(before, after):
     old = b"        ref: d5337fc1db5b36f701328cad7c2444384dc88bb5\n"
-    new = b"        ref: " + policy.GRAPH.encode("ascii") + b"\n"
+    new = b"        ref: " + policy.LOCALIZATION_SOURCE.encode("ascii") + b"\n"
     if type(before) is not bytes or type(after) is not bytes or before.count(old) != 1 or (
         after != before.replace(old, new, 1)
     ):
@@ -194,7 +201,7 @@ def validate_localization_inventory(data):
     if len(rows) < 3 or len(rows) % 2 != 1 or rows[-1] != b"":
         raise policy.GuardError("localization requires a complete nonempty inventory")
     changes = list(zip(rows[:-1:2], rows[1:-1:2]))
-    workflow = policy.WORKFLOW.encode("ascii")
+    workflow = policy.LOCALIZATION_WORKFLOW.encode("ascii")
     allowed = {name.encode("ascii") for name in LOCALIZATION_PATHS}
     if (
         (b"A", workflow) not in changes
@@ -217,6 +224,23 @@ def validate_registration_inventory(data):
         {name for _, name in changes} != allowed or len(changes) != len(allowed)
     ):
         raise policy.GuardError("registration correction changed or omitted a frozen surface")
+
+
+def validate_corrected_report_inventory(data):
+    if type(data) is not bytes:
+        raise policy.GuardError("corrected report inventory is not a Git byte record")
+    rows = data.split(b"\0")
+    if len(rows) < 3 or len(rows) % 2 != 1 or rows[-1] != b"":
+        raise policy.GuardError("corrected report preparation requires its complete fixed inventory")
+    changes = list(zip(rows[:-1:2], rows[1:-1:2]))
+    workflow = policy.WORKFLOW.encode("ascii")
+    allowed = {name.encode("ascii") for name in CORRECTED_REPORT_PATHS}
+    if (
+        (b"A", workflow) not in changes
+        or {name for _, name in changes} != allowed or len(changes) != len(allowed)
+        or any(kind != (b"A" if name == workflow else b"M") for kind, name in changes)
+    ):
+        raise policy.GuardError("corrected report changed a spent workflow or unallocated mechanism")
 
 
 def apparmor_text(name):
@@ -1014,13 +1038,14 @@ class Owner:
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
         validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=16", "HEAD").decode().splitlines(),
+            git(self.harness, "rev-list", "--parents", "--max-count=17", "HEAD").decode().splitlines(),
             self.scope["harness_sha"],
         )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
         if any(
             name and name.decode() not in {
-                policy.WORKFLOW, policy.FULL_REPORT_WORKFLOW, policy.COMPONENT_WORKFLOW, policy.PREVIOUS_WORKFLOW,
+                policy.WORKFLOW, policy.LOCALIZATION_WORKFLOW, policy.FULL_REPORT_WORKFLOW,
+                policy.COMPONENT_WORKFLOW, policy.PREVIOUS_WORKFLOW,
             }
             and not name.decode().startswith("scripts/ci_calibration/")
             for name in changed
@@ -1075,7 +1100,10 @@ class Owner:
             self.harness, "diff", "--name-status", "-z", REPORT_LOCALIZATION_SHA, REPORT_REGISTRATION_SHA,
         ))
         validate_registration_inventory(git(
-            self.harness, "diff", "--name-status", "-z", REPORT_REGISTRATION_SHA, "HEAD",
+            self.harness, "diff", "--name-status", "-z", REPORT_REGISTRATION_SHA, REPORT_CODE_METADATA_SHA,
+        ))
+        validate_corrected_report_inventory(git(
+            self.harness, "diff", "--name-status", "-z", REPORT_CODE_METADATA_SHA, "HEAD",
         ))
         validate_accounting_workflow(
             git(self.harness, "show", REPORT_FINALIZATION_SHA + ":" + policy.FULL_REPORT_WORKFLOW),

@@ -1,11 +1,62 @@
-# Contained report-failure localization preparation
+# Contained corrected full-report preparation 2
 
 **Preparation only; never merge this branch. No native execution, workflow
 launch, retry or production resource-policy decision is allocated here.**
-Current code-metadata correction freeze:
+
+Current freeze:
+[5769695055](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5769695055).
+This is one normal child of accepted harness
+`4360e557a843f0feee214918bc0d9320127d5817`, on the new
+`calibration/issue-180-full-report-sizing-2` branch with exactly one matching
+fixed first-owner-push workflow. Source is
+`29e892d0cbc53976adc994d910af8b3dd5b337ed`; BASE remains
+`ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`.
+All spent workflows, branch allocations and their historical source bindings
+remain unchanged. Historical accounting-workflow validation still binds b6,
+not this newly selected source.
+
+The localization run35672055448 is spent and closed
+([5769594829](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5769594829)).
+Its actual bounded location in `reporter._path_admission` enabled the pure
+immutable-tree reproduction of the sole missing semantic admission,
+`scripts/validation_ownership/tests/null_mount_fixture.py`.
+The accepted exact native-owner routing correction
+([5769567237](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5769567237))
+and separately accepted RA corrections are normally integrated in source29e,
+with the existing tester procedures updated. This does not turn the failed
+prefix into a completed report or select a shipping limit.
+
+Parsed immutable source29e evidence derives 123 changed paths (55 added,
+68 modified, no deleted/type-changed paths), 11042 tracked paths, 57 graph
+nodes, 117 edges, 25 path rules, 39 oracle probes, 45 Make-dynamics contracts,
+and the unchanged 51-feature/99-case tester registry. The graph delta is only
+the exact helper admission plus its competing-prefix exclusion. Schema,
+oracle and registry data remain unchanged. Fourteen public API/default/
+constructor/report-shape definitions and the eight-entry runtime inventory
+are unchanged from b6; lifecycle records retain their typed output shape.
+These are parsed interface/data facts, not native correctness or report results.
+
+The accepted harness is reused without mechanism changes: one real full
+CURRENT/BASE/source/lifecycle `graph_report.check`, its original serializer,
+one shared budget/session/original deadline, fourteen cumulative query
+overrides, nineteen counters and all original hard limits. Seven fresh
+containment qualifiers and independent inner/pre-outer/final cleanup remain
+mandatory. The source-bound locator registers the actual new code; no old
+line/offset, expected exception or predicted next failure is pinned.
+Five bounded artifacts remain the only eventual run outputs.
+
+The inspected runner preserves all 144 methods / 863 subtests, with directly
+coupled new-source binding, closed inventory and spent-history controls.
+Same-reviewer exact follow-up and Main's separate one-shot allocation must
+precede a push or launch. Full report/verifier, native regressions, resource
+fit, H1, shipping policy and CI/merge/master/closure gates remain open.
+
+## Historical localization preparation and corrections (closed allocation)
+
+Code-metadata correction freeze:
 [5769225768](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5769225768).
-This is a normal child of `1e6a767673e96f546bf9f2bc70b2e312e2fd0105`;
-it retains the closed LR1 and original dictionary-callback corrections.
+That correction was a normal child of `1e6a767673e96f546bf9f2bc70b2e312e2fd0105`;
+it retained the closed LR1 and original dictionary-callback corrections.
 Earlier registration correction freeze:
 [5768979816](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5768979816).
 That correction was a normal child of
@@ -39,7 +90,7 @@ arguments/messages, source/SDK/argv/environment/key content, frame locals or
 raw traceback is exported. The record explicitly states `authority=false`:
 this is diagnostic location evidence, not semantic authority or qualification.
 
-Binding uses the original report measurement, exact b6 revision and `/repo`,
+Binding uses the original report measurement, the exact selected revision and `/repo`,
 the original issued budget/session/loader capture and regular superproject
 Git entries. The original public check must actually occur in the error
 chain. Relevant already-loaded source modules must have the admitted source
@@ -99,7 +150,7 @@ all hard limits, original clock, first-error/all-close/AT/FR behavior,
 physical algorithms and five bounded artifacts remain the same. There is
 no alternate workload, tracing platform, source hash ledger or automatic retry.
 
-The code-metadata correction runner preserves all 136 prior methods / 804 subtests
+The earlier code-metadata correction runner preserved all 136 prior methods / 804 subtests
 and exercises actual raised direct/nested/method/wrapped errors through the
 Observer and Protocol, including standard contextmanager generators without
 aliases. Foreign/dynamic/unbound/bad-membership cases, wrapper cycles/depth,
@@ -113,11 +164,11 @@ false file attribution. Additional callback tripwires cover the code fields and
 metadata keys consumed by this same locator, at registration and projection;
 ordinary strings and neutral ordering remain valid. These adversarial fixtures
 are not evidence that b6 installs such metadata or that it caused the spent run.
-Independent review and a separate one-shot allocation must precede any
-owner-created localization push. The final D source review completed with
-three Medium RA findings under separate correction; none is inferred to be
-the cause of the spent report failure. Source correction and all real
-report/verifier/H1/delivery requirements remain open.
+Those locator corrections were accepted before the spent localization launch.
+The separate RA corrections are integrated in the newly selected source above,
+not inferred to explain that earlier failure. The next exact-source review and
+separate allocation remain distinct from all real report/verifier/H1/delivery
+requirements.
 
 ## Historical source-rebind preparation (closed allocation)
 

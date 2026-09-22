@@ -36,6 +36,7 @@ WORKFLOW_TEXT = (REPO / policy.WORKFLOW).read_text()
 SUPERVISOR_AST = ast.parse((REPO / "scripts/ci_calibration/supervisor.py").read_text())
 QUOTA_MODEL = SOURCE_PROBING = OLD_BUDGET_CHARGE = OLD_CALIBRATION_FACTORY = None
 OLD_TELEMETRY_SNAPSHOT = OLD_TELEMETRY_PROTOCOL = None
+CORRECTED_SOURCE_INPUTS = None
 WORKER_AST = ast.parse((REPO / "scripts/ci_calibration/worker.py").read_text())
 
 
@@ -534,7 +535,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.REPORT_REGISTRATION_SHA}",
+            f"{'a' * 40} {supervisor.REPORT_CODE_METADATA_SHA}",
+            f"{supervisor.REPORT_CODE_METADATA_SHA} {supervisor.REPORT_REGISTRATION_SHA}",
             f"{supervisor.REPORT_REGISTRATION_SHA} {supervisor.REPORT_LOCALIZATION_SHA}",
             f"{supervisor.REPORT_LOCALIZATION_SHA} {supervisor.REPORT_REBIND_SHA}",
             f"{supervisor.REPORT_REBIND_SHA} {supervisor.REPORT_TELEMETRY_SHA}",
@@ -672,7 +674,7 @@ class CalibrationControls(Inert):
 
     def test_localization_inventory_and_event_cannot_reopen_the_spent_workflow(self):
         data = b"".join(
-            (b"A" if name == policy.WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
+            (b"A" if name == policy.LOCALIZATION_WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
             for name in sorted(supervisor.LOCALIZATION_PATHS)
         )
         supervisor.validate_localization_inventory(data)
@@ -706,6 +708,81 @@ class CalibrationControls(Inert):
         ):
             with self.subTest(changed=changed[:64]), self.assertRaises(policy.GuardError):
                 supervisor.validate_registration_inventory(changed)
+
+    def test_corrected_report_inventory_is_exact_and_preserves_all_spent_mechanisms(self):
+        data = b"".join(
+            (b"A" if name == policy.WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
+            for name in sorted(supervisor.CORRECTED_REPORT_PATHS)
+        )
+        supervisor.validate_corrected_report_inventory(data)
+        for changed in (
+            b"", data[:-1], data + data, data.replace(b"A\0", b"M\0"),
+            data.replace(b"M\0", b"A\0", 1), data.split(b"\0", 2)[2],
+            data + b"M\0" + policy.LOCALIZATION_WORKFLOW.encode() + b"\0",
+            data + b"M\0" + policy.FULL_REPORT_WORKFLOW.encode() + b"\0",
+            data + b"M\0scripts/ci_calibration/worker.py\0",
+            data + b"M\0scripts/ci_calibration/root_stage.py\0",
+            data + b"M\0scripts/ci_calibration/observation_failure.py\0",
+            data + b"M\0scripts/ci_calibration/kernel.py\0",
+            data + b"M\0scripts/validation_ownership/reporter.py\0",
+        ):
+            with self.subTest(changed=changed[:64]), self.assertRaises(policy.GuardError):
+                supervisor.validate_corrected_report_inventory(changed)
+        rows = data.split(b"\0")
+        reversed_rows = b"".join(kind + b"\0" + name + b"\0"
+                                 for kind, name in reversed(list(zip(rows[:-1:2], rows[1:-1:2]))))
+        supervisor.validate_corrected_report_inventory(reversed_rows)
+
+    def test_corrected_source_binding_uses_actual_diff_and_rejects_spent_source_and_events(self):
+        self.assertIsNotNone(CORRECTED_SOURCE_INPUTS, "requires the inspected corrected-source runner")
+        inputs = CORRECTED_SOURCE_INPUTS
+        self.assertEqual((inputs.contract["source"], inputs.contract["base"]), (policy.GRAPH, policy.BASE))
+        changes = policy.changed_path_set(inputs.diff)
+        actual = policy.changed_path_binding(changes)
+        self.assertEqual(actual["count"], inputs.contract["changed_paths"]["count"])
+        self.assertEqual(actual["added"], inputs.contract["changed_paths"]["A"])
+        self.assertEqual(actual["modified"], inputs.contract["changed_paths"]["M"])
+        self.assertEqual(actual["deleted"], inputs.contract["changed_paths"].get("D", 0))
+        self.assertEqual(actual["type_changed"], inputs.contract["changed_paths"].get("T", 0))
+        scope = policy.validate_event(self.event(), **self.authorization())
+        scope.update(changed_paths=actual, tracked_paths=inputs.contract["tracked_paths"])
+        binding = policy.report_binding(scope)
+        self.assertEqual(policy.validate_report_binding(dict(reversed(tuple(binding.items())))), binding)
+        with mock.patch.object(policy, "GRAPH", policy.LOCALIZATION_SOURCE):
+            previous = policy.changed_path_binding(policy.changed_path_set(inputs.previous_diff))
+        self.assertNotEqual(actual["sha256"], previous["sha256"])
+        for field, value in (
+            ("source_revision", policy.LOCALIZATION_SOURCE), ("base_revision", policy.GRAPH),
+            ("source_phases", False), ("lifecycle", False),
+        ):
+            with self.subTest(field=field), self.assertRaises(policy.GuardError):
+                policy.validate_report_binding({**binding, field: value})
+        error = policy.unavailable_report_error(
+            binding, policy.component_secondary_error(RuntimeError("private inert failure")), stage="check",
+        )
+        self.assertEqual(error["source_locations"]["source_revision"], policy.GRAPH)
+        parser = supervisor.Protocol("12345/report", policy.OUTPUT_BYTES, report_binding=binding, deadline=3700.0)
+        parser.feed(policy.encoded({"scope": "12345/report", "kind": "error", "data": error}) + b"\n")
+        self.assertTrue(parser.failed)
+        self.assertFalse(parser.finished)
+        changed = copy.deepcopy(error)
+        changed["source_locations"]["source_revision"] = policy.LOCALIZATION_SOURCE
+        with self.assertRaises(policy.GuardError):
+            policy.validate_report_error(changed, binding)
+        for branch in ("calibration/issue-180-full-report-sizing-1", "calibration/issue-180-report-localization-1"):
+            with self.subTest(branch=branch), self.assertRaises(policy.GuardError):
+                policy.validate_event({**self.event(), "ref": "refs/heads/" + branch}, **self.authorization())
+
+    def test_accounting_workflow_history_cannot_rebind_to_the_new_active_source(self):
+        self.assertIsNotNone(CORRECTED_SOURCE_INPUTS, "requires immutable historical workflow inputs")
+        inputs = CORRECTED_SOURCE_INPUTS
+        supervisor.validate_accounting_workflow(inputs.historical_before, inputs.historical_after)
+        altered = inputs.historical_after.replace(
+            policy.LOCALIZATION_SOURCE.encode("ascii"), policy.GRAPH.encode("ascii"),
+        )
+        self.assertNotEqual(altered, inputs.historical_after)
+        with self.assertRaises(policy.GuardError):
+            supervisor.validate_accounting_workflow(inputs.historical_before, altered)
 
     def test_complete_diff_binding_preserves_additions_deletions_and_both_rename_sides(self):
         changes = self.changes()
