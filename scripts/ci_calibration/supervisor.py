@@ -53,6 +53,7 @@ PYTHON_REPORT_SHA = "440cbb613857c7802d19ce7dc55b03dd29941b04"
 PARTIAL_ANCHOR_SHA = "43feaf98a048390a36b1b380e97f7b8b64ce8b69"
 TRACELESS_ANCHOR_SHA = "3d1e5ac5416be38906148a87ee20bf44dbb63dbd"
 ORIGINAL_IMPORT_SHA = "64e2e9ccaff88ca7ccdfcb1dc750fb35ea057af9"
+IMPORT_RELEASE_SHA = "ed693cd52e1ad202c0f30d04e13e2582389fbd23"
 COMPONENT_PATHS = frozenset({
     policy.COMPONENT_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "worker.py", "root_stage.py", "supervisor.py", "observation_failure.py", "README.md",
@@ -97,16 +98,23 @@ PARTIAL_ANCHOR_PATHS = frozenset({
     )),
 })
 TRACELESS_ANCHOR_PATHS = (PARTIAL_ANCHOR_PATHS - {policy.PARTIAL_ANCHOR_WORKFLOW}) | {policy.TRACELESS_ANCHOR_WORKFLOW}
-ORIGINAL_IMPORT_PATHS = (COMPONENT_PATHS - {policy.COMPONENT_WORKFLOW}) | {policy.WORKFLOW}
+ORIGINAL_IMPORT_PATHS = (COMPONENT_PATHS - {policy.COMPONENT_WORKFLOW}) | {policy.ORIGINAL_IMPORT_WORKFLOW}
 IMPORT_RELEASE_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
     "observation_failure.py", "root_stage.py", "worker.py", "supervisor.py",
     "test_ci_calibration.py", "test_root_stage.py", "README.md",
 ))
+MAKE_CONTEXT_PATHS = frozenset({
+    policy.WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
+        "observation_failure.py", "policy.py", "supervisor.py", "README.md",
+        "test_ci_calibration.py", "test_root_stage.py", "test_observation_failure.py",
+    )),
+})
 
 
 def validate_harness_lineage(lines, head):
     if lines != [
-        f"{head} {ORIGINAL_IMPORT_SHA}",
+        f"{head} {IMPORT_RELEASE_SHA}",
+        f"{IMPORT_RELEASE_SHA} {ORIGINAL_IMPORT_SHA}",
         f"{ORIGINAL_IMPORT_SHA} {TRACELESS_ANCHOR_SHA}",
         f"{TRACELESS_ANCHOR_SHA} {PARTIAL_ANCHOR_SHA}",
         f"{PARTIAL_ANCHOR_SHA} {PYTHON_REPORT_SHA}",
@@ -129,7 +137,7 @@ def validate_harness_lineage(lines, head):
         f"{RETAINED_HARNESS_SHA} {PREPARATION_SHA}",
         f"{PREPARATION_SHA} {policy.BASE}",
     ]:
-        raise policy.GuardError("diagnostic requires its exact normal import-release/original-import/traceless/partial-anchor/Python-corrected/corrected-report/code-metadata/registration/localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
+        raise policy.GuardError("diagnostic requires its exact normal make-context/import-release/original-import/traceless/partial-anchor/Python-corrected/corrected-report/code-metadata/registration/localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
 
 
 def validate_correction_inventory(data):
@@ -324,7 +332,7 @@ def validate_original_import_inventory(data):
     if len(rows) < 3 or len(rows) % 2 != 1 or rows[-1] != b"":
         raise policy.GuardError("original-import observation requires its complete fixed inventory")
     changes = list(zip(rows[:-1:2], rows[1:-1:2]))
-    workflow = policy.WORKFLOW.encode("ascii")
+    workflow = policy.ORIGINAL_IMPORT_WORKFLOW.encode("ascii")
     allowed = {name.encode("ascii") for name in ORIGINAL_IMPORT_PATHS}
     if (
         (b"A", workflow) not in changes
@@ -347,6 +355,22 @@ def validate_import_release_inventory(data):
         or any(kind != b"M" for kind, name in changes)
     ):
         raise policy.GuardError("import-release correction changed a workflow or unallocated surface")
+
+
+def validate_make_context_inventory(data):
+    if type(data) is not bytes:
+        raise policy.GuardError("Make context inventory is not a Git byte record")
+    rows = data.split(b"\0")
+    if len(rows) < 3 or len(rows) % 2 != 1 or rows[-1] != b"":
+        raise policy.GuardError("Make context requires its complete fixed inventory")
+    changes = list(zip(rows[:-1:2], rows[1:-1:2]))
+    allowed = {name.encode("ascii") for name in MAKE_CONTEXT_PATHS}
+    workflow = policy.WORKFLOW.encode("ascii")
+    if (
+        {name for _, name in changes} != allowed or len(changes) != len(allowed)
+        or any(kind != (b"A" if name == workflow else b"M") for kind, name in changes)
+    ):
+        raise policy.GuardError("Make context changed a spent workflow or unallocated surface")
 
 
 def apparmor_text(name):
@@ -1144,13 +1168,14 @@ class Owner:
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
         validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=22", "HEAD").decode().splitlines(),
+            git(self.harness, "rev-list", "--parents", "--max-count=23", "HEAD").decode().splitlines(),
             self.scope["harness_sha"],
         )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
         if any(
             name and name.decode() not in {
-                policy.WORKFLOW, policy.TRACELESS_ANCHOR_WORKFLOW, policy.PARTIAL_ANCHOR_WORKFLOW,
+                policy.WORKFLOW, policy.ORIGINAL_IMPORT_WORKFLOW,
+                policy.TRACELESS_ANCHOR_WORKFLOW, policy.PARTIAL_ANCHOR_WORKFLOW,
                 policy.PYTHON_REPORT_WORKFLOW, policy.CORRECTED_REPORT_WORKFLOW,
                 policy.LOCALIZATION_WORKFLOW, policy.FULL_REPORT_WORKFLOW,
                 policy.COMPONENT_WORKFLOW, policy.PREVIOUS_WORKFLOW,
@@ -1226,7 +1251,10 @@ class Owner:
             self.harness, "diff", "--name-status", "-z", TRACELESS_ANCHOR_SHA, ORIGINAL_IMPORT_SHA,
         ))
         validate_import_release_inventory(git(
-            self.harness, "diff", "--name-status", "-z", ORIGINAL_IMPORT_SHA, "HEAD",
+            self.harness, "diff", "--name-status", "-z", ORIGINAL_IMPORT_SHA, IMPORT_RELEASE_SHA,
+        ))
+        validate_make_context_inventory(git(
+            self.harness, "diff", "--name-status", "-z", IMPORT_RELEASE_SHA, "HEAD",
         ))
         validate_accounting_workflow(
             git(self.harness, "show", REPORT_FINALIZATION_SHA + ":" + policy.FULL_REPORT_WORKFLOW),

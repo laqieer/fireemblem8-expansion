@@ -54,24 +54,182 @@ _COMPILE, _EXEC = builtins.compile, builtins.exec
 _IMPORT_BUILTINS = _SOURCE_TO_CODE.__globals__["__builtins__"]
 _CLOCK, _THREAD, _FRAME = time.monotonic, threading.get_ident, sys._getframe
 _BLOB_HASH = hashlib.sha1
+_MAKE_COLLAPSE_MESSAGE = "unproven GNU Make parsing-mode context changes continuation data"
+_MAKE_LABEL = re.compile(r"([^:;\x00-\x1f]+):([0-9]+)(?:-([0-9]+))? \(logical ([0-9]+)\)")
+_MAKE_CONTEXT_REASONS = frozenset({
+    "guard-unobserved", "multiple-guards", "arguments-unavailable", "message-bound",
+    "message-encoding", "message-format", "work-bound", "epoch-unavailable",
+    "output-bound", "context-unavailable", "spans-unavailable",
+})
+_MAKE_SPAN_REASONS = frozenset({
+    "not-reported", "unknown-source", "position-format", "position-range",
+    "path-unbound", "path-format", "output-bound", "context-unavailable",
+})
+
+
+def make_context_unavailable(reason, *, exception=None):
+    if reason not in _MAKE_CONTEXT_REASONS:
+        raise policy.GuardError("unknown Make context unavailability reason")
+    return {
+        "kind": "make-parsing-mode", "authority": False, "exception": exception,
+        "status": "unavailable", "reason": reason, "spans": [],
+    }
+
+
+def _make_span_unavailable(role, reason):
+    return {"role": role, "status": "unavailable", "reason": reason}
+
+
+def _make_path_size(path):
+    size = 2
+    for character in path:
+        number = ord(character)
+        size += 12 if number > 0xFFFF else 6 if number > 126 or number < 32 else (
+            2 if character in {'"', "\\"} else 1
+        )
+    return size
+
+
+def validate_make_context(value, locations):
+    _location_fields(value)
+    policy._component_fields(value, "kind authority exception status reason spans")
+    if (
+        type(value["kind"]) is not str or value["kind"] != "make-parsing-mode"
+        or value["authority"] is not False
+        or value["exception"] is not None and not policy._component_integer(value["exception"], 31)
+        or type(value["status"]) is not str or value["status"] not in {"reported", "partial", "unavailable"}
+        or type(value["spans"]) is not list or len(value["spans"]) not in {0, 2}
+    ):
+        raise policy.GuardError("Make source context has an unclosed diagnostic shape")
+    if value["exception"] is not None:
+        raising = [row for row in (*locations["locations"], *locations["anchors"])
+                   if row["exception"] == value["exception"]]
+        if (
+            locations["references_closed"] is not True or len(raising) != 1
+            or raising[0]["file"] != "scripts/validation_ownership/graph_probe.py"
+            or raising[0]["code"] != "collapse"
+            or raising[0].get("role", "registered-raising-frame") != "registered-raising-frame"
+        ):
+            raise policy.GuardError("Make context lacks its verified Python raising anchor")
+    if not value["spans"]:
+        if (
+            value["status"] != "unavailable" or type(value["reason"]) is not str
+            or value["reason"] not in _MAKE_CONTEXT_REASONS - {"spans-unavailable"}
+        ):
+            raise policy.GuardError("absent Make context claims reported data")
+        return value
+    if value["exception"] is None:
+        raise policy.GuardError("Make source spans lack their original exception index")
+    reported = 0
+    for role, span in zip(("failure", "first-uncertainty"), value["spans"]):
+        _location_fields(span)
+        if type(span) is not dict or type(span.get("status")) is not str or (
+            type(span.get("role")) is not str or span["role"] != role
+        ):
+            raise policy.GuardError("Make source span has a foreign role")
+        if span["status"] == "unavailable":
+            policy._component_fields(span, "role status reason")
+            if type(span["reason"]) is not str or span["reason"] not in _MAKE_SPAN_REASONS:
+                raise policy.GuardError("unavailable Make span invented a position")
+        elif span["status"] == "reported-selected-tree":
+            policy._component_fields(span, "role status path logical start end")
+            if type(span["path"]) is not str or len(span["path"]) > 4096 or any(
+                not policy._component_integer(span[name], policy.ORIGINAL_LIMITS["file_bytes"], 1)
+                for name in ("logical", "start", "end")
+            ) or span["start"] > span["end"]:
+                raise policy.GuardError("Make source span contains invalid bounded positions")
+            try:
+                policy._root_path(span["path"])
+            except (policy.GuardError, UnicodeError) as error:
+                raise policy.GuardError("Make source span lacks a canonical selected-tree path") from error
+            reported += 1
+        else:
+            raise policy.GuardError("Make span has an unsupported provenance")
+    if (
+        value["status"] != ("reported" if reported == 2 else "partial" if reported else "unavailable")
+        or reported == 2 and value["reason"] is not None
+        or reported != 2 and (type(value["reason"]) is not str or value["reason"] != "spans-unavailable")
+    ):
+        raise policy.GuardError("Make context silently qualified a missing span")
+    return value
+
+
+def _make_label_position(match):
+    if match is None:
+        return "position-format"
+    try:
+        numbers = match.group(2), match.group(3), match.group(4)
+        if any(value is not None and (len(value) > 8 or value.startswith("0")) for value in numbers):
+            return "position-range"
+        start, end, logical = (None if value is None else int(value) for value in numbers)
+        end = start if end is None else end
+        if not all(1 <= value <= policy.ORIGINAL_LIMITS["file_bytes"] for value in (start, end, logical)) or start > end:
+            return "position-range"
+        return match.group(1), logical, start, end
+    finally:
+        match = None
+
+
+def _make_source_labels(arguments):
+    """Decode reported labels only; this does not admit a path or establish provenance."""
+    text = match = None
+    try:
+        if type(arguments) is not tuple or len(arguments) != 1 or type(arguments[0]) is not str:
+            return "arguments-unavailable", "arguments-unavailable"
+        text = arguments[0]
+        limit = min(policy.ERROR_BYTES // 4, policy.ORIGINAL_LIMITS["file_bytes"] // 4,
+                    policy.ORIGINAL_LIMITS["entries"] // 2)
+        if len(text) > limit:
+            return "message-bound", "message-bound"
+        try:
+            if len(text.encode("utf-8")) > policy.ERROR_BYTES:
+                return "message-bound", "message-bound"
+        except UnicodeError:
+            return "message-encoding", "message-encoding"
+        if not text.startswith(_MAKE_COLLAPSE_MESSAGE):
+            return "message-format", "message-format"
+        cursor = len(_MAKE_COLLAPSE_MESSAGE)
+        failure = uncertainty = "not-reported"
+        if text.startswith("; source ", cursor):
+            cursor += len("; source ")
+            end = text.find("; first uncertainty ", cursor)
+            end = len(text) if end < 0 else end
+            failure = _make_label_position(_MAKE_LABEL.fullmatch(text, cursor, end))
+            cursor = end
+        if cursor != len(text):
+            if not text.startswith("; first uncertainty ", cursor):
+                return "message-format", "message-format"
+            cursor += len("; first uncertainty ")
+            if text.startswith("<unknown source>: ", cursor):
+                uncertainty = "unknown-source"
+            else:
+                match = _MAKE_LABEL.match(text, cursor)
+                if match is None or not text.startswith(": ", match.end()):
+                    uncertainty = "position-format"
+                else:
+                    uncertainty = _make_label_position(match)
+        return failure, uncertainty
+    finally:
+        arguments = text = match = None
 
 
 def location_unavailable(reason, *, references_closed=None):
     if reason not in LOCATION_REASONS:
         raise policy.GuardError("unknown location unavailability reason")
     return {
-        "version": 2, "source_revision": policy.GRAPH, "root": "/repo", "api": policy.REPORT_API,
+        "version": 3, "source_revision": policy.GRAPH, "root": "/repo", "api": policy.REPORT_API,
         "authority": False, "status": "unavailable", "reason": reason, "locations": [],
         "anchors": [], "references_closed": references_closed,
+        "context": make_context_unavailable("guard-unobserved"),
     }
 
 
 def validate_locations(value, binding):
     policy._component_fields(value, (
-        "version source_revision root api authority status reason locations anchors references_closed"
+        "version source_revision root api authority status reason locations anchors references_closed context"
     ))
     if (
-        type(value["version"]) is not int or value["version"] != 2
+        type(value["version"]) is not int or value["version"] != 3
         or value["source_revision"] != binding["source_revision"] or value["root"] != "/repo"
         or value["api"] != binding["api"] or value["authority"] is not False
         or type(value["status"]) is not str or value["status"] not in {"observed", "unavailable"}
@@ -117,6 +275,7 @@ def validate_locations(value, binding):
             }):
                 raise policy.GuardError("partial source anchor has an unknown observation role")
             previous = row["exception"]
+    validate_make_context(value["context"], value)
     if len(policy.encoded(value)) > policy.ERROR_BYTES:
         raise policy.GuardError("source location evidence exceeds the existing error record bound")
     return value
@@ -422,6 +581,158 @@ class _SourceLocations:
             self.codes[id(current)] = current, namespace, relative
             pending.extend(value for value in current.co_consts if type(value) is types.CodeType)
 
+    def context_checkpoint(self, amount=1):
+        self.account(amount)
+        if self.imports is None:
+            raise _LocationUnavailable("original-import-unavailable")
+        self.imports.live(projection=True)
+
+    def make_guard(self, registered):
+        code, module = registered[0](), registered[1]()
+        if code is None or type(module) is not types.ModuleType or (
+            registered[2] != "scripts/validation_ownership/graph_probe.py"
+        ):
+            return False
+        _location_code(code)
+        if type(code.co_qualname) is not str or code.co_qualname != "_MakeSourceMode.collapse":
+            return False
+        namespace = _location_fields(types.ModuleType.__getattribute__(module, "__dict__"))
+        owner = namespace.get("_MakeSourceMode")
+        if type(owner) is not type:
+            return False
+        fields = type.__getattribute__(owner, "__dict__")
+        self.context_checkpoint(len(fields))
+        fields = _location_fields(fields)
+        function = fields.get("collapse")
+        qualified_name = type.__dict__["__qualname__"].__get__(owner, type)
+        if (
+            type(fields.get("__module__")) is not str or fields["__module__"] != SOURCE_PACKAGE + ".graph_probe"
+            or type(qualified_name) is not str or qualified_name != "_MakeSourceMode"
+            or type(function) is not types.FunctionType or function.__code__ is not code
+            or function.__globals__ is not namespace or type(function.__module__) is not str
+            or function.__module__ != SOURCE_PACKAGE + ".graph_probe"
+        ):
+            return False
+        metadata = function.__dict__
+        if type(metadata) is not dict:
+            return False
+        self.context_checkpoint(len(metadata))
+        _location_fields(metadata)
+        self.require_registered(code, namespace, registered[2])
+        actual = self.imports.metadata(namespace.get("__loader__"), SOURCE_PACKAGE + ".graph_probe", initializing=False)
+        if actual[0] is not module or actual[3] != registered[2]:
+            return False
+        return True
+
+    def make_span(self, role, position):
+        if type(position) is str:
+            return _make_span_unavailable(role, position)
+        path, logical, start, end = position
+        self.context_checkpoint(2 * len(path) + 1)
+        try:
+            policy._root_path(path)
+        except (policy.GuardError, UnicodeError):
+            return _make_span_unavailable(role, "path-format")
+        entry = dict.get(self.entries, path)
+        try:
+            fields = _instance_fields(entry, self.entry_type)
+        except _LocationUnavailable:
+            return _make_span_unavailable(role, "path-unbound")
+        if (
+            type(fields.get("path")) is not str or fields["path"] != path
+            or type(fields.get("mode")) is not str or fields["mode"] not in {"100644", "100755"}
+            or type(fields.get("object_type")) is not str or fields["object_type"] != "blob"
+            or "git_dir" not in fields or fields["git_dir"] is not None
+            or type(fields.get("object_id")) is not str
+            or re.fullmatch(r"[0-9a-f]{40}", fields["object_id"]) is None
+        ):
+            return _make_span_unavailable(role, "path-unbound")
+        return {
+            "role": role, "status": "reported-selected-tree", "path": path,
+            "logical": logical, "start": start, "end": end,
+        }
+
+    def make_context(self, error, candidates, allowance):
+        current = trace = frame = arguments = positions = qualified = cause = None
+        module = registered = position = None
+        index = None
+        try:
+            qualified = [(number, registered) for number, registered in candidates if self.make_guard(registered)]
+            if not qualified:
+                return make_context_unavailable("guard-unobserved")
+            if len(qualified) != 1:
+                return make_context_unavailable("multiple-guards")
+            index, registered = qualified[0]
+            self.context_checkpoint(index + 1)
+            current = error
+            for unused in range(index):
+                cause = BaseException.__dict__["__cause__"].__get__(current, BaseException)
+                current = cause if cause is not None else BaseException.__dict__["__context__"].__get__(current, BaseException)
+                if current is None:
+                    return make_context_unavailable("context-unavailable", exception=index)
+            trace = BaseException.__dict__["__traceback__"].__get__(current, BaseException)
+            count = 0
+            while trace is not None:
+                if type(trace) is not types.TracebackType or count == 256:
+                    return make_context_unavailable("context-unavailable", exception=index)
+                self.context_checkpoint()
+                count += 1
+                frame = trace.tb_frame
+                if trace.tb_next is None:
+                    break
+                trace = trace.tb_next
+            module = registered[1]()
+            if (
+                frame is None or registered[0]() is not frame.f_code or type(module) is not types.ModuleType
+                or types.ModuleType.__getattribute__(module, "__dict__") is not frame.f_globals
+                or not self.make_guard(registered)
+            ):
+                return make_context_unavailable("context-unavailable", exception=index)
+            frame = trace = None
+            self.context_checkpoint()
+            arguments = BaseException.__dict__["args"].__get__(current, BaseException)
+            if type(arguments) is tuple and len(arguments) == 1 and type(arguments[0]) is str:
+                limit = min(policy.ERROR_BYTES // 4, policy.ORIGINAL_LIMITS["file_bytes"] // 4,
+                            policy.ORIGINAL_LIMITS["entries"] // 2)
+                if len(arguments[0]) > limit:
+                    return make_context_unavailable("message-bound", exception=index)
+                self.context_checkpoint(2 * len(arguments[0]))
+            positions = _make_source_labels(arguments)
+            arguments = current = None
+            if type(positions[0]) is str and positions[0] in _MAKE_CONTEXT_REASONS:
+                return make_context_unavailable(positions[0], exception=index)
+            result = {
+                **make_context_unavailable("spans-unavailable", exception=index),
+                "spans": [_make_span_unavailable(role, "output-bound")
+                          for role in ("failure", "first-uncertainty")],
+            }
+            if len(policy.encoded(result)) > allowance:
+                return make_context_unavailable("output-bound", exception=index)
+            for ordinal, (role, position) in enumerate(zip(("failure", "first-uncertainty"), positions)):
+                span = self.make_span(role, position)
+                if span["status"] == "reported-selected-tree":
+                    sample = {**span, "path": ""}
+                    size = len(policy.encoded(sample)) - 2 + _make_path_size(span["path"])
+                else:
+                    size = len(policy.encoded(span))
+                if len(policy.encoded(result)) - len(policy.encoded(result["spans"][ordinal])) + size <= allowance:
+                    result["spans"][ordinal] = span
+            reported = sum(span["status"] == "reported-selected-tree" for span in result["spans"])
+            result["status"] = "reported" if reported == 2 else "partial" if reported else "unavailable"
+            result["reason"] = None if reported == 2 else "spans-unavailable"
+            self.context_checkpoint()
+            if not self.make_guard(registered):
+                return make_context_unavailable("epoch-unavailable", exception=index)
+            return result
+        except _LocationUnavailable as error:
+            return make_context_unavailable("work-bound" if error.reason == "registration-bound" else "epoch-unavailable",
+                                            exception=index)
+        except BaseException:
+            return make_context_unavailable("context-unavailable", exception=index)
+        finally:
+            error = current = trace = frame = arguments = positions = qualified = cause = None
+            module = registered = position = None
+
     def project(self, error):
         def position(code, line, offset):
             _location_code(code)
@@ -437,7 +748,7 @@ class _SourceLocations:
             return {"code": code.co_name, "first_line": code.co_firstlineno, "line": line, "offset": offset}
 
         current, relation = error, "primary"
-        seen, locations, candidates = set(), [], []
+        seen, locations, candidates, contexts = set(), [], [], []
         frames, scope_seen, incomplete, foreign_candidate = 0, False, False, False
         missing_trace = False
         while current is not None:
@@ -496,6 +807,8 @@ class _SourceLocations:
                     incomplete = True
                 else:
                     locations.append({"exception": index, "relation": relation, "file": relative, **fields})
+                    if registered_leaf is not None:
+                        contexts.append((index, registered_leaf))
             if candidate is not None:
                 candidates.append(candidate)
             cause = BaseException.__dict__["__cause__"].__get__(current, BaseException)
@@ -530,8 +843,15 @@ class _SourceLocations:
                 **location_unavailable("binding-not-ready"), "status": "observed", "reason": None,
                 "locations": locations, "references_closed": True,
             }
-        if len(policy.encoded(result)) > policy.ERROR_BYTES:
+        size = len(policy.encoded(result))
+        if size > policy.ERROR_BYTES:
             raise _LocationUnavailable("location-size-bound")
+        try:
+            allowance = policy.ERROR_BYTES - size + len(policy.encoded(result["context"]))
+            context = self.make_context(error, contexts, allowance)
+            result["context"] = context if len(policy.encoded(context)) <= allowance else make_context_unavailable("output-bound")
+        finally:
+            contexts.clear()
         return result
 
     def close(self):

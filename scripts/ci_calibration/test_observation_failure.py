@@ -31,6 +31,8 @@ PREIMAGE_ANCHOR_PROJECT = None
 PREIMAGE_TRACELESS_PROJECT = None
 PREIMAGE_LOCATION_OBSERVER = None
 IMPORT_COMPILE_AUDIT = None
+MAKE_CONTEXT_SOURCE = None
+MAKE_CONTEXT_PARENT_PROJECT = None
 
 
 class FrameFixture:
@@ -1641,7 +1643,7 @@ def source_boundary():
             current = current.__cause__ if current.__cause__ is not None else current.__context__
             index += 1
         locations = record["source_locations"]
-        self.assertEqual(locations["version"], 2)
+        self.assertEqual(locations["version"], 3)
         self.assertFalse(locations["authority"])
         self.assertTrue(locations["references_closed"])
         for row in locations["anchors"]:
@@ -2370,11 +2372,12 @@ class OriginalImportControls(Inert):
 
     @contextmanager
     def imported(self, kind="source", *, raise_leaf=True, body=None, mutate=None, restoring=None,
-                 owned=(), operation="natural"):
+                 owned=(), operation="natural", graph_probe=False):
         self.assertIsNotNone(IMPORT_COMPILE_AUDIT, "requires the effect-trapped import runner")
         with LocationControls.fixture(self) as value, ExitStack() as patches:
-            fullname = observation_failure.SOURCE_PACKAGE + ".inert_original"
-            filename = "/repo/scripts/validation_ownership/inert_original.py"
+            module_name = "graph_probe" if graph_probe else "inert_original"
+            fullname = observation_failure.SOURCE_PACKAGE + "." + module_name
+            filename = "/repo/scripts/validation_ownership/" + module_name + ".py"
             if kind == "foreign":
                 fullname = "unselected.inert_original"
             body = self.BODY if body is None else body
@@ -3223,6 +3226,538 @@ def outer():
                 self.assertEqual(record["source_locations"]["status"], "observed")
                 with self.assertRaises(AssertionError):
                     self.assertEqual(record["source_locations"]["status"], "unavailable")
+
+
+class MakeContextControls(Inert):
+    wire = OriginalImportControls.wire
+    imported = OriginalImportControls.imported
+    blob = staticmethod(OriginalImportControls.blob)
+    BODY, OTHER = OriginalImportControls.BODY, OriginalImportControls.OTHER
+
+    @contextmanager
+    def fixture(self, *, failure=("Makefile", 4, 7, 9), uncertainty=("generated_data.mk", 2, 3, 3),
+                unknown=False, wrapped=True):
+        self.assertIsNotNone(MAKE_CONTEXT_SOURCE, "requires the inspected selected pure AST")
+        with self.imported(body=MAKE_CONTEXT_SOURCE, graph_probe=True) as value:
+            for path in ("Makefile", "generated_data.mk"):
+                entry = value.authority.GitTreeEntry()
+                entry.path, entry.mode, entry.object_type, entry.object_id, entry.git_dir = path, "100644", "blob", "c" * 40, None
+                value.entries[path] = entry
+            def configure(module):
+                module.MODE.budget = value.budget
+                module.MODE.site = None if failure is None else module._SourceSite(*failure)
+                module.MODE.first_uncertainty = (
+                    (None, "private reason", "PRIVATE_INPUT") if unknown else
+                    None if uncertainty is None else (module._SourceSite(*uncertainty), "private reason", "PRIVATE_INPUT")
+                )
+            value.graph.AFTER_LOAD = configure
+            value.graph.WRAP = wrapped
+            yield value
+
+    def assert_context(self, result, *, count=2):
+        record, retained = self.wire(result)
+        self.assertIs(result.error, result.original_failure)
+        self.assertFalse(retained)
+        location = record["source_locations"]
+        self.assertEqual(location["version"], 3)
+        self.assertEqual(location["reason"], "no-source-trace")
+        self.assertEqual(location["locations"], [])
+        self.assertTrue(location["references_closed"])
+        self.assertFalse(location["authority"])
+        context = location["context"]
+        self.assertFalse(context["authority"])
+        self.assertEqual(context["exception"], 1 if result.graph.WRAP else 0)
+        self.assertEqual(sum(row["status"] == "reported-selected-tree" for row in context["spans"]), count)
+        self.assertEqual(context["status"], "reported" if count == 2 else "partial" if count else "unavailable")
+        self.assertEqual(len(context["spans"]), 2)
+        self.assertNotIn(b"private", policy.encoded(record))
+        self.assertNotIn(b"PRIVATE_INPUT", policy.encoded(record))
+        self.assertNotIn(b"PREFIX", policy.encoded(record))
+        return record
+
+    def test_actual_selected_collapse_reports_both_spans_without_native_or_namespace_authority(self):
+        for wrapped in (False, True):
+            with self.subTest(wrapped=wrapped), self.fixture(wrapped=wrapped) as value:
+                value.invoke()
+                record = self.assert_context(value)
+                spans = record["source_locations"]["context"]["spans"]
+                self.assertEqual(spans, [
+                    {"role": "failure", "status": "reported-selected-tree", "path": "Makefile",
+                     "logical": 4, "start": 7, "end": 9},
+                    {"role": "first-uncertainty", "status": "reported-selected-tree", "path": "generated_data.mk",
+                     "logical": 2, "start": 3, "end": 3},
+                ])
+                self.assertEqual(value.compiles, 1)
+                self.assertEqual(value.measurement.states["check_attempts"], 1)
+                self.assertEqual(value.measurement.states["session_constructed"], 1)
+
+    def test_absent_unknown_and_unbound_spans_remain_independent(self):
+        cases = (
+            (None, None, False, 0, ("not-reported", "not-reported")),
+            (("Makefile", 1, 1, 1), None, False, 1, (None, "not-reported")),
+            (("Makefile", 1, 1, 1), None, True, 1, (None, "unknown-source")),
+            (("build/unobserved.mk", 1, 1, 1), ("generated_data.mk", 2, 3, 3), False, 1, ("path-unbound", None)),
+            (("Makefile", 1, 1, 1), ("build/unobserved.mk", 2, 3, 3), False, 1, (None, "path-unbound")),
+        )
+        for failure, uncertainty, unknown, count, reasons in cases:
+            with self.subTest(failure=failure, uncertainty=uncertainty, unknown=unknown), self.fixture(
+                failure=failure, uncertainty=uncertainty, unknown=unknown,
+            ) as value:
+                value.invoke()
+                record = self.assert_context(value, count=count)
+                self.assertEqual(tuple(row.get("reason") for row in record["source_locations"]["context"]["spans"]), reasons)
+
+    def test_paths_require_current_canonical_ordinary_blob_entries_without_callbacks(self):
+        for fault in ("missing", "symlink", "gitlink", "foreign-git", "entry-type", "entry-dict", "entry-text"):
+            touched = []
+            class Mapping(dict):
+                def get(self, *args):
+                    touched.append("get")
+                    raise AssertionError("private metadata callback")
+            class Text(str):
+                def __eq__(self, other):
+                    touched.append("eq")
+                    raise AssertionError("private metadata callback")
+                __hash__ = str.__hash__
+            with self.subTest(fault=fault), self.fixture() as value:
+                entry = value.entries["Makefile"]
+                if fault == "missing":
+                    del value.entries["Makefile"]
+                elif fault == "symlink":
+                    entry.mode = "120000"
+                elif fault == "gitlink":
+                    entry.mode = "160000"
+                elif fault == "foreign-git":
+                    entry.git_dir = Path("/private")
+                elif fault == "entry-type":
+                    value.entries["Makefile"] = object()
+                elif fault == "entry-dict":
+                    entry.__dict__ = Mapping(entry.__dict__)
+                else:
+                    entry.path = Text("Makefile")
+                value.invoke()
+                record = self.assert_context(value, count=1)
+                self.assertEqual(record["source_locations"]["context"]["spans"][0]["reason"], "path-unbound")
+                self.assertEqual(touched, [])
+        for path in ("/runtime/private.mk", "../outside.mk", "./Makefile", "a//b.mk", "a\\b.mk"):
+            with self.subTest(path=path), self.fixture(failure=(path, 1, 1, 1)) as value:
+                value.invoke()
+                record = self.assert_context(value, count=1)
+                self.assertEqual(record["source_locations"]["context"]["spans"][0]["reason"], "path-format")
+
+    def test_numeric_and_range_bounds_preserve_a_valid_other_span(self):
+        maximum = policy.ORIGINAL_LIMITS["file_bytes"]
+        for logical, start, end, admitted in (
+            (1, 1, 1, True), (maximum, maximum, maximum, True),
+            (0, 1, 1, False), (maximum + 1, 1, 1, False),
+            (1, 0, 1, False), (1, 2, 1, False), (1, 1, maximum + 1, False),
+            (10 ** 100, 1, 1, False),
+        ):
+            with self.subTest(logical=logical, start=start, end=end), self.fixture(
+                failure=("Makefile", logical, start, end),
+            ) as value:
+                value.invoke()
+                record = self.assert_context(value, count=2 if admitted else 1)
+                if not admitted:
+                    self.assertEqual(record["source_locations"]["context"]["spans"][0]["reason"], "position-range")
+
+    def test_builtin_exception_descriptor_never_calls_overridden_args_or_text_callbacks(self):
+        touched = []
+        class Text(str):
+            def __len__(self):
+                touched.append("len")
+                raise AssertionError("private text callback")
+            def encode(self, *args, **kwargs):
+                touched.append("encode")
+                raise AssertionError("private text callback")
+        for fault in ("property", "getattribute", "string-subclass", "two-args", "nonstring"):
+            with self.subTest(fault=fault), self.fixture() as value:
+                configure = value.graph.AFTER_LOAD
+                def prepare(module):
+                    configure(module)
+                    original = module.MakeProbeError
+                    if fault == "property":
+                        class Error(original):
+                            @property
+                            def args(self):
+                                touched.append("args")
+                                raise AssertionError("private args property")
+                        module.MakeProbeError = Error
+                    elif fault == "getattribute":
+                        class Error(original):
+                            def __getattribute__(self, name):
+                                if name == "args":
+                                    touched.append("args")
+                                    raise AssertionError("private args attribute")
+                                return super().__getattribute__(name)
+                        module.MakeProbeError = Error
+                value.graph.AFTER_LOAD = prepare
+                value.invoke()
+                target = BaseException.__dict__["__cause__"].__get__(value.error, BaseException)
+                if fault not in {"property", "getattribute"}:
+                    original = BaseException.__dict__["args"].__get__(target, BaseException)[0]
+                    target.args = (Text(original),) if fault == "string-subclass" else (
+                        (original, "private extra") if fault == "two-args" else (object(),)
+                    )
+                record, _ = self.wire(value)
+                self.assertEqual(touched, [])
+                context = record["source_locations"]["context"]
+                self.assertEqual(context["status"], "reported" if fault in {"property", "getattribute"} else "unavailable")
+                if fault not in {"property", "getattribute"}:
+                    self.assertEqual(context["reason"], "arguments-unavailable")
+                self.assertEqual([row["role"] for row in record["source_locations"]["anchors"]],
+                                 ["registered-raising-frame", "registered-raising-frame"])
+
+    def test_message_encoding_format_and_size_refusals_do_not_erase_python_anchors(self):
+        for fault in ("wrong-prefix", "surrogate", "oversize", "numeric-text", "opaque-suffix"):
+            with self.subTest(fault=fault), self.fixture() as value:
+                value.invoke()
+                target = value.error.__cause__
+                text, = BaseException.__dict__["args"].__get__(target, BaseException)
+                if fault == "wrong-prefix":
+                    target.args = ("private " + text,)
+                elif fault == "surrogate":
+                    target.args = (text + "\ud800",)
+                elif fault == "oversize":
+                    target.args = (text + "x" * policy.ERROR_BYTES,)
+                elif fault == "numeric-text":
+                    target.args = (text.replace("logical 4", "logical \u0664"),)
+                else:
+                    target.args = (text + "; private suffix [/runtime/private] $(PRIVATE_VALUE)",)
+                record, _ = self.wire(value)
+                self.assertEqual([row["role"] for row in record["source_locations"]["anchors"]],
+                                 ["registered-raising-frame", "registered-raising-frame"])
+                context = record["source_locations"]["context"]
+                if fault == "numeric-text":
+                    self.assertEqual(context["status"], "partial")
+                    self.assertEqual(context["spans"][0]["reason"], "position-format")
+                elif fault == "opaque-suffix":
+                    self.assertEqual(context["status"], "reported")
+                else:
+                    self.assertEqual(context["status"], "unavailable")
+                self.assertNotIn(b"PRIVATE", policy.encoded(record))
+                self.assertNotIn(b"private", policy.encoded(record))
+
+    def test_unicode_paths_obey_exact_utf8_path_bound_and_json_representation(self):
+        for path, admitted in (
+            ("t\u00e9st.mk", True), ("\u8cc7\u6599.mk", True), ("emoji-\U0001f642.mk", True),
+            ("\u00e9" * 2048, True), ("\u00e9" * 2048 + "x", False),
+        ):
+            with self.subTest(length=len(path), admitted=admitted), self.fixture(failure=(path, 1, 1, 1)) as value:
+                entry = value.authority.GitTreeEntry()
+                entry.path, entry.mode, entry.object_type, entry.object_id, entry.git_dir = path, "100644", "blob", "d" * 40, None
+                value.entries[path] = entry
+                value.invoke()
+                record = self.assert_context(value, count=2 if admitted else 1)
+                span = record["source_locations"]["context"]["spans"][0]
+                if admitted:
+                    self.assertEqual(span["path"], path)
+                else:
+                    self.assertEqual(span["reason"], "path-format")
+        for path in ("normal.mk", 'quoted".mk', "delete-\x7f.mk", "accent-\u00e9.mk", "astral-\U0001f642.mk"):
+            with self.subTest(json_path=path):
+                self.assertEqual(observation_failure._make_path_size(path), len(policy.encoded(path)))
+
+    def test_exact_message_work_admission_and_callback_tuple_rejection(self):
+        touched = []
+        class Tuple(tuple):
+            def __len__(self):
+                touched.append("len")
+                raise AssertionError("private tuple callback")
+        self.assertEqual(observation_failure._make_source_labels(Tuple(("private",))),
+                         ("arguments-unavailable",) * 2)
+        self.assertEqual(touched, [])
+        for over in (0, 1):
+            with self.subTest(over=over), self.fixture() as value:
+                value.invoke()
+                arguments = BaseException.__dict__["args"].__get__(value.error.__cause__, BaseException)
+                limit = min(policy.ERROR_BYTES // 4, policy.ORIGINAL_LIMITS["file_bytes"] // 4,
+                            policy.ORIGINAL_LIMITS["entries"] // 2)
+                message = arguments[0] + "x" * (limit - len(arguments[0]) + over)
+                decoded = observation_failure._make_source_labels((message,))
+                self.assertEqual(decoded, ("message-bound",) * 2 if over else (
+                    ("Makefile", 4, 7, 9), ("generated_data.mk", 2, 3, 3),
+                ))
+                arguments = message = None
+
+    def test_exact_context_work_threshold_and_original_deadline_are_observed(self):
+        observed = []
+        original = observation_failure._SourceLocations.make_context
+        def measure(locations, error, candidates, allowance):
+            before = locations.work
+            result = original(locations, error, candidates, allowance)
+            observed.append(locations.work - before)
+            return result
+        with self.fixture() as value, mock.patch.object(observation_failure._SourceLocations, "make_context", measure):
+            value.invoke()
+            self.assert_context(value)
+        needed, = observed
+        self.assertGreater(needed, 0)
+        for over in (0, 1):
+            with self.subTest(over=over), self.fixture() as value:
+                value.invoke()
+                def bound(locations, error, candidates, allowance):
+                    locations.work = policy.ORIGINAL_LIMITS["entries"] - needed + over
+                    return original(locations, error, candidates, allowance)
+                with mock.patch.object(observation_failure._SourceLocations, "make_context", bound):
+                    record, _ = self.wire(value)
+                context = record["source_locations"]["context"]
+                self.assertEqual(context["status"], "unavailable" if over else "reported")
+                if over:
+                    self.assertEqual(context["reason"], "work-bound")
+                self.assertEqual(len(record["source_locations"]["anchors"]), 2)
+        with self.fixture() as value:
+            value.invoke()
+            def expired(locations, error, candidates, allowance):
+                clock = locations.imports.clock
+                before = clock.return_value
+                clock.return_value = locations.imports.deadline
+                try:
+                    return original(locations, error, candidates, allowance)
+                finally:
+                    clock.return_value = before
+            with mock.patch.object(observation_failure._SourceLocations, "make_context", expired):
+                record, _ = self.wire(value)
+            self.assertEqual(record["source_locations"]["context"]["reason"], "epoch-unavailable")
+            self.assertEqual(len(record["source_locations"]["anchors"]), 2)
+
+    def test_only_a_qualified_leaf_reads_arguments_and_ambiguous_guards_stay_unavailable(self):
+        for fault in ("caller", "scope", "multiple"):
+            with self.subTest(fault=fault), self.fixture() as value:
+                if fault == "caller":
+                    configure = value.graph.AFTER_LOAD
+                    def replace(module):
+                        configure(module)
+                        original = module.unrelated
+                        module.MODE.checkpoint = type(original)(original.__code__.replace(), module.__dict__)
+                    value.graph.AFTER_LOAD = replace
+                value.invoke()
+                if fault in {"scope", "multiple"}:
+                    value.graph.loaded.MODE.budget = None
+                    try:
+                        value.graph.loaded.MODE.collapse("PREFIX " + chr(92) + chr(10) + " SUFFIX")
+                    except BaseException as following:
+                        if fault == "scope":
+                            value.error = following
+                        else:
+                            value.error.__cause__.__cause__ = following
+                decoder = observation_failure._make_source_labels
+                with mock.patch.object(observation_failure, "_make_source_labels", wraps=decoder) as observed:
+                    record, _ = self.wire(value)
+                observed.assert_not_called()
+                context = record["source_locations"]["context"]
+                self.assertEqual(context["status"], "unavailable")
+                self.assertEqual(context["spans"], [])
+                if fault == "caller":
+                    anchor = record["source_locations"]["anchors"][1]
+                    self.assertEqual((anchor["code"], anchor["role"]), ("collapse", "registered-caller"))
+                elif fault == "multiple":
+                    self.assertEqual(context["reason"], "multiple-guards")
+
+    def test_post_decode_binding_changes_and_collector_failure_preserve_python_anchors(self):
+        for fault in ("entry-epoch", "guard-member", "collector"):
+            with self.subTest(fault=fault), self.fixture() as value:
+                value.invoke()
+                original = observation_failure._make_source_labels
+                def mutate(arguments):
+                    result = original(arguments)
+                    if fault == "entry-epoch":
+                        value.entries.capture = (Path("/repo"), policy.BASE)
+                    elif fault == "guard-member":
+                        value.graph.loaded._MakeSourceMode.collapse = value.graph.loaded.outer
+                    else:
+                        raise RuntimeError("private decoder")
+                    return result
+                with mock.patch.object(observation_failure, "_make_source_labels", mutate):
+                    record, _ = self.wire(value)
+                location = record["source_locations"]
+                self.assertEqual(len(location["anchors"]), 2)
+                self.assertEqual(location["context"]["status"], "unavailable")
+                self.assertEqual(location["context"]["spans"], [])
+                self.assertFalse(location["authority"])
+
+    def test_name_text_callers_and_late_replacements_cannot_qualify_context(self):
+        for fault in ("different-leaf", "code-copy", "class-member", "metaclass", "qualname", "unraised"):
+            with self.subTest(fault=fault), self.fixture() as value:
+                configure = value.graph.AFTER_LOAD
+                def alter(module):
+                    configure(module)
+                    function = module._MakeSourceMode.collapse
+                    if fault == "different-leaf":
+                        def foreign():
+                            raise module.MakeProbeError(observation_failure._MAKE_COLLAPSE_MESSAGE)
+                        module.MODE.checkpoint = foreign
+                    elif fault == "code-copy":
+                        function.__code__ = function.__code__.replace()
+                    elif fault == "qualname":
+                        function.__code__ = function.__code__.replace(co_qualname="Other.collapse")
+                value.graph.AFTER_LOAD = alter
+                value.invoke()
+                if fault == "class-member":
+                    value.graph.loaded._MakeSourceMode.collapse = value.graph.loaded.outer
+                elif fault == "metaclass":
+                    class Meta(type):
+                        def __getattribute__(self, name):
+                            raise AssertionError("private metaclass callback")
+                    value.graph.loaded._MakeSourceMode = Meta("_MakeSourceMode", (), {})
+                elif fault == "unraised":
+                    value.error.__cause__.__traceback__ = None
+                record, _ = self.wire(value)
+                self.assertEqual(record["source_locations"]["context"]["status"], "unavailable")
+                self.assertEqual(record["source_locations"]["context"]["spans"], [])
+
+    def test_context_work_clock_and_output_refusal_leave_existing_python_roles_intact(self):
+        for fault in ("work", "epoch", "output"):
+            with self.subTest(fault=fault), self.fixture() as value:
+                value.invoke()
+                method = observation_failure._SourceLocations.make_context
+                def bounded(locations, error, candidates, allowance):
+                    if fault == "work":
+                        locations.work = policy.ORIGINAL_LIMITS["entries"]
+                    elif fault == "epoch":
+                        locations.imports.thread = -1
+                    return method(locations, error, candidates, 0 if fault == "output" else allowance)
+                with mock.patch.object(observation_failure._SourceLocations, "make_context", bounded):
+                    record, _ = self.wire(value)
+                location = record["source_locations"]
+                self.assertEqual([row["role"] for row in location["anchors"]],
+                                 ["registered-raising-frame", "registered-raising-frame"])
+                self.assertEqual(location["context"]["status"], "unavailable")
+                self.assertEqual(location["context"]["spans"], [])
+                self.assertFalse(location["authority"])
+
+    def test_exact_parent_lacks_context_while_neutral_reason_and_metadata_order_preserve_spans(self):
+        self.assertIsNotNone(MAKE_CONTEXT_PARENT_PROJECT, "requires exacted693 locator preimage")
+        with self.fixture() as value:
+            value.invoke()
+            with mock.patch.object(observation_failure._SourceLocations, "project", MAKE_CONTEXT_PARENT_PROJECT):
+                old, _ = self.wire(value)
+            self.assertEqual(old["source_locations"]["context"]["reason"], "guard-unobserved")
+            self.assertEqual(old["source_locations"]["context"]["spans"], [])
+            self.assertEqual(len(old["source_locations"]["anchors"]), 2)
+        for note in ("private different reason", "private ; source counterfeit:1 (logical 1) [INPUT]"):
+            with self.subTest(note=note), self.fixture() as value:
+                configure = value.graph.AFTER_LOAD
+                def neutral(module):
+                    configure(module)
+                    old = module.MODE.first_uncertainty
+                    module.MODE.first_uncertainty = (old[0], note, "DIFFERENT_INPUT")
+                value.graph.AFTER_LOAD = neutral
+                value.invoke()
+                record = self.assert_context(value)
+                self.assertEqual(policy.validate_report_error(json_order(record), self.binding()), record)
+
+    def test_closed_v3_mutations_cannot_grant_context_or_native_provenance(self):
+        with self.fixture() as value:
+            value.invoke()
+            record = self.assert_context(value)
+        for fault in ("v2", "missing", "authority", "caller", "exception", "extra", "native", "bool", "range", "role", "partial"):
+            with self.subTest(fault=fault):
+                changed = copy.deepcopy(record)
+                location = changed["source_locations"]
+                context = location["context"]
+                if fault == "v2":
+                    location["version"] = 2
+                elif fault == "missing":
+                    del location["context"]
+                elif fault == "authority":
+                    context["authority"] = True
+                elif fault == "caller":
+                    location["anchors"][1]["role"] = "registered-caller"
+                elif fault == "exception":
+                    context["exception"] = 2
+                elif fault == "extra":
+                    context["message"] = "private"
+                elif fault == "native":
+                    context["spans"][0]["status"] = "native-attested"
+                elif fault == "bool":
+                    context["spans"][0]["logical"] = True
+                elif fault == "range":
+                    context["spans"][0]["end"] = 1
+                elif fault == "role":
+                    context["spans"][0]["role"] = "registered-raising-frame"
+                else:
+                    context["spans"][0] = {"role": "failure", "status": "unavailable", "reason": "path-unbound"}
+                with self.assertRaises(policy.GuardError):
+                    policy.validate_report_error(changed, self.binding())
+
+    def entrypoint_case(self, fault=None):
+        with self.fixture() as value, ExitStack() as effects:
+            api = value.measurement.api
+            budget = value.budget
+            real_import = builtins.__import__
+            def git(root, issued, *args):
+                self.assertIs(issued, budget)
+                if args == ("rev-parse", "HEAD"):
+                    return policy.GRAPH.encode()
+                if args == ("rev-parse", policy.BASE + "^{commit}"):
+                    return policy.BASE.encode()
+                return b"".join(kind.encode() + b"\0" + path.encode() + b"\0" for path, kind in self.changes().items())
+            value.authority.git = git
+            def imported(name, *args, **kwargs):
+                if name == "scripts.validation_ownership.authority":
+                    return value.authority
+                if name == "scripts.validation_ownership.budget":
+                    return budgeting
+                if name == "scripts.validation_ownership.make_probe":
+                    return value.probing
+                return real_import(name, *args, **kwargs)
+            def measurement(root, issued, config, sampler, changes):
+                self.assertIs(issued, budget)
+                value.measurement.sampler = sampler
+                return value.measurement
+            raw, emitted = io.BytesIO(), []
+            original_emit = kernel.emit
+            def emit(scope, kind, record):
+                if kind == "error":
+                    emitted.append(record)
+                    if fault == "publication-before" and len(emitted) == 1:
+                        raise OSError(errno.EPIPE, "private publication")
+                original_emit(scope, kind, record)
+                if kind == "error" and fault == "publication-after" and len(emitted) == 1:
+                    raise OSError(errno.EPIPE, "private publication")
+            effects.enter_context(mock.patch.object(builtins, "__import__", side_effect=imported))
+            effects.enter_context(mock.patch.object(root_stage, "ReportMeasurement", side_effect=measurement))
+            effects.enter_context(mock.patch.object(sys, "path", list(sys.path)))
+            effects.enter_context(mock.patch.object(threading.Thread, "start", return_value=None))
+            effects.enter_context(mock.patch.object(worker.Sampler, "close", return_value=None))
+            effects.enter_context(mock.patch.object(worker, "calibration_budget", return_value=(
+                budget, budget.limits, dataclasses.asdict(budgeting.Limits()),
+                policy.profile_manifest(policy.ORIGINAL_LIMITS, observation_count=32768),
+            )))
+            effects.enter_context(mock.patch.object(kernel, "owned_config", return_value=value.measurement.config))
+            effects.enter_context(mock.patch.object(sys, "argv", ["worker.py", "/guard/config.json"]))
+            effects.enter_context(mock.patch.object(kernel, "sys", SimpleNamespace(stdout=SimpleNamespace(buffer=raw))))
+            effects.enter_context(mock.patch.object(kernel, "emit", side_effect=emit))
+            if fault == "record":
+                effects.enter_context(mock.patch.object(worker, "report_error_record", side_effect=ValueError("private collector")))
+            code = worker.entrypoint()
+            value.observer = value.measurement.observer
+            parser = supervisor.Protocol("12345/report", policy.OUTPUT_BYTES,
+                                         report_binding=self.binding(), deadline=3700.0)
+            rows = []
+            for line in raw.getvalue().splitlines(keepends=True):
+                rows.extend(parser.feed(line))
+            self.assertEqual(code, 1)
+            self.assertTrue(parser.failed)
+            self.assertFalse(parser.finished)
+            self.assertNotIn(b"private", raw.getvalue())
+            record = [row["data"] for row in rows if row["kind"] == "error"][-1]
+            return record
+
+    def test_actual_worker_publication_and_recovery_keep_context_first_cause_and_cleanup(self):
+        for fault in (None, "publication-before", "publication-after", "record"):
+            with self.subTest(fault=fault):
+                record = self.entrypoint_case(fault)
+                self.assertEqual(record["error"]["chain"][0]["type"], "MakeProbeError")
+                if fault == "record":
+                    self.assertIsNone(record["cleanup"])
+                    self.assertEqual(record["source_locations"]["context"]["status"], "unavailable")
+                else:
+                    self.assertEqual(record["source_locations"]["context"]["status"], "reported")
+                    self.assertFalse(record["states"]["completed"])
+                    self.assertTrue(record["cleanup"]["source_imports_restored"])
+                    self.assertTrue(record["cleanup"]["source_imports_released"])
 
 
 def json_order(value):

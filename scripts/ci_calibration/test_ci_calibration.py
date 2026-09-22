@@ -537,7 +537,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.ORIGINAL_IMPORT_SHA}",
+            f"{'a' * 40} {supervisor.IMPORT_RELEASE_SHA}",
+            f"{supervisor.IMPORT_RELEASE_SHA} {supervisor.ORIGINAL_IMPORT_SHA}",
             f"{supervisor.ORIGINAL_IMPORT_SHA} {supervisor.TRACELESS_ANCHOR_SHA}",
             f"{supervisor.TRACELESS_ANCHOR_SHA} {supervisor.PARTIAL_ANCHOR_SHA}",
             f"{supervisor.PARTIAL_ANCHOR_SHA} {supervisor.PYTHON_REPORT_SHA}",
@@ -891,7 +892,7 @@ class CalibrationControls(Inert):
 
     def test_original_import_inventory_cannot_reopen_spent_workflows_or_change_source(self):
         data = b"".join(
-            (b"A" if name == policy.WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
+            (b"A" if name == policy.ORIGINAL_IMPORT_WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
             for name in sorted(supervisor.ORIGINAL_IMPORT_PATHS)
         )
         supervisor.validate_original_import_inventory(data)
@@ -943,7 +944,7 @@ class CalibrationControls(Inert):
             with self.subTest(changed=changed[:64]), self.assertRaises(policy.GuardError):
                 supervisor.validate_import_release_inventory(changed)
         original = b"".join(
-            (b"A" if path == policy.WORKFLOW else b"M") + b"\0" + path.encode() + b"\0"
+            (b"A" if path == policy.ORIGINAL_IMPORT_WORKFLOW else b"M") + b"\0" + path.encode() + b"\0"
             for path in sorted(supervisor.ORIGINAL_IMPORT_PATHS)
         )
         supervisor.validate_original_import_inventory(original)
@@ -951,6 +952,29 @@ class CalibrationControls(Inert):
             supervisor.validate_import_release_inventory(original)
         with self.assertRaises(policy.GuardError):
             supervisor.validate_original_import_inventory(data)
+
+    def test_make_context_inventory_preserves_all_old_endpoints_and_the_spent_import_workflow(self):
+        data = b"".join(
+            (b"A" if name == policy.WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
+            for name in sorted(supervisor.MAKE_CONTEXT_PATHS)
+        )
+        supervisor.validate_make_context_inventory(data)
+        for changed in (
+            b"", data[:-1], data + data, data.split(b"\0", 2)[2],
+            data.replace(b"A\0", b"M\0"), data.replace(b"M\0", b"A\0", 1),
+            data + b"M\0" + policy.ORIGINAL_IMPORT_WORKFLOW.encode() + b"\0",
+            data + b"M\0scripts/ci_calibration/root_stage.py\0",
+            data + b"M\0scripts/ci_calibration/worker.py\0",
+            data + b"M\0scripts/ci_calibration/kernel.py\0",
+            data + b"M\0scripts/validation_ownership/graph_probe.py\0",
+        ):
+            with self.subTest(changed=changed[:64]), self.assertRaises(policy.GuardError):
+                supervisor.validate_make_context_inventory(changed)
+        with self.assertRaises(policy.GuardError):
+            policy.validate_event(
+                {**self.event(), "ref": "refs/heads/calibration/issue-180-original-import-localization-1"},
+                **self.authorization(),
+            )
     def test_complete_diff_binding_preserves_additions_deletions_and_both_rename_sides(self):
         changes = self.changes()
         binding = policy.changed_path_binding(changes)

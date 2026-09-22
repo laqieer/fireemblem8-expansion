@@ -1051,6 +1051,26 @@ class RootStageControls(Inert):
                     self.assertTrue(value.result["report"]["cleanup"]["source_imports_restored"])
                     self.assertTrue(value.result["report"]["cleanup"]["source_imports_released"])
 
+    def test_closed_location_v3_rejects_old_version_and_unqualified_make_context(self):
+        value = self.composition("source", use_worker=True, executable=WORKER_MAIN)
+        record = [row["data"] for row in self.consume_executable(value)[1] if row["kind"] == "error"][-1]
+        self.assertEqual(record["source_locations"]["version"], 3)
+        self.assertEqual(record["source_locations"]["context"]["reason"], "guard-unobserved")
+        for change in ("old-version", "missing-context", "false-authority", "unbound-index"):
+            with self.subTest(change=change):
+                changed = copy.deepcopy(record)
+                location = changed["source_locations"]
+                if change == "old-version":
+                    location["version"] = 2
+                elif change == "missing-context":
+                    del location["context"]
+                elif change == "false-authority":
+                    location["context"]["authority"] = True
+                else:
+                    location["context"]["exception"] = 0
+                with self.assertRaises(policy.GuardError):
+                    policy.validate_report_error(changed, self.binding())
+
     def test_import_release_fault_is_retained_once_across_full_record_loss_and_publication_recovery(self):
         original = observation_failure._OriginalImports.close
         for when in ("before", "after"):
