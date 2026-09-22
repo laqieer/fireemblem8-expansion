@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import builtins
+import hashlib
+import importlib._bootstrap as _bootstrap
 from importlib.machinery import ModuleSpec, SourceFileLoader
+import math
 from pathlib import Path
 import re
 import sys
+import threading
+import time
 import types
 import weakref
 
@@ -24,7 +30,29 @@ LOCATION_REASONS = frozenset({
     "exception-chain-bound", "trace-frame-bound", "registration-bound", "invalid-code-location",
     "location-size-bound", "locator-failed", "cyclic-wrapper-chain", "wrapper-chain-bound",
     "function-metadata-unavailable", "code-metadata-unavailable", "source-metadata-unavailable",
+    "original-import-unavailable", "import-restoration-unavailable",
 })
+
+_IMPORT_MRO = SourceFileLoader.__mro__
+_IMPORT_METHODS = {
+    name: getattr(SourceFileLoader, name) for name in (
+        "get_code", "source_to_code", "exec_module", "get_filename", "get_data",
+        "path_stats", "_cache_bytecode", "set_data", "is_package",
+    )
+}
+_GET_CODE = _IMPORT_METHODS["get_code"]
+_SOURCE_TO_CODE = _IMPORT_METHODS["source_to_code"]
+_EXEC_MODULE = _IMPORT_METHODS["exec_module"]
+_LOAD_UNLOCKED = _bootstrap._load_unlocked
+_CALL_REMOVED = _bootstrap._call_with_frames_removed
+_IMPORT_FUNCTIONS = {
+    function: (function.__code__, function.__globals__)
+    for function in (*_IMPORT_METHODS.values(), _LOAD_UNLOCKED, _CALL_REMOVED)
+}
+_COMPILE, _EXEC = builtins.compile, builtins.exec
+_IMPORT_BUILTINS = _SOURCE_TO_CODE.__globals__["__builtins__"]
+_CLOCK, _THREAD, _FRAME = time.monotonic, threading.get_ident, sys._getframe
+_BLOB_HASH = hashlib.sha1
 
 
 def location_unavailable(reason, *, references_closed=None):
@@ -142,14 +170,19 @@ class _SourceLocations:
     def __init__(self):
         self.codes, self.modules, self.seen, self.registered = {}, {}, set(), {}
         self.entries = self.entry_type = self.call = self.call_globals = None
+        self.imports = self.clock = self.deadline = None
         self.work = 0
 
     def account(self, amount=1):
         self.work += amount
         if self.work > policy.ORIGINAL_LIMITS["entries"]:
             raise _LocationUnavailable("registration-bound")
+        if self.clock is not None and self.clock() >= self.deadline:
+            raise _LocationUnavailable("original-import-unavailable")
 
     def public_call(self, api, session_type):
+        if type(api) is types.SimpleNamespace:
+            _location_fields(object.__getattribute__(api, "__dict__"))
         if (
             type(api) is not types.SimpleNamespace or api.session is not session_type
             or type(api.module) is not types.ModuleType or type(api.check) is not types.FunctionType
@@ -195,8 +228,12 @@ class _SourceLocations:
             or registered[2] != relative
         ):
             raise _LocationUnavailable("source-code-unbound")
+        if len(registered) == 4:
+            if self.imports is None:
+                raise _LocationUnavailable("source-code-unbound")
+            self.imports.require_registered(registered, code, namespace, relative)
 
-    def bind(self, observer, measurement):
+    def bind_source(self, observer, measurement):
         if (
             measurement is None or measurement.api is None or measurement.session_valid is not True
             or type(measurement.root) is not type(SOURCE_ROOT) or measurement.root != SOURCE_ROOT
@@ -239,8 +276,12 @@ class _SourceLocations:
         self.entry_type, self.entries = namespace.get("GitTreeEntry"), entries
         if type(self.entry_type) is not type:
             raise _LocationUnavailable("source-binding-invalid")
+
+    def bind(self, observer, measurement):
+        self.bind_source(observer, measurement)
         relative = self.module(self.call_globals)
-        self.module(namespace)
+        authority = sys.modules[SOURCE_PACKAGE + ".authority"]
+        self.module(types.ModuleType.__getattribute__(authority, "__dict__"))
         if id(self.call) not in self.codes:
             raise _LocationUnavailable("source-code-unbound")
         self.require_registered(self.call, self.call_globals, relative)
@@ -442,9 +483,12 @@ class _SourceLocations:
                 fields = position(code, line, offset)
                 owned = self.codes.get(id(code))
                 try:
-                    if owned is None or owned[0] is not code or owned[1] is not namespace or owned[2] != relative:
-                        raise _LocationUnavailable("source-code-unbound")
                     self.require_registered(code, namespace, relative)
+                    registered_leaf = self.registered.get(id(code))
+                    if (registered_leaf is None or len(registered_leaf) != 4) and (
+                        owned is None or owned[0] is not code or owned[1] is not namespace or owned[2] != relative
+                    ):
+                        raise _LocationUnavailable("source-code-unbound")
                 except _LocationUnavailable as unavailable:
                     if unavailable.reason != "source-code-unbound":
                         raise
@@ -469,9 +513,11 @@ class _SourceLocations:
                 namespace = types.ModuleType.__getattribute__(module, "__dict__")
                 relative = self.module(namespace)
                 owned = self.codes.get(id(code))
-                if owned is None or owned[0] is not code or owned[1] is not namespace or owned[2] != relative:
-                    raise _LocationUnavailable("source-code-unbound")
                 self.require_registered(code, namespace, relative)
+                if len(registered) != 4 and (
+                    owned is None or owned[0] is not code or owned[1] is not namespace or owned[2] != relative
+                ):
+                    raise _LocationUnavailable("source-code-unbound")
                 anchors.append({
                     "exception": index, "relation": relation, "role": role,
                     "file": relative, **position(code, line, offset),
@@ -495,7 +541,7 @@ class _SourceLocations:
             except BaseException as error:
                 if first is None:
                     first = error
-        for name in ("entries", "entry_type", "call", "call_globals"):
+        for name in ("entries", "entry_type", "call", "call_globals", "imports", "clock", "deadline"):
             try:
                 setattr(self, name, None)
             except BaseException as error:
@@ -503,6 +549,441 @@ class _SourceLocations:
                     first = error
         if first is not None:
             raise first
+
+
+def _import_slot(name):
+    ancestry = type.__dict__["__mro__"].__get__(SourceFileLoader, type)
+    if len(ancestry) != len(_IMPORT_MRO) or any(
+        left is not right for left, right in zip(ancestry, _IMPORT_MRO)
+    ):
+        raise _LocationUnavailable("original-import-unavailable")
+    for parent in ancestry:
+        namespace = _location_fields(type.__dict__["__dict__"].__get__(parent, type))
+        if name in namespace:
+            return namespace[name]
+    raise _LocationUnavailable("original-import-unavailable")
+
+
+class _OriginalImports:
+    """Two original return boundaries, scoped to one report and its original session."""
+
+    def __init__(self, observer, measurement):
+        self.observer, self.measurement = observer, weakref.ref(measurement)
+        self.thread, self.clock = _THREAD(), _CLOCK
+        self.deadline = measurement.config["deadline"]
+        self.bound = self.active = None
+        self.get_hook = self.compile_hook = None
+        self.old_slots = {}
+        self.restored = dict.fromkeys(("get_code", "source_to_code"))
+        self.secondary = []
+        self.failed = self.note_failed = self.stopped = self.release_attempted = False
+        self.released = None
+        self.source_bytes = 0
+
+    def fault(self, error, stage="import-observation"):
+        # Stop observation after the first fault; delegation and restoration
+        # continue. No exception/traceback (and thus no compiler bytes) is kept.
+        self.failed = True
+        try:
+            if not any(row["stage"] == stage for row in self.secondary):
+                self.secondary.append({"stage": stage, "error": policy.component_secondary_error(error)})
+        except BaseException:
+            self.note_failed = True
+
+    def unchanged(self, *, installed):
+        for name, original in _IMPORT_METHODS.items():
+            expected = self.get_hook if installed and name == "get_code" else (
+                self.compile_hook if installed and name == "source_to_code" else original
+            )
+            if _import_slot(name) is not expected:
+                raise _LocationUnavailable("original-import-unavailable")
+        for function, (code, namespace) in _IMPORT_FUNCTIONS.items():
+            if function.__code__ is not code or function.__globals__ is not namespace:
+                raise _LocationUnavailable("original-import-unavailable")
+        namespace = _SOURCE_TO_CODE.__globals__
+        _location_fields(namespace)
+        modules = []
+        for module in (_bootstrap, builtins, time, threading, sys, hashlib):
+            if type(module) is not types.ModuleType:
+                raise _LocationUnavailable("original-import-unavailable")
+            modules.append(_location_fields(types.ModuleType.__getattribute__(module, "__dict__")))
+        bootstrap_fields, builtin_fields, time_fields, thread_fields, sys_fields, hash_fields = modules
+        if (
+            bootstrap_fields.get("_load_unlocked") is not _LOAD_UNLOCKED
+            or bootstrap_fields.get("_call_with_frames_removed") is not _CALL_REMOVED
+            or namespace.get("_bootstrap") is not _bootstrap
+            or namespace.get("__builtins__") is not _IMPORT_BUILTINS
+            or namespace.get("compile", _COMPILE) is not _COMPILE
+            or namespace.get("exec", _EXEC) is not _EXEC
+            or builtin_fields.get("compile") is not _COMPILE or builtin_fields.get("exec") is not _EXEC
+            or time_fields.get("monotonic") is not _CLOCK or thread_fields.get("get_ident") is not _THREAD
+            or sys_fields.get("_getframe") is not _FRAME
+            or hash_fields.get("sha1") is not _BLOB_HASH
+        ):
+            raise _LocationUnavailable("original-import-unavailable")
+
+    def live(self, *, projection=False):
+        if (
+            self.release_attempted or self.failed or _THREAD() != self.thread
+            or not projection and self.stopped or projection and not all(self.restored.values())
+            or self.clock is not _CLOCK
+            or type(self.deadline) not in (int, float) or not math.isfinite(self.deadline)
+        ):
+            raise _LocationUnavailable("original-import-unavailable")
+        self.unchanged(installed=not self.stopped)
+        now = self.clock()
+        if type(now) not in (int, float) or not math.isfinite(now) or now >= self.deadline:
+            raise _LocationUnavailable("original-import-unavailable")
+        measurement = self.measurement()
+        if measurement is None or self.bound is None:
+            raise _LocationUnavailable("binding-not-ready")
+        if type(measurement.config) is not dict:
+            raise _LocationUnavailable("source-binding-invalid")
+        _location_fields(measurement.config)
+        session, loader, entries, limits, started = self.bound
+        observer = self.observer
+        budget = _instance_fields(observer.budget, type(observer.budget))
+        limit_fields = _instance_fields(limits(), type(limits()))
+        if (
+            measurement.budget is not observer.budget or measurement.session is not session()
+            or type(budget.get("started")) not in (int, float) or budget["started"] != started
+            or budget.get("limits") is not limits()
+            or type(limit_fields.get("seconds")) is not int
+            or started + limit_fields["seconds"] != self.deadline
+            or type(measurement.config.get("deadline")) not in (int, float)
+            or measurement.config["deadline"] != self.deadline
+        ):
+            raise _LocationUnavailable("source-binding-invalid")
+        fields = _instance_fields(session(), observer.session_type)
+        api = measurement.api
+        loading = _instance_fields(loader(), api.loader)
+        if (
+            fields.get("loader") is not loader() or loading.get("entries") is not entries()
+            or type(fields.get("owner_thread")) is not int or fields["owner_thread"] != self.thread
+        ):
+            raise _LocationUnavailable("source-binding-invalid")
+        return measurement
+
+    def bind(self, measurement):
+        try:
+            if self.bound is not None or self.measurement() is not measurement or self.stopped:
+                raise _LocationUnavailable("source-binding-invalid")
+            observer, api = self.observer, measurement.api
+            fields = _instance_fields(measurement.session, observer.session_type)
+            loader = fields.get("loader")
+            loading = _instance_fields(loader, api.loader)
+            entries = loading.get("entries")
+            _instance_fields(entries, api.entries)
+            budget = _instance_fields(observer.budget, type(observer.budget))
+            limits = budget.get("limits")
+            _instance_fields(limits, type(limits))
+            _location_fields(measurement.states)
+            if (
+                measurement.session_valid is not True or measurement.budget is not observer.budget
+                or fields.get("budget") is not observer.budget
+                or loading.get("budget") is not observer.budget
+                or type(fields.get("owner_thread")) is not int or fields["owner_thread"] != self.thread
+                or type(measurement.states) is not dict
+                or any(type(measurement.states.get(name)) is not int or measurement.states[name] != 1
+                       for name in ("check_attempts", "session_attempts", "session_constructed"))
+                or type(measurement.states.get("check_returned")) is not int
+                or measurement.states["check_returned"] != 0
+            ):
+                raise _LocationUnavailable("source-binding-invalid")
+            self.bound = (
+                weakref.ref(measurement.session), weakref.ref(loader), weakref.ref(entries),
+                weakref.ref(limits), budget.get("started"),
+            )
+            self.live()
+        except BaseException as error:
+            self.fault(error)
+
+    def metadata(self, loader, fullname, *, initializing):
+        measurement = self.live(projection=not initializing)
+        if (
+            type(fullname) is not str
+            or re.fullmatch(r"scripts\.validation_ownership(?:\.[A-Za-z_][A-Za-z0-9_]*)+", fullname) is None
+            or type(sys.modules) is not dict
+        ):
+            raise _LocationUnavailable("source-module-unowned")
+        _location_fields(sys.modules)
+        loading = _instance_fields(loader, SourceFileLoader)
+        if set(loading) != {"name", "path"} or any(type(loading[name]) is not str for name in loading):
+            raise _LocationUnavailable("source-module-unowned")
+        module = dict.get(sys.modules, fullname)
+        if type(module) is not types.ModuleType:
+            raise _LocationUnavailable("source-module-unowned")
+        namespace = _location_fields(types.ModuleType.__getattribute__(module, "__dict__"))
+        filename = loading["path"]
+        registry = _SourceLocations()
+        try:
+            registry.bind_source(self.observer, measurement)
+            if registry.entries is not self.bound[2]():
+                raise _LocationUnavailable("source-binding-invalid")
+            relative = registry.file(filename)
+            entry = dict.get(registry.entries, relative)
+            item = _instance_fields(entry, registry.entry_type)
+            object_id = item["object_id"]
+        finally:
+            registry.close()
+        expected = fullname.replace(".", "/")
+        if relative not in {expected + ".py", expected + "/__init__.py"} or loading["name"] != fullname:
+            raise _LocationUnavailable("source-module-unowned")
+        package = relative.endswith("/__init__.py")
+        spec = namespace.get("__spec__")
+        declared = _instance_fields(spec, ModuleSpec)
+        search = declared.get("submodule_search_locations")
+        if (
+            namespace.get("__loader__") is not loader
+            or any(type(namespace.get(name)) is not str or namespace[name] != value for name, value in (
+                ("__name__", fullname), ("__file__", filename),
+                ("__package__", fullname if package else fullname.rsplit(".", 1)[0]),
+            ))
+            or any(type(declared.get(name)) is not str or declared[name] != value for name, value in (
+                ("name", fullname), ("origin", filename),
+            ))
+            or declared.get("loader") is not loader or declared.get("_initializing") is not initializing
+            or declared.get("loader_state") is not None or declared.get("_set_fileattr") is not True
+            or ((type(search) is not list or len(search) != 1 or type(search[0]) is not str
+                 or search[0] != filename.rsplit("/", 1)[0]) if package else search is not None)
+        ):
+            raise _LocationUnavailable("source-module-unowned")
+        return module, spec, entry, relative, object_id
+
+    def same(self, token):
+        actual = self.metadata(token["loader"], token["name"], initializing=True)
+        if any(actual[index] is not token["binding"][index] for index in range(3)) or (
+            actual[3:] != token["binding"][3:]
+        ):
+            raise _LocationUnavailable("source-binding-invalid")
+
+    def install(self):
+        owner = self
+
+        def get_code(self, fullname):
+            try:
+                return owner.get_code(self, fullname)
+            finally:
+                self = fullname = None
+
+        def source_to_code(self, data, path, *, _optimize=-1):
+            try:
+                return owner.source_to_code(self, data, path, _optimize=_optimize)
+            finally:
+                self = data = path = None
+
+        self.get_hook, self.compile_hook = get_code, source_to_code
+        try:
+            namespace = _location_fields(type.__dict__["__dict__"].__get__(SourceFileLoader, type))
+            self.old_slots = {name: (name in namespace, namespace.get(name)) for name in self.restored}
+            self.unchanged(installed=False)
+            SourceFileLoader.source_to_code = source_to_code
+            SourceFileLoader.get_code = get_code
+            self.unchanged(installed=True)
+        except BaseException as error:
+            self.fault(error)
+
+    def get_code(self, loader, fullname):
+        token = caller = result = binding = None
+        try:
+            if not self.stopped and not self.failed and type(fullname) is str and fullname.startswith(
+                SOURCE_PACKAGE + "."
+            ):
+                try:
+                    caller = _FRAME(2)
+                    natural = (
+                        caller.f_code is _IMPORT_FUNCTIONS[_EXEC_MODULE][0]
+                        and caller.f_globals is _EXEC_MODULE.__globals__ and caller.f_back is not None
+                        and caller.f_back.f_code is _IMPORT_FUNCTIONS[_LOAD_UNLOCKED][0]
+                        and caller.f_back.f_globals is _LOAD_UNLOCKED.__globals__
+                    )
+                    caller = None
+                    if natural:
+                        if self.active is not None:
+                            raise _LocationUnavailable("original-import-unavailable")
+                        binding = self.metadata(loader, fullname, initializing=True)
+                        token = {"loader": loader, "name": fullname, "binding": binding,
+                                 "compiled": None, "compile_seen": False, "caller": id(_FRAME())}
+                        binding = None
+                        self.active = token
+                except BaseException as error:
+                    self.fault(error)
+            result = _GET_CODE(loader, fullname)
+            if token is not None and not self.failed:
+                try:
+                    self.same(token)
+                    # Cache-only returns never passed the source compiler.
+                    if token["compiled"] is not None:
+                        if result is not token["compiled"]:
+                            raise _LocationUnavailable("source-code-unbound")
+                        self.record(token, result)
+                except BaseException as error:
+                    self.fault(error)
+            return result
+        finally:
+            caller = loader = fullname = result = binding = None
+            if token is not None:
+                self.active = None
+                token.clear()
+
+    def source_to_code(self, loader, data, path, *, _optimize=-1):
+        token = self.active
+        caller = result = None
+        valid = False
+        try:
+            if token is not None and not self.failed:
+                try:
+                    caller = _FRAME(2)
+                    original_call = (
+                        caller.f_code is _IMPORT_FUNCTIONS[_GET_CODE][0] and caller.f_globals is _GET_CODE.__globals__
+                        and caller.f_back is not None and id(caller.f_back) == token["caller"]
+                    )
+                    caller = None
+                    if not original_call:
+                        token = None
+                except BaseException as error:
+                    self.fault(error)
+            if token is not None and not self.failed:
+                try:
+                    self.same(token)
+                    if (
+                        loader is not token["loader"] or token["compile_seen"]
+                        or type(path) is not str or path != "/repo/" + token["binding"][3]
+                        or type(data) is not bytes or len(data) > policy.ORIGINAL_LIMITS["file_bytes"]
+                        or type(_optimize) is not int or _optimize != -1
+                    ):
+                        raise _LocationUnavailable("original-import-unavailable")
+                    token["compile_seen"] = True
+                    self.source_bytes += len(data)
+                    if self.source_bytes > policy.ORIGINAL_LIMITS["file_bytes"]:
+                        raise _LocationUnavailable("registration-bound")
+                    digest = _BLOB_HASH()
+                    digest.update(b"blob " + str(len(data)).encode("ascii") + b"\0")
+                    digest.update(data)
+                    if digest.hexdigest() != token["binding"][4]:
+                        raise _LocationUnavailable("source-binding-invalid")
+                    digest = None
+                    valid = True
+                except BaseException as error:
+                    self.fault(error)
+            result = _SOURCE_TO_CODE(loader, data, path, _optimize=_optimize)
+            if valid and not self.failed:
+                try:
+                    self.same(token)
+                    _location_code(result)
+                    token["compiled"] = result
+                except BaseException as error:
+                    self.fault(error)
+            return result
+        finally:
+            caller = loader = data = path = result = token = None
+
+    def record(self, token, code):
+        if self.active is not token or token["compiled"] is not code:
+            raise _LocationUnavailable("source-code-unbound")
+        self.same(token)
+        observer = self.observer
+        if getattr(observer, "location_reason", "binding-not-ready") is not None:
+            raise _LocationUnavailable("binding-not-ready")
+        module, spec, entry, relative, object_id = token["binding"]
+        namespace = types.ModuleType.__getattribute__(module, "__dict__")
+        registry = _SourceLocations()
+        registry.work = observer.location_work
+        registry.clock, registry.deadline = self.clock, self.deadline
+        staged = {}
+        try:
+            registry.register_code(code, namespace, "/repo/" + relative, relative)
+            binding = (weakref.ref(token["loader"]), weakref.ref(spec), weakref.ref(entry),
+                       token["name"], object_id)
+            staged = {
+                identity: (weakref.ref(item[0]), weakref.ref(module), relative, binding)
+                for identity, item in registry.codes.items()
+            }
+            if len(observer.location_codes) + len(staged) > policy.ORIGINAL_LIMITS["entries"]:
+                raise _LocationUnavailable("registration-bound")
+            observer.location_codes.update(staged)
+            observer.location_work = registry.work
+        finally:
+            staged.clear()
+            registry.close()
+
+    def require_registered(self, registered, code, namespace, relative):
+        loader, spec, entry, fullname, object_id = registered[3]
+        actual = self.metadata(loader(), fullname, initializing=False)
+        if (
+            registered[0]() is not code or registered[1]() is not actual[0]
+            or types.ModuleType.__getattribute__(actual[0], "__dict__") is not namespace
+            or actual[1] is not spec() or actual[2] is not entry()
+            or actual[3:] != (relative, object_id)
+        ):
+            raise _LocationUnavailable("source-code-unbound")
+
+    def restore_slot(self, name):
+        present, original = self.old_slots[name]
+        if present:
+            setattr(SourceFileLoader, name, original)
+        else:
+            namespace = _location_fields(type.__dict__["__dict__"].__get__(SourceFileLoader, type))
+            if name in namespace:
+                delattr(SourceFileLoader, name)
+
+    def restore(self):
+        if self.stopped:
+            return
+        try:
+            self.unchanged(installed=True)
+        except BaseException as error:
+            self.fault(error)
+        self.stopped = True
+        for name in self.restored:
+            try:
+                self.restore_slot(name)
+            except BaseException as error:
+                self.fault(error, "import-" + name.replace("_", "-") + "-restore")
+            try:
+                present, original = self.old_slots[name]
+                namespace = _location_fields(type.__dict__["__dict__"].__get__(SourceFileLoader, type))
+                self.restored[name] = (name in namespace) is present and (
+                    not present or namespace[name] is original
+                ) and _import_slot(name) is _IMPORT_METHODS[name]
+                if self.restored[name] is not True:
+                    raise _LocationUnavailable("import-restoration-unavailable")
+            except BaseException as error:
+                self.restored[name] = None
+                self.fault(error, "import-" + name.replace("_", "-") + "-restore")
+        if self.active is not None:
+            self.active.clear()
+        self.active = self.get_hook = self.compile_hook = None
+        self.old_slots.clear()
+
+    def close(self):
+        if self.release_attempted:
+            if self.released is not True:
+                raise _LocationUnavailable("import-restoration-unavailable")
+            return
+        self.release_attempted = True
+        first = None
+        for action in (
+            lambda: getattr(self.observer, "location_codes", {}).clear(),
+            lambda: self.old_slots.clear(),
+            lambda: None if self.active is None else self.active.clear(),
+        ):
+            try:
+                action()
+            except BaseException as error:
+                if first is None:
+                    first = error
+        for name in ("active", "bound", "observer", "measurement", "get_hook", "compile_hook", "clock"):
+            try:
+                setattr(self, name, None)
+                if getattr(self, name) is not None:
+                    raise _LocationUnavailable("import-restoration-unavailable")
+            except BaseException as error:
+                if first is None:
+                    first = error
+        if first is not None:
+            raise first
+        self.released = True
 
 
 def unavailable(reason):
@@ -637,6 +1118,7 @@ class Observer:
             self.location_reason = "locator-failed"
             secondary.append({"stage": "location-publication", "error": policy.component_secondary_error(error)})
         finally:
+            self.location_work = locations.work
             try:
                 locations.close()
                 self.location_references_closed = True
@@ -646,20 +1128,60 @@ class Observer:
                 secondary.append({"stage": "location-publication", "error": policy.component_secondary_error(error)})
         return secondary
 
+    def start_imports(self, measurement):
+        if hasattr(self, "imports"):
+            raise policy.GuardError("original source import observation is single-use")
+        self.imports = _OriginalImports(self, measurement)
+        self.imports.install()
+
+    def bind_imports(self, measurement):
+        self.imports.bind(measurement)
+
+    def restore_imports(self):
+        self.imports.restore()
+
+    def import_cleanup(self):
+        imports = getattr(self, "imports", None)
+        return {
+            "source_imports_restored": None if imports is None else all(
+                value is True for value in imports.restored.values()
+            ),
+            "source_imports_released": None if imports is None else imports.released,
+        }
+
+    def close_imports(self, measurement):
+        try:
+            imports = getattr(self, "imports", None)
+            if imports is not None:
+                imports.close()
+        finally:
+            if measurement is not None and measurement.cleanup is not None:
+                measurement.cleanup.update(self.import_cleanup())
+
     def source_locations(self, error, measurement):
         locations = _SourceLocations()
         locations.registered = getattr(self, "location_codes", {})
+        locations.imports = imports = getattr(self, "imports", None)
         try:
             try:
                 reason = getattr(self, "location_reason", "binding-not-ready")
                 if reason is not None:
                     raise _LocationUnavailable(reason)
+                if imports is not None:
+                    if not all(value is True for value in imports.restored.values()):
+                        raise _LocationUnavailable("import-restoration-unavailable")
+                    if imports.failed:
+                        raise _LocationUnavailable("original-import-unavailable")
                 locations.bind(self, measurement)
                 value = locations.project(error)
             except _LocationUnavailable as unavailable_error:
                 value = location_unavailable(unavailable_error.reason)
         finally:
-            locations.close()
+            try:
+                locations.close()
+            finally:
+                if imports is not None:
+                    self.close_imports(measurement)
         value["references_closed"] = getattr(self, "location_references_closed", None)
         return validate_locations(value, {"source_revision": policy.GRAPH, "api": policy.REPORT_API})
 

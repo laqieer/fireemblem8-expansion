@@ -1,0 +1,103 @@
+name: Issue 180 contained original source-import localization 1
+
+on:
+  push:
+    branches: [calibration/issue-180-original-import-localization-1]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue180-original-import-localization-1
+  cancel-in-progress: false
+
+jobs:
+  contained-original-import-localization-1:
+    name: Contained CURRENT BASE lifecycle report with original source-import observation
+    if: >-
+      github.repository == 'laqieer/fireemblem8-expansion' &&
+      github.event.repository.private == false &&
+      github.actor == 'laqieer' &&
+      github.triggering_actor == 'laqieer' &&
+      github.event.sender.login == 'laqieer' &&
+      github.event.created == true &&
+      github.event.deleted == false &&
+      github.run_number == 1 &&
+      github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      BASH_ENV: ''
+      ENV: ''
+      PYTHONDONTWRITEBYTECODE: '1'
+
+    steps:
+    - name: Checkout this exact diagnostic harness
+      timeout-minutes: 5
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ github.sha }}
+        path: harness
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Record the closed first-attempt scope
+      env:
+        EXPECTED_HARNESS_SHA: ${{ github.sha }}
+      run: |
+        /usr/bin/python3 -I -S -B harness/scripts/ci_calibration/supervisor.py plan \
+          --harness "$GITHUB_WORKSPACE/harness" \
+          --candidate "$GITHUB_WORKSPACE/candidate" \
+          --output "$RUNNER_TEMP/issue180-original-import-localization-1-$GITHUB_RUN_ID" \
+          --event "$GITHUB_EVENT_PATH" --sha "$EXPECTED_HARNESS_SHA" \
+          --event-name "$GITHUB_EVENT_NAME" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
+          --run-number "$GITHUB_RUN_NUMBER" \
+          --runner-environment "$RUNNER_ENVIRONMENT" --runner-os "$RUNNER_OS"
+
+    - name: Checkout the immutable selected public report source separately
+      timeout-minutes: 10
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: 6d2725d89df70c30954daade3cca7abc6d3171d4
+        path: candidate
+        fetch-depth: 0
+        submodules: recursive
+        persist-credentials: false
+
+    - name: Install only the diagnostic host and modern-query prerequisites
+      timeout-minutes: 15
+      run: |
+        sudo -n apt-get update
+        sudo -n apt-get install -y --no-install-recommends \
+          build-essential binutils-arm-none-eabi gcc-arm-none-eabi \
+          libnewlib-arm-none-eabi libpng-dev pkg-config \
+          apparmor-utils e2fsprogs util-linux
+
+    - name: Qualify containment and invoke the complete report at most once
+      timeout-minutes: 70
+      env:
+        EXPECTED_HARNESS_SHA: ${{ github.sha }}
+      run: |
+        sudo -n env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+          /usr/bin/python3 -I -S -B "$GITHUB_WORKSPACE/harness/scripts/ci_calibration/supervisor.py" run \
+          --harness "$GITHUB_WORKSPACE/harness" \
+          --candidate "$GITHUB_WORKSPACE/candidate" \
+          --output "$RUNNER_TEMP/issue180-original-import-localization-1-$GITHUB_RUN_ID" \
+          --event "$GITHUB_EVENT_PATH" --sha "$EXPECTED_HARNESS_SHA" \
+          --event-name "$GITHUB_EVENT_NAME" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
+          --run-number "$GITHUB_RUN_NUMBER" \
+          --runner-environment "$RUNNER_ENVIRONMENT" --runner-os "$RUNNER_OS"
+
+    - name: Upload bounded diagnostic records only
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+      with:
+        name: issue180-original-import-localization-1-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+        retention-days: 7
+        if-no-files-found: error
+        path: |
+          ${{ runner.temp }}/issue180-original-import-localization-1-${{ github.run_id }}/scope.json
+          ${{ runner.temp }}/issue180-original-import-localization-1-${{ github.run_id }}/preflight.json
+          ${{ runner.temp }}/issue180-original-import-localization-1-${{ github.run_id }}/metrics.jsonl
+          ${{ runner.temp }}/issue180-original-import-localization-1-${{ github.run_id }}/progress.jsonl
+          ${{ runner.temp }}/issue180-original-import-localization-1-${{ github.run_id }}/result.json

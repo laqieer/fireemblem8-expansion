@@ -83,6 +83,7 @@ class Inert(unittest.TestCase):
         ):
             self.stack.enter_context(mock.patch.object(signal, name, return_value=value))
         self.stack.enter_context(mock.patch.object(time, "monotonic", return_value=100.0))
+        self.stack.enter_context(mock.patch.object(observation_failure, "_CLOCK", time.monotonic))
 
     def budget(self):
         return worker.calibration_budget(budgeting.Limits, budgeting.ProbeBudget, 3700.0)[0]
@@ -92,7 +93,7 @@ class Inert(unittest.TestCase):
             budget=budget, processes_used=16, syscalls_used=1000, observations_used=100,
             files_created=2, pending_commands_peak=1, live_process_peak=4, memory_peak=16 * policy.MIB,
             pending_commands=0, parked_capsules=[], make_depth=0, _file_owners={},
-            base=None if closed else Path("/owned/base"), _views=[],
+            base=None if closed else Path("/owned/base"), _views=[], owner_thread=threading.get_ident(),
         )
 
     def changes(self):
@@ -181,7 +182,8 @@ class Inert(unittest.TestCase):
             "summary": policy.summarize_report(raw, self.changes(), counters, self.binding()),
             "serialized_bytes": len(policy.encoded(raw)), "counters": counters,
             "cleanup": {**root_stage.cleanup_state(session, budget), "constructor_restored": True,
-                        "report_released": True, "serialization_released": True},
+                        "report_released": True, "serialization_released": True,
+                        "source_imports_restored": True, "source_imports_released": True},
         }
 
     def report_phase(self):
@@ -535,7 +537,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.PARTIAL_ANCHOR_SHA}",
+            f"{'a' * 40} {supervisor.TRACELESS_ANCHOR_SHA}",
+            f"{supervisor.TRACELESS_ANCHOR_SHA} {supervisor.PARTIAL_ANCHOR_SHA}",
             f"{supervisor.PARTIAL_ANCHOR_SHA} {supervisor.PYTHON_REPORT_SHA}",
             f"{supervisor.PYTHON_REPORT_SHA} {supervisor.CORRECTED_REPORT_SHA}",
             f"{supervisor.CORRECTED_REPORT_SHA} {supervisor.REPORT_CODE_METADATA_SHA}",
@@ -866,7 +869,7 @@ class CalibrationControls(Inert):
 
     def test_traceless_inventory_and_event_cannot_reopen_spent_partial_anchors(self):
         data = b"".join(
-            (b"A" if name == policy.WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
+            (b"A" if name == policy.TRACELESS_ANCHOR_WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
             for name in sorted(supervisor.TRACELESS_ANCHOR_PATHS)
         )
         supervisor.validate_traceless_anchor_inventory(data)
@@ -884,6 +887,45 @@ class CalibrationControls(Inert):
         with self.assertRaises(policy.GuardError):
             policy.validate_event({**self.event(), "ref": "refs/heads/calibration/issue-180-report-localization-2"},
                                   **self.authorization())
+
+    def test_original_import_inventory_cannot_reopen_spent_workflows_or_change_source(self):
+        data = b"".join(
+            (b"A" if name == policy.WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
+            for name in sorted(supervisor.ORIGINAL_IMPORT_PATHS)
+        )
+        supervisor.validate_original_import_inventory(data)
+        for changed in (
+            b"", data[:-1], data + data, data.replace(b"A\0", b"M\0"),
+            data.replace(b"M\0", b"A\0", 1), data.split(b"\0", 2)[2],
+            data + b"M\0" + policy.TRACELESS_ANCHOR_WORKFLOW.encode() + b"\0",
+            data + b"M\0" + policy.PARTIAL_ANCHOR_WORKFLOW.encode() + b"\0",
+            data + b"M\0scripts/ci_calibration/kernel.py\0",
+            data + b"M\0scripts/ci_calibration/entry.py\0",
+            data + b"M\0scripts/validation_ownership/graph_report.py\0",
+        ):
+            with self.subTest(changed=changed[:64]), self.assertRaises(policy.GuardError):
+                supervisor.validate_original_import_inventory(changed)
+        with self.assertRaises(policy.GuardError):
+            policy.validate_event({**self.event(), "ref": "refs/heads/calibration/issue-180-report-localization-3"},
+                                  **self.authorization())
+
+    def test_missing_import_restoration_or_release_cannot_qualify_result_or_cleanup(self):
+        for field in ("source_imports_restored", "source_imports_released"):
+            for value in (None, False, 0, 1, "true"):
+                with self.subTest(field=field, value=value):
+                    phase = self.report_phase()
+                    phase["worker"]["report"]["cleanup"][field] = value
+                    with self.assertRaises(policy.GuardError):
+                        supervisor.validate_report_phase(phase, self.binding())
+                    if value is None or type(value) is bool:
+                        self.assertTrue(supervisor.report_retention(phase))
+                    else:
+                        with self.assertRaises(policy.GuardError):
+                            supervisor.report_retention(phase)
+        phase = self.report_phase()
+        del phase["worker"]["report"]["cleanup"]["source_imports_restored"]
+        with self.assertRaises(policy.GuardError):
+            supervisor.validate_report_phase(phase, self.binding())
 
     def test_complete_diff_binding_preserves_additions_deletions_and_both_rename_sides(self):
         changes = self.changes()

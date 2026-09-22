@@ -1,4 +1,118 @@
-# Contained traceless-chain source-anchor preparation
+# Contained original source-import observer preparation
+
+**Code-only preparation; never merge this diagnostic branch. No native
+execution, push, workflow launch, retry or resource-policy decision is
+allocated by this change.**
+
+Frozen scope:
+[5774853564](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5774853564).
+This is one normal child of `3d1e5ac5416be38906148a87ee20bf44dbb63dbd`, on
+`calibration/issue-180-original-import-localization-1`, with exactly one new
+fixed first-owner/run-1/attempt-1 workflow. Source remains
+`6d2725d89df70c30954daade3cca7abc6d3171d4`; BASE remains
+`ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`. All spent workflows and
+allocations, including run35700854588, remain closed. Its underlying native
+cause is still unknown.
+
+The confirmed diagnostic gap is lazy source compilation after the existing
+pre-check registry scan. The observer now scopes **both** original stdlib
+`SourceFileLoader.get_code` and `source_to_code` to the original public report
+call. `ReportMeasurement.construct` binds its already-returned original
+session, loader, entries and budget; no extra capture or session is created.
+The original finder, `exec_module`, import order, report methods and serializer
+are unchanged. No candidate file is reread or recompiled for observation.
+
+A natural original import on the original worker thread must have the exact
+ordinary loader/module/spec, `/repo` path, immutable selected Git entry and
+original session/budget/deadline. The actual builtin bytes reaching the original
+source compiler are transiently checked against that Git blob. Module and
+nested code are registered before body execution only when original `get_code`
+returns the **identical** object returned by original `source_to_code`.
+Timestamp and hash caches, even substituted valid caches, gain no authority
+without that compilation. Broken caches may fall back naturally; nothing
+forces compilation. Direct and foreign calls delegate once without authority.
+The private token identifies the live original `get_code` invocation, not
+merely that function's code: a nested foreign import cannot attest or poison
+the selected invocation's compiler return.
+
+Metadata access uses exact builtin shapes without candidate callbacks.
+Original method/code/compiler identities and source bindings are checked before
+and after the original boundaries and again at projection. Weak code, module,
+loader, spec and entry identities prevent late replacements from borrowing a
+location. This does not broaden the pre-check registry's class/metaclass
+admission or register arbitrary post-failure code. Existing entry/file/error
+bounds and the original clock bound observer work; no content ledger, retained
+source bytes, traceback, arguments, messages, locals, SDK, environment or keys
+are exported.
+
+Observation faults do not replace original return objects, read/compile/body
+errors or cancellation. They become unavailable evidence and bounded secondary
+failures, and fail the diagnostic after original work. Both exact class-owned
+versus inherited method slots restore independently, even after a first
+restoration fault. Actual restoration and reference release are required
+cleanup facts; missing/uncertain facts cannot complete the report or qualify
+cleanup. Tokens and strong references retire, and bounded weak maps close after
+projection. First-source, publication fallback, AT/FR, outcome and conservative
+retention rules remain.
+
+Preparation controls use actual stdlib import compositions with inspected pure
+synthetic bodies and external effects trapped, plus the actual observer,
+report adapter, bounded wire, Protocol and finalizer. Positive source/nested
+registration, timestamp/hash-cache refusal, natural fallback, direct/foreign
+calls, identity/metadata/boundary mutations, body/read/compile/cancel and
+before/after restoration faults have preimage and neutral controls. The
+accepted 171 methods/1034 subtests and source-shaped explanatory-note cases
+remain part of the focused preparation evidence.
+
+### TC-ISSUE180-ORIGINAL-IMPORT-001: source-compiled lazy locations
+
+This issue-#180 regression uses the fixed diagnostic profile above, Python
+3.12 stdlib imports and the inspected preparation runner. It is not ordinary
+test discovery: candidate modules, native effects, external I/O, signals and
+processes must remain trapped. Start with restored stdlib loader slots and
+fresh synthetic modules; remove those modules and verify both slot ownership
+states after each case.
+
+1. Naturally load the inspected pure source fixture, then raise its nested
+   error through the synthetic original public check. Expect the identical
+   original compiler/get-code return, registration before body execution,
+   one original compilation and the actual nested location on the failed
+   observer/Protocol record.
+2. Supply matching timestamp and checked-hash headers with substituted pure
+   code. Expect that original cached body to run, zero compilation, no code
+   authority and unavailable locations. Corrupt the cache instead and expect
+   natural source fallback, not a forced or duplicate compilation.
+3. Exercise identity, callback, capacity, read/compile/body/cancellation and
+   before/after restoration/release controls. Expect the original source
+   result/error, all independent restoration attempts and no completion or
+   cleanup credit from missing evidence. Publication recovery must retain each
+   known close failure exactly once.
+4. Compare the exact parent observer on the same trace, then neutral source
+   renaming and metadata order. The parent loses the lazy raising location;
+   neutral changes retain real positions. A source-shaped three-error chain
+   keeps its explanatory note unknown while the newly attested lazy raise
+   becomes a raising anchor, never a borrowed caller location.
+
+`OriginalImportControls`, the coupled `RootStageControls` and parsed policy/
+lineage controls automate these assertions. There is no subjective manual
+criterion. Native utility is an explicit separate hold, not inferred from
+synthetic success; cache-only, foreign and unbound lifetimes remain unsupported
+as code authority. No save/profile/content interaction is introduced.
+
+Full CURRENT/BASE/source/lifecycle/serializer workload, one budget/session/
+deadline, 14 cumulative queries, 19 counters, all hard unit/physical guards,
+seven fresh qualifiers and five bounded artifacts remain mandatory. No
+production, protected containment, helper or prior-workflow change is admitted.
+No ROM, save, localization or generated-data behavior changes. The sole
+dependency is this accepted harness lineage and selected immutable source;
+there is no new runtime capability or project feature interaction.
+
+Independent exact-head review and Main's separately frozen one-shot allocation
+must precede any hosted diagnostic. Native usefulness, the actual inner cause,
+complete report/verifier/native/H1/shipping/CI/merge/master/issue-closure and
+remote-completion gates remain open.
+
+## Historical traceless-chain source-anchor preparation (closed allocation)
 
 **Preparation only; never merge this branch. No native execution, workflow
 launch, retry or production resource-policy decision is allocated here.**

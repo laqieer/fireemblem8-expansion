@@ -1021,6 +1021,75 @@ class RootStageControls(Inert):
         self.assertEqual(value.result["report"]["states"]["check_attempts"], 1)
         self.assertEqual(value.result["counters"]["counters"], value.result["report"]["counters"])
 
+    def test_original_import_hooks_are_owned_by_the_real_report_lifetime(self):
+        from importlib.machinery import SourceFileLoader
+
+        slots = {name: (name in SourceFileLoader.__dict__, SourceFileLoader.__dict__.get(name))
+                 for name in ("get_code", "source_to_code")}
+        for fault in (None, "source", "constructor-before", "serialization", "restore-before"):
+            with self.subTest(fault=fault):
+                value = self.composition(*(() if fault is None else (fault,)), use_worker=True)
+                measurement, = value.measurements
+                imports = measurement.observer.imports
+                self.assertTrue(imports.stopped)
+                self.assertTrue(imports.released)
+                self.assertEqual(imports.restored, {"get_code": True, "source_to_code": True})
+                self.assertIsNone(imports.active)
+                self.assertIsNone(imports.bound)
+                self.assertIsNone(imports.observer)
+                self.assertIsNone(imports.measurement)
+                self.assertEqual(slots, {
+                    name: (name in SourceFileLoader.__dict__, SourceFileLoader.__dict__.get(name))
+                    for name in slots
+                })
+                if fault:
+                    record, = [data for kind, data in value.frames if kind == "error"]
+                    self.assertTrue(record["cleanup"]["source_imports_restored"])
+                    self.assertTrue(record["cleanup"]["source_imports_released"])
+                else:
+                    self.assertTrue(value.result["report"]["cleanup"]["source_imports_restored"])
+                    self.assertTrue(value.result["report"]["cleanup"]["source_imports_released"])
+
+    def test_import_release_fault_is_retained_once_across_full_record_loss_and_publication_recovery(self):
+        original = observation_failure._OriginalImports.close
+        for when in ("before", "after"):
+            for publication in (None, "publication", "publication-after", "record-collection"):
+                with self.subTest(when=when, publication=publication):
+                    error = OSError(errno.EIO, "private import reference")
+                    def close(imports):
+                        if when == "before":
+                            raise error
+                        original(imports)
+                        raise error
+                    faults = ("source",) + (() if publication is None else (publication,))
+                    with mock.patch.object(observation_failure._OriginalImports, "close", close):
+                        value = self.composition(*faults, use_worker=True, executable=WORKER_MAIN)
+                    self.assertEqual(value.exit_code, 1)
+                    self.assertIsNone(value.failure)
+                    parser, rows = self.consume_executable(value)
+                    self.assertTrue(parser.failed)
+                    self.assertFalse(parser.finished)
+                    record = [row["data"] for row in rows if row["kind"] == "error"][-1]
+                    self.assertEqual(record["error"]["chain"][0]["type"], "SourceError")
+                    stages = [row["stage"] for row in record["secondary"]]
+                    self.assertEqual(stages.count("import-reference"), 1)
+                    if publication == "record-collection":
+                        self.assertIsNone(record["cleanup"])
+                    else:
+                        self.assertIs(record["cleanup"]["source_imports_released"], True if when == "after" else None)
+                    phase = {
+                        "mode": "report", "first_cause": {"type": "worker-error", "error": record},
+                        "empty_before_outer_cleanup": True, "empty": True,
+                        "watchdog_reaped": True, "lifetime_writer_closed": True,
+                    }
+                    self.assertTrue(supervisor.report_retention(phase))
+                    self.assertEqual(value.events[-2:], ["sampler-close", "budget-close"])
+                    self.assertNotIn(b"private", value.wire)
+                    if when == "before":
+                        # Fixture containment after an explicitly unconfirmed
+                        # release; never used as diagnostic cleanup credit.
+                        original(value.measurements[0].observer.imports)
+
     def test_constructor_failures_with_collectors_teardown_and_reference_faults_keep_uncertainty(self):
         for constructor, collector, reference, teardown in itertools.product(
             ("constructor-before", "constructor-after"),

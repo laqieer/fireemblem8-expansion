@@ -4,6 +4,9 @@ import errno
 import builtins
 import copy
 import dataclasses
+import hashlib
+import importlib._bootstrap as import_bootstrap
+import importlib._bootstrap_external as import_external
 import io
 from contextlib import AbstractContextManager, ExitStack, contextmanager
 from functools import wraps
@@ -13,6 +16,7 @@ import sys
 import threading
 from types import CodeType, ModuleType, SimpleNamespace
 import unittest
+import weakref
 from unittest import mock
 
 from scripts.ci_calibration import kernel, observation_failure, policy, root_stage, supervisor, worker
@@ -25,6 +29,8 @@ PREIMAGE_REGISTRATION_MODULE = None
 PREIMAGE_CODE_METHODS = None
 PREIMAGE_ANCHOR_PROJECT = None
 PREIMAGE_TRACELESS_PROJECT = None
+PREIMAGE_LOCATION_OBSERVER = None
+IMPORT_COMPILE_AUDIT = None
 
 
 class FrameFixture:
@@ -90,7 +96,8 @@ class ObservationFailureControls(Inert):
             states={**dict.fromkeys(policy.REPORT_STATES, 0), "check_attempts": 1,
                     "session_attempts": 1, "session_constructed": 1, "completed": False},
             cleanup={**root_stage.cleanup_state(session, value.budget), "constructor_restored": True,
-                     "report_released": True, "serialization_released": True},
+                     "report_released": True, "serialization_released": True,
+                     "source_imports_restored": True, "source_imports_released": True},
             summary=None, serialized_bytes=None, secondary=[],
         )
         sampler = SimpleNamespace(snapshot=lambda: {"counters": policy.counter_snapshot(value.budget, session), "accounting": None})
@@ -1889,6 +1896,9 @@ def source_boundary():
     def entrypoint_case(self, *faults):
         with self.fixture("wrapped-late", execute=False) as value:
             faults, events = set(faults), value.events
+            class Measurement(SimpleNamespace):
+                pass
+            value.measurement = Measurement(**vars(value.measurement))
             value.measurement.first = None
             value.measurement.first_stage = "check"
             value.measurement.raw_report = value.measurement.raw_serialization = None
@@ -1898,7 +1908,13 @@ def source_boundary():
             def run():
                 events.append("model-check")
                 value.budget.session_started = True
-                error = value.invoke()
+                observer = value.measurement.observer
+                observer.start_imports(value.measurement)
+                try:
+                    observer.bind_imports(value.measurement)
+                    error = value.invoke()
+                finally:
+                    observer.restore_imports()
                 value.measurement.first = error
                 original_close()
                 value.measurement.cleanup = {
@@ -1906,6 +1922,7 @@ def source_boundary():
                     "constructor_restored": value.graph.ProbeSession is value.probing.ProbeSession,
                     "report_released": value.measurement.raw_report is None,
                     "serialization_released": value.measurement.raw_serialization is None,
+                    **observer.import_cleanup(),
                 }
                 raise error
             value.measurement.run = run
@@ -1954,6 +1971,7 @@ def source_boundary():
                 if kind == "error" and len(error_emits) == 1 and "publication-after" in faults:
                     raise OSError(errno.EIO, "private publication")
             config = {"mode": "report", "scope": "12345/report", "deadline": 3700.0, "report_binding": self.binding()}
+            value.measurement.config = config
             with ExitStack() as stack:
                 stack.enter_context(mock.patch.object(worker, "require_contained", return_value={}))
                 stack.enter_context(mock.patch.object(root_stage, "candidate_api", return_value=value.measurement.api))
@@ -2331,6 +2349,880 @@ class TracelessAnchorControls(Inert):
                 self.assertFalse(instance.registered)
                 for name in ("entries", "entry_type", "call", "call_globals"):
                     self.assertIsNone(getattr(instance, name))
+
+
+class OriginalImportControls(Inert):
+    BODY = (
+        b'MARKER = "original"\n'
+        b'def outer():\n'
+        b'    def nested():\n'
+        b'        raise RuntimeError("private original nested")\n'
+        b'    return nested()\n'
+    )
+    OTHER = BODY.replace(b'"original"', b'"replaced"').replace(b'original nested', b'replaced nested')
+
+    @staticmethod
+    def blob(data):
+        digest = hashlib.sha1()
+        digest.update(b"blob " + str(len(data)).encode("ascii") + b"\0")
+        digest.update(data)
+        return digest.hexdigest()
+
+    @contextmanager
+    def imported(self, kind="source", *, raise_leaf=True, body=None, mutate=None, restoring=None,
+                 owned=(), operation="natural"):
+        self.assertIsNotNone(IMPORT_COMPILE_AUDIT, "requires the effect-trapped import runner")
+        with LocationControls.fixture(self) as value, ExitStack() as patches:
+            fullname = observation_failure.SOURCE_PACKAGE + ".inert_original"
+            filename = "/repo/scripts/validation_ownership/inert_original.py"
+            if kind == "foreign":
+                fullname = "unselected.inert_original"
+            body = self.BODY if body is None else body
+            cache = None
+            if kind in {"timestamp", "timestamp-substitution", "hash-substitution"}:
+                cached_code = compile(self.BODY if kind == "timestamp" else self.OTHER,
+                                      filename, "exec", dont_inherit=True)
+                cache = bytes(import_external._code_to_timestamp_pyc(cached_code, 7, len(body)))
+                if kind == "hash-substitution":
+                    source_hash = import_external._imp.source_hash(import_external._RAW_MAGIC_NUMBER, body)
+                    cache = bytes(import_external._code_to_hash_pyc(cached_code, source_hash, checked=True))
+            elif kind == "broken-cache":
+                cache = b"invalid synthetic pyc"
+            elif kind == "cache-read":
+                cache = OSError("private cache read")
+            source_loader = SourceFileLoader(fullname, filename)
+            spec = import_external.spec_from_file_location(fullname, filename, loader=source_loader)
+            item = value.authority.GitTreeEntry()
+            item.path, item.mode, item.object_type = filename.removeprefix("/repo/"), "100644", "blob"
+            item.object_id, item.git_dir = self.blob(bytes(body)), None
+            value.entries[item.path] = item
+            source_error = None
+            if kind == "source-read":
+                source_error = OSError("private original source read")
+            elif kind == "cancel":
+                class Cancelled(BaseException):
+                    pass
+                source_error = Cancelled("private original cancellation")
+            value.__dict__.update(
+                source_loader=source_loader, spec=spec, item=item, source_error=source_error,
+                reads=[], registrations=[], tokens=[], callbacks=[], restore_attempts=[],
+                compile_returns=[], body=body, cache=cache, filename=filename, fullname=fullname,
+                before_read=None, before_record=None, result=None, original_failure=None,
+                foreign_sources={},
+            )
+            controls, runtime = self, ("/inert/original/runtime",)
+
+            def constructor(session, loader, *, scratch_root, budget, runtime_files):
+                session.__dict__.update(vars(controls.session(budget)))
+                session.loader, session.scratch_root = loader, scratch_root
+                session.runtime_paths, session.owner_thread = runtime_files, threading.get_ident()
+                value.constructed = session
+
+            def enter(session):
+                session.budget.session_started = True
+                session.budget.plan(1)
+                session.budget.charge("control", 8)
+                session.budget.runs = 1
+                return session
+
+            def leave(session, kind, error, trace):
+                value.original_failure = error
+                value.budget.close()
+
+            value.probing.ProbeSession.__init__ = constructor
+            value.probing.ProbeSession.__enter__ = enter
+            value.probing.ProbeSession.__exit__ = leave
+            value.graph.__dict__.update(
+                ProbeSession=value.probing.ProbeSession, LOADER=value.loader, RUNTIME=runtime,
+                SPEC=spec, LOAD=import_bootstrap._load_unlocked, BODY=body, ENTRY="outer",
+                OPERATION=operation, RAISE_LEAF=raise_leaf, BEFORE_IMPORT=None, AFTER_LOAD=None, WRAP=False,
+                REPORT=lambda: controls.raw_report(value.budget, value.constructed),
+            )
+            exec(compile("""
+def check(root, *, budget, revision, base_revision, changed_paths, lifecycle):
+    global loaded
+    with ProbeSession(LOADER, scratch_root=root / "build/test-artifacts/validation-ownership",
+                      budget=budget, runtime_files=RUNTIME):
+        try:
+            if BEFORE_IMPORT is not None:
+                BEFORE_IMPORT()
+            if OPERATION == "get-code":
+                loaded = SPEC.loader.get_code(SPEC.name)
+            elif OPERATION == "source-to-code":
+                loaded = SPEC.loader.source_to_code(BODY, SPEC.origin)
+            else:
+                loaded = LOAD(SPEC)
+                if AFTER_LOAD is not None:
+                    AFTER_LOAD(loaded)
+                if RAISE_LEAF:
+                    getattr(loaded, ENTRY)()
+        except RuntimeError as error:
+            if WRAP:
+                raise type(error)("private reporter wrapper") from error
+            raise
+        return REPORT()
+""", value.graph.__file__, "exec"), value.graph.__dict__)
+            api = value.measurement.api
+            api.check, api.runtime_files = value.graph.check, runtime
+            api.budget_type = budgeting.ProbeBudget
+            api.serializer = lambda report: policy.encoded(report) + b"\n"
+            config = {"mode": "report", "scope": "12345/report", "deadline": 3700.0,
+                      "report_binding": self.binding()}
+            sampler = SimpleNamespace(phase="candidate-import", session=None)
+            value.measurement = root_stage.ReportMeasurement(Path("/repo"), value.budget, config, sampler, self.changes())
+            value.measurement.api = api
+            value.observer = observation_failure.Observer(value.probing.ProbeSession, value.budget)
+            value.measurement.observer = value.observer
+            self.assertEqual(value.observer.register_locations(api), [])
+            original_slots = {
+                name: (name in SourceFileLoader.__dict__, SourceFileLoader.__dict__.get(name))
+                for name in ("get_code", "source_to_code")
+            }
+            for name in owned:
+                patches.enter_context(mock.patch.object(SourceFileLoader, name, getattr(SourceFileLoader, name)))
+            expected_slots = {
+                name: (name in SourceFileLoader.__dict__, SourceFileLoader.__dict__.get(name))
+                for name in original_slots
+            }
+
+            def get_data(loader, path):
+                if type(loader.name) is str and loader.name in value.foreign_sources:
+                    foreign_path, data = value.foreign_sources[loader.name]
+                    if path == foreign_path:
+                        return data
+                    raise FileNotFoundError("private absent foreign cache")
+                value.reads.append("source" if path == filename else "cache")
+                if value.before_read is not None:
+                    action, value.before_read = value.before_read, None
+                    action(value)
+                if path == filename:
+                    if value.source_error is not None:
+                        raise value.source_error
+                    return value.body
+                if value.cache is None:
+                    raise FileNotFoundError("private missing synthetic cache")
+                if isinstance(value.cache, BaseException):
+                    raise value.cache
+                return value.cache
+
+            def path_stats(loader, path):
+                return {"mtime": 7, "size": len(body)}
+
+            def no_write(*args, **kwargs):
+                self.fail("the original no-bytecode-write import attempted a write")
+
+            methods = dict(observation_failure._IMPORT_METHODS)
+            functions = dict(observation_failure._IMPORT_FUNCTIONS)
+            for name, function in (
+                ("get_data", get_data), ("path_stats", path_stats),
+                ("set_data", no_write), ("_cache_bytecode", no_write),
+            ):
+                patches.enter_context(mock.patch.object(SourceFileLoader, name, function))
+                methods[name] = function
+                functions[function] = function.__code__, function.__globals__
+            patches.enter_context(mock.patch.object(observation_failure, "_IMPORT_METHODS", methods))
+            patches.enter_context(mock.patch.object(observation_failure, "_IMPORT_FUNCTIONS", functions))
+            record = observation_failure._OriginalImports.record
+            restore = observation_failure._OriginalImports.restore_slot
+
+            def registered(imports, token, code):
+                value.tokens.append(token)
+                if value.before_record is not None:
+                    value.before_record(imports, token, code)
+                record(imports, token, code)
+                module = token["binding"][0]
+                pending, codes = [code], []
+                while pending:
+                    current = pending.pop()
+                    codes.append(current)
+                    pending.extend(child for child in current.co_consts if type(child) is CodeType)
+                self.assertIs(code, token["compiled"])
+                self.assertTrue(all(imports.observer.location_codes[id(item)][0]() is item for item in codes))
+                self.assertNotIn("MARKER", module.__dict__)
+                value.compile_returns.append(token["compiled"])
+                value.registrations.append((code, tuple(codes), module))
+
+            def restored(imports, name):
+                value.restore_attempts.append(name)
+                if restoring in {("before", name), ("both-before", name)} or restoring == ("both-before", "*"):
+                    raise OSError(errno.EIO, "private before restoration")
+                restore(imports, name)
+                if restoring == ("after", name):
+                    raise OSError(errno.EIO, "private after restoration")
+
+            patches.enter_context(mock.patch.object(observation_failure._OriginalImports, "record", registered))
+            patches.enter_context(mock.patch.object(observation_failure._OriginalImports, "restore_slot", restored))
+            patches.enter_context(mock.patch.object(root_stage, "candidate_api", return_value=api))
+            patches.enter_context(mock.patch.object(worker, "require_contained", return_value={}))
+            IMPORT_COMPILE_AUDIT.update(filename=filename, count=0)
+            value.before_read = mutate
+
+            def invoke():
+                try:
+                    value.result = value.measurement.run()
+                except BaseException as error:
+                    value.error = error
+                else:
+                    value.error = None
+                value.compiles = IMPORT_COMPILE_AUDIT["count"]
+                return value.error
+
+            value.invoke = invoke
+            try:
+                yield value
+            finally:
+                IMPORT_COMPILE_AUDIT.clear()
+                if hasattr(value.observer, "imports"):
+                    imports = value.observer.imports
+                    imports.restore()
+                    try:
+                        value.observer.close_imports(value.measurement)
+                    except observation_failure._LocationUnavailable:
+                        self.assertIsNot(imports.released, True)
+                    self.assertIsNone(imports.active)
+                    self.assertIsNone(imports.bound)
+                    self.assertIsNone(imports.observer)
+                    self.assertIsNone(imports.measurement)
+                    self.assertTrue(all(token == {} for token in value.tokens))
+                    if restoring is None:
+                        self.assertEqual(expected_slots, {
+                            name: (name in SourceFileLoader.__dict__, SourceFileLoader.__dict__.get(name))
+                            for name in expected_slots
+                        })
+                # Test containment only, never credited as observer restoration.
+                for name, (present, original) in expected_slots.items():
+                    if present:
+                        setattr(SourceFileLoader, name, original)
+                    elif name in SourceFileLoader.__dict__:
+                        delattr(SourceFileLoader, name)
+                sys.modules.pop(fullname, None)
+
+    def wire(self, value, *, observer=None):
+        sampler = SimpleNamespace(snapshot=lambda: {
+            "counters": policy.counter_snapshot(value.budget, value.measurement.session), "accounting": None,
+        })
+        record = worker.report_error_record(
+            value.error, value.measurement, sampler, value.observer if observer is None else observer,
+            self.binding(), [],
+        )
+        raw = io.BytesIO()
+        with mock.patch.object(kernel, "sys", SimpleNamespace(stdout=SimpleNamespace(buffer=raw))):
+            kernel.emit("12345/report", "error", record)
+        parser = supervisor.Protocol("12345/report", policy.OUTPUT_BYTES,
+                                     report_binding=self.binding(), deadline=3700.0)
+        row, = parser.feed(raw.getvalue())
+        self.assertTrue(parser.failed)
+        self.assertFalse(parser.finished)
+        self.assertNotIn(b"private", raw.getvalue())
+        self.assertNotIn(b'"message"', raw.getvalue())
+        self.assertNotIn(b'"frames"', raw.getvalue())
+        phase = {
+            "mode": "report", "empty_before_outer_cleanup": True, "empty": True,
+            "watchdog_reaped": True, "lifetime_writer_closed": True,
+            "first_cause": {"type": "worker-error", "error": row["data"]},
+        }
+        return row["data"], supervisor.report_retention(phase)
+
+    def test_genuine_source_and_nested_code_bind_before_body_and_reach_actual_wire(self):
+        for kind in ("source", "broken-cache", "cache-read"):
+            with self.subTest(kind=kind), self.imported(kind) as value:
+                value.invoke()
+                self.assertIs(value.error, value.original_failure)
+                self.assertEqual(value.compiles, 1)
+                self.assertEqual(value.reads, ["cache", "source"])
+                root, codes, module = value.registrations[0]
+                self.assertIs(root, value.compile_returns[0])
+                self.assertEqual(len(codes), 3)
+                self.assertEqual(module.MARKER, "original")
+                record, retained = self.wire(value)
+                location, = record["source_locations"]["locations"]
+                self.assertEqual(record["source_locations"]["status"], "observed")
+                self.assertEqual(location["code"], "nested")
+                self.assertFalse(record["source_locations"]["authority"])
+                self.assertFalse(retained)
+                self.assertEqual(value.restore_attempts, ["get_code", "source_to_code"])
+                self.assertTrue(record["cleanup"]["source_imports_restored"])
+                self.assertTrue(record["cleanup"]["source_imports_released"])
+
+    def test_valid_timestamp_and_checked_hash_substitution_never_attest_cached_code(self):
+        for kind in ("timestamp", "timestamp-substitution", "hash-substitution"):
+            with self.subTest(kind=kind), self.imported(kind) as value:
+                value.invoke()
+                self.assertIs(value.error, value.original_failure)
+                self.assertEqual(value.compiles, 0)
+                self.assertEqual(value.registrations, [])
+                self.assertEqual(value.reads, ["cache", "source"] if kind == "hash-substitution" else ["cache"])
+                record, _ = self.wire(value)
+                self.assertEqual(record["source_locations"]["reason"], "source-code-unbound")
+                self.assertEqual(record["source_locations"]["locations"], [])
+                self.assertEqual(record["source_locations"]["anchors"][0]["role"], "registered-caller")
+                self.assertEqual(value.graph.loaded.MARKER, "original" if kind == "timestamp" else "replaced")
+
+    def test_direct_and_foreign_calls_preserve_original_returns_without_code_authority(self):
+        for kind, operation in (("source", "get-code"), ("source", "source-to-code"), ("foreign", "natural")):
+            with self.subTest(kind=kind, operation=operation), self.imported(
+                kind, operation=operation, raise_leaf=False,
+            ) as value:
+                value.invoke()
+                self.assertIsNone(value.error)
+                self.assertEqual(value.compiles, 1)
+                self.assertEqual(value.registrations, [])
+                self.assertTrue(value.result["states"]["completed"])
+                if operation != "natural":
+                    self.assertIs(type(value.graph.loaded), CodeType)
+                self.assertEqual(value.restore_attempts, ["get_code", "source_to_code"])
+
+    def test_nested_foreign_import_is_not_the_active_selected_get_code_invocation(self):
+        with self.imported() as value:
+            name, path = "unselected.nested_inert", "/inert/nested_inert.py"
+            value.foreign_sources[name] = (path, b"VALUE = 7\n")
+            def nested(current):
+                spec = import_external.spec_from_file_location(name, path, loader=SourceFileLoader(name, path))
+                module = import_bootstrap._load_unlocked(spec)
+                self.assertEqual(module.VALUE, 7)
+                self.assertFalse(current.observer.imports.failed)
+                self.assertIsNone(current.observer.imports.active["compiled"])
+                self.assertFalse(current.observer.imports.active["compile_seen"])
+            value.before_read = nested
+            value.invoke()
+            record, _ = self.wire(value)
+            self.assertEqual(record["source_locations"]["status"], "observed")
+            self.assertEqual(value.compiles, 1)
+            self.assertEqual(value.reads, ["cache", "source"])
+            self.assertEqual(len(value.registrations), 1)
+            self.assertFalse(value.observer.imports.failed)
+
+    def test_source_read_compile_body_and_cancellation_preserve_the_actual_first_exception(self):
+        cases = (
+            ("source-read", self.BODY, 0), ("cancel", self.BODY, 0),
+            ("source", b"\0", 0),
+            ("source", b'ERROR = RuntimeError("private body")\nraise ERROR\n', 1),
+        )
+        for kind, body, count in cases:
+            with self.subTest(kind=kind, body_length=len(body)), self.imported(kind, body=body) as value:
+                value.invoke()
+                self.assertIs(value.error, value.original_failure)
+                if value.source_error is not None:
+                    self.assertIs(value.error, value.source_error)
+                elif body == b"\0":
+                    self.assertIs(type(value.error), SyntaxError)
+                    trace, calls = value.error.__traceback__, []
+                    while trace is not None:
+                        calls.append(trace.tb_frame.f_code)
+                        trace = trace.tb_next
+                    self.assertEqual(calls.count(observation_failure._GET_CODE.__code__), 1)
+                    self.assertEqual(calls.count(observation_failure._SOURCE_TO_CODE.__code__), 1)
+                else:
+                    trace = value.error.__traceback__
+                    while trace.tb_next is not None:
+                        trace = trace.tb_next
+                    self.assertIs(value.error, trace.tb_frame.f_globals["ERROR"])
+                self.assertEqual(value.compiles, count)
+                record, _ = self.wire(value)
+                self.assertEqual(record["error"]["chain"][0]["type"], type(value.error).__name__)
+                self.assertTrue(record["cleanup"]["source_imports_restored"])
+                self.assertTrue(record["cleanup"]["source_imports_released"])
+
+    def test_wrong_source_bytes_are_diagnostic_failure_not_a_substituted_source_result(self):
+        for raising in (False, True):
+            def wrong(value):
+                value.body = self.OTHER
+            with self.subTest(raising=raising), self.imported(raise_leaf=raising, mutate=wrong) as value:
+                value.invoke()
+                self.assertEqual(value.graph.loaded.MARKER, "replaced")
+                self.assertEqual(value.compiles, 1)
+                self.assertEqual(value.registrations, [])
+                if raising:
+                    self.assertIs(value.error, value.original_failure)
+                else:
+                    self.assertIsNone(value.original_failure)
+                    self.assertEqual(value.measurement.states["serialization_returned"], 1)
+                    self.assertIs(type(value.error), policy.GuardError)
+                record, _ = self.wire(value)
+                self.assertEqual(record["source_locations"]["status"], "unavailable")
+                self.assertIn("import-observation", [row["stage"] for row in record["secondary"]])
+
+    def test_before_and_after_identity_changes_cannot_register_or_borrow_original_code(self):
+        faults = ("loader", "spec", "module", "entry", "entry-bytes", "budget", "session", "entries",
+                  "thread", "clock", "root", "method", "compiler")
+        for fault in faults:
+            with self.subTest(fault=fault), self.imported(raise_leaf=False) as value, ExitStack() as changes:
+                def mutate(value):
+                    imports = value.observer.imports
+                    if fault == "loader":
+                        value.source_loader.path = "/foreign/inert_original.py"
+                    elif fault == "spec":
+                        value.spec.origin = "/foreign/inert_original.py"
+                    elif fault == "module":
+                        sys.modules[value.fullname] = ModuleType(value.fullname)
+                    elif fault == "entry":
+                        value.entries[value.item.path] = copy.copy(value.item)
+                    elif fault == "entry-bytes":
+                        value.item.object_id = "b" * 40
+                    elif fault == "budget":
+                        value.loader.budget = object()
+                    elif fault == "session":
+                        value.measurement.session = value.probing.ProbeSession.__new__(value.probing.ProbeSession)
+                    elif fault == "entries":
+                        value.loader.entries = copy.copy(value.entries)
+                    elif fault == "thread":
+                        imports.thread = -1
+                    elif fault == "clock":
+                        imports.deadline -= 1
+                    elif fault == "root":
+                        value.loader.root = Path("/foreign")
+                    elif fault == "method":
+                        changes.enter_context(mock.patch.object(SourceFileLoader, "path_stats", lambda *args: {}))
+                    else:
+                        original_compile = builtins.compile
+                        def other(*args, **kwargs):
+                            return original_compile(*args, **kwargs)
+                        changes.enter_context(mock.patch.object(builtins, "compile", other))
+                value.before_read = mutate
+                value.invoke()
+                self.assertIsNone(value.original_failure)
+                self.assertEqual(value.compiles, 1)
+                self.assertEqual(value.registrations, [])
+                self.assertIsNotNone(value.error)
+                record, _ = self.wire(value)
+                self.assertEqual(record["source_locations"]["status"], "unavailable")
+                self.assertFalse(record["states"]["completed"])
+
+    def test_metadata_subclasses_do_not_receive_observer_callbacks(self):
+        class Mapping(dict):
+            def get(self, *args):
+                touched.append("get")
+                raise AssertionError("metadata callback")
+            def __iter__(self):
+                touched.append("iter")
+                raise AssertionError("metadata callback")
+        class Text(str):
+            def __eq__(self, other):
+                touched.append("eq")
+                raise AssertionError("metadata callback")
+            __hash__ = str.__hash__
+        for fault in ("loader-dict", "spec-dict", "origin", "entry-id"):
+            touched = []
+            with self.subTest(fault=fault), self.imported(raise_leaf=False) as value:
+                def mutate(value):
+                    if fault == "loader-dict":
+                        value.source_loader.__dict__ = Mapping(value.source_loader.__dict__)
+                    elif fault == "spec-dict":
+                        value.spec.__dict__ = Mapping(value.spec.__dict__)
+                    elif fault == "origin":
+                        value.spec.origin = Text(value.spec.origin)
+                    else:
+                        value.item.object_id = Text(value.item.object_id)
+                value.before_read = mutate
+                value.invoke()
+                self.assertEqual(touched, [])
+                self.assertIsNone(value.original_failure)
+                self.assertEqual(value.compiles, 1)
+                self.assertEqual(value.registrations, [])
+                self.assertIsNotNone(value.error)
+                self.wire(value)
+
+    def test_original_slots_restore_independently_for_all_owned_and_inherited_combinations(self):
+        for owned in ((), ("get_code",), ("source_to_code",), ("get_code", "source_to_code")):
+            for raising in (False, True):
+                with self.subTest(owned=owned, raising=raising), self.imported(owned=owned, raise_leaf=raising) as value:
+                    value.invoke()
+                    if raising:
+                        self.wire(value)
+                    else:
+                        self.assertIsNone(value.error)
+                    self.assertEqual(value.restore_attempts, ["get_code", "source_to_code"])
+                    self.assertEqual(value.observer.imports.restored, {"get_code": True, "source_to_code": True})
+                    self.assertTrue(value.observer.imports.released)
+
+    def test_restoration_faults_attempt_both_slots_preserve_primary_and_never_complete(self):
+        for when in ("before", "after"):
+            for name in ("get_code", "source_to_code"):
+                for source in ("source-read", "cancel", "source"):
+                    with self.subTest(when=when, name=name, source=source), self.imported(
+                        source, restoring=(when, name),
+                    ) as value:
+                        value.invoke()
+                        self.assertIs(value.error, value.original_failure)
+                        self.assertEqual(value.restore_attempts, ["get_code", "source_to_code"])
+                        record, retained = self.wire(value)
+                        self.assertTrue(retained)
+                        self.assertFalse(record["states"]["completed"])
+                        self.assertEqual(record["error"]["chain"][0]["type"], type(value.error).__name__)
+                        self.assertIn("import-" + name.replace("_", "-") + "-restore",
+                                      [row["stage"] for row in record["secondary"]])
+                        self.assertIs(record["cleanup"]["source_imports_restored"], when == "after")
+        with self.imported("source-read", restoring=("both-before", "*")) as value:
+            value.invoke()
+            record, retained = self.wire(value)
+            self.assertIs(value.error, value.source_error)
+            self.assertEqual(value.restore_attempts, ["get_code", "source_to_code"])
+            self.assertTrue(retained)
+            self.assertEqual([row["stage"] for row in record["secondary"]],
+                             ["import-get-code-restore", "import-source-to-code-restore"])
+
+    def test_record_and_capacity_failures_do_not_prevent_original_body_or_serialization(self):
+        for fault in ("record", "work", "source-bytes", "code-identity"):
+            for raising in (False, True):
+                with self.subTest(fault=fault, raising=raising), self.imported(raise_leaf=raising) as value:
+                    def mutate(value):
+                        if fault == "work":
+                            value.observer.location_work = policy.ORIGINAL_LIMITS["entries"]
+                        elif fault == "source-bytes":
+                            value.observer.imports.source_bytes = policy.ORIGINAL_LIMITS["file_bytes"]
+                    def record(imports, token, code):
+                        if fault == "record":
+                            raise OSError(errno.EIO, "private collector")
+                        if fault == "code-identity":
+                            token["compiled"] = code.replace(co_name="different")
+                    value.before_read, value.before_record = mutate, record
+                    value.invoke()
+                    self.assertEqual(value.graph.loaded.MARKER, "original")
+                    self.assertEqual(value.compiles, 1)
+                    self.assertEqual(value.registrations, [])
+                    if raising:
+                        self.assertIs(value.error, value.original_failure)
+                    else:
+                        self.assertIsNone(value.original_failure)
+                        self.assertEqual(value.measurement.states["serialization_returned"], 1)
+                    record, _ = self.wire(value)
+                    self.assertFalse(record["states"]["completed"])
+                    self.assertEqual(record["source_locations"]["status"], "unavailable")
+
+    def test_late_module_spec_entry_and_function_replacements_remain_unavailable_at_projection(self):
+        for fault in ("module", "spec", "entry", "method", "function"):
+            with self.subTest(fault=fault), self.imported() as value, ExitStack() as changes:
+                if fault == "function":
+                    def replacement(module):
+                        code = module.outer.__code__
+                        module.outer.__code__ = code.replace(co_consts=tuple(
+                            child.replace(co_name="replacement") if type(child) is CodeType else child
+                            for child in code.co_consts
+                        ))
+                    value.graph.AFTER_LOAD = replacement
+                value.invoke()
+                if fault == "module":
+                    sys.modules[value.fullname] = ModuleType(value.fullname)
+                elif fault == "spec":
+                    value.graph.loaded.__spec__ = copy.copy(value.spec)
+                elif fault == "entry":
+                    value.entries[value.item.path] = copy.copy(value.item)
+                elif fault == "method":
+                    changes.enter_context(mock.patch.object(SourceFileLoader, "path_stats", lambda *args: {}))
+                record, _ = self.wire(value)
+                self.assertEqual(record["source_locations"]["status"], "unavailable")
+                self.assertEqual(record["source_locations"]["locations"], [])
+
+    def test_parent_observer_reproduces_missing_lazy_source_without_a_second_import(self):
+        self.assertIsNotNone(PREIMAGE_LOCATION_OBSERVER)
+        with self.imported() as value:
+            previous = PREIMAGE_LOCATION_OBSERVER(value.probing.ProbeSession, value.budget)
+            self.assertEqual(previous.register_locations(value.measurement.api), [])
+            value.invoke()
+            old, _ = self.wire(value, observer=previous)
+            self.assertEqual(old["source_locations"]["reason"], "source-code-unbound")
+            self.assertEqual(old["source_locations"]["locations"], [])
+            self.assertEqual(old["source_locations"]["anchors"][0]["role"], "registered-caller")
+            current, _ = self.wire(value)
+            self.assertEqual(current["source_locations"]["status"], "observed")
+            self.assertEqual(value.compiles, 1)
+            self.assertEqual(value.reads, ["cache", "source"])
+
+    def test_neutral_source_names_order_and_wire_order_keep_actual_position_evidence(self):
+        body = self.BODY.replace(b"outer", b"entry").replace(b"nested", b"branch")
+        for data, name in ((self.BODY, "outer"), (body, "entry")):
+            with self.subTest(name=name), self.imported(body=data) as value:
+                value.graph.ENTRY = name
+                value.invoke()
+                record, retained = self.wire(value)
+                self.assertFalse(retained)
+                self.assertEqual(record["source_locations"]["status"], "observed")
+                trace = value.error.__traceback__
+                while trace.tb_next is not None:
+                    trace = trace.tb_next
+                row, = record["source_locations"]["locations"]
+                self.assertEqual((row["code"], row["line"], row["offset"]),
+                                 (trace.tb_frame.f_code.co_name, trace.tb_lineno, trace.tb_lasti))
+                self.assertEqual(policy.validate_report_error(json_order(record), self.binding()), record)
+
+    def test_initial_metadata_and_mid_import_loader_replacements_gain_no_authority(self):
+        for fault in ("loader-subclass", "spec-subclass", "instance-shadow", "spec-origin", "name",
+                      "mode", "gitlink", "module-loader", "module-spec", "session-thread"):
+            with self.subTest(fault=fault), self.imported(raise_leaf=False) as value:
+                def mutate():
+                    if fault == "loader-subclass":
+                        class ForeignLoader(SourceFileLoader):
+                            pass
+                        value.source_loader.__class__ = ForeignLoader
+                    elif fault == "spec-subclass":
+                        class ForeignSpec(ModuleSpec):
+                            pass
+                        value.spec.__class__ = ForeignSpec
+                    elif fault == "instance-shadow":
+                        value.source_loader.extra = object()
+                    elif fault == "spec-origin":
+                        value.spec.origin = "/foreign/inert_original.py"
+                    elif fault == "name":
+                        value.source_loader.name = "foreign.inert_original"
+                    elif fault == "mode":
+                        value.item.mode = "120000"
+                    elif fault == "gitlink":
+                        value.item.git_dir = Path("/foreign/git")
+                    elif fault == "session-thread":
+                        value.constructed.owner_thread = -1
+                    elif fault == "module-loader":
+                        sys.modules[value.fullname].__loader__ = SourceFileLoader(value.fullname, value.filename)
+                    else:
+                        sys.modules[value.fullname].__spec__ = copy.copy(value.spec)
+                if fault in {"module-loader", "module-spec"}:
+                    value.before_read = lambda unused: mutate()
+                else:
+                    value.graph.BEFORE_IMPORT = mutate
+                value.invoke()
+                self.assertEqual(value.registrations, [])
+                if value.original_failure is not None:
+                    self.assertIs(value.error, value.original_failure)
+                self.assertIsNotNone(value.error)
+                record, _ = self.wire(value)
+                self.assertEqual(record["source_locations"]["status"], "unavailable")
+
+    def test_original_method_code_and_compiler_global_identities_are_not_metadata_equivalence(self):
+        for fault in ("get-code", "source-to-code", "compiler-global", "compiler-builtin", "exec-module"):
+            with self.subTest(fault=fault), self.imported() as value, ExitStack() as changes:
+                foreign = compile(self.OTHER, value.filename, "exec", dont_inherit=True)
+                IMPORT_COMPILE_AUDIT["count"] = 0
+                def mutate():
+                    if fault in {"get-code", "source-to-code", "exec-module"}:
+                        original = {
+                            "get-code": observation_failure._GET_CODE,
+                            "source-to-code": observation_failure._SOURCE_TO_CODE,
+                            "exec-module": observation_failure._EXEC_MODULE,
+                        }[fault]
+                        original_code = original.__code__
+                        changes.callback(setattr, original, "__code__", original_code)
+                        original.__code__ = original_code.replace(co_name="renamed")
+                    elif fault == "compiler-global":
+                        changes.enter_context(mock.patch.dict(observation_failure._SOURCE_TO_CODE.__globals__,
+                                                             {"compile": lambda *args, **kwargs: foreign}))
+                    else:
+                        changes.enter_context(mock.patch.object(builtins, "compile", lambda *args, **kwargs: foreign))
+                value.graph.BEFORE_IMPORT = mutate
+                value.invoke()
+                self.assertIs(value.error, value.original_failure)
+                self.assertEqual(value.registrations, [])
+                record, _ = self.wire(value)
+                self.assertEqual(record["source_locations"]["status"], "unavailable")
+                self.assertEqual(value.reads, ["cache", "source"])
+
+    def test_exact_registration_and_cumulative_source_byte_capacities(self):
+        with self.imported() as first:
+            first.invoke()
+            _, codes, _ = first.registrations[0]
+            needed = sum(1 + len(code.co_consts) for code in codes)
+            self.wire(first)
+        for boundary in ("entries", "source-bytes"):
+            for over in (0, 1):
+                with self.subTest(boundary=boundary, over=over), self.imported() as value:
+                    def mutate(value):
+                        if boundary == "entries":
+                            value.observer.location_work = policy.ORIGINAL_LIMITS["entries"] - needed + over
+                        else:
+                            value.observer.imports.source_bytes = policy.ORIGINAL_LIMITS["file_bytes"] - len(value.body) + over
+                    value.before_read = mutate
+                    value.invoke()
+                    self.assertIs(value.error, value.original_failure)
+                    self.assertEqual(value.compiles, 1)
+                    record, _ = self.wire(value)
+                    self.assertEqual(record["source_locations"]["status"], "unavailable" if over else "observed")
+                    self.assertEqual(len(value.registrations), 0 if over else 1)
+
+    def test_nonbuiltin_compiler_input_does_not_invoke_metadata_callbacks_or_skip_compile(self):
+        touched = []
+        class Bytes(bytes):
+            def __len__(self):
+                touched.append("len")
+                raise AssertionError("private bytes callback")
+        for shape in (bytearray, Bytes):
+            with self.subTest(shape=shape.__name__), self.imported(raise_leaf=False) as value:
+                value.before_read = lambda current: setattr(current, "body", shape(self.BODY))
+                value.invoke()
+                self.assertIsNone(value.original_failure)
+                self.assertIsNotNone(value.error)
+                self.assertEqual(value.compiles, 1)
+                self.assertEqual(value.graph.loaded.MARKER, "original")
+                self.assertEqual(value.registrations, [])
+                self.assertEqual(touched, [])
+                self.wire(value)
+
+    def test_stale_hooks_and_private_record_tokens_cannot_reopen_a_finished_lifetime(self):
+        with self.imported() as value:
+            hooks = []
+            def save(current):
+                hooks.extend((current.observer.imports.get_hook, current.observer.imports.compile_hook))
+            value.before_read = save
+            value.invoke()
+            code = value.compile_returns[0]
+            self.wire(value)
+            imports = value.observer.imports
+            with self.assertRaises(observation_failure._LocationUnavailable):
+                imports.record({}, code)
+            self.assertTrue(imports.released)
+            self.assertEqual(value.observer.location_codes, {})
+            returned = hooks[1](value.source_loader, self.BODY, value.filename)
+            self.assertIs(type(returned), CodeType)
+            self.assertEqual(value.observer.location_codes, {})
+            self.assertIsNone(imports.active)
+
+    def test_weak_module_identity_does_not_keep_a_removed_source_module_alive(self):
+        with self.imported() as value:
+            value.invoke()
+            reference = weakref.ref(value.graph.loaded)
+            value.registrations.clear()
+            del value.graph.loaded
+            del sys.modules[value.fullname]
+            self.assertIsNone(reference())
+            record, _ = self.wire(value)
+            self.assertEqual(record["source_locations"]["status"], "unavailable")
+            self.assertEqual(record["source_locations"]["locations"], [])
+
+    def test_successful_source_and_serializer_still_fail_after_restoration_faults(self):
+        for when in ("before", "after"):
+            for name in ("get_code", "source_to_code"):
+                with self.subTest(when=when, name=name), self.imported(
+                    raise_leaf=False, restoring=(when, name),
+                ) as value:
+                    value.invoke()
+                    self.assertIsNone(value.original_failure)
+                    self.assertIs(type(value.error), policy.GuardError)
+                    self.assertEqual(value.measurement.states["check_returned"], 1)
+                    self.assertEqual(value.measurement.states["serialization_returned"], 1)
+                    self.assertEqual(value.restore_attempts, ["get_code", "source_to_code"])
+                    record, retained = self.wire(value)
+                    self.assertTrue(retained)
+                    self.assertFalse(record["states"]["completed"])
+
+    def test_original_compile_fault_stays_first_even_when_the_observer_also_fails(self):
+        with self.imported(body=b"\0", mutate=lambda value: setattr(value.item, "object_id", "b" * 40)) as value:
+            value.invoke()
+            self.assertIs(type(value.error), SyntaxError)
+            self.assertIs(value.error, value.original_failure)
+            record, _ = self.wire(value)
+            self.assertEqual(record["error"]["chain"][0]["type"], "SyntaxError")
+            self.assertEqual(record["source_locations"]["status"], "unavailable")
+            self.assertIn("import-observation", [row["stage"] for row in record["secondary"]])
+
+    def test_reference_release_faults_are_incomplete_and_do_not_hide_the_source_or_other_attempts(self):
+        for failed in ("codes", "slots"):
+            for when in ("before", "after"):
+                attempts = []
+                class Clearing(dict):
+                    def __init__(self, name, values=()):
+                        super().__init__(values)
+                        self.name = name
+                    def clear(self):
+                        attempts.append(self.name)
+                        if self.name == failed and when == "before":
+                            raise OSError(errno.EIO, "private reference release")
+                        super().clear()
+                        if self.name == failed and when == "after":
+                            raise OSError(errno.EIO, "private reference release")
+                with self.subTest(failed=failed, when=when), self.imported() as value:
+                    value.invoke()
+                    first = value.error
+                    value.observer.location_codes = Clearing("codes", value.observer.location_codes)
+                    value.observer.imports.old_slots = Clearing("slots")
+                    record, retained = self.wire(value)
+                    self.assertIs(value.error, first)
+                    self.assertTrue(retained)
+                    self.assertIsNone(record["cleanup"]["source_imports_released"])
+                    self.assertTrue(record["cleanup"]["source_imports_restored"])
+                    self.assertEqual(record["source_locations"]["reason"], "locator-failed")
+                    self.assertIsNone(record["source_locations"]["references_closed"])
+                    self.assertIn("location-publication", [row["stage"] for row in record["secondary"]])
+                    self.assertIn("codes", attempts)
+                    self.assertIn("slots", attempts)
+                    self.assertEqual(value.restore_attempts, ["get_code", "source_to_code"])
+                    imports = value.observer.imports
+                    for name in ("active", "bound", "observer", "measurement", "get_hook", "compile_hook", "clock"):
+                        self.assertIsNone(getattr(imports, name))
+
+    def test_traceless_explanatory_note_keeps_real_lazy_raise_but_no_note_location(self):
+        self.assertIsNotNone(PREIMAGE_LOCATION_OBSERVER)
+        body = b"""
+class MakeProbeError(RuntimeError):
+    pass
+diagnostics = []
+def diagnostic():
+    raise ValueError("private diagnostic")
+def outer():
+    failure = MakeProbeError("private source failure")
+    try:
+        diagnostic()
+    except BaseException as error:
+        error.__traceback__ = None
+        error.__cause__ = error.__context__ = None
+        diagnostics.append(error)
+    note = "private explanatory note"
+    failure.add_note(note)
+    raise failure from MakeProbeError(note)
+"""
+        with self.imported(body=body) as value:
+            value.graph.WRAP = True
+            previous = PREIMAGE_LOCATION_OBSERVER(value.probing.ProbeSession, value.budget)
+            self.assertEqual(previous.register_locations(value.measurement.api), [])
+            value.invoke()
+            self.assertIs(value.error, value.original_failure)
+            self.assertIsNone(value.error.__cause__.__cause__.__traceback__)
+            diagnostic, = value.graph.loaded.diagnostics
+            self.assertIsNone(diagnostic.__traceback__)
+            self.assertIsNone(diagnostic.__cause__)
+            self.assertIsNone(diagnostic.__context__)
+            old, _ = self.wire(value, observer=previous)
+            self.assertEqual([row["role"] for row in old["source_locations"]["anchors"]],
+                             ["registered-raising-frame", "registered-caller"])
+            record, _ = self.wire(value)
+            location = record["source_locations"]
+            self.assertEqual(location["reason"], "no-source-trace")
+            self.assertEqual(location["locations"], [])
+            self.assertEqual([row["exception"] for row in location["anchors"]], [0, 1])
+            self.assertEqual([row["role"] for row in location["anchors"]],
+                             ["registered-raising-frame", "registered-raising-frame"])
+            self.assertEqual([row["type"] for row in record["error"]["chain"]], ["MakeProbeError"] * 3)
+            self.assertFalse(location["authority"])
+            self.assertNotIn(b"private", policy.encoded(record))
+            self.assertEqual(value.compiles, 1)
+
+    def test_get_code_only_and_compiler_identity_bypass_mutations_break_cache_refusal_oracle(self):
+        def unsafe_get(imports, loader, fullname):
+            binding = imports.metadata(loader, fullname, initializing=True)
+            token = {"loader": loader, "name": fullname, "binding": binding,
+                     "compile_seen": False, "compiled": None}
+            imports.active = token
+            try:
+                code = observation_failure._GET_CODE(loader, fullname)
+                token["compiled"] = code
+                imports.record(token, code)
+                return code
+            finally:
+                imports.active = None
+                token.clear()
+        for bypass in ("get-code-only", "compiler-identity"):
+            kind = "timestamp-substitution" if bypass == "get-code-only" else "source"
+            with self.subTest(bypass=bypass), self.imported(kind) as value, ExitStack() as mutation:
+                if bypass == "get-code-only":
+                    mutation.enter_context(mock.patch.object(observation_failure._OriginalImports, "get_code", unsafe_get))
+                else:
+                    foreign = compile(self.OTHER, value.filename, "exec", dont_inherit=True)
+                    IMPORT_COMPILE_AUDIT["count"] = 0
+                    mutation.enter_context(mock.patch.object(observation_failure._OriginalImports, "unchanged", lambda *args, **kwargs: None))
+                    mutation.enter_context(mock.patch.object(builtins, "compile", lambda *args, **kwargs: foreign))
+                value.invoke()
+                self.assertEqual(value.graph.loaded.MARKER, "replaced")
+                self.assertEqual(value.compiles, 0)
+                record, _ = self.wire(value)
+                self.assertEqual(record["source_locations"]["status"], "observed")
+                with self.assertRaises(AssertionError):
+                    self.assertEqual(record["source_locations"]["status"], "unavailable")
 
 
 def json_order(value):

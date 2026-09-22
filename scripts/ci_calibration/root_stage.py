@@ -6,8 +6,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 if __package__:
-    from . import policy
+    from . import observation_failure, policy
 else:
+    import observation_failure
     import policy
 
 
@@ -34,6 +35,7 @@ def cleanup_state(session, budget):
         "session_base_removed": None if session is None else session.base is None,
         "active_views": None if session is None else len(session._views),
         "constructor_restored": None, "report_released": None, "serialization_released": None,
+        "source_imports_restored": None, "source_imports_released": None,
     }
 
 
@@ -50,6 +52,15 @@ class ReportMeasurement:
         self.first = None
         self.first_stage = None
         self.secondary = []
+        self.observer = None
+        self.import_failed = False
+
+    def observe_imports(self, action, stage="import-observation"):
+        try:
+            action()
+        except BaseException as error:
+            self.import_failed = True
+            self.secondary.append({"stage": stage, "error": policy.component_secondary_error(error)})
 
     def fail(self, stage, error):
         if stage not in policy.REPORT_ERROR_STAGES:
@@ -85,11 +96,14 @@ class ReportMeasurement:
             raise policy.GuardError("original report constructor returned a foreign session")
         self.session_valid = True
         self.sampler.session = self.session
+        self.observe_imports(lambda: self.observer.bind_imports(self))
         return self.session
 
     def collect(self):
         try:
             self.cleanup = cleanup_state(self.session if self.session_valid else None, self.budget)
+            if self.observer is not None:
+                self.cleanup.update(self.observer.import_cleanup())
             policy.validate_report_cleanup(self.cleanup)
         except BaseException as error:
             self.cleanup = None
@@ -143,15 +157,22 @@ class ReportMeasurement:
             or not isinstance(self.budget, self.api.budget_type)
         ):
             raise policy.GuardError("report source API or original constructor is already replaced")
+        local_observer = self.observer is None
+        if local_observer:
+            self.observer = observation_failure.Observer(self.api.session, self.budget)
         stage = "check"
         try:
             self.api.module.ProbeSession = self.construct
             self.sampler.phase = "public-report"
             self.states["check_attempts"] += 1
-            self.raw_report = self.api.check(
-                self.root, budget=self.budget, revision=policy.GRAPH, base_revision=policy.BASE,
-                changed_paths=tuple(self.changes), lifecycle=True,
-            )
+            try:
+                self.observe_imports(lambda: self.observer.start_imports(self))
+                self.raw_report = self.api.check(
+                    self.root, budget=self.budget, revision=policy.GRAPH, base_revision=policy.BASE,
+                    changed_paths=tuple(self.changes), lifecycle=True,
+                )
+            finally:
+                self.observe_imports(self.observer.restore_imports)
             self.states["check_returned"] += 1
             stage = "serialization"
             self.sampler.phase = "report-serialization"
@@ -176,6 +197,14 @@ class ReportMeasurement:
                         self.fail("validation", error)
             finally:
                 self.withdraw(original)
+                if self.first is None or local_observer:
+                    self.observe_imports(lambda: self.observer.close_imports(self), "import-reference")
+                imports = getattr(self.observer, "imports", None)
+                if imports is not None:
+                    self.secondary.extend(imports.secondary)
+                    self.import_failed |= imports.failed or imports.note_failed
+                if self.first is None and self.import_failed:
+                    self.fail("import-observation", policy.GuardError("original source import observation failed"))
         if self.first is not None:
             raise self.first
         self.states["completed"] = True

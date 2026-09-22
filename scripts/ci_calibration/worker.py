@@ -677,6 +677,7 @@ def report(config, *, failure=None):
         })
         primary_stage = "check"
         secondary.extend(observer.register_locations(root_stage.candidate_api()))
+        measurement.observer = observer
         result = measurement.run()
         validated = policy.validate_report_result(result, binding)
         sampler.phase = "completed-report"
@@ -721,9 +722,21 @@ def report(config, *, failure=None):
             failure.retain_secondaries([
                 *(() if measurement is None else measurement.secondary), *secondary,
             ])
-            failure.record = report_error_record(
-                primary, measurement, sampler, observer, binding, secondary, stage=primary_stage,
-            )
+            try:
+                failure.record = report_error_record(
+                    primary, measurement, sampler, observer, binding, secondary, stage=primary_stage,
+                )
+            finally:
+                if observer is not None:
+                    try:
+                        observer.close_imports(measurement)
+                    except BaseException as error:
+                        closing = {
+                            "stage": "import-reference", "error": policy.component_secondary_error(error),
+                        }
+                        failure.retain_secondaries([*failure.known_secondary, closing])
+                        if failure.record is not None:
+                            failure.record["secondary"].append(closing)
             kernel.emit(config["scope"], "error", failure.record)
         except BaseException as error:
             # Publication is not permission to replace a source/cleanup failure.
