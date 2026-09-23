@@ -1,4 +1,67 @@
-# Contained source-reported Make-context preparation
+# Contained runtime-corrected full-report rebind
+
+**Code-only preparation; never merge this diagnostic branch. No push, native
+allocation, workflow execution, retry or shipping-policy change is authorized.**
+
+Frozen scope:
+[5786229809](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5786229809).
+This is one normal child of the accepted, spent harness
+`f8144879c4a36fa4e3afa7645b41140234aacb94`, on
+`calibration/issue-180-full-report-sizing-4`, with the new fixed
+`.github/workflows/issue180-full-report-sizing-4.yml`.
+It binds the independently reviewed source
+`79810df78b29eef98ba1da391565f17315352d18` and unchanged
+BASE `ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`.
+The full source diff is still 123 paths, +82,608/-843, derived from Git rather
+than a committed content ledger. Production source is not copied into this branch.
+
+Only identity and admission are rebound. The historical Make-context workflow
+has its own fixed identity; ed693->b7f4 remains the full eight-path context edge,
+and b7f4->f814 remains the five-path boundary correction. Neither endpoint moves
+to HEAD. A separate exact five-path f814->HEAD inventory admits only this
+workflow addition and policy/supervisor/test/README modifications. The normal
+lineage now has 25 edges, preserving every earlier edge and spent workflow.
+Only a first owner-created public hosted push, exact harness `github.sha`,
+run 1/attempt 1 is eligible; dispatch, replay, retry and old branches refuse.
+
+The workload remains `full-public-report-accounting-measurement`, profile
+`full-report-accounting-only-v1`: one complete original CURRENT/BASE/source/
+Make/generator/lifecycle `graph_report.check`, its original serializer, one
+budget/session and one absolute 3600-second clock. The fourteen cumulative
+queries, nineteen counters, seven fresh qualifiers, five bounded artifacts and
+all original unit/record/plan/context/capsule/input/live/VM/ownership/semantic/
+physical bounds remain unchanged. Worker, root_stage, observation_failure,
+loader/registry and protected helpers are unchanged. The original import
+observer, closed v3 reported-only context, exact-once release, first cause,
+distinct secondaries and conservative retention remain.
+
+Focused preparation uses inspected `/usr/bin/python3 -I -S -B` inert controls,
+parsed YAML/Git inventories and source contracts only. Source reflection
+parses or compiles inspected definitions without importing or executing
+original source setup/classes. Preservation assertions retain the original
+contracts and account explicitly for only the independently reviewed 6d->798
+runtime capture-return, namespace/lookup and cleanup API changes. No unrelated
+source assertion may be waived. Retain the actual 231-method/1,366-subtest
+committed baseline, all fifteen independent methods/114 subtests and the
+separate seventeen decoder cases; report fresh counts, not nested historical
+summaries.
+
+All nine previous native runs are closed. Latest35777967557 at f814/6d reported
+modern.mk158 uncertainty and167-170 refusal; these were reported positions,
+not recovered native bytes or header state. Source798 is code-review accepted,
+not native qualified. Its three runtime selectors, coupled metadata/skip
+fixtures, actual capture/materialization/Make/source/cleanup and CURRENT/BASE/
+no-runtime/legacy cases remain outstanding native/CI obligations. No native
+unit selectors are added to this report workload. A future report result
+cannot be relabelled as their completion, standalone verifier measurement,
+shipping-policy fit or H1.
+
+Independent complete exact-head rebind review must precede Main's separately
+frozen owner-push allocation. Main owns any watcher, artifact closure and
+source PR/CI/delivery work. No final candidate push, merge, master verification,
+issue closure or remote-completion authority follows from this preparation.
+
+## Historical source-reported Make-context preparation
 
 **Code-only preparation; never merge this diagnostic branch. No native
 execution, push, workflow launch, retry or resource-policy change is allocated.**

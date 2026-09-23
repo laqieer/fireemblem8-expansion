@@ -537,7 +537,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.MAKE_CONTEXT_SHA}",
+            f"{'a' * 40} {supervisor.MAKE_BOUNDARY_SHA}",
+            f"{supervisor.MAKE_BOUNDARY_SHA} {supervisor.MAKE_CONTEXT_SHA}",
             f"{supervisor.MAKE_CONTEXT_SHA} {supervisor.IMPORT_RELEASE_SHA}",
             f"{supervisor.IMPORT_RELEASE_SHA} {supervisor.ORIGINAL_IMPORT_SHA}",
             f"{supervisor.ORIGINAL_IMPORT_SHA} {supervisor.TRACELESS_ANCHOR_SHA}",
@@ -628,7 +629,7 @@ class CalibrationControls(Inert):
             b"", b"M\0", b"M\0scripts/ci_calibration/root_stage.py",
             b"A\0scripts/ci_calibration/root_stage.py\0",
             b"D\0scripts/ci_calibration/root_stage.py\0",
-            b"M\0" + policy.WORKFLOW.encode() + b"\0",
+            b"M\0" + policy.MAKE_CONTEXT_WORKFLOW.encode() + b"\0",
             b"M\0scripts/ci_calibration/kernel.py\0",
             b"M\0scripts/validation_ownership/budget.py\0", data + data,
         ):
@@ -659,7 +660,7 @@ class CalibrationControls(Inert):
         for bad in (
             b"", data[:-1], data + data, data.replace(b"M\0", b"A\0", 1),
             data.replace(b"M\0", b"D\0", 1),
-            data + b"M\0" + policy.WORKFLOW.encode() + b"\0",
+            data + b"M\0" + policy.MAKE_CONTEXT_WORKFLOW.encode() + b"\0",
             data + b"M\0scripts/ci_calibration/entry.py\0",
             data + b"M\0scripts/ci_calibration/root_stage.py\0",
             data + b"M\0scripts/ci_calibration/observation_failure.py\0",
@@ -709,7 +710,7 @@ class CalibrationControls(Inert):
         for changed in (
             b"", data[:-1], data + data, data.replace(b"M\0", b"A\0", 1),
             data.replace(b"M\0", b"D\0", 1), data.split(b"\0", 2)[2],
-            data + b"M\0" + policy.WORKFLOW.encode() + b"\0",
+            data + b"M\0" + policy.MAKE_CONTEXT_WORKFLOW.encode() + b"\0",
             data + b"M\0scripts/ci_calibration/policy.py\0",
             data + b"M\0scripts/ci_calibration/worker.py\0",
             data + b"M\0scripts/ci_calibration/root_stage.py\0",
@@ -936,7 +937,7 @@ class CalibrationControls(Inert):
         for changed in (
             b"", data[:-1], data + data, data.split(b"\0", 2)[2],
             data.replace(b"M\0", b"A\0", 1), data.replace(b"M\0", b"D\0", 1),
-            data + b"M\0" + policy.WORKFLOW.encode() + b"\0",
+            data + b"M\0" + policy.MAKE_CONTEXT_WORKFLOW.encode() + b"\0",
             data + b"M\0scripts/ci_calibration/policy.py\0",
             data + b"M\0scripts/ci_calibration/entry.py\0",
             data + b"M\0scripts/ci_calibration/kernel.py\0",
@@ -956,7 +957,7 @@ class CalibrationControls(Inert):
 
     def test_make_context_inventory_preserves_all_old_endpoints_and_the_spent_import_workflow(self):
         data = b"".join(
-            (b"A" if name == policy.WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
+            (b"A" if name == policy.MAKE_CONTEXT_WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
             for name in sorted(supervisor.MAKE_CONTEXT_PATHS)
         )
         supervisor.validate_make_context_inventory(data)
@@ -983,7 +984,7 @@ class CalibrationControls(Inert):
         for changed in (
             b"", data[:-1], data + data, data.split(b"\0", 2)[2],
             data.replace(b"M\0", b"A\0", 1), data.replace(b"M\0", b"D\0", 1),
-            data + b"M\0" + policy.WORKFLOW.encode() + b"\0",
+            data + b"M\0" + policy.MAKE_CONTEXT_WORKFLOW.encode() + b"\0",
             data + b"M\0scripts/ci_calibration/policy.py\0",
             data + b"M\0scripts/ci_calibration/root_stage.py\0",
             data + b"M\0scripts/ci_calibration/worker.py\0",
@@ -992,7 +993,7 @@ class CalibrationControls(Inert):
             with self.subTest(changed=changed[:64]), self.assertRaises(policy.GuardError):
                 supervisor.validate_make_boundary_inventory(changed)
         original = b"".join(
-            (b"A" if name == policy.WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
+            (b"A" if name == policy.MAKE_CONTEXT_WORKFLOW else b"M") + b"\0" + name.encode() + b"\0"
             for name in sorted(supervisor.MAKE_CONTEXT_PATHS)
         )
         supervisor.validate_make_context_inventory(original)
@@ -1000,6 +1001,112 @@ class CalibrationControls(Inert):
             supervisor.validate_make_boundary_inventory(original)
         with self.assertRaises(policy.GuardError):
             supervisor.validate_make_context_inventory(data)
+
+    def test_runtime_report_inventory_is_a_separate_exact_child_of_boundary_correction(self):
+        self.assertEqual(supervisor.MAKE_BOUNDARY_SHA, "f8144879c4a36fa4e3afa7645b41140234aacb94")
+        self.assertEqual(supervisor.RUNTIME_REPORT_PATHS, frozenset({
+            policy.WORKFLOW, "scripts/ci_calibration/policy.py", "scripts/ci_calibration/supervisor.py",
+            "scripts/ci_calibration/test_ci_calibration.py", "scripts/ci_calibration/README.md",
+        }))
+        data = b"".join(
+            (b"A" if path == policy.WORKFLOW else b"M") + b"\0" + path.encode() + b"\0"
+            for path in sorted(supervisor.RUNTIME_REPORT_PATHS)
+        )
+        supervisor.validate_runtime_report_inventory(data)
+        rows = list(zip(data.split(b"\0")[:-1:2], data.split(b"\0")[1:-1:2]))
+        supervisor.validate_runtime_report_inventory(b"".join(
+            kind + b"\0" + path + b"\0" for kind, path in reversed(rows)
+        ))
+        for changed in (
+            b"", data[:-1], data + data, data.split(b"\0", 2)[2],
+            data.replace(b"A\0", b"M\0"), data.replace(b"M\0", b"A\0", 1),
+            data.replace(b"M\0", b"D\0", 1),
+            *(data + b"M\0" + path.encode() + b"\0" for path in (
+                policy.MAKE_CONTEXT_WORKFLOW, policy.ORIGINAL_IMPORT_WORKFLOW,
+                policy.TRACELESS_ANCHOR_WORKFLOW, policy.PARTIAL_ANCHOR_WORKFLOW,
+                policy.PYTHON_REPORT_WORKFLOW, policy.CORRECTED_REPORT_WORKFLOW,
+                policy.LOCALIZATION_WORKFLOW, policy.FULL_REPORT_WORKFLOW,
+                policy.COMPONENT_WORKFLOW, policy.PREVIOUS_WORKFLOW,
+                "scripts/ci_calibration/worker.py", "scripts/ci_calibration/root_stage.py",
+                "scripts/ci_calibration/observation_failure.py", "scripts/ci_calibration/entry.py",
+                "scripts/ci_calibration/kernel.py", "scripts/validation_ownership/make_probe.py",
+            )),
+        ):
+            with self.subTest(changed=changed[:64]), self.assertRaises(policy.GuardError):
+                supervisor.validate_runtime_report_inventory(changed)
+        for paths, validator, workflow in (
+            (supervisor.MAKE_CONTEXT_PATHS, supervisor.validate_make_context_inventory, policy.MAKE_CONTEXT_WORKFLOW),
+            (supervisor.MAKE_BOUNDARY_PATHS, supervisor.validate_make_boundary_inventory, None),
+        ):
+            original = b"".join(
+                (b"A" if path == workflow else b"M") + b"\0" + path.encode() + b"\0"
+                for path in sorted(paths)
+            )
+            validator(original)
+            with self.assertRaises(policy.GuardError):
+                validator(data)
+            with self.assertRaises(policy.GuardError):
+                supervisor.validate_runtime_report_inventory(original)
+
+    def test_runtime_report_source_and_workflow_refuse_all_spent_bindings(self):
+        self.assertEqual((policy.BRANCH, policy.WORKFLOW, policy.OUTPUT_PREFIX), (
+            "calibration/issue-180-full-report-sizing-4",
+            ".github/workflows/issue180-full-report-sizing-4.yml", "issue180-full-report-sizing-4-",
+        ))
+        self.assertEqual((policy.GRAPH, policy.PYTHON_REPORT_SOURCE, policy.BASE), (
+            "79810df78b29eef98ba1da391565f17315352d18",
+            "6d2725d89df70c30954daade3cca7abc6d3171d4",
+            "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a",
+        ))
+        self.assertEqual((policy.WORKLOAD_KIND, policy.PROFILE),
+                         ("full-public-report-accounting-measurement", "full-report-accounting-only-v1"))
+        self.assertEqual((len(policy.RELAXED), len(policy.ACCOUNTING_COUNTERS), len(policy.ARTIFACT_NAMES)), (14, 19, 5))
+        for workflow in (
+            policy.MAKE_CONTEXT_WORKFLOW, policy.ORIGINAL_IMPORT_WORKFLOW,
+            policy.TRACELESS_ANCHOR_WORKFLOW, policy.PARTIAL_ANCHOR_WORKFLOW,
+            policy.PYTHON_REPORT_WORKFLOW, policy.CORRECTED_REPORT_WORKFLOW,
+            policy.LOCALIZATION_WORKFLOW, policy.FULL_REPORT_WORKFLOW,
+            policy.COMPONENT_WORKFLOW, policy.PREVIOUS_WORKFLOW,
+        ):
+            branch = "calibration/" + Path(workflow).stem.replace("issue180-", "issue-180-", 1)
+            with self.subTest(branch=branch), self.assertRaises(policy.GuardError):
+                policy.validate_event({**self.event(), "ref": "refs/heads/" + branch}, **self.authorization())
+        for source in (policy.PYTHON_REPORT_SOURCE, policy.CORRECTED_REPORT_SOURCE, policy.LOCALIZATION_SOURCE):
+            with self.subTest(source=source), self.assertRaises(policy.GuardError):
+                policy.validate_report_binding({**self.binding(), "source_revision": source})
+        data = yaml.load(WORKFLOW_TEXT, Loader=yaml.BaseLoader)
+        job, = data["jobs"].values()
+        self.assertEqual({value.strip() for value in job["if"].split("&&")}, {
+            "github.repository == 'laqieer/fireemblem8-expansion'", "github.event.repository.private == false",
+            "github.actor == 'laqieer'", "github.triggering_actor == 'laqieer'",
+            "github.event.sender.login == 'laqieer'", "github.event.created == true",
+            "github.event.deleted == false", "github.run_number == 1", "github.run_attempt == 1",
+        })
+
+    def test_runtime_source_preservation_is_limited_to_the_reviewed_api_delta(self):
+        self.assertIsNotNone(CORRECTED_SOURCE_INPUTS, "requires the inspected runtime-source rebind runner")
+        contract = CORRECTED_SOURCE_INPUTS.contract
+        delta = contract["reviewed_runtime_delta"]
+        self.assertEqual((delta["before"], delta["after"]), (policy.PYTHON_REPORT_SOURCE, policy.GRAPH))
+        self.assertEqual(delta["adapted_preserved_api"], [
+            "ProbeSession.__enter__", "ProbeSession.__exit__", "ProbeSession.__init__", "ProbeSession._sandbox_run",
+        ])
+        self.assertEqual(set(delta["paths"]), {
+            "docs/ownership-probe-foundation.md", "docs/validation-ownership.md",
+            "docs/test-cases/workflow-governance.md", "scripts/validation_ownership/make_probe.py",
+            "scripts/validation_ownership/phase_census.py",
+            "scripts/validation_ownership/tests/test_foundation.py",
+            "scripts/validation_ownership/tests/test_phase_census.py",
+            "scripts/validation_ownership/tests/test_producer.py",
+        })
+        self.assertTrue(delta["all_other_definitions_preserved"])
+        self.assertTrue(delta["original_preservation_checks_retained"])
+        self.assertEqual((contract["changed_paths"]["count"], delta["full_additions"], delta["full_deletions"]),
+                         (123, 82608, 843))
+        self.assertEqual(contract["runtime_inventory"], CORRECTED_SOURCE_INPUTS.runtime_previous_contract["runtime_inventory"])
+        self.assertFalse(contract["source_imports"])
+        self.assertFalse(contract["source_execution"])
+        self.assertFalse(contract["native_execution"])
 
     def test_complete_diff_binding_preserves_additions_deletions_and_both_rename_sides(self):
         changes = self.changes()
