@@ -1860,7 +1860,7 @@ its preceding initializer stored that value only as an exact template fact.
 For example, `OBJECTS := $(addprefix out/,first.o)` followed by an unresolved
 conditional `OBJECTS += out/second.o` retains both `out/first.o` and
 `out/first.o out/second.o`, just like the equivalent literal initializer.
-The existing exact-reference API must prove the same stored binding, origin,
+The shared original-simple-fact check proves the same stored binding, origin,
 scope, version, source occurrence and valid namespace. The fact transfers to
 the ordinary binding representation before RHS evaluation; a changed binding
 or context during capture rejects. An inactive assignment leaves the original
@@ -1880,6 +1880,37 @@ The [conditional-append procedure](test-cases/workflow-governance.md#original-so
 separates actual pure-API evidence, unchanged representative source slices with
 explicit modeled inputs, and the separately required native qualification.
 It does not certify the complete modern aggregate or borrow a native branch.
+
+Finite value composition also consumes a genuinely exact original simple
+snapshot alongside another operand's multiple values. For example, after the
+conditional append above, `DATA := $(addprefix out/,data.o)` and
+`ALL := $(OBJECTS) $(DATA)` retain both complete aggregates, just like a
+literal `DATA := out/data.o`. The read does not replace DATA's binding,
+rewrite unrelated variables or acquire assignment authority.
+
+Append capture, exact-reference fallback, original alias forwarding and
+explicit inherited-base lookup share the same binding/fact validation.
+Finite composition newly uses only the current global file/override simple
+fact, not a global snapshot substituted for a scoped value. Genuine scoped
+and inherited values keep their existing resolution. Binding/fact identities,
+scope, source occurrence, version, namespace and shared budget/clock remain
+checked across resolution; aliasing cannot launder a stale fact. Snapshot
+resolution never calls back into literal/exact resolution, and stored simple
+dollar bytes are data, not a new recursive Make body.
+
+All represented combinations remain subject to the existing 512-context and
+depth bounds. Scanning, assembled text and retained alternatives spend the
+same cache/total budget before retention. Duplicate outcomes do not consume
+new capacity. Unknown or header-only facts, cycles and effect invalidation
+remain unproved; possible `.POSIX` and differing continuation data still
+refuse. No operator, variable-name exception, query or resource flag is added.
+
+The [mixed-fact procedure](test-cases/workflow-governance.md#original-source-mixed-fact-composition-correction)
+uses the unchanged computed data and assembly object initializers from
+`modern.mk`, with explicit modeled leaf inputs. The earlier representative
+append model used literal object tails; it did not cover this composition.
+Closed sizing5 still refused the native aggregate. Neither these models nor
+the source correction establish its exclusive cause or native resolution.
 
 Exact wildcard leaves require a separate **session-issued original namespace
 capability**. Its initial names, types and lookup identities derive from the

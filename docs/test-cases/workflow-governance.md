@@ -4070,6 +4070,90 @@ changes. Reset each inert model and retain only session-local evidence; no
 native cleanup is needed for memory-only cases. Revert or fix forward through
 normal ancestry if later qualification exposes a regression.
 
+### Original-source mixed-fact composition correction
+
+This extends **TC-WORKFLOW-GATE-OWNERSHIP-001** for #180 / PR #186 under
+[scope5788616340](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5788616340).
+Closed sizing5 run35814698115 proves that the preceding conditional-append
+fix alone did **not** resolve the actual aggregate refusal. The reported
+modern913/922-925 positions do not identify the native intermediate binding
+or prove an exclusive cause. All eleven diagnostic allocations remain spent.
+
+Use the existing clean source/host prerequisites. The focused inert class is
+`scripts.validation_ownership.tests.test_make_probe.OriginalMixedFactsApiTests`.
+For code-only preparation inspect and AST-load only the selected pure APIs,
+then run with `/usr/bin/python3 -I -S -B` and complete external/native/import/
+IO/descriptor/signal traps. Real budget run/read/close and session setup remain
+denied. Inputs and execution callbacks are explicit models, not native facts.
+
+1. Preserve exact60f1. Initialize `OBJECTS := $(addprefix out/,first.o)` and
+   conditionally append `out/second.o` under an unknown `CHOICE`. Confirm its
+   two finite values survive. Compare `DATA := out/data.o` with the equivalent
+   `DATA := $(addprefix out/,data.o)`, then evaluate
+   `ALL := $(OBJECTS) $(DATA)` and its aggregate target/continuation.
+   Both must now retain the same two complete aggregates and normal mode.
+   DATA's snapshot-only binding remains unchanged by reading it.
+2. Compose multiple, single and empty facts in both operand orders; retain
+   exact spaces. Check equivalent literal/addprefix/patsubst representations,
+   names, braces and independent declaration order. Simple aliases snapshot
+   their original values; recursive aliases see later inputs. Stored simple
+   dollar/eval-looking bytes must remain data, while a live recursive eval
+   still invalidates the source context. Dead/lazy branches remain unconsumed.
+3. Unknown/header-only/missing facts, stale binding or snapshot versions,
+   foreign origins, scoped shadows and invalid namespace cannot supply an
+   exact value, including through aliases. Preserve legitimate scoped and
+   inherited values. Change binding/fact/site/scope/version/namespace/budget/
+   clock or source callbacks during resolution, including inherited-local
+   replacement and the last budget checkpoint; no stale result may escape.
+   Reading mixed/metadata values must not call the assignment-retention API
+   or rewrite an unrelated effectful variable.
+4. Exercise a complete 512-outcome product and a larger product; retain all
+   outcomes or refuse, never sample. Duplicate-at-capacity controls remain
+   green. Check exact/one-byte-over cache and total budgets, depth511/512,
+   expired/closed/sticky-failed budgets and unchanged clocks. Observe the
+   actual retained-set operation: insufficient admission must refuse before
+   insertion. Keep the append word-count and independent ordering/capacity
+   controls, plus original runtime/source/custody/cleanup cases.
+5. Restore the exact60f1 methods or remove only the finite-to-snapshot
+   connection. The computed-tail case must fail again while its literal
+   equivalent succeeds. Removing provenance or pre-retention admission must
+   fail behavioral assertions even with surrounding phrases retained.
+   Neutral implementation-local renaming must stay green.
+6. Use unchanged representative `modern.mk` C-object construction and guarded
+   units/traps appends, then BOTH original data and assembly object
+   initializers: addprefix over `MODERN_ALL_DATA_C_SOURCES:.c=.o` and
+   `MODERN_ALL_ASM_SOURCES:.s=.o`. Do not replace those object tails with
+   literals. Disclose modeled output/C/linked/data-C/assembly-source/UI leaves
+   and two unknown condition inputs. All four aggregate outcomes must survive
+   with original, renamed and reordered inputs; exact60f1 must refuse.
+   These selected source slices are not a native journal replay.
+7. Under a **separately allocated native run only**, select
+   `test_phase_census.PhaseCensusTests.test_native_mixed_original_facts_match_literal_and_computed_aggregates`
+   and
+   `test_phase_census.PhaseCensusTests.test_native_mixed_facts_do_not_hide_possible_posix_or_rhs_effects`
+   from `scripts.validation_ownership.tests`. Existing owned fixtures use
+   registered printf yes/no conditions, genuine computed data/assembly tails
+   and original source journals. Compare contained Make's actual aggregate
+   and continuation with conservative source results without another query.
+   Actual native no cannot justify discarding possible `.POSIX` or eval.
+   Use existing fixture cleanup; remove only owned state.
+
+These two selectors are authored but **unrun by code-only preparation**.
+The two preceding append and three runtime selectors and coupled metadata/
+skip/default/no-runtime/legacy/signal/cleanup obligations remain separate.
+Later contained report evidence must determine the actual aggregate result;
+models cannot certify full CURRENT/BASE/report/serializer/verifier demand,
+shipping policy, H1, Build/CI, merge/master, closure or remote completion.
+Independent exact-head source review precedes Main's integration/allocation.
+
+Dependencies are the existing original binding/template/version/source-phase/
+namespace and shared budget contracts, with no new issue dependency, registry
+or flag. Unproved facts remain incompatible with admission. No ROM/RAM/save,
+localization, generated output or modern/archival build behavior changes.
+Reset each memory model and retain session-only preimages/results; no native
+cleanup is needed for inert cases. Revert or fix forward through normal
+ancestry if later qualification exposes a regression.
+
 ### Native ownership, stderr effects and cumulative accounting
 
 These are additional deterministic controls for

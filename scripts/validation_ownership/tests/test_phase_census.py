@@ -447,6 +447,74 @@ class PhaseCensusTests(unittest.TestCase):
                     self.assertEqual(session.budget.runs, runs)
                 self.fixture.assert_clean(session)
 
+    def test_native_mixed_original_facts_match_literal_and_computed_aggregates(self):
+        for computed in (False, True):
+            for choice in ("yes", "no"):
+                with self.subTest(computed=computed, choice=choice):
+                    command = "printf %s " + choice
+                    data = "$(addprefix out/,$(DATA_SOURCES:.c=.o))" if computed else "out/data.o"
+                    assembly = "$(addprefix out/,$(ASM_SOURCES:.s=.o))" if computed else "out/asm.o"
+                    self.fixture.add("out/.keep", "owned source directory witness\n")
+                    self.fixture.add("Makefile", (
+                        "CHOICE := $(shell " + command + ")\nOBJECTS := $(addprefix out/,first.o)\n"
+                        "ifeq ($(CHOICE),yes)\nOBJECTS += out/second.o\nendif\n"
+                        "DATA_SOURCES := data.c\nASM_SOURCES := asm.s\nDATA := " + data + "\nASM := " + assembly
+                        + "\nALL := $(OBJECTS) $(DATA) $(ASM)\nall: $(ALL)\n$(ALL): | check\nNEXT := ready\n"
+                        "LATE := alpha  \\\n beta\nout/first.o out/second.o out/data.o out/asm.o check: ;\n"
+                    ))
+                    commands = {command: make_probe.Command(("/usr/bin/printf", "%s", choice))}
+                    with self.fixture.session() as session:
+                        observed = session.make(
+                            "all", definitions=("ALL", "LATE"), commands=commands,
+                            observe_source_journal=True, source_journal_mode=source_directories.MODE,
+                        )
+                        first = "out/first.o" + (" out/second.o" if choice == "yes" else "")
+                        self.assertEqual(observed.semantics["definitions"]["global"]["ALL"]["value"],
+                                         first + " out/data.o out/asm.o")
+                        self.assertEqual(observed.semantics["definitions"]["global"]["LATE"]["value"], "alpha beta")
+                        runs = session.budget.runs
+                        with patch.object(session, "make", side_effect=AssertionError("borrowed a terminal query")):
+                            _, _, streams, _ = phase_census.analyze(session, observed, "all", (), commands)
+                        self.assertEqual(len(streams), 1)
+                        mode = streams[0].mode_state
+                        self.assertEqual(mode.literal_values("$(ALL)"), {
+                            "out/first.o out/data.o out/asm.o", "out/first.o out/second.o out/data.o out/asm.o",
+                        })
+                        self.assertIs(mode.posix, False)
+                        self.assertTrue(mode.original_namespace_valid)
+                        self.assertEqual(session.budget.runs, runs)
+                    self.fixture.assert_clean(session)
+
+    def test_native_mixed_facts_do_not_hide_possible_posix_or_rhs_effects(self):
+        for rhs in (".POSIX", "$(eval DATA := changed)"):
+            with self.subTest(rhs=rhs):
+                command = "printf %s no"
+                self.fixture.add("out/.keep", "owned source directory witness\n")
+                self.fixture.add("Makefile", (
+                    "CHOICE := $(shell " + command + ")\nOBJECTS := $(addprefix out/,first.o)\n"
+                    "ifeq ($(CHOICE),yes)\nOBJECTS += " + rhs + "\nendif\n"
+                    "DATA_SOURCES := data.c\nASM_SOURCES := asm.s\n"
+                    "DATA := $(addprefix out/,$(DATA_SOURCES:.c=.o))\n"
+                    "ASM := $(addprefix out/,$(ASM_SOURCES:.s=.o))\n"
+                    "ALL := $(OBJECTS) $(DATA) $(ASM)\nall: $(ALL)\n$(ALL): | check\nNEXT := ready\n"
+                    "LATE := alpha  \\\n beta\nout/first.o out/data.o out/asm.o check: ;\n"
+                ))
+                commands = {command: make_probe.Command(("/usr/bin/printf", "%s", "no"))}
+                with self.fixture.session() as session:
+                    observed = session.make(
+                        "all", definitions=("ALL", "LATE"), commands=commands,
+                        observe_source_journal=True, source_journal_mode=source_directories.MODE,
+                    )
+                    self.assertEqual(observed.semantics["definitions"]["global"]["ALL"]["value"],
+                                     "out/first.o out/data.o out/asm.o")
+                    self.assertEqual(observed.semantics["definitions"]["global"]["LATE"]["value"], "alpha beta")
+                    runs = session.budget.runs
+                    with patch.object(session, "make", side_effect=AssertionError("borrowed a terminal query")):
+                        with self.assertRaises(MakeProbeError):
+                            phase_census.analyze(session, observed, "all", (), commands)
+                    self.assertEqual(session.budget.runs, runs)
+                self.fixture.assert_clean(session)
+
     def test_native_runtime_wildcard_keeps_original_modern_fragment_mode(self):
         modern = (foundation.ROOT / "modern.mk").read_text()
         fragment = modern[modern.index("MODERN_TOOLCHAIN_ROOT ?="):modern.index("MODERN_LAYOUT_FLAGS :=")]

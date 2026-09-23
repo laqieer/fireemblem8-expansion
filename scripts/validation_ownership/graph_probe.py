@@ -285,11 +285,19 @@ class _MakeSourceMode:
                 selected, = selectors
                 if (selected, name) in self.declared_scopes() and name in self.target_definitions.get(selected, {}):
                     values = self.raw_binding(name, selected)
+                    scoped_values = self.target_definitions[selected][name]
+                    scoped_version = self.binding_versions.get((selected, name), 0)
                     bases = (
                         self.raw_binding(name) if (selected, name) in self.inherited_appends else ()
                     )
+                    fact = self.original_simple_fact(name, bases) if bases else None
+                    if (
+                        self.target_definitions.get(selected, {}).get(name) is not scoped_values
+                        or self.binding_versions.get((selected, name), 0) != scoped_version
+                    ):
+                        raise MakeProbeError("original inherited binding changed during value capture")
                     bases = tuple(
-                        _ModeBinding(base.origin, base.flavor, self.template_snapshot(name))
+                        _ModeBinding(base.origin, base.flavor, None if fact is None else fact[1])
                         if base.flavor == "simple" and base.value is None else base
                         for base in bases
                     )
@@ -368,6 +376,16 @@ class _MakeSourceMode:
     def binding_parts(self, binding):
         return (*binding.inherited, _ModeBinding(binding.origin, binding.flavor, binding.value))
 
+    def retain_literal_value(self, values, value):
+        self.checkpoint()
+        if value in values:
+            return
+        if len(values) >= 512:
+            raise MakeProbeError("literal Make context exceeds the existing bounded context plan")
+        if self.budget is not None:
+            self.budget.charge("cache", 128 + len(encoded(value)))
+        values.add(value)
+
     def binding_values(self, binding, active):
         choices = {""}
         for index, part in enumerate(self.binding_parts(binding)):
@@ -385,12 +403,8 @@ class _MakeSourceMode:
             combined = set()
             for before in choices:
                 for value in values:
-                    text = before + (" " if index and before else "") + value
-                    if self.budget is not None:
-                        self.budget.charge("cache", len(encoded(text)))
-                    combined.add(text)
-                    if len(combined) > 512:
-                        raise MakeProbeError("literal Make context exceeds the existing bounded context plan")
+                    text = _join_make_text((before, " " if index and before else "", value), self.budget)
+                    self.retain_literal_value(combined, text)
             choices = combined
         return choices
 
@@ -474,13 +488,34 @@ class _MakeSourceMode:
 
     def literal_values(self, expression, active=()):
         self.checkpoint()
-        if not self.original_namespace_valid:
+        if not self.original_namespace_valid or len(active) >= 512:
             return None
+        version, site, scope, namespace = self.version, self.site, self.scope_context, self.namespace
+        budget, definitions = self.budget, self.definitions
+        template, original_input, execution = self.template_mode, self.original_input, self.original_execution
+        clock = None if budget is None else (budget.started, budget.deadline, budget.limits)
+        reads = {}
+
+        def require_live():
+            if self.budget is not budget:
+                raise MakeProbeError("original value budget changed during composition")
+            self.checkpoint()
+            if (
+                self.version != version or not self.original_namespace_valid
+                or self.site is not site or self.scope_context is not scope or self.namespace is not namespace
+                or self.definitions is not definitions or self.budget is not budget
+                or self.template_mode is not template or self.original_input is not original_input
+                or self.original_execution is not execution
+                or budget is not None and (
+                    (budget.started, budget.deadline) != clock[:2] or budget.limits is not clock[2]
+                )
+            ):
+                raise MakeProbeError("original value context changed during composition")
 
         def literal(text):
             return None if "$" in text.replace("$$", "") else text.replace("$$", "$")
 
-        spans = list(_make_expression_spans(expression, short=True))
+        spans = list(_make_expression_spans(expression, short=True, budget=self.budget))
         values, previous = {""}, 0
         for start, stop, body in sorted(spans, key=lambda item: (item[0], -item[1])):
             if start < previous:
@@ -501,35 +536,61 @@ class _MakeSourceMode:
             self.retain_reads(names)
             choices = set()
             for name in names:
-                for binding in self.binding(name):
+                bindings = self.binding(name)
+                require_live()
+                if scope is None and definitions.get(name) is bindings and name not in reads:
+                    captured = bindings, self.binding_versions.get((None, name), 0), self.template_values.get(name)
+                    if budget is not None:
+                        budget.charge("cache", 128 + len(encoded(name)))
+                    reads[name] = captured
+                fact = (
+                    self.original_simple_fact(name, bindings)
+                    if scope is None and metadata in {None, "value"} else None
+                )
+                require_live()
+                for binding in bindings:
                     self.checkpoint()
                     if metadata is not None:
                         value = getattr(binding, metadata)
+                        if value is None and metadata == "value" and fact is not None:
+                            value = fact[1]
                         if value is None or metadata != "value" and value == "unknown":
                             return None
-                        choices.add(value)
+                        self.retain_literal_value(choices, value)
                     else:
-                        expanded = self.binding_values(binding, (*active, name))
+                        expanded = (
+                            (fact[1],) if fact is not None and fact[1] is not None
+                            else self.binding_values(binding, (*active, name))
+                        )
                         if expanded is None:
                             return None
-                        choices.update(expanded)
+                        for value in expanded:
+                            self.retain_literal_value(choices, value)
             if not choices:
                 return None
             combined = set()
             for value in values:
                 for choice in choices:
-                    self.checkpoint()
-                    combined.add(value + prefix + choice)
-                    if len(combined) > 512:
-                        raise MakeProbeError("literal Make context exceeds the existing bounded context plan")
-            if self.budget is not None:
-                self.budget.charge("cache", len(encoded(sorted(combined))))
+                    text = _join_make_text((value, prefix, choice), self.budget)
+                    self.retain_literal_value(combined, text)
             values = combined
             previous = stop
         suffix = literal(expression[previous:])
         if suffix is None:
             return None
-        return frozenset(value + suffix for value in values)
+        result = set()
+        for value in values:
+            self.retain_literal_value(result, _join_make_text((value, suffix), self.budget))
+        require_live()
+        # Do not reenter callbacks after starting the final identity comparison.
+        for name, (bindings, binding_version, fact) in reads.items():
+            if (
+                definitions.get(name) is not bindings
+                or self.binding_versions.get((None, name), 0) != binding_version
+                or self.template_values.get(name) is not fact
+            ):
+                raise MakeProbeError("original binding changed during value composition")
+        return frozenset(result)
 
     def target_posix(self, header):
         statement, _ = split_inline_recipe(header)
@@ -744,10 +805,9 @@ class _MakeSourceMode:
         forwarded = NAME_PART.fullmatch(expression)
         if forwarded:
             name = forwarded[1] or forwarded[2]
-            record = self.template_values.get(name)
-            unscoped = self.scope_context is None or all(value.scope is None for value in self.binding(name))
-            if unscoped and record is not None and record[0] == self.version:
-                return record[1]
+            fact = self.original_simple_fact(name, self.binding(name))
+            if fact is not None:
+                return fact[0]
         function = _make_function(expression)
         if function is None or function[0] in {"notdir", "addprefix", "filter", "filter-out", "findstring", "strip", "and"}:
             if function is None:
@@ -818,7 +878,56 @@ class _MakeSourceMode:
             return self.exact_initializer_value(binding.value, active=(*active, name))
         if binding.scope is not None:
             return None
-        return self.template_snapshot(name) if binding.flavor == "simple" else None
+        fact = self.original_simple_fact(name, bindings)
+        return None if fact is None else fact[1]
+
+    def original_simple_fact(self, name, bindings):
+        self.checkpoint()
+        if (
+            not self.original_namespace_valid or len(bindings) != 1
+            or self.definitions.get(name) is not bindings
+            or self.binding_versions.get((None, name), 0) != self.version
+        ):
+            return None
+        binding = next(iter(bindings))
+        if (
+            binding.origin not in {"file", "override"} or binding.flavor != "simple"
+            or binding.value is not None or binding.inherited or binding.scope is not None
+        ):
+            return None
+        record = self.template_values.get(name)
+        if record is None or record[0] != self.version:
+            return None
+        version, site, scope, namespace = self.version, self.site, self.scope_context, self.namespace
+        template, original_input, execution = self.template_mode, self.original_input, self.original_execution
+        budget = self.budget
+        clock = None if budget is None else (budget.started, budget.deadline, budget.limits)
+
+        def require_original():
+            if self.budget is not budget:
+                raise MakeProbeError("original simple binding changed during value capture")
+            self.checkpoint()
+            if (
+                self.version != version or not self.original_namespace_valid or self.budget is not budget
+                or self.binding_versions.get((None, name), 0) != version
+                or self.site is not site or self.scope_context is not scope or self.namespace is not namespace
+                or self.definitions.get(name) is not bindings or self.template_values.get(name) is not record
+                or self.template_mode is not template or self.original_input is not original_input
+                or self.original_execution is not execution
+                or budget is not None and (
+                    (budget.started, budget.deadline) != clock[:2] or budget.limits is not clock[2]
+                )
+            ):
+                raise MakeProbeError("original simple binding changed during value capture")
+
+        if self.scope_lookup_guard is not None:
+            self.scope_lookup_guard(self, name)
+        require_original()
+        value = self.template_snapshot(name)
+        if self.budget is not None:
+            self.budget.charge("cache", 128)
+        require_original()
+        return record[1], value
 
     def template_snapshot(self, name):
         record = self.template_values.get(name)
@@ -1225,31 +1334,13 @@ class _MakeSourceMode:
             if operator in {"?=", "+=", "undefine"} or active is None
             or name in definitions or name in self.forced or self.version else ()
         )
-        if (
-            operator == "+=" and scope is None and self.scope_context is None
-            and self.original_namespace_valid and len(previous) == 1
-            and self.definitions.get(name) is previous
-        ):
-            before = next(iter(previous))
-            if (
-                before.origin in {"file", "override"} and before.flavor == "simple"
-                and before.value is None and not before.inherited and before.scope is None
-            ):
-                original_version, original_site = self.version, self.site
-                original_fact = self.template_values.get(name)
-                exact = self.exact_reference(name)
-                if (
-                    self.version != original_version or not self.original_namespace_valid
-                    or self.binding_versions.get((None, name), 0) != original_version
-                    or self.site is not original_site
-                    or self.scope_context is not None or self.definitions.get(name) is not previous
-                    or self.template_values.get(name) is not original_fact
-                ):
-                    raise MakeProbeError("original simple append binding changed during value capture")
-                if exact is not None:
-                    # Transfer the original fact before RHS effects can retire it.
-                    self.retain_binding(name, (_ModeBinding(before.origin, before.flavor, exact),))
-                    previous = self.definitions[name]
+        if operator == "+=" and scope is None and self.scope_context is None:
+            fact = self.original_simple_fact(name, previous)
+            if fact is not None and fact[1] is not None:
+                before = next(iter(previous))
+                # Transfer the original fact before RHS effects can retire it.
+                self.retain_binding(name, (_ModeBinding(before.origin, before.flavor, fact[1]),))
+                previous = self.definitions[name]
         definitions = self.definitions if scope is None else self.target_definitions.get(scope, {})
         choices = previous or (UNDEFINED_BINDING,)
         actions = []

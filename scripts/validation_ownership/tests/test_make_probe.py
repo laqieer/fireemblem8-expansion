@@ -750,6 +750,460 @@ class OriginalConditionalAppendApiTests(unittest.TestCase):
                 self.assertIs(mode.definitions["OBJECTS"], original)
 
 
+class OriginalMixedFactsApiTests(unittest.TestCase):
+    """Original finite/snapshot composition with explicit modeled source inputs."""
+
+    mode = OriginalConditionalAppendApiTests.mode
+    parse = OriginalConditionalAppendApiTests.parse
+
+    @staticmethod
+    def program(data="$(addprefix out/,data.o)", assembly="$(addprefix out/,asm.o)", choice="$(shell opaque)"):
+        return (
+            "OBJECTS := $(addprefix out/,first.o)\nCHOICE := " + choice + "\n"
+            "ifeq ($(CHOICE),yes)\nOBJECTS += out/second.o\nendif\nDATA := " + data
+            + "\nASM := " + assembly + "\nALL := $(OBJECTS) $(DATA) $(ASM)\n"
+            "$(ALL): | check\nBARRIER := ready\nVALUE := alpha  \\\n beta\n"
+        )
+
+    def mixed(self):
+        mode = self.mode()
+        mode.assign("OBJECTS", ":=", "$(addprefix out/,first.o)")
+        mode.assign("OBJECTS", "+=", "out/second.o", active=None)
+        mode.assign("DATA", ":=", "$(addprefix out/,data.o)")
+        return mode
+
+    def test_literal_computed_and_empty_tails_keep_every_aggregate(self):
+        for data, tail in (
+            ("out/data.o", "out/data.o"),
+            ("$(addprefix out/,data.o)", "out/data.o"),
+            ("$(patsubst %.c,out/%.o,data.c)", "out/data.o"),
+            ("$(addprefix out/,)", ""),
+        ):
+            for assembly in ("out/asm.o", "$(addprefix out/,asm.o)"):
+                for choice in ("yes", "no", "$(shell opaque)"):
+                    with self.subTest(data=data, assembly=assembly, choice=choice):
+                        mode, _ = self.parse(self.program(data, assembly, choice))
+                        objects = {"out/first.o out/second.o"} if choice == "yes" else {"out/first.o"}
+                        if choice == "$(shell opaque)":
+                            objects.add("out/first.o out/second.o")
+                        self.assertEqual(mode.literal_values("$(ALL)"),
+                                         {value + " " + tail + " out/asm.o" for value in objects})
+                        self.assertEqual(mode.exact_reference("VALUE"), "alpha beta")
+                        self.assertIs(mode.posix, False)
+                        self.assertTrue(mode.original_namespace_valid)
+                        if data.startswith("$("):
+                            self.assertEqual({value.value for value in mode.definitions["DATA"]}, {None})
+                            self.assertEqual(mode.template_snapshot("DATA"), tail)
+
+    def test_order_names_braces_and_alias_timing_are_neutral(self):
+        original = self.program()
+        variants = (
+            original,
+            original.replace("OBJECTS", "PARTS").replace("DATA", "TAIL"),
+            original.replace("$(OBJECTS)", "${OBJECTS}").replace("$(DATA)", "${DATA}"),
+            original.replace("ALL := $(OBJECTS) $(DATA) $(ASM)", "ALL := $(ASM) $(DATA) $(OBJECTS)"),
+            "DATA := $(addprefix out/,data.o)\nASM := $(addprefix out/,asm.o)\n"
+            + original.replace("DATA := $(addprefix out/,data.o)\nASM := $(addprefix out/,asm.o)\n", ""),
+        )
+        for index, source in enumerate(variants):
+            with self.subTest(variant=index):
+                mode, _ = self.parse(source)
+                objects = {"out/first.o", "out/first.o out/second.o"}
+                expected = ({value + " out/data.o out/asm.o" for value in objects} if index != 3 else
+                            {"out/asm.o out/data.o " + value for value in objects})
+                self.assertEqual(mode.literal_values("$(ALL)"), expected)
+                self.assertIs(mode.posix, False)
+        mode = self.mixed()
+        mode.assign("COPY", ":=", "$(DATA)")
+        mode.assign("ALIAS", "=", "$(DATA)")
+        mode.assign("DATA", ":=", "later")
+        self.assertEqual(mode.literal_values("$(OBJECTS)|$(COPY)|$(ALIAS)"), {
+            value + "|out/data.o|later" for value in ("out/first.o", "out/first.o out/second.o")
+        })
+        mode.assign("LEAF", "=", "old.c")
+        mode.assign("DATA", ":=", "$(addprefix out/,$(LEAF:.c=.o))")
+        mode.assign("LEAF", "=", "new.c")
+        mode.assign("ALIAS2", "=", "$(ALIAS)")
+        self.assertEqual(mode.literal_values("$(OBJECTS)|$(ALIAS2)"), {
+            value + "|out/old.o" for value in ("out/first.o", "out/first.o out/second.o")
+        })
+
+    def test_unknown_header_stale_and_foreign_facts_cannot_be_laundered_by_aliases(self):
+        for change in (
+            "unknown", "header-bound", "snapshot-version", "binding-version", "namespace",
+            "command line", "environment", "scoped", "inherited", "replaced", "missing",
+        ):
+            with self.subTest(change=change):
+                mode = self.mixed()
+                if change == "unknown":
+                    mode.assign("DATA", ":=", "$(sort unproved)")
+                elif change == "header-bound":
+                    mode.namespace = frozenset({"src", "src/data.o"})
+                    mode.assign("DATA", ":=", "$(wildcard src/*.o)")
+                    self.assertEqual(mode.template_values["DATA"][1][0], "header-bound")
+                elif change == "snapshot-version":
+                    version, fact = mode.template_values["DATA"]
+                    mode.template_values["DATA"] = version - 1, fact
+                elif change == "binding-version":
+                    mode.binding_versions[None, "DATA"] -= 1
+                elif change == "namespace":
+                    mode.uncertain()
+                elif change in {"command line", "environment"}:
+                    mode.definitions["DATA"] = frozenset((graph_probe._ModeBinding(change, "simple", None),))
+                elif change == "scoped":
+                    mode.definitions["DATA"] = frozenset((graph_probe._ModeBinding(
+                        "file", "simple", None, scope="out/one",
+                    ),))
+                elif change == "inherited":
+                    mode.definitions["DATA"] = frozenset((graph_probe._ModeBinding(
+                        "file", "simple", None, inherited=(graph_probe._ModeBinding("file", "simple", "base"),),
+                    ),))
+                elif change == "replaced":
+                    mode.assign("DATA", "=", "$(UNKNOWN)")
+                    mode.assign("UNKNOWN", ":=", "$(sort unproved)")
+                else:
+                    mode.template_values.pop("DATA")
+                self.assertIsNone(mode.literal_values("$(OBJECTS) $(DATA)"))
+                mode.assign("ALIAS", ":=", "$(DATA)")
+                self.assertIsNone(mode.literal_values("$(OBJECTS) $(ALIAS)"))
+                self.assertIsNone(mode.exact_reference("ALIAS"))
+
+    def test_fact_capture_rejects_mid_lookup_identity_epoch_and_lifetime_changes(self):
+        for change in (
+            "binding", "fact", "binding-version", "version", "namespace", "namespace-image",
+            "site", "scope", "budget", "clock", "limits", "template", "input", "execution",
+        ):
+            with self.subTest(change=change):
+                mode = self.mixed()
+                calls = []
+                def guard(current, name):
+                    if name != "DATA":
+                        return
+                    calls.append(name)
+                    if len(calls) != 2:
+                        return
+                    current.scope_lookup_guard = None
+                    if change == "binding":
+                        current.assign("DATA", ":=", "replacement")
+                    elif change == "fact":
+                        current.template_values["DATA"] = current.version, ("exact", "replacement")
+                    elif change == "binding-version":
+                        current.binding_versions[None, "DATA"] -= 1
+                    elif change == "version":
+                        current.version += 1
+                    elif change == "namespace":
+                        current.original_namespace_valid = False
+                    elif change == "namespace-image":
+                        current.namespace = frozenset({"different"})
+                    elif change == "site":
+                        current.site = graph_probe._SourceSite("other.mk", 1, 1, 1)
+                    elif change == "scope":
+                        current.scope_context = graph_probe._ScopeContext("out/one", "out/one", "recipe")
+                    elif change == "budget":
+                        current.budget = ProbeBudget(Limits(seconds=10))
+                    elif change == "clock":
+                        current.budget.started += 1
+                    elif change == "limits":
+                        current.budget.limits = replace(current.budget.limits)
+                    elif change == "template":
+                        current.template_mode = object()
+                    elif change == "input":
+                        current.original_input = lambda name: None
+                    else:
+                        current.original_execution = lambda *args: None
+                mode.scope_lookup_guard = guard
+                with self.assertRaises(MakeProbeError):
+                    mode.literal_values("$(OBJECTS) $(DATA)")
+                self.assertNotIn("ALL", mode.definitions)
+
+    def test_later_operand_cannot_replace_an_already_consumed_original_binding(self):
+        for change in ("binding", "fact", "binding-version"):
+            with self.subTest(change=change):
+                mode = self.mixed()
+                def guard(current, name):
+                    if name != "DATA":
+                        return
+                    current.scope_lookup_guard = None
+                    if change == "binding":
+                        current.assign("OBJECTS", ":=", "replacement")
+                    elif change == "fact":
+                        current.template_values["OBJECTS"] = current.version, ("exact", "replacement")
+                    else:
+                        current.binding_versions[None, "OBJECTS"] -= 1
+                mode.scope_lookup_guard = guard
+                with self.assertRaises(MakeProbeError):
+                    mode.literal_values("$(OBJECTS) $(DATA)")
+
+    def test_snapshot_computation_must_finish_in_its_original_context(self):
+        for change in ("binding", "fact", "site", "namespace", "clock"):
+            with self.subTest(change=change):
+                mode = self.mixed()
+                snapshot = mode.template_snapshot
+                def resolve(name):
+                    value = snapshot(name)
+                    self.assertEqual(value, "out/data.o")
+                    if change == "binding":
+                        mode.definitions[name] = frozenset((graph_probe._ModeBinding("file", "simple", "late"),))
+                    elif change == "fact":
+                        mode.template_values[name] = mode.version, ("exact", "late")
+                    elif change == "site":
+                        mode.site = graph_probe._SourceSite("other.mk", 1, 1, 1)
+                    elif change == "namespace":
+                        mode.original_namespace_valid = False
+                    else:
+                        mode.budget.started += 1
+                    return value
+                with patch.object(mode, "template_snapshot", resolve), self.assertRaises(MakeProbeError):
+                    mode.literal_values("$(OBJECTS) $(DATA)")
+
+    def test_final_provenance_validation_has_no_reentrant_checkpoint_gap(self):
+        mode = self.mixed()
+        remaining, checkpoints = mode.budget.remaining, []
+        def measured():
+            checkpoints.append(None)
+            return remaining()
+        with patch.object(mode.budget, "remaining", measured):
+            self.assertEqual(len(mode.literal_values("$(OBJECTS) $(DATA)")), 2)
+        for change in ("binding", "fact", "namespace", "template", "input", "execution", "budget", "clock"):
+            with self.subTest(change=change):
+                mode = self.mixed()
+                remaining, calls = mode.budget.remaining, []
+                def mutate():
+                    result = remaining()
+                    calls.append(None)
+                    if len(calls) == len(checkpoints):
+                        if change == "binding":
+                            mode.definitions["OBJECTS"] = frozenset((
+                                graph_probe._ModeBinding("file", "simple", "late"),
+                            ))
+                        elif change == "fact":
+                            mode.template_values["OBJECTS"] = mode.version, ("exact", "late")
+                        elif change == "namespace":
+                            mode.original_namespace_valid = False
+                        elif change == "template":
+                            mode.template_mode = object()
+                        elif change == "input":
+                            mode.original_input = lambda name: None
+                        elif change == "execution":
+                            mode.original_execution = lambda *args: None
+                        elif change == "budget":
+                            mode.budget = ProbeBudget(Limits(seconds=10))
+                        else:
+                            mode.budget.started += 1
+                    return result
+                with patch.object(mode.budget, "remaining", mutate), self.assertRaises(MakeProbeError):
+                    mode.literal_values("$(OBJECTS) $(DATA)")
+
+    def test_scoped_and_inherited_values_keep_their_own_bindings(self):
+        objects = ("out/first.o", "out/first.o out/second.o")
+        mode = self.mixed()
+        with mode.using_scope(graph_probe._ScopeContext("out/unrelated", "out/unrelated", "recipe")):
+            self.assertIsNone(mode.literal_values("$(OBJECTS) $(DATA)"))
+        for inherited in (False, True):
+            with self.subTest(inherited=inherited):
+                mode = self.mixed()
+                declaration = "out/one: DATA " + ("+=" if inherited else ":=") + " local\n"
+                tuple(make_source_units(declaration, mode=mode, source_path="model.mk"))
+                context = graph_probe._ScopeContext("out/one", "out/one", "recipe")
+                with mode.using_scope(context):
+                    tail = "out/data.o local" if inherited else "local"
+                    self.assertEqual(mode.literal_values("$(OBJECTS) $(DATA)"),
+                                     {value + " " + tail for value in objects})
+                self.assertEqual({row.value for row in mode.definitions["DATA"]}, {None})
+                self.assertEqual(mode.literal_values("$(OBJECTS) $(DATA)"),
+                                 {value + " out/data.o" for value in objects})
+                mode.assign("DATA", ":=", "$(sort unproved)", scope="out/one")
+                with mode.using_scope(context):
+                    self.assertIsNone(mode.literal_values("$(OBJECTS) $(DATA)"))
+        mode = self.mixed()
+        tuple(make_source_units("out/one: DATA += local\n", mode=mode, source_path="model.mk"))
+        calls = []
+        def guard(current, name):
+            if name == "DATA":
+                calls.append(name)
+                if len(calls) == 2:
+                    current.target_definitions["out/one"]["DATA"] = frozenset((
+                        graph_probe._ModeBinding("file", "recursive", "changed"),
+                    ))
+        mode.scope_lookup_guard = guard
+        with mode.using_scope(graph_probe._ScopeContext("out/one", "out/one", "recipe")):
+            with self.assertRaises(MakeProbeError):
+                mode.literal_values("$(OBJECTS) $(DATA)")
+
+    def test_command_line_environment_and_override_precedence_remain_distinct(self):
+        for forced, override, tail, origin in (
+            (True, False, "cli", "command line"),
+            (True, True, "out/data.o", "override"),
+            (False, False, "out/data.o", "file"),
+        ):
+            with self.subTest(forced=forced, override=override):
+                mode = self.mode(definitions={"DATA": "cli"}, forced={"DATA"} if forced else ())
+                mode.assign("OBJECTS", ":=", "first")
+                mode.assign("OBJECTS", "+=", "second", active=None)
+                mode.assign("DATA", ":=", "$(addprefix out/,data.o)", override=override)
+                self.assertEqual(mode.literal_values("$(OBJECTS) $(DATA)"), {"first " + tail, "first second " + tail})
+                self.assertEqual(mode.literal_values("$(origin DATA)"), {origin})
+        mode = self.mode(definitions={"DATA": ""})
+        mode.assign("OBJECTS", ":=", "first")
+        mode.assign("OBJECTS", "+=", "second", active=None)
+        mode.assign("DATA", "?=", "not-used")
+        self.assertEqual(mode.literal_values("$(OBJECTS)|$(DATA)"), {"first|", "first second|"})
+        self.assertEqual(mode.literal_values("$(origin DATA)"), {"environment"})
+
+    def test_simple_dollar_bytes_are_data_but_recursive_bodies_keep_late_expansion(self):
+        mode = self.mixed()
+        mode.assign("LATER", "=", "old")
+        mode.assign("SIMPLE", ":=", "$$(LATER)")
+        mode.assign("RECURSIVE", "=", "$(LATER)")
+        mode.assign("LATER", "=", "new")
+        self.assertEqual(mode.literal_values("$(SIMPLE)|$(DATA)|$(RECURSIVE)"), {"$(LATER)|out/data.o|new"})
+        mode.assign("SIMPLE", ":=", "$$(eval .POSIX:)")
+        expected = {value + "|$(eval .POSIX:)|out/data.o" for value in ("out/first.o", "out/first.o out/second.o")}
+        self.assertEqual(mode.literal_values("$(OBJECTS)|$(SIMPLE)|$(DATA)"), expected)
+        self.assertFalse(mode.effectful("$(SIMPLE)"))
+        self.assertTrue(mode.original_namespace_valid)
+        mode.assign("RECURSIVE", "=", "$(eval .POSIX:)")
+        self.assertTrue(mode.effectful("$(RECURSIVE)"))
+        mode.assign("LIVE", ":=", "$(RECURSIVE)")
+        self.assertFalse(mode.original_namespace_valid)
+        self.assertIsNone(mode.literal_values("$(OBJECTS) $(DATA)"))
+
+    def test_cycles_effects_and_unconsumed_branches_do_not_refresh_facts(self):
+        mode = self.mixed()
+        mode.assign("A", "=", "$(B)")
+        mode.assign("B", "=", "$(A)")
+        self.assertIsNone(mode.literal_values("$(OBJECTS) $(DATA) $(A)"))
+        for before in (
+            "ifeq (no,yes)\nIGNORED := $(eval .POSIX:)\nendif\n",
+            "IGNORED := $(and ,$(eval .POSIX:))\n",
+            "IGNORED := $(if yes,safe,$(eval .POSIX:))\n",
+        ):
+            with self.subTest(before=before):
+                parsed, _ = self.parse(before + self.program())
+                self.assertIs(parsed.posix, False)
+                self.assertEqual(len(parsed.literal_values("$(ALL)")), 2)
+        for effect in ("$(eval .POSIX:)", "$(eval DATA := changed)"):
+            with self.subTest(effect=effect), self.assertRaises(MakeProbeError):
+                self.parse(self.program().replace("$(DATA) $(ASM)\n", "$(DATA) $(ASM) " + effect + "\n"))
+
+    def test_possible_posix_in_mixed_values_still_refuses_different_continuations(self):
+        source = self.program().replace("out/second.o", ".POSIX")
+        with self.assertRaises(MakeProbeError):
+            self.parse(source)
+        for choice in ("yes", "no"):
+            with self.subTest(choice=choice):
+                mode, _ = self.parse(source.replace("CHOICE := $(shell opaque)", "CHOICE := " + choice))
+                self.assertIs(mode.posix, choice == "yes")
+                self.assertEqual(mode.exact_reference("VALUE"), "alpha   beta" if choice == "yes" else "alpha beta")
+
+    def test_complete_product_and_duplicate_capacity_never_sample(self):
+        mode = self.mode()
+        mode.assign("OBJECTS", ":=", "$(addprefix ,first)")
+        left = {"first"}
+        for index in range(8):
+            tail = "p" + str(index)
+            mode.assign("OBJECTS", "+=", tail, active=None)
+            left |= {value + " " + tail for value in left}
+        mode.assign("SECOND", ":=", "a")
+        mode.assign("SECOND", "+=", "b", active=None)
+        mode.assign("DATA", ":=", "$(addprefix out/,data.o)")
+        expected = {value + "|" + tail + "|out/data.o" for value in left for tail in ("a", "a b")}
+        self.assertEqual(len(expected), 512)
+        self.assertEqual(mode.literal_values("$(OBJECTS)|$(SECOND)|$(DATA)"), expected)
+        mode.assign("SECOND", "+=", "c", active=None)
+        before, clock = dict(mode.definitions), (mode.budget.started, mode.budget.deadline)
+        with self.assertRaises(MakeProbeError):
+            mode.literal_values("$(OBJECTS)|$(SECOND)|$(DATA)")
+        self.assertEqual(mode.definitions, before)
+        self.assertEqual((mode.budget.started, mode.budget.deadline), clock)
+
+    def test_exact_strict_bytes_depth_and_expired_budgets_preserve_read_only_failure(self):
+        expression = "$(OBJECTS) $(DATA)"
+        mode = self.mixed()
+        used = dict(mode.budget.bytes)
+        expected = mode.literal_values(expression)
+        delta = {name: value - used.get(name, 0) for name, value in mode.budget.bytes.items()}
+        for category in ("cache", "total"):
+            for offset in (0, -1):
+                with self.subTest(category=category, offset=offset):
+                    mode = self.mixed()
+                    budget, before = mode.budget, dict(mode.definitions)
+                    used = sum(budget.bytes.values()) if category == "total" else budget.bytes[category]
+                    needed = sum(delta.values()) if category == "total" else delta[category]
+                    budget.limits = replace(budget.limits, **{category + "_bytes": used + needed + offset})
+                    clock = budget.started, budget.deadline
+                    if offset == 0:
+                        self.assertEqual(mode.literal_values(expression), expected)
+                    else:
+                        with self.assertRaises(MakeProbeError):
+                            mode.literal_values(expression)
+                        self.assertTrue(budget.failed)
+                        with self.assertRaises(MakeProbeError):
+                            mode.literal_values(expression)
+                    self.assertEqual(mode.definitions, before)
+                    self.assertEqual((budget.started, budget.deadline), clock)
+        for closed in (True, False):
+            with self.subTest(closed=closed):
+                mode = self.mixed()
+                if closed:
+                    mode.budget.closed = True
+                else:
+                    mode.budget.started -= mode.budget.limits.seconds + 1
+                with self.assertRaises(MakeProbeError):
+                    mode.literal_values(expression)
+        mode = self.mixed()
+        self.assertEqual(mode.literal_values(expression, tuple(range(511))), expected)
+        self.assertIsNone(mode.literal_values(expression, tuple(range(512))))
+
+    def test_admission_precedes_retention_and_duplicates_need_no_new_capacity(self):
+        text = "out/data.o"
+        needed = 128 + len(graph_probe.encoded(text))
+        for offset in (0, -1):
+            with self.subTest(offset=offset):
+                budget = ProbeBudget(Limits(cache_bytes=needed + offset))
+                mode = _MakeSourceMode(budget=budget)
+                attempts = []
+                class Values(set):
+                    def add(self, value):
+                        attempts.append((value, budget.bytes.get("cache", 0)))
+                        super().add(value)
+                values = Values()
+                if offset == 0:
+                    mode.retain_literal_value(values, text)
+                    self.assertEqual(values, {text})
+                    self.assertEqual(attempts, [(text, needed)])
+                    mode.retain_literal_value(values, text)
+                    self.assertEqual(attempts, [(text, needed)])
+                else:
+                    with self.assertRaises(MakeProbeError):
+                        mode.retain_literal_value(values, text)
+                    self.assertEqual(attempts, [])
+                    self.assertEqual(values, set())
+        mode = _MakeSourceMode(budget=ProbeBudget())
+        values = {str(index) for index in range(512)}
+        mode.retain_literal_value(values, "0")
+        self.assertEqual(mode.budget.bytes, {})
+        with self.assertRaises(MakeProbeError):
+            mode.retain_literal_value(values, "one-over")
+        self.assertEqual(len(values), 512)
+
+    def test_reading_mixed_and_metadata_values_does_not_acquire_write_authority(self):
+        mode = self.mixed()
+        mode.assign("UNRELATED", "=", "$(eval .POSIX:)")
+        definitions, facts = dict(mode.definitions), dict(mode.template_values)
+        with patch.object(mode, "retain_binding", side_effect=AssertionError("read acquired write authority")):
+            self.assertEqual(mode.literal_values("$(OBJECTS) $(DATA)"),
+                             {"out/first.o out/data.o", "out/first.o out/second.o out/data.o"})
+            self.assertEqual(mode.literal_values("$(origin OBJECTS)/$(flavor DATA)/$(value DATA)"),
+                             {"file/simple/out/data.o"})
+        self.assertEqual(mode.definitions, definitions)
+        self.assertEqual(mode.template_values, facts)
+        self.assertTrue(all(mode.definitions[name] is value for name, value in definitions.items()))
+        self.assertTrue(all(mode.template_values[name] is value for name, value in facts.items()))
+        self.assertTrue(mode.original_namespace_valid)
+        self.assertIs(mode.posix, False)
+
+
 class AuthoritativeMakeProbeTests(unittest.TestCase):
     def setUp(self):
         self.directory = ROOT / "build/test-artifacts/graph-probe" / secrets.token_hex(12)
