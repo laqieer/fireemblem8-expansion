@@ -1855,6 +1855,32 @@ leaves still decline. Supported pure recursive bodies are resolved at use,
 not frozen at definition. This remains a bounded exact algebra, not a general
 Make interpreter.
 
+An applicable global simple `+=` preserves a proven original value even when
+its preceding initializer stored that value only as an exact template fact.
+For example, `OBJECTS := $(addprefix out/,first.o)` followed by an unresolved
+conditional `OBJECTS += out/second.o` retains both `out/first.o` and
+`out/first.o out/second.o`, just like the equivalent literal initializer.
+The existing exact-reference API must prove the same stored binding, origin,
+scope, version, source occurrence and valid namespace. The fact transfers to
+the ordinary binding representation before RHS evaluation; a changed binding
+or context during capture rejects. An inactive assignment leaves the original
+binding and snapshot untouched.
+
+Only exact values qualify, never header-safety bounds, stale facts, unrelated
+scoped/inherited values or terminal Make observations. Recursive appends keep
+their deferred semantics; precedence, empty and unknown RHSs and effect
+invalidation remain distinct. Taken and not-taken alternatives are complete,
+not sampled, and every retained append alternative is admitted against the
+existing cache/total budget and 512-context bound. That bound is not a limit on
+the number of words in one value. Concatenation uses the existing accounted
+text path, sharing the original deadline. Possible `.POSIX` activation and
+genuinely different continuation values still refuse.
+
+The [conditional-append procedure](test-cases/workflow-governance.md#original-source-conditional-append-correction)
+separates actual pure-API evidence, unchanged representative source slices with
+explicit modeled inputs, and the separately required native qualification.
+It does not certify the complete modern aggregate or borrow a native branch.
+
 Exact wildcard leaves require a separate **session-issued original namespace
 capability**. Its initial names, types and lookup identities derive from the
 admitted materialized Snapshot/view, not `mode.namespace`, a caller set, or the

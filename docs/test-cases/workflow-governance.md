@@ -3987,6 +3987,89 @@ budgets, H1, CI, merge, exact-master verification or closure. Keep those holds
 explicit. Revert or fix forward without widening authority if native
 qualification exposes a regression.
 
+### Original-source conditional-append correction
+
+This extends **TC-WORKFLOW-GATE-OWNERSHIP-001** for #180 / PR #186 under the
+[frozen source correction](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5787323067).
+The confirmed defect loses a preceding exact simple-assignment snapshot when
+an unresolved conditional appends to it. It is not an object-word-count limit.
+Closed sizing run35804108040 reports a later aggregate-target/continuation
+refusal, but its reported selected-Git positions do not identify the native
+unknown binding or prove this defect is its exclusive cause.
+
+Use a clean exact candidate and the host prerequisites above. The focused
+inert class is
+`scripts.validation_ownership.tests.test_make_probe.OriginalConditionalAppendApiTests`.
+For code-only preparation, inspect the selected actual AST/API bodies and run
+them with `/usr/bin/python3 -I -S -B`, complete native/import/IO/effect traps
+and the existing shared budget. Never import a candidate module, enter native
+session setup or call signal-bearing budget teardown. Original inputs and
+execution records in this model are not native authority.
+
+1. Initialize `OBJECTS := $(addprefix out/,first.o)`, set an explicitly modeled
+   unknown `CHOICE`, and conditionally execute `OBJECTS += out/second.o` under
+   `ifeq ($(CHOICE),yes)`. Follow with `ALL := $(OBJECTS)`, an aggregate
+   `$(ALL): | check` target, a subsequent rule and a continued assignment.
+   Require both exact object lists, normal mode and valid original namespace,
+   without a terminal query. Literal and captured `patsubst` initializers,
+   known taken/untaken conditions and unconditional appends must agree.
+   A skipped append must leave the prior binding and snapshot untouched.
+2. Exercise empty, self-referential, computed and genuinely unknown RHSs;
+   recursive late expansion; command-line/environment/override precedence;
+   scoped and inherited appends; later replacement and original snapshot
+   inputs. Stale binding/snapshot versions, invalid namespace, a changed
+   source occurrence or binding during capture, and header-only bounds cannot
+   supply an exact old value. RHS eval must invalidate the original context;
+   inactive assignments and unconsumed lazy bodies must not execute it.
+3. Include an alternative appending `.POSIX` and a later continuation whose
+   normal/POSIX values differ. Unknown activation must reject, not normalize
+   the values; known yes/no must retain their distinct spacing. Reach exactly
+   512 distinct alternatives, then exceed that bound and require refusal
+   without losing or sampling prior outcomes. Repeat with 2, 512, 513 and
+   1500 words in each value, exact/one-over cache and total admission, the
+   existing depth boundary and expired/closed/sticky-failed budgets. Retained
+   alternatives and assembled text spend the same budget and deadline.
+4. Preserve the exact798 assignment preimage. Restoring it or removing only
+   the original-fact transfer must recover the computed/unknown-condition
+   loss and continuation refusal while literal/unconditional controls stay
+   valid. Removing not-taken retention must fail the outcome assertions.
+   Equivalent names, braced references, independent declaration order and a
+   neutral implementation-local rename remain green.
+5. Repeat with unchanged representative `modern.mk` C-object initialization,
+   linked-source append, guarded units/traps appends, aggregate target,
+   pattern target and following continuation. Explicitly model literal
+   output/source/linked/data/asm/UI leaves and two unknown condition inputs.
+   Require all four lists and normal mode, including renamed variables and
+   independently reordered inputs. Restoring exact798 must fail again.
+   Those modeled leaves and selected source spans are not a native aggregate
+   certificate. Preserve the prior runtime/source/custody/cleanup, lazy,
+   `.POSIX`, exact-preimage and resource controls.
+6. Only under a **separately allocated native run**, select
+   `test_phase_census.PhaseCensusTests.test_native_original_conditional_append_keeps_literal_and_computed_outcomes`
+   and
+   `test_phase_census.PhaseCensusTests.test_native_conditional_append_cannot_borrow_untaken_posix_or_eval_state`
+   from `scripts.validation_ownership.tests`. The existing owned fixtures use
+   registered `printf %s yes/no` conditions and real source journals. Compare
+   contained Make's selected object list/continuation value with conservative
+   source alternatives, and require analysis to issue no additional Make.
+   Native `no` must not excuse a possible `.POSIX` or eval branch. Use the
+   fixtures' existing cleanup and remove only their owned state.
+
+The two native selectors are authored but **unrun by code-only preparation**.
+A later full native report must establish whether the actual aggregate
+refusal is resolved. All ten prior diagnostic allocations remain spent;
+model success does not certify native selectors, the complete CURRENT/BASE
+report, verifier/resource demand, shipping limits, H1 or CI/delivery.
+Independent exact-head source review precedes Main's integration/allocation.
+
+Dependencies are the existing original binding/version/source-phase/namespace
+and budget contracts; there is no new independent issue dependency, registry
+or flag. Unproved facts remain in conflict with admission. No ROM/RAM, save,
+localization, generated content or modern debug/release/archival output
+changes. Reset each inert model and retain only session-local evidence; no
+native cleanup is needed for memory-only cases. Revert or fix forward through
+normal ancestry if later qualification exposes a regression.
+
 ### Native ownership, stderr effects and cumulative accounting
 
 These are additional deterministic controls for

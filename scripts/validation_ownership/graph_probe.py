@@ -1225,6 +1225,31 @@ class _MakeSourceMode:
             if operator in {"?=", "+=", "undefine"} or active is None
             or name in definitions or name in self.forced or self.version else ()
         )
+        if (
+            operator == "+=" and scope is None and self.scope_context is None
+            and self.original_namespace_valid and len(previous) == 1
+            and self.definitions.get(name) is previous
+        ):
+            before = next(iter(previous))
+            if (
+                before.origin in {"file", "override"} and before.flavor == "simple"
+                and before.value is None and not before.inherited and before.scope is None
+            ):
+                original_version, original_site = self.version, self.site
+                original_fact = self.template_values.get(name)
+                exact = self.exact_reference(name)
+                if (
+                    self.version != original_version or not self.original_namespace_valid
+                    or self.binding_versions.get((None, name), 0) != original_version
+                    or self.site is not original_site
+                    or self.scope_context is not None or self.definitions.get(name) is not previous
+                    or self.template_values.get(name) is not original_fact
+                ):
+                    raise MakeProbeError("original simple append binding changed during value capture")
+                if exact is not None:
+                    # Transfer the original fact before RHS effects can retire it.
+                    self.retain_binding(name, (_ModeBinding(before.origin, before.flavor, exact),))
+                    previous = self.definitions[name]
         definitions = self.definitions if scope is None else self.target_definitions.get(scope, {})
         choices = previous or (UNDEFINED_BINDING,)
         actions = []
@@ -1264,7 +1289,9 @@ class _MakeSourceMode:
                 literal_choices = self.literal_values(value)
             except RecursionError:
                 literal_choices = None
-            if scope is not None and self.original_execution is not None and literal_choices is None:
+            if literal_choices is None and (
+                operator == "+=" or scope is not None and self.original_execution is not None
+            ):
                 exact = self.exact_initializer_value(value)
                 if exact is not None:
                     literal_choices = frozenset((exact,))
@@ -1288,18 +1315,33 @@ class _MakeSourceMode:
             emitted = self.evaluate(value, active=active)
         if emitted and definitions.get(name, ()) != previous:
             self.uncertain("emitted assignment changes its enclosing destination")
-        result = set(previous) if active is None else set()
+        result = set()
+
+        def add(binding):
+            self.checkpoint()
+            if binding in result:
+                return
+            if operator == "+=":
+                if len(result) >= 512:
+                    raise MakeProbeError("literal Make context exceeds the existing bounded context plan")
+                if self.budget is not None:
+                    self.budget.charge("cache", 128 + len(encoded((binding.origin, binding.flavor, binding.value))))
+            result.add(binding)
+
+        if active is None:
+            for before in previous:
+                add(before)
         for before, applies, immediate in actions:
             if applies is not True:
-                result.add(before if self.version == version else UNPROVEN_BINDING)
+                add(before if self.version == version else UNPROVEN_BINDING)
             if applies is False:
                 continue
             if operator == "undefine":
-                result.add(UNDEFINED_BINDING)
+                add(UNDEFINED_BINDING)
             elif operator == "!=":
                 # The shell runs now, but its output becomes a recursive Make
                 # body. Neither the command text nor a later value proves it.
-                result.add(_ModeBinding(origin, "recursive", None))
+                add(_ModeBinding(origin, "recursive", None))
             elif operator in SIMPLE_ASSIGNMENT_OPERATORS or operator == "+=" and immediate is True:
                 if emitted:
                     literals = (value[:len(value) - len(value.lstrip(MAKE_SPACE))] + value[len(value.rstrip(MAKE_SPACE)):],)
@@ -1310,29 +1352,29 @@ class _MakeSourceMode:
                 for literal in literals:
                     if operator == "+=":
                         if literal in {"", None}:
-                            result.add(before)
+                            add(before)
                         if literal == "":
                             continue
                         literal = (
-                            (before.value + " " if before.value else "") + literal
+                            _join_make_text((before.value, " " if before.value else "", literal), self.budget)
                             if before.value is not None and literal is not None else None
                         )
-                    result.add(_ModeBinding(origin, "simple", literal))
+                    add(_ModeBinding(origin, "simple", literal))
             elif operator == "+=":
                 if before.flavor == "unknown":
-                    result.add(UNPROVEN_BINDING)
+                    add(UNPROVEN_BINDING)
                 elif not value and before.flavor != "undefined":
-                    result.add(before)
+                    add(before)
                 elif before.value is None:
-                    result.add(_ModeBinding(origin, "recursive", None))
+                    add(_ModeBinding(origin, "recursive", None))
                 else:
-                    result.add(_ModeBinding(origin, "recursive", (before.value + " " if before.value else "") + value))
+                    add(_ModeBinding(origin, "recursive", (before.value + " " if before.value else "") + value))
             else:
                 if operator == "?=" and before.flavor == "unknown":
-                    result.add(before)
-                result.add(_ModeBinding(origin, "recursive", value))
+                    add(before)
+                add(_ModeBinding(origin, "recursive", value))
         if self.version != version:
-            result.add(UNPROVEN_BINDING)
+            add(UNPROVEN_BINDING)
         self.retain_binding(name, result, scope)
         if scope is None and effect.applies is not False:
             self.template_values.pop(name, None)

@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from scripts.validation_ownership import graph_probe, make_probe, reporter
+from scripts.validation_ownership import graph_probe, make_probe, phase_census, reporter
 from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, GitTreeEntries, GitTreeEntry, encoded
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.budget import Limits, MAX_PLANNED_STATE_BYTES
@@ -418,6 +418,336 @@ class GraphSemanticApiTests(unittest.TestCase):
                     self.assertEqual(source_census(
                         sources, reference_units=stream, budget=budget,
                     )["literal_binding_modules"], ("data.mk",))
+
+
+class OriginalConditionalAppendApiTests(unittest.TestCase):
+    """Actual original-value APIs; input/execution facts below are explicit models."""
+
+    def mode(self, *, budget=None, definitions=None, forced=()):
+        budget = ProbeBudget(Limits(seconds=10)) if budget is None else budget
+        mode = _MakeSourceMode(
+            budget=budget, definitions={} if definitions is None else definitions, forced=frozenset(forced),
+            original_input=lambda name: {"origin": "undefined", "flavor": "undefined", "value": ""},
+            original_execution=lambda *args: None,
+        )
+        def no_terminal(*args, **kwargs):
+            self.fail("original append borrowed a terminal value")
+        template = phase_census.SourceTemplates(
+            SimpleNamespace(budget=budget, make=no_terminal), "all", (), {}, None, "model.mk", False,
+        )
+        mode.template_mode, mode.original_target_value = template, template.text
+        mode.bind_invocation("all")
+        return mode
+
+    @staticmethod
+    def program(*, initial="$(addprefix out/,first.o)", condition="$(shell opaque)", suffix="out/second.o"):
+        return (
+            "OBJECTS := " + initial + "\nCHOICE := " + condition
+            + "\nifeq ($(CHOICE),yes)\nOBJECTS += " + suffix + "\nendif\n"
+            "ALL := $(OBJECTS)\n$(ALL): | check\nnext: ;\nVALUE := alpha \\\n beta\n"
+        )
+
+    def parse(self, source, **kwargs):
+        mode = self.mode(**kwargs)
+        units = tuple(make_source_units(source, mode=mode, source_path="model.mk"))
+        self.assertEqual((mode.budget.runs, mode.budget.states), (0, 0))
+        self.assertFalse(mode.budget.children)
+        self.assertFalse(mode.budget.producer_waiters)
+        return mode, units
+
+    @staticmethod
+    def values(mode, name):
+        values = mode.literal_values("$(" + name + ")")
+        if values is not None:
+            return values
+        exact = mode.exact_reference(name)
+        return None if exact is None else frozenset((exact,))
+
+    def test_literal_and_exact_initializers_keep_all_conditional_outcomes(self):
+        for initial in ("out/first.o", "$(addprefix out/,first.o)", "$(patsubst %.c,out/%.o,first.c)"):
+            for condition in ("yes", "no", "$(shell opaque)"):
+                with self.subTest(initial=initial, condition=condition):
+                    mode, _ = self.parse(self.program(initial=initial, condition=condition))
+                    expected = {"out/first.o out/second.o"} if condition == "yes" else {"out/first.o"}
+                    if condition == "$(shell opaque)":
+                        expected.add("out/first.o out/second.o")
+                    self.assertEqual(self.values(mode, "OBJECTS"), expected)
+                    self.assertEqual(self.values(mode, "ALL"), expected)
+                    self.assertIs(mode.target_posix("$(ALL): | check"), False)
+                    self.assertEqual(mode.exact_reference("VALUE"), "alpha beta")
+                    self.assertTrue(mode.original_namespace_valid)
+                    self.assertIs(mode.posix, False)
+
+    def test_neutral_names_braces_and_independent_order_keep_the_same_outcomes(self):
+        source = self.program()
+        first, second, rest = source.split("\n", 2)
+        for variant in (
+            source,
+            source.replace("OBJECTS", "RENAMED"),
+            source.replace("$(OBJECTS)", "${OBJECTS}").replace("$(ALL)", "${ALL}"),
+            second + "\n" + first + "\n" + rest,
+        ):
+            with self.subTest(source=variant):
+                mode, _ = self.parse(variant)
+                self.assertEqual(mode.literal_values("$(ALL)"), {"out/first.o", "out/first.o out/second.o"})
+                self.assertEqual(mode.exact_reference("VALUE"), "alpha beta")
+                self.assertTrue(mode.original_namespace_valid)
+                self.assertIs(mode.posix, False)
+
+    def test_simple_append_rhs_empty_exact_self_and_unknown_keep_honest_values(self):
+        for initial, old in (("$(addprefix out/,first.o)", "out/first.o"), ("$(addprefix out/,)", "")):
+            for rhs, tail in (("", ""), ("out/second.o", "out/second.o"),
+                              ("$(addprefix out/,second.o)", "out/second.o"), ("$(OBJECTS)", old)):
+                for active in (True, False, None):
+                    with self.subTest(initial=initial, rhs=rhs, active=active):
+                        mode = self.mode()
+                        mode.assign("OBJECTS", ":=", initial)
+                        self.assertEqual(mode.template_snapshot("OBJECTS"), old)
+                        previous = mode.definitions["OBJECTS"], mode.template_values["OBJECTS"]
+                        mode.assign("OBJECTS", "+=", rhs, active=active)
+                        appended = old if not tail else old + (" " if old else "") + tail
+                        expected = {appended} if active is True else {old}
+                        if active is None:
+                            expected.add(appended)
+                        self.assertEqual(self.values(mode, "OBJECTS"), expected)
+                        if active is False:
+                            self.assertIs(mode.definitions["OBJECTS"], previous[0])
+                            self.assertIs(mode.template_values["OBJECTS"], previous[1])
+        for active in (True, None):
+            with self.subTest(unknown_rhs=True, active=active):
+                mode = self.mode()
+                mode.assign("OBJECTS", ":=", "$(addprefix out/,first.o)")
+                mode.assign("OBJECTS", "+=", "$(sort unknown)", active=active)
+                self.assertIsNone(mode.literal_values("$(OBJECTS)"))
+                self.assertIn(None, {row.value for row in mode.binding("OBJECTS")})
+                self.assertIn("out/first.o", {row.value for row in mode.binding("OBJECTS")})
+
+    def test_recursive_append_keeps_late_expansion_and_all_branches(self):
+        for active in (True, False, None):
+            with self.subTest(active=active):
+                mode = self.mode()
+                mode.assign("LATE", "=", "first")
+                mode.assign("OBJECTS", "=", "$(LATE)")
+                mode.assign("OBJECTS", "+=", "$(LATE)", active=active)
+                mode.assign("LATE", "=", "second")
+                expected = {"second second"} if active is True else {"second"}
+                if active is None:
+                    expected.add("second second")
+                self.assertEqual(mode.literal_values("$(OBJECTS)"), expected)
+                self.assertTrue(all(row.flavor == "recursive" for row in mode.binding("OBJECTS")))
+                self.assertIsNone(mode.template_snapshot("OBJECTS"))
+
+    def test_command_line_override_and_environment_precedence_are_preserved(self):
+        for forced, initial_override, append_override, expected, origins in (
+            (True, False, False, {"cli"}, {"command line"}),
+            (True, True, False, {"out/first.o"}, {"override"}),
+            (True, True, True, {"out/first.o", "out/first.o tail"}, {"override"}),
+            (False, False, False, {"out/first.o", "out/first.o tail"}, {"file"}),
+            (False, False, True, {"out/first.o", "out/first.o tail"}, {"file", "override"}),
+        ):
+            with self.subTest(forced=forced, initial_override=initial_override, append_override=append_override):
+                mode = self.mode(definitions={"OBJECTS": "cli"}, forced={"OBJECTS"} if forced else ())
+                mode.assign("OBJECTS", ":=", "$(addprefix out/,first.o)", override=initial_override)
+                mode.assign("OBJECTS", "+=", "tail", override=append_override, active=None)
+                self.assertEqual(mode.literal_values("$(OBJECTS)"), expected)
+                self.assertEqual({row.origin for row in mode.binding("OBJECTS")}, origins)
+
+    def test_original_snapshot_does_not_follow_late_inputs_or_replaced_bindings(self):
+        mode = self.mode()
+        mode.assign("LEAF", "=", "first.o")
+        mode.assign("OBJECTS", ":=", "$(addprefix out/,$(LEAF))")
+        mode.assign("LEAF", "=", "replacement.o")
+        mode.assign("OBJECTS", "+=", "tail", active=None)
+        self.assertEqual(mode.literal_values("$(OBJECTS)"), {"out/first.o", "out/first.o tail"})
+        mode.assign("OBJECTS", ":=", "$(sort unproved)")
+        self.assertIsNone(mode.template_snapshot("OBJECTS"))
+        mode.assign("OBJECTS", "+=", "tail", active=None)
+        self.assertIsNone(mode.literal_values("$(OBJECTS)"))
+        self.assertNotIn("out/first.o", {row.value for row in mode.binding("OBJECTS")})
+
+    def test_stale_namespace_binding_version_and_header_bounds_do_not_become_values(self):
+        for change in ("namespace", "binding-version", "snapshot-version", "header-bound"):
+            with self.subTest(change=change):
+                mode = self.mode()
+                if change == "header-bound":
+                    mode.namespace = frozenset({"src", "src/first.o"})
+                    mode.assign("OBJECTS", ":=", "$(wildcard src/*.o)")
+                    self.assertEqual(mode.template_values["OBJECTS"][1][0], "header-bound")
+                else:
+                    mode.assign("OBJECTS", ":=", "$(addprefix out/,first.o)")
+                    if change == "namespace":
+                        mode.uncertain()
+                    elif change == "binding-version":
+                        mode.binding_versions[None, "OBJECTS"] -= 1
+                    else:
+                        version, fact = mode.template_values["OBJECTS"]
+                        mode.template_values["OBJECTS"] = version - 1, fact
+                mode.assign("OBJECTS", "+=", "tail", active=None)
+                self.assertIsNone(mode.literal_values("$(OBJECTS)"))
+                self.assertIsNone(mode.exact_reference("OBJECTS"))
+
+    def test_scoped_and_inherited_appends_do_not_borrow_an_unrelated_global_fact(self):
+        mode = self.mode()
+        mode.assign("OBJECTS", ":=", "$(addprefix out/,first.o)")
+        tuple(make_source_units("out/one: OBJECTS += local\n", mode=mode, source_path="model.mk"))
+        context = graph_probe._ScopeContext("out/one", "out/one", "recipe")
+        with mode.using_scope(context):
+            self.assertEqual(mode.literal_values("$(OBJECTS)"), {"out/first.o local"})
+        mode.assign("OBJECTS", "+=", "global", active=None)
+        with mode.using_scope(context):
+            self.assertEqual(mode.literal_values("$(OBJECTS)"),
+                             {"out/first.o local", "out/first.o global local"})
+        self.assertEqual(mode.literal_values("$(OBJECTS)"), {"out/first.o", "out/first.o global"})
+        mode = self.mode()
+        mode.assign("OBJECTS", ":=", "$(addprefix out/,first.o)")
+        mode.assign("OBJECTS", ":=", "$(sort unproved)", scope="out/one")
+        mode.assign("OBJECTS", "+=", "local", scope="out/one", active=None)
+        self.assertTrue(all(row.value is None for row in mode.raw_binding("OBJECTS", "out/one")))
+        self.assertEqual(mode.exact_reference("OBJECTS"), "out/first.o")
+        with mode.using_scope(graph_probe._ScopeContext("out/one", "out/one", "assignment")):
+            original = mode.definitions["OBJECTS"]
+            mode.assign("OTHER", "+=", "tail", active=None)
+            self.assertIs(mode.definitions["OBJECTS"], original)
+
+    def test_value_capture_cannot_cross_an_original_binding_or_epoch_change(self):
+        for change in ("binding", "snapshot", "version", "binding-version", "site", "namespace", "scope"):
+            with self.subTest(change=change):
+                mode = self.mode()
+                mode.assign("OBJECTS", ":=", "$(addprefix out/,first.o)")
+                calls = []
+                def guard(current, name):
+                    calls.append(name)
+                    if len(calls) != 2:
+                        return
+                    current.scope_lookup_guard = None
+                    if change == "binding":
+                        current.assign("OBJECTS", ":=", "replacement")
+                    elif change == "snapshot":
+                        version, fact = current.template_values["OBJECTS"]
+                        current.template_values["OBJECTS"] = version, ("exact", "replacement")
+                    elif change == "version":
+                        current.version += 1
+                    elif change == "binding-version":
+                        current.binding_versions[None, "OBJECTS"] -= 1
+                    elif change == "site":
+                        current.site = graph_probe._SourceSite("other.mk", 1, 1, 1)
+                    elif change == "namespace":
+                        current.original_namespace_valid = False
+                    else:
+                        current.scope_context = graph_probe._ScopeContext("out/one", "out/one", "recipe")
+                mode.scope_lookup_guard = guard
+                with self.assertRaisesRegex(MakeProbeError, "changed during value capture"):
+                    mode.assign("OBJECTS", "+=", "tail", active=None)
+                self.assertNotIn("out/first.o tail", {row.value for row in mode.definitions["OBJECTS"]})
+
+    def test_rhs_effects_invalidate_original_context_but_dead_assignments_do_not(self):
+        for rhs in ("$(eval OTHER := changed)", "$(eval OBJECTS := changed)", "$(eval .POSIX:)"):
+            for active in (True, None):
+                with self.subTest(rhs=rhs, active=active):
+                    mode = self.mode()
+                    mode.assign("OBJECTS", ":=", "$(addprefix out/,first.o)")
+                    mode.assign("OBJECTS", "+=", rhs, active=active)
+                    self.assertFalse(mode.original_namespace_valid)
+                    self.assertIsNone(mode.exact_reference("OBJECTS"))
+                    self.assertIsNone(mode.literal_values("$(OBJECTS)"))
+                    with self.assertRaises(MakeProbeError):
+                        mode.collapse("alpha  \\\n beta")
+        mode = self.mode()
+        mode.assign("OBJECTS", ":=", "$(addprefix out/,first.o)")
+        mode.assign("OBJECTS", "+=", "$(eval .POSIX:)", active=False)
+        self.assertEqual(mode.exact_reference("OBJECTS"), "out/first.o")
+        self.assertTrue(mode.original_namespace_valid)
+        self.assertFalse(mode.effectful("$(and ,$(eval .POSIX:))"))
+        self.assertFalse(mode.effectful("$(if yes,safe,$(eval .POSIX:))"))
+
+    def test_possible_posix_activation_is_not_normalized_into_safe_targets(self):
+        source = (
+            "OBJECTS := $(addprefix ,ordinary)\nCHOICE := $(shell opaque)\n"
+            "ifeq ($(CHOICE),yes)\nOBJECTS += .POSIX\nendif\n"
+            "$(OBJECTS):\nNEXT := barrier\nVALUE := alpha  \\\n beta\n"
+        )
+        with self.assertRaises(MakeProbeError):
+            self.parse(source)
+        for replacement in ("CHOICE := yes", "CHOICE := no"):
+            with self.subTest(choice=replacement):
+                mode, _ = self.parse(source.replace("CHOICE := $(shell opaque)", replacement))
+                self.assertIs(mode.posix, replacement == "CHOICE := yes")
+                self.assertEqual(mode.exact_reference("VALUE"), "alpha   beta" if mode.posix else "alpha beta")
+
+    def test_alternative_cardinality_is_exact_and_over_bound_never_samples(self):
+        mode = self.mode()
+        mode.assign("OBJECTS", ":=", "$(addprefix out/,first.o)")
+        expected = {"out/first.o"}
+        for index in range(9):
+            tail = "part" + str(index)
+            mode.assign("OBJECTS", "+=", tail, active=None)
+            expected |= {value + " " + tail for value in expected}
+        self.assertEqual(len(expected), 512)
+        self.assertEqual(mode.literal_values("$(OBJECTS)"), expected)
+        before, spent, deadline = mode.definitions["OBJECTS"], dict(mode.budget.bytes), mode.budget.deadline
+        with self.assertRaises(MakeProbeError):
+            mode.assign("OBJECTS", "+=", "one-over", active=None)
+        self.assertIs(mode.definitions["OBJECTS"], before)
+        self.assertGreaterEqual(mode.budget.bytes["cache"], spent["cache"])
+        self.assertEqual(mode.budget.deadline, deadline)
+
+    def test_word_count_is_not_alternative_count_and_depth_limit_is_unchanged(self):
+        for count in (2, 512, 513, 1500):
+            with self.subTest(words=count):
+                words = " ".join("unit" + str(index) + ".o" for index in range(count))
+                mode = self.mode()
+                mode.assign("OBJECTS", ":=", "$(addprefix out/," + words + ")")
+                mode.assign("OBJECTS", "+=", "tail", active=None)
+                expected = " ".join("out/" + word for word in words.split())
+                self.assertEqual(mode.literal_values("$(OBJECTS)"), {expected, expected + " tail"})
+                self.assertIs(mode.target_posix("$(OBJECTS): | check"), False)
+        mode = self.mode()
+        mode.assign("OBJECTS", ":=", "$(addprefix out/,first.o)")
+        mode.assign("OBJECTS", "+=", "", active=None)
+        self.assertEqual(mode.exact_reference("OBJECTS", active=tuple(range(511))), "out/first.o")
+        self.assertIsNone(mode.exact_reference("OBJECTS", active=tuple(range(512))))
+
+    def test_exact_cache_total_deadline_and_failed_budget_boundaries(self):
+        mode = self.mode()
+        mode.assign("OBJECTS", ":=", "$(addprefix out/,first.o)")
+        used = dict(mode.budget.bytes)
+        mode.assign("OBJECTS", "+=", "$(addprefix out/,second.o)", active=None)
+        delta = {name: value - used.get(name, 0) for name, value in mode.budget.bytes.items()}
+        for category in ("cache", "total"):
+            for offset in (0, -1):
+                with self.subTest(category=category, offset=offset):
+                    mode = self.mode()
+                    mode.assign("OBJECTS", ":=", "$(addprefix out/,first.o)")
+                    budget = mode.budget
+                    used = sum(budget.bytes.values()) if category == "total" else budget.bytes[category]
+                    needed = sum(delta.values()) if category == "total" else delta[category]
+                    budget.limits = replace(budget.limits, **{category + "_bytes": used + needed + offset})
+                    started, deadline = budget.started, budget.deadline
+                    if offset == 0:
+                        mode.assign("OBJECTS", "+=", "$(addprefix out/,second.o)", active=None)
+                        actual = sum(budget.bytes.values()) if category == "total" else budget.bytes[category]
+                        self.assertEqual(actual, used + needed)
+                    else:
+                        with self.assertRaises(MakeProbeError):
+                            mode.assign("OBJECTS", "+=", "$(addprefix out/,second.o)", active=None)
+                        self.assertTrue(budget.failed)
+                        self.assertNotIn("out/first.o out/second.o",
+                                         {row.value for row in mode.definitions["OBJECTS"]})
+                        with self.assertRaises(MakeProbeError):
+                            mode.assign("OBJECTS", "+=", "", active=None)
+                    self.assertEqual((budget.started, budget.deadline), (started, deadline))
+        for closed in (True, False):
+            with self.subTest(closed=closed):
+                mode = self.mode()
+                mode.assign("OBJECTS", ":=", "$(addprefix out/,first.o)")
+                original = mode.definitions["OBJECTS"]
+                if closed:
+                    mode.budget.closed = True
+                else:
+                    mode.budget.started -= mode.budget.limits.seconds + 1
+                with self.assertRaises(MakeProbeError):
+                    mode.assign("OBJECTS", "+=", "tail", active=None)
+                self.assertIs(mode.definitions["OBJECTS"], original)
 
 
 class AuthoritativeMakeProbeTests(unittest.TestCase):

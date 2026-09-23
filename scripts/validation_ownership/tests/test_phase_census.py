@@ -388,6 +388,65 @@ class PhaseCensusTests(unittest.TestCase):
             observe_source_journal=True, source_journal_mode=source_directories.MODE,
         )
 
+    def test_native_original_conditional_append_keeps_literal_and_computed_outcomes(self):
+        for initial in ("out/first.o", "$(addprefix out/,first.o)"):
+            for choice in ("yes", "no"):
+                with self.subTest(initial=initial, choice=choice):
+                    command = "printf %s " + choice
+                    self.fixture.add("out/.keep", "owned source directory witness\n")
+                    self.fixture.add("Makefile", (
+                        "CHOICE := $(shell " + command + ")\nOBJECTS := " + initial
+                        + "\nifeq ($(CHOICE),yes)\nOBJECTS += out/second.o\nendif\n"
+                        "all: $(OBJECTS)\n$(OBJECTS): | check\nnext: ;\n"
+                        "LATE := alpha \\\n beta\nout/first.o out/second.o check: ;\n"
+                    ))
+                    commands = {command: make_probe.Command(("/usr/bin/printf", "%s", choice))}
+                    with self.fixture.session() as session:
+                        observed = session.make(
+                            "all", definitions=("OBJECTS", "LATE"), commands=commands,
+                            observe_source_journal=True, source_journal_mode=source_directories.MODE,
+                        )
+                        expected = "out/first.o" + (" out/second.o" if choice == "yes" else "")
+                        self.assertEqual(observed.semantics["definitions"]["global"]["OBJECTS"]["value"], expected)
+                        self.assertEqual(observed.semantics["definitions"]["global"]["LATE"]["value"], "alpha beta")
+                        runs = session.budget.runs
+                        with patch.object(session, "make", side_effect=AssertionError("borrowed a terminal query")):
+                            _, _, streams, _ = phase_census.analyze(session, observed, "all", (), commands)
+                        self.assertEqual(len(streams), 1)
+                        mode = streams[0].mode_state
+                        self.assertEqual(mode.literal_values("$(OBJECTS)"),
+                                         {"out/first.o", "out/first.o out/second.o"})
+                        self.assertIs(mode.posix, False)
+                        self.assertTrue(mode.original_namespace_valid)
+                        self.assertEqual(session.budget.runs, runs)
+                    self.fixture.assert_clean(session)
+
+    def test_native_conditional_append_cannot_borrow_untaken_posix_or_eval_state(self):
+        for rhs in (".POSIX", "$(eval OTHER := changed)"):
+            with self.subTest(rhs=rhs):
+                command = "printf %s no"
+                self.fixture.add("out/.keep", "owned source directory witness\n")
+                self.fixture.add("Makefile", (
+                    "CHOICE := $(shell " + command + ")\nOBJECTS := $(addprefix out/,first.o)\n"
+                    "ifeq ($(CHOICE),yes)\nOBJECTS += " + rhs + "\nendif\n"
+                    "all: $(OBJECTS)\n$(OBJECTS): | check\nNEXT := barrier\n"
+                    "LATE := alpha  \\\n beta\nout/first.o check: ;\n"
+                ))
+                commands = {command: make_probe.Command(("/usr/bin/printf", "%s", "no"))}
+                with self.fixture.session() as session:
+                    observed = session.make(
+                        "all", definitions=("OBJECTS", "LATE"), commands=commands,
+                        observe_source_journal=True, source_journal_mode=source_directories.MODE,
+                    )
+                    self.assertEqual(observed.semantics["definitions"]["global"]["OBJECTS"]["value"], "out/first.o")
+                    self.assertEqual(observed.semantics["definitions"]["global"]["LATE"]["value"], "alpha beta")
+                    runs = session.budget.runs
+                    with patch.object(session, "make", side_effect=AssertionError("borrowed a terminal query")):
+                        with self.assertRaises(MakeProbeError):
+                            phase_census.analyze(session, observed, "all", (), commands)
+                    self.assertEqual(session.budget.runs, runs)
+                self.fixture.assert_clean(session)
+
     def test_native_runtime_wildcard_keeps_original_modern_fragment_mode(self):
         modern = (foundation.ROOT / "modern.mk").read_text()
         fragment = modern[modern.index("MODERN_TOOLCHAIN_ROOT ?="):modern.index("MODERN_LAYOUT_FLAGS :=")]
