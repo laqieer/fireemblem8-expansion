@@ -56,6 +56,7 @@ ORIGINAL_IMPORT_SHA = "64e2e9ccaff88ca7ccdfcb1dc750fb35ea057af9"
 IMPORT_RELEASE_SHA = "ed693cd52e1ad202c0f30d04e13e2582389fbd23"
 MAKE_CONTEXT_SHA = "b7f4ca2d6b4d2d4777a8913ee7bd2cfec4e9695f"
 MAKE_BOUNDARY_SHA = "f8144879c4a36fa4e3afa7645b41140234aacb94"
+RUNTIME_REPORT_SHA = "f5a70aaf62c44e43b5f12dc7f78577c8a3fb292c"
 COMPONENT_PATHS = frozenset({
     policy.COMPONENT_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "worker.py", "root_stage.py", "supervisor.py", "observation_failure.py", "README.md",
@@ -116,6 +117,11 @@ MAKE_BOUNDARY_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
     "test_ci_calibration.py", "test_observation_failure.py",
 ))
 RUNTIME_REPORT_PATHS = frozenset({
+    policy.RUNTIME_REPORT_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
+        "policy.py", "supervisor.py", "test_ci_calibration.py", "README.md",
+    )),
+})
+APPEND_REPORT_PATHS = frozenset({
     policy.WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "supervisor.py", "test_ci_calibration.py", "README.md",
     )),
@@ -124,7 +130,8 @@ RUNTIME_REPORT_PATHS = frozenset({
 
 def validate_harness_lineage(lines, head):
     if lines != [
-        f"{head} {MAKE_BOUNDARY_SHA}",
+        f"{head} {RUNTIME_REPORT_SHA}",
+        f"{RUNTIME_REPORT_SHA} {MAKE_BOUNDARY_SHA}",
         f"{MAKE_BOUNDARY_SHA} {MAKE_CONTEXT_SHA}",
         f"{MAKE_CONTEXT_SHA} {IMPORT_RELEASE_SHA}",
         f"{IMPORT_RELEASE_SHA} {ORIGINAL_IMPORT_SHA}",
@@ -150,7 +157,7 @@ def validate_harness_lineage(lines, head):
         f"{RETAINED_HARNESS_SHA} {PREPARATION_SHA}",
         f"{PREPARATION_SHA} {policy.BASE}",
     ]:
-        raise policy.GuardError("diagnostic requires its exact normal runtime-report/make-boundary/make-context/import-release/original-import/traceless/partial-anchor/Python-corrected/corrected-report/code-metadata/registration/localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
+        raise policy.GuardError("diagnostic requires its exact normal append-report/runtime-report/make-boundary/make-context/import-release/original-import/traceless/partial-anchor/Python-corrected/corrected-report/code-metadata/registration/localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
 
 
 def validate_correction_inventory(data):
@@ -409,12 +416,28 @@ def validate_runtime_report_inventory(data):
         raise policy.GuardError("runtime-corrected report requires its complete fixed inventory")
     changes = list(zip(rows[:-1:2], rows[1:-1:2]))
     allowed = {name.encode("ascii") for name in RUNTIME_REPORT_PATHS}
-    workflow = policy.WORKFLOW.encode("ascii")
+    workflow = policy.RUNTIME_REPORT_WORKFLOW.encode("ascii")
     if (
         {name for _, name in changes} != allowed or len(changes) != len(allowed)
         or any(kind != (b"A" if name == workflow else b"M") for kind, name in changes)
     ):
         raise policy.GuardError("runtime-corrected report changed a spent workflow or unallocated surface")
+
+
+def validate_append_report_inventory(data):
+    if type(data) is not bytes:
+        raise policy.GuardError("append-corrected report inventory is not a Git byte record")
+    rows = data.split(b"\0")
+    if len(rows) < 3 or len(rows) % 2 != 1 or rows[-1] != b"":
+        raise policy.GuardError("append-corrected report requires its complete fixed inventory")
+    changes = list(zip(rows[:-1:2], rows[1:-1:2]))
+    allowed = {name.encode("ascii") for name in APPEND_REPORT_PATHS}
+    workflow = policy.WORKFLOW.encode("ascii")
+    if (
+        {name for _, name in changes} != allowed or len(changes) != len(allowed)
+        or any(kind != (b"A" if name == workflow else b"M") for kind, name in changes)
+    ):
+        raise policy.GuardError("append-corrected report changed a spent workflow or unallocated surface")
 
 
 def apparmor_text(name):
@@ -1212,13 +1235,14 @@ class Owner:
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
         validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=25", "HEAD").decode().splitlines(),
+            git(self.harness, "rev-list", "--parents", "--max-count=26", "HEAD").decode().splitlines(),
             self.scope["harness_sha"],
         )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
         if any(
             name and name.decode() not in {
-                policy.WORKFLOW, policy.MAKE_CONTEXT_WORKFLOW, policy.ORIGINAL_IMPORT_WORKFLOW,
+                policy.WORKFLOW, policy.RUNTIME_REPORT_WORKFLOW,
+                policy.MAKE_CONTEXT_WORKFLOW, policy.ORIGINAL_IMPORT_WORKFLOW,
                 policy.TRACELESS_ANCHOR_WORKFLOW, policy.PARTIAL_ANCHOR_WORKFLOW,
                 policy.PYTHON_REPORT_WORKFLOW, policy.CORRECTED_REPORT_WORKFLOW,
                 policy.LOCALIZATION_WORKFLOW, policy.FULL_REPORT_WORKFLOW,
@@ -1304,7 +1328,10 @@ class Owner:
             self.harness, "diff", "--name-status", "-z", MAKE_CONTEXT_SHA, MAKE_BOUNDARY_SHA,
         ))
         validate_runtime_report_inventory(git(
-            self.harness, "diff", "--name-status", "-z", MAKE_BOUNDARY_SHA, "HEAD",
+            self.harness, "diff", "--name-status", "-z", MAKE_BOUNDARY_SHA, RUNTIME_REPORT_SHA,
+        ))
+        validate_append_report_inventory(git(
+            self.harness, "diff", "--name-status", "-z", RUNTIME_REPORT_SHA, "HEAD",
         ))
         validate_accounting_workflow(
             git(self.harness, "show", REPORT_FINALIZATION_SHA + ":" + policy.FULL_REPORT_WORKFLOW),

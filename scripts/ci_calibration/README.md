@@ -1,4 +1,73 @@
-# Contained runtime-corrected full-report rebind
+# Contained append-corrected full-report rebind
+
+**Code-only preparation; never merge this diagnostic branch. No push, native
+allocation, workflow execution, retry or shipping-policy change is authorized.**
+
+Frozen scope:
+[5788124345](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5788124345).
+This is one normal child of the accepted, spent harness
+`f5a70aaf62c44e43b5f12dc7f78577c8a3fb292c`, on
+`calibration/issue-180-full-report-sizing-5`, with the new fixed
+`.github/workflows/issue180-full-report-sizing-5.yml`.
+It selects independently reviewed source
+`60f1c374e23e83efc994f2833dbfb2861f9c3c66` and unchanged
+BASE `ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`.
+The full source diff is 123 paths, +83,148/-843 (83,991 changed lines), derived
+from Git, not a committed content ledger. No production source is copied.
+
+Only identity and admission change. Sizing4's workflow and source798 identity
+are frozen separately, together with its complete five-path f814->f5a70
+inventory. A distinct five-path f5a70->HEAD inventory admits only the new
+workflow and policy/supervisor/test/README modifications. All earlier endpoints
+and thirteen old workflows remain immutable. The lineage has26 normal edges;
+no historical endpoint moves to HEAD. Only the first owner-created public
+hosted branch push, exact harness SHA, run1/attempt1 qualifies.
+
+The complete original CURRENT/BASE/source/Make/generator/lifecycle report and
+serializer remain one check, one budget/session and one absolute3600-second
+clock. Workload `full-public-report-accounting-measurement` and profile
+`full-report-accounting-only-v1` retain14 cumulative queries,19 counters,
+seven fresh qualifiers, five bounded artifacts and all original unit/stream/
+plan/context/capsule/input/namespace/ownership/native/VM/physical bounds.
+Worker, root_stage, observation_failure, protected helpers, import observation,
+closed v3 reported-only context, ambiguity refusal, first/distinct-secondary
+errors, exact-once cleanup and conservative retention are unchanged.
+
+Use inspected isolated `/usr/bin/python3 -I -S -B` inert controls and parsed
+YAML/Git/AST contracts only. Source reflection never executes source classes,
+setup or native functions; compilation is unexecuted metadata inspection.
+Retain every original source assertion and the four exact reviewed6d->798
+full API pairs. The additional adaptation is only the complete reviewed
+798->60f1 `_MakeSourceMode.assign` pair with unchanged signature. Whole-module
+comparison must reject every other graph change, and extra body/signature/
+class/module mutations must fail. No name-only or whole-class waiver is valid.
+The old control-disabling Git helper stays uncompiled and uncalled.
+
+Retain all234 committed methods/1,402 subtests and15 independent methods/114
+subtests from f5a70, plus the separate17-case decoder proof and108 context
+witnesses. Add only the new identity/inventory/source-binding controls and
+report fresh executed counts, not stale nested historical metadata.
+Historical3d1e/64e2/ed693/b7f4 harness preimages remain distinct from source
+21bc/798/60f1 history. All original negative, mutation and neutral controls stay.
+
+All ten earlier native allocations are closed. Latest35804108040 at
+f5a70/source798 passed the runtime-header barrier but reported uncertainty at
+modern913 and refusal922-925. Those selected-Git positions do not establish
+native bindings or an exclusive cause. Source60f1 has a reviewed precision
+fix; actual native aggregate resolution remains unqualified.
+
+The two append selectors, three runtime selectors and coupled metadata/skip/
+default/no-runtime/legacy/CURRENT-BASE/signal/custody/cleanup cases remain
+separate native obligations. No unit suite is added to the report workload;
+a future report cannot substitute for them, standalone verifier measurement,
+shipping-policy H1 or Build/final delivery. Independent exact-head rebind
+acceptance must precede Main's separately frozen one-shot owner allocation.
+No push, allocation, merge, issue closure or remote completion occurs here.
+
+## Historical runtime-corrected full-report rebind
+
+The following preparation text describes the frozen f814->f5a70 sizing4 edge,
+not the new active head or current execution counts.
 
 **Code-only preparation; never merge this diagnostic branch. No push, native
 allocation, workflow execution, retry or shipping-policy change is authorized.**
