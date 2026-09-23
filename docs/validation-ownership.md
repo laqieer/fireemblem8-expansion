@@ -1898,6 +1898,32 @@ checked across resolution; aliasing cannot launder a stale fact. Snapshot
 resolution never calls back into literal/exact resolution, and stored simple
 dollar bytes are data, not a new recursive Make body.
 
+All nested value reads share one bounded, temporary **outer read lifetime**.
+Resolving `ALIAS = $(DATA)` retains DATA's actual binding/fact/version receipt
+until the outer expression returns; nested success does not retire that
+dependency. Scoped reads retain the selected binding, inherited global base,
+inheritance decision and any observed missing scoped slot. Scope selection
+retains the declaration sequence the matcher actually consumes, not an
+arbitrary global-definition or source snapshot.
+
+The last budget checkpoint precedes every final receipt comparison. Final
+validation compares those original objects and versions without callbacks,
+name re-resolution or accepting a newer binding. A later operand cannot
+replace a recursive dependency or scoped/inherited value and still publish
+the earlier text. Public value-entry signatures remain unchanged.
+Nested success, errors and cancellation restore the caller's tracking/scope
+state; an owned lifetime releases its references on exit and independent
+reads start fresh. Assignment callbacks preserve their writes, but their
+separate RHS/write-precedence reads do not pollute an unrelated outer read.
+
+Receipt/selection retention is admitted before growth against the existing
+entry, cache, total and deadline bounds. Repeated lookups deduplicate without
+dropping transitive dependencies. No global authority registry, whole-map
+ledger, new budget, refund or resource waiver is introduced. The
+[provenance follow-up controls](test-cases/workflow-governance.md#mixed-fact-transitive-and-scoped-provenance-follow-up)
+preserve the exact rejected3d9e75 witnesses and distinguish modeled mutation
+from the separately required original native source/job-context check.
+
 All represented combinations remain subject to the existing 512-context and
 depth bounds. Scanning, assembled text and retained alternatives spend the
 same cache/total budget before retention. Duplicate outcomes do not consume

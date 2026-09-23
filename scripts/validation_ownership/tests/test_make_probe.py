@@ -1204,6 +1204,419 @@ class OriginalMixedFactsApiTests(unittest.TestCase):
         self.assertIs(mode.posix, False)
 
 
+class OriginalValueProvenanceApiTests(unittest.TestCase):
+    """Actual transitive/scoped reads; only later lookup callbacks inject mutations."""
+
+    mode = OriginalConditionalAppendApiTests.mode
+    mixed = OriginalMixedFactsApiTests.mixed
+
+    def fixture(self, depth=1):
+        mode = self.mixed()
+        previous = "DATA"
+        for index in range(depth):
+            name = "ALIAS" + str(index)
+            mode.assign(name, "=", "$(" + previous + ")")
+            previous = name
+        mode.assign("TRIGGER", ":=", "tail")
+        return mode, previous
+
+    def mutation(self, mode, change, *, scope=None):
+        if change == "binding":
+            mode.assign("DATA", ":=", "$(addprefix late/,data.o)", scope=scope)
+        elif change == "fact":
+            mode.template_values["DATA"] = mode.version, ("exact", "late/data.o")
+        elif change == "version":
+            mode.binding_versions[scope, "DATA"] -= 1
+        elif change == "inherited":
+            mode.inherited_appends.discard((scope, "DATA"))
+        else:
+            self.fail("unknown bounded mutation")
+
+    def later(self, mode, action):
+        fired = []
+        def guard(current, name):
+            if name == "TRIGGER" and not fired:
+                fired.append(True)
+                action(current)
+        mode.scope_lookup_guard = guard
+        return fired, guard
+
+    def test_deep_repeated_recursive_dependencies_survive_outer_publication(self):
+        for depth in (1, 2, 4):
+            for repeated in (False, True):
+                for change in ("binding", "fact", "version"):
+                    with self.subTest(depth=depth, repeated=repeated, change=change):
+                        mode, alias = self.fixture(depth)
+                        expression = "$(OBJECTS)|$(" + alias + ")" + ("|$(" + alias + ")" if repeated else "") + "|$(TRIGGER)"
+                        self.assertEqual(len(mode.literal_values(expression)), 2)
+                        fired, guard = self.later(mode, lambda current: self.mutation(current, change))
+                        with self.assertRaises(MakeProbeError):
+                            mode.literal_values(expression)
+                        self.assertEqual(fired, [True])
+                        self.assertIs(mode.scope_lookup_guard, guard)
+                        self.assertIsNone(mode._value_reads)
+
+    def test_earlier_mutation_and_neutral_spelling_order_keep_current_facts(self):
+        mode, alias = self.fixture(3)
+        self.later(mode, lambda current: self.mutation(current, "binding"))
+        self.assertEqual(mode.literal_values("$(TRIGGER)|$(OBJECTS)|$(" + alias + ")"), {
+            "tail|out/first.o|late/data.o", "tail|out/first.o out/second.o|late/data.o",
+        })
+        for name, reverse, braces in (("DATA", False, False), ("RENAMED", True, False), ("RENAMED", False, True)):
+            with self.subTest(name=name, reverse=reverse, braces=braces):
+                mode = self.mode()
+                declarations = [(name, "$(addprefix out/,data.o)"), ("OBJECTS", "first")]
+                for target, value in reversed(declarations) if reverse else declarations:
+                    mode.assign(target, ":=", value)
+                mode.assign("OBJECTS", "+=", "second", active=None)
+                mode.assign("ALIAS", "=", "${" + name + "}" if braces else "$(" + name + ")")
+                expression = "${ALIAS}|${OBJECTS}" if braces else "$(OBJECTS)|$(ALIAS)"
+                expected = ({"out/data.o|first", "out/data.o|first second"} if braces else
+                            {"first|out/data.o", "first second|out/data.o"})
+                self.assertEqual(mode.literal_values(expression), expected)
+                self.assertIsNone(mode._value_reads)
+
+    def test_scoped_and_inherited_records_survive_later_mutation(self):
+        for change in ("scoped-binding", "global-binding", "fact", "scoped-version", "global-version", "inherited"):
+            with self.subTest(change=change):
+                mode, _ = self.fixture()
+                tuple(make_source_units("out/one: DATA += local\n", mode=mode, source_path="model.mk"))
+                context = graph_probe._ScopeContext("out/one", "out/one", "recipe")
+                def mutate(current):
+                    kind = change.removeprefix("scoped-").removeprefix("global-")
+                    self.mutation(current, kind, scope="out/one" if change.startswith("scoped-") or change == "inherited" else None)
+                self.later(mode, mutate)
+                with mode.using_scope(context):
+                    with self.assertRaises(MakeProbeError):
+                        mode.literal_values("$(OBJECTS)|$(DATA)|$(TRIGGER)")
+                    self.assertIs(mode.scope_context, context)
+                    self.assertIsNone(mode._value_reads)
+                self.assertIsNone(mode.scope_context)
+
+    def test_scoped_shadow_does_not_borrow_or_track_unread_global_data(self):
+        mode, _ = self.fixture()
+        tuple(make_source_units("out/one: DATA := local\n", mode=mode, source_path="model.mk"))
+        self.later(mode, lambda current: self.mutation(current, "binding"))
+        with mode.using_scope(graph_probe._ScopeContext("out/one", "out/one", "recipe")):
+            self.assertEqual(mode.literal_values("$(OBJECTS)|$(DATA)|$(TRIGGER)"), {
+                "out/first.o|local|tail", "out/first.o out/second.o|local|tail",
+            })
+        self.assertEqual(mode.exact_reference("DATA"), "late/data.o")
+        self.assertIsNone(mode._value_reads)
+
+    def test_absent_scoped_slots_and_selection_records_are_not_refreshed(self):
+        for change in ("new-slot", "declaration", "inherited-flag"):
+            with self.subTest(change=change):
+                mode, _ = self.fixture()
+                mode.assign("DATA", ":=", "global")
+                tuple(make_source_units("out/one: DATA := local\n", mode=mode, source_path="model.mk"))
+                if change == "new-slot":
+                    mode.target_definitions["out/one"].pop("DATA")
+                def mutate(current):
+                    if change == "new-slot":
+                        current.assign("DATA", ":=", "late", scope="out/one")
+                    elif change == "declaration":
+                        current.scope_declarations[0] = current.scope_declarations[0]._replace(selector="out/other")
+                    else:
+                        current.inherited_appends.add(("out/one", "DATA"))
+                self.later(mode, mutate)
+                with mode.using_scope(graph_probe._ScopeContext("out/one", "out/one", "recipe")):
+                    with self.assertRaises(MakeProbeError):
+                        mode.literal_values("$(OBJECTS)|$(DATA)|$(TRIGGER)")
+
+    def test_exact_and_template_entrypoints_hold_transitive_reads_together(self):
+        for operation in ("literal", "exact", "initializer", "argument", "template", "binding-values"):
+            with self.subTest(operation=operation):
+                mode, alias = self.fixture(2)
+                mode.assign("WHOLE", "=", "$(" + alias + ") $(TRIGGER)")
+                self.later(mode, lambda current: self.mutation(current, "binding"))
+                with self.assertRaises(MakeProbeError):
+                    if operation == "literal":
+                        mode.literal_values("$(WHOLE)")
+                    elif operation == "exact":
+                        mode.exact_reference("WHOLE")
+                    elif operation == "initializer":
+                        mode.exact_initializer_value("$(addprefix ,$(WHOLE))")
+                    elif operation == "argument":
+                        mode.template_argument("$(WHOLE)")
+                    elif operation == "template":
+                        mode.template_initializer("$(patsubst %,%,${WHOLE})")
+                    else:
+                        mode.binding_values(next(iter(mode.binding("WHOLE"))), ())
+                self.assertIsNone(mode._value_reads)
+
+    def test_metadata_dead_and_unconsumed_bodies_do_not_gain_receipts(self):
+        for expression in ("$(value ALIAS0)|$(TRIGGER)", "$(origin ALIAS0)|$(TRIGGER)"):
+            with self.subTest(expression=expression):
+                mode, _ = self.fixture()
+                mode.assign("UNREAD", "=", "$(eval .POSIX:)")
+                self.later(mode, lambda current: self.mutation(current, "binding"))
+                with mode.reading_values() as state:
+                    value = mode.literal_values(expression)
+                    self.assertNotIn((None, "DATA"), state.bindings)
+                    self.assertNotIn((None, "UNREAD"), state.bindings)
+                self.assertEqual(value, {"$(DATA)|tail"} if "value" in expression else {"file|tail"})
+                self.assertTrue(mode.original_namespace_valid)
+                self.assertIsNone(state.owner)
+        mode, _ = self.fixture()
+        mode.assign("UNREAD", ":=", "old")
+        self.later(mode, lambda current: current.assign("UNREAD", ":=", "new"))
+        self.assertEqual(len(mode.literal_values("$(OBJECTS)|$(ALIAS0)|$(TRIGGER)")), 2)
+        self.assertEqual(mode.exact_reference("UNREAD"), "new")
+
+    def test_reentrant_nested_scopes_preserve_the_outer_owner(self):
+        mode, _ = self.fixture()
+        mode.assign("INNER", ":=", "inside")
+        captured = []
+        def nested(current):
+            outer, scope = current._value_reads, current.scope_context
+            captured.append(outer)
+            with current.using_scope(graph_probe._ScopeContext("out/inner", "out/inner", "recipe")):
+                self.assertEqual(current.literal_values("$(INNER)"), {"inside"})
+                self.assertIs(current._value_reads, outer)
+            self.assertIs(current.scope_context, scope)
+            self.assertIs(current._value_reads, outer)
+        self.later(mode, nested)
+        reads = mode.reads
+        self.assertEqual(len(mode.literal_values("$(OBJECTS)|$(ALIAS0)|$(TRIGGER)")), 2)
+        self.assertIs(mode.reads, reads)
+        self.assertIsNone(mode._value_reads)
+        self.assertEqual(len(captured), 1)
+        self.assertIsNone(captured[0].owner)
+        self.assertEqual(captured[0].bindings, {})
+        self.assertIsNone(captured[0].selection)
+
+    def test_nested_failure_and_cancellation_restore_state_without_refunds(self):
+        class Cancelled(BaseException):
+            pass
+        for failure in (ValueError("nested"), Cancelled("nested")):
+            for caught in (False, True):
+                with self.subTest(failure=type(failure).__name__, caught=caught):
+                    mode, _ = self.fixture()
+                    mode.assign("BROKEN", "=", "$(DATA)|$(BOOM)")
+                    states, fired = [], []
+                    def guard(current, name):
+                        if name == "BOOM":
+                            raise failure
+                        if name == "TRIGGER" and not fired:
+                            fired.append(True)
+                            outer = current._value_reads
+                            states.append(outer)
+                            try:
+                                current.literal_values("$(BROKEN)")
+                            except BaseException as error:
+                                self.assertIs(error, failure)
+                                self.assertIs(current._value_reads, outer)
+                                if not caught:
+                                    raise
+                    mode.scope_lookup_guard = guard
+                    before = dict(mode.budget.bytes)
+                    clock = mode.budget.started, mode.budget.deadline
+                    if caught:
+                        self.assertEqual(len(mode.literal_values("$(OBJECTS)|$(TRIGGER)")), 2)
+                    else:
+                        with self.assertRaises(type(failure)) as context:
+                            mode.literal_values("$(OBJECTS)|$(TRIGGER)")
+                        self.assertIs(context.exception, failure)
+                    self.assertIsNone(mode._value_reads)
+                    self.assertTrue(all(value.owner is None and not value.bindings for value in states))
+                    self.assertGreaterEqual(mode.budget.bytes["cache"], before["cache"])
+                    self.assertEqual((mode.budget.started, mode.budget.deadline), clock)
+                    mode.scope_lookup_guard = None
+                    self.assertEqual(len(mode.literal_values("$(OBJECTS)|$(DATA)")), 2)
+
+    def test_independent_calls_and_assignment_callbacks_do_not_share_retired_receipts(self):
+        mode, _ = self.fixture()
+        read_set = mode.reads
+        with mode.reading_values() as first:
+            self.assertEqual(mode.literal_values("$(ALIAS0)"), {"out/data.o"})
+        self.mutation(mode, "binding")
+        with mode.reading_values() as second:
+            self.assertEqual(mode.literal_values("$(ALIAS0)"), {"late/data.o"})
+        self.assertIsNot(first, second)
+        self.assertIs(mode.reads, read_set)
+        for state in (first, second):
+            self.assertIsNone(state.owner)
+            self.assertIsNone(state.original)
+            self.assertIsNone(state.budget)
+            self.assertEqual(state.bindings, {})
+        self.assertIsNone(mode._value_reads)
+
+    def test_receipt_entry_bounds_and_repeated_aliases_are_exact(self):
+        for limit in (4, 3):
+            with self.subTest(limit=limit):
+                mode, _ = self.fixture()
+                mode.budget.limits = replace(mode.budget.limits, entries=limit)
+                if limit == 4:
+                    with mode.reading_values() as state:
+                        values = mode.literal_values("$(OBJECTS)|$(ALIAS0)|$(ALIAS0)|$(TRIGGER)")
+                        self.assertEqual(len(values), 2)
+                        self.assertEqual(state.entries, 4)
+                        self.assertEqual(len(state.bindings), 4)
+                else:
+                    with self.assertRaises(MakeProbeError):
+                        mode.literal_values("$(OBJECTS)|$(ALIAS0)|$(TRIGGER)")
+                    self.assertTrue(mode.budget.failed)
+                self.assertIsNone(mode._value_reads)
+        for limit in (6, 5):
+            with self.subTest(scoped_limit=limit):
+                mode, _ = self.fixture()
+                tuple(make_source_units("out/one: DATA += local\n", mode=mode, source_path="model.mk"))
+                mode.budget.limits = replace(mode.budget.limits, entries=limit)
+                with mode.using_scope(graph_probe._ScopeContext("out/one", "out/one", "recipe")):
+                    if limit == 6:
+                        self.assertEqual(len(mode.literal_values("$(OBJECTS)|$(DATA)|$(TRIGGER)")), 2)
+                    else:
+                        with self.assertRaises(MakeProbeError):
+                            mode.literal_values("$(OBJECTS)|$(DATA)|$(TRIGGER)")
+                self.assertIsNone(mode._value_reads)
+
+    def test_read_lifetime_cache_total_clock_and_depth_boundaries(self):
+        expression = "$(OBJECTS)|$(ALIAS0)|$(TRIGGER)"
+        mode, _ = self.fixture()
+        before = dict(mode.budget.bytes)
+        expected = mode.literal_values(expression)
+        delta = {name: value - before.get(name, 0) for name, value in mode.budget.bytes.items()}
+        for category in ("cache", "total"):
+            for offset in (0, -1):
+                with self.subTest(category=category, offset=offset):
+                    mode, _ = self.fixture()
+                    budget, definitions = mode.budget, dict(mode.definitions)
+                    before = sum(budget.bytes.values()) if category == "total" else budget.bytes["cache"]
+                    needed = sum(delta.values()) if category == "total" else delta[category]
+                    budget.limits = replace(budget.limits, **{category + "_bytes": before + needed + offset})
+                    clock = budget.started, budget.deadline
+                    if offset == 0:
+                        self.assertEqual(mode.literal_values(expression), expected)
+                    else:
+                        with self.assertRaises(MakeProbeError):
+                            mode.literal_values(expression)
+                        self.assertTrue(budget.failed)
+                    self.assertIsNone(mode._value_reads)
+                    self.assertEqual(mode.definitions, definitions)
+                    self.assertEqual((budget.started, budget.deadline), clock)
+        for closed in (True, False):
+            with self.subTest(closed=closed):
+                mode, _ = self.fixture()
+                if closed:
+                    mode.budget.closed = True
+                else:
+                    mode.budget.started -= mode.budget.limits.seconds + 1
+                with self.assertRaises(MakeProbeError):
+                    mode.literal_values(expression)
+                self.assertIsNone(mode._value_reads)
+        mode, _ = self.fixture()
+        self.assertEqual(len(mode.literal_values("$(OBJECTS)|$(DATA)", tuple(range(511)))), 2)
+        self.assertIsNone(mode.literal_values("$(OBJECTS)|$(DATA)", tuple(range(512))))
+        self.assertIsNone(mode._value_reads)
+
+    def test_reentrant_admission_cannot_replace_an_earlier_receipt(self):
+        mode, _ = self.fixture()
+        old, fired, states = mode.budget.charge, [], []
+        def charge(category, size):
+            state = mode._value_reads
+            if state is not None and (None, "DATA") not in state.bindings and not fired:
+                fired.append(True)
+                states.append(state)
+                with mode.paused_value_read():
+                    self.mutation(mode, "binding")
+                self.assertEqual(mode.literal_values("$(DATA)"), {"late/data.o"})
+            return old(category, size)
+        with mode.reading_values() as state:
+            with patch.object(mode.budget, "charge", charge), self.assertRaises(MakeProbeError):
+                mode.raw_binding("DATA")
+            self.assertIs(mode._value_reads, state)
+        self.assertEqual(fired, [True])
+        self.assertIsNone(mode._value_reads)
+        self.assertTrue(all(value.owner is None for value in states))
+
+    def test_lifetime_admission_and_partial_setup_retire_owned_state(self):
+        constructor = graph_probe._ValueReadState.__init__
+        for offset in (0, -1):
+            with self.subTest(offset=offset):
+                mode, _ = self.fixture()
+                created = []
+                def observe(state, *args):
+                    constructor(state, *args)
+                    created.append(state)
+                mode.budget.limits = replace(
+                    mode.budget.limits, cache_bytes=mode.budget.bytes["cache"] + 512 + offset,
+                )
+                with patch.object(graph_probe._ValueReadState, "__init__", observe):
+                    if offset == 0:
+                        with mode.reading_values():
+                            pass
+                    else:
+                        with self.assertRaises(MakeProbeError):
+                            with mode.reading_values():
+                                self.fail("unadmitted lifetime entered")
+                self.assertEqual(len(created), 1 if offset == 0 else 0)
+                self.assertTrue(all(state.owner is None and state.original is None for state in created))
+                self.assertIsNone(mode._value_reads)
+        mode, _ = self.fixture()
+        created, fired = [], []
+        charge = mode.budget.charge
+        def observe(state, *args):
+            constructor(state, *args)
+            created.append(state)
+        def mutate(category, size):
+            result = charge(category, size)
+            if not fired:
+                fired.append(True)
+                mode.namespace = frozenset({"changed"})
+            return result
+        with patch.object(graph_probe._ValueReadState, "__init__", observe), \
+             patch.object(mode.budget, "charge", mutate), self.assertRaises(MakeProbeError):
+            mode.literal_values("$(DATA)")
+        self.assertEqual(len(created), 1)
+        self.assertIsNone(created[0].owner)
+        self.assertIsNone(created[0].original)
+        self.assertIsNone(mode._value_reads)
+        self.assertEqual(mode.namespace, frozenset({"changed"}))
+
+    def test_reentrant_admission_preserves_a_caller_owned_lifetime(self):
+        mode, _ = self.fixture()
+        charge, managers, owners = mode.budget.charge, [], []
+        def enter(category, size):
+            if not managers:
+                manager = mode.reading_values()
+                managers.append(manager)
+                owners.append(manager.__enter__())
+            return charge(category, size)
+        try:
+            with patch.object(mode.budget, "charge", enter), self.assertRaises(MakeProbeError):
+                mode.literal_values("$(DATA)")
+            self.assertIs(mode._value_reads, owners[0])
+            self.assertIs(owners[0].owner, mode)
+        finally:
+            if managers:
+                managers[0].__exit__(None, None, None)
+        self.assertIsNone(mode._value_reads)
+        self.assertIsNone(owners[0].owner)
+
+    def test_retired_or_foreign_lifetimes_are_not_adopted_or_retired_by_another_call(self):
+        for retired in (False, True):
+            with self.subTest(retired=retired):
+                owner, _ = self.fixture()
+                receiver, _ = self.fixture()
+                manager = owner.reading_values()
+                state = manager.__enter__()
+                if retired:
+                    manager.__exit__(None, None, None)
+                receiver._value_reads = state
+                try:
+                    with self.assertRaises(MakeProbeError):
+                        receiver.literal_values("$(DATA)")
+                    self.assertIs(receiver._value_reads, state)
+                    self.assertIs(state.owner, None if retired else owner)
+                    self.assertIs(owner._value_reads, None if retired else state)
+                finally:
+                    receiver._value_reads = None
+                    if not retired:
+                        manager.__exit__(None, None, None)
+                self.assertIsNone(state.owner)
+
+
 class AuthoritativeMakeProbeTests(unittest.TestCase):
     def setUp(self):
         self.directory = ROOT / "build/test-artifacts/graph-probe" / secrets.token_hex(12)

@@ -232,6 +232,117 @@ UNPROVEN_BINDING = _ModeBinding("unknown", "unknown", None)
 UNDEFINED_BINDING = _ModeBinding("undefined", "undefined", "")
 
 
+class _ValueReadState:
+    @staticmethod
+    def context(mode):
+        budget = mode.budget
+        identity = (
+            mode.site, mode.scope_context, mode.namespace, mode.definitions,
+            mode.template_mode, mode.original_input, mode.original_execution, budget,
+        )
+        clock = None if budget is None else (budget.started, budget.deadline, budget.limits)
+        return identity, mode.version, mode.original_namespace_valid, clock
+
+    def __init__(self, mode, context):
+        self.owner = mode
+        self.original = context
+        self.budget = context[0][-1]
+        self.limit = self.budget.limits.entries if self.budget is not None else Limits().entries
+        self.entries = 0
+        self.bindings = {}
+        self.selection = None
+
+    def require_context(self, mode):
+        identity, version, valid, clock = self.original
+        current, current_version, current_valid, current_clock = self.context(mode)
+        if (
+            any(left is not right for left, right in zip(identity, current))
+            or version != current_version or valid is not current_valid
+            or clock is not None and (
+                current_clock is None or clock[:2] != current_clock[:2] or clock[2] is not current_clock[2]
+            )
+        ):
+            raise MakeProbeError("original value context changed during composition")
+
+    def reserve(self, mode, entries, size):
+        if mode._value_reads is not self or mode.budget is not self.budget:
+            raise MakeProbeError("original value read lifetime changed")
+        clock = self.original[3]
+        if self.budget is not None and (
+            (self.budget.started, self.budget.deadline) != clock[:2] or self.budget.limits is not clock[2]
+        ):
+            raise MakeProbeError("original value read budget changed")
+        if self.entries + entries > self.limit:
+            if self.budget is not None:
+                self.budget.reject("original value read receipts exceed the existing entry bound")
+            raise MakeProbeError("original value read receipts exceed the existing entry bound")
+        self.entries += entries
+        if self.budget is not None:
+            self.budget.charge("cache", size)
+        if mode._value_reads is not self or mode.budget is not self.budget or self.budget is not None and (
+            (self.budget.started, self.budget.deadline) != clock[:2] or self.budget.limits is not clock[2]
+        ):
+            raise MakeProbeError("original value read admission changed")
+
+    def binding(self, mode, name, scope, definitions, values, version):
+        key = scope, name
+        if key in self.bindings:
+            return
+        fact = mode.template_values.get(name) if scope is None else None
+        inherited = scope is not None and key in mode.inherited_appends
+        context = mode.scope_context
+        self.reserve(mode, 1, 192 + len(encoded(key)))
+        if key not in self.bindings:
+            self.bindings[key] = definitions, values, version, fact, inherited, context
+        else:
+            previous = self.bindings[key]
+            if (
+                previous[0] is not definitions or previous[1] is not values or previous[2] != version
+                or previous[3] is not fact or previous[4] != inherited
+            ):
+                raise MakeProbeError("original binding changed during reentrant admission")
+
+    def declarations(self, mode):
+        if self.selection is None:
+            original = mode.scope_declarations
+            count = len(original)
+            self.reserve(mode, count + 1, 128 + 64 * count)
+            if mode.scope_declarations is not original or len(original) != count:
+                raise MakeProbeError("original scope selection changed during capture")
+            if self.selection is None:
+                self.selection = original, tuple(original)
+        return self.selection[1]
+
+    def finish(self, mode):
+        if mode.budget is not self.budget or mode._value_reads is not self:
+            raise MakeProbeError("original value read lifetime changed")
+        mode.checkpoint()
+        self.require_context(mode)
+        if mode._value_reads is not self:
+            raise MakeProbeError("original value read lifetime changed")
+        # No callbacks after this point: compare the actual consumed records.
+        if self.selection is not None:
+            original, records = self.selection
+            if (
+                mode.scope_declarations is not original or len(original) != len(records)
+                or any(left is not right for left, right in zip(original, records))
+            ):
+                raise MakeProbeError("original scope selection changed during composition")
+        for (scope, name), (definitions, values, version, fact, inherited, context) in self.bindings.items():
+            current = mode.definitions if scope is None else mode.target_definitions.get(scope)
+            if (
+                current is not definitions or (None if definitions is None else definitions.get(name)) is not values
+                or mode.binding_versions.get((scope, name), 0) != version
+                or scope is None and mode.template_values.get(name) is not fact
+                or scope is not None and ((scope, name) in mode.inherited_appends) != inherited
+            ):
+                raise MakeProbeError("original binding changed during value composition")
+
+    def retire(self):
+        self.bindings.clear()
+        self.owner = self.original = self.budget = self.selection = None
+
+
 @dataclass
 class _MakeSourceMode:
     posix: bool | None = False
@@ -264,6 +375,7 @@ class _MakeSourceMode:
     scope_context: _ScopeContext | None = None
     scope_lookup_guard: object = None
     source_rule_count: int = 0
+    _value_reads: object = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self):
         self.definitions = {
@@ -271,7 +383,52 @@ class _MakeSourceMode:
             for name, value in self.definitions.items()
         }
 
+    @contextmanager
+    def reading_values(self):
+        previous = self._value_reads
+        root = previous is None
+        state = context = None
+        installed = False
+        try:
+            if root:
+                context = _ValueReadState.context(self)
+                if self.budget is not None:
+                    self.budget.charge("cache", 512)
+                if self._value_reads is not previous:
+                    raise MakeProbeError("original value read lifetime changed during admission")
+                state = _ValueReadState(self, context)
+                context = None
+                state.require_context(self)
+            else:
+                state = previous
+                if not isinstance(state, _ValueReadState) or state.owner is not self:
+                    raise MakeProbeError("foreign original value read lifetime")
+            self._value_reads = state
+            installed = True
+            yield state
+            if root:
+                state.finish(self)
+        finally:
+            if installed:
+                self._value_reads = previous
+            if root and state is not None:
+                state.retire()
+            context = None
+
+    @contextmanager
+    def paused_value_read(self):
+        previous = self._value_reads
+        self._value_reads = None
+        try:
+            yield
+        finally:
+            self._value_reads = previous
+
     def binding(self, name, scope=None):
+        with self.reading_values():
+            return self._binding(name, scope)
+
+    def _binding(self, name, scope=None):
         if scope is None and self.scope_lookup_guard is not None:
             self.scope_lookup_guard(self, name)
         if scope is None and self.scope_context is not None:
@@ -283,6 +440,12 @@ class _MakeSourceMode:
             selectors = self.matching_scopes(context.target)
             if selectors:
                 selected, = selectors
+                if (selected, name) in self.declared_scopes() and name not in self.target_definitions.get(selected, {}):
+                    if self._value_reads is not None:
+                        self._value_reads.binding(
+                            self, name, selected, self.target_definitions.get(selected), None,
+                            self.binding_versions.get((selected, name), 0),
+                        )
                 if (selected, name) in self.declared_scopes() and name in self.target_definitions.get(selected, {}):
                     values = self.raw_binding(name, selected)
                     scoped_values = self.target_definitions[selected][name]
@@ -318,9 +481,13 @@ class _MakeSourceMode:
     def raw_binding(self, name, scope=None):
         definitions = self.definitions if scope is None else self.target_definitions.get(scope, {})
         if name in definitions:
-            if self.binding_versions.get((scope, name), 0) != self.version:
+            values = definitions[name]
+            version = self.binding_versions.get((scope, name), 0)
+            if self._value_reads is not None:
+                self._value_reads.binding(self, name, scope, definitions, values, version)
+            if version != self.version:
                 return frozenset((UNPROVEN_BINDING,))
-            return definitions[name]
+            return values
         if scope is not None:
             # A new target-specific append does not inherit a global simple
             # flavor. Original command-line precedence is still applicable.
@@ -344,17 +511,25 @@ class _MakeSourceMode:
             else:
                 values = frozenset((_ModeBinding(record["origin"], record["flavor"], record["value"]),))
         self.retain_binding(name, values, scope)
+        if self._value_reads is not None:
+            definitions = self.definitions if scope is None else self.target_definitions[scope]
+            self._value_reads.binding(self, name, scope, definitions, definitions[name], self.version)
         return values
 
+    def read_scope_declarations(self):
+        if self._value_reads is None:
+            return self.scope_declarations
+        return self._value_reads.declarations(self)
+
     def declared_scopes(self):
-        return {(record.selector, record.name) for record in self.scope_declarations}
+        return {(record.selector, record.name) for record in self.read_scope_declarations()}
 
     def scoped_names(self):
-        return {record.name for record in self.scope_declarations}
+        return {record.name for record in self.read_scope_declarations()}
 
     def matching_scopes(self, target):
         selectors = set()
-        for record in self.scope_declarations:
+        for record in self.read_scope_declarations():
             self.checkpoint()
             if _scope_pattern_stem(record.selector, target) is not None:
                 selectors.add(record.selector)
@@ -387,6 +562,10 @@ class _MakeSourceMode:
         values.add(value)
 
     def binding_values(self, binding, active):
+        with self.reading_values():
+            return self._binding_values(binding, active)
+
+    def _binding_values(self, binding, active):
         choices = {""}
         for index, part in enumerate(self.binding_parts(binding)):
             self.checkpoint()
@@ -487,6 +666,10 @@ class _MakeSourceMode:
         return names
 
     def literal_values(self, expression, active=()):
+        with self.reading_values():
+            return self._literal_values(expression, active)
+
+    def _literal_values(self, expression, active=()):
         self.checkpoint()
         if not self.original_namespace_valid or len(active) >= 512:
             return None
@@ -494,7 +677,6 @@ class _MakeSourceMode:
         budget, definitions = self.budget, self.definitions
         template, original_input, execution = self.template_mode, self.original_input, self.original_execution
         clock = None if budget is None else (budget.started, budget.deadline, budget.limits)
-        reads = {}
 
         def require_live():
             if self.budget is not budget:
@@ -538,11 +720,6 @@ class _MakeSourceMode:
             for name in names:
                 bindings = self.binding(name)
                 require_live()
-                if scope is None and definitions.get(name) is bindings and name not in reads:
-                    captured = bindings, self.binding_versions.get((None, name), 0), self.template_values.get(name)
-                    if budget is not None:
-                        budget.charge("cache", 128 + len(encoded(name)))
-                    reads[name] = captured
                 fact = (
                     self.original_simple_fact(name, bindings)
                     if scope is None and metadata in {None, "value"} else None
@@ -582,14 +759,6 @@ class _MakeSourceMode:
         for value in values:
             self.retain_literal_value(result, _join_make_text((value, suffix), self.budget))
         require_live()
-        # Do not reenter callbacks after starting the final identity comparison.
-        for name, (bindings, binding_version, fact) in reads.items():
-            if (
-                definitions.get(name) is not bindings
-                or self.binding_versions.get((None, name), 0) != binding_version
-                or self.template_values.get(name) is not fact
-            ):
-                raise MakeProbeError("original binding changed during value composition")
         return frozenset(result)
 
     def target_posix(self, header):
@@ -774,6 +943,10 @@ class _MakeSourceMode:
         return None
 
     def template_argument(self, expression, active=()):
+        with self.reading_values():
+            return self._template_argument(expression, active)
+
+    def _template_argument(self, expression, active=()):
         self.checkpoint()
         if "$" not in expression:
             return expression
@@ -797,6 +970,10 @@ class _MakeSourceMode:
         return None
 
     def template_initializer(self, expression):
+        with self.reading_values():
+            return self._template_initializer(expression)
+
+    def _template_initializer(self, expression):
         if (
             self.template_mode is None or not self.original_namespace_valid
             or expression != expression.strip(MAKE_SPACE)
@@ -848,6 +1025,10 @@ class _MakeSourceMode:
         return None
 
     def exact_reference(self, name, active=()):
+        with self.reading_values():
+            return self._exact_reference(name, active)
+
+    def _exact_reference(self, name, active=()):
         self.checkpoint()
         if not self.original_namespace_valid or name in active or len(active) >= 512:
             return None
@@ -882,6 +1063,10 @@ class _MakeSourceMode:
         return None if fact is None else fact[1]
 
     def original_simple_fact(self, name, bindings):
+        with self.reading_values():
+            return self._original_simple_fact(name, bindings)
+
+    def _original_simple_fact(self, name, bindings):
         self.checkpoint()
         if (
             not self.original_namespace_valid or len(bindings) != 1
@@ -930,6 +1115,15 @@ class _MakeSourceMode:
         return record[1], value
 
     def template_snapshot(self, name):
+        with self.reading_values():
+            return self._template_snapshot(name)
+
+    def _template_snapshot(self, name):
+        if self._value_reads is not None:
+            self._value_reads.binding(
+                self, name, None, self.definitions, self.definitions.get(name),
+                self.binding_versions.get((None, name), 0),
+            )
         record = self.template_values.get(name)
         if record is None or record[0] != self.version:
             return None
@@ -945,6 +1139,10 @@ class _MakeSourceMode:
         return None
 
     def exact_initializer_value(self, expression, active=()):
+        with self.reading_values():
+            return self._exact_initializer_value(expression, active)
+
+    def _exact_initializer_value(self, expression, active=()):
         self.checkpoint()
         if not self.original_namespace_valid or len(active) >= 512:
             return None
@@ -1326,6 +1524,12 @@ class _MakeSourceMode:
         return tuple(created)
 
     def assign(self, name, operator, value, *, override=False, active=True, scope=None, literal_body=False):
+        with self.paused_value_read():
+            return self._assign(
+                name, operator, value, override=override, active=active, scope=scope, literal_body=literal_body,
+            )
+
+    def _assign(self, name, operator, value, *, override=False, active=True, scope=None, literal_body=False):
         if active is False:
             return _AssignmentEffect(False, False)
         definitions = self.definitions if scope is None else self.target_definitions.get(scope, {})

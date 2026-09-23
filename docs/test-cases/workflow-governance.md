@@ -4154,6 +4154,64 @@ Reset each memory model and retain session-only preimages/results; no native
 cleanup is needed for inert cases. Revert or fix forward through normal
 ancestry if later qualification exposes a regression.
 
+#### Mixed-fact transitive and scoped provenance follow-up
+
+The same **TC-WORKFLOW-GATE-OWNERSHIP-001** includes MF-REVIEW-001/002 under
+[scope5789530483](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5789530483).
+Exact3d9e75 passed the direct mixed-value checks but published six stale
+recursive/scoped results. Use the same clean source and isolated, inspected
+pure-API/effect-trapped prerequisites; real budget run/read/close remains
+denied. The focused class is
+`scripts.validation_ownership.tests.test_make_probe.OriginalValueProvenanceApiTests`.
+
+1. Preserve exact3d9e75. Give DATA its real original computed snapshot, set
+   `ALIAS = $(DATA)` and `TRIGGER := tail`, then read
+   `$(OBJECTS)|$(ALIAS)|$(TRIGGER)`. Only at the later TRIGGER lookup, use the
+   existing guard callback to replace DATA through actual assign, its fact,
+   or its binding version. All three reads must refuse or return unavailable;
+   direct DATA controls and unchanged recursive controls remain valid.
+2. Parse `out/one: DATA += local` through the actual source API. In its typed
+   scope read `$(OBJECTS)|$(DATA)|$(TRIGGER)`. Replace the selected scoped
+   binding/version or inherited global fact at TRIGGER. Refuse all three
+   stale publications, while the unchanged scoped result remains valid.
+   Keep the original site, scope, global version, namespace and callback
+   identity stable so these are dependency-receipt tests, not proxy refusals.
+3. Exercise deeper/repeated aliases, multiple uses, exact/template entrypoints,
+   selected shadows, absent scoped slots, inheritance and declaration
+   changes. A scoped shadow must not acquire an unread global dependency.
+   Metadata-only and unconsumed effectful bodies remain data/unconsumed;
+   an unrelated assignment callback must not force a whole-map comparison.
+   Equivalent names, braces and independent declaration order stay green.
+4. Observe the one outer lifetime across reentrant and nested scope reads.
+   Propagate and catch nested errors/cancellation, preserve the caller's
+   scope/read-state identity, release owned receipts on exit and start
+   independent calls fresh. Test failed initial admission, partial setup,
+   reentrant receipt admission and an already caller-owned nested lifetime.
+   Never overwrite that caller's state or refund spent budget.
+5. Require exact/over receipt-entry, cache/total and depth boundaries plus
+   expired/closed/sticky budgets. Repeated aliases consume no duplicate
+   receipt capacity. Preserve complete512 alternatives and all old append,
+   mixed-value, runtime/custody/cleanup and computed-modern-tail controls.
+6. Restore exact3d9e75 and require the same six failures with six stable/direct
+   controls still passing. Disconnect recursive propagation and scoped
+   receipt capture separately: each must recover its three stale results.
+   Neutral implementation-local renaming remains green. Final comparisons
+   must contain no new checkpoint or callback after validation begins.
+7. Only with separate native authorization, select
+   `test_phase_census.PhaseCensusTests.test_native_original_alias_and_issued_scope_keep_outer_read_provenance`.
+   Its existing owned fixture captures original Make/source/recipe evidence,
+   compares actual printf arguments, and uses the original issued job scope
+   for the inherited case. A later source-API mutation must refuse without
+   another Make query. Use existing fixture cleanup only.
+
+The native selector is authored but **unrun in code-only preparation**.
+All preceding native selectors and report/verifier/resource/shipping/H1/
+CI/delivery obligations remain separate; all eleven diagnostic attempts stay
+spent. Same-reviewer exact-head follow-up precedes Main integration/allocation.
+No namespace/Make grammar, configuration, registry or ROM/save/build behavior
+change is part of this correction. Reset only owned memory/fixture state;
+retain original and mutation evidence without modifying earlier artifacts.
+
 ### Native ownership, stderr effects and cumulative accounting
 
 These are additional deterministic controls for

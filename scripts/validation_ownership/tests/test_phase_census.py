@@ -515,6 +515,50 @@ class PhaseCensusTests(unittest.TestCase):
                     self.assertEqual(session.budget.runs, runs)
                 self.fixture.assert_clean(session)
 
+    def test_native_original_alias_and_issued_scope_keep_outer_read_provenance(self):
+        for scoped in (False, True):
+            with self.subTest(scoped=scoped):
+                target = "out/one" if scoped else "all"
+                self.fixture.add("out/.keep", "owned source directory witness\n")
+                self.fixture.add("Makefile", (
+                    "DATA := $(addprefix out/,data.o)\nALIAS = $(DATA)\nTRIGGER := tail\n"
+                    + ("all: out/one\nout/one: DATA += local\n" if scoped else "")
+                    + target + ":\n\t@printf '%s\\n' '$(ALIAS)'\n"
+                ))
+                with self.fixture.session() as session:
+                    observed = self.scoped_observation(session, ("DATA", "ALIAS", "TRIGGER"))
+                    runs = session.budget.runs
+                    with patch.object(session, "make", side_effect=AssertionError("borrowed a terminal query")):
+                        _, _, streams, _ = phase_census.analyze(session, observed, "all", (), {})
+                    self.assertEqual(len(streams), 1)
+                    mode = streams[0].mode_state
+                    phase = mode.scope_lookup_guard.__self__
+                    event, = [row for row in observed.semantics["native_dispatches"]
+                              if row["job"]["target"] == target]
+                    expected = "out/data.o local" if scoped else "out/data.o"
+                    self.assertEqual(shlex.split(event["arguments"][2].rstrip(";"))[-1], expected)
+                    original, fired = mode.scope_lookup_guard, []
+                    def guard(current, name):
+                        original(current, name)
+                        if name == "TRIGGER" and not fired:
+                            fired.append(True)
+                            current.assign("DATA", "=", "changed", scope="out/one" if scoped else None)
+                    def probe():
+                        self.assertEqual(mode.literal_values("$(ALIAS)|$(TRIGGER)"), {expected + "|tail"})
+                        mode.scope_lookup_guard = guard
+                        with self.assertRaises(MakeProbeError):
+                            mode.literal_values("$(ALIAS)|$(TRIGGER)")
+                        self.assertIsNone(mode._value_reads)
+                    with patch.object(session, "make", side_effect=AssertionError("borrowed a terminal query")):
+                        if scoped:
+                            with mode.using_scope(phase.job_contexts[event["sequence"]]):
+                                probe()
+                        else:
+                            probe()
+                    self.assertEqual(fired, [True])
+                    self.assertEqual(session.budget.runs, runs)
+                self.fixture.assert_clean(session)
+
     def test_native_runtime_wildcard_keeps_original_modern_fragment_mode(self):
         modern = (foundation.ROOT / "modern.mk").read_text()
         fragment = modern[modern.index("MODERN_TOOLCHAIN_ROOT ?="):modern.index("MODERN_LAYOUT_FLAGS :=")]
