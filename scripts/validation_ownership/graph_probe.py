@@ -286,21 +286,20 @@ class _ValueReadState:
 
     def binding(self, mode, name, scope, definitions, values, version):
         key = scope, name
-        if key in self.bindings:
-            return
         fact = mode.template_values.get(name) if scope is None else None
         inherited = scope is not None and key in mode.inherited_appends
-        context = mode.scope_context
-        self.reserve(mode, 1, 192 + len(encoded(key)))
         if key not in self.bindings:
-            self.bindings[key] = definitions, values, version, fact, inherited, context
-        else:
-            previous = self.bindings[key]
-            if (
-                previous[0] is not definitions or previous[1] is not values or previous[2] != version
-                or previous[3] is not fact or previous[4] != inherited
-            ):
-                raise MakeProbeError("original binding changed during reentrant admission")
+            context = mode.scope_context
+            self.reserve(mode, 1, 192 + len(encoded(key)))
+            if key not in self.bindings:
+                self.bindings[key] = definitions, values, version, fact, inherited, context
+        previous = self.bindings[key]
+        if (
+            previous[0] is not definitions or previous[1] is not values or previous[2] != version
+            or previous[3] is not fact or previous[4] != inherited
+        ):
+            raise MakeProbeError("original binding conflicts with its consumed receipt")
+        return fact
 
     def declarations(self, mode):
         if self.selection is None:
@@ -311,7 +310,17 @@ class _ValueReadState:
                 raise MakeProbeError("original scope selection changed during capture")
             if self.selection is None:
                 self.selection = original, tuple(original)
+        self.require_selection(mode)
         return self.selection[1]
+
+    def require_selection(self, mode):
+        if self.selection is not None:
+            original, records = self.selection
+            if (
+                mode.scope_declarations is not original or len(original) != len(records)
+                or any(left is not right for left, right in zip(original, records))
+            ):
+                raise MakeProbeError("original scope selection changed during composition")
 
     def finish(self, mode):
         if mode.budget is not self.budget or mode._value_reads is not self:
@@ -321,13 +330,7 @@ class _ValueReadState:
         if mode._value_reads is not self:
             raise MakeProbeError("original value read lifetime changed")
         # No callbacks after this point: compare the actual consumed records.
-        if self.selection is not None:
-            original, records = self.selection
-            if (
-                mode.scope_declarations is not original or len(original) != len(records)
-                or any(left is not right for left, right in zip(original, records))
-            ):
-                raise MakeProbeError("original scope selection changed during composition")
+        self.require_selection(mode)
         for (scope, name), (definitions, values, version, fact, inherited, context) in self.bindings.items():
             current = mode.definitions if scope is None else mode.target_definitions.get(scope)
             if (
@@ -1120,11 +1123,12 @@ class _MakeSourceMode:
 
     def _template_snapshot(self, name):
         if self._value_reads is not None:
-            self._value_reads.binding(
+            record = self._value_reads.binding(
                 self, name, None, self.definitions, self.definitions.get(name),
                 self.binding_versions.get((None, name), 0),
             )
-        record = self.template_values.get(name)
+        else:
+            record = self.template_values.get(name)
         if record is None or record[0] != self.version:
             return None
         kind, value = record[1]

@@ -1617,6 +1617,208 @@ class OriginalValueProvenanceApiTests(unittest.TestCase):
                 self.assertIsNone(state.owner)
 
 
+class OriginalRepeatedReceiptApiTests(unittest.TestCase):
+    """Actual repeated reads must agree before any restored final state can qualify them."""
+
+    mode = OriginalConditionalAppendApiTests.mode
+    mixed = OriginalMixedFactsApiTests.mixed
+    fixture = OriginalValueProvenanceApiTests.fixture
+
+    def test_repeated_change_restore_refuses_before_the_restore_operand(self):
+        for route in ("direct", "recursive", "fact", "scoped"):
+            for changed in (False, True):
+                with self.subTest(route=route, changed=changed):
+                    mode, alias = self.fixture(2)
+                    mode.assign("SWITCH", ":=", "switch")
+                    mode.assign("RESTORE", ":=", "restore")
+                    scope = "out/one" if route == "scoped" else None
+                    if scope:
+                        tuple(make_source_units("out/one: DATA += local\n", mode=mode, source_path="model.mk"))
+                    definitions = mode.definitions if scope is None else mode.target_definitions[scope]
+                    original, version, fact = (
+                        definitions["DATA"], mode.binding_versions[scope, "DATA"], mode.template_values["DATA"],
+                    )
+                    reader = alias if route == "recursive" else "DATA"
+                    expression = "$(OBJECTS)|$(" + reader + ")|$(SWITCH)|$(" + reader + ")|$(RESTORE)"
+                    events = []
+                    def guard(current, name):
+                        if name == "SWITCH" and changed and not events:
+                            events.append("changed")
+                            if route == "fact":
+                                current.template_values["DATA"] = current.version, ("exact", "late/data.o")
+                            elif scope:
+                                current.assign("DATA", "=", "replacement", scope=scope)
+                            else:
+                                current.assign("DATA", ":=", "$(addprefix late/,data.o)")
+                        elif name == "RESTORE" and events:
+                            events.append("restored")
+                            definitions["DATA"] = original
+                            current.binding_versions[scope, "DATA"] = version
+                            current.template_values["DATA"] = fact
+                    mode.scope_lookup_guard = guard
+                    def read():
+                        if changed:
+                            with self.assertRaises(MakeProbeError):
+                                mode.literal_values(expression)
+                            self.assertEqual(events, ["changed"])
+                        else:
+                            tail = "out/data.o local" if scope else "out/data.o"
+                            self.assertEqual(mode.literal_values(expression), {
+                                value + "|" + tail + "|switch|" + tail + "|restore"
+                                for value in ("out/first.o", "out/first.o out/second.o")
+                            })
+                    if scope:
+                        with mode.using_scope(graph_probe._ScopeContext(scope, scope, "recipe")):
+                            read()
+                    else:
+                        read()
+                    self.assertIsNone(mode._value_reads)
+
+    def test_each_map_binding_fact_version_and_inheritance_change_conflicts(self):
+        for change in ("map", "binding", "fact", "version", "inherited"):
+            with self.subTest(change=change):
+                mode, _ = self.fixture()
+                scope = "out/one" if change == "inherited" else None
+                if scope:
+                    tuple(make_source_units("out/one: DATA += local\n", mode=mode, source_path="model.mk"))
+                definitions = mode.definitions if scope is None else mode.target_definitions[scope]
+                original, version, fact = (
+                    definitions["DATA"], mode.binding_versions[scope, "DATA"], mode.template_values["DATA"],
+                )
+                with mode.reading_values() as state:
+                    mode.raw_binding("DATA", scope)
+                    entries = state.entries
+                    if change == "map":
+                        mode.definitions = dict(definitions)
+                    elif change == "binding":
+                        definitions["DATA"] = frozenset(tuple(original))
+                        self.assertIsNot(definitions["DATA"], original)
+                    elif change == "fact":
+                        mode.template_values["DATA"] = version, ("exact", "out/data.o")
+                    elif change == "version":
+                        mode.binding_versions[scope, "DATA"] -= 1
+                    else:
+                        mode.inherited_appends.discard((scope, "DATA"))
+                    try:
+                        with self.assertRaises(MakeProbeError):
+                            mode.raw_binding("DATA", scope)
+                        self.assertEqual(state.entries, entries)
+                    finally:
+                        mode.definitions = definitions if scope is None else mode.definitions
+                        definitions["DATA"] = original
+                        mode.binding_versions[scope, "DATA"] = version
+                        mode.template_values["DATA"] = fact
+                        if scope:
+                            mode.inherited_appends.add((scope, "DATA"))
+                self.assertIsNone(mode._value_reads)
+
+    def test_supplied_consumption_is_not_replaced_by_a_restored_dictionary_lookup(self):
+        mode, _ = self.fixture()
+        with mode.reading_values() as state:
+            original = mode.raw_binding("DATA")
+            consumed = frozenset((graph_probe._ModeBinding("file", "simple", "late/data.o"),))
+            self.assertIs(mode.definitions["DATA"], original)
+            with self.assertRaises(MakeProbeError):
+                state.binding(mode, "DATA", None, mode.definitions, consumed, mode.version)
+            self.assertIs(mode.definitions["DATA"], original)
+            self.assertIs(state.bindings[None, "DATA"][1], original)
+
+    def test_selection_reuse_checks_original_sequence_before_consumption(self):
+        for change in ("identity", "order", "container"):
+            with self.subTest(change=change):
+                mode, _ = self.fixture()
+                tuple(make_source_units("out/one: DATA += local\nout/two: OTHER := value\n",
+                                        mode=mode, source_path="model.mk"))
+                original = mode.scope_declarations
+                records = tuple(original)
+                with mode.reading_values() as state:
+                    self.assertEqual(mode.read_scope_declarations(), records)
+                    if change == "identity":
+                        original[0] = original[0]._replace()
+                        self.assertIsNot(original[0], records[0])
+                    elif change == "order":
+                        original.reverse()
+                    else:
+                        mode.scope_declarations = list(original)
+                    try:
+                        with self.assertRaises(MakeProbeError):
+                            mode.read_scope_declarations()
+                    finally:
+                        mode.scope_declarations = original
+                        original[:] = records
+                    self.assertEqual(state.selection[1], records)
+                self.assertIsNone(mode._value_reads)
+
+    def test_snapshot_consumes_the_fact_captured_before_admission_callbacks(self):
+        mode, _ = self.fixture()
+        original, charge, fired = mode.template_values["DATA"], mode.budget.charge, []
+        def change(category, size):
+            result = charge(category, size)
+            if not fired:
+                fired.append(True)
+                mode.template_values["DATA"] = mode.version, ("exact", "late/data.o")
+            return result
+        with mode.reading_values() as state:
+            try:
+                with patch.object(mode.budget, "charge", change):
+                    value = mode.template_snapshot("DATA")
+                self.assertEqual(value, "out/data.o")
+                self.assertIs(state.bindings[None, "DATA"][3], original)
+            finally:
+                mode.template_values["DATA"] = original
+        self.assertEqual(fired, [True])
+        self.assertIsNone(mode._value_reads)
+
+    def test_reentrant_conflict_cannot_publish_a_value_or_replace_the_outer_receipt(self):
+        mode, alias = self.fixture(2)
+        original, version, fact = mode.definitions["DATA"], mode.binding_versions[None, "DATA"], mode.template_values["DATA"]
+        with mode.reading_values() as state:
+            self.assertEqual(mode.literal_values("$(DATA)"), {"out/data.o"})
+            mode.assign("DATA", ":=", "$(addprefix late/,data.o)")
+            try:
+                with self.assertRaises(MakeProbeError):
+                    mode.literal_values("$(" + alias + ")")
+                self.assertIs(mode._value_reads, state)
+                self.assertIs(state.bindings[None, "DATA"][1], original)
+                self.assertIs(state.bindings[None, "DATA"][3], fact)
+            finally:
+                mode.definitions["DATA"] = original
+                mode.binding_versions[None, "DATA"] = version
+                mode.template_values["DATA"] = fact
+            self.assertEqual(mode.literal_values("$(DATA)"), {"out/data.o"})
+        self.assertIsNone(state.owner)
+
+    def test_stable_duplicates_at_exact_entry_capacity_do_not_reallocate(self):
+        mode, _ = self.fixture()
+        mode.assign("OTHER", ":=", "other")
+        mode.budget.limits = replace(mode.budget.limits, entries=1)
+        with self.assertRaises(MakeProbeError):
+            with mode.reading_values() as state:
+                mode.raw_binding("DATA")
+                before, receipt = dict(mode.budget.bytes), state.bindings[None, "DATA"]
+                for _ in range(8):
+                    mode.raw_binding("DATA")
+                    self.assertEqual(mode.template_snapshot("DATA"), "out/data.o")
+                self.assertEqual(state.entries, 1)
+                self.assertIs(state.bindings[None, "DATA"], receipt)
+                self.assertEqual(mode.budget.bytes, before)
+                mode.raw_binding("OTHER")
+        self.assertTrue(mode.budget.failed)
+        self.assertIsNone(mode._value_reads)
+
+    def test_neutral_names_and_independent_order_preserve_stable_repetition(self):
+        for name, reverse in (("DATA", False), ("RENAMED", True)):
+            with self.subTest(name=name, reverse=reverse):
+                mode = self.mode()
+                declarations = [(name, "$(addprefix out/,data.o)"), ("SEPARATOR", "same")]
+                for target, value in reversed(declarations) if reverse else declarations:
+                    mode.assign(target, ":=", value)
+                mode.assign("ALIAS", "=", "${" + name + "}")
+                self.assertEqual(mode.literal_values("$(ALIAS)|$(SEPARATOR)|$(" + name + ")"),
+                                 {"out/data.o|same|out/data.o"})
+                self.assertIsNone(mode._value_reads)
+
+
 class AuthoritativeMakeProbeTests(unittest.TestCase):
     def setUp(self):
         self.directory = ROOT / "build/test-artifacts/graph-probe" / secrets.token_hex(12)

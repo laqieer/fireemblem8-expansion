@@ -1918,11 +1918,21 @@ separate RHS/write-precedence reads do not pollute an unrelated outer read.
 
 Receipt/selection retention is admitted before growth against the existing
 entry, cache, total and deadline bounds. Repeated lookups deduplicate without
-dropping transitive dependencies. No global authority registry, whole-map
+dropping transitive dependencies. Deduplication compares every actual
+consumption with the first receipt before allowing its value to participate:
+map/binding/fact identities, version and inheritance must agree even if a
+later operand would restore the original end state. Stable repeats do not
+reserve another entry. Reused scope selections check their original sequence,
+and snapshot reads consume the captured fact rather than rereading a
+replacement after admission callbacks. Final callback-free checks remain
+necessary; final equality alone cannot qualify conflicting repeated reads.
+No global authority registry, whole-map
 ledger, new budget, refund or resource waiver is introduced. The
 [provenance follow-up controls](test-cases/workflow-governance.md#mixed-fact-transitive-and-scoped-provenance-follow-up)
 preserve the exact rejected3d9e75 witnesses and distinguish modeled mutation
 from the separately required original native source/job-context check.
+The same procedure includes the exact1d20 repeated-consumption restoration
+witnesses; publishing a source checkpoint does not establish acceptance.
 
 All represented combinations remain subject to the existing 512-context and
 depth bounds. Scanning, assembled text and retained alternatives spend the

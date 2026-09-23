@@ -4212,6 +4212,43 @@ No namespace/Make grammar, configuration, registry or ROM/save/build behavior
 change is part of this correction. Reset only owned memory/fixture state;
 retain original and mutation evidence without modifying earlier artifacts.
 
+The same case also covers **MF-REVIEW-003** under
+[scope5790501043](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5790501043).
+Exact1d20 corrected the earlier transitive/scoped witnesses but accepted
+conflicting repeated consumption when the first identities were restored
+before final validation. Use
+`test_make_probe.OriginalRepeatedReceiptApiTests` with the same isolated,
+inspected pure-API/effect-trap prerequisites; no native execution is allocated.
+
+1. Preserve exact1d20. Read
+   `$(OBJECTS)|$(DATA)|$(SWITCH)|$(DATA)|$(RESTORE)`, using the existing later
+   lookup callback to assign a different computed DATA at SWITCH and restore
+   the exact first binding/fact/version objects at RESTORE. Repeat through
+   recursive aliases, snapshot-only changes and the typed inherited scope.
+   Every conflict must refuse before its value participates, while stable
+   repetitions and changes left in place retain their original outcomes.
+2. Change map, binding, snapshot, version and inheritance independently.
+   Compare the actual supplied consumed object, not a restored dictionary
+   lookup. Reuse a changed scope-selection sequence and require refusal.
+   During snapshot admission, change the live fact after capture: the read
+   must use the fact actually captured, not a later reread.
+3. Catch a nested/reentrant conflict, restore the first records, and verify
+   no conflicting value or replacement receipt escaped. Stable duplicates at
+   exact entry capacity must not spend another receipt/cache allocation;
+   a new entry still refuses. Keep caller state, retirement and existing
+   byte/total/depth/deadline/alternative controls.
+4. Restore exact1d20 or restore the blind existing-key shortcut. Both must
+   recover the four unsafe change-and-restore results while eight original
+   stable/unrestored controls remain valid. Neutral receipt-local naming,
+   variable names and independent declaration order remain green.
+
+Keep all prior99/485 controls, old restorations/mutations, computed modern
+tails and native holds. No successful resolver is substituted. Main publishes
+each normal source checkpoint immediately under owner context; publication
+is not integration, acceptance or native allocation. Same-reviewer exact-head
+follow-up and every native/report/verifier/resource/H1/CI/delivery gate remain
+open, with all eleven earlier native allocations closed.
+
 ### Native ownership, stderr effects and cumulative accounting
 
 These are additional deterministic controls for
