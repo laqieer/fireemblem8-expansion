@@ -23,6 +23,339 @@ from scripts.validation_ownership.tests.test_foundation import _PendingTrafficLi
 ROOT = Path(__file__).resolve().parents[3]
 
 
+class OriginalStructuralScopesApiTests(unittest.TestCase):
+    """Actual source APIs over unissued data; include/native results stay unavailable."""
+
+    def mode(self):
+        def unavailable(*args, **kwargs):
+            self.fail("structural recognition requested native/include authority")
+        budget = ProbeBudget(Limits(seconds=10))
+        session = SimpleNamespace(budget=budget, make=unavailable, _wildcard_image=unavailable)
+        proof = SimpleNamespace(session=session, missing={}, observation=None, require_live=unavailable)
+        part = SimpleNamespace(number=1, inputs=(SimpleNamespace(parent=None, variables=()),), visits=())
+        original = phase_census.SourcePass(
+            proof, part, SimpleNamespace(directories=(), members={}), (), "all", (), {}, "model.mk",
+        )
+        mode = _MakeSourceMode(
+            budget=budget, original_input=original.input, original_execution=original.record_execution,
+            namespace=frozenset(),
+        )
+        template = original.template_mode()
+        mode.template_mode, mode.original_target_value = template, template.text
+        mode.original_include_value, mode.scope_lookup_guard = template.text, original.require_scoped_context
+        return mode, original
+
+    def parsed(self, source):
+        mode, original = self.mode()
+        units = tuple(make_source_units(source, mode=mode, source_path="model.mk"))
+        stream = graph_probe._SourceUnitStream(
+            tuple(("model.mk", index, unit) for index, unit in enumerate(units)),
+            frozenset(range(len(units))), read_sources=("model.mk",), mode_state=mode,
+        )
+        return mode, original, stream
+
+    def census(self, source):
+        mode, original, stream = self.parsed(source)
+        usage = source_census(
+            {"model.mk": source.encode()}, reference_units=stream, budget=mode.budget,
+            original_read_check=original.check_reads,
+        )
+        self.inert(mode, original)
+        return usage, mode, original, stream
+
+    def inert(self, mode, original):
+        self.assertEqual((mode.budget.runs, mode.budget.states), (0, 0))
+        self.assertFalse(mode.budget.children)
+        self.assertFalse(mode.budget.producer_waiters)
+        self.assertEqual(original.issued_contexts, {})
+        self.assertIsNone(mode._value_reads)
+        self.assertIsNone(mode.scope_context)
+
+    def test_match_validation_preserves_groups_spans_and_whitespace_modifiers(self):
+        for text in (
+            "one.o: FLAGS += local",
+            "  one.o \t : \t export FLAGS := local: data",
+            "${TARGETS} \t: private override FLAGS ::= local",
+            "$(TARGETS): .FLAGS = local",
+            "one.o two.o   : FLAGS ?= local",
+        ):
+            for pattern in (graph_probe.TARGET_ASSIGNMENT, graph_probe.MODE_TARGET_ASSIGNMENT):
+                for method in (pattern.match, pattern.fullmatch):
+                    with self.subTest(text=text, pattern=pattern, method=method):
+                        match = method(text)
+                        if match is None:
+                            self.assertIsNone(graph_probe._scoped_assignment(match))
+                            continue
+                        groups = match.groupdict()
+                        spans = {name: match.span(name) for name in groups}
+                        recognized = graph_probe._scoped_assignment(match)
+                        self.assertIs(recognized, match)
+                        self.assertEqual(recognized.groupdict(), groups)
+                        self.assertEqual({name: recognized.span(name) for name in groups}, spans)
+
+    def test_nested_or_escaped_delimiter_cannot_borrow_another_rule_colon(self):
+        for text in (
+            "include $(FILES:o=d)",
+            "include ${RENAMED:o=d}",
+            "$(info $(FILES:o=d))",
+            "$(info ${RENAMED:o=d}): prerequisite",
+            "out/$(FILES:o=d): prerequisite",
+            "out/${RENAMED:o=d}: prerequisite: another",
+            r"one\: FLAGS=local",
+            r"one\: export FLAGS:=local : another",
+            r"one\\\: FLAGS=local: another",
+        ):
+            for pattern in (graph_probe.TARGET_ASSIGNMENT, graph_probe.MODE_TARGET_ASSIGNMENT):
+                with self.subTest(text=text, pattern=pattern):
+                    match = pattern.fullmatch(text)
+                    self.assertIsNotNone(match)
+                    self.assertIsNone(graph_probe._scoped_assignment(match))
+
+    def test_true_scopes_keep_target_values_and_global_precedence(self):
+        for name, target, layout in (
+            ("FLAGS", "one.o", ": "),
+            ("OPTIONS", "${TARGETS}", " \t : \t export "),
+            ("FLAGS", "$(TARGETS)", "   : "),
+        ):
+            with self.subTest(name=name, target=target, layout=layout):
+                mode, original, _ = self.parsed(
+                    "TARGETS := one.o two.o\n" + name + " := global\n"
+                    + target + layout + name + " += local\n"
+                )
+                selectors = ("one.o",) if target == "one.o" else ("one.o", "two.o")
+                self.assertEqual(tuple(record.selector for record in mode.scope_declarations), selectors)
+                for selector in (*selectors, "other.o"):
+                    with mode.using_scope(graph_probe._ScopeContext(selector, selector, "assignment")):
+                        self.assertEqual(mode.literal_text("$(" + name + ")"),
+                                         "global local" if selector in selectors else "global")
+                self.assertEqual(mode.literal_text("$(" + name + ")"), "global")
+                self.inert(mode, original)
+        usage, mode, original, _ = self.census(
+            "FILES := src/a.o\nFLAGS := stable\n"
+            "OBJECTS := $(FILES:.o=.d)\nVALUE := label: FLAGS=not-a-write\nall: ;\n"
+        )
+        self.assertEqual(mode.scope_declarations, [])
+        self.assertEqual(mode.target_definitions, {})
+        self.assertEqual(mode.exact_reference("OBJECTS"), "src/a.d")
+        self.assertEqual(usage["definitions"]["VALUE"], ["label: FLAGS=not-a-write"])
+        self.assertEqual(usage["read_constants"]["FLAGS"], "stable")
+        self.inert(mode, original)
+
+    def test_non_rules_follow_directive_and_effect_paths_without_include_authority(self):
+        modern = (
+            "-include $(wildcard $(sort $(MODERN_COHORT_DEPS) $(MODERN_ALL_DEPS) "
+            "$(MODERN_FE6SIO_OBJ:.o=.d)))"
+        )
+        for header, kind in (
+            (modern, "directive"),
+            ("include $(FILES:o=d)", "directive"),
+            ("include ${FILES:o=d}", "directive"),
+            ("sinclude $(RENAMED:o=d)", "directive"),
+            ("$(info $(FILES:o=d))", "expression"),
+            ("$(info ${RENAMED:o=d})", "expression"),
+        ):
+            with self.subTest(header=header):
+                mode, original, stream = self.parsed(
+                    "FILES := src/a.o src/b.o\nRENAMED := src/a.o\n" + header + "\n"
+                )
+                unit, = [unit for _, _, unit in stream.ordered if unit.text == header]
+                self.assertEqual(unit.kind, kind)
+                self.assertIsNone(unit.assignment)
+                self.assertEqual(mode.scope_declarations, [])
+                self.assertEqual(mode.target_definitions, {})
+                self.assertNotIn("o", mode.definitions)
+                self.assertNotIn(".o", mode.definitions)
+                if kind == "directive":
+                    self.assertFalse(mode.original_namespace_valid)
+                    with self.assertRaises(MakeProbeError):
+                        original.prepare_deferred_reads(stream)
+                    with self.assertRaises(MakeProbeError):
+                        graph_probe._source_units({"model.mk": (header + "\n").encode()},
+                                                  budget=ProbeBudget())
+                self.inert(mode, original)
+
+    def test_literal_eval_only_retains_structural_assignments(self):
+        for body in ("include $$(FILES:o=d)", "include $${FILES:o=d}", "$$(info $$(FILES:o=d))"):
+            with self.subTest(body=body):
+                mode, original = self.mode()
+                tuple(make_source_units("FILES := src/a.o\n", mode=mode))
+                self.assertEqual(mode.evaluate("$(eval " + body + ")"), ())
+                self.assertFalse(mode.original_namespace_valid)
+                self.assertEqual(mode.scope_declarations, [])
+                self.assertEqual(mode.target_definitions, {})
+                self.assertNotIn("o", mode.definitions)
+                self.inert(mode, original)
+        mode, original = self.mode()
+        tuple(make_source_units("FLAGS := global\n", mode=mode))
+        emitted = mode.evaluate("$(eval one.o : export FLAGS += local)")
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0][1].applies, True)
+        self.assertEqual(emitted[0][1].immediate, False)
+        self.assertEqual(tuple(record.selector for record in mode.scope_declarations), ("one.o",))
+        self.assertEqual({binding.value for binding in mode.target_definitions["one.o"]["FLAGS"]}, {"local"})
+        self.assertFalse(mode.original_namespace_valid)
+        self.inert(mode, original)
+
+    def test_unknown_mode_continuations_require_real_assignment_equivalence(self):
+        for text in (
+            "include $(FILES:o= \\\n  d)",
+            "include ${RENAMED:o= \\\n  d}",
+            "$(info $(FILES:o= \\\n  d))",
+            "one\\: FLAGS= \\\n  local",
+        ):
+            with self.subTest(text=text):
+                ordinary = graph_probe._collapse_make_continuations(text)
+                posix = graph_probe._collapse_make_continuations(text, posix=True)
+                self.assertNotEqual(ordinary, posix)
+                self.assertFalse(graph_probe._same_make_assignment(ordinary, posix))
+                mode = _MakeSourceMode(posix=None, budget=ProbeBudget())
+                with self.assertRaises(MakeProbeError):
+                    mode.collapse(text, construct=True)
+        for text in ("FLAGS= \\\n local", "one.o : export FLAGS= \\\n local"):
+            with self.subTest(text=text):
+                ordinary = graph_probe._collapse_make_continuations(text)
+                posix = graph_probe._collapse_make_continuations(text, posix=True)
+                self.assertTrue(graph_probe._same_make_assignment(ordinary, posix))
+                self.assertEqual(_MakeSourceMode(posix=None).collapse(text, construct=True), ordinary)
+
+    def test_template_parts_distinguish_prerequisite_substitution_from_scoped_writes(self):
+        for reference in ("$(FILES:o=d)", "${RENAMED:o=d}"):
+            with self.subTest(reference=reference):
+                body = "out/$(1): " + reference + "\n\t@printf '%s' '$(FLAGS)'"
+                self.assertEqual(graph_probe._rule_template_parts(body),
+                                 ("out/$(1)", " " + reference, ["\t@printf '%s' '$(FLAGS)'"]))
+                mode, original = self.mode()
+                with self.assertRaises(MakeProbeError):
+                    tuple(make_source_units(
+                        "FILES := one.o\nRENAMED := one.o\nFLAGS := data\nITEMS := one\n"
+                        "define RULE\n" + body + "\nendef\n"
+                        "$(foreach item,$(ITEMS),$(eval $(call RULE,$(item))))\n",
+                        mode=mode,
+                    ))
+                self.inert(mode, original)
+        for body in ("out/$(1): FLAGS=local", r"out/$(1)\: FLAGS=local",
+                     "out/$(1):: prerequisite", "out/$(1): prerequisite ; command"):
+            with self.subTest(body=body), self.assertRaises(MakeProbeError):
+                graph_probe._rule_template_parts(body)
+
+    def test_computed_destinations_are_not_hidden_by_substitution_or_escape_colons(self):
+        for header in (
+            "$(FILES:o=d) $(NAME) = data",
+            "${RENAMED:o=d} ${DESTINATION} = data",
+            r"$(NAME)\: FLAGS=data",
+        ):
+            with self.subTest(header=header):
+                self.assertTrue(graph_probe._unproven_assignment_destination(header))
+                mode, original, _ = self.parsed(header + "\n")
+                self.assertFalse(mode.original_namespace_valid)
+                self.assertEqual(mode.scope_declarations, [])
+                self.assertEqual(mode.target_definitions, {})
+                self.inert(mode, original)
+        for header in ("one.o: FLAGS=local", "VALUE := $(FILES:o=d)", "include $(FILES:o=d)"):
+            with self.subTest(header=header):
+                self.assertFalse(graph_probe._unproven_assignment_destination(header))
+
+    def test_inline_recipe_and_census_keep_substitution_targets_separate(self):
+        for reference in ("$(FILES:o=d)", "${RENAMED:o=d}"):
+            with self.subTest(reference=reference):
+                header = "out/" + reference + ": prerequisite "
+                recipe = " @printf '%s' '$(FLAGS)'"
+                self.assertEqual(graph_probe.split_inline_recipe(header + ";" + recipe), (header, recipe))
+                usage, _, _, stream = self.census(
+                    "FILES := one.o\nRENAMED := one.o\nFLAGS := data\n" + header + ";" + recipe + "\n"
+                )
+                self.assertIn("FLAGS", usage["recipe_only"])
+                self.assertNotIn("FLAGS", usage["graph"])
+                self.assertEqual(usage["defined"], {"FILES", "RENAMED", "FLAGS"})
+                rule = stream.ordered[-2][2]
+                self.assertEqual(rule.kind, "rule")
+                self.assertEqual(rule.recipe_ordinal, 1)
+                self.assertIsNone(rule.assignment)
+        self.assertEqual(graph_probe.split_inline_recipe("one.o: FLAGS=local;data"),
+                         ("one.o: FLAGS=local;data", ""))
+
+    def test_census_defaults_writes_and_constants_do_not_promote_non_rules(self):
+        for name, braces, reverse in (("FILES", False, False), ("RENAMED", True, False),
+                                      ("RENAMED", False, True)):
+            for operator in ("=", "?="):
+                with self.subTest(name=name, braces=braces, reverse=reverse, operator=operator):
+                    declarations = [name + " := one.o", "FLAGS := stable"]
+                    if reverse:
+                        declarations.reverse()
+                    reference = ("${" if braces else "$(") + name + ":FLAGS" + operator + "deps" + ("}" if braces else ")")
+                    usage, _, _, _ = self.census("\n".join(declarations) + "\n$(info " + reference + ")\nall: ;\n")
+                    self.assertEqual(usage["defined"], {name, "FLAGS"})
+                    self.assertEqual(usage["definitions"]["FLAGS"], ["stable"])
+                    self.assertEqual(usage["defaults"], set())
+                    self.assertEqual(usage["read_constants"]["FLAGS"], "stable")
+                    self.assertIn(name, usage["graph"])
+                    self.assertNotIn("FLAGS", usage["graph"])
+
+    def test_eval_history_retains_unknown_directives_instead_of_assignment_facts(self):
+        for body in ("include $(FILES:FLAGS?=deps)", "include ${RENAMED:FLAGS?=deps}"):
+            with self.subTest(body=body):
+                mode, original, stream = self.parsed(
+                    "FILES := one.o\nRENAMED := one.o\nRULE = " + body + "\nall: ; $(eval $(RULE))\n"
+                )
+                with self.assertRaises(MakeProbeError):
+                    source_census({}, reference_units=stream, budget=mode.budget,
+                                  original_read_check=original.check_reads)
+                self.assertNotIn("FLAGS", mode.definitions)
+                self.assertEqual(mode.scope_declarations, [])
+                self.inert(mode, original)
+
+    def test_malformed_unissued_emitted_records_cannot_create_assignment_history(self):
+        for body in ("include $(FILES:FLAGS?=deps)", r"one\: FLAGS=deps"):
+            with self.subTest(body=body):
+                mode, original, stream = self.parsed("ordinary\n")
+                unit = stream.ordered[0][2]._replace(emitted=((body, graph_probe._AssignmentEffect(False, False)),))
+                stream = stream._replace(ordered=(("model.mk", 0, unit),))
+                with self.assertRaises(MakeProbeError):
+                    source_census({}, reference_units=stream, budget=mode.budget,
+                                  original_read_check=original.check_reads)
+                self.assertNotIn("FLAGS", mode.definitions)
+                self.assertEqual(mode.scope_declarations, [])
+                self.inert(mode, original)
+
+    def test_structural_admission_does_not_relax_genuine_scoped_guards(self):
+        sources = [
+            "unit.o: FLAGS ?= local\n",
+            "unit.o: FLAGS != not-run\n",
+            "unit.o: private FLAGS := local\n",
+            "unit.o: override FLAGS := local\n",
+            ".PHONY: FLAGS := local\n",
+            "$(MISSING): FLAGS += local\n",
+            "unit\\ name.o: FLAGS += local\n",
+            "dir/%/%.o: FLAGS += local\n",
+            "../unit.o: FLAGS += local\n",
+            "KEY := TARGET\nTARGET := unit.o\n$($(KEY)): FLAGS += local\n",
+            "CHOICE := $(sort yes)\nifeq ($(CHOICE),yes)\nunit.o: FLAGS += local\nendif\n",
+            "TARGETS := $(sort unit.o)\n$(TARGETS): FLAGS += local\n",
+            "TARGETS := $(addsuffix .o,unit)\n$(TARGETS): FLAGS += local\n",
+            "TARGETS := $(wildcard *.o)\n$(TARGETS): FLAGS += local\n",
+            "unit.o: FLAGS := $(sort b a)\n",
+            "unit.o: FLAGS := $(shell not-run)\n",
+            "unit.o: FLAGS := $(guile not-run)\n",
+        ]
+        sources.extend("unit.o: FLAGS := " + rhs + "\n" for rhs in ("$@", "${<}", "$(1)", "$(@D)"))
+        sources.extend("unit.o: " + name + " = local\n" for name in sorted(
+            graph_probe.INVOCATION_CONTROL_READS | graph_probe.SOURCE_HISTORY_CONTROLS | {"MAKELEVEL"},
+        ))
+        for source in sources:
+            with self.subTest(source=source):
+                mode, original = self.mode()
+                with self.assertRaises(MakeProbeError):
+                    tuple(make_source_units(source, mode=mode))
+                self.assertEqual(mode.scope_declarations, [])
+                self.inert(mode, original)
+        mode, original = self.mode()
+        with self.assertRaises(MakeProbeError):
+            tuple(make_source_units("unit%.o: FLAGS := one\n%it.o: OTHER := two\n", mode=mode))
+        self.assertEqual(tuple(record.selector for record in mode.scope_declarations), ("unit%.o",))
+        self.assertNotIn("%it.o", mode.target_definitions)
+        self.inert(mode, original)
+
+
 class GraphSemanticApiTests(unittest.TestCase):
     """Pure parser/planner controls; observations below are models, not native authority."""
 

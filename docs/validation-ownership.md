@@ -1742,6 +1742,21 @@ is unproven. Invocation/mode guards remain conservative even for a proven
 literal emitted assignment. One expansion of a paired-dollar eval spelling
 must not be mistaken for executing that returned spelling.
 
+Scoped-assignment recognition first validates the lexical match's actual
+target delimiter with the existing top-level rule-separator scanner. A colon
+inside a substitution or nested function, or an escaped colon, cannot acquire
+scope merely because the regex matches or another rule colon exists elsewhere.
+Whitespace and modifiers between the target and variable name do not change
+that delimiter's identity. Global assignments retain precedence. Literal eval,
+continuation equivalence, the source visitor, template admission, dynamic
+destinations, inline recipes and every census assignment/default/history/
+constant consumer share this distinction. Non-rules retain their existing
+directive, include or effect obligations: correct classification does not
+complete an include or authorize a native result. Exact selector/RHS values,
+activity, scoped contexts, source lifetimes and all resource guards remain
+separate. This adds neither pure `sort`/`wildcard` support nor full-report
+qualification, and source-only collisions do not identify a native failure.
+
 Mode failures report their actual visitor path, logical statement and physical
 line span, plus the first unproven source site/input name. The error chain and
 failure classification remain, without dumping variable or environment values.

@@ -1472,7 +1472,7 @@ class _MakeSourceMode:
             if "$" not in body.replace("$$", ""):
                 body = strip_comment(body.replace("$$", "$"))
                 assignment = MODE_ASSIGNMENT.fullmatch(body)
-                target_assignment = MODE_TARGET_ASSIGNMENT.fullmatch(body)
+                target_assignment = _scoped_assignment(MODE_TARGET_ASSIGNMENT.fullmatch(body))
                 try:
                     if assignment is not None:
                         effect = self.assign(
@@ -1823,6 +1823,8 @@ def _same_make_assignment(left, right):
         value = strip_comment(value)
         for kind, pattern in (("global", MODE_ASSIGNMENT), ("target", MODE_TARGET_ASSIGNMENT)):
             assignment = pattern.fullmatch(value)
+            if kind == "target":
+                assignment = _scoped_assignment(assignment)
             if assignment:
                 return (
                     kind, value[:assignment.start("name")],
@@ -2129,8 +2131,7 @@ def make_source_units(
                         override="override" in declaration[:assignment.start("name")].split(),
                         active=_mode_and(active, None) if provisional else active,
                     )
-                elif MODE_TARGET_ASSIGNMENT.fullmatch(declaration):
-                    target_assignment = MODE_TARGET_ASSIGNMENT.fullmatch(declaration)
+                elif (target_assignment := _scoped_assignment(MODE_TARGET_ASSIGNMENT.fullmatch(declaration))) is not None:
                     effect = mode.assign_targets(
                         target_assignment,
                         override="override" in declaration[target_assignment.end("target"):target_assignment.start("name")].split(),
@@ -2474,7 +2475,7 @@ def _rule_template_parts(body):
     if next(unit for unit in lines if strip_comment(unit.text).strip(MAKE_SPACE)).text.startswith("\t"):
         raise MakeProbeError("rule-template recipe precedes its header")
     header, inline = split_inline_recipe(strip_comment(headers[0]))
-    if inline or ASSIGNMENT.match(header) or TARGET_ASSIGNMENT.match(header):
+    if inline or ASSIGNMENT.match(header) or _scoped_assignment(TARGET_ASSIGNMENT.match(header)):
         raise MakeProbeError("rule template cannot emit assignments or inline control")
     separators = _rule_separators(header)
     if len(separators) != 1:
@@ -2493,6 +2494,13 @@ def _rule_separators(header):
             separators.append(index)
         slashes = slashes + 1 if char == "\\" else 0
     return separators
+
+
+def _scoped_assignment(assignment):
+    if assignment is None:
+        return None
+    delimiter = assignment.string.find(":", assignment.end("target"), assignment.start("name"))
+    return assignment if delimiter in _rule_separators(assignment.string) else None
 
 
 def _make_target_words(value):
@@ -2537,7 +2545,7 @@ def _unproven_assignment_destination(header):
                    if char == "=" and not any(start <= index < stop for start, stop in spans)), None)
     return (
         equals is not None and "$" in header[:equals] and ASSIGNMENT.match(header) is None
-        and TARGET_ASSIGNMENT.match(header) is None
+        and _scoped_assignment(TARGET_ASSIGNMENT.match(header)) is None
     ) or (
         re.match(r"^[ \t]*(?:override[ \t]+)?undefine[ \t]+", header)
         and not re.fullmatch(r"[ \t]*(?:override[ \t]+)?undefine[ \t]+" + IDENTIFIER + r"[ \t]*", header)
@@ -3589,7 +3597,7 @@ def computed_introspection(line):
 
 
 def split_inline_recipe(line):
-    if ASSIGNMENT.match(line) or TARGET_ASSIGNMENT.match(line):
+    if ASSIGNMENT.match(line) or _scoped_assignment(TARGET_ASSIGNMENT.match(line)):
         return line, ""
     stack = []
     escaped = False
@@ -3686,7 +3694,7 @@ def source_census(
         return True
 
     def retain_defaults(statement):
-        assignment = ASSIGNMENT.fullmatch(statement) or TARGET_ASSIGNMENT.fullmatch(statement)
+        assignment = ASSIGNMENT.fullmatch(statement) or _scoped_assignment(TARGET_ASSIGNMENT.fullmatch(statement))
         if assignment:
             if assignment["operator"] == "?=":
                 found = DEFAULT.finditer(statement[:assignment.start("value")])
@@ -3820,7 +3828,7 @@ def source_census(
             introspection.update(name for _, _, name in _literal_metadata(read_body))
             continue
         assignment = None if raw.startswith("\t") else ASSIGNMENT.match(line)
-        target_assignment = None if raw.startswith("\t") else TARGET_ASSIGNMENT.match(line)
+        target_assignment = None if raw.startswith("\t") else _scoped_assignment(TARGET_ASSIGNMENT.match(line))
         relevant = (
             not (assignment or target_assignment)
             or unit.assignment is None
@@ -3935,7 +3943,7 @@ def source_census(
             if unit.text.startswith("\t"):
                 continue
             line = strip_comment(unit.text).strip(MAKE_SPACE)
-            assignment = ASSIGNMENT.fullmatch(line) or TARGET_ASSIGNMENT.fullmatch(line)
+            assignment = ASSIGNMENT.fullmatch(line) or _scoped_assignment(TARGET_ASSIGNMENT.fullmatch(line))
             definition = DEFINE.match(line) if unit.body is not None else None
             if assignment:
                 if assignment["operator"] == "+=" and "$$" in assignment["value"]:
@@ -3961,7 +3969,7 @@ def source_census(
 
     def retain_emitted_assignments(records):
         for line, effect in records:
-            assignment = ASSIGNMENT.fullmatch(line) or TARGET_ASSIGNMENT.fullmatch(line)
+            assignment = ASSIGNMENT.fullmatch(line) or _scoped_assignment(TARGET_ASSIGNMENT.fullmatch(line))
             if assignment is None:
                 raise MakeProbeError("unproven emitted assignment destination")
             if not retain_once("bound-assignment", (line, effect)):
@@ -3998,7 +4006,7 @@ def source_census(
             if undefined:
                 unsafe_constants.add(undefined[1])
             assignment = ASSIGNMENT.fullmatch(line)
-            target_assignment = TARGET_ASSIGNMENT.fullmatch(line)
+            target_assignment = None if assignment else _scoped_assignment(TARGET_ASSIGNMENT.fullmatch(line))
             if target_assignment:
                 unsafe_constants.add(target_assignment["name"])
             if assignment:

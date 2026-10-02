@@ -4284,6 +4284,64 @@ fact API, removing duplicated live fact-admission checks. It does not copy all
 mode maps or add a registry, grammar, source authority, gate or resource waiver.
 All native/full-report/verifier/H1/CI and delivery requirements remain open.
 
+### Structural scoped-assignment recognition
+
+This extends **TC-WORKFLOW-GATE-OWNERSHIP-001** under
+[scope5946387314](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5946387314).
+At exact `c73dcefb`, a nested substitution colon in the final `modern.mk`
+optional include was incorrectly interpreted as a target assignment. Ordinary
+identifier substitutions, braces and nested functions reproduce the same
+source-role defect. This does not establish the scope, name, statement or
+firing conjunct of failed native run36964911895.
+
+Use a clean exact source and the existing host prerequisites. The focused
+memory-only class is
+`scripts.validation_ownership.tests.test_make_probe.OriginalStructuralScopesApiTests`.
+For local code-only work, inspect and AST-load the executing bodies under
+`/usr/bin/python3 -I -S -B` with import, filesystem, process, native and budget
+run/read/close traps. Do not discover the native-bearing module, provide a
+successful resolver/recipe result or make an unissued leaf native authority.
+
+1. Preserve the exact parent and the four include/braced/function witnesses.
+   Require no scoped declaration or target binding for any of them. Includes
+   remain directives with unclosed original authority; the existing source
+   stream and deferred-read checks must still refuse unsupported includes.
+   Renamed/braced references and independent declaration order must agree.
+2. Test the regex match's actual delimiter, including whitespace/modifiers,
+   escaped colons and a nested colon with a different top-level colon elsewhere.
+   Real scoped matches retain their original groups, spans and match object.
+   Parse real target-local appends and inspect scoped versus global values.
+   A global assignment containing colon/assignment data must remain global.
+3. Exercise literal eval, unknown-mode continuation equivalence, template
+   header admission, computed destinations and inline recipes. Inspect emitted
+   effects, parsing mode, source-rule/recipe state and graph-versus-recipe
+   readers. Parsing a template header is not proof that an unsupported
+   transformation can instantiate it. Unknown programs remain unknown.
+4. Exercise census defaults, writes, eval history, malformed unissued emitted
+   records and immutable-literal writer analysis. Non-rule substitutions must
+   not create defaults/definitions or poison an unrelated literal. Unsupported
+   eval/include history must not become a successful assignment history.
+   Restore the raw recognizer and each consumer connection independently;
+   every disconnected sibling must expose its original misclassification.
+5. Keep the finite source-time/deferred-value, six modern clauses, compiler/LZ,
+   neutral and genuine-invalid-scope controls. Unknown activity/selectors,
+   unsupported operators/computed names, all eight controls, automatic RHSs,
+   private/override, special/overlapping scopes and unsupported immediate
+   effects still refuse. Preserve unissued-context, count, closed/deadline and
+   prior receipt/mixed/append resource controls without changing a budget.
+
+The smaller design reuses one existing scanner before interpreting values; it
+adds no name exemption, parser grammar, registry, service or source ledger.
+Reset only owned memory models and retain preimage/mutation evidence locally.
+Dependencies are the existing source/include/value/context and resource
+contracts; other feature/profile conflicts are none. ROM/RAM, saves, locales,
+generated game data and modern/archival build behavior are unchanged. Correct
+source classification is not successful include/native/full-report evidence.
+All twelve native diagnostic allocations remain spent; independent exact-head
+review and native/report/verifier/resource/H1/CI/master/delivery gates remain
+coordinator-owned and open. Revert or fix forward without widening authority
+if separately authorized qualification exposes a regression.
+
 ### Native ownership, stderr effects and cumulative accounting
 
 These are additional deterministic controls for
