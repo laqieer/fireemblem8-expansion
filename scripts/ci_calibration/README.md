@@ -1,4 +1,81 @@
-# Contained structural-assignment full-report rebind
+# Contained original-sort full-report rebind
+
+**Local-only diagnostic preparation; never merge. Recovery publication is
+not execution authority. No native run, trigger push, retry, shipping-limit
+increase or source-policy change is allocated by this preparation.**
+
+Frozen scope:
+[5954743680](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5954743680).
+This is one normal child of spent sizing7 harness
+`ca119454f152251798f22a171bf9d07466160834`, with no upstream merge. Only the
+new `.github/workflows/issue180-full-report-sizing-8.yml` and policy,
+supervisor, tests and this README's identity/admission surfaces change.
+Main alone publishes on `recovery/session-f417-issue180-report-sizing8`;
+the implementation owner does not push. The future
+`calibration/issue-180-full-report-sizing-8` ref remains absent and unallocated.
+
+The selected source is `fb24e38cffae626f8d7b47ff6baf7a88d8db76c8`, accepted
+and normally integrated under
+[5954743350](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5954743350).
+Source acceptance is not native or delivery acceptance. BASE remains
+`ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`. Git's complete BASE/source diff
+is123 paths, +86,398/-843, 87,241 changed lines. The immediate2de8->fb24
+source delta is five paths, +792/-17, 809 changed lines; that is not the
+full PR review size. Selected source is only Git/AST-reflected here, never
+imported, executed or copied into the harness.
+
+Sizing7's workflow/source/ca119 endpoint and complete ea8->ca119 structural
+five-path inventory are frozen separately. Every older source, workflow,
+endpoint and inventory remains. A distinct closed ca119->HEAD five-path
+sort-source edge29 admits only this new workflow and four modifications.
+All16 old workflows and28 historical normal edges remain unchanged.
+Worker, root_stage, observation_failure, entry, kernel, runtime-view, volume
+and protected production/source/namespace/ownership/lifecycle helpers are
+byte-unchanged.
+
+The complete original CURRENT/BASE/source/Make/generator/lifecycle
+`graph_report.check` and original serializer retain one shared budget/session,
+one absolute3600-second clock, the same14 diagnostic cumulative queries and
+finite9223372036854775807 sentinel,19 real counters, seven fresh qualifiers,
+five bounded artifacts and every original entries/depth512/file/record/plan/
+live/funded-VM/physical/source/namespace/ownership/cleanup bound. Read-only
+credentials, pinned actions and70-minute inner/90-minute outer timeouts stay
+fixed. There is no reduced sample, retry, refund, reset or new quota.
+
+Inspect the session-only inert tools and their executing dependencies before
+isolated `/usr/bin/python3 -I -S -B` preparation. Keep every old semantic,
+quota and source-input refusal test. The executing API fixture stays at
+frozen60f1 and the original Make guard fixture at6d. Source reflection retains
+the complete original runtime/append/mixed/provenance/repeated/consumer/
+structural checks, public/API signatures and unrelated AST preservation.
+
+The complete2de8->fb24 reflection admits only
+`_MakeSourceMode._template_initializer`, `_MakeSourceMode._exact_initializer_value`
+and added `_original_sort_words`. The unrelated graph module and
+`phase_census.py` remain byte-unchanged. All423 existing helper/test methods
+remain; all11 negative-test changes replace literal-sort uncertainty with
+sort over an unsupported `word` operand while retaining every safety assertion.
+The helper's bounded ASCII alphanumeric plus `_./+%-` words, six whitespace
+separators, empty input, deduplication and C-locale order do not change actual
+budgets or consumed lifetimes. No addsuffix/other operator, include-only
+resolver, whole interpreter, modern-name exemption or ledger is admitted.
+Extra body/signature/class/module/operand mutations refuse; neutral comment,
+whitespace, AST location and inventory ordering stay accepted. These are
+source-bound preparation controls, not fresh execution of that source.
+
+All13 prior native allocations are spent. Run36985229259 at harnessca119/
+source2de8 failed after qualifiers and cleanup, reaching203 runs/1 state,
+711,054,985 accounted bytes,893,374,464-byte physical peak and11 PIDs,
+with no returned report or serialization. Reported modern.mk4789 and
+assets.mk139-140 context establishes neither native bindings nor an exclusive
+cause. Native authority remains unallocated. Full-report/verifier/resource/
+native/H1/security/Copilot/Build/master/closure/completion/cleanup gates
+remain open and coordinator-owned.
+
+## Historical structural-assignment full-report rebind
+
+The following records the frozen ea8->ca119 sizing7 preparation, not the
+active identity, fresh counts or a new allocation. Its endpoint remainsca119.
 
 **Local diagnostic preparation; never merge. Recovery publication is not
 execution authority. No native run, trigger push, retry, shipping-limit

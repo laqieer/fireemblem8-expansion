@@ -537,7 +537,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.CONSUMER_REPORT_SHA}",
+            f"{'a' * 40} {supervisor.STRUCTURAL_REPORT_SHA}",
+            f"{supervisor.STRUCTURAL_REPORT_SHA} {supervisor.CONSUMER_REPORT_SHA}",
             f"{supervisor.CONSUMER_REPORT_SHA} {supervisor.APPEND_REPORT_SHA}",
             f"{supervisor.APPEND_REPORT_SHA} {supervisor.RUNTIME_REPORT_SHA}",
             f"{supervisor.RUNTIME_REPORT_SHA} {supervisor.MAKE_BOUNDARY_SHA}",
@@ -1053,11 +1054,11 @@ class CalibrationControls(Inert):
 
     def test_runtime_report_source_and_workflow_refuse_all_spent_bindings(self):
         self.assertEqual((policy.BRANCH, policy.WORKFLOW, policy.OUTPUT_PREFIX), (
-            "calibration/issue-180-full-report-sizing-7",
-            ".github/workflows/issue180-full-report-sizing-7.yml", "issue180-full-report-sizing-7-",
+            "calibration/issue-180-full-report-sizing-8",
+            ".github/workflows/issue180-full-report-sizing-8.yml", "issue180-full-report-sizing-8-",
         ))
         self.assertEqual((policy.GRAPH, policy.PYTHON_REPORT_SOURCE, policy.BASE), (
-            "2de8a23cd6d8df1250c2ff826d223ee038c626c6",
+            "fb24e38cffae626f8d7b47ff6baf7a88d8db76c8",
             "6d2725d89df70c30954daade3cca7abc6d3171d4",
             "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a",
         ))
@@ -1065,6 +1066,7 @@ class CalibrationControls(Inert):
                          ("full-public-report-accounting-measurement", "full-report-accounting-only-v1"))
         self.assertEqual((len(policy.RELAXED), len(policy.ACCOUNTING_COUNTERS), len(policy.ARTIFACT_NAMES)), (14, 19, 5))
         for workflow in (
+            policy.STRUCTURAL_REPORT_WORKFLOW,
             policy.CONSUMER_REPORT_WORKFLOW, policy.APPEND_REPORT_WORKFLOW, policy.RUNTIME_REPORT_WORKFLOW,
             policy.MAKE_CONTEXT_WORKFLOW, policy.ORIGINAL_IMPORT_WORKFLOW,
             policy.TRACELESS_ANCHOR_WORKFLOW, policy.PARTIAL_ANCHOR_WORKFLOW,
@@ -1165,8 +1167,8 @@ class CalibrationControls(Inert):
             "79810df78b29eef98ba1da391565f17315352d18",
         ))
         self.assertEqual((policy.BRANCH, policy.GRAPH, policy.BASE), (
-            "calibration/issue-180-full-report-sizing-7",
-            "2de8a23cd6d8df1250c2ff826d223ee038c626c6",
+            "calibration/issue-180-full-report-sizing-8",
+            "fb24e38cffae626f8d7b47ff6baf7a88d8db76c8",
             "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a",
         ))
         accepted = policy.validate_event(self.event(), **self.authorization())
@@ -1175,6 +1177,7 @@ class CalibrationControls(Inert):
             {"ref": "refs/heads/calibration/issue-180-full-report-sizing-4"},
             {"ref": "refs/heads/calibration/issue-180-full-report-sizing-5"},
             {"ref": "refs/heads/calibration/issue-180-full-report-sizing-6"},
+            {"ref": "refs/heads/calibration/issue-180-full-report-sizing-7"},
             {"created": False}, {"before": "b" * 40},
             {"sender": {"login": "other"}}, {"repository": {"full_name": policy.REPOSITORY, "private": True}},
         ):
@@ -1263,10 +1266,10 @@ class CalibrationControls(Inert):
             "c73dcefb913bd432637a67e6ee4aff2dda1565cd",
         ))
         self.assertEqual(supervisor.STRUCTURAL_REPORT_PATHS, frozenset({
-            policy.WORKFLOW, "scripts/ci_calibration/policy.py", "scripts/ci_calibration/supervisor.py",
+            policy.STRUCTURAL_REPORT_WORKFLOW, "scripts/ci_calibration/policy.py", "scripts/ci_calibration/supervisor.py",
             "scripts/ci_calibration/test_ci_calibration.py", "scripts/ci_calibration/README.md",
         }))
-        rows = [(b"A" if path == policy.WORKFLOW else b"M", path.encode())
+        rows = [(b"A" if path == policy.STRUCTURAL_REPORT_WORKFLOW else b"M", path.encode())
                 for path in sorted(supervisor.STRUCTURAL_REPORT_PATHS)]
         data = b"".join(kind + b"\0" + path + b"\0" for kind, path in rows)
         supervisor.validate_structural_report_inventory(data)
@@ -1334,14 +1337,14 @@ class CalibrationControls(Inert):
         self.assertEqual(endpoints, {
             "validate_append_report_inventory": ["RUNTIME_REPORT_SHA", "APPEND_REPORT_SHA"],
             "validate_consumer_report_inventory": ["APPEND_REPORT_SHA", "CONSUMER_REPORT_SHA"],
-            "validate_structural_report_inventory": ["CONSUMER_REPORT_SHA", "'HEAD'"],
+            "validate_structural_report_inventory": ["CONSUMER_REPORT_SHA", "STRUCTURAL_REPORT_SHA"],
         })
 
     def test_structural_source_reflection_requires_complete_ordinary_mode_and_nested_census_pairs(self):
         self.assertIsNotNone(CORRECTED_SOURCE_INPUTS, "requires inspected structural-source reflection")
         contract = CORRECTED_SOURCE_INPUTS.contract
         delta = contract["reviewed_structural_delta"]
-        self.assertEqual((delta["before"], delta["after"]), (policy.CONSUMER_REPORT_SOURCE, policy.GRAPH))
+        self.assertEqual((delta["before"], delta["after"]), (policy.CONSUMER_REPORT_SOURCE, policy.STRUCTURAL_REPORT_SOURCE))
         self.assertEqual(delta["path_status_inventory"], [
             {"status": "M", "path": path} for path in sorted({
                 "docs/test-cases/workflow-governance.md", "docs/validation-ownership.md",
@@ -1368,6 +1371,137 @@ class CalibrationControls(Inert):
         self.assertEqual(set(module["delimiter_mutation_refusals"]), {"extra-delimiter", "wrong-delimiter"})
         self.assertEqual(contract["changed_paths"]["count"], 123)
         self.assertEqual(contract["reviewed_consumer_delta"]["after"], policy.CONSUMER_REPORT_SOURCE)
+        self.assertFalse(contract["source_imports"])
+        self.assertFalse(contract["source_execution"])
+        self.assertFalse(contract["native_execution"])
+
+    def test_sort_rebind_freezes_structural_identity_and_complete_separate_inventory(self):
+        self.assertEqual(supervisor.STRUCTURAL_REPORT_SHA, "ca119454f152251798f22a171bf9d07466160834")
+        self.assertEqual((policy.STRUCTURAL_REPORT_WORKFLOW, policy.STRUCTURAL_REPORT_SOURCE), (
+            ".github/workflows/issue180-full-report-sizing-7.yml",
+            "2de8a23cd6d8df1250c2ff826d223ee038c626c6",
+        ))
+        self.assertEqual(supervisor.SORT_REPORT_PATHS, frozenset({
+            policy.WORKFLOW, "scripts/ci_calibration/policy.py", "scripts/ci_calibration/supervisor.py",
+            "scripts/ci_calibration/test_ci_calibration.py", "scripts/ci_calibration/README.md",
+        }))
+        rows = [(b"A" if path == policy.WORKFLOW else b"M", path.encode())
+                for path in sorted(supervisor.SORT_REPORT_PATHS)]
+        data = b"".join(kind + b"\0" + path + b"\0" for kind, path in rows)
+        supervisor.validate_sort_report_inventory(data)
+        supervisor.validate_sort_report_inventory(b"".join(
+            kind + b"\0" + path + b"\0" for kind, path in reversed(rows)
+        ))
+        for changed in (
+            None, "", b"", data[:-1], data + data, data.split(b"\0", 2)[2],
+            data.replace(b"A\0", b"M\0"), data.replace(b"M\0", b"A\0", 1),
+            data.replace(b"M\0", b"D\0", 1),
+            *(data + b"M\0" + path.encode() + b"\0" for path in (
+                policy.STRUCTURAL_REPORT_WORKFLOW, policy.CONSUMER_REPORT_WORKFLOW,
+                policy.APPEND_REPORT_WORKFLOW, policy.RUNTIME_REPORT_WORKFLOW,
+                policy.MAKE_CONTEXT_WORKFLOW, policy.ORIGINAL_IMPORT_WORKFLOW,
+                policy.TRACELESS_ANCHOR_WORKFLOW, policy.PARTIAL_ANCHOR_WORKFLOW,
+                policy.PYTHON_REPORT_WORKFLOW, policy.CORRECTED_REPORT_WORKFLOW,
+                policy.LOCALIZATION_WORKFLOW, policy.FULL_REPORT_WORKFLOW,
+                policy.COMPONENT_WORKFLOW, policy.PREVIOUS_WORKFLOW,
+                "scripts/ci_calibration/worker.py", "scripts/ci_calibration/root_stage.py",
+                "scripts/ci_calibration/observation_failure.py", "scripts/ci_calibration/entry.py",
+                "scripts/ci_calibration/kernel.py", "scripts/ci_calibration/runtime_view.py",
+                "scripts/ci_calibration/volume_mount.py", "scripts/validation_ownership/graph_probe.py",
+                "scripts/validation_ownership/lifecycle.py",
+            )),
+        ):
+            with self.subTest(changed=changed), self.assertRaises(policy.GuardError):
+                supervisor.validate_sort_report_inventory(changed)
+        for paths, validator, workflow in (
+            (supervisor.STRUCTURAL_REPORT_PATHS, supervisor.validate_structural_report_inventory, policy.STRUCTURAL_REPORT_WORKFLOW),
+            (supervisor.CONSUMER_REPORT_PATHS, supervisor.validate_consumer_report_inventory, policy.CONSUMER_REPORT_WORKFLOW),
+            (supervisor.APPEND_REPORT_PATHS, supervisor.validate_append_report_inventory, policy.APPEND_REPORT_WORKFLOW),
+            (supervisor.RUNTIME_REPORT_PATHS, supervisor.validate_runtime_report_inventory, policy.RUNTIME_REPORT_WORKFLOW),
+            (supervisor.MAKE_CONTEXT_PATHS, supervisor.validate_make_context_inventory, policy.MAKE_CONTEXT_WORKFLOW),
+            (supervisor.MAKE_BOUNDARY_PATHS, supervisor.validate_make_boundary_inventory, None),
+        ):
+            original = b"".join(
+                (b"A" if path == workflow else b"M") + b"\0" + path.encode() + b"\0"
+                for path in sorted(paths)
+            )
+            validator(original)
+            with self.assertRaises(policy.GuardError):
+                validator(data)
+            with self.assertRaises(policy.GuardError):
+                supervisor.validate_sort_report_inventory(original)
+
+    def test_sort_rebind_rejects_spent_sources_and_nontriggering_recovery_ref(self):
+        accepted = policy.validate_event(self.event(), **self.authorization())
+        self.assertEqual((accepted["graph_sha"], accepted["base_sha"]), (policy.GRAPH, policy.BASE))
+        for source in (
+            policy.STRUCTURAL_REPORT_SOURCE, policy.CONSUMER_REPORT_SOURCE,
+            policy.APPEND_REPORT_SOURCE, policy.RUNTIME_REPORT_SOURCE,
+        ):
+            with self.subTest(source=source), self.assertRaises(policy.GuardError):
+                policy.validate_report_binding({**self.binding(), "source_revision": source})
+        for branch in (
+            "calibration/issue-180-full-report-sizing-7",
+            "recovery/session-f417-issue180-report-sizing7",
+            "recovery/session-f417-issue180-report-sizing8",
+        ):
+            with self.subTest(branch=branch), self.assertRaises(policy.GuardError):
+                policy.validate_event({**self.event(), "ref": "refs/heads/" + branch}, **self.authorization())
+        owner, = [node for node in SUPERVISOR_AST.body if isinstance(node, ast.ClassDef) and node.name == "Owner"]
+        prepare, = [node for node in owner.body if isinstance(node, ast.FunctionDef) and node.name == "prepare"]
+        endpoints = {}
+        for node in ast.walk(prepare):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {
+                "validate_append_report_inventory", "validate_consumer_report_inventory",
+                "validate_structural_report_inventory", "validate_sort_report_inventory",
+            }:
+                self.assertNotIn(node.func.id, endpoints)
+                endpoints[node.func.id] = [ast.unparse(value) for value in node.args[0].args[-2:]]
+        self.assertEqual(endpoints, {
+            "validate_append_report_inventory": ["RUNTIME_REPORT_SHA", "APPEND_REPORT_SHA"],
+            "validate_consumer_report_inventory": ["APPEND_REPORT_SHA", "CONSUMER_REPORT_SHA"],
+            "validate_structural_report_inventory": ["CONSUMER_REPORT_SHA", "STRUCTURAL_REPORT_SHA"],
+            "validate_sort_report_inventory": ["STRUCTURAL_REPORT_SHA", "'HEAD'"],
+        })
+
+    def test_sort_source_reflection_requires_exact_shared_initializers_and_preserved_negative_operands(self):
+        self.assertIsNotNone(CORRECTED_SOURCE_INPUTS, "requires inspected sort-source reflection")
+        contract = CORRECTED_SOURCE_INPUTS.contract
+        delta = contract["reviewed_sort_delta"]
+        self.assertEqual((delta["before"], delta["after"]), (policy.STRUCTURAL_REPORT_SOURCE, policy.GRAPH))
+        self.assertEqual(delta["path_status_inventory"], [
+            {"status": "M", "path": path} for path in sorted({
+                "docs/test-cases/workflow-governance.md", "docs/validation-ownership.md",
+                "scripts/validation_ownership/graph_probe.py",
+                "scripts/validation_ownership/tests/test_make_probe.py",
+                "scripts/validation_ownership/tests/test_phase_census.py",
+            })
+        ])
+        module = delta["complete_module"]
+        self.assertEqual(module["changed_methods"], [
+            "_MakeSourceMode._exact_initializer_value", "_MakeSourceMode._template_initializer",
+        ])
+        self.assertEqual(module["added_methods"], ["_original_sort_words"])
+        self.assertTrue(all(pair["unchanged"] for pair in module["signature_pairs"]))
+        self.assertTrue(module["whole_module_unrelated_ast_preserved"])
+        self.assertTrue(module["whole_module_unrelated_bytes_preserved"])
+        self.assertTrue(module["no_whole_class_waiver"])
+        self.assertTrue(module["neutral_comment_whitespace_and_ast_location_change"])
+        self.assertTrue(module["operand_mutation_refusals"])
+        self.assertTrue(delta["phase_census_byte_unchanged"])
+        self.assertEqual(delta["preserved_helper_test_methods"], {
+            "scripts/validation_ownership/tests/test_make_probe.py": 310,
+            "scripts/validation_ownership/tests/test_phase_census.py": 113,
+        })
+        self.assertEqual(len(delta["negative_operand_changes"]), 11)
+        for change in delta["negative_operand_changes"]:
+            with self.subTest(path=change["path"], method=change["method"]):
+                self.assertTrue(change["signature_unchanged"])
+                self.assertTrue(change["all_other_body_and_safety_assertions_preserved"])
+                self.assertTrue(change["operand_mutations_refused"])
+        self.assertEqual((delta["full_additions"], delta["full_deletions"]), (86398, 843))
+        self.assertEqual((delta["edge_additions"], delta["edge_deletions"]), (792, 17))
+        self.assertEqual(contract["reviewed_structural_delta"]["after"], policy.STRUCTURAL_REPORT_SOURCE)
         self.assertFalse(contract["source_imports"])
         self.assertFalse(contract["source_execution"])
         self.assertFalse(contract["native_execution"])
