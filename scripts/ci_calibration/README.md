@@ -1,4 +1,69 @@
-# Contained captured-consumer full-report rebind
+# Contained structural-assignment full-report rebind
+
+**Local diagnostic preparation; never merge. Recovery publication is not
+execution authority. No native run, trigger push, retry, shipping-limit
+increase or source-policy change is allocated by this preparation.**
+
+Frozen scope:
+[5947324745](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5947324745).
+This is one normal child of the spent sizing6 harness
+`ea8dddf2fee3af8bef8a777e1c39719dba60acca`, with no upstream merge. The only
+tracked changes are the new `.github/workflows/issue180-full-report-sizing-7.yml`
+and policy/supervisor/test/README identity and admission updates. The assigned
+publication ref is `recovery/session-f417-issue180-report-sizing7`; it does not
+trigger the new workflow. The still-absent
+`calibration/issue-180-full-report-sizing-7` ref is reserved for a separately
+reviewed and frozen first owner-created public hosted push, run1/attempt1.
+Do not push that calibration ref during preparation.
+
+Accepted immutable source is `2de8a23cd6d8df1250c2ff826d223ee038c626c6`;
+BASE remains `ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`. Git reports the complete
+BASE/source delta as123 paths, +85,623/-843. The source-only c73->2de8 edge is
+four modified paths, +425/-11. It corrects substitution-colon misclassification
+with structural rule delimiters; it does not change grammar, operator/value
+semantics, defaults, source authority or report sampling. Source is neither
+copied into the harness nor imported/executed by preparation tools.
+
+Sizing6's workflow/source/ea8 endpoint is frozen separately. The complete
+d505->ea8 consumer inventory remains fixed, as do f5a70->d505 append and all
+earlier inventories. A distinct closed five-path ea8->HEAD structural inventory
+adds only the new workflow and four normal modifications. All15 old workflows
+and27 historical normal edges remain unchanged; only fresh edge28 is added.
+Worker, root_stage, observation_failure, entry, kernel, runtime-view, volume,
+protected lifecycle/namespace/source/producer and ownership helpers are unchanged.
+
+The complete original CURRENT/BASE/source/Make/generator/lifecycle
+`graph_report.check` and serializer retain one budget/session and one absolute
+3600-second clock,14 diagnostic-only cumulative queries,19 real counters,
+seven fresh qualifiers, five bounded artifacts and every original unit/record/
+input/stream/plan/context/capsule/live/VM/physical/source/ownership/cleanup bound.
+Read-only credentials, pinned actions and70-minute inner/90-minute outer
+timeouts are unchanged. There is no reduced report or automatic retry.
+
+Inspect session-local tools before isolated `/usr/bin/python3 -I -S -B` inert
+execution. Retain all old semantic assertions and quota/source-input controls.
+The executed synthetic API fixture stays at frozen60f1 and the Make guard
+fixture stays at6d. Source reflection preserves the four exact6d->798 API pairs,
+the798->60f1 assignment pair and every mixed/provenance/repeated/consumer edge.
+The added c73->2de8 reflection binds `_scoped_assignment`, every changed
+ordinary/mode consumer and nested census member, unchanged public signatures
+and the whole unrelated module. Extra/wrong delimiters, body/signature/class/
+module mutations must refuse; no whole-class waiver is allowed. Fresh method
+and parameter counts must come only from actual inert execution, separately
+from prior scope/source-classifier13/109 and51 behavioral-model observations.
+
+All12 historical native allocations are spent. Run36964911895 failed at a
+later original scoped-context guard; its actual scope, name, statement and
+conjunct remain unknown. The demonstrated non-rule substitution-colon source
+fix is not native attribution, and the full report remains unqualified.
+Independent exact-head harness/source review and a separately frozen one-shot
+allocation are coordinator-owned. Final report/verifier/resource/native/H1/
+review/security/candidate/master/closure/completion/cleanup gates remain open.
+
+## Historical captured-consumer full-report rebind
+
+The following records the frozen d505->ea8 sizing6 preparation, not the active
+identity, fresh counts or a new allocation. Its historical HEAD endpoint is ea8.
 
 **Code-only preparation; never merge. Publication on the assigned recovery
 ref is not execution authority. No trigger push, native allocation, retry or
