@@ -38,6 +38,7 @@ QUOTA_MODEL = SOURCE_PROBING = OLD_BUDGET_CHARGE = OLD_CALIBRATION_FACTORY = Non
 OLD_TELEMETRY_SNAPSHOT = OLD_TELEMETRY_PROTOCOL = None
 CORRECTED_SOURCE_INPUTS = None
 INCLUDE_STATE_INPUTS = None
+INCLUDE_STATE_REBIND_INPUTS = None
 WORKER_AST = ast.parse((REPO / "scripts/ci_calibration/worker.py").read_text())
 
 
@@ -538,7 +539,9 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.SORT_REPORT_SHA}",
+            f"{'a' * 40} {supervisor.MEMBER_PIN_SHA}",
+            f"{supervisor.MEMBER_PIN_SHA} {supervisor.INCLUDE_STATE_SHA}",
+            f"{supervisor.INCLUDE_STATE_SHA} {supervisor.SORT_REPORT_SHA}",
             f"{supervisor.SORT_REPORT_SHA} {supervisor.STRUCTURAL_REPORT_SHA}",
             f"{supervisor.STRUCTURAL_REPORT_SHA} {supervisor.CONSUMER_REPORT_SHA}",
             f"{supervisor.CONSUMER_REPORT_SHA} {supervisor.APPEND_REPORT_SHA}",
@@ -1056,8 +1059,8 @@ class CalibrationControls(Inert):
 
     def test_runtime_report_source_and_workflow_refuse_all_spent_bindings(self):
         self.assertEqual((policy.BRANCH, policy.WORKFLOW, policy.OUTPUT_PREFIX), (
-            "calibration/issue-180-original-include-localization-1",
-            ".github/workflows/issue180-original-include-localization-1.yml", "issue180-original-include-localization-1-",
+            "calibration/issue-180-original-include-localization-2",
+            ".github/workflows/issue180-original-include-localization-2.yml", "issue180-original-include-localization-2-",
         ))
         self.assertEqual((policy.GRAPH, policy.PYTHON_REPORT_SOURCE, policy.BASE), (
             "fb24e38cffae626f8d7b47ff6baf7a88d8db76c8",
@@ -1068,6 +1071,7 @@ class CalibrationControls(Inert):
                          ("full-public-report-accounting-measurement", "full-report-accounting-only-v1"))
         self.assertEqual((len(policy.RELAXED), len(policy.ACCOUNTING_COUNTERS), len(policy.ARTIFACT_NAMES)), (14, 19, 5))
         for workflow in (
+            policy.INCLUDE_STATE_WORKFLOW,
             policy.SORT_REPORT_WORKFLOW,
             policy.STRUCTURAL_REPORT_WORKFLOW,
             policy.CONSUMER_REPORT_WORKFLOW, policy.APPEND_REPORT_WORKFLOW, policy.RUNTIME_REPORT_WORKFLOW,
@@ -1170,7 +1174,7 @@ class CalibrationControls(Inert):
             "79810df78b29eef98ba1da391565f17315352d18",
         ))
         self.assertEqual((policy.BRANCH, policy.GRAPH, policy.BASE), (
-            "calibration/issue-180-original-include-localization-1",
+            "calibration/issue-180-original-include-localization-2",
             "fb24e38cffae626f8d7b47ff6baf7a88d8db76c8",
             "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a",
         ))
@@ -1182,6 +1186,7 @@ class CalibrationControls(Inert):
             {"ref": "refs/heads/calibration/issue-180-full-report-sizing-6"},
             {"ref": "refs/heads/calibration/issue-180-full-report-sizing-7"},
             {"ref": "refs/heads/calibration/issue-180-full-report-sizing-8"},
+            {"ref": "refs/heads/calibration/issue-180-original-include-localization-1"},
             {"created": False}, {"before": "b" * 40},
             {"sender": {"login": "other"}}, {"repository": {"full_name": policy.REPOSITORY, "private": True}},
         ):
@@ -1517,12 +1522,12 @@ class CalibrationControls(Inert):
             "fb24e38cffae626f8d7b47ff6baf7a88d8db76c8",
         ))
         self.assertEqual(supervisor.INCLUDE_STATE_PATHS, frozenset({
-            policy.WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
+            policy.INCLUDE_STATE_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
                 "policy.py", "supervisor.py", "observation_failure.py", "worker.py",
                 "test_ci_calibration.py", "test_observation_failure.py", "README.md",
             )),
         }))
-        rows = [(b"A" if path == policy.WORKFLOW else b"M", path.encode())
+        rows = [(b"A" if path == policy.INCLUDE_STATE_WORKFLOW else b"M", path.encode())
                 for path in sorted(supervisor.INCLUDE_STATE_PATHS)]
         data = b"".join(kind + b"\0" + path + b"\0" for kind, path in rows)
         supervisor.validate_include_state_inventory(data)
@@ -1560,7 +1565,7 @@ class CalibrationControls(Inert):
         }
         self.assertEqual(endpoints, {
             "validate_sort_report_inventory": ["STRUCTURAL_REPORT_SHA", "SORT_REPORT_SHA"],
-            "validate_include_state_inventory": ["SORT_REPORT_SHA", "'HEAD'"],
+            "validate_include_state_inventory": ["SORT_REPORT_SHA", "INCLUDE_STATE_SHA"],
         })
 
     def test_include_state_reuses_the_source_without_reopening_the_spent_or_recovery_refs(self):
@@ -1572,7 +1577,9 @@ class CalibrationControls(Inert):
         self.assertFalse(accepted["production_acceptance"])
         for branch in (
             "calibration/issue-180-full-report-sizing-8",
+            "calibration/issue-180-original-include-localization-1",
             "recovery/session-f417-issue180-original-include-localization1",
+            "recovery/session-f417-issue180-original-include-localization2",
         ):
             with self.subTest(branch=branch), self.assertRaises(policy.GuardError):
                 policy.validate_event({**self.event(), "ref": "refs/heads/" + branch}, **self.authorization())
@@ -1593,6 +1600,152 @@ class CalibrationControls(Inert):
         self.assertEqual(INCLUDE_STATE_INPUTS["fact_kinds"], ["exact", "patsubst", "header-bound"])
         self.assertFalse(INCLUDE_STATE_INPUTS["selected_source_execution"])
         self.assertFalse(INCLUDE_STATE_INPUTS["native_binding_evidence"])
+
+    def test_include_state_rebind_keeps_three_complete_separate_inventories(self):
+        self.assertIsNotNone(INCLUDE_STATE_REBIND_INPUTS, "requires observed frozen Git inventories")
+        self.assertEqual((supervisor.INCLUDE_STATE_SHA, supervisor.MEMBER_PIN_SHA), (
+            "8c1874e56b7a7de42254d60db926d77930894adc",
+            "8d57389c40a48c7bfc1cd10cd9a6a75a6981af1f",
+        ))
+        self.assertEqual((policy.INCLUDE_STATE_WORKFLOW, policy.INCLUDE_STATE_SOURCE), (
+            ".github/workflows/issue180-original-include-localization-1.yml",
+            "fb24e38cffae626f8d7b47ff6baf7a88d8db76c8",
+        ))
+        models = (
+            ("include_inventory", supervisor.INCLUDE_STATE_PATHS, supervisor.validate_include_state_inventory,
+             policy.INCLUDE_STATE_WORKFLOW, frozenset({
+                 ".github/workflows/issue180-original-include-localization-1.yml",
+                 *(f"scripts/ci_calibration/{name}" for name in (
+                     "policy.py", "supervisor.py", "observation_failure.py", "worker.py",
+                     "test_ci_calibration.py", "test_observation_failure.py", "README.md",
+                 )),
+             })),
+            ("pin_inventory", supervisor.MEMBER_PIN_PATHS, supervisor.validate_member_pin_inventory,
+             None, frozenset({
+                 "scripts/ci_calibration/supervisor.py", "scripts/ci_calibration/test_output_phase.py",
+                 "scripts/ci_calibration/README.md",
+             })),
+            ("rebind_inventory", supervisor.INCLUDE_STATE_REBIND_PATHS,
+             supervisor.validate_include_state_rebind_inventory, policy.WORKFLOW, frozenset({
+                 ".github/workflows/issue180-original-include-localization-2.yml",
+                 "scripts/ci_calibration/policy.py", "scripts/ci_calibration/supervisor.py",
+                 "scripts/ci_calibration/test_ci_calibration.py", "scripts/ci_calibration/README.md",
+             })),
+        )
+        for name, paths, validator, workflow, expected in models:
+            self.assertEqual(paths, expected)
+            rows = [(b"A" if path == workflow else b"M", path.encode()) for path in sorted(expected)]
+            data = b"".join(kind + b"\0" + path + b"\0" for kind, path in rows)
+            self.assertEqual(INCLUDE_STATE_REBIND_INPUTS[name], data)
+            validator(data)
+            validator(b"".join(kind + b"\0" + path + b"\0" for kind, path in reversed(rows)))
+            for changed in (None, "", b"", data[:-1], data + data,
+                            data + b"M\0scripts/ci_calibration/entry.py\0"):
+                with self.subTest(inventory=name, changed=changed), self.assertRaises(policy.GuardError):
+                    validator(changed)
+            for index, (kind, path) in enumerate(rows):
+                missing = b"".join(k + b"\0" + p + b"\0" for k, p in rows[:index] + rows[index + 1:])
+                with self.subTest(inventory=name, missing=path), self.assertRaises(policy.GuardError):
+                    validator(missing)
+                for status in (b"A", b"M", b"D", b"R100", b"C100", b"T"):
+                    if status != kind:
+                        wrong = b"".join(k + b"\0" + p + b"\0" for k, p in (
+                            rows[:index] + [(status, path)] + rows[index + 1:]
+                        ))
+                        with self.subTest(inventory=name, path=path, status=status), self.assertRaises(policy.GuardError):
+                            validator(wrong)
+            for other, _, _, _, _ in models:
+                if other != name:
+                    with self.subTest(inventory=name, other=other), self.assertRaises(policy.GuardError):
+                        validator(INCLUDE_STATE_REBIND_INPUTS[other])
+        owner, = [node for node in SUPERVISOR_AST.body if isinstance(node, ast.ClassDef) and node.name == "Owner"]
+        prepare, = [node for node in owner.body if isinstance(node, ast.FunctionDef) and node.name == "prepare"]
+        endpoints = {}
+        for node in ast.walk(prepare):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {
+                "validate_sort_report_inventory", "validate_include_state_inventory",
+                "validate_member_pin_inventory", "validate_include_state_rebind_inventory",
+            }:
+                self.assertNotIn(node.func.id, endpoints)
+                endpoints[node.func.id] = [ast.unparse(value) for value in node.args[0].args[-2:]]
+        self.assertEqual(endpoints, {
+            "validate_sort_report_inventory": ["STRUCTURAL_REPORT_SHA", "SORT_REPORT_SHA"],
+            "validate_include_state_inventory": ["SORT_REPORT_SHA", "INCLUDE_STATE_SHA"],
+            "validate_member_pin_inventory": ["INCLUDE_STATE_SHA", "MEMBER_PIN_SHA"],
+            "validate_include_state_rebind_inventory": ["MEMBER_PIN_SHA", "'HEAD'"],
+        })
+
+    def test_include_state_rebind_requires_all_32_normal_edges_including_the_pin(self):
+        self.assertIsNotNone(INCLUDE_STATE_REBIND_INPUTS, "requires observed exact-parent Git lineage")
+        inputs = INCLUDE_STATE_REBIND_INPUTS
+        self.assertEqual((inputs["parent"], inputs["parent_tree"], inputs["branch"]), (
+            supervisor.MEMBER_PIN_SHA, "7769009111e3cefd41c3a43922b15528bce15d76",
+            "recovery/session-f417-issue180-original-include-localization2",
+        ))
+        historical = inputs["lineage"]
+        self.assertEqual(len(historical), 31)
+        self.assertEqual(historical[:2], [
+            f"{supervisor.MEMBER_PIN_SHA} {supervisor.INCLUDE_STATE_SHA}",
+            f"{supervisor.INCLUDE_STATE_SHA} {supervisor.SORT_REPORT_SHA}",
+        ])
+        self.assertEqual(historical[-1], f"{supervisor.PREPARATION_SHA} {policy.BASE}")
+        head = "a" * 40
+        chain = [f"{head} {supervisor.MEMBER_PIN_SHA}", *historical]
+        self.assertEqual(len(chain), 32)
+        supervisor.validate_harness_lineage(chain, head)
+        for index, line in enumerate(chain):
+            for kind, changed in (
+                ("missing", chain[:index] + chain[index + 1:]),
+                ("extra", chain[:index] + [line, line] + chain[index + 1:]),
+                ("wrong-parent", chain[:index] + [line.split()[0] + " " + "b" * 40] + chain[index + 1:]),
+                ("merge", chain[:index] + [line + " " + "b" * 40] + chain[index + 1:]),
+            ):
+                with self.subTest(index=index, kind=kind), self.assertRaises(policy.GuardError):
+                    supervisor.validate_harness_lineage(changed, head)
+        for changed in (
+            historical, historical[1:],
+            [f"{head} {supervisor.INCLUDE_STATE_SHA}", *historical[1:]],
+            [chain[0], historical[1], historical[0], *historical[2:]],
+        ):
+            with self.subTest(changed=changed[:3]), self.assertRaises(policy.GuardError):
+                supervisor.validate_harness_lineage(changed, head)
+        with self.assertRaises(policy.GuardError):
+            supervisor.validate_harness_lineage(chain, "c" * 40)
+
+    def test_include_state_rebind_admits_only_the_fresh_first_owner_event(self):
+        self.assertEqual((policy.BRANCH, policy.WORKFLOW, policy.OUTPUT_PREFIX), (
+            "calibration/issue-180-original-include-localization-2",
+            ".github/workflows/issue180-original-include-localization-2.yml",
+            "issue180-original-include-localization-2-",
+        ))
+        self.assertEqual((policy.GRAPH, policy.BASE), (
+            policy.INCLUDE_STATE_SOURCE, "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a",
+        ))
+        accepted = policy.validate_event(self.event(), **self.authorization())
+        self.assertEqual((accepted["graph_sha"], accepted["base_sha"], accepted["branch"]), (
+            policy.INCLUDE_STATE_SOURCE, policy.BASE, policy.BRANCH,
+        ))
+        self.assertTrue(accepted["never_merge"])
+        self.assertFalse(accepted["production_acceptance"])
+        for branch in (
+            "calibration/issue-180-original-include-localization-1",
+            "recovery/session-f417-issue180-original-include-localization1",
+            "recovery/session-f417-issue180-original-include-localization2",
+            "calibration/issue-180-full-report-sizing-8",
+        ):
+            with self.subTest(branch=branch), self.assertRaises(policy.GuardError):
+                policy.validate_event({**self.event(), "ref": "refs/heads/" + branch}, **self.authorization())
+        for field in ("attempt", "run_number"):
+            for value in ("0", "2", "01", 1, None):
+                with self.subTest(field=field, value=value), self.assertRaises(policy.GuardError):
+                    policy.validate_event(self.event(), **{**self.authorization(), field: value})
+        for changes in (
+            {"before": supervisor.MEMBER_PIN_SHA}, {"created": False}, {"deleted": True},
+            {"after": supervisor.INCLUDE_STATE_SHA}, {"sender": {"login": "other"}},
+            {"repository": {"full_name": policy.REPOSITORY, "private": True}},
+        ):
+            with self.subTest(changes=changes), self.assertRaises(policy.GuardError):
+                policy.validate_event({**self.event(), **changes}, **self.authorization())
 
     def test_complete_diff_binding_preserves_additions_deletions_and_both_rename_sides(self):
         changes = self.changes()

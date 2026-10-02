@@ -1,5 +1,72 @@
 # Contained original-include retained-state diagnostic
 
+## Original-include localization2 identity preparation
+
+**Local-only identity/admission child for #180 / #186; ineligible WIP,
+never merge. No native allocation, trigger push, retry or report completion
+is authorized.** Assignment `issue180-include-state2-rebind-f417` is one
+normal child of `8d57389c40a48c7bfc1cd10cd9a6a75a6981af1f`, tree
+`7769009111e3cefd41c3a43922b15528bce15d76`, without upstream merges.
+Frozen scope:
+[5959048151](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5959048151).
+The exact pin/release correction was accepted under
+[5959047761](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5959047761)
+by fresh read-only reviewer `eb3e2fc9-3859-442d-9017-59deb399cc70`.
+That acceptance is not a new native allocation.
+
+Only the new localization2 workflow and policy, supervisor, direct identity
+tests and this README change. All18 prior workflows and31 normal historical
+edges remain fixed; the five-path identity child adds edge32 only.
+Localization1's workflow/source and exact
+`8c1874e56b7a7de42254d60db926d77930894adc` endpoint retain their separate
+eight-path `7e5a->8c187` diagnostic inventory. The complete `8c187->8d573`
+pin/release edge has exactly three normal modifications: supervisor,
+test_output_phase and README. Neither historical endpoint becomes `HEAD`.
+Only the new five-path identity inventory terminates at `HEAD`.
+
+Selectedsourcefb24 and BASEec1 are unchanged. The v4 refusal-time projector,
+explicit closed v3 compatibility,20-name metadata without values/evaluation/
+authority, member-exit observations with zero held credit, all-attempt
+pidfd release and independent OS-close error chains are protected.
+No metadata, worker, containment, production/source, pin/release
+implementation, wire protocol, workload, resource or timeout change exists.
+The original complete CURRENT/BASE/source/Make/generator/lifecycle
+`graph_report.check` and serializer still share one budget/session and
+absolute3600-second clock,14 cumulative queries with the same signed64
+sentinel,19 counters, seven fresh qualifiers and five bounded artifacts.
+Every original hard/input/record/stream/plan/context/entry/file/live/
+funded-VM/physical/source/namespace/ownership/error/cleanup bound, action pin,
+read-only credential and70/90-minute timeout remains intact.
+
+For existing `TC-ISSUE180-ORIGINAL-IMPORT-001`, compare the complete parsed
+localization2 YAML with unchanged localization1, allowing only identity,
+job-key and output-prefix labels. Check exact Git scope and whole policy/
+supervisor/test AST preservation, then execute the focused event, three
+separate inventories and32-edge lineage controls with missing/wrong/extra/
+attempt/recovery-ref negatives and neutral ordering controls. Retain the
+reviewed exact-source and whole metadata reflection as historical,
+protected-input proof; do not rerun its273-method matrix or execute
+selectedfb24. Run the inspected shimmed17-control/43-phase pin/release
+selectors for `TC-ISSUE180-MEMBER-PIN-RACE-001`, never the real process/
+pipe/watchdog methods. Record actual fresh method/subtest/unique-parameter
+events and script OS exits separately from historical totals and repeats.
+Credential-free `-I -S -B` traps are operational controls, not hostile
+same-UID isolation or native/report/resource evidence.
+
+Main/laqieer alone immediately owner-pushes the exact local child on
+`recovery/session-f417-issue180-original-include-localization2`, which is
+nontriggering. The future first-owner
+`calibration/issue-180-original-include-localization-2` ref remains absent
+and unallocated until fresh exact-harness review and separate frozen
+allocation. All15 old native attempts remain spent; localization1 is never
+rerun. Run37042956243 failed in a qualifier before source/report/descriptor
+launch, so the original source cause remains unknown. Every full-report,
+serializer/verifier/resource/native/H1/security/Copilot/candidate-master
+Build/architecture/merge/closure/remote-completion/cleanup gate stays open.
+There are no new services, dependencies, feature/profile, save,
+generated-data, localization, ROM or RAM changes. The sections below retain
+historical preparation and correction evidence, not fresh execution claims.
+
 ## Owned member-pin disappearance correction
 
 **Local diagnostic correction for #180 / #186; ineligible WIP, never merge.
