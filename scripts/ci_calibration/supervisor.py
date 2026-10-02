@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
+import errno
 import os
 from pathlib import Path
 import platform
@@ -1181,7 +1183,15 @@ def phase(owner, mode, volume, *, memory, pids, seconds):
                         elif kind == "escaped":
                             result["escaped"] = value
                             for pid in kernel.read(group.path / "cgroup.procs").decode().split():
-                                held.append(os.pidfd_open(int(pid)))
+                                member = int(pid)
+                                try:
+                                    descriptor = os.pidfd_open(member)
+                                except ProcessLookupError as error:
+                                    if error.errno != errno.ESRCH:
+                                        raise
+                                    result.setdefault("unpinned_member_exits", []).append(member)
+                                else:
+                                    held.append(descriptor)
                             if mode == "lifetime":
                                 os.close(writer)
                                 writer = None
@@ -1202,31 +1212,45 @@ def phase(owner, mode, volume, *, memory, pids, seconds):
         )
         cause = cause or {"type": "supervisor-error", "error": result["supervisor_error"]}
     finally:
-        group.kill()
-        if writer is not None:
-            os.close(writer)
-        if reader is not None:
-            os.close(reader)
-        if child is not None:
+        release_error = None
+
+        def close_held(descriptor):
+            nonlocal release_error
             try:
-                child.wait(timeout=5)
-            except subprocess.TimeoutExpired as error:
-                raise policy.GuardError("watchdog cleanup unconfirmed; retain containment resources") from error
-            child.stdout.close()
-            child.stderr.close()
-            result.setdefault("returncode", child.returncode)
-        until = time.monotonic() + 5
-        while not group.empty() and time.monotonic() < until:
-            time.sleep(0.02)
-        if not group.empty():
-            raise policy.GuardError("owned cgroup remains populated after kill; retain workspace")
-        with selectors.DefaultSelector() as selector:
+                os.close(descriptor)
+            except OSError as error:
+                previous = release_error
+                release_error = error
+                if previous is not None:
+                    raise error from previous
+                raise
+
+        with ExitStack() as release:
             for descriptor in held:
-                selector.register(descriptor, selectors.EVENT_READ)
-            if held and len(selector.select(0)) != len(held):
-                raise policy.GuardError("escaped descendant pidfds did not become terminal")
-        for descriptor in held:
-            os.close(descriptor)
+                release.callback(close_held, descriptor)
+            group.kill()
+            if writer is not None:
+                os.close(writer)
+            if reader is not None:
+                os.close(reader)
+            if child is not None:
+                try:
+                    child.wait(timeout=5)
+                except subprocess.TimeoutExpired as error:
+                    raise policy.GuardError("watchdog cleanup unconfirmed; retain containment resources") from error
+                child.stdout.close()
+                child.stderr.close()
+                result.setdefault("returncode", child.returncode)
+            until = time.monotonic() + 5
+            while not group.empty() and time.monotonic() < until:
+                time.sleep(0.02)
+            if not group.empty():
+                raise policy.GuardError("owned cgroup remains populated after kill; retain workspace")
+            with selectors.DefaultSelector() as selector:
+                for descriptor in held:
+                    selector.register(descriptor, selectors.EVENT_READ)
+                if held and len(selector.select(0)) != len(held):
+                    raise policy.GuardError("escaped descendant pidfds did not become terminal")
         result["kernel"] = group.snapshot()
         disk = os.statvfs(volume.mountpoint)
         result["kernel"]["disk_used_bytes"] = (disk.f_blocks - disk.f_bfree) * disk.f_frsize

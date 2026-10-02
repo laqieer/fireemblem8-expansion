@@ -1,5 +1,65 @@
 # Contained original-include retained-state diagnostic
 
+## Owned member-pin disappearance correction
+
+**Local diagnostic correction for #180 / #186; ineligible WIP, never merge.
+No native allocation, report completion or trigger retry is authorized.**
+Assignment `issue180-member-pin-race-f417` is one normal child of
+`8c1874e56b7a7de42254d60db926d77930894adc`, with no upstream merge, on the
+existing recovery ref. Frozen scope:
+[5958220598](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5958220598).
+Failed run37042956243 closed under
+[5958220266](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5958220266).
+It raised `ProcessLookupError`/`ESRCH` at `os.pidfd_open` after the owned
+`cgroup.procs` snapshot, before launching the report. No report, serializer
+or v4 state descriptor was returned; the original source failure is unknown.
+All15 native allocations are spent, including localization1's run1.
+
+Only that pin call reconciles `ProcessLookupError` with errno `ESRCH`.
+`unpinned_member_exits` explicitly records the listed PIDs that disappeared;
+they contribute zero held-descendant, terminal or caller-lifetime credit.
+Only successfully captured pidfds count toward the unchanged minimum of two
+escaped descendants. All captured handles remain release obligations even
+when cleanup or terminal checks fail; `ExitStack` attempts every close and
+the narrow OS-close handler explicitly chains independent close failures
+without losing an earlier cleanup error.
+Other errno, read/list/decode/type/pin errors remain supervisor failures.
+Original first-cause selection, deadline, lifetime-pipe closure, pre-outer
+emptiness, watchdog reap and descriptor readiness checks remain mandatory.
+Outer kill cannot certify inner emptiness.
+
+For **TC-ISSUE180-MEMBER-PIN-RACE-001**, start from this frozen parent with
+finite owned-member and descriptor fixtures only:
+
+1. AST-load the inspected `MemberPinPhaseTests` and actual phase, Protocol
+   and probe validator under credential-free `-I -S -B`, with all phase
+   effects shimmed. Do not run `OutputPhaseTests`' real-pipe/watchdog routes.
+2. Disappear a listed member before pinning, before/after other captures and
+   in reversed member order. Require explicit observations, two retained
+   terminal handles, all-attempt release and actual probe qualification.
+   Empty or too-few survivors must still refuse.
+3. Inject independent errno/read/type/pin/cleanup/close faults, earlier worker
+   errors, nonterminal handles, nonempty pre-outer state and unreaped watchdog.
+   Require failure, preserved first cause or exception chain, and release
+   attempts for every captured handle.
+4. Restore the exact old pin loop to recover its supervisor failure; restore
+   the correction, then retain neutral local-name and result-map ordering
+   controls. Counting disappearances or broad-catching pin errors must break
+   the behavioral oracle.
+
+Sourcefb24/BASEec1, public/worker/protocol/refusal metadata, identities,
+workflows, production, limits and timeouts are unchanged. There are no new
+dependencies beyond the existing Python standard library, feature/profile,
+save, generated-data, ROM or RAM changes. These finite observations are not
+native/report/resource evidence or hostile same-UID isolation. Script OS
+exits are separate from unknown runtime-owner PID/RSS/OS exit. Main/laqieer
+must publish the local commit immediately as ineligible WIP and separately
+prepare/review a fresh diagnostic identity before another trigger. Every
+original report/verifier/native/H1/security/Copilot/Build/master/merge/closure/
+remote-completion/cleanup gate remains open.
+
+## Historical original-include retained-state preparation
+
 **Local-only preparation for #180 / #186; never merge. No native allocation,
 trigger push, retry, production correction or final-gate acceptance follows.**
 Frozen scope:
