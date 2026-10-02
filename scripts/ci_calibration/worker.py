@@ -528,7 +528,8 @@ def finish_report(sampler, budget, primary, secondary):
     return primary, first_stage
 
 
-def report_error_record(primary, measurement, sampler, observer, binding, secondary, *, stage="check"):
+def report_error_record(primary, measurement, sampler, observer, binding, secondary, *,
+                        stage="check", location_version=3):
     record = {
         "binding": binding, "stage": stage, "error": policy.component_secondary_error(primary),
         "states": None if measurement is None else dict(measurement.states),
@@ -539,7 +540,7 @@ def report_error_record(primary, measurement, sampler, observer, binding, second
         "source_cleanup_failures": policy.source_cleanup_count(primary),
         "observation_failure": observation_failure.unavailable("binding-not-ready"),
         "budget_admission": observation_failure.unavailable("binding-not-ready"),
-        "source_locations": observation_failure.location_unavailable("binding-not-ready"),
+        "source_locations": observation_failure.location_unavailable("binding-not-ready", version=location_version),
     }
     if measurement is not None:
         record["states"]["completed"] = False
@@ -551,7 +552,9 @@ def report_error_record(primary, measurement, sampler, observer, binding, second
         ("admission-publication", "budget_admission",
          lambda: observation_failure.validate_fact(observer.budget_admission(primary), admission=True)),
         ("location-publication", "source_locations",
-         lambda: observation_failure.validate_locations(observer.source_locations(primary, measurement), binding)),
+         lambda: observation_failure.validate_locations(
+             observer.source_locations(primary, measurement) if location_version == 3 else
+             observer.source_locations(primary, measurement, version=location_version), binding)),
     ):
         if observer is None and name != "snapshot":
             continue
@@ -566,7 +569,7 @@ def report_error_record(primary, measurement, sampler, observer, binding, second
             if name == "snapshot":
                 record["counters"] = record["accounting"] = None
             elif name == "source_locations":
-                record[name] = observation_failure.location_unavailable("locator-failed")
+                record[name] = observation_failure.location_unavailable("locator-failed", version=location_version)
             else:
                 record[name] = observation_failure.unavailable("collector-failed")
     policy.validate_report_error(record, binding)
@@ -599,7 +602,7 @@ class ReportFailure:
             raise policy.GuardError("report fallback has a foreign run binding")
         self.capture(error, self.stage)
         value = policy.unavailable_report_error(
-            binding, self.error, stage=self.stage, source_cleanup_failures=self.cleanup_failures,
+            binding, self.error, stage=self.stage, source_cleanup_failures=self.cleanup_failures, location_version=4,
         )
         value["secondary"] = list(self.known_secondary)
         try:
@@ -725,6 +728,7 @@ def report(config, *, failure=None):
             try:
                 failure.record = report_error_record(
                     primary, measurement, sampler, observer, binding, secondary, stage=primary_stage,
+                    location_version=4,
                 )
             finally:
                 if observer is not None:

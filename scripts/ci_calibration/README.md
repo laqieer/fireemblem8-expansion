@@ -1,4 +1,117 @@
-# Contained original-sort full-report rebind
+# Contained original-include retained-state diagnostic
+
+**Local-only preparation for #180 / #186; never merge. No native allocation,
+trigger push, retry, production correction or final-gate acceptance follows.**
+Frozen scope:
+[5956212450](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5956212450).
+This is one normal child of `7e5a5bf1b7d4aa5d3b5c64d70654a96ba6732e50`
+on `recovery/session-f417-issue180-original-include-localization1`, without
+upstream merges. Main/laqieer alone publishes it. The future
+`calibration/issue-180-original-include-localization-1` ref remains absent
+and unallocated during local preparation.
+
+Source stays `fb24e38cffae626f8d7b47ff6baf7a88d8db76c8`; BASE stays
+`ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`. The complete source diff remains
+123 paths, +86,398/-843 (87,241 changed lines). All17 old workflows and29
+historical normal edges remain exact. Sizing8's workflow/source/7e5a endpoint
+and five-path ca119->7e5a inventory are frozen separately. New edge30 has
+exactly eight paths: the new workflow and policy, supervisor, worker,
+observation_failure, their two direct test files and this README. No
+root_stage, protected containment, production source, game or build changes
+are admitted. There are no source copies or committed content ledgers.
+
+Sizing8 run37027807021 failed with203 runs/one state,711,221,649 accounted
+bytes,894,509,056-byte physical peak,11 PIDs and151.091757722 seconds.
+It returned zero reports and never attempted serialization. Seven fresh
+qualifiers and cleanup closed; there was no report OOM. All14 allocations
+are spent. Its reported modern.mk4789/assets.mk139-140 context is not a
+native binding or exclusive cause. Actual input/wildcard/text callbacks are
+wired. Neither a missing callback nor Git's source cardinality is an
+established cause. Do not implement those guesses.
+
+The smaller next observation extends the existing registered refusal-frame
+projector, not the interpreter. The new report path requests a **closed v4**
+location envelope with required `state`; explicit v3 requests and exact
+closed v3 wire records retain their original span/anchor semantics and have
+no state member. A v3 record with an extra state or a v4 record without it
+refuses. A producer cannot silently return a different requested version.
+The unchanged v3 span projector still runs in full before the extension.
+
+State is always `time=refusal-time`, `use=report-only`, `authority=false`,
+`selection=possible-rhs-not-actual-reads`. Observed metadata is explicitly
+`partial/finite-selection`, never a complete condition closure. Unavailable
+state has a fixed reason, nullable exception index, no rows and no invented
+mode data. An observation requires the actual registered original
+`_MakeSourceMode.collapse` raising leaf, original public-call and
+source/import/code/root/head/session/entry/clock binding. Multiple leaves,
+foreign types, stale identities or unavailable lifetimes cannot select one.
+
+The retained mode contributes only ordinary/POSIX/unknown mode, version,
+`original_namespace_valid` and bounded namespace-hold count; hold messages
+are never inspected. Exactly20 finite possible RHS names contribute binding
+cardinality, explicit absent/unique/ambiguous/unavailable status, finite
+origin/flavor and body-known boolean, retained binding epoch and captured
+fact tag/epoch. The fact tags are `exact`, `patsubst`, `header-bound`; unknown
+tags remain unavailable. Epoch equality is just equality with the retained
+mode version, not original-data eligibility, native binding or permission.
+Neither known bodies nor captured tags are evaluated.
+
+The selection is `GENERATED_DATA_LINKED_HAND_SOURCES`, `MODERN_ABI`,
+`MODERN_ALL_ASM_OBJECTS`, `MODERN_ALL_ASM_SOURCES`, `MODERN_ALL_C_OBJECTS`,
+`MODERN_ALL_C_SOURCES`, `MODERN_ALL_DATA_C_SOURCES`, `MODERN_ALL_DATA_OBJECTS`,
+`MODERN_ALL_DEPS`, `MODERN_BGM_REGISTRY_C`, `MODERN_BUILD_ROOT`,
+`MODERN_COHORT_ASM_OBJECTS`, `MODERN_COHORT_ASM_SOURCES`,
+`MODERN_COHORT_C_OBJECTS`, `MODERN_COHORT_DEPS`, `MODERN_COHORT_OBJECTS`,
+`MODERN_COHORT_SOURCES`, `MODERN_CONFIG`, `MODERN_FE6SIO_OBJ`,
+`MODERN_OUTPUT_DIR`. These are a source-only possible initializer closure,
+not an actual read list, first-use observation or production exemption.
+
+Exact source-owned ordinary types and builtin field/map/tuple/set access
+precede reads. The shared entry-work/clock and original file/error limits
+preadmit fixed rows and variable binding storage before iteration, copying,
+sorting, encoding or retention. Source maps, selected records, type identities
+and epochs are revalidated. No source method, binding evaluator, native
+operation, repr, arbitrary getter or callback-bearing metadata is called.
+No raw value, namespace message, arbitrary exception text, object address,
+secret or code bytes are exported. Transient references retire on every
+path; faults remain unavailable without changing first cause, independent
+secondaries, restoration, release or conservative cleanup.
+
+For existing `TC-ISSUE180-ORIGINAL-IMPORT-001`, use only the inspected
+credential-free `-I -S -B` inert route in the assignment evidence:
+
+1. Raise the frozen6d collapse fixture with the frozen60f1 binding type and
+   finite synthetic metadata. Observe the exact20 rows, missing/ambiguous
+   bindings, known/unknown bodies and current/stale/unknown epochs through
+   the actual Observer, worker, emit and Protocol. Trap all source operations.
+2. Run explicit closed v3 compatibility and v4 privacy/schema/adversarial
+   controls, including head/import/code/type/epoch/lifetime mutations,
+   callback traps and exact/one-over work/output admission.
+3. Exercise collection/encoding, first-cause, publication, release and
+   recovery faults. Remove the diagnostic to break its behavioral oracle,
+   restore it, then retain neutral local-name/map/wire-order witnesses.
+4. Preserve every original quota/source-input/refusal control and complete
+   old source pair/reflection,423 methods and11 negative-operand comparisons.
+   Selectedfb24 is read/AST-reflected only, never imported or executed.
+
+These are fresh finite actual-API inert observations, not source-native
+bindings, report completion, resource sizing or delivery evidence. Script OS
+exits are separate from unknown runtime-owner PID/RSS/OS exit. Operational
+traps are not hostile same-UID isolation.
+
+One unchanged complete CURRENT/BASE/source/Make/generator/lifecycle public
+report and original serializer still own one shared budget/session and
+absolute3600-second clock,14 cumulative diagnostic queries with the same
+9223372036854775807 sentinel,19 counters, seven fresh qualifiers and five
+bounded artifacts. All hard/unit/record/input/stream/plan/context/file/live/
+funded-VM/physical/source/namespace/ownership/cleanup limits, action pins,
+read-only credentials and70/90-minute timeouts remain. No sampling, reset,
+refund, new quota, source authority, service or shipping-policy change exists.
+Independent review and a separately frozen possible one-shot allocation,
+all native/report/verifier/H1/CI/master/merge/closure/completion gates and the
+unresolved root issue remain coordinator-owned and open.
+
+## Historical original-sort full-report rebind
 
 **Local-only diagnostic preparation; never merge. Recovery publication is
 not execution authority. No native run, trigger push, retry, shipping-limit

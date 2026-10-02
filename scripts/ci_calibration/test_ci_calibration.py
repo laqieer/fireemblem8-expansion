@@ -37,6 +37,7 @@ SUPERVISOR_AST = ast.parse((REPO / "scripts/ci_calibration/supervisor.py").read_
 QUOTA_MODEL = SOURCE_PROBING = OLD_BUDGET_CHARGE = OLD_CALIBRATION_FACTORY = None
 OLD_TELEMETRY_SNAPSHOT = OLD_TELEMETRY_PROTOCOL = None
 CORRECTED_SOURCE_INPUTS = None
+INCLUDE_STATE_INPUTS = None
 WORKER_AST = ast.parse((REPO / "scripts/ci_calibration/worker.py").read_text())
 
 
@@ -537,7 +538,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.STRUCTURAL_REPORT_SHA}",
+            f"{'a' * 40} {supervisor.SORT_REPORT_SHA}",
+            f"{supervisor.SORT_REPORT_SHA} {supervisor.STRUCTURAL_REPORT_SHA}",
             f"{supervisor.STRUCTURAL_REPORT_SHA} {supervisor.CONSUMER_REPORT_SHA}",
             f"{supervisor.CONSUMER_REPORT_SHA} {supervisor.APPEND_REPORT_SHA}",
             f"{supervisor.APPEND_REPORT_SHA} {supervisor.RUNTIME_REPORT_SHA}",
@@ -1054,8 +1056,8 @@ class CalibrationControls(Inert):
 
     def test_runtime_report_source_and_workflow_refuse_all_spent_bindings(self):
         self.assertEqual((policy.BRANCH, policy.WORKFLOW, policy.OUTPUT_PREFIX), (
-            "calibration/issue-180-full-report-sizing-8",
-            ".github/workflows/issue180-full-report-sizing-8.yml", "issue180-full-report-sizing-8-",
+            "calibration/issue-180-original-include-localization-1",
+            ".github/workflows/issue180-original-include-localization-1.yml", "issue180-original-include-localization-1-",
         ))
         self.assertEqual((policy.GRAPH, policy.PYTHON_REPORT_SOURCE, policy.BASE), (
             "fb24e38cffae626f8d7b47ff6baf7a88d8db76c8",
@@ -1066,6 +1068,7 @@ class CalibrationControls(Inert):
                          ("full-public-report-accounting-measurement", "full-report-accounting-only-v1"))
         self.assertEqual((len(policy.RELAXED), len(policy.ACCOUNTING_COUNTERS), len(policy.ARTIFACT_NAMES)), (14, 19, 5))
         for workflow in (
+            policy.SORT_REPORT_WORKFLOW,
             policy.STRUCTURAL_REPORT_WORKFLOW,
             policy.CONSUMER_REPORT_WORKFLOW, policy.APPEND_REPORT_WORKFLOW, policy.RUNTIME_REPORT_WORKFLOW,
             policy.MAKE_CONTEXT_WORKFLOW, policy.ORIGINAL_IMPORT_WORKFLOW,
@@ -1167,7 +1170,7 @@ class CalibrationControls(Inert):
             "79810df78b29eef98ba1da391565f17315352d18",
         ))
         self.assertEqual((policy.BRANCH, policy.GRAPH, policy.BASE), (
-            "calibration/issue-180-full-report-sizing-8",
+            "calibration/issue-180-original-include-localization-1",
             "fb24e38cffae626f8d7b47ff6baf7a88d8db76c8",
             "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a",
         ))
@@ -1178,6 +1181,7 @@ class CalibrationControls(Inert):
             {"ref": "refs/heads/calibration/issue-180-full-report-sizing-5"},
             {"ref": "refs/heads/calibration/issue-180-full-report-sizing-6"},
             {"ref": "refs/heads/calibration/issue-180-full-report-sizing-7"},
+            {"ref": "refs/heads/calibration/issue-180-full-report-sizing-8"},
             {"created": False}, {"before": "b" * 40},
             {"sender": {"login": "other"}}, {"repository": {"full_name": policy.REPOSITORY, "private": True}},
         ):
@@ -1382,10 +1386,10 @@ class CalibrationControls(Inert):
             "2de8a23cd6d8df1250c2ff826d223ee038c626c6",
         ))
         self.assertEqual(supervisor.SORT_REPORT_PATHS, frozenset({
-            policy.WORKFLOW, "scripts/ci_calibration/policy.py", "scripts/ci_calibration/supervisor.py",
+            policy.SORT_REPORT_WORKFLOW, "scripts/ci_calibration/policy.py", "scripts/ci_calibration/supervisor.py",
             "scripts/ci_calibration/test_ci_calibration.py", "scripts/ci_calibration/README.md",
         }))
-        rows = [(b"A" if path == policy.WORKFLOW else b"M", path.encode())
+        rows = [(b"A" if path == policy.SORT_REPORT_WORKFLOW else b"M", path.encode())
                 for path in sorted(supervisor.SORT_REPORT_PATHS)]
         data = b"".join(kind + b"\0" + path + b"\0" for kind, path in rows)
         supervisor.validate_sort_report_inventory(data)
@@ -1461,14 +1465,14 @@ class CalibrationControls(Inert):
             "validate_append_report_inventory": ["RUNTIME_REPORT_SHA", "APPEND_REPORT_SHA"],
             "validate_consumer_report_inventory": ["APPEND_REPORT_SHA", "CONSUMER_REPORT_SHA"],
             "validate_structural_report_inventory": ["CONSUMER_REPORT_SHA", "STRUCTURAL_REPORT_SHA"],
-            "validate_sort_report_inventory": ["STRUCTURAL_REPORT_SHA", "'HEAD'"],
+            "validate_sort_report_inventory": ["STRUCTURAL_REPORT_SHA", "SORT_REPORT_SHA"],
         })
 
     def test_sort_source_reflection_requires_exact_shared_initializers_and_preserved_negative_operands(self):
         self.assertIsNotNone(CORRECTED_SOURCE_INPUTS, "requires inspected sort-source reflection")
         contract = CORRECTED_SOURCE_INPUTS.contract
         delta = contract["reviewed_sort_delta"]
-        self.assertEqual((delta["before"], delta["after"]), (policy.STRUCTURAL_REPORT_SOURCE, policy.GRAPH))
+        self.assertEqual((delta["before"], delta["after"]), (policy.STRUCTURAL_REPORT_SOURCE, policy.SORT_REPORT_SOURCE))
         self.assertEqual(delta["path_status_inventory"], [
             {"status": "M", "path": path} for path in sorted({
                 "docs/test-cases/workflow-governance.md", "docs/validation-ownership.md",
@@ -1505,6 +1509,90 @@ class CalibrationControls(Inert):
         self.assertFalse(contract["source_imports"])
         self.assertFalse(contract["source_execution"])
         self.assertFalse(contract["native_execution"])
+
+    def test_include_state_inventory_is_complete_and_freezes_the_spent_sort_endpoint(self):
+        self.assertEqual((supervisor.SORT_REPORT_SHA, policy.SORT_REPORT_WORKFLOW, policy.SORT_REPORT_SOURCE), (
+            "7e5a5bf1b7d4aa5d3b5c64d70654a96ba6732e50",
+            ".github/workflows/issue180-full-report-sizing-8.yml",
+            "fb24e38cffae626f8d7b47ff6baf7a88d8db76c8",
+        ))
+        self.assertEqual(supervisor.INCLUDE_STATE_PATHS, frozenset({
+            policy.WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
+                "policy.py", "supervisor.py", "observation_failure.py", "worker.py",
+                "test_ci_calibration.py", "test_observation_failure.py", "README.md",
+            )),
+        }))
+        rows = [(b"A" if path == policy.WORKFLOW else b"M", path.encode())
+                for path in sorted(supervisor.INCLUDE_STATE_PATHS)]
+        data = b"".join(kind + b"\0" + path + b"\0" for kind, path in rows)
+        supervisor.validate_include_state_inventory(data)
+        supervisor.validate_include_state_inventory(b"".join(
+            kind + b"\0" + path + b"\0" for kind, path in reversed(rows)
+        ))
+        for changed in (
+            None, "", b"", data[:-1], data + data, data.split(b"\0", 2)[2],
+            data.replace(b"A\0", b"M\0"), data.replace(b"M\0", b"A\0", 1),
+            data.replace(b"M\0", b"D\0", 1),
+            *(data + b"M\0" + path.encode() + b"\0" for path in (
+                policy.SORT_REPORT_WORKFLOW, policy.STRUCTURAL_REPORT_WORKFLOW,
+                "scripts/ci_calibration/root_stage.py", "scripts/ci_calibration/kernel.py",
+                "scripts/ci_calibration/entry.py", "scripts/ci_calibration/runtime_view.py",
+                "scripts/ci_calibration/volume_mount.py", "scripts/validation_ownership/graph_probe.py",
+            )),
+        ):
+            with self.subTest(changed=changed), self.assertRaises(policy.GuardError):
+                supervisor.validate_include_state_inventory(changed)
+        old = b"".join(
+            (b"A" if path == policy.SORT_REPORT_WORKFLOW else b"M") + b"\0" + path.encode() + b"\0"
+            for path in sorted(supervisor.SORT_REPORT_PATHS)
+        )
+        supervisor.validate_sort_report_inventory(old)
+        with self.assertRaises(policy.GuardError):
+            supervisor.validate_include_state_inventory(old)
+        with self.assertRaises(policy.GuardError):
+            supervisor.validate_sort_report_inventory(data)
+        owner, = [node for node in SUPERVISOR_AST.body if isinstance(node, ast.ClassDef) and node.name == "Owner"]
+        prepare, = [node for node in owner.body if isinstance(node, ast.FunctionDef) and node.name == "prepare"]
+        endpoints = {
+            node.func.id: [ast.unparse(value) for value in node.args[0].args[-2:]]
+            for node in ast.walk(prepare) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id in {"validate_sort_report_inventory", "validate_include_state_inventory"}
+        }
+        self.assertEqual(endpoints, {
+            "validate_sort_report_inventory": ["STRUCTURAL_REPORT_SHA", "SORT_REPORT_SHA"],
+            "validate_include_state_inventory": ["SORT_REPORT_SHA", "'HEAD'"],
+        })
+
+    def test_include_state_reuses_the_source_without_reopening_the_spent_or_recovery_refs(self):
+        self.assertEqual(policy.GRAPH, policy.SORT_REPORT_SOURCE)
+        self.assertEqual((len(policy.RELAXED), len(policy.ACCOUNTING_COUNTERS), len(policy.ARTIFACT_NAMES)), (14, 19, 5))
+        self.assertEqual((policy.POLICY_SENTINEL, policy.GRAPH_SECONDS), (9223372036854775807, 3600))
+        accepted = policy.validate_event(self.event(), **self.authorization())
+        self.assertTrue(accepted["never_merge"])
+        self.assertFalse(accepted["production_acceptance"])
+        for branch in (
+            "calibration/issue-180-full-report-sizing-8",
+            "recovery/session-f417-issue180-original-include-localization1",
+        ):
+            with self.subTest(branch=branch), self.assertRaises(policy.GuardError):
+                policy.validate_event({**self.event(), "ref": "refs/heads/" + branch}, **self.authorization())
+        for changes in ({"attempt": "2"}, {"run_number": "2"}, {"event_name": "workflow_dispatch"}):
+            with self.subTest(changes=changes), self.assertRaises(policy.GuardError):
+                policy.validate_event(self.event(), **{**self.authorization(), **changes})
+
+    def test_include_metadata_fixture_is_exact_reflection_not_selected_source_execution(self):
+        self.assertIsNotNone(INCLUDE_STATE_INPUTS, "requires inspected inert metadata fixture binding")
+        self.assertEqual(INCLUDE_STATE_INPUTS["source"], policy.GRAPH)
+        self.assertEqual(INCLUDE_STATE_INPUTS["api_fixture"], policy.APPEND_REPORT_SOURCE)
+        self.assertEqual(INCLUDE_STATE_INPUTS["guard_fixture"], policy.PYTHON_REPORT_SOURCE)
+        self.assertEqual(INCLUDE_STATE_INPUTS["fields"], [
+            "binding_versions", "budget", "definitions", "namespace_holds",
+            "original_namespace_valid", "posix", "template_values", "version",
+        ])
+        self.assertEqual(INCLUDE_STATE_INPUTS["binding_fields"], ["origin", "flavor", "value", "inherited", "scope"])
+        self.assertEqual(INCLUDE_STATE_INPUTS["fact_kinds"], ["exact", "patsubst", "header-bound"])
+        self.assertFalse(INCLUDE_STATE_INPUTS["selected_source_execution"])
+        self.assertFalse(INCLUDE_STATE_INPUTS["native_binding_evidence"])
 
     def test_complete_diff_binding_preserves_additions_deletions_and_both_rename_sides(self):
         changes = self.changes()

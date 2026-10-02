@@ -66,6 +66,142 @@ _MAKE_SPAN_REASONS = frozenset({
     "path-unbound", "path-format", "output-bound", "context-unavailable",
     "ambiguous-label",
 })
+_MAKE_STATE_NAMES = (
+    "GENERATED_DATA_LINKED_HAND_SOURCES", "MODERN_ABI", "MODERN_ALL_ASM_OBJECTS",
+    "MODERN_ALL_ASM_SOURCES", "MODERN_ALL_C_OBJECTS", "MODERN_ALL_C_SOURCES",
+    "MODERN_ALL_DATA_C_SOURCES", "MODERN_ALL_DATA_OBJECTS", "MODERN_ALL_DEPS",
+    "MODERN_BGM_REGISTRY_C", "MODERN_BUILD_ROOT", "MODERN_COHORT_ASM_OBJECTS",
+    "MODERN_COHORT_ASM_SOURCES", "MODERN_COHORT_C_OBJECTS", "MODERN_COHORT_DEPS",
+    "MODERN_COHORT_OBJECTS", "MODERN_COHORT_SOURCES", "MODERN_CONFIG",
+    "MODERN_FE6SIO_OBJ", "MODERN_OUTPUT_DIR",
+)
+_MAKE_STATE_REASONS = frozenset({
+    "guard-unobserved", "multiple-guards", "frame-unavailable", "type-unavailable",
+    "metadata-unavailable", "epoch-unavailable", "work-bound", "output-bound", "state-unavailable",
+})
+_MAKE_ORIGINS = ("default", "environment", "file", "command line", "override", "unknown", "undefined")
+_MAKE_FLAVORS = ("simple", "recursive", "unknown", "undefined")
+_MAKE_FACT_KINDS = ("exact", "patsubst", "header-bound")
+
+
+def make_state_unavailable(reason, *, exception=None):
+    if reason not in _MAKE_STATE_REASONS:
+        raise policy.GuardError("unknown retained-state unavailability reason")
+    return {
+        "kind": "original-include-state", "time": "refusal-time", "use": "report-only",
+        "authority": False, "selection": "possible-rhs-not-actual-reads",
+        "status": "unavailable", "reason": reason, "exception": exception,
+        "mode": None, "version": None, "original_namespace_valid": None, "namespace_holds": None,
+        "names": [],
+    }
+
+
+def _make_epoch_status(epoch, version):
+    return "unavailable" if epoch is None else (
+        "same-mode-version" if epoch == version else "different-mode-version"
+    )
+
+
+def validate_make_state(value, locations):
+    _location_fields(value)
+    policy._component_fields(value, (
+        "kind time use authority selection status reason exception mode version original_namespace_valid "
+        "namespace_holds names"
+    ))
+    if (
+        any(type(value[name]) is not str or value[name] != expected for name, expected in (
+            ("kind", "original-include-state"), ("time", "refusal-time"), ("use", "report-only"),
+            ("selection", "possible-rhs-not-actual-reads"),
+        ))
+        or value["authority"] is not False
+        or type(value["status"]) is not str or value["status"] not in {"partial", "unavailable"}
+        or value["exception"] is not None and not policy._component_integer(value["exception"], 31)
+        or type(value["names"]) is not list or len(value["names"]) not in {0, len(_MAKE_STATE_NAMES)}
+    ):
+        raise policy.GuardError("retained state is not a closed non-authorizing diagnostic")
+    if value["status"] == "unavailable":
+        if (
+            type(value["reason"]) is not str or value["reason"] not in _MAKE_STATE_REASONS
+            or value["names"] or any(value[name] is not None for name in (
+                "mode", "version", "original_namespace_valid", "namespace_holds",
+            ))
+        ):
+            raise policy.GuardError("unavailable retained state invented a source observation")
+        return value
+    raising = [row for row in (*locations["locations"], *locations["anchors"])
+               if row["exception"] == value["exception"]]
+    if (
+        value["reason"] != "finite-selection" or value["exception"] is None
+        or locations["references_closed"] is not True or len(raising) != 1
+        or raising[0]["file"] != "scripts/validation_ownership/graph_probe.py"
+        or raising[0]["code"] != "collapse"
+        or raising[0].get("role", "registered-raising-frame") != "registered-raising-frame"
+        or type(value["mode"]) is not str or value["mode"] not in {"ordinary", "posix", "unknown"}
+        or not policy._component_integer(value["version"])
+        or type(value["original_namespace_valid"]) is not bool
+        or not policy._component_integer(value["namespace_holds"], policy.ORIGINAL_LIMITS["entries"])
+        or len(value["names"]) != len(_MAKE_STATE_NAMES)
+    ):
+        raise policy.GuardError("retained state lacks its actual registered refusal anchor")
+    seen, total = set(), 0
+    for row in value["names"]:
+        _location_fields(row)
+        policy._component_fields(row, (
+            "name status reason cardinality binding_epoch binding_epoch_status bindings fact"
+        ))
+        if (
+            type(row["name"]) is not str or row["name"] not in _MAKE_STATE_NAMES or row["name"] in seen
+            or type(row["status"]) is not str or row["status"] not in {"absent", "unique", "ambiguous", "unavailable"}
+            or row["cardinality"] is not None and not policy._component_integer(
+                row["cardinality"], policy.ORIGINAL_LIMITS["entries"],
+            )
+            or row["binding_epoch"] is not None and not policy._component_integer(row["binding_epoch"])
+            or type(row["binding_epoch_status"]) is not str
+            or row["binding_epoch_status"] != _make_epoch_status(row["binding_epoch"], value["version"])
+        ):
+            raise policy.GuardError("retained binding contains a foreign name or epoch")
+        seen.add(row["name"])
+        if row["status"] == "unavailable":
+            if type(row["reason"]) is not str or row["reason"] not in {
+                "binding-shape", "work-bound", "output-bound",
+            } or row["bindings"] is not None:
+                raise policy.GuardError("unavailable binding invented original body metadata")
+        else:
+            cardinality = row["cardinality"]
+            if (
+                cardinality is None or row["reason"] is not None
+                or type(row["bindings"]) is not list or len(row["bindings"]) != cardinality
+                or row["status"] != ("absent" if cardinality == 0 else "unique" if cardinality == 1 else "ambiguous")
+            ):
+                raise policy.GuardError("retained binding concealed absence or ambiguity")
+            total += cardinality
+            if total > policy.ORIGINAL_LIMITS["entries"]:
+                raise policy.GuardError("retained binding metadata exceeds the original entry bound")
+            for binding in row["bindings"]:
+                _location_fields(binding)
+                policy._component_fields(binding, "origin flavor body_known")
+                if (
+                    type(binding["origin"]) is not str or binding["origin"] not in _MAKE_ORIGINS
+                    or type(binding["flavor"]) is not str or binding["flavor"] not in _MAKE_FLAVORS
+                    or type(binding["body_known"]) is not bool
+                ):
+                    raise policy.GuardError("retained binding contains raw or unsupported data")
+        fact = row["fact"]
+        _location_fields(fact)
+        policy._component_fields(fact, "status kind epoch epoch_status")
+        if (
+            type(fact["status"]) is not str or fact["status"] not in {"absent", "captured", "unavailable"}
+            or fact["epoch"] is not None and not policy._component_integer(fact["epoch"])
+            or type(fact["epoch_status"]) is not str
+            or fact["epoch_status"] != _make_epoch_status(fact["epoch"], value["version"])
+            or fact["status"] == "captured" and (
+                type(fact["kind"]) is not str or fact["kind"] not in _MAKE_FACT_KINDS or fact["epoch"] is None
+            )
+            or fact["status"] != "captured" and fact["kind"] is not None
+            or fact["status"] == "absent" and fact["epoch"] is not None
+        ):
+            raise policy.GuardError("retained captured-fact metadata is not its finite tag and epoch")
+    return value
 
 
 def make_context_unavailable(reason, *, exception=None):
@@ -243,24 +379,31 @@ def _make_source_labels(arguments):
         arguments = text = match = previous = last = failure = uncertainty = candidate = None
 
 
-def location_unavailable(reason, *, references_closed=None):
+def location_unavailable(reason, *, references_closed=None, version=3):
     if reason not in LOCATION_REASONS:
         raise policy.GuardError("unknown location unavailability reason")
-    return {
-        "version": 3, "source_revision": policy.GRAPH, "root": "/repo", "api": policy.REPORT_API,
+    if type(version) is not int or version not in {3, 4}:
+        raise policy.GuardError("unsupported closed location version")
+    result = {
+        "version": version, "source_revision": policy.GRAPH, "root": "/repo", "api": policy.REPORT_API,
         "authority": False, "status": "unavailable", "reason": reason, "locations": [],
         "anchors": [], "references_closed": references_closed,
         "context": make_context_unavailable("guard-unobserved"),
     }
+    if version == 4:
+        result["state"] = make_state_unavailable("guard-unobserved")
+    return result
 
 
 def validate_locations(value, binding):
+    _location_fields(value)
+    if type(value) is not dict or type(value.get("version")) is not int or value["version"] not in {3, 4}:
+        raise policy.GuardError("unsupported closed location version")
     policy._component_fields(value, (
         "version source_revision root api authority status reason locations anchors references_closed context"
-    ))
+    ) + (" state" if value["version"] == 4 else ""))
     if (
-        type(value["version"]) is not int or value["version"] != 3
-        or value["source_revision"] != binding["source_revision"] or value["root"] != "/repo"
+        value["source_revision"] != binding["source_revision"] or value["root"] != "/repo"
         or value["api"] != binding["api"] or value["authority"] is not False
         or type(value["status"]) is not str or value["status"] not in {"observed", "unavailable"}
         or value["references_closed"] is not None and type(value["references_closed"]) is not bool
@@ -306,12 +449,20 @@ def validate_locations(value, binding):
                 raise policy.GuardError("partial source anchor has an unknown observation role")
             previous = row["exception"]
     validate_make_context(value["context"], value)
+    if value["version"] == 4:
+        validate_make_state(value["state"], value)
     if len(policy.encoded(value)) > policy.ERROR_BYTES:
         raise policy.GuardError("source location evidence exceeds the existing error record bound")
     return value
 
 
 class _LocationUnavailable(policy.GuardError):
+    def __init__(self, reason):
+        self.reason = reason
+        super().__init__(reason)
+
+
+class _MakeStateUnavailable(policy.GuardError):
     def __init__(self, reason):
         self.reason = reason
         super().__init__(reason)
@@ -882,6 +1033,306 @@ class _SourceLocations:
             result["context"] = context if len(policy.encoded(context)) <= allowance else make_context_unavailable("output-bound")
         finally:
             contexts.clear()
+        return result
+
+    def state_fields(self, value, expected):
+        ancestry = owner = fields = descriptor = None
+        try:
+            self.context_checkpoint()
+            if type(expected) is not type or type(value) is not expected:
+                raise _MakeStateUnavailable("type-unavailable")
+            ancestry = type.__dict__["__mro__"].__get__(expected, type)
+            if len(ancestry) > 32:
+                raise _MakeStateUnavailable("type-unavailable")
+            self.context_checkpoint(len(ancestry))
+            for owner in ancestry:
+                fields = type.__dict__["__dict__"].__get__(owner, type)
+                self.context_checkpoint(len(fields))
+                descriptor = _location_fields(fields).get("__dict__")
+                if descriptor is not None:
+                    if type(descriptor) is not types.GetSetDescriptorType:
+                        raise _MakeStateUnavailable("type-unavailable")
+                    fields = descriptor.__get__(value, expected)
+                    if type(fields) is not dict:
+                        raise _MakeStateUnavailable("metadata-unavailable")
+                    self.context_checkpoint(len(fields))
+                    return _location_fields(fields)
+            raise _MakeStateUnavailable("type-unavailable")
+        finally:
+            value = expected = ancestry = owner = fields = descriptor = None
+
+    def state_map(self, value, *, epochs=False):
+        key = None
+        try:
+            self.context_checkpoint()
+            if type(value) is not dict or len(value) > policy.ORIGINAL_LIMITS["entries"]:
+                raise _MakeStateUnavailable("metadata-unavailable")
+            self.context_checkpoint(len(value))
+            for key in value:
+                if epochs:
+                    if (
+                        type(key) is not tuple or len(key) != 2
+                        or key[0] is not None and type(key[0]) is not str or type(key[1]) is not str
+                    ):
+                        raise _MakeStateUnavailable("metadata-unavailable")
+                elif type(key) is not str:
+                    raise _MakeStateUnavailable("metadata-unavailable")
+            return value
+        finally:
+            value = key = None
+
+    def state_type(self, namespace, name):
+        owner = fields = qualified = ancestry = initializer = None
+        try:
+            self.context_checkpoint()
+            owner = namespace.get(name)
+            if type(owner) is not type:
+                raise _MakeStateUnavailable("type-unavailable")
+            fields = type.__dict__["__dict__"].__get__(owner, type)
+            self.context_checkpoint(len(fields))
+            fields = _location_fields(fields)
+            qualified = type.__dict__["__qualname__"].__get__(owner, type)
+            ancestry = type.__dict__["__mro__"].__get__(owner, type)
+            if (
+                type(fields.get("__module__")) is not str or fields["__module__"] != SOURCE_PACKAGE + ".graph_probe"
+                or type(qualified) is not str or qualified != name
+                or len(ancestry) != 2 or ancestry[0] is not owner or ancestry[1] is not object
+                or "__getattribute__" in fields or "__getattr__" in fields
+            ):
+                raise _MakeStateUnavailable("type-unavailable")
+            if name == "_ModeBinding":
+                initializer = fields.get("__init__")
+                if (
+                    type(initializer) is not types.FunctionType or initializer.__globals__ is not namespace
+                    or any(key in fields for key in ("origin", "flavor", "value"))
+                    or type(fields.get("inherited")) is not tuple or fields["inherited"]
+                    or "scope" not in fields or fields["scope"] is not None
+                ):
+                    raise _MakeStateUnavailable("type-unavailable")
+            return owner
+        finally:
+            namespace = owner = fields = qualified = ancestry = initializer = None
+
+    def state_binding(self, binding, expected):
+        data = None
+        try:
+            data = self.state_fields(binding, expected)
+            if (
+                set(data) != {"origin", "flavor", "value", "inherited", "scope"}
+                or type(data["origin"]) is not str or data["origin"] not in _MAKE_ORIGINS
+                or type(data["flavor"]) is not str or data["flavor"] not in _MAKE_FLAVORS
+                or data["value"] is not None and type(data["value"]) is not str
+                or type(data["inherited"]) is not tuple
+                or data["scope"] is not None and type(data["scope"]) is not str
+            ):
+                return None
+            return data["origin"], data["flavor"], data["value"] is not None
+        finally:
+            binding = expected = data = None
+
+    def state_rows(self, mode, mode_type, binding_type, namespace, allowance):
+        fields = maps = bindings = record = binding = metadata = None
+        captured = result = holds = tag = current = original = before = actual = fact = snapshots = details = None
+        selection = retained_epoch = None
+        try:
+            # Conservative admission covers all fixed rows before any source
+            # field read. Variable binding storage is admitted before iteration.
+            admitted = 2048 + 1024 * len(_MAKE_STATE_NAMES)
+            if admitted > allowance or 16 * admitted > policy.ORIGINAL_LIMITS["file_bytes"]:
+                raise _MakeStateUnavailable("output-bound")
+            self.context_checkpoint(32 * len(_MAKE_STATE_NAMES))
+            fields = self.state_fields(mode, mode_type)
+            version, posix, valid, holds = (fields.get(name) for name in (
+                "version", "posix", "original_namespace_valid", "namespace_holds",
+            ))
+            if (
+                not policy._component_integer(version) or posix is not None and type(posix) is not bool
+                or type(valid) is not bool or type(holds) is not set
+                or len(holds) > policy.ORIGINAL_LIMITS["entries"]
+                or fields.get("budget") is not self.imports.observer.budget
+            ):
+                raise _MakeStateUnavailable("metadata-unavailable")
+            hold_count = len(holds)
+            maps = (
+                self.state_map(fields.get("definitions")),
+                self.state_map(fields.get("binding_versions"), epochs=True),
+                self.state_map(fields.get("template_values")),
+            )
+            selection = []
+            for name in _MAKE_STATE_NAMES:
+                self.context_checkpoint()
+                selection.append((
+                    maps[0].get(name), maps[1].get((None, name)), maps[2].get(name),
+                    (name in maps[0], (None, name) in maps[1], name in maps[2]),
+                ))
+            result, captured = [], []
+            for name, (bindings, retained_epoch, record, presence) in zip(_MAKE_STATE_NAMES, selection):
+                self.context_checkpoint()
+                epoch = retained_epoch if policy._component_integer(retained_epoch) else None
+                fact = {"status": "absent", "kind": None, "epoch": None, "epoch_status": "unavailable"}
+                if presence[2]:
+                    fact["status"] = "unavailable"
+                    if type(record) is tuple and len(record) == 2 and policy._component_integer(record[0]):
+                        fact["epoch"] = record[0]
+                        tag = record[1]
+                        if type(tag) is tuple and len(tag) == 2 and type(tag[0]) is str and tag[0] in _MAKE_FACT_KINDS:
+                            fact.update(status="captured", kind=tag[0])
+                    fact["epoch_status"] = _make_epoch_status(fact["epoch"], version)
+                row = {
+                    "name": name, "status": "unavailable", "reason": "binding-shape", "cardinality": None,
+                    "binding_epoch": epoch, "binding_epoch_status": _make_epoch_status(epoch, version),
+                    "bindings": None, "fact": fact,
+                }
+                snapshots = []
+                if not presence[0]:
+                    row.update(status="absent", reason=None, cardinality=0, bindings=[])
+                elif type(bindings) is frozenset and len(bindings) <= policy.ORIGINAL_LIMITS["entries"]:
+                    count = len(bindings)
+                    row["cardinality"] = count
+                    if admitted + 256 * count > allowance or 16 * (admitted + 256 * count) > policy.ORIGINAL_LIMITS["file_bytes"]:
+                        row["reason"] = "output-bound"
+                    else:
+                        self.context_checkpoint(8 * count + 1)
+                        admitted += 256 * count
+                        metadata = []
+                        for binding in bindings:
+                            details = self.state_binding(binding, binding_type)
+                            if details is None:
+                                metadata = None
+                                snapshots.clear()
+                                break
+                            snapshots.append((binding, details))
+                            metadata.append({
+                                "origin": details[0], "flavor": details[1], "body_known": details[2],
+                            })
+                        if metadata is not None:
+                            metadata.sort(key=lambda item: (item["origin"], item["flavor"], item["body_known"]))
+                            row.update(status="absent" if count == 0 else "unique" if count == 1 else "ambiguous",
+                                       reason=None, bindings=metadata)
+                result.append(row)
+                captured.append(snapshots)
+            self.context_checkpoint()
+            current = self.state_fields(mode, mode_type)
+            if (
+                type(current.get("version")) is not int or current["version"] != version
+                or current.get("posix") is not posix
+                or current.get("original_namespace_valid") is not valid or current.get("namespace_holds") is not holds
+                or len(holds) != hold_count or current.get("budget") is not self.imports.observer.budget
+                or any(current.get(name) is not original for name, original in zip(
+                    ("definitions", "binding_versions", "template_values"), maps,
+                ))
+                or self.state_type(namespace, "_MakeSourceMode") is not mode_type
+                or self.state_type(namespace, "_ModeBinding") is not binding_type
+            ):
+                raise _MakeStateUnavailable("epoch-unavailable")
+            for original, epochs in zip(maps, (False, True, False)):
+                self.state_map(original, epochs=epochs)
+            for name, (before, epoch, fact, presence), snapshots in zip(_MAKE_STATE_NAMES, selection, captured):
+                actual = maps[1].get((None, name))
+                if (
+                    maps[0].get(name) is not before or maps[2].get(name) is not fact
+                    or presence != (name in maps[0], (None, name) in maps[1], name in maps[2])
+                    or type(actual) is not type(epoch) or type(actual) is int and actual != epoch
+                    or type(actual) is not int and actual is not epoch
+                ):
+                    raise _MakeStateUnavailable("epoch-unavailable")
+                for binding, details in snapshots:
+                    if self.state_binding(binding, binding_type) != details:
+                        raise _MakeStateUnavailable("epoch-unavailable")
+            return {
+                "mode": "unknown" if posix is None else "posix" if posix else "ordinary",
+                "version": version, "original_namespace_valid": valid,
+                "namespace_holds": hold_count, "names": result,
+            }
+        finally:
+            fields = maps = bindings = record = binding = metadata = mode = namespace = None
+            captured = result = holds = tag = current = original = before = actual = fact = snapshots = details = None
+            mode_type = binding_type = epoch = selection = retained_epoch = None
+
+    def make_state(self, error, locations, allowance):
+        current = trace = frame = module = namespace = registered = mode = None
+        candidates = cause = values = mode_type = binding_type = state = None
+        index = None
+        try:
+            if 2048 + 1024 * len(_MAKE_STATE_NAMES) > allowance:
+                return make_state_unavailable("output-bound")
+            self.context_checkpoint(len(locations["locations"]) + len(locations["anchors"]) + 1)
+            candidates = [
+                row for row in (*locations["locations"], *locations["anchors"])
+                if row["file"] == "scripts/validation_ownership/graph_probe.py" and row["code"] == "collapse"
+                and row.get("role", "registered-raising-frame") == "registered-raising-frame"
+            ]
+            if not candidates:
+                return make_state_unavailable("guard-unobserved")
+            if len(candidates) != 1:
+                return make_state_unavailable("multiple-guards")
+            index = candidates[0]["exception"]
+            self.context_checkpoint(index + 1)
+            current = error
+            for _ in range(index):
+                cause = BaseException.__dict__["__cause__"].__get__(current, BaseException)
+                current = cause if cause is not None else BaseException.__dict__["__context__"].__get__(current, BaseException)
+                if current is None:
+                    raise _MakeStateUnavailable("frame-unavailable")
+            trace = BaseException.__dict__["__traceback__"].__get__(current, BaseException)
+            count = 0
+            while trace is not None:
+                if type(trace) is not types.TracebackType or count >= 256:
+                    raise _MakeStateUnavailable("frame-unavailable")
+                self.context_checkpoint()
+                count += 1
+                frame = trace.tb_frame
+                if trace.tb_next is None:
+                    break
+                trace = trace.tb_next
+            if frame is None:
+                raise _MakeStateUnavailable("frame-unavailable")
+            registered = self.registered.get(id(frame.f_code))
+            if registered is None or not self.make_guard(registered):
+                raise _MakeStateUnavailable("guard-unobserved")
+            module = registered[1]()
+            namespace = types.ModuleType.__getattribute__(module, "__dict__")
+            if namespace is not frame.f_globals or registered[0]() is not frame.f_code:
+                raise _MakeStateUnavailable("epoch-unavailable")
+            self.context_checkpoint(frame.f_code.co_nlocals)
+            values = _location_fields(frame.f_locals)
+            mode = values.get("self")
+            values = None
+            mode_type = self.state_type(namespace, "_MakeSourceMode")
+            binding_type = self.state_type(namespace, "_ModeBinding")
+            state = {
+                **make_state_unavailable("state-unavailable", exception=index),
+                "status": "partial", "reason": "finite-selection",
+                **self.state_rows(mode, mode_type, binding_type, namespace, allowance),
+            }
+            self.context_checkpoint()
+            if not self.make_guard(registered):
+                raise _MakeStateUnavailable("epoch-unavailable")
+            validate_make_state(state, locations)
+            if len(policy.encoded(state)) > allowance:
+                raise _MakeStateUnavailable("output-bound")
+            return state
+        except _MakeStateUnavailable as failure:
+            return make_state_unavailable(failure.reason, exception=index)
+        except _LocationUnavailable as failure:
+            return make_state_unavailable(
+                "work-bound" if failure.reason == "registration-bound" else "epoch-unavailable", exception=index,
+            )
+        except BaseException:
+            return make_state_unavailable("state-unavailable", exception=index)
+        finally:
+            error = current = trace = frame = module = namespace = registered = mode = None
+            candidates = cause = values = mode_type = binding_type = state = locations = None
+
+    def project_state(self, error):
+        result = self.project(error)
+        result["version"] = 4
+        result["state"] = make_state_unavailable("guard-unobserved")
+        size = len(policy.encoded(result))
+        if size > policy.ERROR_BYTES:
+            raise _LocationUnavailable("location-size-bound")
+        allowance = policy.ERROR_BYTES - size + len(policy.encoded(result["state"]))
+        result["state"] = self.make_state(error, result, allowance)
         return result
 
     def close(self):
@@ -1534,7 +1985,9 @@ class Observer:
             return closing
         return None
 
-    def source_locations(self, error, measurement):
+    def source_locations(self, error, measurement, *, version=3):
+        if type(version) is not int or version not in {3, 4}:
+            raise policy.GuardError("unsupported closed location version")
         locations = _SourceLocations()
         locations.registered = getattr(self, "location_codes", {})
         locations.imports = imports = getattr(self, "imports", None)
@@ -1549,9 +2002,9 @@ class Observer:
                     if imports.failed:
                         raise _LocationUnavailable("original-import-unavailable")
                 locations.bind(self, measurement)
-                value = locations.project(error)
+                value = locations.project(error) if version == 3 else locations.project_state(error)
             except _LocationUnavailable as unavailable_error:
-                value = location_unavailable(unavailable_error.reason)
+                value = location_unavailable(unavailable_error.reason, version=version)
         finally:
             try:
                 locations.close()
@@ -1559,6 +2012,8 @@ class Observer:
                 if imports is not None:
                     self.close_imports(measurement)
         value["references_closed"] = getattr(self, "location_references_closed", None)
+        if value["version"] != version:
+            raise policy.GuardError("source projector changed its requested closed location version")
         return validate_locations(value, {"source_revision": policy.GRAPH, "api": policy.REPORT_API})
 
     def _admission_frame(self, error, values):

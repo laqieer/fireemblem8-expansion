@@ -13,8 +13,10 @@ import traceback
 
 
 REPOSITORY = "laqieer/fireemblem8-expansion"
-BRANCH = "calibration/issue-180-full-report-sizing-8"
-WORKFLOW = ".github/workflows/issue180-full-report-sizing-8.yml"
+BRANCH = "calibration/issue-180-original-include-localization-1"
+WORKFLOW = ".github/workflows/issue180-original-include-localization-1.yml"
+SORT_REPORT_WORKFLOW = ".github/workflows/issue180-full-report-sizing-8.yml"
+SORT_REPORT_SOURCE = "fb24e38cffae626f8d7b47ff6baf7a88d8db76c8"
 STRUCTURAL_REPORT_WORKFLOW = ".github/workflows/issue180-full-report-sizing-7.yml"
 STRUCTURAL_REPORT_SOURCE = "2de8a23cd6d8df1250c2ff826d223ee038c626c6"
 CONSUMER_REPORT_WORKFLOW = ".github/workflows/issue180-full-report-sizing-6.yml"
@@ -36,7 +38,7 @@ LOCALIZATION_SOURCE = "b6c47bc9300cf5d66244f161f81abe5d81d5a20b"
 FULL_REPORT_WORKFLOW = ".github/workflows/issue180-full-report-sizing-1.yml"
 COMPONENT_WORKFLOW = ".github/workflows/issue180-toolchain-component-sizing-1.yml"
 PREVIOUS_WORKFLOW = ".github/workflows/issue180-ci-baseline-20.yml"
-OUTPUT_PREFIX = "issue180-full-report-sizing-8-"
+OUTPUT_PREFIX = "issue180-original-include-localization-1-"
 BASE = "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"
 GRAPH = "fb24e38cffae626f8d7b47ff6baf7a88d8db76c8"
 WORKLOAD_KIND = "full-public-report-accounting-measurement"
@@ -1311,7 +1313,7 @@ def validate_report_error(value, binding):
     return value
 
 
-def unavailable_report_error(binding, error, *, stage, source_cleanup_failures=None):
+def unavailable_report_error(binding, error, *, stage, source_cleanup_failures=None, location_version=3):
     if __package__:
         from . import observation_failure
     else:
@@ -1322,7 +1324,7 @@ def unavailable_report_error(binding, error, *, stage, source_cleanup_failures=N
         "secondary": [], "source_cleanup_failures": source_cleanup_failures,
         "observation_failure": {"status": "unavailable", "reason": "binding-not-ready"},
         "budget_admission": {"status": "unavailable", "reason": "binding-not-ready"},
-        "source_locations": observation_failure.location_unavailable("binding-not-ready"),
+        "source_locations": observation_failure.location_unavailable("binding-not-ready", version=location_version),
     }
     return validate_report_error(value, binding)
 

@@ -1,5 +1,6 @@
 """Actual bounded observers with synthetic effects and real budget admissions."""
 
+import ast
 import errno
 import builtins
 import copy
@@ -34,6 +35,7 @@ IMPORT_COMPILE_AUDIT = None
 MAKE_CONTEXT_SOURCE = None
 MAKE_CONTEXT_PARENT_PROJECT = None
 MAKE_BOUNDARY_PREIMAGE = None
+INCLUDE_STATE_SOURCE = None
 
 
 class FrameFixture:
@@ -2601,13 +2603,13 @@ def check(root, *, budget, revision, base_revision, changed_paths, lifecycle):
                         delattr(SourceFileLoader, name)
                 sys.modules.pop(fullname, None)
 
-    def wire(self, value, *, observer=None):
+    def wire(self, value, *, observer=None, location_version=3):
         sampler = SimpleNamespace(snapshot=lambda: {
             "counters": policy.counter_snapshot(value.budget, value.measurement.session), "accounting": None,
         })
         record = worker.report_error_record(
             value.error, value.measurement, sampler, value.observer if observer is None else observer,
-            self.binding(), [],
+            self.binding(), [], location_version=location_version,
         )
         raw = io.BytesIO()
         with mock.patch.object(kernel, "sys", SimpleNamespace(stdout=SimpleNamespace(buffer=raw))):
@@ -3955,6 +3957,506 @@ class MakeContextControls(Inert):
                 record = self.boundary_wire(value)
                 self.assertEqual(len(record["source_locations"]["anchors"]), 2)
                 arguments = None
+
+
+class IncludeStateControls(Inert):
+    imported = OriginalImportControls.imported
+    blob = staticmethod(OriginalImportControls.blob)
+    BODY, OTHER = OriginalImportControls.BODY, OriginalImportControls.OTHER
+    entrypoint_case = MakeContextControls.entrypoint_case
+
+    @contextmanager
+    def fixture(self, *, wrapped=True):
+        self.assertIsNotNone(INCLUDE_STATE_SOURCE, "requires the frozen inert binding/guard AST")
+        with self.imported(body=INCLUDE_STATE_SOURCE, graph_probe=True) as value:
+            for path in ("Makefile", "generated_data.mk"):
+                entry = value.authority.GitTreeEntry()
+                entry.path, entry.mode, entry.object_type, entry.object_id, entry.git_dir = path, "100644", "blob", "c" * 40, None
+                value.entries[path] = entry
+
+            def configure(module):
+                mode, binding = module.MODE, module._ModeBinding
+                mode.budget, mode.posix, mode.version = value.budget, None, 7
+                mode.site = module._SourceSite("Makefile", 4, 7, 9)
+                mode.first_uncertainty = (module._SourceSite("generated_data.mk", 2, 3, 3), "private reason", "PRIVATE_INPUT")
+                mode.original_namespace_valid = False
+                mode.namespace_holds = {"private namespace message one", "private namespace message two"}
+                mode.definitions = {
+                    "GENERATED_DATA_LINKED_HAND_SOURCES": frozenset((binding("file", "recursive", "private source body"),)),
+                    "MODERN_ABI": frozenset((binding("command line", "recursive", "private input body"),)),
+                    "MODERN_ALL_C_OBJECTS": frozenset((binding("file", "simple", None),)),
+                    "MODERN_ALL_C_SOURCES": frozenset((
+                        binding("file", "simple", None), binding("unknown", "unknown", None),
+                    )),
+                    "MODERN_ALL_DATA_OBJECTS": None,
+                    "MODERN_ALL_DEPS": frozenset(),
+                    "MODERN_CONFIG": frozenset((binding("environment", "recursive", "private config"),)),
+                    "MODERN_OUTPUT_DIR": frozenset((binding("override", "simple", None),)),
+                }
+                mode.binding_versions = {(None, name): 7 for name in mode.definitions}
+                mode.binding_versions[None, "MODERN_CONFIG"] = 6
+                mode.binding_versions[None, "MODERN_OUTPUT_DIR"] = True
+                mode.template_values = {
+                    "MODERN_ALL_C_OBJECTS": (7, ("exact", "private captured words")),
+                    "MODERN_ALL_C_SOURCES": (6, ("header-bound", object())),
+                    "MODERN_CONFIG": (6, ("patsubst", object())),
+                    "MODERN_OUTPUT_DIR": (7, ("private unsupported tag", object())),
+                }
+
+            value.graph.AFTER_LOAD, value.graph.WRAP = configure, wrapped
+            yield value
+
+    def wire(self, value, *, observer=None):
+        return OriginalImportControls.wire(self, value, observer=observer, location_version=4)
+
+    def assert_state(self, value):
+        record, retained = self.wire(value)
+        self.assertIs(value.error, value.original_failure)
+        self.assertEqual(record["source_locations"]["version"], 4)
+        self.assertFalse(record["states"]["completed"])
+        self.assertFalse(retained)
+        self.assertTrue(record["cleanup"]["source_imports_restored"])
+        self.assertTrue(record["cleanup"]["source_imports_released"])
+        state = record["source_locations"]["state"]
+        self.assertEqual((state["time"], state["use"], state["selection"]),
+                         ("refusal-time", "report-only", "possible-rhs-not-actual-reads"))
+        self.assertFalse(state["authority"])
+        self.assertEqual((state["status"], state["reason"]), ("partial", "finite-selection"))
+        self.assertEqual(state["exception"], 1 if value.graph.WRAP else 0)
+        self.assertEqual((state["mode"], state["version"], state["original_namespace_valid"], state["namespace_holds"]),
+                         ("unknown", 7, False, 2))
+        self.assertEqual({row["name"] for row in state["names"]}, set(observation_failure._MAKE_STATE_NAMES))
+        self.assertEqual(len(state["names"]), 20)
+        self.assertEqual(value.observer.location_codes, {})
+        self.assertLess(len(policy.encoded(record["source_locations"])), policy.ERROR_BYTES)
+        return record
+
+    def test_actual_refusal_state_has_exact_twenty_metadata_rows_and_no_evaluation(self):
+        for wrapped in (False, True):
+            with self.subTest(wrapped=wrapped), self.fixture(wrapped=wrapped) as value:
+                value.invoke()
+                source_calls = []
+                def refused(*args, **kwargs):
+                    source_calls.append(True)
+                    raise AssertionError("a source operation ran during projection")
+                mode = value.graph.loaded.MODE
+                for name in ("original_input", "original_wildcard", "original_include_value", "original_execution",
+                             "template_snapshot", "binding", "exact_reference", "exact_initializer_value"):
+                    setattr(mode, name, refused)
+                with mock.patch.object(value.budget, "remaining", side_effect=refused), \
+                     mock.patch.object(value.budget, "charge", side_effect=refused):
+                    record = self.assert_state(value)
+                self.assertEqual(source_calls, [])
+                rows = {row["name"]: row for row in record["source_locations"]["state"]["names"]}
+                unique = rows["MODERN_ALL_C_OBJECTS"]
+                self.assertEqual((unique["status"], unique["cardinality"]), ("unique", 1))
+                self.assertEqual(unique["bindings"], [{"origin": "file", "flavor": "simple", "body_known": False}])
+                self.assertEqual(unique["fact"], {
+                    "status": "captured", "kind": "exact", "epoch": 7, "epoch_status": "same-mode-version",
+                })
+                self.assertEqual((rows["MODERN_ALL_C_SOURCES"]["status"], rows["MODERN_ALL_C_SOURCES"]["cardinality"]),
+                                 ("ambiguous", 2))
+                self.assertEqual(rows["MODERN_ALL_C_SOURCES"]["fact"]["epoch_status"], "different-mode-version")
+                self.assertEqual(rows["MODERN_ALL_ASM_OBJECTS"]["status"], "absent")
+                self.assertEqual(rows["MODERN_ALL_DATA_OBJECTS"]["status"], "unavailable")
+                self.assertIsNone(rows["MODERN_ALL_DATA_OBJECTS"]["cardinality"])
+                self.assertEqual(rows["MODERN_ALL_DEPS"]["cardinality"], 0)
+                self.assertEqual(rows["MODERN_CONFIG"]["binding_epoch_status"], "different-mode-version")
+                self.assertEqual(rows["MODERN_OUTPUT_DIR"]["binding_epoch_status"], "unavailable")
+                self.assertEqual(rows["MODERN_OUTPUT_DIR"]["fact"]["status"], "unavailable")
+                self.assertNotIn(b"private", policy.encoded(record))
+                self.assertNotIn(b"PRIVATE_INPUT", policy.encoded(record))
+                self.assertNotIn("native", record["source_locations"]["state"])
+
+    def test_closed_v3_compatibility_is_explicit_and_does_not_acquire_state(self):
+        observations = {}
+        for version in (3, 4):
+            with self.subTest(version=version), self.fixture() as value:
+                value.invoke()
+                record, _ = OriginalImportControls.wire(self, value, location_version=version)
+                observations[version] = record["source_locations"]
+        self.assertNotIn("state", observations[3])
+        current = copy.deepcopy(observations[4])
+        current.pop("state")
+        current["version"] = 3
+        self.assertEqual(current, observations[3])
+        for changed in (
+            {**observations[3], "state": observations[4]["state"]},
+            {key: item for key, item in observations[4].items() if key != "state"},
+            {**observations[4], "version": 5}, {**observations[4], "version": True},
+        ):
+            with self.assertRaises(policy.GuardError):
+                observation_failure.validate_locations(changed, self.binding())
+
+    def test_state_wire_rejects_tamper_extra_fields_missing_names_and_authority_claims(self):
+        with self.fixture() as value:
+            value.invoke()
+            record = self.assert_state(value)
+        mutations = (
+            lambda state: state.update(authority=True),
+            lambda state: state.update(time="first-use"),
+            lambda state: state.update(use="source-authority"),
+            lambda state: state.update(selection="actual-native-reads"),
+            lambda state: state.update(status="complete", reason=None),
+            lambda state: state.update(exception=2),
+            lambda state: state.update(version=True),
+            lambda state: state.update(namespace_holds=policy.ORIGINAL_LIMITS["entries"] + 1),
+            lambda state: state.update(message="private"),
+            lambda state: state["names"].pop(),
+            lambda state: state["names"][0].update(name="UNSELECTED_PRIVATE_NAME"),
+            lambda state: state["names"][0].update(name=state["names"][1]["name"]),
+            lambda state: state["names"][0].update(cardinality=True),
+            lambda state: state["names"][0].update(status="absent"),
+            lambda state: state["names"][0].update(binding_epoch_status="unavailable"),
+            lambda state: state["names"][0]["bindings"][0].update(value="private"),
+            lambda state: state["names"][0]["bindings"][0].update(body_known=1),
+            lambda state: state["names"][0]["fact"].update(status="captured", kind="exact", epoch=None),
+            lambda state: state["names"][2]["fact"].update(epoch=True),
+            lambda state: state["names"][2]["fact"].update(epoch_status="different-mode-version"),
+            lambda state: state["names"][2]["fact"].update(raw="private"),
+        )
+        for index, mutate in enumerate(mutations):
+            changed = copy.deepcopy(record)
+            mutate(changed["source_locations"]["state"])
+            with self.subTest(index=index), self.assertRaises(policy.GuardError):
+                parser = supervisor.Protocol("12345/report", policy.OUTPUT_BYTES,
+                                             report_binding=self.binding(), deadline=3700.0)
+                parser.feed(policy.encoded({"scope": "12345/report", "kind": "error", "data": changed}) + b"\n")
+        neutral = json_order(record)
+        neutral["source_locations"]["state"]["names"].reverse()
+        self.assertEqual(policy.validate_report_error(neutral, self.binding()), neutral)
+
+    def test_callback_shapes_are_rejected_without_reading_or_rendering_values(self):
+        for fault in ("mode-map", "definitions", "epochs", "facts", "holds", "bindings",
+                      "key", "epoch-key", "body", "origin", "inherited", "mode-type", "binding-type", "descriptor"):
+            touched = []
+            class Mapping(dict):
+                def __len__(self):
+                    touched.append("len")
+                    raise AssertionError("mapping callback")
+                def __iter__(self):
+                    touched.append("iter")
+                    raise AssertionError("mapping callback")
+                def get(self, *args):
+                    touched.append("get")
+                    raise AssertionError("mapping callback")
+            class Text(str):
+                def __eq__(self, other):
+                    touched.append("eq")
+                    raise AssertionError("text callback")
+                def __repr__(self):
+                    touched.append("repr")
+                    raise AssertionError("text callback")
+                __hash__ = str.__hash__
+            class Sequence(tuple):
+                def __len__(self):
+                    touched.append("len")
+                    raise AssertionError("tuple callback")
+                def __iter__(self):
+                    touched.append("iter")
+                    raise AssertionError("tuple callback")
+            class Bag(frozenset):
+                def __len__(self):
+                    touched.append("len")
+                    raise AssertionError("bag callback")
+                def __iter__(self):
+                    touched.append("iter")
+                    raise AssertionError("bag callback")
+            class Holds(set):
+                def __len__(self):
+                    touched.append("len")
+                    raise AssertionError("hold callback")
+                def __iter__(self):
+                    touched.append("iter")
+                    raise AssertionError("hold callback")
+            with self.subTest(fault=fault), self.fixture() as value:
+                value.invoke()
+                module, mode = value.graph.loaded, value.graph.loaded.MODE
+                name = "MODERN_ALL_C_OBJECTS"
+                if fault == "mode-map":
+                    mode.__dict__ = Mapping(mode.__dict__)
+                elif fault in {"definitions", "epochs", "facts"}:
+                    key = {"definitions": "definitions", "epochs": "binding_versions", "facts": "template_values"}[fault]
+                    setattr(mode, key, Mapping(getattr(mode, key)))
+                elif fault == "holds":
+                    mode.namespace_holds = Holds(mode.namespace_holds)
+                elif fault == "bindings":
+                    mode.definitions[name] = Bag(mode.definitions[name])
+                elif fault == "key":
+                    mode.definitions[Text("UNSELECTED")] = frozenset()
+                elif fault == "epoch-key":
+                    mode.binding_versions[Sequence((None, "UNSELECTED"))] = 7
+                elif fault in {"body", "origin", "inherited"}:
+                    binding = next(iter(mode.definitions[name]))
+                    object.__setattr__(binding, {"body": "value", "origin": "origin", "inherited": "inherited"}[fault],
+                                       Sequence(()) if fault == "inherited" else Text("private"))
+                elif fault == "mode-type":
+                    class Other(module._MakeSourceMode):
+                        pass
+                    mode.__class__ = Other
+                elif fault == "binding-type":
+                    module._ModeBinding = type("_ModeBinding", (), {"__module__": module.__name__})
+                else:
+                    module._MakeSourceMode.__getattribute__ = lambda *args: touched.append("getattribute")
+                touched.clear()
+                record, _ = self.wire(value)
+                self.assertEqual(touched, [])
+                state = record["source_locations"]["state"]
+                if fault in {"bindings", "body", "origin", "inherited"}:
+                    row = next(row for row in state["names"] if row["name"] == name)
+                    self.assertEqual(row["status"], "unavailable")
+                    self.assertIsNone(row["bindings"])
+                else:
+                    self.assertEqual(state["status"], "unavailable")
+                self.assertIs(value.error, value.original_failure)
+                self.assertTrue(record["cleanup"]["source_imports_released"])
+
+    def test_head_import_type_clock_lifetime_and_foreign_mode_budget_stay_unavailable(self):
+        for fault in ("head", "capture", "module", "spec", "code", "thread", "deadline", "limits", "mode-budget", "released"):
+            with self.subTest(fault=fault), self.fixture() as value:
+                value.invoke()
+                if fault == "head":
+                    value.loader.revision = policy.BASE
+                elif fault == "capture":
+                    value.entries.capture = (Path("/repo"), policy.BASE)
+                elif fault == "module":
+                    sys.modules[value.fullname] = ModuleType(value.fullname)
+                elif fault == "spec":
+                    value.graph.loaded.__spec__ = copy.copy(value.spec)
+                elif fault == "code":
+                    original = value.graph.loaded._MakeSourceMode.collapse
+                    original.__code__ = original.__code__.replace()
+                elif fault == "thread":
+                    value.observer.imports.thread = -1
+                elif fault == "deadline":
+                    value.observer.imports.deadline = 100.0
+                elif fault == "limits":
+                    value.budget.limits = dataclasses.replace(value.budget.limits)
+                elif fault == "mode-budget":
+                    value.graph.loaded.MODE.budget = object()
+                else:
+                    value.observer.close_imports(value.measurement)
+                record, _ = self.wire(value)
+                self.assertEqual(record["source_locations"]["state"]["status"], "unavailable")
+                self.assertIs(value.error, value.original_failure)
+                self.assertFalse(record["states"]["completed"])
+
+    def test_multiple_guards_and_unavailable_span_text_never_select_a_native_read(self):
+        for fault in ("multiple", "unraised", "bad-arguments", "ambiguous-label"):
+            with self.subTest(fault=fault), self.fixture() as value:
+                value.invoke()
+                if fault == "multiple":
+                    value.graph.loaded.MODE.budget = None
+                    try:
+                        value.graph.loaded.MODE.collapse("PREFIX " + chr(92) + chr(10) + " SUFFIX")
+                    except BaseException as following:
+                        value.error.__cause__.__cause__ = following
+                elif fault == "unraised":
+                    value.error.__cause__.__traceback__ = None
+                elif fault == "bad-arguments":
+                    value.error.__cause__.args = (object(),)
+                else:
+                    text, = value.error.__cause__.args
+                    value.error.__cause__.args = (text + ": other.mk:1 (logical 1): tail",)
+                record, _ = self.wire(value)
+                state = record["source_locations"]["state"]
+                self.assertEqual(state["status"], "unavailable" if fault in {"multiple", "unraised"} else "partial")
+                if fault == "multiple":
+                    self.assertEqual(state["reason"], "multiple-guards")
+                self.assertFalse(state["authority"])
+                self.assertEqual(record["source_locations"]["locations"], [])
+
+    def test_projection_epoch_changes_and_binding_tamper_cannot_survive_revalidation(self):
+        for fault in ("version", "validity", "holds", "definitions", "fact", "binding", "binding-type"):
+            with self.subTest(fault=fault), self.fixture() as value:
+                value.invoke()
+                original = observation_failure._SourceLocations.state_binding
+                mutated = []
+                def change(locations, binding, expected):
+                    result = original(locations, binding, expected)
+                    if not mutated:
+                        mutated.append(True)
+                        mode = value.graph.loaded.MODE
+                        if fault == "version":
+                            mode.version += 1
+                        elif fault == "validity":
+                            mode.original_namespace_valid = True
+                        elif fault == "holds":
+                            mode.namespace_holds.add("private later hold")
+                        elif fault == "definitions":
+                            mode.definitions = dict(mode.definitions)
+                        elif fault == "fact":
+                            mode.template_values["MODERN_ALL_C_OBJECTS"] = (7, ("exact", object()))
+                        elif fault == "binding":
+                            object.__setattr__(binding, "origin", "override")
+                        else:
+                            value.graph.loaded._ModeBinding = type("_ModeBinding", (), {})
+                    return result
+                with mock.patch.object(observation_failure._SourceLocations, "state_binding", change):
+                    record, _ = self.wire(value)
+                self.assertTrue(mutated)
+                self.assertEqual(record["source_locations"]["state"]["status"], "unavailable")
+                self.assertEqual(len(record["source_locations"]["anchors"]), 2)
+                self.assertTrue(record["cleanup"]["source_imports_released"])
+
+    def test_original_work_and_output_admission_precede_iteration_and_encoding(self):
+        original = observation_failure._SourceLocations.make_state
+        measured = []
+        def observe(locations, error, context, allowance):
+            before = locations.work
+            result = original(locations, error, context, allowance)
+            measured.append(locations.work - before)
+            return result
+        with self.fixture() as value, mock.patch.object(observation_failure._SourceLocations, "make_state", observe):
+            value.invoke()
+            self.assert_state(value)
+        needed, = measured
+        for over in (0, 1):
+            with self.subTest(over=over), self.fixture() as value:
+                value.invoke()
+                def bounded(locations, error, context, allowance):
+                    locations.work = policy.ORIGINAL_LIMITS["entries"] - needed + over
+                    return original(locations, error, context, allowance)
+                with mock.patch.object(observation_failure._SourceLocations, "make_state", bounded):
+                    record, _ = self.wire(value)
+                state = record["source_locations"]["state"]
+                self.assertEqual(state["status"], "unavailable" if over else "partial")
+                if over:
+                    self.assertEqual(state["reason"], "work-bound")
+                self.assertEqual(len(record["source_locations"]["anchors"]), 2)
+        for allowance in (0, 2048 + 1024 * 20 - 1):
+            with self.subTest(allowance=allowance), self.fixture() as value:
+                value.invoke()
+                def bounded(locations, error, context, unused):
+                    return original(locations, error, context, allowance)
+                with mock.patch.object(observation_failure._SourceLocations, "make_state", bounded), \
+                     mock.patch.object(observation_failure._SourceLocations, "state_fields",
+                                       side_effect=AssertionError("source fields read before admission")) as read:
+                    record, _ = self.wire(value)
+                read.assert_not_called()
+                self.assertEqual(record["source_locations"]["state"]["reason"], "output-bound")
+                self.assertEqual(record["source_locations"]["context"]["status"], "reported")
+        with self.fixture() as value:
+            value.invoke()
+            binding = value.graph.loaded._ModeBinding
+            value.graph.loaded.MODE.definitions["MODERN_ALL_C_OBJECTS"] = frozenset(
+                binding("file", "recursive", str(number)) for number in range(512)
+            )
+            def bounded(locations, error, context, unused):
+                return original(locations, error, context, 2048 + 1024 * 20)
+            with mock.patch.object(observation_failure._SourceLocations, "make_state", bounded), \
+                 mock.patch.object(observation_failure._SourceLocations, "state_binding",
+                                   side_effect=AssertionError("bindings iterated before admission")) as read:
+                record, _ = self.wire(value)
+            read.assert_not_called()
+            row = next(row for row in record["source_locations"]["state"]["names"]
+                       if row["name"] == "MODERN_ALL_C_OBJECTS")
+            self.assertEqual((row["cardinality"], row["status"], row["reason"]), (512, "unavailable", "output-bound"))
+
+    def test_diagnostic_failure_recovery_and_reference_release_keep_first_cause_and_cleanup(self):
+        for fault in (None, "publication-before", "publication-after", "record"):
+            with self.subTest(fault=fault):
+                record = self.entrypoint_case(fault)
+                self.assertEqual(record["source_locations"]["version"], 4)
+                self.assertEqual(record["error"]["chain"][0]["type"], "MakeProbeError")
+                self.assertEqual(record["source_locations"]["state"]["status"], "unavailable" if fault == "record" else "partial")
+                if fault != "record":
+                    self.assertTrue(record["cleanup"]["source_imports_restored"])
+                    self.assertTrue(record["cleanup"]["source_imports_released"])
+        for failure in (MemoryError, UnicodeError, OSError):
+            with self.subTest(failure=failure.__name__), self.fixture() as value:
+                value.invoke()
+                first = value.error
+                with mock.patch.object(observation_failure._SourceLocations, "state_rows", side_effect=failure()):
+                    record, _ = self.wire(value)
+                self.assertIs(value.error, first)
+                self.assertEqual(record["source_locations"]["state"]["status"], "unavailable")
+                self.assertEqual(len(record["source_locations"]["anchors"]), 2)
+                self.assertTrue(record["cleanup"]["source_imports_released"])
+                self.assertEqual(value.observer.location_codes, {})
+        with self.fixture() as value:
+            value.invoke()
+            original = observation_failure._SourceLocations.close
+            closed = []
+            def failed(locations):
+                closed.append(True)
+                original(locations)
+                raise OSError(errno.EIO, "private after-release")
+            with mock.patch.object(observation_failure._SourceLocations, "close", failed):
+                record, retained = self.wire(value)
+            self.assertTrue(closed)
+            self.assertIs(value.error, value.original_failure)
+            self.assertEqual(record["source_locations"]["state"]["status"], "unavailable")
+            self.assertIsNone(record["source_locations"]["references_closed"])
+            self.assertIn("location-publication", [row["stage"] for row in record["secondary"]])
+            self.assertTrue(record["cleanup"]["source_imports_released"])
+
+    def test_encoding_omits_raw_surrogates_and_encoder_failure_preserves_refusal(self):
+        with self.fixture() as value:
+            value.invoke()
+            module = value.graph.loaded
+            module.MODE.definitions["MODERN_ABI"] = frozenset((
+                module._ModeBinding("command line", "recursive", "private\ud800 body"),
+            ))
+            module.MODE.template_values["MODERN_ABI"] = (7, ("exact", "private\ud800 captured"))
+            record = self.assert_state(value)
+            row = next(row for row in record["source_locations"]["state"]["names"] if row["name"] == "MODERN_ABI")
+            self.assertTrue(row["bindings"][0]["body_known"])
+            self.assertEqual(row["fact"]["kind"], "exact")
+            self.assertNotIn(b"ud800", policy.encoded(record))
+        with self.fixture() as value:
+            value.invoke()
+            encoded = policy.encoded
+            def fault(data):
+                if type(data) is dict and data.get("kind") == "original-include-state" and data.get("status") == "partial":
+                    raise UnicodeError("private encoder failure")
+                return encoded(data)
+            with mock.patch.object(policy, "encoded", fault):
+                record, _ = self.wire(value)
+            self.assertIs(value.error, value.original_failure)
+            self.assertEqual(record["source_locations"]["state"]["reason"], "state-unavailable")
+            self.assertEqual(len(record["source_locations"]["anchors"]), 2)
+            self.assertEqual(record["source_locations"]["context"]["status"], "reported")
+            self.assertTrue(record["cleanup"]["source_imports_released"])
+
+    def test_removal_restoration_and_neutral_metadata_order_have_behavioral_witnesses(self):
+        def oracle():
+            with self.fixture() as value:
+                value.invoke()
+                return self.assert_state(value)["source_locations"]["state"]
+        expected = oracle()
+        with mock.patch.object(observation_failure._SourceLocations, "make_state",
+                               return_value=observation_failure.make_state_unavailable("state-unavailable")), \
+             self.assertRaises(AssertionError):
+            oracle()
+        self.assertEqual(oracle(), expected)
+        for change in ("map-order", "wire-order"):
+            with self.subTest(change=change), self.fixture() as value:
+                value.invoke()
+                mode = value.graph.loaded.MODE
+                if change == "map-order":
+                    for name in ("definitions", "binding_versions", "template_values"):
+                        setattr(mode, name, dict(reversed(tuple(getattr(mode, name).items()))))
+                record = self.assert_state(value)
+                self.assertEqual(record["source_locations"]["state"], expected)
+                self.assertEqual(policy.validate_report_error(json_order(record), self.binding()), record)
+        original = observation_failure._SourceLocations.state_rows
+        class Rename(ast.NodeTransformer):
+            def visit_Name(self, node):
+                if node.id == "bindings":
+                    node.id = "chosen"
+                return node
+        tree = ast.parse(INCLUDE_STATE_PROJECTOR_AST)
+        node, = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "state_rows"]
+        namespace = dict(vars(observation_failure))
+        exec(compile(ast.fix_missing_locations(ast.Module(body=[Rename().visit(node)], type_ignores=[])),
+                     "<inert-neutral-state-local>", "exec"), namespace)
+        with mock.patch.object(observation_failure._SourceLocations, "state_rows", namespace["state_rows"]):
+            self.assertEqual(oracle(), expected)
+        self.assertIs(observation_failure._SourceLocations.state_rows, original)
+
+
+INCLUDE_STATE_PROJECTOR_AST = None
 
 
 def json_order(value):
