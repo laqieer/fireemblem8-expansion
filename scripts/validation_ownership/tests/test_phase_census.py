@@ -141,7 +141,7 @@ class OriginalTemplateApiTests(unittest.TestCase):
         self.assertEqual(queries, [])
 
     def test_unproven_original_parameters_refuse_instead_of_borrowing_empty_headers(self):
-        for parameter in ("$(sort early late)", "$(word 1,early late)"):
+        for parameter in ("$(sort $(word 1,early late))", "$(word 1,early late)"):
             with self.subTest(parameter=parameter), self.assertRaises(MakeProbeError):
                 self.original(self.template_source(parameter), terminal={
                     "TABLES": "", "RULE": "out/$(1): $(CONFIG_$(1))",
@@ -337,7 +337,7 @@ class OriginalRuntimeWildcardSourceApiTests(unittest.TestCase):
                 self.assertEqual(mode.exact_reference("FILES"), "src/a.c")
                 self.assertEqual(mode.exact_reference("RUNTIME"), "one   two" if expected else "one two")
                 self.assertEqual(set(original.patterns), {("src/*.c", "src/a.c")})
-        for expression in ("$(eval .POSIX:)", "$(if $(sort unknown),safe,$(eval .POSIX:))"):
+        for expression in ("$(eval .POSIX:)", "$(if $(sort $(word 1,unknown)),safe,$(eval .POSIX:))"):
             source = self.program() + "LIVE := " + expression + "\nVALUE := one  \\\n two\n"
             with self.subTest(expression=expression), self.source(source) as (_, _, mode):
                 with self.assertRaises(MakeProbeError):

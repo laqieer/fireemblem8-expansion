@@ -985,7 +985,7 @@ class _MakeSourceMode:
             if fact is not None:
                 return fact[0]
         function = _make_function(expression)
-        if function is None or function[0] in {"notdir", "addprefix", "filter", "filter-out", "findstring", "strip", "and"}:
+        if function is None or function[0] in {"notdir", "addprefix", "filter", "filter-out", "findstring", "strip", "sort", "and"}:
             if function is None:
                 try:
                     literal = self.literal_text(expression)
@@ -1199,6 +1199,17 @@ class _MakeSourceMode:
                         and all("$" not in value and "\0" not in value for value in fact[1])):
                     return _join_make_text(_original_patsubst_parts(fact[1], self.budget), self.budget)
                 return None
+            if operation == "sort" and len(arguments) == 1:
+                for _ in _make_expression_spans(part, require_complete=True, budget=self.budget):
+                    self.checkpoint()
+                value = self.exact_initializer_value(arguments[0], active=active)
+                words = None if value is None else _original_sort_words(value, self.budget)
+                if words is None:
+                    return None
+                return _join_make_text(
+                    (part for index, word in enumerate(words) for part in (" " if index else "", word)),
+                    self.budget,
+                )
             if (operation, len(arguments)) not in {
                 ("notdir", 1), ("addprefix", 2), ("filter", 2), ("filter-out", 2), ("findstring", 2), ("strip", 1),
             }:
@@ -2819,6 +2830,57 @@ def _original_filter_patterns(value, budget):
             budget.charge("cache", len(encoded(pattern)))
         patterns.append(pattern)
     return patterns
+
+
+def _original_sort_words(value, budget):
+    limits = Limits() if budget is None else budget.limits
+    scratch = 256 + len(value)
+    if scratch > limits.cache_bytes or scratch > limits.total_bytes:
+        if budget is not None:
+            budget.reject("original sort workspace exceeds the existing byte bound")
+        raise MakeProbeError("original sort workspace exceeds the existing byte bound")
+    if budget is not None:
+        budget.charge("cache", scratch)
+    count = characters = 0
+    in_word = False
+    for character in value:
+        if budget is not None:
+            budget.remaining()
+        if character in MAKE_SPACE:
+            in_word = False
+            continue
+        if not ("a" <= character <= "z" or "A" <= character <= "Z"
+                or "0" <= character <= "9" or character in "_./+%-"):
+            return None
+        characters += 1
+        if not in_word:
+            count += 1
+            if count > limits.entries:
+                if budget is not None:
+                    budget.reject("original sort words exceed the existing entry bound")
+                raise MakeProbeError("original sort words exceed the existing entry bound")
+            in_word = True
+    # Admit word copies, set growth, sorting/merge scratch, join references,
+    # output and encoding scratch before slicing or allocating any word.
+    storage = 768 + 256 * count + 4 * characters
+    if scratch + storage > limits.cache_bytes or scratch + storage > limits.total_bytes:
+        if budget is not None:
+            budget.reject("original sort workspace exceeds the existing byte bound")
+        raise MakeProbeError("original sort workspace exceeds the existing byte bound")
+    if budget is not None:
+        budget.charge("cache", storage)
+    words = set()
+    for match in re.finditer(r"[^ \t\r\n\v\f]+", value):
+        if budget is not None:
+            budget.remaining()
+        words.add(match[0])
+    if budget is not None:
+        budget.remaining()
+    # Validated ASCII code points have exactly C-locale unsigned-byte order.
+    ordered = sorted(words)
+    if budget is not None:
+        budget.remaining()
+    return ordered
 
 
 def _patsubst_word(pattern, word):

@@ -329,11 +329,11 @@ class OriginalStructuralScopesApiTests(unittest.TestCase):
             "dir/%/%.o: FLAGS += local\n",
             "../unit.o: FLAGS += local\n",
             "KEY := TARGET\nTARGET := unit.o\n$($(KEY)): FLAGS += local\n",
-            "CHOICE := $(sort yes)\nifeq ($(CHOICE),yes)\nunit.o: FLAGS += local\nendif\n",
-            "TARGETS := $(sort unit.o)\n$(TARGETS): FLAGS += local\n",
+            "CHOICE := $(sort $(word 1,yes))\nifeq ($(CHOICE),yes)\nunit.o: FLAGS += local\nendif\n",
+            "TARGETS := $(sort $(word 1,unit.o))\n$(TARGETS): FLAGS += local\n",
             "TARGETS := $(addsuffix .o,unit)\n$(TARGETS): FLAGS += local\n",
             "TARGETS := $(wildcard *.o)\n$(TARGETS): FLAGS += local\n",
-            "unit.o: FLAGS := $(sort b a)\n",
+            "unit.o: FLAGS := $(sort $(word 1,b a))\n",
             "unit.o: FLAGS := $(shell not-run)\n",
             "unit.o: FLAGS := $(guile not-run)\n",
         ]
@@ -851,7 +851,7 @@ class OriginalConditionalAppendApiTests(unittest.TestCase):
             with self.subTest(unknown_rhs=True, active=active):
                 mode = self.mode()
                 mode.assign("OBJECTS", ":=", "$(addprefix out/,first.o)")
-                mode.assign("OBJECTS", "+=", "$(sort unknown)", active=active)
+                mode.assign("OBJECTS", "+=", "$(sort $(word 1,unknown))", active=active)
                 self.assertIsNone(mode.literal_values("$(OBJECTS)"))
                 self.assertIn(None, {row.value for row in mode.binding("OBJECTS")})
                 self.assertIn("out/first.o", {row.value for row in mode.binding("OBJECTS")})
@@ -893,7 +893,7 @@ class OriginalConditionalAppendApiTests(unittest.TestCase):
         mode.assign("LEAF", "=", "replacement.o")
         mode.assign("OBJECTS", "+=", "tail", active=None)
         self.assertEqual(mode.literal_values("$(OBJECTS)"), {"out/first.o", "out/first.o tail"})
-        mode.assign("OBJECTS", ":=", "$(sort unproved)")
+        mode.assign("OBJECTS", ":=", "$(sort $(word 1,unproved))")
         self.assertIsNone(mode.template_snapshot("OBJECTS"))
         mode.assign("OBJECTS", "+=", "tail", active=None)
         self.assertIsNone(mode.literal_values("$(OBJECTS)"))
@@ -934,7 +934,7 @@ class OriginalConditionalAppendApiTests(unittest.TestCase):
         self.assertEqual(mode.literal_values("$(OBJECTS)"), {"out/first.o", "out/first.o global"})
         mode = self.mode()
         mode.assign("OBJECTS", ":=", "$(addprefix out/,first.o)")
-        mode.assign("OBJECTS", ":=", "$(sort unproved)", scope="out/one")
+        mode.assign("OBJECTS", ":=", "$(sort $(word 1,unproved))", scope="out/one")
         mode.assign("OBJECTS", "+=", "local", scope="out/one", active=None)
         self.assertTrue(all(row.value is None for row in mode.raw_binding("OBJECTS", "out/one")))
         self.assertEqual(mode.exact_reference("OBJECTS"), "out/first.o")
@@ -1084,6 +1084,581 @@ class OriginalConditionalAppendApiTests(unittest.TestCase):
                 self.assertIs(mode.definitions["OBJECTS"], original)
 
 
+class OriginalSortWordsApiTests(unittest.TestCase):
+    """Exact word data over unissued original inputs; no native/source authority."""
+
+    def unavailable(self, *args, **kwargs):
+        raise MakeProbeError("unissued source proof cannot grant native authority")
+
+    def mode(self, *, budget=None, inputs=None, namespace=()):
+        budget = ProbeBudget(Limits(seconds=10)) if budget is None else budget
+        supplied = {} if inputs is None else inputs
+        variables = tuple(SimpleNamespace(name=name, value=value, flags=(4 << 26) | 1)
+                          for name, value in supplied.items())
+        session = SimpleNamespace(budget=budget, make=self.unavailable,
+                                  _wildcard_image=self.unavailable)
+        proof = SimpleNamespace(session=session, observation=None, missing={},
+                                require_live=self.unavailable)
+        original = phase_census.SourcePass(
+            proof, SimpleNamespace(number=1, inputs=(SimpleNamespace(parent=False, variables=variables),),
+                                   visits=()),
+            SimpleNamespace(directories=(), members={}), (), "all", (), {}, "unissued.mk",
+        )
+        mode = _MakeSourceMode(
+            budget=budget, original_input=original.input, original_execution=original.record_execution,
+            forced=original.forced, namespace=frozenset(namespace),
+        )
+        template = original.template_mode()
+        mode.template_mode, mode.original_target_value = template, template.text
+        mode.original_include_value, mode.scope_lookup_guard = template.text, original.require_scoped_context
+        return mode, original
+
+    def parse(self, mode, source):
+        return tuple(make_source_units(source, mode=mode, source_path="unissued.mk"))
+
+    def inert(self, mode, original):
+        self.assertEqual((mode.budget.runs, mode.budget.states), (0, 0))
+        self.assertFalse(mode.budget.children)
+        self.assertFalse(mode.budget.producer_waiters)
+        self.assertFalse(original.issued_contexts)
+        self.assertIsNone(mode._value_reads)
+        self.assertIsNone(mode.scope_context)
+
+    def test_direct_empty_deduplication_and_all_six_byte_word_separators(self):
+        for text, expected in (
+            ("", ""), (" \t\r\n\v\f", ""), ("b a b", "a b"),
+            ("\tz\ra\nz\vb\fa b ", "a b z"), ("A a Z z A", "A Z a z"),
+            ("aa a aa ab a", "a aa ab"),
+            ("z _ Z A 9 0 / . - + % a", "% + - . / 0 9 A Z _ a z"),
+        ):
+            with self.subTest(text=text):
+                mode, original = self.mode()
+                self.assertFalse(mode.effectful("$(sort " + text + ")"))
+                self.assertEqual(mode.exact_initializer_value("$(sort " + text + ")"), expected)
+                self.assertEqual(mode.template_initializer("${sort " + text + "}"), ("exact", expected))
+                self.inert(mode, original)
+
+    def test_permutations_have_independent_c_locale_byte_order(self):
+        words = (b"z", b"A", b"a", b"+", b"_", b"0", b"%", b"z")
+        expected = b"% + 0 A _ a z"
+        for ordered in (words, tuple(reversed(words)), words[3:] + words[:3], words[1:] + words[:1]):
+            with self.subTest(words=ordered):
+                mode, original = self.mode()
+                source = b"\t".join(ordered).decode("ascii")
+                actual = mode.exact_initializer_value("$(sort " + source + ")")
+                self.assertEqual(actual.encode("ascii"), expected)
+                self.inert(mode, original)
+
+    def test_nested_sort_and_existing_substitution_constructors_compose(self):
+        mode, original = self.mode()
+        self.parse(mode, "FILES := b.o a.o b.o\n")
+        for expression, expected in (
+            ("$(sort $(sort z a z) b a)", "a b z"),
+            ("$(addprefix out/,$(sort $(FILES:.o=.d)))", "out/a.d out/b.d"),
+            ("$(sort $(addprefix out/,$(FILES:.o=.d)))", "out/a.d out/b.d"),
+            ("$(sort $(notdir x/b.o y/a.o x/b.o))", "a.o b.o"),
+            ("$(strip $(filter-out b.o,$(sort $(FILES))))", "a.o"),
+            ("${sort ${FILES:.o=.d}}", "a.d b.d"),
+        ):
+            with self.subTest(expression=expression):
+                self.assertEqual(mode.exact_initializer_value(expression), expected)
+        self.inert(mode, original)
+
+    def test_simple_values_freeze_while_recursive_values_read_current_original_inputs(self):
+        mode, original = self.mode()
+        self.parse(mode, (
+            "DATA := early/b.o early/a.o early/a.o\n"
+            "FROZEN := $(sort $(DATA))\nCOPY := $(FROZEN)\nCURRENT = $(sort $(DATA))\n"
+            "DATA := late/c.o late/a.o\n"
+        ))
+        self.assertEqual(mode.template_snapshot("FROZEN"), "early/a.o early/b.o")
+        self.assertEqual(mode.exact_reference("FROZEN"), "early/a.o early/b.o")
+        self.assertEqual(mode.exact_reference("COPY"), "early/a.o early/b.o")
+        self.assertEqual(mode.exact_reference("CURRENT"), "late/a.o late/c.o")
+        self.assertEqual(mode.template_initializer("$(FROZEN)"), ("exact", "early/a.o early/b.o"))
+        self.inert(mode, original)
+
+    def test_renames_braces_and_independent_declaration_order_preserve_precision(self):
+        for name, braces, reverse in (("WORDS", False, False), ("RENAMED", True, False),
+                                      ("RENAMED", False, True)):
+            with self.subTest(name=name, braces=braces, reverse=reverse):
+                mode, original = self.mode()
+                reference = ("${" if braces else "$(") + name + ("}" if braces else ")")
+                declarations = [name + " := z.o a.o z.o", "PREFIX := out/"]
+                if reverse:
+                    declarations.reverse()
+                self.parse(mode, "\n".join(declarations) + "\n"
+                           "RESULT := $(sort $(addprefix $(PREFIX)," + reference + "))\n")
+                self.assertEqual(mode.exact_reference("RESULT"), "out/a.o out/z.o")
+                self.inert(mode, original)
+
+    def test_scoped_rhs_timing_selectors_and_shadow_are_original_data_only(self):
+        mode, original = self.mode()
+        self.parse(mode, (
+            "DATA := global/z global/a\nTARGETS := $(sort two.o one.o two.o)\n"
+            "$(TARGETS): FROZEN := $(sort $(DATA))\n"
+            "one.o: DATA := scoped/z scoped/a\none.o: CURRENT = $(sort $(DATA))\n"
+            "DATA := later/b later/a\n"
+        ))
+        for target, frozen, current in (
+            ("one.o", "global/a global/z", "scoped/a scoped/z"),
+            ("two.o", "global/a global/z", ""),
+            ("other.o", "", ""),
+        ):
+            with self.subTest(target=target):
+                with mode.using_scope(graph_probe._ScopeContext(target, target, "assignment")):
+                    self.assertEqual(mode.exact_reference("FROZEN"), frozen)
+                    self.assertEqual(mode.exact_reference("CURRENT"), current)
+        self.assertEqual(mode.exact_initializer_value("$(sort $(DATA))"), "later/a later/b")
+        original.deferred_execution = True
+        original.unproven_scoped_names = mode.scoped_names()
+        original.scope_mode = mode
+        for kind in ("recipe", "obligation"):
+            with self.subTest(kind=kind):
+                with mode.using_scope(graph_probe._ScopeContext("one.o", "one.o", kind)):
+                    with self.assertRaisesRegex(MakeProbeError, "unproven target/private"):
+                        mode.exact_reference("FROZEN")
+        self.inert(mode, original)
+
+    def test_shared_condition_and_selector_consumers_keep_taken_and_untaken_states(self):
+        mode, original = self.mode()
+        units = self.parse(mode, (
+            "CHOICE := $(sort yes yes)\nifeq ($(CHOICE),yes)\n"
+            "$(sort b.o a.o b.o): FLAGS := $(sort z a z)\nelse\n"
+            "BAD := $(shell not-run)\nendif\n"
+        ))
+        bad, = [unit for unit in units if unit.text.startswith("BAD :=")]
+        self.assertIs(bad.active, False)
+        for target, value in (("a.o", "a z"), ("b.o", "a z"), ("other.o", "")):
+            with mode.using_scope(graph_probe._ScopeContext(target, target, "assignment")):
+                self.assertEqual(mode.exact_reference("FLAGS"), value)
+        self.assertTrue(mode.original_namespace_valid)
+        self.inert(mode, original)
+
+    def test_shared_template_parameters_use_frozen_original_words_without_terminal_queries(self):
+        mode, original = self.mode()
+        expression = "$(foreach item,$(WORDS),$(eval $(call RULE,$(item))))"
+        self.parse(mode, (
+            "DATA := beta alpha beta\nWORDS := $(sort $(DATA))\nDATA := changed\n"
+            "define RULE\nout/$(1): src/$(1)\nendef\n" + expression + "\n"
+        ))
+        template = mode.template_mode
+        with self.assertRaisesRegex(MakeProbeError, "omitted"):
+            template.require_complete()
+        call, = template.calls
+        captured = template.original_call(call.site, expression)
+        self.assertEqual(tuple(unit.source_rule.targets for unit in captured.units),
+                         (("out/alpha",), ("out/beta",)))
+        self.assertEqual(tuple(unit.source_rule.prerequisites for unit in captured.units),
+                         (("src/alpha",), ("src/beta",)))
+        template.require_complete()
+        self.inert(mode, original)
+
+    def test_shared_include_data_does_not_grant_wildcard_or_source_authority(self):
+        mode, original = self.mode(namespace=("a.mk", "b.mk"))
+        self.parse(mode, "DATA := b.mk a.mk b.mk\nFROZEN := $(sort $(DATA))\n"
+                         "CURRENT = $(sort $(DATA))\nDATA := later.mk\n")
+        for expression, expected in (
+            ("$(sort b.mk a.mk b.mk)", ["a.mk", "b.mk"]),
+            ("$(FROZEN)", ["a.mk", "b.mk"]), ("$(CURRENT)", ["later.mk"]),
+            ("$(sort )", []),
+        ):
+            self.assertEqual(graph_probe._include_names("-include " + expression, mode), expected)
+        self.assertIsNone(graph_probe._include_names("-include $(wildcard $(sort b.mk a.mk))", mode))
+        mode.original_wildcard = original.wildcard
+        with self.assertRaisesRegex(MakeProbeError, "unissued source proof"):
+            graph_probe._include_names("-include $(wildcard $(sort b.mk a.mk))", mode)
+        sources = {"Makefile": b"include $(sort b.mk a.mk b.mk)\nall: ;\n",
+                   "a.mk": b"A := original\n", "b.mk": b"B := original\n"}
+        stream = graph_probe._source_units(
+            sources, budget=mode.budget, original_input=original.input,
+            template_mode=original.template_mode(),
+            original_include_value=original.template_mode().text,
+            original_execution=original.record_execution,
+        )
+        self.assertEqual(stream.read_sources, ("Makefile", "a.mk", "b.mk"))
+        self.assertIsNone(stream.mode_state)
+        with self.assertRaisesRegex(MakeProbeError, "unproven original include"):
+            graph_probe._source_units(
+                {"Makefile": b"-include $(sort missing.mk missing.mk)\nall: ;\n"},
+                budget=mode.budget, original_input=original.input,
+                template_mode=original.template_mode(),
+                original_include_value=original.template_mode().text,
+            )
+        self.inert(mode, original)
+
+    def test_actual_modern_inner_expression_is_generic_data_not_include_permission(self):
+        mode, original = self.mode(inputs={
+            "MODERN_COHORT_DEPS": "out/z.d out/a.d out/z.d",
+            "MODERN_ALL_DEPS": "out/c.d out/a.d", "MODERN_FE6SIO_OBJ": "out/fe6sio.o",
+        }, namespace=("out/a.d", "out/fe6sio.d"))
+        expression = ("$(sort $(MODERN_COHORT_DEPS) $(MODERN_ALL_DEPS) "
+                      "$(MODERN_FE6SIO_OBJ:.o=.d))")
+        self.assertEqual(mode.template_mode.text(mode, expression),
+                         "out/a.d out/c.d out/fe6sio.d out/z.d")
+        self.assertIsNone(graph_probe._include_names("-include $(wildcard " + expression + ")", mode))
+        self.inert(mode, original)
+
+    def test_unknown_cyclic_bad_arity_and_other_operations_remain_unknown(self):
+        mode, original = self.mode()
+        self.parse(mode, "A = $(B)\nB = $(A)\n")
+        for expression in (
+            "$(sort a,b)", "$(sort $(A))", "$(sort $(word 1,a b))",
+            "$(addsuffix .d,a b)", "$(word 1,a b)", "$(if yes,a,b)",
+            "$(Sort b a)", "$(sort\t$(addsuffix .d,a b))",
+            "$(sort $@)", "$(sort $(MAKEFILE_LIST))", "$(sort $(shell not-run))",
+            "$$(sort a b)", "$(sort a", "${sort a)",
+        ):
+            with self.subTest(expression=expression):
+                self.assertIsNone(mode.exact_initializer_value(expression))
+        for name in graph_probe.INVOCATION_CONTROL_READS | graph_probe.SOURCE_HISTORY_CONTROLS | {"MAKELEVEL"}:
+            self.assertIsNone(mode.exact_initializer_value("$(sort $(" + name + "))"))
+        self.inert(mode, original)
+
+    def test_sort_cannot_promote_unproved_original_input_flags_origins_or_controls(self):
+        for flags in ((4 << 26) | 1 | 2, (3 << 26) | 1):
+            with self.subTest(flags=flags):
+                mode, original = self.mode(inputs={"DATA": "b a"})
+                original.inputs["DATA"].flags = flags
+                with self.assertRaisesRegex(MakeProbeError, "special/private/dynamic original input"):
+                    mode.exact_initializer_value("$(sort $(DATA))")
+                self.inert(mode, original)
+        for name in graph_probe.INVOCATION_CONTROL_READS | graph_probe.SOURCE_HISTORY_CONTROLS | {"MAKELEVEL"}:
+            with self.subTest(name=name):
+                mode, original = self.mode(inputs={name: "b a"})
+                self.assertIsNone(mode.exact_initializer_value("$(sort $(" + name + "))"))
+                self.inert(mode, original)
+
+    def test_unsupported_encoding_escaping_and_dollar_data_are_not_guessed(self):
+        for text in ("a\\ b", "a\\b", "a,b", "a:b", "a|b", "a*b", "a?b",
+                     "\x00", "\x01", "\x7f", "\u00e9", "a\u00a0b", "\udcff"):
+            with self.subTest(text=ascii(text)):
+                mode, original = self.mode()
+                self.assertIsNone(mode.exact_initializer_value("$(sort " + text + ")"))
+                self.assertIsNone(mode.template_initializer("$(sort " + text + ")"))
+                self.inert(mode, original)
+        mode, original = self.mode()
+        self.parse(mode, "DATA := $$(eval .POSIX:)\n")
+        self.assertFalse(mode.effectful("$(DATA)"))
+        self.assertIsNone(mode.exact_initializer_value("$(sort $(DATA))"))
+        self.assertTrue(mode.original_namespace_valid)
+        self.inert(mode, original)
+
+    def test_effects_unknown_conditions_and_scoped_unknown_shadows_stay_closed(self):
+        for source in (
+            "DATA := $(sort $(eval .POSIX:))\n",
+            "CHOICE := $(sort $(word 1,yes))\nifeq ($(CHOICE),yes)\nu.o: X := local\nendif\n",
+        ):
+            mode, original = self.mode()
+            if "ifeq" in source:
+                with self.assertRaisesRegex(MakeProbeError, "scoped assignment"):
+                    self.parse(mode, source)
+            else:
+                self.parse(mode, source)
+                self.assertFalse(mode.original_namespace_valid)
+                self.assertIsNone(mode.exact_reference("DATA"))
+            self.inert(mode, original)
+        mode, original = self.mode()
+        self.parse(mode, "DATA := $(sort z a)\nu.o: DATA = $(word 1,unknown)\n")
+        with mode.using_scope(graph_probe._ScopeContext("u.o", "u.o", "assignment")):
+            self.assertIsNone(mode.exact_initializer_value("$(sort $(DATA))"))
+        self.assertEqual(mode.exact_reference("DATA"), "a z")
+        self.inert(mode, original)
+
+    def test_namespace_hold_is_preserved_without_fabricated_success(self):
+        mode, original = self.mode()
+        def unavailable(patterns):
+            raise graph_probe._NamespaceUnavailable("unissued directory data")
+        mode.original_wildcard = unavailable
+        self.assertIsNone(mode.exact_initializer_value("$(sort $(wildcard out/*.d))"))
+        self.assertEqual(mode.namespace_holds, {"unissued directory data"})
+        self.assertTrue(mode.original_namespace_valid)
+        self.inert(mode, original)
+
+    def test_exact_and_over_word_bounds_count_duplicates_before_deduplication(self):
+        for value, limit, accepted in (("b a", 2, True), ("b a b", 3, True),
+                                        ("b a b", 2, False), ("a a a", 2, False)):
+            with self.subTest(value=value, limit=limit):
+                mode, original = self.mode(budget=ProbeBudget(Limits(seconds=10, entries=limit)))
+                clock = mode.budget.started, mode.budget.deadline
+                if accepted:
+                    self.assertEqual(mode.exact_initializer_value("$(sort " + value + ")"), "a b")
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "sort words.*entry bound"):
+                        mode.exact_initializer_value("$(sort " + value + ")")
+                    self.assertTrue(mode.budget.failed)
+                    with self.assertRaises(MakeProbeError):
+                        mode.exact_initializer_value("$(sort )")
+                self.assertEqual((mode.budget.started, mode.budget.deadline), clock)
+                self.inert(mode, original)
+
+    def test_exact_cache_and_total_capacity_use_existing_cumulative_accounting(self):
+        expression = "$(sort z a z b)"
+        measured, _ = self.mode()
+        self.assertEqual(measured.exact_initializer_value(expression), "a b z")
+        needed = dict(measured.budget.bytes)
+        for category in ("cache", "total"):
+            for prior, offset in ((0, 0), (7, 0), (7, -1)):
+                with self.subTest(category=category, prior=prior, offset=offset):
+                    mode, original = self.mode()
+                    budget = mode.budget
+                    budget.charge("cache", prior)
+                    delta = needed["cache"] if category == "cache" else sum(needed.values())
+                    budget.limits = replace(budget.limits, **{category + "_bytes": prior + delta + offset})
+                    limits, clock = budget.limits, (budget.started, budget.deadline)
+                    if offset == 0:
+                        self.assertEqual(mode.exact_initializer_value(expression), "a b z")
+                        spent = budget.bytes["cache"] if category == "cache" else sum(budget.bytes.values())
+                        self.assertEqual(spent, prior + delta)
+                    else:
+                        with self.assertRaises(MakeProbeError):
+                            mode.exact_initializer_value(expression)
+                        self.assertTrue(budget.failed)
+                    self.assertIs(budget.limits, limits)
+                    self.assertEqual((budget.started, budget.deadline), clock)
+                    self.inert(mode, original)
+
+    def test_word_set_sort_and_output_storage_is_admitted_before_allocation(self):
+        value = " ".join("token" + str(index) for index in range(80))
+        measured = ProbeBudget(Limits(seconds=10))
+        expected = graph_probe._original_sort_words(value, measured)
+        needed = measured.bytes["cache"]
+        for offset in (0, -1):
+            with self.subTest(offset=offset):
+                budget = ProbeBudget(Limits(seconds=10, cache_bytes=needed + offset))
+                allocations = []
+                class Words(set):
+                    def __init__(self):
+                        allocations.append(("set", budget.bytes.get("cache", 0)))
+                        super().__init__()
+                def ordering(words):
+                    allocations.append(("sort", budget.bytes.get("cache", 0)))
+                    ordered = sorted(words)
+                    retained = (sys.getsizeof(words) + sys.getsizeof(ordered)
+                                + sum(sys.getsizeof(word) for word in words))
+                    join_peak = (sys.getsizeof(" ".join(ordered)) + 32 * len(ordered)
+                                 + 2 * max(map(len, ordered)))
+                    self.assertLessEqual(retained + join_peak, budget.bytes["cache"])
+                    return ordered
+                with patch.object(graph_probe, "set", Words, create=True), \
+                     patch.object(graph_probe, "sorted", ordering, create=True):
+                    if offset == 0:
+                        self.assertEqual(graph_probe._original_sort_words(value, budget), expected)
+                        self.assertEqual(allocations, [("set", needed), ("sort", needed)])
+                    else:
+                        with self.assertRaises(MakeProbeError):
+                            graph_probe._original_sort_words(value, budget)
+                        self.assertEqual(allocations, [])
+                self.assertEqual((budget.runs, budget.states), (0, 0))
+
+    def test_budgetless_words_still_obey_original_default_entry_and_byte_bounds(self):
+        self.assertEqual(graph_probe._original_sort_words("b a b", None), ["a", "b"])
+        with self.assertRaisesRegex(MakeProbeError, "entry bound"):
+            graph_probe._original_sort_words("a " * (Limits().entries + 1), None)
+        self.assertIsNone(graph_probe._original_sort_words("a\u00a0b", None))
+        for category in ("cache", "total"):
+            budget = ProbeBudget(Limits(seconds=10, **{category + "_bytes": 64}))
+            with self.subTest(category=category), self.assertRaisesRegex(MakeProbeError, "byte bound"):
+                graph_probe._original_sort_words("a" * 65, budget)
+            self.assertTrue(budget.failed)
+            self.assertFalse(budget.bytes)
+
+    def test_deadline_closed_and_mid_scan_expiry_do_not_allocate_or_refund(self):
+        for closed in (False, True):
+            mode, original = self.mode()
+            if closed:
+                mode.budget.closed = True
+            else:
+                mode.budget.started -= mode.budget.limits.seconds + 1
+            with self.subTest(closed=closed), self.assertRaises(MakeProbeError):
+                mode.exact_initializer_value("$(sort b a)")
+            self.assertFalse(mode.budget.bytes)
+            self.inert(mode, original)
+        budget = ProbeBudget(Limits(seconds=10))
+        remaining, checkpoints = budget.remaining, []
+        def expire():
+            checkpoints.append(None)
+            if len(checkpoints) == 32:
+                budget.started -= budget.limits.seconds + 1
+            return remaining()
+        with patch.object(budget, "remaining", expire), \
+             patch.object(graph_probe, "set", side_effect=AssertionError("unadmitted allocation"), create=True):
+            with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
+                graph_probe._original_sort_words("token " * 100, budget)
+        self.assertEqual(len(checkpoints), 32)
+        self.assertTrue(budget.failed)
+        self.assertGreater(budget.bytes["cache"], 0)
+
+    def test_existing_active_and_expression_scanner_depth_bounds_are_not_raised(self):
+        mode, original = self.mode()
+        self.assertEqual(mode.exact_initializer_value("$(sort b a)", active=tuple(range(511))), "a b")
+        self.assertIsNone(mode.exact_initializer_value("$(sort b a)", active=tuple(range(512))))
+        self.inert(mode, original)
+        for depth in (511, 512):
+            with self.subTest(argument_depth=depth):
+                mode, original = self.mode()
+                expression = "$(sort " + "$(" * depth + "X" + ")" * depth + ")"
+                if depth == 511:
+                    self.assertIsNone(mode.exact_initializer_value(expression))
+                    self.assertFalse(mode.budget.failed)
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "reference depth bound"):
+                        mode.exact_initializer_value(expression)
+                    self.assertTrue(mode.budget.failed)
+                self.inert(mode, original)
+
+    def test_stable_duplicate_reads_keep_receipt_identity_and_exact_entry_capacity(self):
+        mode, original = self.mode()
+        self.parse(mode, "DATA := $(sort a a)\nOTHER := b\n")
+        mode.budget.limits = replace(mode.budget.limits, entries=1)
+        with self.assertRaises(MakeProbeError):
+            with mode.reading_values() as state:
+                self.assertEqual(mode.exact_initializer_value("$(sort $(DATA))"), "a")
+                receipt = state.bindings[None, "DATA"]
+                for _ in range(4):
+                    self.assertEqual(mode.exact_initializer_value("$(sort $(DATA))"), "a")
+                    self.assertEqual(state.entries, 1)
+                    self.assertIs(state.bindings[None, "DATA"], receipt)
+                mode.exact_initializer_value("$(sort $(OTHER))")
+        self.assertTrue(mode.budget.failed)
+        self.inert(mode, original)
+
+    def test_repeated_change_restore_conflicts_before_later_operands(self):
+        mode, original = self.mode()
+        self.parse(mode, "DATA := $(sort z a)\nSWITCH := switch\nRESTORE := restore\n")
+        binding, fact, version = (mode.definitions["DATA"], mode.template_values["DATA"],
+                                  mode.binding_versions[None, "DATA"])
+        events = []
+        def change(current, name):
+            if name == "SWITCH" and not events:
+                events.append("changed")
+                current.assign("DATA", ":=", "$(sort y b)")
+            elif name == "RESTORE" and events:
+                events.append("restored")
+                current.definitions["DATA"], current.template_values["DATA"] = binding, fact
+                current.binding_versions[None, "DATA"] = version
+        mode.scope_lookup_guard = change
+        try:
+            with self.assertRaises(MakeProbeError):
+                mode.exact_initializer_value("$(sort $(DATA))|$(SWITCH)|$(sort $(DATA))|$(RESTORE)")
+            self.assertEqual(events, ["changed"])
+        finally:
+            mode.definitions["DATA"], mode.template_values["DATA"] = binding, fact
+            mode.binding_versions[None, "DATA"] = version
+            mode.scope_lookup_guard = original.require_scoped_context
+        self.inert(mode, original)
+
+    def test_sort_admission_reentry_cannot_replace_consumed_original_fact(self):
+        mode, original = self.mode()
+        self.parse(mode, "DATA := $(sort z a)\n")
+        charge, events, states = mode.budget.charge, [], []
+        def admit(category, size):
+            result = charge(category, size)
+            frame = sys._getframe(1)
+            if (not events and frame.f_code is graph_probe._original_sort_words.__code__
+                    and frame.f_locals.get("count") == 2):
+                events.append("changed")
+                states.append(mode._value_reads)
+                current = mode._value_reads
+                mode.assign("DATA", ":=", "b y")
+                with mode.paused_value_read():
+                    self.assertEqual(mode.exact_initializer_value("$(sort $(DATA))"), "b y")
+                self.assertIs(mode._value_reads, current)
+            return result
+        with patch.object(mode.budget, "charge", admit), self.assertRaises(MakeProbeError):
+            mode.exact_initializer_value("$(sort $(DATA))")
+        self.assertEqual(events, ["changed"])
+        self.assertTrue(all(state.owner is None and not state.bindings for state in states))
+        self.inert(mode, original)
+
+    def test_sort_admission_restore_keeps_the_consumed_fact_not_a_later_reentry(self):
+        mode, original = self.mode()
+        self.parse(mode, "DATA := $(sort z a)\n")
+        binding, fact, version = (mode.definitions["DATA"], mode.template_values["DATA"],
+                                  mode.binding_versions[None, "DATA"])
+        charge, events = mode.budget.charge, []
+        def admit(category, size):
+            result = charge(category, size)
+            frame = sys._getframe(1)
+            if (not events and frame.f_code is graph_probe._original_sort_words.__code__
+                    and frame.f_locals.get("count") == 2):
+                events.append("changed")
+                mode.assign("DATA", ":=", "b y")
+                try:
+                    with self.assertRaises(MakeProbeError):
+                        mode.exact_initializer_value("$(sort $(DATA))")
+                finally:
+                    mode.definitions["DATA"], mode.template_values["DATA"] = binding, fact
+                    mode.binding_versions[None, "DATA"] = version
+                    events.append("restored")
+            return result
+        with mode.reading_values() as state:
+            with patch.object(mode.budget, "charge", admit):
+                self.assertEqual(mode.exact_initializer_value("$(sort $(DATA))"), "a z")
+            self.assertIs(state.bindings[None, "DATA"][1], binding)
+            self.assertIs(state.bindings[None, "DATA"][3], fact)
+        self.assertEqual(events, ["changed", "restored"])
+        self.inert(mode, original)
+
+    def test_final_sort_checkpoint_precedes_consumed_record_comparisons(self):
+        mode, _ = self.mode()
+        self.parse(mode, "DATA := a z\n")
+        remaining, checkpoints = mode.budget.remaining, []
+        def count():
+            checkpoints.append(None)
+            return remaining()
+        with patch.object(mode.budget, "remaining", count):
+            self.assertEqual(mode.exact_initializer_value("$(sort $(DATA))"), "a z")
+        for change in ("binding", "fact", "namespace", "scope", "limits", "clock"):
+            with self.subTest(change=change):
+                mode, original = self.mode()
+                self.parse(mode, "DATA := a z\n")
+                remaining, calls = mode.budget.remaining, []
+                def mutate():
+                    result = remaining()
+                    calls.append(None)
+                    if len(calls) == len(checkpoints):
+                        if change == "binding":
+                            mode.definitions["DATA"] = frozenset((graph_probe._ModeBinding("file", "simple", "late"),))
+                        elif change == "fact":
+                            mode.template_values["DATA"] = mode.version, ("exact", "late")
+                        elif change == "namespace":
+                            mode.namespace = frozenset({"changed"})
+                        elif change == "scope":
+                            mode.scope_context = graph_probe._ScopeContext("u.o", "u.o", "assignment")
+                        elif change == "limits":
+                            mode.budget.limits = replace(mode.budget.limits)
+                        else:
+                            mode.budget.started += 1
+                    return result
+                try:
+                    with patch.object(mode.budget, "remaining", mutate), self.assertRaises(MakeProbeError):
+                        mode.exact_initializer_value("$(sort $(DATA))")
+                    self.assertEqual(len(calls), len(checkpoints))
+                finally:
+                    mode.scope_context = None
+                self.inert(mode, original)
+
+    def test_sort_failure_and_cancellation_retire_only_owned_lifetimes(self):
+        class Cancelled(BaseException):
+            pass
+        for failure in (ValueError("word allocation"), Cancelled("word allocation")):
+            with self.subTest(failure=type(failure).__name__):
+                mode, original = self.mode()
+                states = []
+                with mode.reading_values() as outer:
+                    spent = dict(mode.budget.bytes)
+                    with patch.object(graph_probe, "sorted", side_effect=failure, create=True):
+                        with self.assertRaises(type(failure)) as error:
+                            mode.exact_initializer_value("$(sort b a)")
+                    self.assertIs(error.exception, failure)
+                    self.assertIs(mode._value_reads, outer)
+                    states.append(outer)
+                    self.assertGreater(mode.budget.bytes["cache"], spent["cache"])
+                self.assertTrue(all(state.owner is None and not state.bindings for state in states))
+                self.inert(mode, original)
+
+
 class OriginalMixedFactsApiTests(unittest.TestCase):
     """Original finite/snapshot composition with explicit modeled source inputs."""
 
@@ -1170,7 +1745,7 @@ class OriginalMixedFactsApiTests(unittest.TestCase):
             with self.subTest(change=change):
                 mode = self.mixed()
                 if change == "unknown":
-                    mode.assign("DATA", ":=", "$(sort unproved)")
+                    mode.assign("DATA", ":=", "$(sort $(word 1,unproved))")
                 elif change == "header-bound":
                     mode.namespace = frozenset({"src", "src/data.o"})
                     mode.assign("DATA", ":=", "$(wildcard src/*.o)")
@@ -1194,7 +1769,7 @@ class OriginalMixedFactsApiTests(unittest.TestCase):
                     ),))
                 elif change == "replaced":
                     mode.assign("DATA", "=", "$(UNKNOWN)")
-                    mode.assign("UNKNOWN", ":=", "$(sort unproved)")
+                    mode.assign("UNKNOWN", ":=", "$(sort $(word 1,unproved))")
                 else:
                     mode.template_values.pop("DATA")
                 self.assertIsNone(mode.literal_values("$(OBJECTS) $(DATA)"))
@@ -1346,7 +1921,7 @@ class OriginalMixedFactsApiTests(unittest.TestCase):
                 self.assertEqual({row.value for row in mode.definitions["DATA"]}, {None})
                 self.assertEqual(mode.literal_values("$(OBJECTS) $(DATA)"),
                                  {value + " out/data.o" for value in objects})
-                mode.assign("DATA", ":=", "$(sort unproved)", scope="out/one")
+                mode.assign("DATA", ":=", "$(sort $(word 1,unproved))", scope="out/one")
                 with mode.using_scope(context):
                     self.assertIsNone(mode.literal_values("$(OBJECTS) $(DATA)"))
         mode = self.mixed()
@@ -2215,7 +2790,7 @@ class OriginalCapturedConsumerApiTests(unittest.TestCase):
             for action in ("stable", "changed", "restored"):
                 with self.subTest(route=route, action=action):
                     mode = self.mode()
-                    mode.assign("DATA", ":=", "$(sort unproved)")
+                    mode.assign("DATA", ":=", "$(sort $(word 1,unproved))")
                     self.assertNotIn("DATA", mode.template_values)
                     original_remaining, events = mode.budget.remaining, []
                     def remaining():
@@ -2260,7 +2835,7 @@ class OriginalCapturedConsumerApiTests(unittest.TestCase):
             for action in ("stable", "restored"):
                 with self.subTest(owner=owner, action=action):
                     mode = self.mode()
-                    mode.assign("DATA", ":=", "$(sort unproved)")
+                    mode.assign("DATA", ":=", "$(sort $(word 1,unproved))")
                     proof, events = self.proof(mode, owner), []
                     def lookup(current, name):
                         fallback = any(
@@ -2388,7 +2963,7 @@ class OriginalCapturedConsumerApiTests(unittest.TestCase):
                 mode.assign("DATA", ":=", global_value)
                 tuple(make_source_units("out/one: DATA := literal\n",
                                         mode=mode, source_path="model.mk"))
-                mode.assign("DATA", ":=", "$(sort unproved)", scope="out/one")
+                mode.assign("DATA", ":=", "$(sort $(word 1,unproved))", scope="out/one")
                 with mode.using_scope(graph_probe._ScopeContext("out/one", "out/one", "recipe")):
                     self.assertFalse(mode.template_header_reference("DATA"))
                     for owner in (graph_probe._TemplateModeProof, phase_census.SourceTemplates):

@@ -1858,8 +1858,8 @@ new snapshot semantics. Bounds cannot supply exact template parameters,
 targets, comparison operands, recipe values or native-value claims.
 
 The separate exact initializer path supports bounded original `notdir`,
-`addprefix` and substitution-reference chains, including nested literal and
-reference operands. It snapshots the actual simple-assignment inputs and
+`addprefix`, `sort` and substitution-reference chains, including nested literal
+and reference operands. It snapshots the actual simple-assignment inputs and
 retains an exact result without querying native values to construct it.
 Existing captured `patsubst` relations share their text semantics with that
 path; a native value remains only a claim checked against original operands.
@@ -1869,6 +1869,44 @@ Unsupported escaping, extra percent operators and unknown/effectful/staged
 leaves still decline. Supported pure recursive bodies are resolved at use,
 not frozen at definition. This remains a bounded exact algebra, not a general
 Make interpreter.
+
+`sort` uses that same original-data path and its assignment-time fact
+admission, not an include-only resolver. Exact known words are de-duplicated,
+ordered and joined with single spaces; an empty input yields an exact empty
+string. The reviewed word alphabet is ASCII letters, digits and `_./+%-`,
+with all six ASCII whitespace separators (space, tab, CR, LF, VT and FF).
+Within that alphabet Python's ordinal string comparison is exactly unsigned
+ASCII byte comparison in GNU Make's C locale; no locale-dependent or general
+Unicode ordering is assumed. Other encodings, escaping, punctuation outside
+that alphabet, malformed calls and unknown operands remain unknown.
+This is not full GNU Make word-function or filename-escaping support.
+
+Simple values freeze the words known at their original assignment;
+recursive bodies and scoped RHS reads use their current original context.
+The existing `SourceTemplates.text` route supplies conditions, selectors,
+RHSs, rule-template parameters and include data without changing their
+signatures. `addsuffix`, `word`, `if` and other unsupported exact operators
+do not become supported merely because they are pure. A genuinely unresolved
+operand, not literal `sort` itself, is now the negative-control input for
+those existing uncertainty/provenance tests.
+
+Before word slices, set retention or sorting, the constructor admits scan
+work and conservative storage for every input occurrence, including duplicates,
+set growth, sorting/merge work, join references, output and encoding scratch.
+It uses the existing entry/cache/total limits, the caller's stricter policy
+and original deadline; expression depth and read-receipt limits remain
+separate and unchanged. Even budgetless word construction retains the
+original default entry/byte bounds. Scans and checkpoints precede the outer
+read lifetime's final callback-free comparisons. Nothing resets or refunds a
+budget, substitutes a newer fact, or creates a whole-mode snapshot.
+
+Exact words are data, not original wildcard, include, recipe or source-phase
+authority. The nested modern dependency wildcard still requires its genuine
+source-time namespace proof. Predicted include data never permits an ignored
+failed open, unknown condition, missing visit, stale view or unproved remake.
+See the [bounded original-sort procedure](test-cases/workflow-governance.md#bounded-original-sort-data-correction).
+The source-only correction neither attributes the exclusive native failure
+nor qualifies a full report or selects shipping resource policy.
 
 An applicable global simple `+=` preserves a proven original value even when
 its preceding initializer stored that value only as an exact template fact.

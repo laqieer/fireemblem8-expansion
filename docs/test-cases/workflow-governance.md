@@ -4342,6 +4342,106 @@ review and native/report/verifier/resource/H1/CI/master/delivery gates remain
 coordinator-owned and open. Revert or fix forward without widening authority
 if separately authorized qualification exposes a regression.
 
+### Bounded original-sort data correction
+
+This extends **TC-WORKFLOW-GATE-OWNERSHIP-001** under
+[scope5950419012](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5950419012).
+At exact `2de8a23cd6d8df1250c2ff826d223ee038c626c6`, pure `sort` did not
+supply exact original words, either directly or through a stored simple
+initializer. The modern dependency include explicitly needs this constructor.
+That is a confirmed bounded data-precision defect, not the exclusive native
+cause of failed run36985229259: its reported source/context authority is
+false, and its actual dependency words and include bindings remain unknown.
+
+Use a clean exact source and the existing host prerequisites. The focused
+class is
+`scripts.validation_ownership.tests.test_make_probe.OriginalSortWordsApiTests`.
+For local source-only evidence, inspect and AST-load its actual executing
+bodies under `/usr/bin/python3 -I -S -B`, with candidate imports, filesystem,
+process/network, native and budget run/read/close effects trapped. Do not
+discover the native-bearing modules or install successful native, recipe,
+wildcard or source resolvers. All modeled inputs, source pools, namespace
+masks and typed contexts are explicitly **unissued and authority-unqualified**.
+
+1. Preserve the exact parent and its direct, simple, recursive and scoped
+   `sort` unknowns, plus its stored-selector and immediate-RHS refusals.
+   Require `$(sort b a b)` to produce `a b` in the corrected direct route.
+   Freeze `FROZEN := $(sort $(DATA))` while DATA has early values, then
+   replace DATA: FROZEN and its simple alias retain the early words;
+   `CURRENT = $(sort $(DATA))` reads the later original words. Scoped
+   immediate RHSs freeze their own original context; recursive scoped reads
+   use their actual shadow, never an unrelated global fact.
+2. Exercise empty input, duplicates, prefixes, mixed case, supported
+   punctuation and all six ASCII whitespace separators. Require one-space
+   output with de-duplication and C-locale byte order. Compare a fixed
+   independent byte-order vector, not a second call to the production sort.
+   Nested sorts and existing addprefix/notdir/filter/substitution composition
+   must agree across permutations, braces, renamed bindings and independent
+   declaration order. Unicode, surrogate, NUL/control, escaping and words
+   outside ASCII letters/digits/`_./+%-` remain unsupported; do not guess
+   encoding or claim full GNU Make word/filename support.
+3. Feed the same route through `SourceTemplates.text`, original conditions,
+   scoped selectors/RHSs, template parameters and include data. Inspect taken
+   and untaken source units and actual template target/prerequisite tuples.
+   Consume every original template call; an omitted call must still refuse.
+   The finite modern inner expression yields
+   `out/a.d out/c.d out/fe6sio.d out/z.d`, but its nested wildcard still
+   requires genuine source-time namespace authority. Literal include data can
+   predict sorted traversal in an unissued source pool; it is not a native
+   visit, successful ignored open or issued phase. Unknown/missing optional
+   sources and unissued wildcard proofs still refuse.
+4. Preserve unknown/cyclic operands, unsupported arity/spelling, automatic
+   RHSs, input flags/origins, all invocation/history/level controls, scoped
+   shadows, effects and namespace holds. `addsuffix`, `word`, `if` and other
+   unsupported exact operations remain unknown. Existing tests that formerly
+   used literal sort as an uncertainty sentinel now use sort over an
+   unsupported word operand; retain their original uncertainty/provenance
+   assertions and add the independent exact-sort positives above. This is a
+   necessary precision correction, not a waiver of fail-closed admission.
+5. Check exact/one-over input-word and receipt capacity separately, including
+   duplicates before de-duplication and stable repeated reads. Measure actual
+   cache/total charges, then require exact remaining capacity to succeed and
+   one byte less to fail without resetting/refunding or changing the clock.
+   Observe admission before word/set/sorting allocation and bound actual
+   retained storage plus output/encoding/join work. Test default budgetless
+   word bounds, stricter policies, closed/deadline and mid-scan expiry,
+   original depth, failed-budget reuse and cancellation.
+6. Inject binding/fact/context changes at sorting admission, during reentry,
+   at later operands and at the last checkpoint. Repeated change/restore
+   cannot publish inconsistent data; a restored original receipt can only
+   supply its actually consumed original words. Preserve the caller's
+   lifetime/scope and retire only owned state. Restore the exact-parent
+   initializer independently: direct sort stays exact while stored simple
+   data loses precision. Restore the constructor independently and together:
+   direct and stored positives must recover the defect. A private-local
+   rename remains green.
+
+Retain the coupled conditional-append, mixed/provenance/repeated/captured
+receipt, structural-recognition and permitted grammar controls, together with
+the existing finite include/source/input/epoch/generated/remake guard families.
+Do not rerun successful synthetic native/wildcard collaborators or broader
+native/full-repository suites as local substitutes. Reset only owned memory
+models, never native budgets, source views or shared files.
+
+The smaller design extends only the existing original-data projector and
+shared assignment-time fact admission. There is no per-modern-name exception,
+include-only resolver, whole interpreter, additional word operation, source
+ledger, registry, service, permission prerequisite or shipping-policy change.
+Dependencies are the existing expression/reference, source-fact, receipt and
+budget APIs; other feature/profile conflicts are none. Public signatures,
+source/include traversal, proof liveness/journals/remakes and all final gates
+remain unchanged. ROM/RAM, saves, locales, generated game data and
+modern/archival build behavior are unchanged.
+
+All thirteen native diagnostic allocations remain spent; this procedure
+allocates none. Source-only precision and storage observations are not a
+complete report, physical/RSS sizing or acceptance. Fresh exact-head read-only
+source review and native/full-report/verifier/resource/H1, candidate/master,
+closure, remote-completion and cleanup requirements remain coordinator-owned
+and open. Revert or fix forward through that owner if separately authorized
+qualification finds a regression; do not grow the operator universe or relax
+authority to pursue the next native barrier.
+
 ### Native ownership, stderr effects and cumulative accounting
 
 These are additional deterministic controls for
