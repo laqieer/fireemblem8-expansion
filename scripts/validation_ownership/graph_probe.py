@@ -301,6 +301,9 @@ class _ValueReadState:
             raise MakeProbeError("original binding conflicts with its consumed receipt")
         return fact
 
+    def inherited(self, name, scope):
+        return self.bindings[scope, name][4]
+
     def declarations(self, mode):
         if self.selection is None:
             original = mode.scope_declarations
@@ -451,17 +454,10 @@ class _MakeSourceMode:
                         )
                 if (selected, name) in self.declared_scopes() and name in self.target_definitions.get(selected, {}):
                     values = self.raw_binding(name, selected)
-                    scoped_values = self.target_definitions[selected][name]
-                    scoped_version = self.binding_versions.get((selected, name), 0)
                     bases = (
-                        self.raw_binding(name) if (selected, name) in self.inherited_appends else ()
+                        self.raw_binding(name) if self._value_reads.inherited(name, selected) else ()
                     )
                     fact = self.original_simple_fact(name, bases) if bases else None
-                    if (
-                        self.target_definitions.get(selected, {}).get(name) is not scoped_values
-                        or self.binding_versions.get((selected, name), 0) != scoped_version
-                    ):
-                        raise MakeProbeError("original inherited binding changed during value capture")
                     bases = tuple(
                         _ModeBinding(base.origin, base.flavor, None if fact is None else fact[1])
                         if base.flavor == "simple" and base.value is None else base
@@ -516,7 +512,7 @@ class _MakeSourceMode:
         self.retain_binding(name, values, scope)
         if self._value_reads is not None:
             definitions = self.definitions if scope is None else self.target_definitions[scope]
-            self._value_reads.binding(self, name, scope, definitions, definitions[name], self.version)
+            self._value_reads.binding(self, name, scope, definitions, values, self.version)
         return values
 
     def read_scope_declarations(self):
@@ -1244,6 +1240,10 @@ class _MakeSourceMode:
             return None
 
     def template_header_reference(self, name, active=()):
+        with self.reading_values():
+            return self._template_header_reference(name, active)
+
+    def _template_header_reference(self, name, active=()):
         self.checkpoint()
         if not self.original_namespace_valid or name in active or len(active) >= 512:
             return False
@@ -1264,15 +1264,17 @@ class _MakeSourceMode:
             forwarded = NAME_PART.fullmatch(binding.value)
             if forwarded:
                 return self.template_header_reference(forwarded[1] or forwarded[2], (*active, name))
-        record = self.template_values.get(name)
-        if binding.flavor == "simple" and record is not None and record[0] == self.version and record[1][0] == "exact":
-            return _template_header_data(record[1][1])
-        return bool(
-            binding.flavor == "simple" and record is not None and record[0] == self.version
-            and record[1][0] == "header-bound"
-        )
+        fact = self.original_simple_fact(name, bindings)
+        if fact is None:
+            return False
+        kind, value = fact[0]
+        return _template_header_data(value) if kind == "exact" else kind == "header-bound"
 
     def template_header_composition(self, expression):
+        with self.reading_values():
+            return self._template_header_composition(expression)
+
+    def _template_header_composition(self, expression):
         self.checkpoint()
         if not self.original_namespace_valid:
             return None
@@ -2917,6 +2919,10 @@ class _TemplateModeProof:
         return self.records[name]
 
     def value(self, mode, name, *, active=()):
+        with mode.reading_values():
+            return self._value(mode, name, active=active)
+
+    def _value(self, mode, name, *, active=()):
         mode.checkpoint()
         if not mode.original_namespace_valid or name in active or len(active) >= 512:
             return None
@@ -2933,10 +2939,10 @@ class _TemplateModeProof:
             return literal
         if binding.flavor == "recursive" and binding.value is not None:
             return mode.exact_reference(name, active)
-        record = mode.template_values.get(name)
-        if binding.flavor != "simple" or record is None or record[0] != mode.version:
+        fact = mode.original_simple_fact(name, bindings)
+        if fact is None:
             return None
-        kind, arguments = record[1]
+        kind, arguments = fact[0]
         if kind == "exact":
             return arguments
         if kind != "patsubst":
@@ -2949,6 +2955,10 @@ class _TemplateModeProof:
         return None
 
     def header_data(self, mode, name, active=()):
+        with mode.reading_values():
+            return self._header_data(mode, name, active)
+
+    def _header_data(self, mode, name, active=()):
         mode.checkpoint()
         if name in active or len(active) >= 512:
             return False
@@ -2963,13 +2973,14 @@ class _TemplateModeProof:
             forwarded = NAME_PART.fullmatch(binding.value)
             if forwarded:
                 return self.header_data(mode, forwarded[1] or forwarded[2], (*active, name))
-        record = mode.template_values.get(name)
-        return bool(
-            binding.flavor == "simple" and record is not None and record[0] == mode.version
-            and record[1][0] == "header-bound"
-        )
+        fact = mode.original_simple_fact(name, bindings)
+        return fact is not None and fact[0][0] == "header-bound"
 
     def text(self, mode, expression):
+        with mode.reading_values():
+            return self._text(mode, expression)
+
+    def _text(self, mode, expression):
         result = expression
         for match in reversed(list(NAME_PART.finditer(expression))):
             value = self.value(mode, match[1] or match[2])
@@ -2982,6 +2993,10 @@ class _TemplateModeProof:
         pass
 
     def __call__(self, mode, expression):
+        with mode.reading_values():
+            return self._call(mode, expression)
+
+    def _call(self, mode, expression):
         self.session.budget.remaining()
         if mode.posix is None or not mode.original_namespace_valid:
             return False

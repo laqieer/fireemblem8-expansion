@@ -1934,6 +1934,25 @@ from the separately required original native source/job-context check.
 The same procedure includes the exact1d20 repeated-consumption restoration
 witnesses; publishing a source checkpoint does not establish acceptance.
 
+Scoped composition consumes the inheritance decision retained with its actual
+binding, and a missing raw lookup records the object it returns rather than a
+later map entry. Header/value fallbacks reuse `original_simple_fact`, including
+its original binding, scope, origin, version and snapshot eligibility. They do
+not admit a live global fact for an unproved scoped shadow. Complete header,
+text and template adapter operations share one existing read lifetime across
+all operands; retiring a receipt after each operand cannot qualify the whole
+composition. Writer, setup, diagnostic and final-comparison reads remain
+distinct from value admission.
+
+This reuses the existing bounded consumed subset instead of copying every
+mode map at entry. Whole-mode freezing would change valid first-use updates,
+lazy inputs and unread/shadowed data behavior, while a final-only whole-mode
+comparison would still miss restored conflicting consumption. The existing
+[captured-consumer controls](test-cases/workflow-governance.md#mixed-fact-transitive-and-scoped-provenance-follow-up)
+preserve exact `ea8054d3` as the negative control for seven unsafe publications
+across twenty actual-API subtests. Native/report/verifier qualification remains
+separate from these effect-trapped models.
+
 All represented combinations remain subject to the existing 512-context and
 depth bounds. Scanning, assembled text and retained alternatives spend the
 same cache/total budget before retention. Duplicate outcomes do not consume

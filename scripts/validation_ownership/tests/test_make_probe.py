@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 import secrets
 import shutil
+import sys
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -1817,6 +1818,271 @@ class OriginalRepeatedReceiptApiTests(unittest.TestCase):
                 self.assertEqual(mode.literal_values("$(ALIAS)|$(SEPARATOR)|$(" + name + ")"),
                                  {"out/data.o|same|out/data.o"})
                 self.assertIsNone(mode._value_reads)
+
+
+class OriginalCapturedConsumerApiTests(unittest.TestCase):
+    """Consume the actual retained components across a complete value operation."""
+
+    mode = OriginalConditionalAppendApiTests.mode
+
+    @staticmethod
+    def frames():
+        frame = sys._getframe(1)
+        while frame is not None:
+            yield frame
+            frame = frame.f_back
+
+    def proof(self, mode, owner=graph_probe._TemplateModeProof):
+        def no_terminal(*args, **kwargs):
+            self.fail("captured consumer borrowed a terminal value")
+        return owner(SimpleNamespace(budget=mode.budget, make=no_terminal),
+                     "all", (), {}, None, "model.mk", False)
+
+    def test_inherited_composition_uses_the_captured_decision(self):
+        for action in ("stable", "changed", "restored"):
+            with self.subTest(action=action):
+                mode = self.mode()
+                mode.assign("DATA", ":=", "$(addprefix out/,data.o)")
+                tuple(make_source_units("out/one: DATA += local\n", mode=mode, source_path="model.mk"))
+                original_charge, events = mode.budget.charge, []
+                key = "out/one", "DATA"
+                def charge(category, size):
+                    result = original_charge(category, size)
+                    admission = any(
+                        frame.f_code is graph_probe._ValueReadState.binding.__code__
+                        and (frame.f_locals.get("scope"), frame.f_locals.get("name")) == key
+                        for frame in self.frames()
+                    )
+                    if action != "stable" and not events and admission:
+                        events.append("removed")
+                        mode.inherited_appends.remove(key)
+                    elif action == "restored" and events == ["removed"]:
+                        events.append("restored")
+                        mode.inherited_appends.add(key)
+                    return result
+                value, refused = None, False
+                try:
+                    with mode.using_scope(graph_probe._ScopeContext("out/one", "out/one", "recipe")):
+                        with mode.reading_values():
+                            mode.read_scope_declarations()
+                            with patch.object(mode.budget, "charge", charge):
+                                value = mode.literal_values("$(DATA)|$(DATA)")
+                except MakeProbeError:
+                    refused = True
+                finally:
+                    mode.inherited_appends.add(key)
+                self.assertTrue(refused or value == {"out/data.o local|out/data.o local"})
+                self.assertEqual(events, [] if action == "stable" else ["removed"]
+                                 if action == "changed" else ["removed", "restored"])
+                self.assertIsNone(mode._value_reads)
+                self.assertEqual((mode.budget.runs, mode.budget.states), (0, 0))
+
+    def test_header_fallback_cannot_admit_a_later_fact(self):
+        for route in ("reference", "initializer"):
+            for action in ("stable", "changed", "restored"):
+                with self.subTest(route=route, action=action):
+                    mode = self.mode()
+                    mode.assign("DATA", ":=", "$(sort unproved)")
+                    self.assertNotIn("DATA", mode.template_values)
+                    original_remaining, events = mode.budget.remaining, []
+                    def remaining():
+                        result = original_remaining()
+                        frames = tuple(self.frames())
+                        leaf = any(
+                            frame.f_code is graph_probe._MakeSourceMode._binding_values.__code__
+                            and isinstance(frame.f_locals.get("part"), graph_probe._ModeBinding)
+                            and frame.f_locals["part"].value is None for frame in frames
+                        )
+                        header = any(frame.f_code in {
+                            graph_probe._MakeSourceMode.template_header_reference.__code__,
+                            getattr(graph_probe._MakeSourceMode, "_template_header_reference",
+                                    graph_probe._MakeSourceMode.template_header_reference).__code__,
+                        } for frame in frames)
+                        if action != "stable" and not events and leaf and header:
+                            events.append("injected")
+                            mode.template_values["DATA"] = mode.version, ("exact", "safe")
+                        return result
+                    value, refused = None, False
+                    try:
+                        with mode.reading_values():
+                            mode.raw_binding("DATA")
+                            try:
+                                with patch.object(mode.budget, "remaining", remaining):
+                                    value = (mode.template_header_reference("DATA") if route == "reference"
+                                             else mode.template_initializer("prefix $(DATA)"))
+                            finally:
+                                if action == "restored":
+                                    mode.template_values.pop("DATA", None)
+                    except MakeProbeError:
+                        refused = True
+                    finally:
+                        mode.template_values.pop("DATA", None)
+                    self.assertTrue(refused or value is False or value is None)
+                    self.assertEqual(events, [] if action == "stable" else ["injected"])
+                    self.assertIsNone(mode._value_reads)
+                    self.assertEqual((mode.budget.runs, mode.budget.states), (0, 0))
+
+    def test_adapter_header_retains_its_earlier_unavailable_read(self):
+        for owner in (graph_probe._TemplateModeProof, phase_census.SourceTemplates):
+            for action in ("stable", "restored"):
+                with self.subTest(owner=owner, action=action):
+                    mode = self.mode()
+                    mode.assign("DATA", ":=", "$(sort unproved)")
+                    proof, events = self.proof(mode, owner), []
+                    def lookup(current, name):
+                        fallback = any(
+                            frame.f_code in {
+                                graph_probe._TemplateModeProof.header_data.__code__,
+                                getattr(graph_probe._TemplateModeProof, "_header_data",
+                                        graph_probe._TemplateModeProof.header_data).__code__,
+                            } and "value" in frame.f_locals and frame.f_locals["value"] is None
+                            and "bindings" not in frame.f_locals for frame in self.frames()
+                        )
+                        if action == "restored" and name == "DATA" and not events and fallback:
+                            events.append("injected")
+                            current.template_values["DATA"] = current.version, (
+                                "header-bound", ("composition", "opaque"),
+                            )
+                    value, refused = None, False
+                    mode.scope_lookup_guard = lookup
+                    try:
+                        value = proof.header_data(mode, "DATA")
+                    except MakeProbeError:
+                        refused = True
+                    finally:
+                        mode.template_values.pop("DATA", None)
+                        mode.scope_lookup_guard = None
+                    self.assertTrue(refused or value is False)
+                    self.assertEqual(events, [] if action == "stable" else ["injected"])
+                    self.assertIsNone(mode._value_reads)
+                    self.assertEqual((mode.budget.runs, mode.budget.states), (0, 0))
+
+    def test_adapter_text_cannot_retire_each_operand_separately(self):
+        for action in ("stable", "restored"):
+            with self.subTest(action=action):
+                mode = self.mode()
+                mode.assign("DATA", ":=", "$(addprefix out/,data.o)")
+                mode.assign("SWITCH", ":=", "switch")
+                mode.assign("RESTORE", ":=", "restore")
+                original, fact, version = (
+                    mode.definitions["DATA"], mode.template_values["DATA"],
+                    mode.binding_versions[None, "DATA"],
+                )
+                events = []
+                def guard(current, name):
+                    if action == "restored" and name == "SWITCH" and not events:
+                        events.append("changed")
+                        current.assign("DATA", ":=", "$(addprefix late/,data.o)")
+                    elif action == "restored" and name == "RESTORE" and events:
+                        current.definitions["DATA"] = original
+                        current.template_values["DATA"] = fact
+                        current.binding_versions[None, "DATA"] = version
+                mode.scope_lookup_guard = guard
+                value, refused = None, False
+                try:
+                    value = self.proof(mode).text(mode, "$(RESTORE)|$(DATA)|$(SWITCH)|$(DATA)")
+                except MakeProbeError:
+                    refused = True
+                finally:
+                    mode.definitions["DATA"] = original
+                    mode.template_values["DATA"] = fact
+                    mode.binding_versions[None, "DATA"] = version
+                    mode.scope_lookup_guard = None
+                self.assertTrue(refused or value == "restore|out/data.o|switch|out/data.o")
+                self.assertEqual(events, [] if action == "stable" else ["changed"])
+                self.assertIsNone(mode._value_reads)
+                self.assertEqual((mode.budget.runs, mode.budget.states), (0, 0))
+
+    def test_missing_raw_receipt_tracks_the_actual_returned_object(self):
+        for action in ("stable", "swapped", "restored"):
+            with self.subTest(action=action):
+                mode = self.mode()
+                original_map, events = mode.definitions, []
+                replacement = frozenset((graph_probe._ModeBinding("file", "simple", "late/data.o"),))
+                def original_input(name):
+                    if action != "stable":
+                        original_map[name] = replacement
+                        mode.definitions = dict(original_map)
+                        events.append("swapped")
+                    return {"origin": "file", "flavor": "simple", "value": "out/data.o"}
+                original_charge = mode.budget.charge
+                def charge(category, size):
+                    result = original_charge(category, size)
+                    retention = any(
+                        frame.f_code is graph_probe._MakeSourceMode.retain_binding.__code__
+                        and frame.f_locals.get("name") == "MISSING" for frame in self.frames()
+                    )
+                    if action == "restored" and retention and events == ["swapped"]:
+                        mode.definitions = original_map
+                        events.append("restored")
+                    return result
+                mode.original_input = original_input
+                value, receipt_values, refused = None, None, False
+                try:
+                    with mode.reading_values() as state:
+                        with patch.object(mode.budget, "charge", charge):
+                            value = mode.literal_values("$(MISSING)")
+                        receipt_values = {binding.value for binding in state.bindings[None, "MISSING"][1]}
+                except MakeProbeError:
+                    refused = True
+                finally:
+                    mode.definitions = original_map
+                self.assertTrue(refused or value == receipt_values)
+                self.assertEqual(events, [] if action == "stable" else ["swapped"]
+                                 if action == "swapped" else ["swapped", "restored"])
+                self.assertIsNone(mode._value_reads)
+                self.assertEqual((mode.budget.runs, mode.budget.states), (0, 0))
+
+    def test_genuine_facts_and_neutral_names_preserve_header_results(self):
+        for name in ("DATA", "RENAMED"):
+            with self.subTest(name=name):
+                mode = self.mode()
+                mode.assign(name, ":=", "$(addprefix out/,data.o)")
+                expression = "prefix $(" + name + ")"
+                self.assertEqual(mode.template_initializer(expression),
+                                 ("header-bound", ("composition", expression)))
+                self.assertEqual(mode.template_snapshot(name), "out/data.o")
+                self.assertTrue(mode.template_header_reference(name))
+                self.assertTrue(self.proof(mode).header_data(mode, name))
+                self.assertTrue(self.proof(mode, phase_census.SourceTemplates).header_data(mode, name))
+                self.assertIsNone(mode._value_reads)
+
+    def test_scoped_unknown_shadow_cannot_borrow_a_global_fact(self):
+        for global_value in ("$(addprefix out/,data.o)", "prefix $(OTHER)"):
+            with self.subTest(global_value=global_value):
+                mode = self.mode()
+                mode.assign("OTHER", ":=", "$(addprefix out/,data.o)")
+                mode.assign("DATA", ":=", global_value)
+                tuple(make_source_units("out/one: DATA := literal\n",
+                                        mode=mode, source_path="model.mk"))
+                mode.assign("DATA", ":=", "$(sort unproved)", scope="out/one")
+                with mode.using_scope(graph_probe._ScopeContext("out/one", "out/one", "recipe")):
+                    self.assertFalse(mode.template_header_reference("DATA"))
+                    for owner in (graph_probe._TemplateModeProof, phase_census.SourceTemplates):
+                        proof = self.proof(mode, owner)
+                        self.assertIsNone(proof.value(mode, "DATA"))
+                        self.assertFalse(proof.header_data(mode, "DATA"))
+                self.assertIsNone(mode._value_reads)
+
+    def test_scoped_stable_repeats_keep_exact_receipt_capacity(self):
+        mode = self.mode()
+        mode.assign("DATA", ":=", "$(addprefix out/,data.o)")
+        mode.assign("OTHER", ":=", "other")
+        tuple(make_source_units("out/one: DATA += local\n", mode=mode, source_path="model.mk"))
+        mode.budget.limits = replace(mode.budget.limits, entries=4)
+        with self.assertRaises(MakeProbeError):
+            with mode.using_scope(graph_probe._ScopeContext("out/one", "out/one", "recipe")):
+                with mode.reading_values() as state:
+                    mode.binding("DATA")
+                    self.assertEqual(state.entries, 4)
+                    receipt = state.bindings["out/one", "DATA"]
+                    for _ in range(4):
+                        self.assertEqual(mode.literal_values("$(DATA)"), {"out/data.o local"})
+                        self.assertEqual(state.entries, 4)
+                        self.assertIs(state.bindings["out/one", "DATA"], receipt)
+                    mode.binding("OTHER")
+        self.assertTrue(mode.budget.failed)
+        self.assertIsNone(mode._value_reads)
 
 
 class AuthoritativeMakeProbeTests(unittest.TestCase):

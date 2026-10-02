@@ -4249,6 +4249,41 @@ is not integration, acceptance or native allocation. Same-reviewer exact-head
 follow-up and every native/report/verifier/resource/H1/CI/delivery gate remain
 open, with all eleven earlier native allocations closed.
 
+The captured-component correction also uses
+`test_make_probe.OriginalCapturedConsumerApiTests`, under the same isolated
+actual-API/effect-trap prerequisites. Preserve exact `ea8054d3`: twenty
+subtests expose seven unsafe publications while thirteen controls remain
+valid. These are modeled callback mutations, not native source qualification.
+
+1. During scoped receipt admission, remove its inherited-append flag, then
+   restore it at a later cache charge. Repeated DATA reads must either refuse
+   or consistently use the captured `out/data.o local`, never return
+   `local|out/data.o local`. Stable and un-restored controls stay valid.
+2. Start with an unproved simple DATA and no fact. Inject an exact fact during
+   the final unavailable literal callback, then restore its original absence.
+   Header-reference and initializer fallback must not certify that component.
+   Repeat through both base and original-source header adapters after their
+   earlier unavailable value read.
+3. Read DATA twice through the base text adapter, changing it at SWITCH and
+   restoring all original identities at RESTORE. Reverse operand evaluation
+   still represents one operation: mixed original/changed text cannot publish.
+4. For an absent input, switch its map before retention and restore the map
+   before the retention write. The receipt must describe the actual returned
+   object; returning `out/data.o` with a `late/data.o` receipt is invalid.
+5. Keep genuine original facts and neutral names usable. An unproved scoped
+   shadow cannot borrow a global fact. Stable scoped repeats at exact receipt
+   capacity do not add entries; a genuinely new receipt exceeds the bound.
+   Every success/refusal retires owned state and preserves caller ownership.
+6. Restore exact EA or independently restore each unsafe consumer connection
+   and per-operand lifetime. Recover the corresponding original failures;
+   keep positive, earlier-mutation, unread/shadowed, lazy-input, nested,
+   retirement, resource and prior provenance/repeated controls unchanged.
+
+The smaller design reuses captured receipt components and the existing guarded
+fact API, removing duplicated live fact-admission checks. It does not copy all
+mode maps or add a registry, grammar, source authority, gate or resource waiver.
+All native/full-report/verifier/H1/CI and delivery requirements remain open.
+
 ### Native ownership, stderr effects and cumulative accounting
 
 These are additional deterministic controls for
