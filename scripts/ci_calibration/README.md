@@ -1,4 +1,55 @@
-# Contained append-corrected full-report rebind
+# Contained captured-consumer full-report rebind
+
+**Code-only preparation; never merge. Publication on the assigned recovery
+ref is not execution authority. No trigger push, native allocation, retry or
+shipping-policy change is authorized by this preparation.**
+
+Frozen preparation scope:
+[5944435435](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5944435435).
+This is one normal child of spent, reviewed harness
+`d505e9344fb62b2dad525ed79c79c6140979a81f`. It introduces only
+`.github/workflows/issue180-full-report-sizing-6.yml` and coupled policy,
+supervisor, test and README changes. The prospective trigger is the first
+owner-created `calibration/issue-180-full-report-sizing-6` ref, run1/attempt1.
+Preparation is published separately on
+`recovery/session-f417-issue180-report-sizing6`.
+
+Provisional selected source is
+`c73dcefb913bd432637a67e6ee4aff2dda1565cd`, subject to its complete independent
+source acceptance. BASE remains
+`ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`. The consumed-component redesign
+reuses guarded facts and existing read lifetimes; it does not change this
+report workload or shipping defaults. No source is copied into the harness.
+
+Sizing5's workflow/source and exact f5a70->d505 inventory are frozen, alongside
+every earlier endpoint. The new d505->HEAD edge has its own complete five-path
+inventory. All fourteen prior workflows and twenty-seven normal edges remain.
+Worker, root_stage, observation_failure, entry, kernel, runtime-view, volume
+and protected ownership/namespace/lifecycle helpers are unchanged.
+
+The complete CURRENT/BASE/source/Make/generator/lifecycle report and serializer
+retain one check, one budget/session and the original3600-second deadline,
+fourteen accounting-only cumulative queries, nineteen actual counters, all
+seven fresh qualifiers, five bounded artifacts and every original hard bound.
+This is not a smaller sampled workload or another quota increase.
+
+Keep all original negative, mutation and neutral controls. Current source
+reflection must retain the original6d->798 and798->60f1 preservation checks and
+explicitly bind the complete later mixed/provenance/repeated/consumer delta,
+including unchanged signatures and unrelated module bodies. It never imports
+or executes selected source or suppresses an unallocated mutation.
+
+The eleven historical native allocations remain closed. Complete source and
+exact-harness review precede a separately frozen one-shot execution. A refusal
+preserves its first cause and requires cost/architecture reassessment, not an
+automatic retry. Native regressions, standalone-verifier measurement, shipping
+policy, independently invoked H1 and all candidate/master/closure/completion
+gates remain separate.
+
+## Historical append-corrected full-report rebind
+
+The following describes the preserved f5a70->d505 sizing5 edge, not the active
+source binding or fresh execution counts.
 
 **Code-only preparation; never merge this diagnostic branch. No push, native
 allocation, workflow execution, retry or shipping-policy change is authorized.**
