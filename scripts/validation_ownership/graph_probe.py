@@ -557,7 +557,7 @@ class _MakeSourceMode:
         if len(values) >= 512:
             raise MakeProbeError("literal Make context exceeds the existing bounded context plan")
         if self.budget is not None:
-            self.budget.charge("cache", 128 + len(encoded(value)))
+            self.budget.charge("cache", 128 + _original_literal_size(value, self.budget))
         values.add(value)
 
     def binding_values(self, binding, active):
@@ -578,13 +578,96 @@ class _MakeSourceMode:
                     return None
             else:
                 values = (part.value,)
-            combined = set()
-            for before in choices:
-                for value in values:
-                    text = _join_make_text((before, " " if index and before else "", value), self.budget)
-                    self.retain_literal_value(combined, text)
-            choices = combined
+            choices = self._literal_projection(
+                (choices, values),
+                lambda pair: _original_data_join(
+                    (pair[0], " " if index and pair[0] else "", pair[1]), self.budget,
+                ),
+            )
         return choices
+
+    def _literal_projection(self, domains, project):
+        count = 1
+        for domain in domains:
+            if domain is None or not domain:
+                return None
+            count *= len(domain)
+        _original_data_admission(self.budget, 256 + 64 * count * (len(domains) + 1), entries=count)
+        result = set()
+
+        def members(index, arguments):
+            if index == len(domains):
+                yield arguments
+            else:
+                for value in domains[index]:
+                    self.checkpoint()
+                    yield from members(index + 1, (*arguments, value))
+
+        # Marginal domains prove a cover, not correlation between conditions.
+        for arguments in members(0, ()):
+            value = project(arguments)
+            if value is None:
+                return None
+            self.retain_literal_value(result, value)
+        return result
+
+    def _literal_function_values(self, operation, arguments, active):
+        if operation == "and":
+            empty = False
+            values = {""}
+            for argument in arguments:
+                if next(computed_selectors(argument), None) is not None:
+                    return None
+                values = self.literal_values(argument.strip(MAKE_SPACE), active)
+                if values is None:
+                    exact = self.exact_initializer_value(argument.strip(MAKE_SPACE), active=active)
+                    values = None if exact is None else frozenset((exact,))
+                if values is None:
+                    return None
+                if any("$" in value or "\0" in value for value in values):
+                    return None
+                empty |= "" in values
+                if all(not value for value in values):
+                    return frozenset(("",))
+            result = self._literal_projection((values,), lambda original: original[0])
+            if empty:
+                self.retain_literal_value(result, "")
+            return result
+        if (operation, len(arguments)) not in {
+            ("notdir", 1), ("addprefix", 2), ("filter", 2), ("filter-out", 2),
+            ("findstring", 2), ("strip", 1), ("sort", 1), ("patsubst", 3), ("wildcard", 1),
+        }:
+            return None
+        if operation == "wildcard" and self.original_wildcard is None:
+            return None
+        domains = []
+        for argument in arguments:
+            if next(computed_selectors(argument), None) is not None:
+                return None
+            values = self.literal_values(argument, active)
+            if values is None:
+                exact = self.exact_initializer_value(argument, active=active)
+                values = None if exact is None else frozenset((exact,))
+            if values is None:
+                return None
+            domains.append(values)
+
+        def project(values):
+            if operation != "wildcard":
+                return _original_word_value(
+                    operation, values, self.budget, word_limit=512 if operation == "patsubst" else None,
+                )
+            if "$" in values[0] or "\0" in values[0]:
+                return None
+            try:
+                return self.original_wildcard(values[0])
+            except _NamespaceUnavailable as error:
+                if str(error) not in self.namespace_holds and self.budget is not None:
+                    self.budget.charge("cache", len(encoded(str(error))))
+                self.namespace_holds.add(str(error))
+                return None
+
+        return self._literal_projection(domains, project)
 
     def source_rule(self, header, *, literal=False, site=None):
         header, _ = split_inline_recipe(strip_comment(header))
@@ -672,6 +755,7 @@ class _MakeSourceMode:
         self.checkpoint()
         if not self.original_namespace_valid or len(active) >= 512:
             return None
+        _original_data_admission(self.budget, 256 + 16 * len(expression))
         version, site, scope, namespace = self.version, self.site, self.scope_context, self.namespace
         budget, definitions = self.budget, self.definitions
         template, original_input, execution = self.template_mode, self.original_input, self.original_execution
@@ -696,7 +780,12 @@ class _MakeSourceMode:
         def literal(text):
             return None if "$" in text.replace("$$", "") else text.replace("$$", "$")
 
-        spans = list(_make_expression_spans(expression, short=True, budget=self.budget))
+        try:
+            spans = list(_make_expression_spans(
+                expression, short=True, require_complete=True, budget=self.budget,
+            ))
+        except _UnresolvedName:
+            return None
         values, previous = {""}, 0
         for start, stop, body in sorted(spans, key=lambda item: (item[0], -item[1])):
             if start < previous:
@@ -706,57 +795,75 @@ class _MakeSourceMode:
                 return None
             metadata = None
             function = None if re.fullmatch(IDENTIFIER, body) else _make_function(expression[start:stop])
-            if function is not None:
-                if (function[0] not in {"origin", "flavor", "value"} or len(function[1]) != 1
-                        or not re.fullmatch(IDENTIFIER, function[1][0])):
+            substitution = None
+            if function is not None and function[0] not in {"origin", "flavor", "value"}:
+                choices = self._literal_function_values(*function, active)
+            else:
+                if function is not None:
+                    if len(function[1]) != 1 or not re.fullmatch(IDENTIFIER, function[1][0]):
+                        return None
+                    metadata, body = function[0], function[1][0]
+                name = _make_reference_base(body)
+                if re.fullmatch(IDENTIFIER, name) and body != name:
+                    suffix = body[len(name):]
+                    if not suffix.startswith(":") or suffix.count("=") != 1 or "$" in suffix:
+                        return None
+                    pattern, replacement = suffix[1:].split("=", 1)
+                    if "%" not in pattern:
+                        pattern, replacement = "%" + pattern, "%" + replacement
+                    if not _supported_patsubst(pattern, replacement):
+                        return None
+                    substitution, body = (pattern, replacement), name
+                names = self.reference_names(body, active)
+                if names is None or metadata is None and set(names) & set(active):
                     return None
-                metadata, body = function[0], function[1][0]
-            names = self.reference_names(body, active)
-            if names is None or metadata is None and set(names) & set(active):
-                return None
-            self.retain_reads(names)
-            choices = set()
-            for name in names:
-                bindings = self.binding(name)
-                require_live()
-                fact = (
-                    self.original_simple_fact(name, bindings)
-                    if scope is None and metadata in {None, "value"} else None
-                )
-                require_live()
-                for binding in bindings:
-                    self.checkpoint()
-                    if metadata is not None:
-                        value = getattr(binding, metadata)
-                        if value is None and metadata == "value" and fact is not None:
-                            value = fact[1]
-                        if value is None or metadata != "value" and value == "unknown":
-                            return None
-                        self.retain_literal_value(choices, value)
-                    else:
-                        expanded = (
-                            (fact[1],) if fact is not None and fact[1] is not None
-                            else self.binding_values(binding, (*active, name))
-                        )
-                        if expanded is None:
-                            return None
-                        for value in expanded:
+                self.retain_reads(names)
+                choices = set()
+                for name in names:
+                    bindings = self.binding(name)
+                    require_live()
+                    fact = (
+                        self.original_simple_fact(name, bindings)
+                        if scope is None and metadata in {None, "value"} else None
+                    )
+                    require_live()
+                    for binding in bindings:
+                        self.checkpoint()
+                        if metadata is not None:
+                            value = getattr(binding, metadata)
+                            if value is None and metadata == "value" and fact is not None:
+                                value = fact[1]
+                            if value is None or metadata != "value" and value == "unknown":
+                                return None
                             self.retain_literal_value(choices, value)
+                        else:
+                            expanded = (
+                                (fact[1],) if fact is not None and fact[1] is not None
+                                else self.binding_values(binding, (*active, name))
+                            )
+                            if expanded is None:
+                                return None
+                            for value in expanded:
+                                self.retain_literal_value(choices, value)
+                if substitution is not None:
+                    choices = self._literal_projection(
+                        (choices,), lambda words: _original_word_value(
+                            "patsubst", (*substitution, words[0]), self.budget,
+                        ),
+                    )
             if not choices:
                 return None
-            combined = set()
-            for value in values:
-                for choice in choices:
-                    text = _join_make_text((value, prefix, choice), self.budget)
-                    self.retain_literal_value(combined, text)
-            values = combined
+            values = self._literal_projection(
+                (values, choices),
+                lambda pair: _original_data_join((pair[0], prefix, pair[1]), self.budget),
+            )
             previous = stop
         suffix = literal(expression[previous:])
         if suffix is None:
             return None
         result = set()
         for value in values:
-            self.retain_literal_value(result, _join_make_text((value, suffix), self.budget))
+            self.retain_literal_value(result, _original_data_join((value, suffix), self.budget))
         require_live()
         return frozenset(result)
 
@@ -914,6 +1021,10 @@ class _MakeSourceMode:
         return None if equal is None else equal == (keyword == "ifeq")
 
     def literal_comparison(self, operands, controls):
+        with self.reading_values():
+            return self._literal_comparison(operands, controls)
+
+    def _literal_comparison(self, operands, controls):
         self.checkpoint()
         if not self.original_namespace_valid:
             return None
@@ -951,14 +1062,14 @@ class _MakeSourceMode:
             return expression
         reference = NAME_PART.fullmatch(expression)
         if reference is None:
-            return None
+            return self.exact_initializer_value(expression, active)
         name = reference[1] or reference[2]
         if name in active or len(active) >= 512:
             return None
         self.retain_reads((name,))
         bindings = self.binding(name)
         if len(bindings) != 1:
-            return None
+            return self.exact_reference(name, active)
         binding = next(iter(bindings))
         if binding.flavor == "undefined":
             return ""
@@ -992,7 +1103,9 @@ class _MakeSourceMode:
                 except RecursionError:
                     return None
                 if literal is not None:
-                    return self.template_header_composition(expression)
+                    header = self.template_header_composition(expression)
+                    if header is not None or not _original_constructor_expression(expression):
+                        return header
             value = self.exact_initializer_value(expression)
             if value is not None:
                 return "exact", value
@@ -1009,7 +1122,8 @@ class _MakeSourceMode:
         except RecursionError:
             return None
         if any(value is None for value in values):
-            return None
+            exact = self.exact_initializer_value(expression)
+            return None if exact is None else ("exact", exact)
         if operation == "patsubst" and len(values) == 3:
             pattern, replacement, words = values
             if not _supported_patsubst(pattern, replacement):
@@ -1033,12 +1147,12 @@ class _MakeSourceMode:
             return None
         self.retain_reads((name,))
         bindings = self.binding(name)
-        if len(bindings) != 1:
-            return None
-        binding = next(iter(bindings))
         literal = self.literal_text("$(" + name + ")", active)
         if literal is not None:
             return literal if "$" not in literal and "\0" not in literal else None
+        if len(bindings) != 1:
+            return None
+        binding = next(iter(bindings))
         if binding.inherited:
             parts = []
             for part in self.binding_parts(binding):
@@ -1132,10 +1246,7 @@ class _MakeSourceMode:
             return value
         if kind == "patsubst":
             # Evaluate the captured original relation, never a native claim.
-            if any("$" in argument or "\0" in argument for argument in value):
-                return None
-            value = _join_make_text(_original_patsubst_parts(value, self.budget), self.budget)
-            return value if "$" not in value and "\0" not in value else None
+            return _original_word_value("patsubst", value, self.budget, word_limit=512)
         return None
 
     def exact_initializer_value(self, expression, active=()):
@@ -1160,12 +1271,18 @@ class _MakeSourceMode:
                         pattern, replacement = "%" + pattern, "%" + replacement
                     if not _supported_patsubst(pattern, replacement):
                         return None
-                    words = self.exact_reference(name, active)
+                    words = self.literal_values("$(" + name + ")", active)
+                    if words is None:
+                        exact = self.exact_reference(name, active)
+                        words = None if exact is None else frozenset((exact,))
                     if words is None:
                         return None
-                    return _join_make_text(
-                        _original_patsubst_parts((pattern, replacement, words), self.budget), self.budget,
+                    values = self._literal_projection(
+                        (words,), lambda original: _original_word_value(
+                            "patsubst", (pattern, replacement, original[0]), self.budget,
+                        ),
                     )
+                    return next(iter(values)) if values is not None and len(values) == 1 else None
             function = _make_function(part)
             if function is None:
                 return None
@@ -1173,76 +1290,10 @@ class _MakeSourceMode:
             if operation in {"origin", "flavor", "value"}:
                 value = self.literal_text(part)
                 return value if value is not None and "$" not in value and "\0" not in value else None
-            if operation == "and":
-                value = ""
-                for argument in arguments:
-                    value = self.exact_initializer_value(argument.strip(MAKE_SPACE), active=active)
-                    if value is None or not value:
-                        return value
-                return value
-            if operation == "wildcard" and len(arguments) == 1:
-                if self.original_wildcard is None:
-                    return None
-                patterns = self.exact_initializer_value(arguments[0], active=active)
-                if patterns is None:
-                    return None
-                try:
-                    return self.original_wildcard(patterns)
-                except _NamespaceUnavailable as error:
-                    if str(error) not in self.namespace_holds and self.budget is not None:
-                        self.budget.charge("cache", len(encoded(str(error))))
-                    self.namespace_holds.add(str(error))
-                    return None
-            if operation == "patsubst":
-                fact = self.template_initializer(part)
-                if (fact is not None and fact[0] == "patsubst"
-                        and all("$" not in value and "\0" not in value for value in fact[1])):
-                    return _join_make_text(_original_patsubst_parts(fact[1], self.budget), self.budget)
-                return None
-            if operation == "sort" and len(arguments) == 1:
-                for _ in _make_expression_spans(part, require_complete=True, budget=self.budget):
-                    self.checkpoint()
-                value = self.exact_initializer_value(arguments[0], active=active)
-                words = None if value is None else _original_sort_words(value, self.budget)
-                if words is None:
-                    return None
-                return _join_make_text(
-                    (part for index, word in enumerate(words) for part in (" " if index else "", word)),
-                    self.budget,
-                )
-            if (operation, len(arguments)) not in {
-                ("notdir", 1), ("addprefix", 2), ("filter", 2), ("filter-out", 2), ("findstring", 2), ("strip", 1),
-            }:
-                return None
-            values = [self.exact_initializer_value(argument, active=active) for argument in arguments]
-            if any(value is None for value in values):
-                return None
-            if operation == "findstring":
-                return values[0] if values[0] in values[1] else ""
-            patterns = _original_filter_patterns(values[0], self.budget) if operation in {"filter", "filter-out"} else ()
-            if patterns is None:
-                return None
-
-            def parts():
-                first = True
-                for match in re.finditer(r"[^ \t\r\n\v\f]+", values[-1]):
-                    self.checkpoint()
-                    if operation in {"filter", "filter-out"} and (
-                        any(_patsubst_word(pattern, match[0]) for pattern in patterns) != (operation == "filter")
-                    ):
-                        continue
-                    if not first:
-                        yield " "
-                    first = False
-                    if operation == "addprefix":
-                        yield values[0]
-                        yield match[0]
-                    elif operation == "notdir":
-                        yield match[0].rsplit("/", 1)[-1]
-                    else:
-                        yield match[0]
-
-            return _join_make_text(parts(), self.budget)
+            for _ in _make_expression_spans(part, require_complete=True, budget=self.budget):
+                self.checkpoint()
+            values = self._literal_function_values(operation, arguments, active)
+            return next(iter(values)) if values is not None and len(values) == 1 else None
 
         try:
             value = _resolve_make_text(expression, resolve, self.budget)
@@ -1260,15 +1311,15 @@ class _MakeSourceMode:
             return False
         self.retain_reads((name,))
         bindings = self.binding(name)
-        if len(bindings) != 1:
-            return False
-        binding = next(iter(bindings))
         try:
             literal = self.literal_text("$(" + name + ")")
         except RecursionError:
             return False
         if literal is not None:
             return _template_header_data(literal)
+        if len(bindings) != 1:
+            return False
+        binding = next(iter(bindings))
         if binding.inherited:
             return False
         if binding.flavor == "recursive" and binding.value is not None:
@@ -1601,6 +1652,15 @@ class _MakeSourceMode:
                 literal_choices = self.literal_values(value)
             except RecursionError:
                 literal_choices = None
+            if (
+                scope is None and operator in SIMPLE_ASSIGNMENT_OPERATORS
+                and literal_choices is not None and len(literal_choices) == 1
+                and _original_constructor_expression(value)
+            ):
+                # Keep the existing singleton assignment-time fact contract.
+                template_value = self.template_initializer(value)
+                if template_value is not None:
+                    literal_choices = None
             if literal_choices is None and (
                 operator == "+=" or scope is not None and self.original_execution is not None
             ):
@@ -1608,7 +1668,8 @@ class _MakeSourceMode:
                 if exact is not None:
                     literal_choices = frozenset((exact,))
             if operator in SIMPLE_ASSIGNMENT_OPERATORS and literal_choices is None:
-                template_value = self.template_initializer(value)
+                if template_value is None:
+                    template_value = self.template_initializer(value)
             elif operator == "+=" and active is True and effect.applies is True:
                 before_exact = self.exact_reference(name)
                 rhs_exact = self.exact_initializer_value(value)
@@ -1864,6 +1925,7 @@ def _include_names(header, mode=None):
         if (
             mode is not None and mode.namespace is not None and mode.original_namespace_valid
             and function is not None and function[0] == "wildcard" and len(function[1]) == 1
+            and not _original_constructor_expression(function[1][0])
         ):
             try:
                 literal = mode.literal_text(function[1][0])
@@ -2811,6 +2873,116 @@ def _resolve_make_text(expression, resolve, budget):
     return _join_make_text(parts(), budget)
 
 
+def _original_data_admission(budget, size, *, entries=0):
+    limits = Limits() if budget is None else budget.limits
+    if entries > limits.entries:
+        message = "original literal product exceeds the existing entry bound"
+    elif size > limits.cache_bytes or size > limits.total_bytes:
+        message = "original literal workspace exceeds the existing byte bound"
+    else:
+        if budget is not None:
+            budget.charge("cache", size)
+        return
+    if budget is not None:
+        budget.reject(message)
+    raise MakeProbeError(message)
+
+
+def _original_literal_size(value, budget):
+    size = 2
+    for character in value:
+        if budget is not None:
+            budget.remaining()
+        if character in '\b\f\n\r\t"\\':
+            size += 2
+        elif " " <= character <= "~":
+            size += 1
+        else:
+            size += 6 if ord(character) <= 0xFFFF else 12
+    return size
+
+
+def _original_data_join(parts, budget):
+    characters = sum(len(part) for part in parts)
+    if sum(bool(part) for part in parts) <= 1:
+        return next((part for part in parts if part), "")
+    _original_data_admission(budget, 128 + 32 * characters + 64 * len(parts))
+    return "".join(parts)
+
+
+def _original_constructor_expression(expression):
+    for start, stop, body in _make_expression_spans(expression, short=True):
+        function = _make_function(expression[start:stop])
+        if function is not None and function[0] not in {"origin", "flavor", "value"}:
+            return True
+        name = _make_reference_base(body)
+        if re.fullmatch(IDENTIFIER, name) and body[len(name):].startswith(":"):
+            return True
+    return False
+
+
+def _original_word_value(operation, values, budget, *, word_limit=None):
+    if any("$" in value or "\0" in value for value in values):
+        return None
+    if operation == "sort":
+        words = _original_sort_words(values[0], budget)
+        return None if words is None else _join_make_text(
+            (piece for index, word in enumerate(words) for piece in (" " if index else "", word)), budget,
+        )
+    _original_data_admission(budget, 256 + 12 * sum(len(value) for value in values))
+    if operation == "findstring":
+        return values[0] if values[0] in values[1] else ""
+    if operation == "patsubst" and not _supported_patsubst(*values[:2]):
+        return None
+    count = 0
+    for _ in re.finditer(r"[^ \t\r\n\v\f]+", values[-1]):
+        if budget is not None:
+            budget.remaining()
+        count += 1
+        if word_limit is not None and count > word_limit:
+            return None
+    output_bound = len(values[-1]) + count
+    if operation == "addprefix":
+        output_bound += count * len(values[0])
+    elif operation == "patsubst":
+        output_bound += count * len(values[1])
+    _original_data_admission(budget, 768 + 256 * count + 32 * output_bound, entries=count)
+    if operation == "patsubst":
+        return _join_make_text(_original_patsubst_parts(values, budget), budget)
+    if operation in {"filter", "filter-out"}:
+        pattern_count = 0
+        for _ in re.finditer(r"[^ \t\r\n\v\f]+", values[0]):
+            if budget is not None:
+                budget.remaining()
+            pattern_count += 1
+        _original_data_admission(budget, 128 + 256 * pattern_count, entries=pattern_count)
+    patterns = _original_filter_patterns(values[0], budget) if operation in {"filter", "filter-out"} else ()
+    if patterns is None:
+        return None
+
+    def parts():
+        first = True
+        for match in re.finditer(r"[^ \t\r\n\v\f]+", values[-1]):
+            if budget is not None:
+                budget.remaining()
+            if operation in {"filter", "filter-out"} and (
+                any(_patsubst_word(pattern, match[0]) for pattern in patterns) != (operation == "filter")
+            ):
+                continue
+            if not first:
+                yield " "
+            first = False
+            if operation == "addprefix":
+                yield values[0]
+                yield match[0]
+            elif operation == "notdir":
+                yield match[0].rsplit("/", 1)[-1]
+            else:
+                yield match[0]
+
+    return _join_make_text(parts(), budget)
+
+
 def _supported_patsubst(pattern, replacement):
     return bool(
         pattern and pattern.count("%") <= 1 and replacement.count("%") <= 1
@@ -2998,15 +3170,15 @@ class _TemplateModeProof:
             return None
         mode.retain_reads((name,))
         bindings = mode.binding(name)
-        if len(bindings) != 1:
-            return None
-        binding = next(iter(bindings))
         try:
             literal = mode.literal_text("$(" + name + ")")
         except RecursionError:
             return None
         if literal is not None:
             return literal
+        if len(bindings) != 1:
+            return None
+        binding = next(iter(bindings))
         if binding.flavor == "recursive" and binding.value is not None:
             return mode.exact_reference(name, active)
         fact = mode.original_simple_fact(name, bindings)
@@ -3051,6 +3223,9 @@ class _TemplateModeProof:
             return self._text(mode, expression)
 
     def _text(self, mode, expression):
+        value = mode.exact_initializer_value(expression)
+        if value is not None:
+            return value
         result = expression
         for match in reversed(list(NAME_PART.finditer(expression))):
             value = self.value(mode, match[1] or match[2])

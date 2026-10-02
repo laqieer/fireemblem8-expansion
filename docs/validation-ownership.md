@@ -1839,9 +1839,10 @@ bounded substitution relation, including GNU whitespace and empty matches.
 Empty patterns, unproved escaping and multiple percent operators remain
 unsupported. Empty stems/replacements for the supported nonempty patterns
 retain their actual GNU behavior. Bare aliases may retain the same snapshot, but extra
-literal whitespace is not discarded. This does not add function evaluation to
-ordinary source conditions or the literal-value resolver, nor accept a final
-value simply because it looks plausible. A literal-directory wildcard can
+literal whitespace is not discarded. Supported pure constructors share the
+bounded original-data path described below; unsupported functions do not gain
+evaluation support, and a plausible final value is never sufficient evidence.
+A literal-directory wildcard can
 instead retain an original namespace header-safety bound; that is not an
 exact value and cannot supply parameters or target names.
 
@@ -1907,6 +1908,93 @@ failed open, unknown condition, missing visit, stale view or unproved remake.
 See the [bounded original-sort procedure](test-cases/workflow-governance.md#bounded-original-sort-data-correction).
 The source-only correction neither attributes the exclusive native failure
 nor qualifies a full report or selects shipping resource policy.
+
+### Closed finite original-data projection
+
+The literal-value API retains a **set of complete string alternatives**, not
+an unconditional union of words. Already-supported substitution references,
+`patsubst`, `addprefix`, `notdir`, `strip`, `filter`/`filter-out`, `findstring`,
+`sort` and their compositions now operate on every covered literal member
+before an existing scalar consumer asks for one common result. The shared
+pure constructor implements the same GNU whitespace, empty-match, prefix and
+byte-order semantics for singleton and finite inputs; it does not evaluate
+another Make program made from returned data.
+
+For example, an unresolved conditional append can leave `OBJECTS` with
+`b.o a.o b.o` or `b.o a.o b.o a.o`. `DEPS := $(OBJECTS:.o=.d)` captures both
+`b.d a.d b.d` and `b.d a.d b.d a.d` at that assignment. Its simple alias keeps
+both after OBJECTS changes, while a recursive substitution reads the later
+original OBJECTS. Sorting the complete prefixed dependency construction yields
+the common scalar `out/a.d out/b.d`. Appending a genuinely new `c.o` instead
+leaves two distinct normalized outcomes; neither scalar, selector nor include
+consumer may pick the convenient member.
+
+An available whole binding retains its joint string data. Separate marginal
+domains instead use the complete conservative Cartesian cover: two conditionally
+swapped variables do not prove that only the apparent paired source outcomes
+occurred. Repeated references likewise retain a conservative cover, not invented
+condition correlation. Unknown bodies, stale captures, cycles, malformed
+syntax and unsupported/effectful operands make the entire dependent result
+unknown; normalization cannot discard them. Empty results and equal projected
+members are retained and de-duplicated without spending extra alternative or
+receipt capacity.
+
+Existing assignment representation, flavor, applicability, override precedence,
+scope inheritance and unknown shadows remain authoritative. Finite simple
+captures use the existing literal bindings; existing singleton exact and
+`patsubst` captures keep their assignment-time fact contract. No second finite
+registry, journal replacement, whole-mode snapshot or terminal-value borrowing
+is introduced. Recursive reads use the current original context. A scoped
+unknown cannot borrow a global fact, and exact scoped DATA cannot issue a
+recipe or obligation context.
+
+Initializer, alias, condition/comparison, template-argument, header, rule,
+selector/RHS and include DATA consumers use this common construction seam.
+Their public signatures and scalar string-or-unknown contracts are unchanged.
+They still require the appropriate existing grammar and a result common to
+every covered member. In particular, the existing scoped selector grammar is
+not widened: use its supported literal/reference declaration form, not a
+new nested-colon recognition rule. Computed-name constructor operands,
+unsupported functions such as `if`, `word` and `addsuffix`, unproved escaping
+and invalid arity remain outside the exact constructor contract.
+
+Literal dollars remain DATA in simple bodies and metadata; they are never
+interpolated and re-lexed as calls. Constructors retain their existing refusal
+for dollar/NUL operands. A comma obtained from a binding is a literal byte, not
+another argument delimiter; operation/argument syntax comes only from the
+original expression. `sort` retains its reviewed ASCII alphabet. Existing
+lazy `and` behavior admits an unread arm only after all covered prefix outcomes
+prove it dead; a possible live unsupported arm cannot be erased by another
+empty member.
+
+Every consumed binding, captured fact, version, source site, scope, context,
+namespace, clock and limit receipt stays live through the complete compound
+operation. Comparisons include both operands in that lifetime. Admission,
+reentry, repeated/ABA and final callback-free validation still reject a changed
+consumed component; legitimate first-use and unread-variable changes remain
+possible. Owned lifetimes retire and caller-owned lifetimes remain shared.
+
+Cartesian traversal, intermediate strings, word/pattern storage, sorting, joins
+and encoding work are admitted before their allocations through the existing
+budget. Literal retention measures the existing `encoded()` ASCII JSON string
+size without constructing the encoding first, preserving its exact charge.
+Stable duplicates need no new retention or receipt entry. The existing 512
+alternative/context and active/reference-depth bounds, entry/receipt limits,
+default and stricter caller byte/deadline limits and sticky exhaustion remain;
+no counters are reset or refunded and no shipping profile is changed. Numeric
+boundary precharges are model accounting, not physical or native sizing.
+
+Common DATA is not namespace, native, source-phase or include authority. The
+literal wildcard fast path is not broadened to inline constructor programs;
+the genuine original wildcard resolver still requires its live source proof.
+Original inputs, visits, parent/order, bytes, missing/generated sources,
+publication/remake intervals, scoped issuance and source liveness remain
+independent obligations. The confirmed `fb24e38c` API precision loss and its
+correction establish neither the exclusive native failure cause nor a complete
+report. See the [finite-data procedure](test-cases/workflow-governance.md#closed-finite-original-data-correction).
+All native/full-report/verifier/resource/H1, review/security/Build/master,
+architecture, merge/closure/remote-completion and cleanup gates remain open to
+the coordinator.
 
 An applicable global simple `+=` preserves a proven original value even when
 its preceding initializer stored that value only as an exact template fact.

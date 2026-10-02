@@ -4442,6 +4442,120 @@ and open. Revert or fix forward through that owner if separately authorized
 qualification finds a regression; do not grow the operator universe or relax
 authority to pursue the next native barrier.
 
+### Closed finite original-data correction
+
+This extends **TC-WORKFLOW-GATE-OWNERSHIP-001** under
+[scope5961485246](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5961485246).
+The exact `fb24e38cffae626f8d7b47ff6baf7a88d8db76c8` APIs retain two known
+original simple/file literals but lose their derived simple value before
+already-supported constructors can normalize it. Both actual singleton members
+produce the same final DATA. This is a confirmed source/API precision defect,
+not an exclusive cause attribution for failed native run37055185452. Its late,
+partial, refusal-time descriptor supplies no original values, read set, joint
+correlation or include authority.
+
+Use a clean exact source and the existing host prerequisites. The focused
+classes are
+`scripts.validation_ownership.tests.test_make_probe.OriginalFiniteDataApiTests`
+and
+`scripts.validation_ownership.tests.test_phase_census.OriginalFiniteTemplateApiTests`.
+Keep `OriginalSortWordsApiTests` and the coupled append, mixed, provenance,
+repeated and captured receipt controls. Inspect every executing AST/helper/test
+body before source-only execution under `/usr/bin/python3 -I -S -B` with a
+credential-free environment and import, filesystem, process/network, native and
+budget run/read/close traps. Do not discover native-bearing modules, replace a
+successful resolver or turn an unissued DATA input into source/native evidence.
+
+1. Preserve the exact-parent reproduction:
+   `OBJECTS := b.o a.o b.o`, followed by an unresolved conditional
+   `OBJECTS += a.o`. Require the original domain to contain both complete
+   literals. Record the parent's unknown substitution, addprefix/strip/filter/
+   patsubst/sort composition and unknown-body `DEPS := $(OBJECTS:.o=.d)`,
+   plus both real singleton-member outputs. In the correction, require the
+   complete derived domain `b.d a.d b.d` and `b.d a.d b.d a.d`, with common
+   normalized output `out/a.d out/b.d`. A genuine `c.o` append leaves two
+   normalized strings and an unknown scalar; never choose a branch or union
+   its words.
+2. Exercise every existing constructor, brace spelling, composed pattern,
+   replacement and prefix domains, empty members, duplicates and GNU
+   whitespace/empty-match semantics. A whole paired binding may normalize to
+   one result. Separate A/B marginal domains must include their full four
+   combinations and retain `a.d`, `a.d b.d` and `b.d`, rather than pretend
+   original condition correlation. An unknown/cyclic/effectful member cannot
+   disappear through a filter or sort.
+3. Freeze `:=`/`::=` and simple aliases before replacing the source variable;
+   recursive values read the later original input. Preserve singleton exact
+   and captured-patsubst fact shapes. Exercise finite simple appends,
+   recursive/deferred flavor, inactive and unknown activity, command-line/
+   environment/override precedence, local shadow and inherited append.
+   A common scoped immediate RHS works in its assignment context; divergent
+   selectors/RHSs, unknown shadows and unissued recipe/obligation contexts
+   still refuse. Use the existing literal/reference selector grammar, not a
+   new nested-colon rule or per-name exception.
+4. Connect the common seam to initializer/alias, condition/comparison,
+   template argument, header, rule targets, selectors/RHSs, original template
+   parameters and include words. Inspect taken/untaken units and actual
+   template target/prerequisite tuples, and consume every retained call.
+   Divergent/unknown/dollar parameters cannot publish a selected call.
+   Literal include DATA does not prove visits, successful ignored opens,
+   namespace or source authority. Execute the genuine
+   `OriginalSourceProof.require_live`/constructor and nested original wildcard
+   refusal over unissued models; require no recorded patterns or issued
+   contexts and retain the terminal-borrowing refusal.
+5. Keep dollars literal in simple bodies and raw metadata, never re-lexing
+   them as calls; exact constructors still refuse dollar/NUL operands.
+   A returned comma remains a data byte, not another function argument.
+   Preserve unknown members, cycles, effects, metadata-versus-execution,
+   escaping/encoding, malformed syntax, unsupported arity and computed-name
+   constructor operands. `if`, `word`, `addsuffix` and other operators are not
+   added. Only an all-dead supported lazy prefix may leave an arm unread;
+   mixed possible truth with an unsupported live arm remains unknown.
+6. Require exact and one-over 512 alternative/context/depth, word/pattern
+   entry, receipt, cache/total and deadline boundaries under default and
+   stricter caller limits. Observe product, word/pattern, join, sort and
+   encoding admission before allocation, using actual constructor outputs and
+   retained representation measurements. Literal JSON-size counting must
+   match the real `encoded()` output without allocating it during retention.
+   Stable duplicates do not spend extra alternative/receipt capacity.
+   Default numeric receipt reserves and byte precharges must be labeled as
+   numeric models, not fabricated component-read, physical/RSS or native
+   workload evidence. Exhaustion stays sticky; clocks/counters are not reset,
+   refunded or raised.
+7. Inject changes at product/sort admission, callback/reentry, later/repeated
+   reads, attempted ABA restoration and the final checkpoint. Include captured
+   fact, binding/map/version, source site/scope/namespace, input/template/
+   execution and clock/limit mutations. Both comparison operands must retain
+   their consumed receipts. Retire only owned lifetimes and restore nested
+   scopes; legitimate first-use, unread and all-dead changes remain allowed.
+   Keep the original assertion bodies intact.
+8. Disconnect assignment-time literal capture, restore the exact-parent
+   constructors and scalar consumer independently, and restore each changed
+   argument/header/adapter connection. Require the relevant positive to
+   recover the original loss, not merely another arbitrary failure. Restore
+   the normal code and verify it again; a private-local rename, renamed/braced
+   variables and independent declaration order remain green. Parse the whole
+   changed AST/public signatures and unchanged source-authority boundary
+   separately from behavioral evidence. No existing uncertainty sentinel or
+   safety assertion is weakened by this correction.
+
+The smaller design reuses the existing bounded literal sets, binding/capture
+representation, read receipts and pure constructors until the existing scalar
+contract needs one common result. It adds no parallel finite registry,
+whole-mode snapshot, journal replacement, extra operator, include-only resolver,
+terminal query, native/source grant, feature gate or quota. Dependencies are the
+existing source/input/scope/value/receipt/resource contracts; other feature or
+profile conflicts are none. Game/build/configuration, modern/archival behavior,
+ROM/RAM/ABI, saves, generated game data and localization are unchanged.
+
+Reset only owned memory models; preserve preimage and mutation evidence.
+All sixteen previous native allocations stay spent and this procedure allocates
+none. Fresh exact-source family review follows owner publication. Full report/
+verifier/resource/native/H1/security/Copilot/Build/master/architecture/merge/
+closure/remote-completion/cleanup requirements remain coordinator-owned and
+open. Source-only DATA precision is not end-to-end report completion. Revert or
+fix forward through that coordinator if later authorized qualification finds a
+regression, without widening grammar or authority to pursue another barrier.
+
 ### Native ownership, stderr effects and cumulative accounting
 
 These are additional deterministic controls for

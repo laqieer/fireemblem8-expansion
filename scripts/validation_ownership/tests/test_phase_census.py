@@ -254,6 +254,128 @@ class OriginalTemplateApiTests(unittest.TestCase):
         self.assertEqual((budget.runs, budget.states), (0, 0))
 
 
+class OriginalFiniteTemplateApiTests(unittest.TestCase):
+    """Caller-time finite DATA cannot issue a native source or recipe context."""
+
+    def unavailable(self, *args, **kwargs):
+        raise MakeProbeError("unissued source proof cannot grant native authority")
+
+    def mode(self):
+        budget = ProbeBudget()
+        session = SimpleNamespace(budget=budget, make=self.unavailable,
+                                  _wildcard_image=self.unavailable)
+        proof = SimpleNamespace(session=session, observation=None, missing={},
+                                require_live=self.unavailable)
+        original = phase_census.SourcePass(
+            proof, SimpleNamespace(number=1, inputs=(SimpleNamespace(parent=False, variables=()),), visits=()),
+            SimpleNamespace(directories=(), members={}), (), "all", (), {}, "unissued.mk",
+        )
+        mode = graph_probe._MakeSourceMode(
+            budget=budget, original_input=original.input, original_execution=original.record_execution,
+            namespace=frozenset(),
+        )
+        mode.template_mode = original.template_mode()
+        mode.original_target_value = mode.original_include_value = mode.template_mode.text
+        mode.scope_lookup_guard = original.require_scoped_context
+        return mode, original
+
+    def parse(self, mode, source):
+        return tuple(graph_probe.make_source_units(source, mode=mode, source_path="unissued.mk"))
+
+    def inert(self, mode, original):
+        self.assertEqual((mode.budget.runs, mode.budget.states), (0, 0))
+        self.assertFalse(mode.budget.children)
+        self.assertFalse(mode.budget.producer_waiters)
+        self.assertFalse(original.issued_contexts)
+        self.assertIsNone(mode._value_reads)
+        self.assertIsNone(mode.scope_context)
+
+    def test_common_original_template_parameters_freeze_the_complete_early_domain(self):
+        mode, original = self.mode()
+        expression = "$(foreach item,$(PARAMS),$(eval $(call RULE,$(item))))"
+        self.parse(mode, (
+            "WORDS := beta alpha beta\nifdef SELECT\nWORDS += alpha\nendif\n"
+            "PARAMS := $(sort $(WORDS))\nWORDS := later\n"
+            "define RULE\nout/$(1): src/$(1)\nendef\n" + expression + "\n"
+        ))
+        template = mode.template_mode
+        with self.assertRaisesRegex(MakeProbeError, "omitted"):
+            template.require_complete()
+        call, = template.calls
+        captured = template.original_call(call.site, expression)
+        self.assertEqual(tuple(unit.source_rule.targets for unit in captured.units),
+                         (("out/alpha",), ("out/beta",)))
+        self.assertEqual(tuple(unit.source_rule.prerequisites for unit in captured.units),
+                         (("src/alpha",), ("src/beta",)))
+        self.assertEqual(captured.inputs, ("PARAMS",))
+        template.require_complete()
+        self.inert(mode, original)
+
+    def test_divergent_unknown_and_dollar_parameters_never_publish_a_selected_call(self):
+        for body in (
+            "WORDS := beta alpha\nifdef SELECT\nWORDS += gamma\nendif\nPARAMS := $(sort $(WORDS))\n",
+            "PARAMS := $(word 1,unsupported)\n",
+            "PARAMS := $$(eval forbidden-not-executed)\n",
+        ):
+            with self.subTest(body=body):
+                mode, original = self.mode()
+                self.parse(mode, body + "define RULE\nout/$(1): src/$(1)\nendef\n")
+                expression = "$(foreach item,$(PARAMS),$(eval $(call RULE,$(item))))"
+                self.assertFalse(mode.template_mode(mode, expression))
+                self.assertFalse(mode.template_mode.calls)
+                self.inert(mode, original)
+
+    def test_parameter_reassignment_after_consumption_cannot_borrow_a_late_header(self):
+        mode, original = self.mode()
+        self.parse(mode, (
+            "WORDS := beta alpha beta\nifdef SELECT\nWORDS += alpha\nendif\n"
+            "PARAMS := $(sort $(WORDS))\nTRIGGER := prerequisite\n"
+            "define RULE\nout/$(1): $(TRIGGER)\nendef\n"
+        ))
+        guard, changed = mode.scope_lookup_guard, []
+        def mutate(current, name):
+            guard(current, name)
+            if name == "TRIGGER" and not changed:
+                changed.append(name)
+                current.assign("PARAMS", ":=", "late")
+        mode.scope_lookup_guard = mutate
+        with self.assertRaises(MakeProbeError):
+            mode.template_mode(mode, "$(foreach item,$(PARAMS),$(eval $(call RULE,$(item))))")
+        self.assertEqual(changed, ["TRIGGER"])
+        self.inert(mode, original)
+
+    def test_common_scoped_data_still_refuses_unissued_recipe_and_obligation(self):
+        mode, original = self.mode()
+        self.parse(mode, (
+            "WORDS := beta alpha beta\nifdef SELECT\nWORDS += alpha\nendif\n"
+            "unit.o: DATA := $(sort $(WORDS))\n"
+        ))
+        with mode.using_scope(graph_probe._ScopeContext("unit.o", "unit.o", "assignment")):
+            self.assertEqual(mode.template_mode.text(mode, "$(DATA)"), "alpha beta")
+        original.deferred_execution, original.scope_mode = True, mode
+        original.unproven_scoped_names = mode.scoped_names()
+        for kind in ("recipe", "obligation"):
+            with self.subTest(kind=kind):
+                with mode.using_scope(graph_probe._ScopeContext("unit.o", "unit.o", kind)):
+                    with self.assertRaisesRegex(MakeProbeError, "unproven target/private"):
+                        mode.template_mode.text(mode, "$(DATA)")
+        self.assertFalse(original.issued_contexts)
+        self.inert(mode, original)
+
+    def test_common_include_data_remains_independent_of_native_source_liveness(self):
+        mode, original = self.mode()
+        self.parse(mode, "WORDS := b.mk a.mk b.mk\nifdef SELECT\nWORDS += a.mk\nendif\n")
+        expression = "$(sort $(WORDS))"
+        self.assertEqual(graph_probe._include_names("-include " + expression, mode), ["a.mk", "b.mk"])
+        mode.original_wildcard = original.wildcard
+        with self.assertRaisesRegex(MakeProbeError, "unissued source proof"):
+            graph_probe._include_names("-include $(wildcard " + expression + ")", mode)
+        self.assertFalse(original.patterns)
+        with self.assertRaisesRegex(MakeProbeError, "borrow a terminal native value"):
+            mode.template_mode.native_value("WORDS")
+        self.inert(mode, original)
+
+
 class OriginalRuntimeWildcardSourceApiTests(unittest.TestCase):
     """Original source/lookup composition; capture and native completion are modeled."""
 

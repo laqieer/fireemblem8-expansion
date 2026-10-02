@@ -1659,6 +1659,540 @@ class OriginalSortWordsApiTests(unittest.TestCase):
                 self.inert(mode, original)
 
 
+class OriginalFiniteDataApiTests(unittest.TestCase):
+    """Closed original DATA covers, not selected native branches or source proof."""
+
+    mode = OriginalSortWordsApiTests.mode
+    parse = OriginalSortWordsApiTests.parse
+    inert = OriginalSortWordsApiTests.inert
+    unavailable = OriginalSortWordsApiTests.unavailable
+
+    @staticmethod
+    def program(*, tail="a.o", name="OBJECTS"):
+        return name + " := b.o a.o b.o\nifdef SELECT\n" + name + " += " + tail + "\nendif\n"
+
+    @staticmethod
+    def composition(name="OBJECTS", *, suffix=True):
+        words = "$(" + name + (":.o=.d)" if suffix else ")")
+        return "$(sort $(filter %.d,$(strip $(addprefix out/," + words + "))))"
+
+    def test_each_existing_constructor_retains_every_original_literal_member(self):
+        mode, original = self.mode()
+        self.parse(mode, self.program())
+        objects = {"b.o a.o b.o", "b.o a.o b.o a.o"}
+        deps = {"b.d a.d b.d", "b.d a.d b.d a.d"}
+        for expression, expected in (
+            ("$(OBJECTS)", objects), ("$(OBJECTS:.o=.d)", deps), ("${OBJECTS:.o=.d}", deps),
+            ("$(patsubst %.o,%.d,$(OBJECTS))", deps),
+            ("$(strip $(OBJECTS))", objects), ("$(filter %.o,$(OBJECTS))", objects),
+            ("$(filter-out %.missing,$(OBJECTS))", objects),
+            ("$(notdir $(OBJECTS))", objects),
+            ("$(addprefix out/,$(OBJECTS:.o=.d))",
+             {"out/b.d out/a.d out/b.d", "out/b.d out/a.d out/b.d out/a.d"}),
+            (self.composition(), {"out/a.d out/b.d"}),
+        ):
+            with self.subTest(expression=expression):
+                actual = mode.literal_values(expression)
+                self.assertIsInstance(actual, frozenset)
+                self.assertEqual(actual, expected)
+                self.assertEqual(mode.exact_initializer_value(expression),
+                                 next(iter(expected)) if len(expected) == 1 else None)
+        self.inert(mode, original)
+
+    def test_singleton_member_controls_use_the_same_real_constructors(self):
+        for value, expected in (
+            ("b.o a.o b.o", "b.d a.d b.d"), ("b.o a.o b.o a.o", "b.d a.d b.d a.d"),
+        ):
+            with self.subTest(value=value):
+                mode, original = self.mode()
+                self.parse(mode, "OBJECTS := " + value + "\n")
+                self.assertEqual(mode.exact_initializer_value("$(OBJECTS:.o=.d)"), expected)
+                self.assertEqual(mode.exact_initializer_value(self.composition()), "out/a.d out/b.d")
+                self.inert(mode, original)
+
+    def test_genuine_divergence_never_selects_one_member_or_unions_words(self):
+        mode, original = self.mode()
+        self.parse(mode, self.program(tail="c.o") + "DEPS := $(OBJECTS:.o=.d)\n")
+        expected = {"out/a.d out/b.d", "out/a.d out/b.d out/c.d"}
+        self.assertEqual(mode.literal_values(self.composition()), expected)
+        self.assertIsNone(mode.exact_initializer_value(self.composition()))
+        self.assertIsNone(mode.template_argument(self.composition()))
+        self.assertIsNone(mode.template_initializer(self.composition()))
+        self.assertIsNone(graph_probe._include_names("-include " + self.composition(), mode))
+        rule = mode.source_rule(self.composition() + ": prerequisite")
+        self.assertIsNone(rule.targets)
+        self.assertEqual(rule.prerequisites, ("prerequisite",))
+        with self.assertRaisesRegex(MakeProbeError, "scoped assignment"):
+            self.parse(mode, "$(DEPS): FLAGS := local\n")
+        self.inert(mode, original)
+
+    def test_simple_domains_and_aliases_freeze_without_late_recovery(self):
+        for operator in (":=", "::="):
+            with self.subTest(operator=operator):
+                mode, original = self.mode()
+                self.parse(mode, self.program(tail="c.o") + (
+                    "DEPS " + operator + " $(OBJECTS:.o=.d)\nALIAS := $(DEPS)\n"
+                    "CURRENT = $(OBJECTS:.o=.d)\nNORMALIZED := " + self.composition() + "\n"
+                ))
+                frozen = {"b.d a.d b.d", "b.d a.d b.d c.d"}
+                self.assertEqual(mode.literal_values("$(DEPS)"), frozen)
+                self.assertEqual(mode.literal_values("$(ALIAS)"), frozen)
+                self.assertTrue(all(binding.flavor == "simple" and binding.origin == "file"
+                                    and binding.value is not None for binding in mode.definitions["DEPS"]))
+                self.parse(mode, "OBJECTS := late/x.o\n")
+                self.assertEqual(mode.literal_values("$(DEPS)"), frozen)
+                self.assertEqual(mode.literal_values("$(ALIAS)"), frozen)
+                self.assertEqual(mode.exact_reference("CURRENT"), "late/x.d")
+                self.assertEqual(mode.literal_values("$(NORMALIZED)"),
+                                 {"out/a.d out/b.d", "out/a.d out/b.d out/c.d"})
+                self.inert(mode, original)
+
+    def test_common_singleton_capture_and_existing_patsubst_relation_are_preserved(self):
+        mode, original = self.mode()
+        self.parse(mode, self.program() + "NORMALIZED := " + self.composition() + "\n")
+        self.assertEqual(mode.template_values["NORMALIZED"][1], ("exact", "out/a.d out/b.d"))
+        self.assertEqual({binding.value for binding in mode.definitions["NORMALIZED"]}, {None})
+        self.parse(mode, "ONE := $(patsubst %.o,%.d,a.o b.o)\n")
+        self.assertEqual(mode.template_values["ONE"][1], ("patsubst", ("%.o", "%.d", "a.o b.o")))
+        self.assertEqual(mode.template_snapshot("ONE"), "a.d b.d")
+        self.inert(mode, original)
+
+    def test_empty_members_deduplication_and_gnu_word_semantics_survive_projection(self):
+        for initial, tail, expected in (("", "", {""}), ("", "a.o", {"", "a.d"}),
+                                         (" \t", " ", {""})):
+            with self.subTest(initial=initial, tail=tail):
+                mode, original = self.mode()
+                mode.assign("X", ":=", initial)
+                mode.assign("X", "+=", tail, active=None)
+                self.assertEqual(mode.literal_values("$(sort $(X:.o=.d))"), expected)
+                self.assertEqual(mode.exact_initializer_value("$(sort $(X:.o=.d))"),
+                                 next(iter(expected)) if len(expected) == 1 else None)
+                self.inert(mode, original)
+        mode, original = self.mode()
+        for expression, expected in (
+            ("$(patsubst a,,\ta  b\ta )", "\t  b\t "),
+            ("$(patsubst %.o,,\ta.o  b.c\ta.o )", "b.c"),
+            ("$(patsubst %.o,%.d,.o a.o b.c)", ".d a.d b.c"),
+            ("$(notdir a/ b/file c/)", " file "),
+            ("$(addprefix out/,a/ b/)", "out/a/ out/b/"),
+        ):
+            self.assertEqual(mode.exact_initializer_value(expression), expected)
+        self.inert(mode, original)
+
+    def test_joint_binding_data_is_preserved_but_marginals_do_not_invent_correlation(self):
+        mode, original = self.mode()
+        self.parse(mode, (
+            "A := a.o\nB := b.o\nPAIR := a.o b.o\nifdef SELECT\n"
+            "A := b.o\nB := a.o\nPAIR := b.o a.o\nendif\n"
+        ))
+        self.assertEqual(mode.literal_values("$(A) $(B)"), {"a.o a.o", "a.o b.o", "b.o a.o", "b.o b.o"})
+        expression = "$(sort $(patsubst %.o,%.d,$(A) $(B)))"
+        self.assertEqual(mode.literal_values(expression), {"a.d", "a.d b.d", "b.d"})
+        self.assertIsNone(mode.exact_initializer_value(expression))
+        self.assertEqual(mode.exact_initializer_value("$(sort $(PAIR:.o=.d))"), "a.d b.d")
+        self.inert(mode, original)
+
+    def test_multiple_operand_domains_keep_the_complete_conservative_product(self):
+        mode, original = self.mode()
+        self.parse(mode, "PREFIX := out/\nWORDS := a.o\nifdef SELECT\nPREFIX := gen/\nWORDS += b.o\nendif\n")
+        self.assertEqual(mode.literal_values("$(addprefix $(PREFIX),$(WORDS))"),
+                         {"out/a.o", "out/a.o out/b.o", "gen/a.o", "gen/a.o gen/b.o"})
+        self.assertIsNone(mode.exact_initializer_value("$(addprefix $(PREFIX),$(WORDS))"))
+        self.parse(mode, "PAT := %.o\nREPLACEMENT := %.d\nifdef SELECT\nREPLACEMENT := gen/%.d\nendif\n")
+        self.assertEqual(mode.literal_values("$(patsubst $(PAT),$(REPLACEMENT),$(WORDS))"),
+                         {"a.d", "a.d b.d", "gen/a.d", "gen/a.d gen/b.d"})
+        self.inert(mode, original)
+
+    def test_literal_dollars_and_commas_are_never_relexed_as_make_source(self):
+        mode, original = self.mode()
+        self.parse(mode, "DOLLARS := $$(shell forbidden-not-executed)\nCOMMA := a.o,b.o\nPREFIX := x,y/\n")
+        self.assertEqual(mode.literal_values("$(DOLLARS)"), {"$(shell forbidden-not-executed)"})
+        self.assertEqual(mode.literal_values("$(strip $(COMMA))"), {"a.o,b.o"})
+        self.assertEqual(mode.exact_initializer_value("$(addprefix $(PREFIX),a.o b.o)"),
+                         "x,y/a.o x,y/b.o")
+        self.assertIsNone(mode.literal_values("$(sort $(COMMA))"))
+        self.assertIsNone(mode.literal_values("$(strip $(DOLLARS))"))
+        self.assertIsNone(mode.exact_initializer_value("$(sort $(DOLLARS))"))
+        self.assertFalse(mode.effectful("$(DOLLARS)"))
+        self.assertTrue(mode.original_namespace_valid)
+        self.inert(mode, original)
+
+    def test_unknown_members_cycles_effects_escaping_and_malformed_calls_stay_unknown(self):
+        for source in (
+            "X := a.o\nifdef SELECT\nX := $(word 1,unsupported)\nendif\n",
+            "X = $(Y)\nY = $(X)\n", "X := $(shell forbidden-not-executed)\n",
+        ):
+            with self.subTest(source=source):
+                mode, original = self.mode()
+                self.parse(mode, source)
+                self.assertIsNone(mode.literal_values("$(filter %.missing,$(X))"))
+                self.assertIsNone(mode.exact_initializer_value("$(sort $(X:.o=.d))"))
+                self.inert(mode, original)
+        mode, original = self.mode()
+        self.parse(mode, "X := a.o\n")
+        for expression in (
+            "$(if yes,a,b)", "$(word 1,a b)", "$(addsuffix .d,a b)", "$(sort a,b)",
+            "$(X:.o=.d=bad)", "$(X:$(BAD)=.d)", r"$(X:%.o=bad\%.d)",
+            "$(sort a", "${sort a)", "$(strip a,b)", "$(patsubst ,%.d,a.o)",
+            "$(sort $($(X)))",
+        ):
+            with self.subTest(expression=expression):
+                self.assertIsNone(mode.literal_values(expression))
+                self.assertIsNone(mode.exact_initializer_value(expression))
+        self.inert(mode, original)
+
+    def test_metadata_observes_bodies_without_executing_or_collapsing_them(self):
+        mode, original = self.mode()
+        self.parse(mode, self.program() + "DEPS := $(OBJECTS:.o=.d)\nCURRENT = $(OBJECTS:.o=.d)\n")
+        self.assertEqual(mode.literal_values("$(flavor DEPS)/$(origin DEPS)"), {"simple/file"})
+        self.assertEqual(mode.literal_values("$(value DEPS)"), {"b.d a.d b.d", "b.d a.d b.d a.d"})
+        self.assertEqual(mode.literal_values("$(value CURRENT)"), {"$(OBJECTS:.o=.d)"})
+        self.assertIsNone(mode.exact_initializer_value("$(sort $(value CURRENT))"))
+        self.assertEqual(mode.literal_values("$(sort $(value DEPS))"), {"a.d b.d"})
+        self.inert(mode, original)
+
+    def test_lazy_and_requires_every_possible_live_arm_and_all_dead_is_unread(self):
+        mode, original = self.mode()
+        self.parse(mode, self.program())
+        reads = []
+        guard = mode.scope_lookup_guard
+        def observed(current, name):
+            reads.append(name)
+            guard(current, name)
+        mode.scope_lookup_guard = observed
+        expression = "$(and $(filter %.missing,$(OBJECTS)),$(word 1,$(UNREAD)))"
+        self.assertEqual(mode.literal_values(expression), {""})
+        self.assertEqual(mode.exact_initializer_value(expression), "")
+        self.assertNotIn("UNREAD", reads)
+        self.parse(mode, "CHOICE := \nifdef SELECT\nCHOICE := yes\nendif\n")
+        self.assertIsNone(mode.literal_values("$(and $(CHOICE),$(word 1,unsupported))"))
+        self.assertEqual(mode.literal_values("$(and $(CHOICE),tail)"), {"", "tail"})
+        self.assertIsNone(mode.exact_initializer_value("$(and $(CHOICE),tail)"))
+        self.inert(mode, original)
+
+    def test_appends_keep_original_flavor_activity_precedence_and_finite_rhs(self):
+        for active in (False, True, None):
+            with self.subTest(active=active):
+                mode, original = self.mode()
+                self.parse(mode, self.program(tail="c.o") + "DEPS := $(OBJECTS:.o=.d)\n")
+                before = mode.definitions["DEPS"]
+                mode.assign("DEPS", "+=", "$(addprefix extra/,tail.d)", active=active)
+                frozen = {"b.d a.d b.d", "b.d a.d b.d c.d"}
+                appended = {value + " extra/tail.d" for value in frozen}
+                self.assertEqual(mode.literal_values("$(DEPS)"),
+                                 frozen if active is False else appended if active is True else frozen | appended)
+                if active is False:
+                    self.assertIs(mode.definitions["DEPS"], before)
+                self.inert(mode, original)
+        mode, original = self.mode()
+        self.parse(mode, "X = $(LEAF)\nX += $(LEAF:.o=.d)\nLEAF := late.o\n")
+        self.assertEqual(mode.exact_reference("X"), "late.o late.d")
+        self.assertTrue(all(binding.flavor == "recursive" for binding in mode.definitions["X"]))
+        self.inert(mode, original)
+
+    def test_scoped_shadow_inheritance_and_common_immediate_rhs_keep_their_context(self):
+        mode, original = self.mode()
+        self.parse(mode, self.program() + (
+            "GLOBAL := $(addprefix global/,one.o)\none.o: OBJECTS := local/one.o\n"
+            "one.o: GLOBAL = $(word 1,unknown)\ntwo.o: OBJECTS += local/two.o\n"
+            "two.o: FROZEN := $(sort $(OBJECTS:.o=.d))\n"
+        ))
+        with mode.using_scope(graph_probe._ScopeContext("one.o", "one.o", "assignment")):
+            self.assertEqual(mode.exact_initializer_value("$(OBJECTS:.o=.d)"), "local/one.d")
+            self.assertIsNone(mode.exact_reference("GLOBAL"))
+        with mode.using_scope(graph_probe._ScopeContext("two.o", "two.o", "assignment")):
+            self.assertEqual(mode.literal_values("$(OBJECTS:.o=.d)"),
+                             {"b.d a.d b.d local/two.d", "b.d a.d b.d a.d local/two.d"})
+            self.assertEqual(mode.exact_reference("FROZEN"), "a.d b.d local/two.d")
+        self.assertEqual(mode.exact_reference("GLOBAL"), "global/one.o")
+        original.deferred_execution, original.scope_mode = True, mode
+        original.unproven_scoped_names = mode.scoped_names()
+        for kind in ("recipe", "obligation"):
+            with mode.using_scope(graph_probe._ScopeContext("two.o", "two.o", kind)):
+                with self.assertRaisesRegex(MakeProbeError, "unproven target/private"):
+                    mode.exact_reference("FROZEN")
+        self.inert(mode, original)
+
+    def test_common_values_reach_every_shared_scalar_and_header_consumer(self):
+        mode, original = self.mode()
+        self.parse(mode, self.program() + (
+            "DEPS := $(OBJECTS:.o=.d)\nCOMMON = " + self.composition() + "\nifdef SELECT\n"
+            "COMMON = $(sort $(addprefix out/,$(OBJECTS:.o=.d)))\nendif\n"
+        ))
+        expression, expected = self.composition(), "out/a.d out/b.d"
+        self.assertEqual(mode.template_mode.text(mode, expression), expected)
+        self.assertEqual(mode.template_argument(expression), expected)
+        self.assertEqual(mode.template_initializer(expression), ("exact", expected))
+        self.assertEqual(mode.exact_reference("COMMON"), expected)
+        self.assertTrue(mode.template_header_reference("COMMON"))
+        adapter = graph_probe._TemplateModeProof(original.session, "all", (), {}, None, "unissued.mk", False)
+        self.assertEqual(adapter.value(mode, "COMMON"), expected)
+        self.assertEqual(adapter.text(mode, expression), expected)
+        self.assertTrue(adapter.header_data(mode, "COMMON"))
+        self.assertEqual(mode.source_rule(expression + ": prerequisite").targets, ("out/a.d", "out/b.d"))
+        self.assertEqual(graph_probe._include_names("-include " + expression, mode), ["out/a.d", "out/b.d"])
+        self.assertIsNone(graph_probe._include_names("-include $(wildcard " + expression + ")", mode))
+        mode.original_wildcard = original.wildcard
+        with self.assertRaisesRegex(MakeProbeError, "unissued source proof"):
+            graph_probe._include_names("-include $(wildcard " + expression + ")", mode)
+        with self.assertRaisesRegex(MakeProbeError, "borrow a terminal native value"):
+            mode.template_mode.native_value("COMMON")
+        self.inert(mode, original)
+
+    def test_common_predicates_and_selectors_differ_from_divergent_ones(self):
+        mode, original = self.mode()
+        units = self.parse(mode, self.program() + (
+            "TARGETS := " + self.composition() + "\n"
+            "ifeq (" + self.composition() + ",out/a.d out/b.d)\n"
+            "$(TARGETS): FLAGS := $(sort z a z)\nelse\nBAD := $(eval .POSIX:)\nendif\n"
+        ))
+        self.assertIs(next(unit for unit in units if unit.text.startswith("BAD :=")).active, False)
+        with mode.using_scope(graph_probe._ScopeContext("out/a.d", "out/a.d", "assignment")):
+            self.assertEqual(mode.exact_reference("FLAGS"), "a z")
+        self.assertIsNone(mode.condition("ifeq", "($(OBJECTS),b.o a.o b.o)"))
+        self.assertIs(mode.condition("ifeq", "($(OBJECTS),different)"), False)
+        self.assertTrue(mode.original_namespace_valid)
+        self.inert(mode, original)
+
+    def test_comparison_receipts_survive_both_operands(self):
+        mode, original = self.mode()
+        self.parse(mode, self.program() + "RIGHT := different\n")
+        changed = []
+        guard = mode.scope_lookup_guard
+        def mutate(current, name):
+            guard(current, name)
+            if name == "RIGHT" and not changed:
+                changed.append(name)
+                current.assign("OBJECTS", ":=", "late.o")
+        mode.scope_lookup_guard = mutate
+        with self.assertRaises(MakeProbeError):
+            mode.condition("ifeq", "($(sort $(OBJECTS)),$(RIGHT))")
+        self.assertEqual(changed, ["RIGHT"])
+        self.inert(mode, original)
+
+    def test_512_alternatives_and_product_work_use_existing_bounds(self):
+        mode, original = self.mode()
+        mode.assign("X", ":=", "root.o")
+        for index in range(9):
+            mode.assign("X", "+=", "w" + str(index) + ".o", active=None)
+        self.assertEqual(len(mode.literal_values("$(X:.o=.d)")), 512)
+        self.assertEqual(len(mode.literal_values("$(sort $(X:.o=.d))")), 512)
+        with self.assertRaisesRegex(MakeProbeError, "bounded context plan"):
+            mode.assign("X", "+=", "extra.o", active=None)
+        mode, original = self.mode(budget=ProbeBudget(Limits(entries=4)))
+        mode.assign("A", ":=", "a")
+        mode.assign("A", "+=", "b", active=None)
+        mode.assign("B", ":=", "x")
+        mode.assign("B", "+=", "y", active=None)
+        self.assertEqual(len(mode.literal_values("$(addprefix $(A),$(B))")), 4)
+        mode.assign("B", "+=", "z", active=None)
+        with self.assertRaisesRegex(MakeProbeError, "product.*entry bound"):
+            mode.literal_values("$(addprefix $(A),$(B))")
+        self.assertTrue(mode.budget.failed)
+        self.inert(mode, original)
+
+    def test_intermediate_join_and_encoding_are_admitted_before_construction(self):
+        parts = ("x" * 80, "/", "y" * 80)
+        budget = ProbeBudget()
+        expected = graph_probe._original_data_join(parts, budget)
+        needed = budget.bytes["cache"]
+        for offset in (0, -1):
+            with self.subTest(offset=offset):
+                budget = ProbeBudget(Limits(cache_bytes=needed + offset))
+                allocations = []
+                def observed(frame, event, argument):
+                    if (event == "c_call" and frame.f_code is graph_probe._original_data_join.__code__
+                            and argument.__name__ == "join"):
+                        allocations.append(budget.bytes.get("cache", 0))
+                previous = sys.getprofile()
+                try:
+                    sys.setprofile(observed)
+                    if offset == 0:
+                        self.assertEqual(graph_probe._original_data_join(parts, budget), expected)
+                        retained = sys.getsizeof(expected) + 2 * sys.getsizeof(graph_probe.encoded(expected))
+                        self.assertLessEqual(retained, allocations[0])
+                    else:
+                        with self.assertRaises(MakeProbeError):
+                            graph_probe._original_data_join(parts, budget)
+                finally:
+                    sys.setprofile(previous)
+                self.assertEqual(bool(allocations), offset == 0)
+
+    def test_default_word_entry_bound_is_exact_before_finite_normalization(self):
+        for extra in (0, 1):
+            with self.subTest(extra=extra):
+                mode, original = self.mode(budget=ProbeBudget())
+                entries = mode.budget.limits.entries
+                expression = "$(sort " + "w " * (entries + extra) + ")"
+                if extra:
+                    with self.assertRaisesRegex(MakeProbeError, "sort words.*entry bound"):
+                        mode.exact_initializer_value(expression)
+                    self.assertTrue(mode.budget.failed)
+                    with self.assertRaises(MakeProbeError):
+                        mode.literal_values("literal")
+                else:
+                    self.assertEqual(mode.literal_values(expression), {"w"})
+                self.inert(mode, original)
+
+    def test_filter_pattern_storage_and_entry_count_are_admitted_before_slicing(self):
+        for count in (2, 3):
+            with self.subTest(count=count):
+                mode, original = self.mode(budget=ProbeBudget(Limits(entries=2)))
+                expression = "$(filter " + "a " * count + ",a b)"
+                patterns = graph_probe._original_filter_patterns
+                allocations = []
+                def observed(value, budget):
+                    allocations.append(budget.bytes["cache"])
+                    return patterns(value, budget)
+                with patch.object(graph_probe, "_original_filter_patterns", observed):
+                    if count == 2:
+                        self.assertEqual(mode.literal_values(expression), {"a"})
+                    else:
+                        with self.assertRaisesRegex(MakeProbeError, "entry bound"):
+                            mode.literal_values(expression)
+                self.assertEqual(bool(allocations), count == 2)
+                self.inert(mode, original)
+
+    def test_literal_retention_measures_the_ascii_json_size_without_encoding_first(self):
+        for value in ("plain", '"\\\b\f\n\r\t\x00\x1f\x7f', "\u00e9\u2028\udcff", "\U0001f600"):
+            with self.subTest(value=ascii(value)):
+                needed = 128 + len(graph_probe.encoded(value))
+                self.assertEqual(graph_probe._original_literal_size(value, None), needed - 128)
+                for offset in (0, -1):
+                    budget = ProbeBudget(Limits(cache_bytes=needed + offset))
+                    mode = _MakeSourceMode(budget=budget)
+                    values = set()
+                    with patch.object(graph_probe, "encoded", side_effect=AssertionError("unadmitted encoding")):
+                        if offset == 0:
+                            mode.retain_literal_value(values, value)
+                            self.assertEqual(values, {value})
+                            self.assertEqual(budget.bytes["cache"], needed)
+                            mode.retain_literal_value(values, value)
+                            self.assertEqual(budget.bytes["cache"], needed)
+                        else:
+                            with self.assertRaises(MakeProbeError):
+                                mode.retain_literal_value(values, value)
+                            self.assertFalse(values)
+
+    def test_finite_cache_total_depth_and_sticky_exhaustion_are_exact(self):
+        expression = self.composition()
+        measured, _ = self.mode()
+        self.parse(measured, self.program())
+        before = dict(measured.budget.bytes)
+        self.assertEqual(measured.exact_initializer_value(expression), "out/a.d out/b.d")
+        cost = measured.budget.bytes["cache"] - before["cache"]
+        for category in ("cache", "total"):
+            for offset in (0, -1):
+                with self.subTest(category=category, offset=offset):
+                    mode, original = self.mode()
+                    self.parse(mode, self.program())
+                    spent = sum(mode.budget.bytes.values()) if category == "total" else mode.budget.bytes["cache"]
+                    mode.budget.limits = replace(mode.budget.limits, **{category + "_bytes": spent + cost + offset})
+                    clock = mode.budget.started, mode.budget.deadline
+                    if offset == 0:
+                        self.assertEqual(mode.exact_initializer_value(expression), "out/a.d out/b.d")
+                        self.assertEqual(sum(mode.budget.bytes.values()) if category == "total"
+                                         else mode.budget.bytes["cache"], spent + cost)
+                    else:
+                        with self.assertRaises(MakeProbeError):
+                            mode.exact_initializer_value(expression)
+                        self.assertTrue(mode.budget.failed)
+                        with self.assertRaises(MakeProbeError):
+                            mode.literal_values("literal")
+                    self.assertEqual((mode.budget.started, mode.budget.deadline), clock)
+                    self.inert(mode, original)
+        mode, original = self.mode()
+        self.parse(mode, self.program())
+        self.assertEqual(mode.literal_values(expression, tuple(range(511))), {"out/a.d out/b.d"})
+        self.assertIsNone(mode.literal_values(expression, tuple(range(512))))
+        self.inert(mode, original)
+
+    def test_compound_repeated_aba_and_final_validation_keep_consumed_domains(self):
+        for repeated in (True, False):
+            with self.subTest(repeated=repeated):
+                mode, original = self.mode()
+                self.parse(mode, self.program() + "SWITCH := switch\nRESTORE := restore\n")
+                binding, version = mode.definitions["OBJECTS"], mode.binding_versions[None, "OBJECTS"]
+                events = []
+                guard = mode.scope_lookup_guard
+                def mutate(current, name):
+                    guard(current, name)
+                    if name == "SWITCH" and not events:
+                        events.append("changed")
+                        current.assign("OBJECTS", ":=", "late.o")
+                    elif name == "RESTORE" and events:
+                        events.append("restored")
+                        current.definitions["OBJECTS"] = binding
+                        current.binding_versions[None, "OBJECTS"] = version
+                mode.scope_lookup_guard = mutate
+                expression = "$(sort $(OBJECTS))|$(SWITCH)" + (
+                    "|$(sort $(OBJECTS))|$(RESTORE)" if repeated else ""
+                )
+                with self.assertRaises(MakeProbeError):
+                    mode.exact_initializer_value(expression)
+                self.assertEqual(events, ["changed"])
+                self.inert(mode, original)
+
+    def test_product_admission_reentry_retains_and_retires_actual_read_state(self):
+        mode, original = self.mode()
+        self.parse(mode, self.program())
+        charge, events, states = mode.budget.charge, [], []
+        def mutate(category, size):
+            result = charge(category, size)
+            frame = sys._getframe(1)
+            while frame is not None:
+                if frame.f_code is graph_probe._MakeSourceMode._literal_projection.__code__:
+                    if frame.f_locals.get("count") == 2 and not events:
+                        events.append("changed")
+                        states.append(mode._value_reads)
+                        mode.assign("OBJECTS", ":=", "late.o")
+                        with self.assertRaises(MakeProbeError):
+                            mode.literal_values("$(OBJECTS)")
+                    break
+                frame = frame.f_back
+            return result
+        with patch.object(mode.budget, "charge", mutate), self.assertRaises(MakeProbeError):
+            mode.exact_initializer_value(self.composition())
+        self.assertEqual(events, ["changed"])
+        self.assertTrue(all(state.owner is None and not state.bindings for state in states))
+        self.inert(mode, original)
+
+    def test_first_use_and_unread_lazy_changes_remain_legitimate(self):
+        mode, original = self.mode()
+        self.parse(mode, self.program() + "LATER := old\nUNREAD := old\n")
+        guard = mode.scope_lookup_guard
+        changed = []
+        def mutate(current, name):
+            guard(current, name)
+            if name == "OBJECTS" and not changed:
+                changed.append(name)
+                current.assign("LATER", ":=", "new")
+                current.assign("UNREAD", ":=", "new")
+        mode.scope_lookup_guard = mutate
+        self.assertEqual(mode.exact_initializer_value(self.composition() + "|$(LATER)"), "out/a.d out/b.d|new")
+        self.assertEqual(changed, ["OBJECTS"])
+        self.inert(mode, original)
+
+    def test_initializer_normalizer_and_data_removal_restore_unknown_not_authority(self):
+        for name, braces, prelude in (("OBJECTS", False, ""), ("RENAMED", True, "UNRELATED := data\n")):
+            with self.subTest(name=name, braces=braces):
+                mode, original = self.mode()
+                self.parse(mode, prelude + self.program(name=name))
+                expression = self.composition(name)
+                if braces:
+                    expression = expression.replace("$(" + name + ":.o=.d)", "${" + name + ":.o=.d}")
+                self.assertEqual(mode.exact_initializer_value(expression), "out/a.d out/b.d")
+                self.assertIsNone(mode.exact_initializer_value("$(" + name + ":.o=.d)"))
+                mode.assign("DEPS", ":=", "$(" + name + ":.o=.d)")
+                self.assertEqual(mode.exact_initializer_value(self.composition("DEPS", suffix=False)),
+                                 "out/a.d out/b.d")
+                mode.assign(name, ":=", "$(word 1,unknown)")
+                self.assertIsNone(mode.exact_initializer_value(expression))
+                self.assertEqual(mode.exact_initializer_value(self.composition("DEPS", suffix=False)),
+                                 "out/a.d out/b.d")
+                self.inert(mode, original)
+
+
 class OriginalMixedFactsApiTests(unittest.TestCase):
     """Original finite/snapshot composition with explicit modeled source inputs."""
 
