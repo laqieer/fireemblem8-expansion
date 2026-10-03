@@ -1948,6 +1948,16 @@ is introduced. Recursive reads use the current original context. A scoped
 unknown cannot borrow a global fact, and exact scoped DATA cannot issue a
 recipe or obligation context.
 
+Conditional replacements retain both the previous and replacement outcomes.
+Before combining them, a still-live preceding exact or captured-`patsubst`
+simple value is materialized through the existing guarded fact reader.
+A proven replacement literal cover is not discarded for a singleton fact
+that cannot be published in an unresolved conditional. Thus common conditional
+`:=`/`::=` replacements remain exact, while genuinely different outcomes stay
+finite and non-scalar. Unknown, stale or header-only captures remain unknown;
+inactive assignments preserve the original binding and fact unchanged.
+Unconditional singleton assignments retain their existing fact shapes.
+
 Initializer, alias, condition/comparison, template-argument, header, rule,
 selector/RHS and include DATA consumers use this common construction seam.
 Their public signatures and scalar string-or-unknown contracts are unchanged.

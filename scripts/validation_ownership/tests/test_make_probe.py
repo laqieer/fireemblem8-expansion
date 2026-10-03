@@ -1757,6 +1757,83 @@ class OriginalFiniteDataApiTests(unittest.TestCase):
         self.assertEqual(mode.template_snapshot("ONE"), "a.d b.d")
         self.inert(mode, original)
 
+    def test_conditional_simple_replacements_keep_every_common_original_value(self):
+        expected = "out/a.d out/b.d"
+        for operator in (":=", "::="):
+            for initial in (
+                expected, "$(sort out/b.d out/a.d)", "$(patsubst %.o,out/%.d,a.o b.o)",
+            ):
+                for rhs in (
+                    expected, "$(sort out/b.d out/a.d)",
+                    "$(sort $(addprefix out/,$(OBJECTS:.o=.d)))",
+                ):
+                    with self.subTest(operator=operator, initial=initial, rhs=rhs):
+                        mode, original = self.mode()
+                        self.parse(mode, (
+                            "OBJECTS := b.o a.o b.o\nDEPS " + operator + " " + initial
+                            + "\nifdef SELECT\nOBJECTS += a.o\nDEPS " + operator + " " + rhs
+                            + "\nendif\nALIAS := $(DEPS)\n"
+                        ))
+                        self.assertEqual(mode.literal_values("$(DEPS)"), {expected})
+                        self.assertEqual(mode.exact_reference("DEPS"), expected)
+                        self.assertEqual(mode.literal_values("$(ALIAS)"), {expected})
+                        self.assertEqual(graph_probe._include_names("-include $(DEPS)", mode),
+                                         ["out/a.d", "out/b.d"])
+                        self.inert(mode, original)
+
+    def test_conditional_replacements_materialize_captures_without_selecting_an_arm(self):
+        for initial in ("$(sort b.d a.d)", "$(patsubst %.o,%.d,a.o b.o)"):
+            for operator, rhs, expected in (
+                (":=", "other.d", {"a.d b.d", "other.d"}),
+                ("::=", "other.d", {"a.d b.d", "other.d"}),
+                ("=", "other.d", {"a.d b.d", "other.d"}),
+                ("undefine", "", {"a.d b.d", ""}),
+                ("?=", "other.d", {"a.d b.d"}),
+            ):
+                with self.subTest(initial=initial, operator=operator):
+                    mode, original = self.mode()
+                    mode.assign("DEPS", ":=", initial)
+                    mode.assign("DEPS", operator, rhs, active=None)
+                    self.assertEqual(mode.literal_values("$(DEPS)"), expected)
+                    self.assertEqual(mode.exact_reference("DEPS"),
+                                     next(iter(expected)) if len(expected) == 1 else None)
+                    mode.assign("ALIAS", ":=", "$(DEPS)")
+                    self.assertEqual(mode.literal_values("$(ALIAS)"), expected)
+                    self.inert(mode, original)
+
+    def test_conditional_replacement_does_not_recover_unknown_or_stale_captures(self):
+        for fault in ("rhs", "fact", "binding", "header"):
+            with self.subTest(fault=fault):
+                mode, original = self.mode()
+                initial = "$(wildcard out/*.d)" if fault == "header" else "$(sort b.d a.d)"
+                mode.assign("DEPS", ":=", initial)
+                if fault == "fact":
+                    version, value = mode.template_values["DEPS"]
+                    mode.template_values["DEPS"] = version - 1, value
+                elif fault == "binding":
+                    mode.binding_versions[None, "DEPS"] -= 1
+                rhs = "$(word 1,unproved)" if fault == "rhs" else "a.d b.d"
+                mode.assign("DEPS", ":=", rhs, active=None)
+                self.assertIsNone(mode.literal_values("$(DEPS)"))
+                self.assertIsNone(mode.exact_reference("DEPS"))
+                self.inert(mode, original)
+
+    def test_inactive_and_unconditional_replacements_preserve_singleton_fact_shapes(self):
+        for active in (False, True):
+            for operator in (":=", "::="):
+                with self.subTest(active=active, operator=operator):
+                    mode, original = self.mode()
+                    mode.assign("DEPS", operator, "$(sort b.d a.d)")
+                    before = mode.definitions["DEPS"], mode.template_values["DEPS"]
+                    mode.assign("DEPS", operator, "$(sort b.d a.d)", active=active)
+                    self.assertEqual(mode.exact_reference("DEPS"), "a.d b.d")
+                    self.assertEqual({binding.value for binding in mode.definitions["DEPS"]}, {None})
+                    self.assertEqual(mode.template_values["DEPS"][1], ("exact", "a.d b.d"))
+                    if active is False:
+                        self.assertIs(mode.definitions["DEPS"], before[0])
+                        self.assertIs(mode.template_values["DEPS"], before[1])
+                    self.inert(mode, original)
+
     def test_empty_members_deduplication_and_gnu_word_semantics_survive_projection(self):
         for initial, tail, expected in (("", "", {""}), ("", "a.o", {"", "a.d"}),
                                          (" \t", " ", {""})):

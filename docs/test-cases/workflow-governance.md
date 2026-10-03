@@ -4488,6 +4488,19 @@ successful resolver or turn an unissued DATA input into source/native evidence.
    and captured-patsubst fact shapes. Exercise finite simple appends,
    recursive/deferred flavor, inactive and unknown activity, command-line/
    environment/override precedence, local shadow and inherited append.
+   For conditional `:=` and `::=` replacements, cross literal, exact-constructor
+   and captured-`patsubst` predecessors with literal, singleton-constructor
+   and finite-to-common replacement RHSs. A common `out/a.d out/b.d` result
+   must remain exact in the retained binding, frozen alias and include words.
+   In the pre-correction capture path, a constructor RHS can instead leave a
+   simple unknown body because its conditional fact cannot be published;
+   a fact-only predecessor can also lose its old value on replacement.
+   Both connections must independently recover that loss when removed.
+   Genuinely different replacements, recursive replacement, `undefine` and
+   skipped defaults retain every applicable outcome rather than choose one.
+   Unknown RHS, stale fact/binding epoch and header-only predecessor remain
+   unknown. Inactive assignments preserve original object identities;
+   unconditional singleton assignments retain their exact fact shapes.
    A common scoped immediate RHS works in its assignment context; divergent
    selectors/RHSs, unknown shadows and unissued recipe/obligation contexts
    still refuse. Use the existing literal/reference selector grammar, not a

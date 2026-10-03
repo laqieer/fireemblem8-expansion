@@ -1606,7 +1606,7 @@ class _MakeSourceMode:
             if operator in {"?=", "+=", "undefine"} or active is None
             or name in definitions or name in self.forced or self.version else ()
         )
-        if operator == "+=" and scope is None and self.scope_context is None:
+        if (operator == "+=" or active is None) and scope is None and self.scope_context is None:
             fact = self.original_simple_fact(name, previous)
             if fact is not None and fact[1] is not None:
                 before = next(iter(previous))
@@ -1659,7 +1659,7 @@ class _MakeSourceMode:
             ):
                 # Keep the existing singleton assignment-time fact contract.
                 template_value = self.template_initializer(value)
-                if template_value is not None:
+                if template_value is not None and active is True and effect.applies is True:
                     literal_choices = None
             if literal_choices is None and (
                 operator == "+=" or scope is not None and self.original_execution is not None
