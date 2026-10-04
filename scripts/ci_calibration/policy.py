@@ -47,6 +47,29 @@ PREVIOUS_WORKFLOW = ".github/workflows/issue180-ci-baseline-20.yml"
 OUTPUT_PREFIX = "issue180-exact-composition-report-1-"
 BASE = "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"
 GRAPH = "731bb115eecf995e6fec77a10b605c727fc148e2"
+NATIVE_SOURCE = "de5f3f93e3866885e7471f1987f124eed5ad93cf"
+NATIVE_IMPLEMENTATION = "6116e01d571929f42cffdaefcb65dd90c65bd975"
+NATIVE_BRANCH = "calibration/issue-180-native-completion-family-1"
+NATIVE_WORKFLOW = ".github/workflows/issue180-native-completion-family-1.yml"
+NATIVE_PROFILE = "native-completion-trace4-abi2-v1"
+NATIVE_KIND = "native-completion-qualification"
+NATIVE_OUTPUT_PREFIX = "issue180-native-completion-family-1-"
+NATIVE_SELECTORS = (
+    "scripts.validation_ownership.tests.test_phase_census.PhaseCensusTests."
+    "test_native_completion_original_profile_family",
+    *("scripts.validation_ownership.tests.test_read_epochs.ReadEpochTests."
+      "test_native_completion_" + suffix + "_terminal"
+      for suffix in ("kernel_frame_pin", "resource", "cancellation", "deadline")),
+)
+NATIVE_MEMBERS = ("source-family", *(
+    primary + "-" + profile
+    for profile in ("default", "alt", "custom", "alt-custom")
+    for primary in ("standalone", "modern")
+))
+NATIVE_MACHINE_HOLDS = (
+    "child-debug-register-readback", "reader-frame-exclusions",
+    "live-source-pin-retirement", "source-active-termination",
+)
 WORKLOAD_KIND = "full-public-report-accounting-measurement"
 REPORT_API = "scripts.validation_ownership.graph_report.check"
 FIXTURE_VERSION = "one-make-two-checker-typed-intermediate-v1"
@@ -160,6 +183,122 @@ class GuardError(RuntimeError):
     pass
 
 
+def native_selection(profile, selector):
+    if profile != NATIVE_PROFILE or selector not in NATIVE_SELECTORS:
+        raise GuardError("native route requires one closed profile and authored selector")
+    return {
+        "profile": profile, "selector": selector, "source_revision": NATIVE_SOURCE,
+        "base_revision": BASE, "workload_kind": NATIVE_KIND,
+    }
+
+
+def native_event(event, *, profile, selector, **identity):
+    selection = native_selection(profile, selector)
+    # Only the positive family's future first-created workflow is prepared.
+    if selector != NATIVE_SELECTORS[0]:
+        raise GuardError("terminal selectors have no execution allocation or workflow")
+    scope = validate_event(event, native=True, **identity)
+    scope.update(
+        branch=NATIVE_BRANCH, graph_sha=NATIVE_SOURCE, workload_kind=NATIVE_KIND,
+        profile=NATIVE_PROFILE, selector=selector, native_selection=selection,
+        report_api=None, report_check_attempts=0, serialization_attempts=0,
+        native_launch_requested=False, native_returned=False,
+    )
+    return scope
+
+
+def validate_native_result(value, selection):
+    if selection != native_selection(selection.get("profile"), selection.get("selector")):
+        raise GuardError("native result selection changed")
+    _component_fields(value, (
+        "selection states operations archives archive_refusals counters cleanup children method_returned clock "
+        "first_stage failure_kind secondary_errors machine_holds qualification"
+    ))
+    if value["selection"] != selection or value["qualification"] != "incomplete":
+        raise GuardError("native preparation cannot claim complete machine qualification")
+    if value["machine_holds"] != list(NATIVE_MACHINE_HOLDS):
+        raise GuardError("native result omitted unobservable child machine criteria")
+    clock = value["clock"]
+    _component_fields(clock, "started deadline ended_at elapsed_seconds limits_seconds outer_deadline limits_unchanged")
+    if any(type(clock[name]) not in (int, float) or not math.isfinite(clock[name]) for name in (
+        "started", "deadline", "ended_at", "elapsed_seconds", "limits_seconds", "outer_deadline",
+    )) or (
+        clock["limits_seconds"] != (20 if selection["selector"] in NATIVE_SELECTORS[-2:] else GRAPH_SECONDS)
+        or clock["deadline"] != clock["started"] + clock["limits_seconds"]
+        or clock["deadline"] > clock["outer_deadline"] or clock["elapsed_seconds"] < 0
+        or clock["elapsed_seconds"] != clock["ended_at"] - clock["started"]
+        or clock["limits_unchanged"] is not True
+    ):
+        raise GuardError("native original clock or Limits changed")
+    states = value["states"]
+    _component_fields(states, "budget_requests session_attempts make_attempts make_returned command_attempts command_returned report_attempts verifier_attempts h1_attempts serialization_attempts")
+    if any(not _component_integer(number, ORIGINAL_LIMITS["runs"]) for number in states.values()):
+        raise GuardError("native invocation counts are malformed")
+    if any(states[name] != 0 for name in (
+        "report_attempts", "verifier_attempts", "h1_attempts", "serialization_attempts",
+    )) or states["budget_requests"] > 1 or states["session_attempts"] > 1:
+        raise GuardError("native route reset an original lifetime or launched another workload")
+    if states["make_returned"] > states["make_attempts"] or states["command_returned"] > states["command_attempts"]:
+        raise GuardError("native operation return count exceeds its actual attempts")
+    if type(value["method_returned"]) is not bool or value["first_stage"] not in {
+        None, "candidate-import", "setup", "method", "finalize",
+    } or not _component_integer(value["secondary_errors"], 64):
+        raise GuardError("native method/failure observations are malformed")
+    if value["failure_kind"] not in {None, "source-refusal", "authored-assertion", "harness-guard", "unexpected", "cleanup"} or (
+        (value["failure_kind"] is None) != (value["first_stage"] is None)
+    ):
+        raise GuardError("native first cause disappeared or changed to an open exception projection")
+    if type(value["operations"]) is not list or len(value["operations"]) > 16:
+        raise GuardError("native operation archive is not bounded")
+    for row in value["operations"]:
+        _component_fields(row, "kind ordinal returned")
+        if row["kind"] not in {"make", "command"} or type(row["returned"]) is not bool or not _component_integer(row["ordinal"], 16, 1):
+            raise GuardError("native operation archive is not closed")
+    if type(value["archives"]) is not list or len(value["archives"]) > 16:
+        raise GuardError("native semantic archive is not bounded")
+    if type(value["archive_refusals"]) is not list or len(value["archive_refusals"]) > 16:
+        raise GuardError("native archive refusal extent is not bounded")
+    for row in value["archive_refusals"]:
+        _component_fields(row, "budget_closed_before budget_failed_before budget_failed_after")
+        if any(type(flag) is not bool for flag in row.values()):
+            raise GuardError("native archive refusal changed its original lifetime facts")
+    for row in value["archives"]:
+        _component_fields(row, (
+            "member trace_version abi_version passes visits sources completions source_closed journal_closed "
+            "frontier_consumed parent_links raw_pinned_path_differences publication_opens "
+            "completion_visits_bound publication_order_bound"
+        ))
+        if row["member"] not in (*NATIVE_MEMBERS, "terminal-preparation") or row["trace_version"] != 4 or row["abi_version"] not in (None, 2):
+            raise GuardError("native archive changed its finite member or compatibility")
+        if any(not _component_integer(row[name], ORIGINAL_LIMITS["observations"] or ORIGINAL_LIMITS["entries"]) for name in (
+            "passes", "visits", "sources", "completions", "parent_links",
+            "raw_pinned_path_differences", "publication_opens",
+        )) or any(row[name] is not None and type(row[name]) is not bool for name in (
+            "source_closed", "journal_closed", "frontier_consumed",
+            "completion_visits_bound", "publication_order_bound",
+        )):
+            raise GuardError("native archive observations are malformed")
+    if value["counters"] is not None:
+        validate_component_counters(value["counters"])
+        if any(row["diagnostic"] != row["original"] for row in value["counters"]["budget"]["quotas"].values()):
+            raise GuardError("native route installed accounting-only quota overrides")
+    cleanup = value["cleanup"]
+    _component_fields(cleanup, "budget_closed children waiters retained_owners session_base_removed fixture_removed references_restored")
+    if any(type(cleanup[name]) is not bool for name in ("budget_closed", "references_restored")) or any(
+        cleanup[name] is not None and type(cleanup[name]) is not bool
+        for name in ("session_base_removed", "fixture_removed")
+    ) or any(
+        cleanup[name] is not None and not _component_integer(cleanup[name])
+        for name in ("children", "waiters", "retained_owners")
+    ):
+        raise GuardError("native cleanup observations are malformed")
+    children = value["children"]
+    _component_fields(children, "created terminal nonzero unknown")
+    if any(not _component_integer(number, ORIGINAL_LIMITS["runs"]) for number in children.values()) or children["terminal"] + children["unknown"] != children["created"] or children["nonzero"] > children["terminal"]:
+        raise GuardError("native Popen observations are inconsistent")
+    return value
+
+
 def encoded(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
 
@@ -182,7 +321,8 @@ def parse_json(data):
         raise GuardError("invalid diagnostic JSON") from error
 
 
-def validate_event(event, *, sha, run_id, attempt, run_number, environment, operating_system, event_name):
+def validate_event(event, *, sha, run_id, attempt, run_number, environment, operating_system, event_name,
+                   native=False):
     if not isinstance(event, dict) or any(not isinstance(event.get(name), dict) for name in ("repository", "sender")):
         raise GuardError("invalid hosted push event")
     if (
@@ -190,7 +330,8 @@ def validate_event(event, *, sha, run_id, attempt, run_number, environment, oper
         or attempt != "1" or run_number != "1"
         or not re.fullmatch(r"[1-9][0-9]{0,19}", run_id)
         or not re.fullmatch(r"[0-9a-f]{40}", sha)
-        or event.get("ref") != "refs/heads/" + BRANCH
+        or type(native) is not bool
+        or event.get("ref") != "refs/heads/" + (NATIVE_BRANCH if native else BRANCH)
         or event.get("before") != "0" * 40 or event.get("after") != sha
         or event.get("created") is not True or event.get("deleted") is not False
         or event.get("repository", {}).get("full_name") != REPOSITORY

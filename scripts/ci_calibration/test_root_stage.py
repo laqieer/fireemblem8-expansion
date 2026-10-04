@@ -29,6 +29,231 @@ FINALIZATION_PREIMAGE_FAILURE = FINALIZATION_PREIMAGE_REPORT = FINALIZATION_PREI
 IMPORT_RELEASE_PREIMAGE = None
 
 
+class NativeAdapterControls(Inert):
+    def recorder(self, selector=0):
+        recorder = root_stage.NativeRecorder({
+            "profile": policy.NATIVE_PROFILE, "selector": policy.NATIVE_SELECTORS[selector],
+            "deadline": 3700.0,
+        })
+        self.limits_type = dataclasses.make_dataclass(
+            "Limits", [(name, object, dataclasses.field(default=value)) for name, value in policy.ORIGINAL_LIMITS.items()],
+        )
+        recorder.api = SimpleNamespace(limits=self.limits_type)
+        recorder.budget = SimpleNamespace(
+            limits=self.limits_type(seconds=20 if selector in (3, 4) else 3600),
+            failed=False, closed=False,
+        )
+
+        def remaining():
+            if recorder.budget.failed or recorder.budget.closed:
+                raise policy.GuardError("terminal original lifetime")
+            return 20
+
+        recorder.budget.remaining = remaining
+        return recorder
+
+    def test_native_budget_injection_preserves_short_limits_and_refuses_new_lifetimes(self):
+        with mock.patch.object(root_stage.time, "monotonic", return_value=100.0):
+            recorder = self.recorder(4)
+            original = recorder.budget
+            limits = recorder.budget.limits
+            self.assertIs(recorder.budget_for(self.limits_type(seconds=20)), original)
+            self.assertIs(recorder.budget.limits, limits)
+            with self.assertRaises(policy.GuardError):
+                recorder.budget_for(self.limits_type(seconds=20))
+            recorder = self.recorder(4)
+            with self.assertRaises(policy.GuardError):
+                recorder.budget_for(self.limits_type())
+            recorder.budget.failed = True
+            with self.assertRaises(policy.GuardError):
+                recorder.budget_for(self.limits_type(seconds=20))
+            self.assertEqual(recorder.states["budget_requests"], 0)
+
+    def test_native_reference_withdrawal_restores_absent_and_present_attributes(self):
+        recorder = self.recorder()
+        original, replacement = object(), object()
+        owner = SimpleNamespace(field=original)
+        with ExitStack() as stack:
+            recorder.bind(stack, owner, "field", replacement)
+            self.assertIs(owner.field, replacement)
+        self.assertIs(owner.field, original)
+        class Owner:
+            def method(self):
+                return 1
+        owner = Owner()
+        with ExitStack() as stack:
+            recorder.bind(stack, owner, "method", replacement)
+        self.assertNotIn("method", vars(owner))
+        self.assertEqual(owner.method(), 1)
+
+    def test_native_operation_observes_actual_callback_failure_without_success_fallback(self):
+        with mock.patch.object(root_stage.time, "monotonic", return_value=100.0):
+            recorder = self.recorder(2)
+            sentinel = object()
+            self.assertIs(recorder.operation("command", lambda: sentinel), sentinel)
+            first = RuntimeError("inert first failure")
+            def refuse():
+                raise first
+            with self.assertRaises(RuntimeError) as caught:
+                recorder.operation("command", refuse)
+            self.assertIs(caught.exception, first)
+            self.assertEqual(recorder.states["command_attempts"], 2)
+            self.assertEqual(recorder.states["command_returned"], 1)
+            self.assertEqual(recorder.operations, [
+                {"kind": "command", "ordinal": 1, "returned": True},
+                {"kind": "command", "ordinal": 2, "returned": False},
+            ])
+
+    def test_native_adapter_denies_uncontained_execution_before_source_imports(self):
+        recorder = self.recorder()
+        first = policy.GuardError("inert containment denial")
+        with mock.patch.object(worker, "require_contained", side_effect=first):
+            with self.assertRaises(policy.GuardError) as caught:
+                recorder.run()
+        self.assertIs(caught.exception, first)
+        self.assertEqual(recorder.states["budget_requests"], 0)
+
+    def test_retired_archive_refusal_preserves_the_real_original_budget_failure(self):
+        recorder = self.recorder()
+        recorder.budget = budgeting.ProbeBudget(budgeting.Limits())
+        recorder.budget.started = 100.0
+        recorder.budget.closed = True
+        with self.assertRaises(budgeting.MakeProbeError):
+            recorder.archive(lambda observed: recorder.budget.remaining(), object())
+        self.assertTrue(recorder.budget.failed)
+        self.assertTrue(recorder.budget.closed)
+        self.assertEqual(recorder.archive_refusals, [{
+            "budget_closed_before": True, "budget_failed_before": False, "budget_failed_after": True,
+        }])
+
+    def test_native_metadata_cannot_select_report_or_probe_work(self):
+        with mock.patch.object(worker, "require_contained", return_value={}), mock.patch.object(kernel, "emit"):
+            for mode in ("report", "identity", "graph", "unknown"):
+                with self.assertRaises(policy.GuardError):
+                    worker.main({
+                        "scope": "unissued-data", "mode": mode, "profile": policy.NATIVE_PROFILE,
+                        "selector": policy.NATIVE_SELECTORS[0], "source_revision": policy.NATIVE_SOURCE,
+                    })
+
+    def test_native_source_callback_failure_preserves_first_cause_and_reference_cleanup(self):
+        import types
+        from scripts.validation_ownership import budget as original_budget
+        module_name, class_name, method_name = policy.NATIVE_SELECTORS[2].rsplit(".", 2)
+        foundation = types.ModuleType("scripts.validation_ownership.tests.test_foundation")
+        selected = types.ModuleType(module_name)
+        authority = types.ModuleType("scripts.validation_ownership.authority")
+        probe = types.ModuleType("scripts.validation_ownership.make_probe")
+        tests = types.ModuleType("scripts.validation_ownership.tests")
+        tests.__path__ = []
+        tests.test_foundation = foundation
+        first = RuntimeError("private inert original callback failure")
+        cleanup_calls = []
+
+        class Entries(dict):
+            def __init__(self, *, budget):
+                super().__init__()
+                self.budget = budget
+
+        class Loader:
+            def __init__(self, root, entries, *, budget):
+                self.root, self.entries, self.budget = root, entries, budget
+
+        class Session:
+            def __init__(inner, loader, *, scratch_root, budget, runtime_files):
+                vars(inner).update(vars(self.session(budget)))
+                inner.loader = loader
+                inner.runtime_paths = runtime_files
+
+            def __enter__(inner):
+                inner.budget.session_started = True
+                return inner
+
+            def __exit__(inner, *args):
+                inner.budget.close()
+
+            def make(inner, *args, **keywords):
+                return SimpleNamespace(source_phases=None, source_journal=None)
+
+            def command(inner, *args, **keywords):
+                raise AssertionError("no native command in this unissued model")
+
+            def _original_source_archive(inner, observed):
+                return SimpleNamespace(version=4, passes=(), sources=())
+
+            def _original_read_abi(inner, *args, **keywords):
+                raise AssertionError("no machine ABI in this unissued model")
+
+        class Fixture:
+            root = Path("/inert/fixture")
+            scratch = root / "build/probe"
+            directory = SimpleNamespace(exists=lambda: False)
+
+            def session(inner):
+                budget = foundation.ProbeBudget(original_budget.Limits())
+                return foundation.ProbeSession(
+                    Loader(inner.root, Entries(budget=budget), budget=budget),
+                    scratch_root=inner.scratch, budget=budget, runtime_files=(),
+                )
+
+        class Case:
+            def __init__(inner, name):
+                self.assertEqual(name, method_name)
+
+            def setUp(inner):
+                inner.fixture = Fixture()
+
+            def tearDown(inner):
+                cleanup_calls.append("teardown")
+
+        def method(case):
+            with case.fixture.session() as session:
+                observed = session.make("all", makefile="terminal.mk", observe_source_phases=True)
+                session._original_source_archive(observed)
+                raise first
+
+        setattr(Case, method_name, method)
+        setattr(selected, class_name, Case)
+        selected.ProbeBudget = foundation.ProbeBudget = original_budget.ProbeBudget
+        foundation.ProbeSession = Session
+        selected.make_probe = SimpleNamespace(ProbeSession=Session)
+        authority.AuthorityLoader, authority.GitTreeEntries = Loader, Entries
+        probe.ProbeSession = Session
+        modules = {
+            authority.__name__: authority, tests.__name__: tests,
+            foundation.__name__: foundation, selected.__name__: selected, probe.__name__: probe,
+        }
+        recorder = root_stage.NativeRecorder({
+            "mode": "native-completion", "source_revision": policy.NATIVE_SOURCE,
+            "profile": policy.NATIVE_PROFILE, "selector": policy.NATIVE_SELECTORS[2],
+            "deadline": 3700.0,
+        })
+        with mock.patch.dict(sys.modules, modules), mock.patch.object(
+            worker, "require_contained", return_value={},
+        ):
+            result, returned = recorder.run()
+        self.assertFalse(returned)
+        self.assertIs(recorder.first, first)
+        self.assertEqual(result["first_stage"], "method")
+        self.assertEqual(result["failure_kind"], "unexpected")
+        self.assertEqual(result["states"]["budget_requests"], 1)
+        self.assertEqual(result["states"]["session_attempts"], 1)
+        self.assertEqual(result["states"]["make_returned"], 1)
+        self.assertEqual(result["children"]["created"], 0)
+        self.assertEqual(result["qualification"], "incomplete")
+        self.assertEqual(cleanup_calls, ["teardown"])
+        self.assertTrue(result["cleanup"]["references_restored"])
+        self.assertIs(foundation.ProbeSession, Session)
+        self.assertIs(foundation.ProbeBudget, original_budget.ProbeBudget)
+        self.assertNotIn(str(first), repr(result))
+        for field, value in (
+            ("qualification", "complete"), ("machine_holds", []), ("failure_kind", "private text"),
+        ):
+            mutant = copy.deepcopy(result)
+            mutant[field] = value
+            with self.assertRaises(policy.GuardError):
+                policy.validate_native_result(mutant, recorder.selection)
+
+
 class RootStageControls(Inert):
     def composition(self, *faults, use_worker=False, executable=None):
         faults = set(faults)

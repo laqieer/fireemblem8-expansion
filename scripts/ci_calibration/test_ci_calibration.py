@@ -45,6 +45,77 @@ EXACT_COMPOSITION_INPUTS = None
 WORKER_AST = ast.parse((REPO / "scripts/ci_calibration/worker.py").read_text())
 
 
+class NativeSelectionControls(unittest.TestCase):
+    def identity(self):
+        return dict(
+            sha="a" * 40, run_id="123", attempt="1", run_number="1",
+            environment="github-hosted", operating_system="Linux", event_name="push",
+        )
+
+    def event(self, branch):
+        return {
+            "repository": {"full_name": policy.REPOSITORY, "private": False},
+            "sender": {"login": "laqieer"}, "ref": "refs/heads/" + branch,
+            "before": "0" * 40, "after": "a" * 40, "created": True, "deleted": False,
+        }
+
+    def test_native_selection_is_finite_and_report_events_are_disjoint(self):
+        for selector in policy.NATIVE_SELECTORS:
+            self.assertEqual(policy.native_selection(policy.NATIVE_PROFILE, selector)["source_revision"], policy.NATIVE_SOURCE)
+        for profile, selector in (
+            (None, policy.NATIVE_SELECTORS[0]), (policy.NATIVE_PROFILE, None),
+            (policy.PROFILE, policy.NATIVE_SELECTORS[0]), (policy.NATIVE_PROFILE, "unittest.discover"),
+        ):
+            with self.assertRaises(policy.GuardError):
+                policy.native_selection(profile, selector)
+        native = self.event(policy.NATIVE_BRANCH)
+        old = self.event(policy.BRANCH)
+        self.assertEqual(policy.validate_event(old, **self.identity())["graph_sha"], policy.GRAPH)
+        with self.assertRaises(policy.GuardError):
+            policy.validate_event(native, **self.identity())
+        for event, selector in (
+            (old, policy.NATIVE_SELECTORS[0]),
+            *((native, selector) for selector in policy.NATIVE_SELECTORS[1:]),
+        ):
+            with self.assertRaises(policy.GuardError):
+                policy.native_event(event, profile=policy.NATIVE_PROFILE, selector=selector, **self.identity())
+        scope = policy.native_event(native, profile=policy.NATIVE_PROFILE, selector=policy.NATIVE_SELECTORS[0], **self.identity())
+        self.assertEqual((scope["graph_sha"], scope["report_check_attempts"], scope["h1_attempts"]), (policy.NATIVE_SOURCE, 0, 0))
+
+    def test_native_future_event_refuses_retry_and_source_drift(self):
+        for name, value in (("before", "b" * 40), ("created", False), ("after", "b" * 40)):
+            event = self.event(policy.NATIVE_BRANCH)
+            event[name] = value
+            with self.assertRaises(policy.GuardError):
+                policy.native_event(event, profile=policy.NATIVE_PROFILE, selector=policy.NATIVE_SELECTORS[0], **self.identity())
+        for name, value in (("attempt", "2"), ("run_number", "2"), ("event_name", "workflow_dispatch")):
+            identity = self.identity()
+            identity[name] = value
+            with self.assertRaises(policy.GuardError):
+                policy.native_event(self.event(policy.NATIVE_BRANCH), profile=policy.NATIVE_PROFILE, selector=policy.NATIVE_SELECTORS[0], **identity)
+
+    def test_native_lineage_adds_one_edge_without_reinterpreting_the_old_chain(self):
+        lines = [f"{'a' * 40} {supervisor.NATIVE_PARENT}"]
+        calls = []
+        original = supervisor.validate_harness_lineage
+        try:
+            supervisor.validate_harness_lineage = lambda history, head: calls.append((history, head))
+            supervisor.validate_native_lineage(lines + ["old-edge"], "a" * 40)
+            self.assertEqual(calls, [(["old-edge"], supervisor.NATIVE_PARENT)])
+            with self.assertRaises(policy.GuardError):
+                supervisor.validate_native_lineage([f"{'a' * 40} {'b' * 40}"], "a" * 40)
+        finally:
+            supervisor.validate_harness_lineage = original
+        data = b"A\0" + policy.NATIVE_WORKFLOW.encode() + b"\0M\0scripts/ci_calibration/policy.py\0"
+        supervisor.validate_native_inventory(data)
+        for changed in (
+            data + b"M\0" + policy.WORKFLOW.encode() + b"\0",
+            data.replace(b"A\0", b"M\0", 1), data + b"M\0src/proc.c\0",
+        ):
+            with self.assertRaises(policy.GuardError):
+                supervisor.validate_native_inventory(changed)
+
+
 class Inert(unittest.TestCase):
     def setUp(self):
         self.stack = ExitStack()

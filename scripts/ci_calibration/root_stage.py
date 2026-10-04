@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from contextlib import ExitStack
+import dataclasses
+import importlib
+import subprocess
+import time
 
 if __package__:
     from . import observation_failure, policy
@@ -225,3 +230,352 @@ class ReportMeasurement:
             self.fail("validation", error)
             raise
         return result
+
+
+class NativeRecorder:
+    """Finite test-reference injection; production authority methods stay original."""
+
+    def __init__(self, config):
+        self.config = config
+        self.selection = policy.native_selection(config["profile"], config["selector"])
+        self.states = dict.fromkeys((
+            "budget_requests", "session_attempts", "make_attempts", "make_returned",
+            "command_attempts", "command_returned", "report_attempts",
+            "verifier_attempts", "h1_attempts", "serialization_attempts",
+        ), 0)
+        self.session = self.case = self.budget = None
+        self.operations, self.archives, self.children = [], [], []
+        self.archive_refusals = []
+        self.seen = set()
+        self.bindings = {}
+        self.observations = []
+        self.members = {}
+        self.abi_version = None
+        self.first = None
+        self.first_stage = None
+        self.failure_kind = None
+        self.secondary_errors = 0
+        self.method_returned = False
+        self.references_restored = False
+
+    def remaining(self):
+        if time.monotonic() >= self.config["deadline"]:
+            raise policy.GuardError("native outer preparation deadline exhausted")
+        if self.budget is not None:
+            self.budget.remaining()
+
+    def bind(self, stack, owner, name, replacement):
+        original = getattr(owner, name)
+        present = name in vars(owner)
+        self.bindings.setdefault((id(owner), name), (owner, name, present, vars(owner).get(name)))
+        setattr(owner, name, replacement)
+
+        def restore():
+            if getattr(owner, name) is not replacement:
+                raise policy.GuardError("native test reference changed before withdrawal")
+            if present:
+                setattr(owner, name, original)
+            else:
+                delattr(owner, name)
+
+        stack.callback(restore)
+
+    def budget_for(self, limits=None):
+        self.remaining()
+        if self.states["budget_requests"]:
+            raise policy.GuardError("native selector attempted another original lifetime")
+        selected = self.api.limits() if limits is None else limits
+        if type(selected) is not self.api.limits or dataclasses.asdict(selected) != dataclasses.asdict(self.budget.limits):
+            raise policy.GuardError("native selector changed its authored original Limits")
+        self.states["budget_requests"] += 1
+        return self.budget
+
+    def session_for(self, loader, *, scratch_root, budget, runtime_files=()):
+        self.remaining()
+        if self.states["session_attempts"] or budget is not self.budget or (
+            type(loader) is not self.api.loader or loader.budget is not budget
+            or type(loader.entries) is not self.api.entries or loader.entries.budget is not budget
+            or self.case is None or loader.root != self.case.fixture.root
+            or scratch_root != self.case.fixture.scratch
+        ):
+            raise policy.GuardError("native session lost its original fixture/loader/entries ownership")
+        self.states["session_attempts"] += 1
+        self.session = self.api.session(
+            loader, scratch_root=scratch_root, budget=budget, runtime_files=runtime_files,
+        )
+        return self.session
+
+    def popen(self, *args, **keywords):
+        self.remaining()
+        if len(self.children) >= self.budget.limits.runs:
+            raise policy.GuardError("native Popen observation extent exhausted")
+        child = self.api.popen(*args, **keywords)
+        self.children.append(child)
+        return child
+
+    def operation(self, kind, original, *args, **keywords):
+        self.remaining()
+        if len(self.operations) >= 16:
+            raise policy.GuardError("native operation observation extent exhausted")
+        count = kind + "_attempts"
+        self.states[count] += 1
+        row = {"kind": kind, "ordinal": self.states[count], "returned": False}
+        self.operations.append(row)
+        member = None
+        if kind == "make":
+            target = args[0] if args else None
+            primary = keywords.get("makefile", "Makefile")
+            if self.selection["selector"] != policy.NATIVE_SELECTORS[0]:
+                member = "terminal-preparation"
+            elif target == "all" and primary == "native-completion.mk":
+                member = "source-family"
+            elif target == "print-ASSET_OUTPUT_DIR" and primary in {"assets.mk", "Makefile"}:
+                inputs = keywords.get("assignments")
+                if type(inputs) is not tuple or len(inputs) != 4:
+                    raise policy.GuardError("native profile lacks its finite original input vector")
+                profiles = (
+                    ("", "0", "build/expansion-modern", "default"),
+                    ("0xCE", "0", "build/native-completion-alt", "alt"),
+                    ("", "1", "build/native-completion-custom", "custom"),
+                    ("0xCE", "1", "build/native-completion-alt-custom", "alt-custom"),
+                )
+                for cap, custom, root, profile in profiles:
+                    if inputs == (
+                        ("command-line", "PYTHON", "python3"),
+                        ("command-line", "FE8_ITEM_ID_CAP", cap),
+                        ("command-line", "EXPANSION_CUSTOM_SPELL_EFFECTS", custom),
+                        ("command-line", "MODERN_BUILD_ROOT", root),
+                    ):
+                        member = ("standalone" if primary == "assets.mk" else "modern") + "-" + profile
+                if member is None:
+                    raise policy.GuardError("native Make profile is outside the authored input table")
+            else:
+                raise policy.GuardError("native method launched an unselected Make operation")
+        value = original(*args, **keywords)
+        row["returned"] = True
+        self.states[kind + "_returned"] += 1
+        if kind == "make":
+            self.observations.append(value)
+            self.members[id(value)] = member
+        return value
+
+    def archive(self, original, observed):
+        closed, failed = self.budget.closed, self.budget.failed
+        try:
+            value = original(observed)
+        except BaseException:
+            if len(self.archive_refusals) >= 16:
+                raise policy.GuardError("native archive refusal observation extent exhausted")
+            self.archive_refusals.append({
+                "budget_closed_before": closed, "budget_failed_before": failed,
+                "budget_failed_after": self.budget.failed,
+            })
+            raise
+        if id(observed) not in self.seen:
+            if len(self.archives) >= 16:
+                raise policy.GuardError("native semantic archive extent exhausted")
+            self.seen.add(id(observed))
+            if id(observed) not in self.members or not any(observed is row for row in self.observations):
+                raise policy.GuardError("native archive is not an actual selected Make return")
+            member = self.members[id(observed)]
+            visits = [visit for part in value.passes for visit in part.visits]
+            completion_bindings = all(
+                any(
+                    visit.number == completion.visit and visit.source is not None
+                    and visit.source.number == completion.source
+                    for visit in part.visits
+                )
+                for part in value.passes for completion in part.completions
+            )
+            self.archives.append({
+                "member": member, "trace_version": value.version, "abi_version": self.abi_version,
+                "passes": len(value.passes), "visits": sum(len(part.visits) for part in value.passes),
+                "sources": len(value.sources),
+                "completions": sum(len(part.completions) for part in value.passes),
+                "source_closed": None if observed.source_phases is None else observed.source_phases["closed"],
+                "journal_closed": None if observed.source_journal is None else observed.source_journal["closed"],
+                "frontier_consumed": None,
+                "parent_links": sum(visit.parent is not None for visit in visits),
+                "raw_pinned_path_differences": sum(
+                    opened.result >= 0 and visit.name != opened.path
+                    for visit in visits for opened in visit.opens
+                ),
+                "publication_opens": sum(
+                    opened.result >= 0 and opened.custody["kind"] in {"publication", "prior-publication"}
+                    for visit in visits for opened in visit.opens
+                ),
+                "completion_visits_bound": completion_bindings,
+                "publication_order_bound": None,
+            })
+        return value
+
+    def watch_session(self, stack):
+        session = self.session
+        for name, kind in (("make", "make"), ("command", "command")):
+            original = getattr(session, name)
+            self.bind(stack, session, name, lambda *a, _o=original, _k=kind, **kw: self.operation(_k, _o, *a, **kw))
+        original = session._original_source_archive
+        self.bind(stack, session, "_original_source_archive", lambda observed: self.archive(original, observed))
+        original_abi = session._original_read_abi
+
+        def abi(*args, **keywords):
+            value = original_abi(*args, **keywords)
+            if keywords.get("completions") is True and value["version"] == 2:
+                self.abi_version = value["version"]
+                for row in self.archives:
+                    row["abi_version"] = value["version"]
+            return value
+
+        self.bind(stack, session, "_original_read_abi", abi)
+
+    def run(self):
+        if __package__:
+            from .worker import require_contained
+        else:
+            from worker import require_contained
+        require_contained(self.config)
+        if self.config.get("mode") != "native-completion" or (
+            self.config.get("source_revision") != policy.NATIVE_SOURCE or "report_binding" in self.config
+        ):
+            raise policy.GuardError("native adapter has no contained source-only invocation")
+        from scripts.validation_ownership import budget as budgeting
+        from scripts.validation_ownership.authority import AuthorityLoader, GitTreeEntries
+        from scripts.validation_ownership.make_probe import ProbeSession
+        from scripts.validation_ownership.tests import test_foundation as foundation
+        self.api = SimpleNamespace(
+            limits=budgeting.Limits, budget=budgeting.ProbeBudget, loader=AuthorityLoader,
+            entries=GitTreeEntries, session=ProbeSession, popen=subprocess.Popen,
+        )
+        terminal_short = self.selection["selector"] in policy.NATIVE_SELECTORS[-2:]
+        limits = self.api.limits(seconds=20) if terminal_short else self.api.limits()
+        start = self.config["deadline"] - policy.GRAPH_SECONDS
+
+        @dataclasses.dataclass
+        class OriginalClockBudget(budgeting.ProbeBudget):
+            def __post_init__(inner):
+                inner.started = start
+
+        self.budget = OriginalClockBudget(limits)
+        initial_limits = dataclasses.asdict(limits)
+        stage = "candidate-import"
+        first = None
+        setup = False
+        try:
+            self.remaining()
+            module_name, class_name, method_name = self.selection["selector"].rsplit(".", 2)
+            selected = importlib.import_module(module_name)
+            owner = getattr(selected, class_name)
+            method = getattr(owner, method_name)
+            self.case = owner(method_name)
+            with ExitStack() as stack:
+                self.bind(stack, subprocess, "Popen", self.popen)
+                self.bind(stack, selected, "ProbeBudget", self.budget_for)
+                self.bind(stack, foundation, "ProbeBudget", self.budget_for)
+                # The positive method uses its module's direct constructor, not case.session().
+                proxy = SimpleNamespace(**vars(selected.make_probe))
+                session_constructor = self.session_for
+
+                def construct(*args, **keywords):
+                    value = session_constructor(*args, **keywords)
+                    self.watch_session(stack)
+                    return value
+
+                proxy.ProbeSession = construct
+                self.bind(stack, selected, "make_probe", proxy)
+                self.bind(stack, foundation, "ProbeSession", construct)
+                if self.selection["selector"] == policy.NATIVE_SELECTORS[0]:
+                    analyzer = selected.phase_census
+                    phase_proxy = SimpleNamespace(**vars(analyzer))
+
+                    def analyze(*args, **keywords):
+                        value = analyzer.analyze(*args, **keywords)
+                        observed = args[1]
+                        archive = self.session._original_source_archive(observed)
+                        phases = [stream.mode_state.scope_lookup_guard.__self__ for stream in value[2]]
+                        complete = len(phases) == len(archive.passes) and all(
+                            phase.next_completion == len(phase.part.completions) for phase in phases
+                        )
+                        for row in self.archives:
+                            if row["member"] == self.members.get(id(observed)):
+                                row["frontier_consumed"] = complete
+                        return value
+
+                    phase_proxy.analyze = analyze
+                    self.bind(stack, selected, "phase_census", phase_proxy)
+                stage = "setup"
+                self.remaining()
+                self.case.setUp()
+                setup = True
+                stage = "method"
+                method(self.case)
+                self.method_returned = True
+        except BaseException as error:
+            first = error
+            self.first_stage = stage
+            self.failure_kind = (
+                "source-refusal" if isinstance(error, budgeting.MakeProbeError) else
+                "authored-assertion" if isinstance(error, AssertionError) else
+                "harness-guard" if isinstance(error, policy.GuardError) else "unexpected"
+            )
+        finally:
+            self.references_restored = all(
+                (name in vars(owner)) == present and (not present or vars(owner)[name] is original)
+                for owner, name, present, original in self.bindings.values()
+            )
+            if not self.references_restored:
+                if first is None:
+                    first, self.first_stage = policy.GuardError("native reference restoration failed"), "finalize"
+                    self.failure_kind = "harness-guard"
+                else:
+                    self.secondary_errors += 1
+            try:
+                if self.budget is not None:
+                    self.budget.close()
+                safe = not self.budget.children and not self.budget.producer_waiters and (
+                    self.session is None or self.session.base is None
+                    and not self.session._views
+                    and not any(owner.retained for owner in self.session._file_owners.values())
+                )
+                if setup and safe:
+                    self.case.tearDown()
+            except BaseException as error:
+                if first is None:
+                    first, self.first_stage = error, "finalize"
+                    self.failure_kind = "cleanup"
+                else:
+                    self.secondary_errors += 1
+            self.observations.clear()
+        ended = time.monotonic()
+        self.first = first
+        cleanup = cleanup_state(self.session, self.budget)
+        native_cleanup = {name: cleanup[name] for name in (
+            "budget_closed", "children", "waiters", "retained_owners", "session_base_removed",
+        )}
+        native_cleanup.update(
+            fixture_removed=None if not setup else not self.case.fixture.directory.exists(),
+            references_restored=self.references_restored,
+        )
+        result = {
+            "selection": self.selection, "states": self.states, "operations": self.operations,
+            "clock": {
+                "started": self.budget.started, "deadline": self.budget.deadline,
+                "ended_at": ended, "elapsed_seconds": ended - self.budget.started,
+                "limits_seconds": self.budget.limits.seconds,
+                "outer_deadline": self.config["deadline"],
+                "limits_unchanged": dataclasses.asdict(self.budget.limits) == initial_limits,
+            },
+            "archives": self.archives, "counters": policy.counter_snapshot(self.budget, self.session),
+            "archive_refusals": self.archive_refusals,
+            "cleanup": native_cleanup, "children": {
+                "created": len(self.children),
+                "terminal": sum(child.returncode is not None for child in self.children),
+                "nonzero": sum(child.returncode not in (None, 0) for child in self.children),
+                "unknown": sum(child.returncode is None for child in self.children),
+            },
+            "method_returned": self.method_returned, "first_stage": self.first_stage,
+            "failure_kind": self.failure_kind,
+            "secondary_errors": self.secondary_errors,
+            "machine_holds": list(policy.NATIVE_MACHINE_HOLDS), "qualification": "incomplete",
+        }
+        policy.validate_native_result(result, self.selection)
+        return result, first is None

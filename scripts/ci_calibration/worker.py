@@ -763,6 +763,20 @@ def main(config, *, failure=None):
     proof = require_contained(config)
     kernel.emit(config["scope"], "ready", proof)
     mode = config["mode"]
+    if mode != "native-completion" and any(name in config for name in ("profile", "selector", "source_revision")):
+        raise policy.GuardError("native selection cannot authorize a report or containment probe")
+    if mode == "native-completion":
+        if config.get("source_revision") != policy.NATIVE_SOURCE or "report_binding" in config:
+            raise policy.GuardError("native worker overlaps report or another source selection")
+        policy.native_selection(config.get("profile"), config.get("selector"))
+        sys.path.insert(0, "/repo")
+        if __package__:
+            from . import root_stage
+        else:
+            import root_stage
+        result, returned = root_stage.NativeRecorder(config).run()
+        kernel.emit(config["scope"], "result", result)
+        return 0 if returned else 1
     if mode == "report":
         result = report(config, failure=failure)
         if result is None:

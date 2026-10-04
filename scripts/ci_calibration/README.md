@@ -1,5 +1,71 @@
 # Contained original-include retained-state diagnostic
 
+## Native completion preparation: no execution allocation
+
+Assignment `issue180-native-harness-1ab6`, scope comment5982866338, is one
+normal never-merge child of `e93847725f58a89bca2a94af2d4acaae6a89cebf`.
+The first35 historical edges, old workflow bytes and old report source731
+remain unchanged. Only edge36 and the eight-path native inventory are added.
+The provisional source is `de5f3f93e3866885e7471f1987f124eed5ad93cf`,
+including the complete fifteen-path731->6116 implementation and four-path
+6116->de5 authored-test/documentation delta, against unchanged BASEec1.
+Source review, harness review and an explicit future allocation are separate
+conditions. This preparation branch is not a workflow trigger.
+
+The existing supervisor accepts the closed pair
+`--profile native-completion-trace4-abi2-v1 --selector <authored selector>`.
+The finite selectors are `PhaseCensusTests.test_native_completion_original_profile_family`
+in `scripts.validation_ownership.tests.test_phase_census`, and
+`ReadEpochTests.test_native_completion_{kernel_frame_pin,resource,cancellation,deadline}_terminal`
+in `scripts.validation_ownership.tests.test_read_epochs`; braces describe four
+literal enum members, not shell expansion or programmable arguments.
+Only the positive family's new workflow/first-owner-created
+`calibration/issue-180-native-completion-family-1` push is prepared.
+No terminal workflow, retry, old allocation, discovery runner or report is
+authorized. All19 previous full-report allocations remain spent.
+
+Native execution, when separately authorized, retains the existing Owner,
+source-status/submodule custody, runtime, root-owned config, namespace/user
+drop, cgroup memory/PID, filesystem, output, protocol and watchdog route.
+All seven containment qualifiers remain independent and unchanged.
+One absolute3600-second outer deadline includes setup and qualifiers.
+The same original native budget reaches the selected fixture loader, entries
+and sole session. Constructor-reference injection preserves the actual Limits
+fields, including the authored20-second cancellation/deadline budgets;
+neither accounting sentinels nor failed-budget resets are installed.
+An exhausted preparation or unsupported original consumer is a failed/unknown
+qualification, never a successful family or permission to widen a quota.
+The positive source method also ends with an expected out-of-lifetime archive
+query. Its original `_source_phase_images` calls `budget.remaining()` after
+closure, setting the original failed flag. The adapter records this transition
+and does not reset it or classify that terminal budget as successful. Complete
+positive qualification therefore also requires a coordinator disposition of
+this existing source/acceptance coupling before allocation; no source edit or
+caller guard bypass is authorized by this preparation.
+
+The adapter observes actual original Make/command returns, real Popen handles,
+parsed original archives, source/visit/publication counts, source-completion
+bindings and consumer frontiers. It restores injected test/instance references
+and observes original budget/session/fixture cleanup. It does not replace
+production authority implementations, fabricate issued observations or infer
+hardware proof from a returned unittest method. No raw unittest output,
+source/value bytes, register addresses or exception traceback is uploaded.
+Only the existing five bounded artifacts are produced. Native projection is
+separate from report projection; report, serialization, verifier and H1
+attempts remain zero. Actual worker exit and outer first cause are retained.
+
+**Every native result remains machine-incomplete:** the existing child API
+does not expose debug-register readback, reader-frame exclusion samples,
+live source-pin retirement or source-active termination evidence. Publication
+order readback is also explicitly unavailable, not invented from counts.
+Expected terminal refusal is not positive-family completion. These obligations
+and TC-WORKFLOW-GATE-OWNERSHIP-001 remain open; this route adds no production
+hook or proof service. Complete report/verifier/resource/native/H1, independent,
+security/Copilot, candidate/master Build, architecture disposition, merge,
+issue closure, remote completion and cleanup gates remain mandatory.
+Preparation validation is credential-free parsed Git/YAML/AST reflection and
+finite inert adapter/projection controls only, not native execution.
+
 ## Accepted finite DATA full-report identity preparation
 
 **Local-only five-path identity/admission/source-reflection child for #180 /

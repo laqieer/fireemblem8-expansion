@@ -182,6 +182,64 @@ EXACT_COMPOSITION_PATHS = frozenset({
         "policy.py", "supervisor.py", "test_ci_calibration.py",
     )),
 })
+NATIVE_PARENT = "e93847725f58a89bca2a94af2d4acaae6a89cebf"
+NATIVE_PATHS = frozenset({
+    policy.NATIVE_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
+        "policy.py", "supervisor.py", "worker.py", "root_stage.py",
+        "test_ci_calibration.py", "test_root_stage.py", "README.md",
+    )),
+})
+NATIVE_IMPLEMENTATION_PATHS = frozenset({
+    *(f"scripts/validation_ownership/{name}.py" for name in (
+        "graph_probe", "make_probe", "phase_census", "read_epochs", "read_trace",
+        "source_effects", "source_phases", "syscall_guard",
+    )),
+    *(f"scripts/validation_ownership/tests/test_{name}.py" for name in (
+        "make_probe", "phase_census", "read_epochs", "source_effects", "source_phases",
+    )),
+    "docs/validation-ownership.md", "docs/test-cases/workflow-governance.md",
+})
+NATIVE_TEST_PATHS = frozenset({
+    "scripts/validation_ownership/tests/test_phase_census.py",
+    "scripts/validation_ownership/tests/test_read_epochs.py",
+    "docs/validation-ownership.md", "docs/test-cases/workflow-governance.md",
+})
+
+
+def validate_native_source_inventory(data, stage):
+    expected = {"implementation": NATIVE_IMPLEMENTATION_PATHS, "tests": NATIVE_TEST_PATHS}
+    if stage not in expected or type(data) is not bytes:
+        raise policy.GuardError("native source inventory has an unknown stage or representation")
+    rows = data.split(b"\0")
+    if len(rows) % 2 != 1 or rows[-1] != b"":
+        raise policy.GuardError("native source inventory is incomplete")
+    changes = list(zip(rows[:-1:2], rows[1:-1:2]))
+    if len(changes) != len(expected[stage]) or any(kind != b"M" for kind, _ in changes) or (
+        {name for _, name in changes} != {name.encode() for name in expected[stage]}
+    ):
+        raise policy.GuardError("native source inventory omitted or changed a coupled family member")
+
+
+def validate_native_lineage(lines, head):
+    if not lines or lines[0] != f"{head} {NATIVE_PARENT}":
+        raise policy.GuardError("native preparation is not one normal child of the frozen harness")
+    validate_harness_lineage(lines[1:], NATIVE_PARENT)
+
+
+def validate_native_inventory(data):
+    if type(data) is not bytes:
+        raise policy.GuardError("native preparation inventory is not immutable Git data")
+    rows = data.split(b"\0")
+    if len(rows) < 3 or len(rows) % 2 != 1 or rows[-1] != b"":
+        raise policy.GuardError("native preparation needs a complete nonempty Git inventory")
+    changes = list(zip(rows[:-1:2], rows[1:-1:2]))
+    allowed = {name.encode("ascii") for name in NATIVE_PATHS}
+    workflow = policy.NATIVE_WORKFLOW.encode("ascii")
+    if (b"A", workflow) not in changes or len(changes) > 8 or any(
+        name not in allowed or kind != (b"A" if name == workflow else b"M")
+        for kind, name in changes
+    ) or len({name for _, name in changes}) != len(changes):
+        raise policy.GuardError("native preparation changed a preserved or unallocated path")
 
 
 def validate_harness_lineage(lines, head):
@@ -971,7 +1029,8 @@ class OutputLimitExceeded(policy.GuardError):
 
 
 class Protocol:
-    def __init__(self, scope, maximum, *, raw_after_ready=False, report_binding=None, deadline=None):
+    def __init__(self, scope, maximum, *, raw_after_ready=False, report_binding=None, deadline=None,
+                 native_selection=None):
         self.scope, self.maximum = scope, maximum
         self.total = 0
         self.stderr_total = 0
@@ -981,6 +1040,12 @@ class Protocol:
         self.raw_after_ready = raw_after_ready
         self.finished = False
         self.report_binding, self.deadline = report_binding, deadline
+        self.native_selection = native_selection
+        if native_selection is not None and (
+            native_selection != policy.native_selection(native_selection.get("profile"), native_selection.get("selector"))
+            or report_binding is not None or raw_after_ready
+        ):
+            raise policy.GuardError("native stream overlaps report or raw-output authority")
         self.report_started = self.failed = False
         self.report_error = None
         self.report_error_records = 0
@@ -1090,6 +1155,16 @@ class Protocol:
                 raise policy.GuardError("diagnostic record is out of order")
             if "source_refusal" in record["data"]:
                 raise policy.GuardError("report scope cannot publish unrelated root source-refusal metadata")
+            if self.native_selection is not None:
+                if self.failed:
+                    raise policy.GuardError("failed native invocation cannot resume")
+                if kind == "result":
+                    policy.validate_native_result(record["data"], self.native_selection)
+                elif kind == "error":
+                    record["data"] = {"native_failure": "setup-or-publication-unavailable"}
+                    self.failed = True
+                elif kind != "ready":
+                    raise policy.GuardError("native stream contains another workload or raw output")
             if self.report_binding is not None:
                 value = record["data"]
                 if kind == "report-start":
@@ -1151,14 +1226,17 @@ class Protocol:
 
 
 def phase(owner, mode, volume, *, memory, pids, seconds):
+    native_started = time.monotonic() if mode == "native-completion" else None
     group = Cgroup(f"vo-ci180-{owner.scope['run_id']}-{mode}", memory, pids)
     owner.groups.append(group)
     group.prepare()
     directory = owner.control / mode
     directory.mkdir()
     scope = owner.scope["run_id"] + "/" + mode
-    started = time.monotonic()
+    started = time.monotonic() if native_started is None else native_started
     deadline = started + seconds
+    if mode == "native-completion":
+        deadline = min(deadline, owner.scope["native_outer_deadline"])
     config = {
         "scope": scope, "mode": mode, "cgroup": str(group.path), "cgroup_relative": "/" + group.path.name,
         "uid": owner.uid, "gid": owner.gid, "memory_max": memory, "pids_max": pids,
@@ -1172,6 +1250,10 @@ def phase(owner, mode, volume, *, memory, pids, seconds):
         "tracked_paths": owner.tracked_paths,
         "runtime_manifest": owner.runtime_manifest,
         **({"report_binding": policy.report_binding(owner.scope)} if mode == "report" else {}),
+        **({
+            "profile": owner.scope["profile"], "selector": owner.scope["selector"],
+            "source_revision": owner.scope["graph_sha"],
+        } if mode == "native-completion" else {}),
         "cgroup_file_identities": {
             name: [(group.path / name).stat().st_dev, (group.path / name).stat().st_ino]
             for name in policy.CGROUP_FILES
@@ -1192,6 +1274,7 @@ def phase(owner, mode, volume, *, memory, pids, seconds):
     protocol = Protocol(
         scope, 65536 if mode == "output" else policy.OUTPUT_BYTES, raw_after_ready=mode == "output",
         report_binding=config.get("report_binding"), deadline=deadline,
+        native_selection=owner.scope.get("native_selection") if mode == "native-completion" else None,
     )
     result = {"mode": mode, "deadline": deadline, "started_at": started,
               "report_starts": 0, "report_check_attempts": None if mode == "report" else 0,
@@ -1247,7 +1330,7 @@ def phase(owner, mode, volume, *, memory, pids, seconds):
                         except OutputLimitExceeded as error:
                             cause = cause or {"type": "output-bound", "message": str(error)}
                             continue
-                        if mode != "report" and not protocol.ready and protocol.stderr_total <= policy.ERROR_BYTES:
+                        if mode not in {"report", "native-completion"} and not protocol.ready and protocol.stderr_total <= policy.ERROR_BYTES:
                             result["trusted_setup_stderr"] = result.get("trusted_setup_stderr", "") + data.decode("utf-8", "replace")
                         if cause is None:
                             cause = {
@@ -1313,15 +1396,18 @@ def phase(owner, mode, volume, *, memory, pids, seconds):
                             owner.artifacts.append("progress.jsonl", record)
                 if now > deadline + 10:
                     raise policy.GuardError("watchdog/stream termination is unconfirmed")
-        if mode == "report" and (protocol.buffer or not protocol.finished and cause is None):
+        if mode in {"report", "native-completion"} and (protocol.buffer or not protocol.finished and cause is None):
             raise policy.GuardError("report stream ended without its complete terminal result")
         result["returncode"] = child.wait(timeout=5)
+        if mode == "native-completion" and result["returncode"] != 0 and cause is None:
+            cause = {"type": "native-worker-exit", "failure_kind": result.get("worker", {}).get("failure_kind")}
         result["empty_before_outer_cleanup"] = group.empty()
         if time.monotonic() >= deadline and cause is None:
             cause = {"type": "deadline", "message": "phase terminated at the original deadline"}
     except BaseException as error:
         result["supervisor_error"] = (
-            policy.component_secondary_error(error) if mode == "report" else policy.error_record(error)
+            policy.component_secondary_error(error) if mode == "report" else
+            {"native_failure": "supervisor-observation-unavailable"} if mode == "native-completion" else policy.error_record(error)
         )
         cause = cause or {"type": "supervisor-error", "error": result["supervisor_error"]}
     finally:
@@ -1451,6 +1537,8 @@ class Owner:
         self.runtime_manifest = None
 
     def prepare(self):
+        native = self.scope.get("workload_kind") == policy.NATIVE_KIND
+        endpoint = NATIVE_PARENT if native else "HEAD"
         if os.geteuid() != 0:
             raise policy.GuardError("hosted containment setup requires its narrow root supervisor")
         if HERE != self.harness / "scripts/ci_calibration" or LIFECYCLE.resolve() != (
@@ -1463,14 +1551,21 @@ class Owner:
             raise policy.GuardError("harness does not match the actual workflow SHA")
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
-        validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=35", "HEAD").decode().splitlines(),
-            self.scope["harness_sha"],
-        )
+        if native:
+            validate_native_lineage(
+                git(self.harness, "rev-list", "--parents", "--max-count=36", "HEAD").decode().splitlines(),
+                self.scope["harness_sha"],
+            )
+            validate_native_inventory(git(self.harness, "diff", "--name-status", "-z", NATIVE_PARENT, "HEAD"))
+        else:
+            validate_harness_lineage(
+                git(self.harness, "rev-list", "--parents", "--max-count=35", "HEAD").decode().splitlines(),
+                self.scope["harness_sha"],
+            )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
         if any(
             name and name.decode() not in {
-                policy.WORKFLOW, policy.TEMPLATE_HEADER_WORKFLOW, policy.FINITE_REPORT_WORKFLOW,
+                policy.WORKFLOW, policy.NATIVE_WORKFLOW, policy.TEMPLATE_HEADER_WORKFLOW, policy.FINITE_REPORT_WORKFLOW,
                 policy.INCLUDE_STATE_REBIND_WORKFLOW,
                 policy.INCLUDE_STATE_WORKFLOW, policy.SORT_REPORT_WORKFLOW,
                 policy.STRUCTURAL_REPORT_WORKFLOW, policy.CONSUMER_REPORT_WORKFLOW,
@@ -1593,27 +1688,29 @@ class Owner:
         validate_template_header_inventory(git(
             self.harness, "diff", "--name-status", "-z", FINITE_REPORT_SHA, TEMPLATE_HEADER_SHA,
         ))
-        if git(self.harness, "diff", "--name-only", TEMPLATE_HEADER_SHA, "HEAD", "--",
+        if git(self.harness, "diff", "--name-only", TEMPLATE_HEADER_SHA, endpoint, "--",
                policy.TEMPLATE_HEADER_WORKFLOW, "scripts/ci_calibration/worker.py",
                "scripts/ci_calibration/observation_failure.py").strip():
             raise policy.GuardError("exact composition changed the frozen template workflow or diagnostic")
         validate_exact_composition_inventory(git(
-            self.harness, "diff", "--name-status", "-z", TEMPLATE_HEADER_SHA, "HEAD",
+            self.harness, "diff", "--name-status", "-z", TEMPLATE_HEADER_SHA, endpoint,
         ))
         validate_accounting_workflow(
             git(self.harness, "show", REPORT_FINALIZATION_SHA + ":" + policy.FULL_REPORT_WORKFLOW),
             git(self.harness, "show", REPORT_REBIND_SHA + ":" + policy.FULL_REPORT_WORKFLOW),
         )
         self.source_status("before")
-        tree = git(self.candidate, "ls-tree", "-rz", "--full-tree", policy.GRAPH)
+        source = self.scope["graph_sha"]
+        tree = git(self.candidate, "ls-tree", "-rz", "--full-tree", source)
         self.tracked_paths = len([row for row in tree.split(b"\0") if row])
         self.scope["tracked_paths"] = self.tracked_paths
         self.scope["changed_paths"] = policy.changed_path_binding(policy.changed_path_set(git(
             self.candidate, "diff", "--no-ext-diff", "--no-textconv", "--no-renames",
-            "--ignore-submodules=none", "--name-status", "-z", policy.BASE, policy.GRAPH, "--",
+            "--ignore-submodules=none", "--name-status", "-z", policy.BASE, source, "--",
         )))
-        policy.report_binding(self.scope)
-        if git(self.candidate, "ls-tree", "-r", "--name-only", policy.GRAPH, "--", "build", "scripts/ci_calibration", policy.WORKFLOW).strip():
+        if not native:
+            policy.report_binding(self.scope)
+        if git(self.candidate, "ls-tree", "-r", "--name-only", source, "--", "build", "scripts/ci_calibration", policy.WORKFLOW).strip():
             raise policy.GuardError("source inventory overlaps writable build or diagnostic harness paths")
         for root in (self.harness, self.candidate, *(self.candidate / name for name in self.gitlinks)):
             found = git(root, "config", "--local", "--name-only", "--get-regexp",
@@ -1676,14 +1773,33 @@ class Owner:
         self.listener.listen(1)
 
     def source_status(self, label):
-        if git(self.candidate, "rev-parse", "HEAD").decode().strip() != policy.GRAPH:
+        source = self.scope["graph_sha"]
+        if source not in {policy.GRAPH, policy.NATIVE_SOURCE} or (
+            source == policy.NATIVE_SOURCE and self.scope.get("workload_kind") != policy.NATIVE_KIND
+        ):
+            raise policy.GuardError("source revision overlaps an unallocated workload")
+        if git(self.candidate, "rev-parse", "HEAD").decode().strip() != source:
             raise policy.GuardError("candidate HEAD differs from the immutable workload")
         if git(self.candidate, "rev-parse", policy.BASE + "^{commit}").decode().strip() != policy.BASE:
             raise policy.GuardError("candidate lacks the exact BASE history")
+        if source == policy.NATIVE_SOURCE:
+            if git(self.candidate, "rev-list", "--parents", "--max-count=1", source).decode().strip() != (
+                source + " " + policy.NATIVE_IMPLEMENTATION
+            ):
+                raise policy.GuardError("authored native source is not the exact normal implementation child")
+            git(self.candidate, "merge-base", "--is-ancestor", policy.GRAPH, policy.NATIVE_IMPLEMENTATION)
+            for before, after, stage in (
+                (policy.GRAPH, policy.NATIVE_IMPLEMENTATION, "implementation"),
+                (policy.NATIVE_IMPLEMENTATION, source, "tests"),
+            ):
+                validate_native_source_inventory(git(
+                    self.candidate, "diff", "--no-ext-diff", "--no-textconv", "--no-renames",
+                    "--name-status", "-z", before, after,
+                ), stage)
         if git(self.candidate, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("candidate source is not clean")
         gitlinks = []
-        for record in git(self.candidate, "ls-tree", "-rz", "--full-tree", policy.GRAPH).split(b"\0"):
+        for record in git(self.candidate, "ls-tree", "-rz", "--full-tree", source).split(b"\0"):
             if record and record.startswith(b"160000 commit "):
                 path = record.split(b"\t", 1)[1].decode("utf-8", "strict")
                 if path.startswith("/") or any(part in {"", ".", ".."} for part in path.split("/")):
@@ -1744,6 +1860,8 @@ def arguments():
     for name in ("harness", "candidate", "output", "event", "sha", "event-name", "run-id",
                  "attempt", "run-number", "runner-environment", "runner-os"):
         parser.add_argument("--" + name, required=True)
+    parser.add_argument("--profile", choices=(policy.NATIVE_PROFILE,))
+    parser.add_argument("--selector", choices=policy.NATIVE_SELECTORS)
     return parser.parse_args()
 
 
@@ -1813,12 +1931,17 @@ def main():
     if not sys.flags.isolated or not sys.flags.no_site or not sys.dont_write_bytecode:
         raise policy.GuardError("supervisor requires isolated no-site startup")
     event = policy.parse_json(kernel.read(args.event, policy.MIB))
-    scope = policy.validate_event(
-        event, sha=args.sha, run_id=args.run_id, attempt=args.attempt, run_number=args.run_number,
+    identity = dict(sha=args.sha, run_id=args.run_id, attempt=args.attempt, run_number=args.run_number,
         environment=args.runner_environment, operating_system=args.runner_os, event_name=args.event_name,
     )
+    native = args.profile is not None or args.selector is not None
+    scope = (
+        policy.native_event(event, profile=args.profile, selector=args.selector, **identity)
+        if native else policy.validate_event(event, **identity)
+    )
     output = Path(args.output).absolute()
-    if output.name != policy.OUTPUT_PREFIX + args.run_id or output.is_symlink():
+    prefix = policy.NATIVE_OUTPUT_PREFIX if native else policy.OUTPUT_PREFIX
+    if output.name != prefix + args.run_id or output.is_symlink():
         raise policy.GuardError("output does not identify the single owned artifact directory")
     artifacts = Artifacts(output)
     if args.operation == "plan":
@@ -1827,7 +1950,7 @@ def main():
         scope.update(
             planned_at_monotonic=time.monotonic(), report_launch_requested=False,
             report_attempted=False, report_returned=False, report_completed=False,
-            policy=policy.profile_manifest(
+            policy=dict(policy.ORIGINAL_LIMITS) if native else policy.profile_manifest(
                 policy.ORIGINAL_LIMITS, observation_count=policy.ORIGINAL_LIMITS["entries"],
             ),
             policy_basis="Expected pinned defaults; actual Limits/effective properties are checked after containment.",
@@ -1854,6 +1977,8 @@ def main():
     failing_phase = None
     preflight = []
     started = time.monotonic()
+    if native:
+        scope["native_outer_deadline"] = started + policy.GRAPH_SECONDS
     artifacts.write("result.json", {
         "status": "preflight-started", "diagnostic_only": True,
         "production_acceptance": False, "report_launch_requested": False, **policy.ABSENT_WORKLOADS,
@@ -1893,17 +2018,21 @@ def main():
         graph_volume = owner.volume("graph-volume", envelope["disk_bytes"])
         if time.monotonic() - started > 5 * 60:
             raise policy.GuardError("preflight/setup exceeded its reserved margin; report will not start")
-        scope["report_launch_requested"] = True
-        scope["report_attempted"] = scope["report_returned"] = None
+        scope["native_launch_requested" if native else "report_launch_requested"] = True
+        if not native:
+            scope["report_attempted"] = scope["report_returned"] = None
         artifacts.write("scope.json", scope)
         result = phase(
-            owner, "report", graph_volume, memory=envelope["memory_max"],
+            owner, "native-completion" if native else "report", graph_volume, memory=envelope["memory_max"],
             pids=envelope["pids_max"], seconds=policy.GRAPH_SECONDS,
         )
         failing_phase = result
-        checked = validate_report_phase(result, policy.report_binding(scope))
+        checked = (
+            validate_native_phase(result, scope["native_selection"]) if native
+            else validate_report_phase(result, policy.report_binding(scope))
+        )
         failing_phase = None
-        scope["report_completed"] = True
+        scope["native_returned" if native else "report_completed"] = True
         result["validation"] = checked
     except BaseException as error:
         observed_cause = failing_phase.get("first_cause") if isinstance(failing_phase, dict) else None
@@ -1911,7 +2040,13 @@ def main():
     finally:
         if owner is not None:
             try:
-                if scope["report_launch_requested"] and (result is None or report_retention(result)):
+                if (
+                    native and scope.get("native_launch_requested") and (
+                        result is None or native_retention(result)
+                    )
+                ) or (
+                    scope["report_launch_requested"] and (result is None or report_retention(result))
+                ):
                     raise policy.GuardError("inner report ownership remains uncertain; retain outer resources after owned-process termination")
                 owner.cleanup()
             except BaseException as error:
@@ -1924,13 +2059,65 @@ def main():
                     first = scope["source_status_after_error"]
         artifacts.write("scope.json", scope)
         artifacts.write("result.json", {
-            "status": "completed-report-diagnostic-only" if first is None and cleanup_error is None else "failed",
+            "status": (
+                "native-returned-machine-incomplete" if native else "completed-report-diagnostic-only"
+            ) if first is None and cleanup_error is None else "failed",
             "diagnostic_only": True, "production_acceptance": False,
             "first_error": first, "phase": result, "cleanup_error": cleanup_error,
             "cleanup_confirmed": cleanup_error is None,
             "elapsed_seconds": time.monotonic() - started,
         })
     return 0 if first is None and cleanup_error is None else 1
+
+
+def native_retention(result):
+    if not isinstance(result, dict) or result.get("mode") != "native-completion" or any(
+        result.get(name) is not True for name in (
+            "empty", "empty_before_outer_cleanup", "watchdog_reaped", "lifetime_writer_closed",
+        )
+    ):
+        return True
+    worker = result.get("worker")
+    cleanup = worker.get("cleanup") if isinstance(worker, dict) else None
+    return not isinstance(cleanup, dict) or cleanup != {
+        "budget_closed": True, "children": 0, "waiters": 0, "retained_owners": 0,
+        "session_base_removed": True, "fixture_removed": True, "references_restored": True,
+    } or worker.get("children", {}).get("unknown") != 0
+
+
+def validate_native_phase(result, selection):
+    if native_retention(result) or result.get("first_cause") or result.get("returncode") != 0 or (
+        type(result.get("returncode")) is not int
+        or result.get("output_exceeded") or result.get("cleanup_errors") or result.get("supervisor_error")
+        or result.get("report_starts") != 0 or result.get("report_check_attempts") != 0
+        or any(result.get(name) != 0 for name in policy.ABSENT_WORKLOADS)
+    ):
+        raise policy.GuardError("native invocation failed or lacks actual owned cleanup")
+    value = policy.validate_native_result(result["worker"], selection)
+    if not value["method_returned"] or value["first_stage"] is not None or value["secondary_errors"]:
+        raise policy.GuardError("native source method did not actually return without errors")
+    if value["counters"] is None or value["counters"]["budget"] is None or value["counters"]["session"] is None or (
+        value["states"]["budget_requests"] != 1 or value["states"]["session_attempts"] != 1
+        or value["children"]["created"] < 1
+    ):
+        raise policy.GuardError("native source method lacks actual original lifetime observations")
+    if selection["selector"] == policy.NATIVE_SELECTORS[0] and (
+        value["states"]["budget_requests"] != 1 or value["states"]["session_attempts"] != 1
+        or value["states"]["make_attempts"] != len(policy.NATIVE_MEMBERS)
+        or value["states"]["make_returned"] != len(policy.NATIVE_MEMBERS)
+        or len(value["archives"]) != len(policy.NATIVE_MEMBERS)
+        or {row["member"] for row in value["archives"]} != set(policy.NATIVE_MEMBERS)
+        or any(row["abi_version"] != 2 or row["frontier_consumed"] is not True for row in value["archives"])
+        or value["counters"]["budget"]["failed"]
+    ):
+        raise policy.GuardError("positive native family did not complete its original finite membership")
+    if selection["selector"] != policy.NATIVE_SELECTORS[0] and (
+        value["states"]["make_returned"] != 1 or len(value["archives"]) != 1
+        or value["archives"][0]["member"] != "terminal-preparation"
+        or not value["counters"]["budget"]["failed"]
+    ):
+        raise policy.GuardError("terminal selector lacks its actual original preparation and terminal failure")
+    return value
 
 
 if __name__ == "__main__":
