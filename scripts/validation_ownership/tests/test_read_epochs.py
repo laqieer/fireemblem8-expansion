@@ -12,6 +12,7 @@ from pathlib import Path
 import posixpath
 import shlex
 import signal
+import stat
 import struct
 from types import MappingProxyType, SimpleNamespace
 import unittest
@@ -73,6 +74,253 @@ class CompletionTraceDataApiTests(unittest.TestCase):
                 "data": base64.b64encode(child).decode(),
             }], "complete": True,
         }
+
+    @staticmethod
+    def trace_data_v4():
+        trace = CompletionTraceDataApiTests.trace_data()
+        trace["version"] = read_epochs.COMPLETION_VERSION
+        source_rows = trace["sources"]
+        trace["selection"] = {
+            "version": 1,
+            "snapshot_sha256": "b" * 64,
+            "names": ["CAP"],
+            "inventory": [
+                {
+                    "path": name, "kind": "snapshot", "mode": row["mode"],
+                    "size": row["bytes"], "sha256": row["sha256"], "screen": "text",
+                }
+                for name, row in zip(("Makefile", "child.mk"), source_rows)
+            ],
+            "scan": {
+                "entries": 2, "bytes": sum(row["bytes"] for row in source_rows),
+                "text": 2, "binary": 0, "invalid_utf8": 0, "oversize": 0,
+            },
+        }
+        for event in trace["events"]:
+            if event["kind"] == "source-open":
+                event["path"] = event["name"]
+                event["custody"] = {"kind": "snapshot"}
+        return trace
+
+    def test_v4_binds_sparse_sites_to_exact_opened_source_versions(self):
+        trace = self.trace_data_v4()
+        self.assertIs(read_epochs.validate_trace(
+            trace, trace["scope"], count_limit=32, file_limit=1024,
+        ), trace)
+        archive = read_epochs.reconstruct_archive(trace, budget=ProbeBudget())
+        self.assertEqual(archive.version, 4)
+        self.assertEqual(archive.selection, ("CAP",))
+        self.assertEqual(
+            (archive.passes[0].visits[0].opens[0].path,
+             archive.passes[0].visits[0].opens[0].custody),
+            ("Makefile", {"kind": "snapshot"}),
+        )
+        for defect in (
+            "foreign-path", "foreign-version", "binary-source", "invalid-screen", "unknown-late-consumer",
+        ):
+            changed = copy.deepcopy(trace)
+            opened = next(row for row in changed["events"] if row["kind"] == "source-open")
+            if defect == "foreign-path":
+                opened["path"] = "foreign.mk"
+            elif defect == "foreign-version":
+                opened["custody"] = {"kind": "prior-publication", "owner": "c" * 64, "serial": 1}
+            elif defect == "binary-source":
+                source = changed["sources"][0]
+                data = b"CAP := \0hidden\n"
+                source.update(bytes=len(data), sha256=hashlib.sha256(data).hexdigest(),
+                              data=base64.b64encode(data).decode())
+                opened["identity"][3] = len(data)
+                row = changed["selection"]["inventory"][0]
+                row.update(size=len(data), sha256=hashlib.sha256(data).hexdigest(), screen="binary")
+                changed["selection"]["scan"]["bytes"] += len(data) - trace["sources"][0]["bytes"]
+                changed["selection"]["scan"]["text"] -= 1
+                changed["selection"]["scan"]["binary"] += 1
+            elif defect == "invalid-screen":
+                changed["selection"]["inventory"][0]["screen"] = 17
+            else:
+                source = changed["sources"][1]
+                data = b"include $(LATE)\n"
+                source.update(bytes=len(data), sha256=hashlib.sha256(data).hexdigest(),
+                              data=base64.b64encode(data).decode())
+                changed["events"][7]["identity"][3] = len(data)
+            with self.subTest(defect=defect), self.assertRaises(read_epochs.ReadEpochError):
+                read_epochs.validate_trace(changed, changed["scope"], count_limit=32, file_limit=1024)
+
+    def test_prior_publication_open_requires_its_exact_frozen_pin(self):
+        trace = self.trace_data_v4()
+        source = trace["sources"][1]
+        identity = [1, 3, 0o100644, source["bytes"], 4, 5, 1]
+        entry = trace["selection"]["inventory"][1]
+        entry.update(kind="prior-publication", owner="e" * 64, serial=2, identity=identity)
+        opened = [row for row in trace["events"] if row["kind"] == "source-open"][1]
+        opened["custody"] = {"kind": "prior-publication", "owner": "e" * 64, "serial": 2}
+        self.assertIs(read_epochs.validate_trace(
+            trace, trace["scope"], count_limit=32, file_limit=1024,
+        ), trace)
+        for defect in ("serial", "owner", "identity"):
+            changed = copy.deepcopy(trace)
+            selected = changed["selection"]["inventory"][1]
+            opened = [row for row in changed["events"] if row["kind"] == "source-open"][1]
+            if defect == "serial":
+                opened["custody"]["serial"] += 1
+            elif defect == "owner":
+                opened["custody"]["owner"] = "f" * 64
+            else:
+                selected["identity"][3] += 1
+            with self.subTest(defect=defect), self.assertRaises(read_epochs.ReadEpochError):
+                read_epochs.validate_trace(changed, changed["scope"], count_limit=32, file_limit=1024)
+
+    def test_newly_published_source_versions_can_contribute_only_frozen_names(self):
+        trace = self.trace_data_v4()
+        opened = [row for row in trace["events"] if row["kind"] == "source-open"][1]
+        source = trace["sources"][1]
+        data = b"CAP := generated-value\n"
+        source.update(bytes=len(data), sha256=hashlib.sha256(data).hexdigest(),
+                      data=base64.b64encode(data).decode())
+        opened["path"] = "build/remade.mk"
+        opened["name"] = "build/remade.mk"
+        trace["events"][6]["name"] = "build/remade.mk"
+        trace["events"][8]["resolved"] = "build/remade.mk"
+        opened["custody"] = {
+            "kind": "publication", "event": 1, "producer": 1, "slot": 0, "owner": "d" * 64,
+        }
+        opened["identity"][3] = len(data)
+        trace["events"][7]["identity"][3] = len(data)
+        site, = read_epochs.completion_sites("build/remade.mk", data, trace["selection"]["names"])
+        completion = {
+            "kind": "assignment-completion", "exec": 1, "pass": 1, "visit": 2, "source": 2,
+            "site": site, "name": "CAP", "operator": ":=", "cwd": "/repo",
+            "variable": ["CAP", "generated-value", 2 << 26, "build/remade.mk", 1, 0],
+        }
+        trace["events"].insert(8, completion)
+        for sequence, event in enumerate(trace["events"], 1):
+            event["seq"] = sequence
+        self.assertIs(read_epochs.validate_trace(
+            trace, trace["scope"], count_limit=32, file_limit=1024,
+        ), trace)
+        late = copy.deepcopy(trace)
+        late_data = b"include $(LATE)\n"
+        late["sources"][1].update(
+            bytes=len(late_data), sha256=hashlib.sha256(late_data).hexdigest(),
+            data=base64.b64encode(late_data).decode(),
+        )
+        late_open = next(row for row in late["events"] if row["kind"] == "source-open")
+        late_open["identity"][3] = len(late_data)
+        with self.assertRaises(read_epochs.ReadEpochError):
+            read_epochs.validate_trace(late, late["scope"], count_limit=32, file_limit=1024)
+
+    def test_actual_source_open_pins_sites_before_resuming_or_refuses_late_consumers(self):
+        for data, accepted in ((b"CAP := generated-value\n", True), (b"include $(LATE)\n", False)):
+            trace = object.__new__(read_trace.NativeReadTrace)
+            caller, frame, address, descriptor = 0x1020, 0x2000, 0x3000, 5
+            mode = stat.S_IFREG | 0o644
+            identity = (1, 3, mode, len(data), 4, 5, 1)
+            info = SimpleNamespace(st_mode=mode, st_size=len(data))
+            closed, events = [], []
+            notifications = {address: struct.pack("<QQQQqII", caller, frame, 1, 2, -1, 0, 0)}
+            trace.pid, trace.bias, trace.version = 17, 0x1000, 4
+            trace.abi = {"source_opens": [0x20]}
+            trace.active = [{"frame": frame, "return": 0x5555, "visit": 2, "source": None}]
+            trace.io = None
+            trace.config = {"file_limit": 1024, "observation_count": 32}
+            trace.selection_names = frozenset({"CAP"})
+            trace.selection_inventory = {}
+            trace.native = SimpleNamespace(publication_identity=lambda value: identity)
+            trace.policy = SimpleNamespace(
+                charge_metadata=lambda size: None,
+                source_effects=SimpleNamespace(
+                    publication_entry=lambda path, actual: {
+                        "kind": "publication", "event": 1, "producer": 1, "slot": 0, "owner": "d" * 64,
+                    },
+                ),
+            )
+            trace.execs, trace.passes = 1, 1
+            trace.events, trace.sources, trace.pool, trace.statement_indexes = [], [], {}, {}
+            trace.deadline = lambda: None
+            trace.context = lambda: {"exec": 1, "pass": 1}
+            trace.number = lambda location: 0x5555 if location == frame + 8 else 0
+            trace.string = lambda pointer, limit: {1: "build/remade.mk", 2: "r"}.get(pointer)
+            trace.memory = lambda location, size: notifications[location]
+            trace.event = lambda kind, **fields: events.append({"kind": kind, **fields})
+            fake_os = SimpleNamespace(
+                O_RDONLY=0, O_CLOEXEC=0, open=lambda *args, **kwargs: 77,
+                fstat=lambda fd: info, pread=lambda fd, count, offset: data[offset:offset + count],
+                close=lambda fd: closed.append(fd),
+            )
+            state = SimpleNamespace(fds={descriptor: "/repo/build/remade.mk"})
+            with patch.object(read_trace, "os", fake_os):
+                trace.source_io(17, state, address, 48)
+                notifications[address] = struct.pack(
+                    "<QQQQqII", caller, frame, 1, 2, descriptor, 1, 0,
+                )
+                if accepted:
+                    trace.source_io(17, state, address, 48)
+                else:
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        trace.source_io(17, state, address, 48)
+            with self.subTest(accepted=accepted):
+                self.assertEqual(bool(events), accepted)
+                self.assertEqual(closed, [] if accepted else [77])
+                if accepted:
+                    self.assertEqual(events[0]["custody"]["kind"], "publication")
+                    self.assertEqual(
+                        [row[5] for row in trace.active[-1]["selection_index"].values()],
+                        ["CAP"],
+                    )
+
+    def test_repeated_path_versions_keep_visit_specific_completion_sites(self):
+        trace = self.trace_data_v4()
+        root_data = b"CAP := $(shell model-only)\ninclude child.mk\ninclude child.mk\n"
+        first_data, second_data = b"CAP := first\n", b"CAP := second\n"
+        root, first = trace["sources"]
+        root.update(bytes=len(root_data), sha256=hashlib.sha256(root_data).hexdigest(),
+                    data=base64.b64encode(root_data).decode())
+        first.update(bytes=len(first_data), sha256=hashlib.sha256(first_data).hexdigest(),
+                     data=base64.b64encode(first_data).decode())
+        trace["selection"]["inventory"][0].update(size=len(root_data), sha256=root["sha256"])
+        trace["selection"]["inventory"][1].update(size=len(first_data), sha256=first["sha256"])
+        trace["selection"]["scan"]["bytes"] = len(root_data) + len(first_data)
+        trace["events"][4]["identity"][3] = len(root_data)
+        trace["events"][5]["site"], = read_epochs.completion_sites(
+            "Makefile", root_data, trace["selection"]["names"],
+        )
+        trace["events"][7]["identity"][3] = len(first_data)
+        first_site, = read_epochs.completion_sites("child.mk", first_data, trace["selection"]["names"])
+        first_completion = {
+            "kind": "assignment-completion", "exec": 1, "pass": 1, "visit": 2, "source": 2,
+            "site": first_site, "name": "CAP", "operator": ":=", "cwd": "/repo",
+            "variable": ["CAP", "first", 2 << 26, "child.mk", 1, 0],
+        }
+        trace["events"].insert(8, first_completion)
+
+        trace["sources"].append({
+            "id": 3, "mode": 0o644, "bytes": len(second_data),
+            "sha256": hashlib.sha256(second_data).hexdigest(),
+            "data": base64.b64encode(second_data).decode(),
+        })
+        second_site, = read_epochs.completion_sites("child.mk", second_data, trace["selection"]["names"])
+        trace["events"][10:10] = [
+            {"kind": "source-entry", "exec": 1, "pass": 1, "visit": 3, "parent": 1,
+             "name": "child.mk", "flags": 0, "location": [1, 1, 3, 3, 3]},
+            {"kind": "source-open", "exec": 1, "pass": 1, "visit": 3, "name": "child.mk",
+             "mode": "r", "result": 5, "source": 3,
+             "identity": [1, 4, 0o100644, len(second_data), 4, 5, 1],
+             "path": "child.mk",
+             "custody": {"kind": "publication", "event": 2, "producer": 1, "slot": 1,
+                         "owner": "d" * 64}},
+            {"kind": "assignment-completion", "exec": 1, "pass": 1, "visit": 3, "source": 3,
+             "site": second_site, "name": "CAP", "operator": ":=", "cwd": "/repo",
+             "variable": ["CAP", "second", 2 << 26, "child.mk", 1, 0]},
+            {"kind": "source-exit", "exec": 1, "pass": 1, "visit": 3, "resolved": "child.mk",
+             "flags": 0, "error": 0, "source": 3},
+        ]
+        trace["events"][-2]["goals"] = [1, 2, 3]
+        trace["events"][-1]["visits"] = 3
+        for sequence, event in enumerate(trace["events"], 1):
+            event["seq"] = sequence
+        self.assertIs(read_epochs.validate_trace(
+            trace, trace["scope"], count_limit=32, file_limit=1024,
+        ), trace)
 
     def test_closed_archive_reconstructs_immutable_sparse_rows_and_original_locations(self):
         trace = self.trace_data()

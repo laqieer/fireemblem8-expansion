@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from scripts.validation_ownership import graph_probe, make_probe, phase_census, reporter
+from scripts.validation_ownership import graph_probe, make_probe, phase_census, read_epochs, reporter
 from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, GitTreeEntries, GitTreeEntry, encoded
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.budget import Limits, MAX_PLANNED_STATE_BYTES
@@ -28,10 +28,13 @@ class OriginalCompletionSelectionApiTests(unittest.TestCase):
 
     def session(self, source, limits=None):
         session = object.__new__(ProbeSession)
-        session.snapshot = SimpleNamespace(files={
-            "Makefile": source.encode(), "unrelated.bin": b"\xff\x00",
-        })
+        files = {"Makefile": source.encode(), "unrelated.bin": b"\xff\x00"}
+        session.snapshot = SimpleNamespace(
+            files=files, modes={name: "100644" for name in files}, digest="a" * 64,
+        )
         session.budget = ProbeBudget(limits or Limits())
+        session.published_sources = {}
+        session.published_versions = {}
         return session
 
     def test_selection_freezes_only_constructor_dependencies_of_source_consumers(self):
@@ -43,26 +46,109 @@ class OriginalCompletionSelectionApiTests(unittest.TestCase):
             "ifeq ($(CAP),0xCD)\ninclude $(PATH)\nendif\n"
         )
         session = self.session(source)
-        rows = session._original_completion_selection()
-        self.assertEqual({row[5] for row in rows}, {"ROOT", "CAP", "PATH"})
-        self.assertEqual(len(rows), 3)
-        self.assertTrue(all(row[0] == "Makefile" for row in rows))
+        selection = session._original_completion_selection()
+        self.assertEqual(selection["names"], ["CAP", "PATH", "ROOT"])
+        self.assertEqual(selection["scan"]["entries"], len(selection["inventory"]))
+        self.assertEqual(selection["scan"]["binary"], 1)
+        self.assertEqual(
+            session.budget.bytes["total"],
+            sum(len(data) for data in session.snapshot.files.values()),
+        )
         self.assertEqual(session.budget.runs, 0)
         self.assertFalse(session.budget.children)
         neutral = self.session("# neutral source comment\n" + source)
-        self.assertEqual({row[5] for row in neutral._original_completion_selection()},
-                         {row[5] for row in rows})
+        self.assertEqual(neutral._original_completion_selection()["names"], selection["names"])
+
+    def test_selection_scans_extensionless_and_arbitrary_suffix_sources_and_prior_publications(self):
+        session = self.session("include control\n")
+        session.snapshot.files.update({
+            "control": b"SECONDARY := $(PATH)\ninclude settings.inc\ninclude $(SECONDARY)\n",
+            "settings.inc": b"PATH := $(VALUE)\n",
+            "other.c": b"UNRELATED := inert\n",
+        })
+        session.snapshot.modes.update({name: "100644" for name in ("control", "settings.inc", "other.c")})
+        selection = session._original_completion_selection()
+        self.assertEqual(selection["names"], ["PATH", "SECONDARY", "VALUE"])
+        self.assertIn("control", {row["path"] for row in selection["inventory"]})
+        self.assertIn("settings.inc", {row["path"] for row in selection["inventory"]})
+        self.assertEqual(
+            [row[5] for row in read_epochs.completion_sites(
+                "control", session.snapshot.files["control"], selection["names"],
+            )],
+            ["SECONDARY"],
+        )
+        self.assertEqual(
+            [row[5] for row in read_epochs.completion_sites(
+                "settings.inc", session.snapshot.files["settings.inc"], selection["names"],
+            )],
+            ["PATH"],
+        )
+
+        session = self.session("include generated\n")
+        generated = b"CAP := $(shell published)\ninclude $(CAP)\n"
+        session.published_sources = {
+            "generated": make_probe.GeneratedFile("generated", generated, 0o644),
+        }
+        session.published_versions = {
+            "generated": ("b" * 64, 1, (1, 2, 0o100644, len(generated), 3, 4, 1)),
+        }
+        selected = session._original_completion_selection()
+        published, = [row for row in selected["inventory"] if row["path"] == "generated"]
+        self.assertEqual((published["kind"], published["owner"], published["serial"]),
+                         ("prior-publication", "b" * 64, 1))
+        self.assertEqual(selected["names"], ["CAP"])
+        self.assertEqual(
+            [row[5] for row in read_epochs.completion_sites("generated", generated, selected["names"])],
+            ["CAP"],
+        )
+
+    def test_selection_screening_is_explicit_and_strict_text_failures_do_not_become_authority(self):
+        session = self.session("include source.mk\n")
+        session.snapshot.files.update({
+            "source.mk": b"CAP := $(shell valid)\n",
+            "binary.mk": b"\0CAP := hidden\n",
+            "invalid.mk": b"\xffCAP := hidden\n",
+            "oversize.mk": b"\0" + b"x" * 40,
+        })
+        session.snapshot.modes.update({name: "100644" for name in ("source.mk", "binary.mk", "invalid.mk", "oversize.mk")})
+        session.budget = ProbeBudget(Limits(file_bytes=32))
+        selection = session._original_completion_selection()
+        screens = {row["path"]: row["screen"] for row in selection["inventory"]}
+        self.assertEqual(screens["source.mk"], "text")
+        self.assertEqual(screens["binary.mk"], "binary")
+        self.assertEqual(screens["invalid.mk"], "invalid-utf8")
+        self.assertEqual(screens["oversize.mk"], "oversize-binary")
+        self.assertEqual(selection["names"], [])
+        with self.assertRaises(MakeProbeError):
+            read_epochs.completion_sites("binary.mk", b"\0CAP := hidden\n", selection["names"])
+        oversized_text = self.session("include source.mk\n")
+        oversized_text.snapshot.files["large.txt"] = b"x" * 33
+        oversized_text.snapshot.modes["large.txt"] = "100644"
+        oversized_text.budget = ProbeBudget(Limits(file_bytes=32))
+        with self.assertRaises(MakeProbeError):
+            oversized_text._original_completion_selection()
 
     def test_selection_respects_stricter_count_file_and_deadline_bounds(self):
         source = "CAP := $(shell model-only)\nPATH := $(CAP)\ninclude $(PATH)\n"
-        for defect in ("count", "file", "deadline"):
+        for defect in ("count", "file", "work", "deadline"):
             limits = Limits(observations=1) if defect == "count" else (
-                Limits(file_bytes=16) if defect == "file" else Limits())
+                Limits(file_bytes=16) if defect == "file" else (
+                    Limits(total_bytes=1) if defect == "work" else Limits()))
             session = self.session(source, limits)
             if defect == "deadline":
                 session.budget.started -= limits.seconds
             with self.subTest(defect=defect), self.assertRaises(MakeProbeError):
                 session._original_completion_selection()
+
+    def test_cyclic_names_reach_fixed_point_and_closure_overflow_is_refused(self):
+        source = "include $(A)\nA := $(B)\nB := $(A)\n"
+        session = self.session(source)
+        self.assertEqual(session._original_completion_selection()["names"], ["A", "B"])
+        bounded = self.session(source, Limits(observations=1))
+        bounded.snapshot.files = {"Makefile": source.encode()}
+        bounded.snapshot.modes = {"Makefile": "100644"}
+        with self.assertRaises(MakeProbeError):
+            bounded._original_completion_selection()
 
     def test_recipe_and_define_consumers_do_not_select_body_assignment_sites(self):
         source = (
@@ -72,7 +158,8 @@ class OriginalCompletionSelectionApiTests(unittest.TestCase):
             "all:\n\tCAP := $(CAP)\n"
             "$(eval $(MACRO))\n"
         )
-        rows = self.session(source)._original_completion_selection()
+        selected = self.session(source)._original_completion_selection()
+        rows = read_epochs.completion_sites("Makefile", source.encode(), selected["names"])
         self.assertEqual([(row[5], row[2]) for row in rows], [("CAP", 1), ("BEFORE", 2)])
         with self.assertRaises(MakeProbeError):
             self.session("define BROKEN\nCAP := value\n")._original_completion_selection()

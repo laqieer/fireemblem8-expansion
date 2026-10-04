@@ -32,7 +32,7 @@ class CompletionEntryImageDataApiTests(unittest.TestCase):
         return trace, {"version": 1, "scope": trace["scope"], "entries": [entry], "closed": True}
 
     def test_new_capture_keeps_exact_entry_image_binding(self):
-        for version in (2, 3):
+        for version in (2, 3, 4):
             trace, capture = self.capture()
             trace["version"] = version
             self.assertIs(source_phases.validate_capture(capture, trace), capture)
@@ -118,7 +118,7 @@ class SourcePhaseTests(unittest.TestCase):
                 "all", variables=("FILES", "HIDDEN"), commands=self.commands(session),
                 observe_source_phases=True,
             )
-            self.assertEqual(result.read_trace["version"], 3)
+            self.assertEqual(result.read_trace["version"], 4)
             phases = result.source_phases
             self.assertTrue(phases["closed"])
             self.assertEqual([entry["pass"] for entry in phases["entries"]], [1, 2])

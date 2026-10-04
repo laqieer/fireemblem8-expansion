@@ -116,6 +116,21 @@ class OriginalCompletionDataApiTests(unittest.TestCase):
         old = self.parse(removed, sources, callback=False)
         self.assertIsNone(old.mode_state.exact_reference("NEXT"))
 
+    def test_v4_completion_index_keeps_identical_repeated_source_visits_distinct(self):
+        phase, _ = self.model("CAP := $(shell printf model-only)\n", {"CAP": "model"})
+        visit, = phase.part.visits
+        part = phase.part._replace(visits=(visit, visit._replace(number=2)))
+        archive = phase.proof.archive._replace(version=4, selection=("CAP",), passes=(part,))
+        phase.proof.archive = archive
+        repeated = phase_census.SourcePass(
+            phase.proof, part, phase.image, phase.exports, phase.target,
+            phase.state, phase.commands, phase.primary_source,
+        )
+        self.assertEqual(
+            [key[0] for key in repeated.completion_selection],
+            [1, 2],
+        )
+
     def test_original_generated_cap_condition_uses_its_own_completed_data(self):
         document = getattr(type(self), "generated_cap_document", None)
         if document is None:

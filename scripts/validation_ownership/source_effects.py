@@ -106,7 +106,7 @@ def validate_journal(value, trace, *, dispatches, requests, publications, count_
         or not isinstance(value["scope"], str) or not value["scope"]
         or not isinstance(value["events"], list) or len(value["events"]) > count_limit
         or not isinstance(trace, dict) or type(trace.get("version")) is not int
-        or trace["version"] not in {2, 3}
+        or trace["version"] not in {2, 3, 4}
     ):
         raise ChannelError("incomplete or malformed native source-effect observation")
     read_epochs.validate_trace(trace, value["scope"], count_limit=count_limit, file_limit=file_limit)
@@ -207,6 +207,28 @@ def validate_journal(value, trace, *, dispatches, requests, publications, count_
         or len(producers) != len(requests) or published != set(producers)
     ):
         raise ChannelError("native source-effect observation omitted an origin, execution or publication")
+    if trace["version"] == 4:
+        publications_by_event = {
+            event["seq"]: event for event in value["events"] if event["kind"] == "publication"
+        }
+        for opened in (event for event in trace["events"] if event["kind"] == "source-open" and event["result"] >= 0):
+            custody = opened["custody"]
+            if custody["kind"] != "publication":
+                continue
+            publication = publications_by_event.get(custody["event"])
+            if publication is None or publication["producer"] != custody["producer"]:
+                raise ChannelError("original source custody names a foreign publication event")
+            confirmation = publication["confirmation"]
+            output = next((row for row in confirmation["outputs"] if row["path"] == opened["path"]), None)
+            source = trace["sources"][opened["source"] - 1]
+            if (
+                custody["slot"] != confirmation["slot"] or custody["owner"] != confirmation["owner"]
+                or publication["trace_seq"] >= opened["seq"] or output is None
+                or output["identity"] != opened["identity"]
+                or output["mode"] != source["mode"] or output["size"] != source["bytes"]
+                or output["sha256"] != source["sha256"]
+            ):
+                raise ChannelError("original source custody differs from its exact prior publication entry")
     return value
 
 
@@ -217,7 +239,7 @@ class NativeSourceEffects:
             or type(config["version"]) is not int or config["version"] != 1
             or config["scope"] != policy.config.get("producer_scope")
             or policy.read_trace is None or type(policy.read_trace.version) is not int
-            or policy.read_trace.version not in {2, 3}
+            or policy.read_trace.version not in {2, 3, 4}
         ):
             raise ChannelError("source effects require their exact original-entry Make trace")
         self.policy, self.trace, self.scope = policy, policy.read_trace, config["scope"]
@@ -298,6 +320,22 @@ class NativeSourceEffects:
             producer=producer, confirmation=confirmation,
         )
         self.publications.append(confirmation)
+
+    def publication_entry(self, path, identity):
+        matches = []
+        for event in self.events:
+            if event["kind"] != "publication" or event["trace_seq"] > len(self.trace.events):
+                continue
+            confirmation = event["confirmation"]
+            for output in confirmation["outputs"]:
+                if output["path"] == path and tuple(output["identity"]) == tuple(identity):
+                    matches.append({
+                        "kind": "publication", "event": event["seq"], "producer": event["producer"],
+                        "slot": confirmation["slot"], "owner": confirmation["owner"],
+                    })
+        if not matches:
+            return None
+        return max(matches, key=lambda row: row["event"])
 
     def finish(self, trace):
         value = {"version": 1, "scope": self.scope, "events": self.events, "closed": True}

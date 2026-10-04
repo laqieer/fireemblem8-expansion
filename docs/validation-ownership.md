@@ -304,11 +304,28 @@ Those consumers still require the independent coverage and use-context proof.
 Version3 extends this same archive with **sparse original assignment-completion
 DATA**, not terminal values or file-entry snapshots. Before launch, the existing
 source consumer references select a bounded dependency closure of ordinary
-literal-name assignment sites in immutable Make sources. Each selected site
-binds its source bytes, logical statement, physical span, name, operator and
-override spelling. Unresolved destinations are not sampled; computed consumers
-still need their existing finite name proof. Legacy version1/2 archives retain
-their old data contracts but cannot grant completion DATA.
+literal-name assignment sites. Each selected site binds its source bytes,
+logical statement, physical span, name, operator and override spelling.
+Version3 retains its original immutable-source selection format and machine
+predicates. Version4 closes the selection over the complete immutable regular
+snapshot and already-published sources, independent of filename extension.
+Only bounded UTF-8 text without NUL contributes source facts; unsupported or
+oversized content cannot become selection authority. The resulting inventory
+binds each path, mode, size, digest, screening result and, for prior
+publications, its owner, serial and identity. The consumer-name closure stays
+frozen before launch; it is not expanded from later source versions.
+
+Version4 derives candidate assignment sites again from the exact pinned bytes
+at each successful original source-open, before source parsing resumes, and
+only for names in that frozen closure. The trace binds that source version to
+its immutable snapshot/prior-publication inventory entry or exact publication
+event. Repeated visits and changed versions of one path remain distinct.
+Publication-backed sources may contribute sites but may not introduce
+previously unknown consumers; a late reference outside the closure fails
+closed. This is not a filename-based source allowlist, an include resolver or
+permission to infer a missing visit. Legacy version1/2 remain data-only, and
+version3 keeps its existing contract; neither receives version4 inventory or
+source-open authority.
 
 The GNU4.3 x86-64 completion ABI is derived from actual instruction operands,
 direct calls, closed evaluator/reader/pass control flow, variable allocation
@@ -349,8 +366,11 @@ word order, repetitions, status and bytes must still match the finite original
 operand proof, all and only.
 
 New fields are closed-schema, immutable on reconstruction and covered by the
-existing observation/view/lifetime fingerprint. All selection/source scans,
-traps, raw reads, events and retained values charge existing limits/deadlines;
+existing observation/view/lifetime fingerprint. Selection screens the
+already-admitted immutable source bytes under the existing file, observation,
+aggregate byte-work and deadline bounds; retained inventory, closure and site
+indexes charge the existing cache bound. Opened-source parsing, traps, raw
+reads, events and retained values charge those same limits/deadlines;
 immutable source-span and sparse-site indexes avoid rescanning the complete
 source/selection on every stop or assignment, and charge their retained storage.
 stricter caller limits are not refunded or expanded. Missing, foreign, copied,

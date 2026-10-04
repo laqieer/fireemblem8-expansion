@@ -32,14 +32,14 @@ class CompletionEffectDataApiTests(unittest.TestCase):
         self.assertIs(source_effects.validate_journal(
             journal, trace, dispatches=[], requests=[], publications=[], count_limit=32, file_limit=1024,
         ), journal)
-        for version in (2, 3):
+        for version in (2, 3, 4):
             policy = SimpleNamespace(
                 config={"producer_scope": trace["scope"]},
                 read_trace=SimpleNamespace(version=version),
             )
             observer = source_effects.NativeSourceEffects(policy, {"version": 1, "scope": trace["scope"]})
             self.assertIs(observer.trace, policy.read_trace)
-        for version in (1, True, 4):
+        for version in (1, True, 5):
             policy.read_trace.version = version
             with self.subTest(version=version), self.assertRaises(ChannelError):
                 source_effects.NativeSourceEffects(policy, {"version": 1, "scope": trace["scope"]})
@@ -58,7 +58,7 @@ class CompletionEffectDataApiTests(unittest.TestCase):
             elif defect == "origin":
                 bad["events"] = [{"seq": 1, "kind": "origin", "trace_seq": 6}]
             else:
-                changed["version"] = 4
+                changed["version"] = 5
             with self.subTest(defect=defect), self.assertRaises(ChannelError):
                 source_effects.validate_journal(
                     bad, changed, dispatches=dispatches, requests=[], publications=publications,

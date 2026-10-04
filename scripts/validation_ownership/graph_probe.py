@@ -21,6 +21,7 @@ from .budget import Limits, MakeProbeError, ProbeBudget
 from .graph_commands import MakeCommands
 from .graph_commands import _normalized_shell_commands
 from .make_probe import _NamespaceUnavailable
+from . import read_epochs
 
 
 IDENTIFIER = r"[A-Za-z_][A-Za-z0-9_]*"
@@ -3399,7 +3400,9 @@ def _prepare_rule_templates(
         original_execution=None if phase is None else phase.record_execution,
         original_completion=(
             phase.complete_assignment
-            if phase is not None and getattr(getattr(phase.proof, "archive", None), "version", None) == 3
+            if phase is not None and getattr(
+                getattr(phase.proof, "archive", None), "version", None,
+            ) == read_epochs.COMPLETION_VERSION
             else None
         ),
         original_invocation_inputs=() if phase is None else tuple(name for _, name, _ in phase.state),

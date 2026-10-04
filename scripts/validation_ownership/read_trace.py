@@ -51,6 +51,8 @@ class NativeReadTrace:
         self.image_identity = before.st_dev, before.st_ino
         self.abi = read_epochs.validate_abi(config["abi"], self.image)
         self.selection = ()
+        self.selection_names = frozenset()
+        self.selection_inventory = MappingProxyType({})
         self.selection_index = MappingProxyType({})
         if self.version == 3:
             if self.abi["version"] != 2:
@@ -68,6 +70,19 @@ class NativeReadTrace:
                 self.policy.charge_metadata(sys.getsizeof({None: None}) + sys.getsizeof(key))
                 index[key] = row
             self.selection_index = MappingProxyType(index)
+        elif self.version == read_epochs.COMPLETION_VERSION:
+            if self.abi["version"] != 2:
+                raise read_epochs.ReadEpochError("completion trace lacks its machine-derived completion ABI")
+            read_epochs.validate_completion_selection(
+                config["selection"], count_limit=self.config["observation_count"],
+                file_limit=self.config["file_limit"],
+            )
+            self.policy.charge_metadata(len(encoded(config["selection"])))
+            self.selection = config["selection"]
+            self.selection_names = frozenset(self.selection["names"])
+            self.selection_inventory = MappingProxyType({
+                row["path"]: row for row in self.selection["inventory"]
+            })
         source = read_epochs.Elf(self.image).bytes(self.abi["source"][0], 8, executable=True)
         if not source.startswith((b"\x55\x48\x89\xe5", b"\xf3\x0f\x1e\xfa\x55\x48\x89\xe5")):
             raise read_epochs.ReadEpochError("source reader lacks its verified frame-pointer ABI")
@@ -181,14 +196,14 @@ class NativeReadTrace:
             raise read_epochs.ReadEpochError("Make read trace has an unsupported ELF load origin")
         self.bias = bases[0] - load[0]
         spans = [self.abi[name] for name in ("read_all", "source")]
-        if self.version == 3:
+        if self.version in {3, read_epochs.COMPLETION_VERSION}:
             spans += [self.abi["completion"]["evaluator"], *self.abi["completion"]["relied_code"]]
         for start, end in spans:
             if not any(left <= self.bias + start < self.bias + end <= right for left, right in code):
                 raise read_epochs.ReadEpochError("read trace site is not readonly executable Make code")
             if self.memory(self.bias + start, end - start) != image.bytes(start, end - start, executable=True):
                 raise read_epochs.ReadEpochError("read trace instruction image differs from captured Make")
-        if self.version == 3:
+        if self.version in {3, read_epochs.COMPLETION_VERSION}:
             start, end = self.abi["completion"]["flavor_table"]
             if (
                 not any(left <= self.bias + start < self.bias + end <= right for left, right in readonly)
@@ -203,10 +218,12 @@ class NativeReadTrace:
         if self.active:
             slots[2] = self.active[-1]["return"]
             purposes[2] = "source-return"
-            if self.version == 3:
+            if self.version in {3, read_epochs.COMPLETION_VERSION}:
                 slots[3] = self.bias + self.abi["completion"]["pc"]
                 purposes[3] = "assignment-completion"
-        if self.pass_frame is not None and not (self.active and self.version == 3):
+        if self.pass_frame is not None and not (
+            self.active and self.version in {3, read_epochs.COMPLETION_VERSION}
+        ):
             slots[3] = self.pass_frame["return"]
             purposes[3] = "pass-return"
         if len(set(slots.values())) != len(slots):
@@ -265,7 +282,7 @@ class NativeReadTrace:
                 count_limit=self.config["observation_count"], string=self.string,
             )
             entry = self.event("pass-entry", **self.context(), inputs=inputs)
-            if self.version in {2, 3}:
+            if self.version in {2, 3, read_epochs.COMPLETION_VERSION}:
                 self.pending_barrier = {
                     "barrier": self.barriers + 1, "exec": self.execs, "pass": self.passes,
                     "trace_seq": entry["seq"], "input_sha256": source_phases.digest(inputs),
@@ -281,14 +298,14 @@ class NativeReadTrace:
             self.visits += 1
             parent = self.active[-1]["visit"] if self.active else None
             location = None
-            if self.version == 3 and self.active:
+            if self.version in {3, read_epochs.COMPLETION_VERSION} and self.active:
                 if frame["return"] != self.bias + self.abi["completion"]["include_return"]:
                     raise read_epochs.ReadEpochError("source include entry has a foreign evaluator caller")
                 location = self.source_location(registers, self.active[-1], allow_eval=False)
             frame.update({"visit": self.visits, "name": name, "flags": flags, "source": None, "pin": None, "closed": False})
             self.event(
                 "source-entry", **self.context(), visit=self.visits, parent=parent, name=name, flags=flags,
-                **({"location": location} if self.version == 3 else {}),
+                **({"location": location} if self.version in {3, read_epochs.COMPLETION_VERSION} else {}),
             )
             self.active.append(frame)
         elif purpose == "source-return":
@@ -357,19 +374,18 @@ class NativeReadTrace:
         return [current["visit"], current["source"], logical, first, last]
 
     def assignment_completion(self, registers, state):
-        if self.version != 3 or not self.active or self.pass_frame is None or self.io is not None:
+        if self.version not in {3, read_epochs.COMPLETION_VERSION} or not self.active or self.pass_frame is None or self.io is not None:
             raise read_epochs.ReadEpochError("completion has no active original source/pass")
         current, abi = self.active[-1], self.abi["completion"]
         location = self.source_location(registers, current, allow_eval=True)
         if location is None:
             return
         modifiers = int.from_bytes(self.memory(registers.rbp + abi["modifiers"], 4), "little")
-        key = (
-            current["name"].removeprefix("/repo/"),
-            self.sources[current["source"] - 1]["sha256"], *location[2:],
-        )
+        path = current.get("relative", current["name"].removeprefix("/repo/"))
+        key = (path, self.sources[current["source"] - 1]["sha256"], *location[2:])
         self.policy.charge_metadata(len(encoded(key)))
-        row = self.selection_index.get(key)
+        index = current.get("selection_index", self.selection_index)
+        row = index.get(key)
         if row is None:
             return
         if modifiers & ~0x3F or not modifiers & 1 or modifiers & (2 | 4 | 32):
@@ -467,19 +483,65 @@ class NativeReadTrace:
                     self.policy.charge_metadata(len(encoded(row)))
                     self.sources.append(row)
                     self.pool[key] = snapshot
-                if self.version == 3 and snapshot not in self.statement_indexes:
+                if self.version in {3, read_epochs.COMPLETION_VERSION} and snapshot not in self.statement_indexes:
                     self.policy.charge_metadata(len(data))
                     self.statement_indexes[snapshot] = read_epochs._statement_index(
                         bytes(data), checkpoint=self.deadline,
                         count_limit=self.config["observation_count"], reserve=self.policy.charge_metadata,
                     )
-                current.update(source=snapshot, pin=pin, identity=identity, descriptor=descriptor, path=path)
+                relative = path.removeprefix("/repo/")
+                custody = None
+                selection_index = None
+                if self.version == read_epochs.COMPLETION_VERSION:
+                    if not relative or relative.startswith("/") or ".." in relative.split("/") or "\\" in relative:
+                        raise read_epochs.ReadEpochError("opened source has no exact repository-relative path")
+                    content_digest = hashlib.sha256(data).hexdigest()
+                    entry = self.selection_inventory.get(relative)
+                    publication = self.policy.source_effects.publication_entry(relative, identity) \
+                        if self.policy.source_effects is not None else None
+                    if publication is not None:
+                        custody = publication
+                    elif entry is not None and (
+                        entry["mode"] == mode_bits and entry["size"] == len(data)
+                        and entry["sha256"] == content_digest
+                        and (
+                            entry["kind"] != "prior-publication"
+                            or tuple(entry["identity"]) == identity
+                        )
+                    ):
+                        custody = (
+                            {"kind": "snapshot"} if entry["kind"] == "snapshot"
+                            else {"kind": "prior-publication", "owner": entry["owner"], "serial": entry["serial"]}
+                        )
+                    else:
+                        raise read_epochs.ReadEpochError(
+                            "opened source is outside the frozen inventory and has no exact publication entry"
+                        )
+                    rows, references, _ = read_epochs.completion_source_facts(
+                        relative, bytes(data),
+                        checkpoint=self.deadline, count_limit=self.config["observation_count"],
+                        charge=self.policy.charge_metadata,
+                    )
+                    if set(references) - self.selection_names:
+                        raise read_epochs.ReadEpochError(
+                            "opened source adds a consumer outside the frozen name closure"
+                        )
+                    sites = [site for site in rows if site[5] in self.selection_names]
+                    selection_index = MappingProxyType({tuple(site[:5]): site for site in sites})
+                current.update(
+                    source=snapshot, pin=pin, identity=identity, descriptor=descriptor, path=path,
+                    relative=relative, custody=custody, selection_index=selection_index,
+                )
                 pin = -1
             finally:
                 if pin >= 0:
                     os.close(pin)
-        self.event("source-open", **self.context(), visit=visit, name=name, mode=mode, result=result,
-                   source=snapshot, identity=None if identity is None else list(identity))
+        self.event(
+            "source-open", **self.context(), visit=visit, name=name, mode=mode, result=result,
+            source=snapshot, identity=None if identity is None else list(identity),
+            **({"path": current.get("relative"), "custody": current.get("custody")}
+               if source and self.version == read_epochs.COMPLETION_VERSION else {}),
+        )
 
     def fd_closed(self, pid, descriptor):
         if pid == self.pid:
@@ -522,13 +584,16 @@ class NativeReadTrace:
     def finish(self):
         if (
             self.active or self.pass_frame is not None or self.io is not None or self.pending_barrier is not None
-            or not self.passes or self.passes != self.execs or self.version in {2, 3} and self.barriers != self.passes
+            or not self.passes or self.passes != self.execs
+            or self.version in {2, 3, read_epochs.COMPLETION_VERSION} and self.barriers != self.passes
         ):
             raise read_epochs.ReadEpochError("original read trace ended with incomplete native state")
         self.event("complete", execs=self.execs, passes=self.passes, visits=self.visits)
         result = {"version": self.version, "scope": self.scope, "events": self.events, "sources": self.sources, "complete": True}
         if self.version == 3:
             result["selection"] = [list(row) for row in self.selection]
+        elif self.version == read_epochs.COMPLETION_VERSION:
+            result["selection"] = self.selection
         read_epochs.validate_trace(result, self.scope, count_limit=self.config["observation_count"],
                                    file_limit=self.config["file_limit"], reserve=self.policy.charge_metadata)
         return result

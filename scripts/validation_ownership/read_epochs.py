@@ -24,7 +24,7 @@ else:
 GLOBALS = ("current_variable_set_list", "reading_file", "hash_deleted_item")
 NORETURN = frozenset({"fatal", "die", "out_of_memory", "__stack_chk_fail", "__assert_fail", "abort"})
 MAX_INSTRUCTIONS = 4096
-COMPLETION_VERSION = 3
+COMPLETION_VERSION = 4
 
 
 class ReadEpochError(MakeProbeError):
@@ -495,6 +495,8 @@ class OriginalOpen(NamedTuple):
     result: int
     source: OriginalSource | None
     identity: tuple | None
+    path: str | None = None
+    custody: object | None = None
 
 
 class OriginalVisit(NamedTuple):
@@ -540,6 +542,7 @@ class OriginalArchive(NamedTuple):
     sources: tuple[OriginalSource, ...]
     version: int = 1
     selection: tuple = ()
+    selection_inventory: tuple = ()
 
 
 class OriginalCompletion(NamedTuple):
@@ -574,6 +577,74 @@ def physical_statements(data, *, checkpoint=lambda: None, count_limit=None):
         logical += 1
         yield logical, start, index, "\n".join(pending)
         pending, start = [], index + 1
+
+
+def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=None, charge=lambda size: None):
+    if not isinstance(path, str) or not path or not isinstance(data, bytes):
+        raise ReadEpochError("completion source facts require an exact byte source")
+    if b"\0" in data:
+        raise ReadEpochError("completion source has unsupported bytes")
+    if __package__:
+        from . import graph_probe
+    else:
+        import graph_probe
+    rows, dependencies, roots = [], {}, set()
+    definition, depth = None, 0
+    digest = hashlib.sha256(data).hexdigest()
+    for logical, first, last, raw in physical_statements(
+        data, checkpoint=checkpoint, count_limit=count_limit,
+    ):
+        statement = graph_probe.strip_comment(graph_probe._collapse_make_continuations(raw))
+        header = statement.strip(graph_probe.MAKE_SPACE)
+        if depth:
+            if not raw.startswith("\t"):
+                if re.match(r"^define(?:[ \t]|$)", header):
+                    depth += 1
+                elif re.match(r"^endef(?:[ \t]|$)", header):
+                    depth -= 1
+                    if not depth:
+                        definition = None
+                        continue
+            names = graph_probe.references(statement)
+            charge(len(encoded(sorted(names))))
+            dependencies[definition].update(names)
+            continue
+        assignment = None if raw.startswith("\t") else graph_probe.MODE_ASSIGNMENT.fullmatch(statement)
+        if assignment is None:
+            names = graph_probe.references(statement)
+            charge(len(encoded(sorted(names))))
+            macro = None if raw.startswith("\t") else graph_probe.DEFINE.match(header)
+            if macro is not None:
+                definition, depth = macro[1], 1
+                dependencies.setdefault(definition, set()).update(names)
+            else:
+                roots.update(names)
+            continue
+        name = assignment["name"]
+        names = graph_probe.references(assignment["value"])
+        charge(len(encoded((name, sorted(names)))))
+        dependencies.setdefault(name, set()).update(names)
+        prefix = statement[:assignment.start("name")].split()
+        if "private" not in prefix:
+            row = [
+                path, digest, logical, first, last, name, assignment["operator"],
+                hashlib.sha256(raw.encode("utf-8")).hexdigest(), "override" in prefix,
+            ]
+            charge(len(encoded(row)))
+            rows.append(row)
+            if count_limit is not None and len(rows) > count_limit:
+                raise ReadEpochError("completion source selection exceeds observation count")
+    if depth:
+        raise ReadEpochError("completion selection encountered an unterminated define body")
+    return rows, roots, dependencies
+
+
+def completion_sites(path, data, names, *, checkpoint=lambda: None, count_limit=None, charge=lambda size: None):
+    rows, _, _ = completion_source_facts(
+        path, data, checkpoint=checkpoint, count_limit=count_limit, charge=charge,
+    )
+    selected = set(names)
+    return [row for row in rows if row[5] in selected]
 
 
 def statement_at(data, start, nlines, *, checkpoint=lambda: None, count_limit=None):
@@ -628,7 +699,7 @@ def original_variable(memory, pointer, string):
     return list(variable_row([name, value, flags, string(filename, 4096), line, offset]))
 
 
-def validate_selection(selection, *, count_limit, file_limit):
+def validate_completion_sites(selection, *, count_limit, file_limit):
     if not isinstance(selection, list) or len(selection) > count_limit:
         raise ReadEpochError("completion selection exceeds its finite source bound")
     previous = None
@@ -655,6 +726,108 @@ def validate_selection(selection, *, count_limit, file_limit):
             raise ReadEpochError("completion selected sites are repeated or unordered")
         previous = key
     return selection
+
+
+def validate_completion_selection(selection, *, count_limit, file_limit):
+    if (
+        not isinstance(selection, dict)
+        or set(selection) != {"version", "snapshot_sha256", "names", "inventory", "scan"}
+        or type(selection["version"]) is not int or selection["version"] != 1
+        or not isinstance(selection["snapshot_sha256"], str)
+        or re.fullmatch("[0-9a-f]{64}", selection["snapshot_sha256"]) is None
+        or not isinstance(selection["names"], list) or len(selection["names"]) > count_limit
+        or not isinstance(selection["inventory"], list) or len(selection["inventory"]) > count_limit
+        or not isinstance(selection["scan"], dict)
+        or set(selection["scan"]) != {"entries", "bytes", "text", "binary", "invalid_utf8", "oversize"}
+        or any(not isinstance(row, dict) for row in selection["inventory"])
+        or type(selection["scan"]["entries"]) is not int
+        or selection["scan"]["entries"] != len(selection["inventory"])
+        or not 0 <= selection["scan"]["entries"] <= count_limit
+        or any(type(selection["scan"][name]) is not int or selection["scan"][name] < 0
+               for name in ("bytes", "text", "binary", "invalid_utf8", "oversize"))
+        or sum(selection["scan"][name] for name in ("text", "binary", "invalid_utf8", "oversize"))
+        != selection["scan"]["entries"]
+        or selection["scan"]["text"] != sum(
+            isinstance(row.get("screen"), str) and row["screen"] == "text" for row in selection["inventory"]
+        )
+        or selection["scan"]["binary"] != sum(
+            isinstance(row.get("screen"), str) and row["screen"] == "binary" for row in selection["inventory"]
+        )
+        or selection["scan"]["invalid_utf8"] != sum(
+            isinstance(row.get("screen"), str) and row["screen"] == "invalid-utf8"
+            for row in selection["inventory"]
+        )
+        or selection["scan"]["oversize"] != sum(
+            isinstance(row.get("screen"), str) and row["screen"].startswith("oversize")
+            for row in selection["inventory"]
+        )
+        or selection["scan"]["bytes"] != sum(
+            row.get("size", 0) if type(row.get("size")) is int else 0 for row in selection["inventory"]
+            if not (isinstance(row.get("screen"), str) and row["screen"].startswith("oversize"))
+        )
+    ):
+        raise ReadEpochError("completion selection has a malformed frozen name closure")
+    names = selection["names"]
+    try:
+        valid_names = names == sorted(set(names)) and all(
+            isinstance(name, str) and 1 <= len(name.encode("utf-8", "strict")) <= 128
+            and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]*", name) is not None
+            for name in names
+        )
+    except UnicodeEncodeError as error:
+        raise ReadEpochError("completion selection name is not strict UTF-8") from error
+    if not valid_names:
+        raise ReadEpochError("completion selection names are invalid, repeated or unordered")
+    previous = None
+    for row in selection["inventory"]:
+        base = {"path", "kind", "mode", "size", "sha256"}
+        publication = {"owner", "serial", "identity"} if isinstance(row, dict) and row.get("kind") == "prior-publication" else set()
+        if (
+            not isinstance(row, dict) or set(row) != base | publication | {"screen"}
+            or not isinstance(row.get("path"), str) or not row["path"]
+            or row["path"].startswith("/") or ".." in row["path"].split("/")
+            or "\\" in row["path"] or any(part in {"", "."} for part in row["path"].split("/"))
+            or "\0" in row["path"] or len(row["path"].encode("utf-8", "strict")) > 4096
+            or not isinstance(row.get("kind"), str) or row["kind"] not in {"snapshot", "prior-publication"}
+            or type(row.get("mode")) is not int or not 0 <= row["mode"] <= 0o777
+            or type(row.get("size")) is not int or not 0 <= row["size"] < 1 << 63
+            or row["screen"] not in {"text", "binary", "invalid-utf8", "oversize-binary"}
+            or row["screen"].startswith("oversize") and (
+                row["size"] <= file_limit or row["sha256"] is not None
+            )
+            or not row["screen"].startswith("oversize") and (
+                row["size"] > file_limit or not isinstance(row["sha256"], str)
+                or re.fullmatch("[0-9a-f]{64}", row["sha256"]) is None
+            )
+            or row["kind"] == "prior-publication" and (
+                not isinstance(row.get("owner"), str) or re.fullmatch("[0-9a-f]{64}", row["owner"]) is None
+                or type(row.get("serial")) is not int or row["serial"] < 1
+                or not isinstance(row.get("identity"), list)
+            )
+        ):
+            raise ReadEpochError("completion selection has a malformed immutable source inventory")
+        if row["kind"] == "prior-publication":
+            if row["screen"].startswith("oversize"):
+                raise ReadEpochError("prior publication exceeds its selected-file admission")
+            try:
+                validate_publication_identity(row["identity"], row["mode"], row["size"])
+            except ChannelError as error:
+                raise ReadEpochError(str(error)) from error
+        try:
+            path_bytes = row["path"].encode("utf-8", "strict")
+        except UnicodeEncodeError as error:
+            raise ReadEpochError("completion inventory path is not strict UTF-8") from error
+        if len(path_bytes) > 4096:
+            raise ReadEpochError("completion inventory path exceeds its byte bound")
+        key = row["path"]
+        if previous is not None and key <= previous:
+            raise ReadEpochError("completion source inventory is repeated or unordered")
+        previous = key
+    return selection
+
+
+def validate_selection(selection, *, count_limit, file_limit):
+    return validate_completion_sites(selection, count_limit=count_limit, file_limit=file_limit)
 
 
 def reconstruct_archive(trace, *, budget):
@@ -691,6 +864,7 @@ def reconstruct_archive(trace, *, budget):
                 event["seq"], event["name"], event["mode"], event["result"],
                 None if event["source"] is None else sources[event["source"]],
                 None if event["identity"] is None else tuple(event["identity"]),
+                event.get("path"), event.get("custody"),
             ))
         elif kind == "source-exit":
             visits[event["visit"]]["exit"] = event
@@ -728,7 +902,9 @@ def reconstruct_archive(trace, *, budget):
         ))
     return OriginalArchive(
         trace["scope"], tuple(passes), tuple(sources.values()), trace["version"],
-        tuple(tuple(row) for row in trace.get("selection", ())),
+        tuple(trace["selection"]["names"]) if trace["version"] == COMPLETION_VERSION
+        else tuple(tuple(row) for row in trace.get("selection", ())),
+        tuple(trace["selection"]["inventory"]) if trace["version"] == COMPLETION_VERSION else (),
     )
 
 
@@ -772,9 +948,9 @@ def original_inputs(memory, pointer, deleted, *, count_limit, string):
 
 def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size: None):
     if (
-        not isinstance(value, dict) or type(value.get("version")) is not int or value["version"] not in {1, 2, 3}
+        not isinstance(value, dict) or type(value.get("version")) is not int or value["version"] not in {1, 2, 3, 4}
         or set(value) != {"version", "scope", "events", "sources", "complete"} | (
-            {"selection"} if value["version"] == COMPLETION_VERSION else set())
+            {"selection"} if value["version"] in {3, COMPLETION_VERSION} else set())
         or value["scope"] != scope
         or value["complete"] is not True or not isinstance(value["events"], list)
         or not 1 <= len(value["events"]) <= count_limit or not isinstance(value["sources"], list)
@@ -782,8 +958,17 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
     ):
         raise ReadEpochError("incomplete or foreign original read trace")
     sources, source_indexes = {}, {}
-    selection = validate_selection(value["selection"], count_limit=count_limit, file_limit=file_limit) if value["version"] == 3 else []
-    selected = {tuple(row) for row in selection}
+    selection = (
+        validate_completion_sites(value["selection"], count_limit=count_limit, file_limit=file_limit)
+        if value["version"] == 3 else
+        validate_completion_selection(value["selection"], count_limit=count_limit, file_limit=file_limit)
+        if value["version"] == COMPLETION_VERSION else []
+    )
+    selected = {tuple(row) for row in selection} if value["version"] == 3 else set()
+    selected_names = set(selection["names"]) if value["version"] == COMPLETION_VERSION else set()
+    inventory = {
+        row["path"]: row for row in selection.get("inventory", ())
+    } if value["version"] == COMPLETION_VERSION else {}
     for row in value["sources"]:
         if (
             not isinstance(row, dict) or set(row) != {"id", "mode", "bytes", "sha256", "data"}
@@ -817,6 +1002,8 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
     execs = passes = visits = 0
     active = []
     opened = {}
+    opened_paths = {}
+    opened_sites = {}
     used_sources = set()
     pass_visits = set()
     in_pass = False
@@ -834,11 +1021,13 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
         "pass-exit": {"exec", "pass", "goals"}, "complete": {"execs", "passes", "visits"},
         "entry-image": {"exec", "pass", "barrier", "input_sha256", "image_sha256"},
     }
-    if value["version"] == 3:
+    if value["version"] in {3, COMPLETION_VERSION}:
         keys["source-entry"] |= {"location"}
         keys["assignment-completion"] = {
             "exec", "pass", "visit", "source", "site", "name", "operator", "cwd", "variable",
         }
+    if value["version"] == COMPLETION_VERSION:
+        keys["source-open"] |= {"path", "custody"}
     for sequence, event in enumerate(value["events"], 1):
         if (
             terminal or not isinstance(event, dict) or not isinstance(event.get("kind"), str)
@@ -855,7 +1044,7 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
             execs += 1
             continue
         if kind == "complete":
-            if in_pass or active or not passes or value["version"] in {2, 3} and barriers != passes or any(
+            if in_pass or active or not passes or value["version"] in {2, 3, 4} and barriers != passes or any(
                 type(event[name]) is not int or event[name] != expected
                 for name, expected in (("execs", execs), ("passes", passes), ("visits", visits))
             ):
@@ -901,14 +1090,14 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
             passes += 1
             in_pass = True
             pass_visits = set()
-            if value["version"] in {2, 3}:
+            if value["version"] in {2, 3, 4}:
                 pending_image = hashlib.sha256(encoded(inputs)).hexdigest()
             continue
         if not in_pass or event["pass"] != passes:
             raise ReadEpochError("source event has no active original pass")
         if kind == "entry-image":
             if (
-                value["version"] not in {2, 3} or pending_image is None
+                value["version"] not in {2, 3, 4} or pending_image is None
                 or type(event["barrier"]) is not int or event["barrier"] != barriers + 1
                 or event["input_sha256"] != pending_image
                 or not isinstance(event["image_sha256"], str) or not re.fullmatch("[0-9a-f]{64}", event["image_sha256"])
@@ -925,7 +1114,7 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
                 or type(event["flags"]) is not int or not 0 <= event["flags"] <= 15
             ):
                 raise ReadEpochError("invalid original source entry")
-            if value["version"] == 3:
+            if value["version"] in {3, COMPLETION_VERSION}:
                 location = event["location"]
                 if active:
                     if (
@@ -944,19 +1133,30 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
             active.append(event)
             pass_visits.add(visits)
             opened[visits] = None
+            opened_paths[visits] = None
+            opened_sites[visits] = {}
         elif kind == "assignment-completion":
             site = event["site"]
-            validate_selection([site], count_limit=count_limit, file_limit=file_limit)
+            validate_completion_sites([site], count_limit=count_limit, file_limit=file_limit)
+            site_allowed = (
+                tuple(site) in selected if value["version"] == 3 else
+                tuple(site) in opened_sites.get(event.get("visit"), {})
+                if value["version"] == COMPLETION_VERSION else False
+            )
             if (
                 not active or type(event["visit"]) is not int or event["visit"] != active[-1]["visit"]
                 or type(event["source"]) is not int or event["source"] != opened[event["visit"]]
                 or event["source"] not in sources or not isinstance(site, list) or len(site) != 9
-                or tuple(site) not in selected or event["name"] != site[5] or event["operator"] != site[6]
+                or not site_allowed or event["name"] != site[5] or event["operator"] != site[6]
                 or not isinstance(event["cwd"], str) or not event["cwd"].startswith("/")
                 or len(event["cwd"].encode()) > 4096 or "\0" in event["cwd"]
                 or (event["visit"], site[2]) in completed
                 or site[2] <= previous_sites.get(event["visit"], 0)
-                or active[-1]["name"].removeprefix("/repo/") != site[0]
+                or (
+                    site[0] != opened_paths[event["visit"]]
+                    if value["version"] == COMPLETION_VERSION
+                    else active[-1]["name"].removeprefix("/repo/") != site[0]
+                )
             ):
                 raise ReadEpochError("completion has a foreign, repeated, late or unselected occurrence")
             row = variable_row(event["variable"])
@@ -968,7 +1168,7 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
                 source["sha256"] != site[1] or [logical, first, last] != site[2:5]
                 or raw_digest != site[7]
             ):
-                raise ReadEpochError("completion source bytes differ from its frozen selection")
+                raise ReadEpochError("completion source bytes differ from its pinned selection visit")
             completed.add((event["visit"], site[2]))
             previous_sites[event["visit"]] = site[2]
         elif kind in {"source-open", "other-open"}:
@@ -984,7 +1184,10 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
                 if not active or event["mode"] not in {"r", "re"}:
                     raise ReadEpochError("source open has no readonly source entry")
                 if event["result"] < 0:
-                    if event["source"] is not None or event["identity"] is not None:
+                    if event["source"] is not None or event["identity"] is not None or (
+                        value["version"] == COMPLETION_VERSION
+                        and (event["path"] is not None or event["custody"] is not None)
+                    ):
                         raise ReadEpochError("failed source open claims captured contents")
                 elif type(event["source"]) is not int or event["source"] not in sources or opened[event["visit"]] is not None:
                     raise ReadEpochError("source open has a missing or repeated snapshot")
@@ -997,6 +1200,52 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
                         raise ReadEpochError(str(error)) from error
                     opened[event["visit"]] = event["source"]
                     used_sources.add(event["source"])
+                    if value["version"] == COMPLETION_VERSION:
+                        path, custody = event["path"], event["custody"]
+                        if (
+                            not isinstance(path, str) or not path or path.startswith("/")
+                            or ".." in path.split("/") or "\\" in path
+                            or any(part in {"", "."} for part in path.split("/"))
+                        ):
+                            raise ReadEpochError("completion source open has an invalid immutable path")
+                        source_name = event["name"].removeprefix("/repo/")
+                        if source_name != path:
+                            raise ReadEpochError("completion source open differs from its original visit spelling")
+                        row = inventory.get(path)
+                        if isinstance(custody, dict) and custody.get("kind") in {"snapshot", "prior-publication"}:
+                            expected_keys = {"kind"} if custody["kind"] == "snapshot" else {"kind", "owner", "serial"}
+                            if (
+                                row is None or row["screen"] != "text" or row["kind"] != custody["kind"]
+                                or set(custody) != expected_keys
+                                or row["size"] != source["bytes"] or row["mode"] != source["mode"]
+                                or row["sha256"] != source["sha256"]
+                                or custody["kind"] == "prior-publication" and (
+                                    custody["owner"] != row["owner"] or custody["serial"] != row["serial"]
+                                    or identity != row["identity"]
+                                )
+                            ):
+                                raise ReadEpochError("completion source open differs from its frozen inventory entry")
+                        elif not (
+                            isinstance(custody, dict) and set(custody) == {
+                                "kind", "event", "producer", "slot", "owner",
+                            } and custody["kind"] == "publication"
+                            and all(type(custody[name]) is int and custody[name] > 0
+                                    for name in ("event", "producer"))
+                            and type(custody["slot"]) is int and custody["slot"] >= 0
+                            and isinstance(custody["owner"], str)
+                            and re.fullmatch("[0-9a-f]{64}", custody["owner"]) is not None
+                        ):
+                            raise ReadEpochError("completion source open lacks exact snapshot/publication custody")
+                        data = base64.b64decode(source["data"], validate=True)
+                        rows, references, _ = completion_source_facts(
+                            path, data, checkpoint=lambda: reserve(0),
+                            count_limit=count_limit, charge=reserve,
+                        )
+                        if set(references) - selected_names:
+                            raise ReadEpochError("opened source adds a consumer outside frozen closure")
+                        sites = [item for item in rows if item[5] in selected_names]
+                        opened_paths[event["visit"]] = path
+                        opened_sites[event["visit"]] = {tuple(site): site for site in sites}
         elif kind == "source-exit":
             if (
                 not active or type(event["visit"]) is not int or event["visit"] != active[-1]["visit"]

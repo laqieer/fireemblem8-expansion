@@ -170,16 +170,36 @@ class SourcePass:
         self.next_completion = 0
         self.completion_archive = getattr(proof, "archive", None)
         selected = {}
-        if self.completion_archive is not None and self.completion_archive.version == read_epochs.COMPLETION_VERSION:
+        if self.completion_archive is not None and self.completion_archive.version == 3:
             for row in self.completion_archive.selection:
-                self.session.budget.remaining()
-                key = row[:5]
+                key = tuple(row[:5])
                 if key in selected:
                     raise MakeProbeError("original completion selection has duplicate source sites")
                 self.session.budget.charge(
                     "cache", len(encoded(row)) + sys.getsizeof({None: None}) + sys.getsizeof(key),
                 )
                 selected[key] = row
+        elif self.completion_archive is not None and self.completion_archive.version == read_epochs.COMPLETION_VERSION:
+            for part in self.completion_archive.passes:
+                for visit in part.visits:
+                    if visit.source is None:
+                        continue
+                    path = _path(visit.resolved)
+                    rows = read_epochs.completion_sites(
+                        path, visit.source.data, self.completion_archive.selection,
+                        checkpoint=self.session.budget.remaining,
+                        count_limit=self.session.budget.limits.observation_count,
+                        charge=lambda size: self.session.budget.charge("cache", size),
+                    )
+                    for row in rows:
+                        self.session.budget.remaining()
+                        key = (visit.number, *row[:5])
+                        if key in selected:
+                            raise MakeProbeError("original completion selection has duplicate source sites")
+                        self.session.budget.charge(
+                            "cache", len(encoded(row)) + sys.getsizeof({None: None}) + sys.getsizeof(key),
+                        )
+                        selected[key] = row
         self.completion_selection = MappingProxyType(selected)
 
     def complete_assignment(self, mode, assignment, effect, active, version, *, private=False, before=()):
@@ -221,12 +241,14 @@ class SourcePass:
         require_context()
         if any(left is not right for left, right in zip(retained, destination_state())):
             raise MakeProbeError("completed destination changed during initial custody validation")
-        if self.proof.archive.version != read_epochs.COMPLETION_VERSION:
+        if self.proof.archive.version not in {3, read_epochs.COMPLETION_VERSION}:
             raise MakeProbeError("legacy original archive cannot grant assignment-completion DATA")
         visit = mode.original_visit
         if visit is None or visit.source is None or mode.site is None:
             raise MakeProbeError("original completion lacks its current source visit")
-        key = (_path(visit.name), visit.source.sha256, *tuple(mode.site)[1:])
+        key = (_path(visit.resolved), visit.source.sha256, *tuple(mode.site)[1:])
+        if self.proof.archive.version == read_epochs.COMPLETION_VERSION:
+            key = (visit.number, *key)
         self.session.budget.remaining()
         selected = selection.get(key)
         self.session.budget.charge("cache", len(encoded(key)))

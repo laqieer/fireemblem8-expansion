@@ -4768,7 +4768,9 @@ required after these deterministic source/API controls.
 This extends **TC-WORKFLOW-GATE-OWNERSHIP-001** for #180, under the original
 completion scope and coupled schema correction. It adds no registry, workflow,
 operator API, public resolver or native retry allocation. The implementation
-uses trace version3 and completion ABI version2; legacy trace1/2 remain data-only.
+uses trace version4 for immutable source-selection inventory and visit-bound
+assignment completion, while preserving trace version3 and completion ABI
+version2 behavior. Legacy trace1/2 remain data-only.
 Dependencies are the existing source archive, original namespace/lifetime
 custody, producer/effect/mutation journal and source census. There are no new
 gameplay, locale, save, ROM/RAM or modern/archival profile conflicts.
@@ -4794,8 +4796,14 @@ gameplay, locale, save, ROM/RAM or modern/archival profile conflicts.
    observation distinct from a removal control. Neutral comments and equivalent
    source refactors preserve semantic results, not incidental source coordinates.
 3. Check sparse source-derived dependency selection with renamed variables,
-   unrelated assignments, stricter source/count/cache limits and deadline.
-   Test immutable archive reconstruction, closed keys/version distinction,
+   extensionless and arbitrary-suffix sources, prior publications, unrelated
+   assignments, strict text screening, stricter source/count/cache limits and
+   deadline. Require the prelaunch inventory to bind exact immutable source
+   versions and only the frozen consumer-name closure. At each version4 source
+   open, derive ordinary assignment sites from the exact opened bytes; test
+   prior/new publication custody, repeated visits and changed versions of the
+   same path. A late publication reference outside the frozen closure must
+   refuse. Test immutable archive reconstruction, closed keys/version distinction,
    malformed/foreign/duplicate/out-of-order/missing rows, wrong source bytes,
    CWD/visit/pass/epoch/site/scope and callback/lifetime changes. New receipts
    must neither create a dispatch nor satisfy missing producer/publication data.

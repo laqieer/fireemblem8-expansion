@@ -66,7 +66,7 @@ def validate_capture(value, trace):
         not isinstance(value, dict) or set(value) != {"version", "scope", "entries", "closed"}
         or type(value["version"]) is not int or value["version"] != 1 or value["closed"] is not True
         or not isinstance(value["entries"], list) or type(trace.get("version")) is not int
-        or trace["version"] not in {2, 3}
+        or trace["version"] not in {2, 3, 4}
         or value["scope"] != trace["scope"]
     ):
         raise ChannelError("incomplete or foreign original entry-image capture")
