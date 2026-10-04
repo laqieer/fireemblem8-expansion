@@ -958,6 +958,253 @@ class PhaseCensusTests(unittest.TestCase):
             observe_source_journal=True, source_journal_mode=source_directories.MODE,
         )
 
+    def test_native_completion_original_profile_family(self):
+        """One immutable source tree/session; no native qualification is inferred."""
+        from scripts.validation_ownership.authority import AuthorityLoader, git_tree_entries
+        from scripts.validation_ownership.graph_commands import MakeCommands, ROOT_RUNTIME_FILES
+
+        budget = ProbeBudget()
+        loader = AuthorityLoader(
+            foundation.ROOT, git_tree_entries(foundation.ROOT, "HEAD", budget=budget),
+            "HEAD", budget=budget,
+        )
+        original_sources = {
+            name: loader.read_blob(name, "original native Make source")
+            for name in ("Makefile", "assets.mk", "generated_data.mk", "modern.mk")
+        }
+        # Prepare complete fixture files, then capture them once through actual Git.
+        for name, entry in loader.entries.items():
+            if entry.mode in {"100644", "100755"} and entry.object_type == "blob":
+                self.fixture.add(name, (foundation.ROOT / name).read_bytes(), entry.mode)
+                (self.fixture.root / name).chmod(0o755 if entry.mode == "100755" else 0o644)
+        self.fixture.add("native-completion.mk", (
+            "CAP := $(shell printf %s 0xCD)\n"
+            "ifeq ($(CAP),0xCD)\nNEXT := selected\nelse\n$(error wrong original condition)\nendif\n"
+            "IGNORED ?= $(error ignored conditional RHS)\n"
+            "IGNORED := $(shell printf %s eager)\n"
+            "BASE := first\nBASE += $(shell printf %s tail)\n"
+            "EMPTY := keep\nEMPTY += $(shell printf %s '')\n"
+            "RECURSIVE = $(shell printf never)\n"
+            "RESULT := $(BASE)|$(EMPTY)|$(IGNORED)|$(NEXT)\n"
+            "SKIP :=\nifeq ($(SKIP),yes)\ninclude absent-skipped.mk\nendif\n"
+            "include $(SKIP)\ninclude native-one.dat native-two\ninclude ./native-one.dat\n"
+            "TEXT := $(CONTINUED)|$(LAST)\n"
+            "all: ; @printf '%s' '$(RESULT)'\n"
+        ))
+        self.fixture.add("native-one.dat", "ONE := one\r\nCONTINUED := a \\\r\n b\r\n")
+        self.fixture.add("native-two", "include native-depth1\nTWO := two\n")
+        for depth in range(1, 8):
+            self.fixture.add("native-depth" + str(depth), (
+                "include native-depth" + str(depth + 1) + "\n"
+            ))
+        self.fixture.add("native-depth8", "LAST := final-without-lf")
+        entries, revision = self.fixture.capture_tree(budget)
+        loader = AuthorityLoader(self.fixture.root, entries, revision, budget=budget)
+        contracts = {
+            row["expression"]: row for row in json.loads(loader.read_blob(
+                ".github/validation-ownership-make-dynamics.json", "native command contracts",
+            ))["contracts"]
+        }
+        profiles = (
+            ("", "0xCD", "0", "build/expansion-modern"),
+            ("0xCE", "0xCE", "0", "build/native-completion-alt"),
+            ("", "0xCD", "1", "build/native-completion-custom"),
+            ("0xCE", "0xCE", "1", "build/native-completion-alt-custom"),
+        )
+        names = (
+            "GENERATED_DATA_ITEM_CAP", "ASSET_RESOLVED_ITEM_ID_CAP", "ASSET_MANIFEST_KEY",
+            "ASSET_PROFILE_KEY", "ASSET_PROFILE_ROOT", "ASSET_OUTPUT_DIR", "ASSET_DISCOVERY_MK",
+        )
+        with make_probe.ProbeSession(
+            loader, scratch_root=self.fixture.scratch, budget=budget,
+            runtime_files=ROOT_RUNTIME_FILES,
+        ) as session:
+            deadline, limits = budget.deadline, budget.limits
+            commands = MakeCommands(session, contracts)
+            for name, data in original_sources.items():
+                self.assertEqual(session.snapshot.files[name], data)
+            state = (("command-line", "IGNORED", "forced"),)
+            family_commands = {
+                spelling: make_probe.Command(("/usr/bin/printf", "%s", value))
+                for spelling, value in (
+                    ("printf %s 0xCD", "0xCD"), ("printf %s eager", "eager"),
+                    ("printf %s tail", "tail"), ("printf %s ''", ""),
+                )
+            }
+            family = session.make(
+                "all", makefile="native-completion.mk", variables=("RESULT", "TEXT"),
+                assignments=state, commands=family_commands, observe_source_journal=True,
+                source_journal_mode=source_directories.MODE,
+            )
+            self.assertEqual(
+                family.semantics["domains"]["RESULT"]["value"], "first tail|keep|forced|selected",
+            )
+            self.assertEqual(family.semantics["domains"]["TEXT"]["value"], "a b|final-without-lf")
+            archive = session._original_source_archive(family)
+            self.assertEqual(archive.version, 4)
+            self.assertEqual(len(archive.passes), 1)
+            visits = archive.passes[0].visits
+            self.assertEqual([visit.name for visit in visits], [
+                "native-completion.mk", "native-one.dat", "native-two",
+                *("native-depth" + str(depth) for depth in range(1, 9)), "./native-one.dat",
+            ])
+            self.assertIs(visits[1].source, visits[-1].source)
+            self.assertNotEqual(visits[1].number, visits[-1].number)
+            self.assertEqual(visits[-1].opens[0].path, "native-one.dat")
+            self.assertEqual(visits[1].source.data, session.snapshot.files["native-one.dat"])
+            self.assertEqual(visits[-2].source.data, b"LAST := final-without-lf")
+            self.assertTrue(all(visit.error == 0 for visit in visits))
+            continued = [row for row in archive.passes[0].completions if row.name == "CONTINUED"]
+            self.assertEqual([row.visit for row in continued], [visits[1].number, visits[-1].number])
+            self.assertTrue(all(row.site[3:5] == (2, 3) for row in continued))
+            self.assertTrue(all(row.variable.value == "a b" for row in continued))
+            self.assertEqual(
+                [graph_probe._event_command(row) for row in family.semantics["native_dispatches"]
+                 if row["kind"] == "value"],
+                ["printf %s 0xCD", "printf %s eager", "printf %s tail", "printf %s ''"],
+            )
+            runs = budget.runs
+            _, _, streams, _ = phase_census.analyze(
+                session, family, "all", state, family_commands, primary_source="native-completion.mk",
+            )
+            self.assertEqual(budget.runs, runs)
+            stream, = streams
+            self.assertEqual(
+                stream.mode_state.exact_reference("RESULT"), "first tail|keep|forced|selected",
+            )
+            self.assertEqual(stream.mode_state.exact_reference("TEXT"), "a b|final-without-lf")
+            self.assertIsNone(stream.mode_state.exact_reference("RECURSIVE"))
+            effects = {
+                assignment["name"]: unit.assignment
+                for _, _, unit in stream.ordered if unit.assignment is not None
+                and (assignment := graph_probe.MODE_ASSIGNMENT.fullmatch(unit.text)) is not None
+            }
+            self.assertFalse(effects["IGNORED"].applies)
+            self.assertTrue(effects["IGNORED"].immediate)
+            self.assertTrue(effects["BASE"].applies)
+            self.assertTrue(effects["BASE"].immediate)
+            self.assertFalse(effects["EMPTY"].applies)
+            self.assertTrue(effects["EMPTY"].immediate)
+            phase = stream.mode_state.scope_lookup_guard.__self__
+            self.assertEqual(phase.next_completion, len(phase.part.completions))
+            self.assertEqual(budget.deadline, deadline)
+            self.assertIs(budget.limits, limits)
+            observation_count = 0
+            for cap, expected_cap, custom, root in profiles:
+                state = (
+                    ("command-line", "PYTHON", "python3"),
+                    ("command-line", "FE8_ITEM_ID_CAP", cap),
+                    ("command-line", "EXPANSION_CUSTOM_SPELL_EFFECTS", custom),
+                    ("command-line", "MODERN_BUILD_ROOT", root),
+                )
+                for primary in ("assets.mk", "Makefile"):
+                    observed = session.make(
+                        "print-ASSET_OUTPUT_DIR", makefile=primary, variables=names,
+                        assignments=state, commands=commands, observe_source_journal=True,
+                        source_journal_mode=source_directories.MODE,
+                    )
+                    archive = session._original_source_archive(observed)
+                    self.assertEqual(archive.version, read_epochs.COMPLETION_VERSION)
+                    self.assertTrue(observed.read_trace["complete"])
+                    self.assertTrue(observed.source_phases["closed"])
+                    self.assertTrue(observed.source_journal["closed"])
+                    values = observed.semantics["domains"]
+                    self.assertEqual(values["ASSET_RESOLVED_ITEM_ID_CAP"]["value"], expected_cap)
+                    key = "assets_manifest_json-custom" + custom + "-cap" + expected_cap
+                    # abspath includes /repo; Make's two substitutions retain that prefix.
+                    self.assertEqual(values["ASSET_PROFILE_KEY"]["value"], "_repo_" + key)
+                    expected_root = (
+                        "build/generated/assets" if primary == "assets.mk"
+                        else root + "/generated/assets"
+                    )
+                    expected_output = (
+                        expected_root if primary == "assets.mk"
+                        else expected_root + "/_repo_" + key
+                    )
+                    self.assertEqual(values["ASSET_PROFILE_ROOT"]["value"], expected_root)
+                    self.assertEqual(values["ASSET_OUTPUT_DIR"]["value"], expected_output)
+                    recipe, = [
+                        row for row in observed.semantics["native_dispatches"]
+                        if row["kind"] == "recipe" and row["job"]["target"] == "print-ASSET_OUTPUT_DIR"
+                    ]
+                    self.assertEqual(shlex.split(recipe["arguments"][2].rstrip(";"))[-1], expected_output)
+                    if primary == "Makefile":
+                        self.assertEqual(values["GENERATED_DATA_ITEM_CAP"]["value"], expected_cap)
+                    runs = budget.runs
+                    usage, sources, streams, parts = phase_census.analyze(
+                        session, observed, "print-ASSET_OUTPUT_DIR", state, commands,
+                        primary_source=primary,
+                    )
+                    self.assertEqual(budget.runs, runs)
+                    self.assertEqual(len(streams), len(archive.passes))
+                    self.assertEqual(len(parts), len(archive.passes))
+                    self.assertIn("ASSET_RESOLVED_ITEM_ID_CAP", usage["all"])
+                    self.assertEqual(sources["assets.mk"], original_sources["assets.mk"])
+                    if primary == "Makefile":
+                        for name in ("Makefile", "generated_data.mk", "modern.mk"):
+                            self.assertEqual(sources[name], original_sources[name])
+                    receipts = [
+                        row for part in archive.passes for row in part.completions
+                        if row.name == (
+                            "ASSET_RESOLVED_ITEM_ID_CAP" if primary == "assets.mk"
+                            else "GENERATED_DATA_ITEM_CAP"
+                        )
+                    ]
+                    self.assertTrue(receipts)
+                    self.assertTrue(all(row.variable.value == expected_cap for row in receipts))
+                    for stream in streams:
+                        cap_units = [
+                            unit for _, _, unit in stream.ordered
+                            if unit.assignment is not None
+                            and (assignment := graph_probe.MODE_ASSIGNMENT.fullmatch(unit.text)) is not None
+                            and assignment["name"] == (
+                                "ASSET_RESOLVED_ITEM_ID_CAP" if primary == "assets.mk"
+                                else "GENERATED_DATA_ITEM_CAP"
+                            )
+                        ]
+                        self.assertTrue(cap_units)
+                        self.assertTrue(all(unit.assignment.immediate for unit in cap_units))
+                        self.assertFalse(any(
+                            unit.active and unit.text.lstrip().startswith("$(error")
+                            for _, _, unit in stream.ordered
+                        ))
+                        phase = stream.mode_state.scope_lookup_guard.__self__
+                        self.assertEqual(phase.next_completion, len(phase.part.completions))
+                    opened = [
+                        event for event in observed.read_trace["events"]
+                        if event["kind"] == "source-open" and event["result"] >= 0
+                    ]
+                    self.assertTrue(opened)
+                    by_source = {row.number: row for row in archive.sources}
+                    generated = {row.path: row for row in observed.generated}
+                    for event in opened:
+                        source = by_source[event["source"]]
+                        if event["custody"]["kind"] == "snapshot":
+                            self.assertEqual(source.data, session.snapshot.files[event["path"]])
+                        else:
+                            self.assertIn(event["custody"]["kind"], {"publication", "prior-publication"})
+                            self.assertIn(event["path"], generated)
+                            self.assertEqual(source.data, generated[event["path"]].data)
+                    discovery = values["ASSET_DISCOVERY_MK"]["value"]
+                    visits = [
+                        visit for part in archive.passes for visit in part.visits
+                        if visit.name == discovery
+                    ]
+                    self.assertTrue(visits)
+                    self.assertTrue(any(visit.source is not None for visit in visits))
+                    self.assertTrue(observed.semantics["dynamic_commands"])
+                    self.assertTrue(observed.stderr_setups)
+                    with self.assertRaises(MakeProbeError):
+                        session._original_source_archive(replace(observed))
+                    observation_count += 1
+                    self.assertEqual(budget.deadline, deadline)
+                    self.assertIs(budget.limits, limits)
+            self.assertEqual(observation_count, 8)
+            self.assertFalse(budget.failed)
+        self.fixture.assert_clean(session)
+        with self.assertRaises(MakeProbeError):
+            session._original_source_archive(observed)
+
     def test_native_original_conditional_append_keeps_literal_and_computed_outcomes(self):
         for initial in ("out/first.o", "$(addprefix out/,first.o)"):
             for choice in ("yes", "no"):

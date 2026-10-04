@@ -392,6 +392,91 @@ See the existing [tester procedure](test-cases/workflow-governance.md#original-a
 This changes no ROM/RAM/save, localization, gameplay or modern/archival build
 behavior; rollback remains reverting the dedicated issue change.
 
+### Authored native completion cases (not executed qualification)
+
+The five explicit selectors below extend the existing native owners, not a new
+gate, launcher mode or qualification protocol. They are **authored and
+source-checked only**. No native import, test discovery, Make, compiler,
+namespace allocation or remote CI was authorized or run during authoring.
+Their expected assertions are not captured machine outcomes.
+
+`PhaseCensusTests.test_native_completion_original_profile_family` uses one
+original `ProbeBudget` and one `ProbeSession` for the entire positive family.
+It prepares complete regular files selected by the original Git path inventory,
+preserves their executable modes and uses the existing fixture's actual
+immutable Git capture; it does not extract a cap declaration or replace an
+original producer. The original Git declarations are independently read for
+byte comparison. Preparation stays within the same deadline, while the native
+snapshot is admitted once through the existing budget API. This component fixture adds
+finite native source cases; it is not a full original-root/gitlink/report/H1
+qualification. Its original `assets.mk`, `generated_data.mk`, `modern.mk` and
+root `Makefile` bytes must equal the captured immutable objects.
+Source-only size inspection found 11,041 regular objects totaling 151,072,100
+bytes: two complete native snapshots would charge at least 604,288,400 snapshot
+bytes, already over the original 384-MiB quota. The test therefore uses normal
+fixture preparation and one native snapshot, not duplicate pre-capture or a
+larger/refunded limit. Fixture disk work is not claimed as measured native
+resource evidence; total execution/preparation demand remains to be observed.
+
+The finite case exercises a native shell-completed cap before its condition,
+ignored conditional RHS, eagerly executed simple RHS without a stronger
+command-line store, nonempty and empty immediate append, unused recursive
+shell data, real recipe reads, skipped/empty/multiword includes, repeated raw
+`./` spelling, eight nested include files, CRLF/continuation and final-no-LF.
+It consumes actual version4 receipts through the existing source census and
+checks actual dispatches independently of stored assignment DATA.
+Then both standalone `assets.mk` and the root modern chain use the existing
+`print-ASSET_OUTPUT_DIR` target and complete registered `MakeCommands` map:
+
+| Cap input / resolved cap | Custom spells | Modern build root |
+| --- | --- | --- |
+| empty / `0xCD` | `0` | `build/expansion-modern` |
+| `0xCE` / `0xCE` | `0` | `build/native-completion-alt` |
+| empty / `0xCD` | `1` | `build/native-completion-custom` |
+| `0xCE` / `0xCE` | `1` | `build/native-completion-alt-custom` |
+
+No discovery exclusion or external-name exemption is added. The test requires
+the actual cap completion, inactive error condition, manifest/profile/root/
+output/discovery values, native recipe operands, exact source/open custody,
+generated include contents, complete source census and copied/expired archive
+refusal. Any unsupported original command, missing source, refusal, exhausted
+budget or failed assertion stops the family; it never creates a replacement
+budget, calls an adapter to manufacture output or qualifies a successful prefix.
+
+Four `ReadEpochTests` selectors are separate complete terminal invocations:
+`test_native_completion_kernel_frame_pin_terminal`,
+`test_native_completion_resource_terminal`,
+`test_native_completion_cancellation_terminal` and
+`test_native_completion_deadline_terminal`. Each first obtains a genuine
+version4 archive, then requires respectively an actual unauthenticated child
+notification refusal, exact default 1-MiB output followed by one byte over,
+owned-outer-child cancellation, or the original 20-second lifetime expiring
+against waiting work. Failure expectations surround the intended operation,
+not preparation. Owned handles must be reaped for cancellation/deadline; each
+case requires failed-budget and scratch/cache/child cleanup observations.
+These invocations have independent original budgets, not reset failed budgets.
+
+**Unresolved machine criterion:** the closed returned trace has source,
+completion and pass events, but no child DR0..DR3/DR6/DR7 readback, siginfo/PC/
+issued-purpose transcript, modifier/RBX/reader-frame samples, inherited-slot
+readback after producer exec, source-active cancellation point, or source-pin
+release/close observations. `ReadTrace.arm`, `trap`, `assignment_completion`
+and `close` consume those facts inside the syscall child; the current trace
+cannot supply them to a trusted worker projection. Actual ABI2 validation and
+ordinary-command forgery rejection are feasible but do not prove those
+unexported states. The kernel/frame/pin selector intentionally names that
+partial boundary, not a completed hardware certificate. Native changed-CWD,
+stale live pins and adversarial frame/modifier controls likewise remain
+unqualified. Parent mocks and inert schedule models cannot fill this gap.
+No production observation hook is authorized here; the coordinator must
+disposition the precisely missing child seam before claiming those criteria.
+
+Fresh source-test review and separate contained execution authorization are
+still required for each invocation. Full report/serializer/verifier and
+resources, original-root/native qualification, H1, independent/security/Copilot
+review, candidate/master Build, architecture disposition, merge, issue closure,
+remote completion and cleanup remain mandatory and unchanged.
+
 `observe_source_journal=True` adds a default-off **fixed-original-directory**
 mutation collector and implies those source observations. Independent kernel
 events are captured through held original directory descriptors. Real native

@@ -8,12 +8,15 @@ from dataclasses import replace
 import errno
 import hashlib
 import json
+import os
 from pathlib import Path
 import posixpath
 import shlex
 import signal
 import stat
 import struct
+import threading
+import time
 from types import MappingProxyType, SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -944,6 +947,145 @@ class ReadEpochTests(unittest.TestCase):
             return original(*args, **kwargs)
         with patch.object(session, "_make", with_phases):
             return self.observe(session, True)
+
+    def test_native_completion_kernel_frame_pin_terminal(self):
+        """Real forged notification refusal; child slot/pin readback remains unknown."""
+        body = (
+            "import ctypes\n"
+            "lib=ctypes.CDLL(None)\n"
+            "record=(ctypes.c_ulonglong*6)()\n"
+            "lib.syscall(ctypes.c_long(39),ctypes.c_ulonglong(0x564f4d4b00000008),"
+            "ctypes.byref(record),ctypes.c_long(48))\n"
+        )
+        session = self.fixture.session(runtime_files=("/usr/include/build",))
+        deadline = session.budget.deadline
+        with session:
+            observed = session.make(
+                "all", commands={"python3 writer.py": Command(
+                    ("/usr/bin/python3", "/repo/writer.py"), code=("writer.py",),
+                    outputs=("build/remade.mk",),
+                )}, observe_source_phases=True,
+            )
+            archive = session._original_source_archive(observed)
+            self.assertEqual(archive.version, read_epochs.COMPLETION_VERSION)
+            self.assertTrue(any(part.completions for part in archive.passes))
+            self.assertEqual(len(archive.passes), 2)
+            missing, loaded = [part.visits[-1] for part in archive.passes]
+            self.assertEqual((missing.error, missing.source), (2, None))
+            self.assertEqual(loaded.source.data, b"REMADE_ONLY := generated-value\n")
+            self.assertEqual(loaded.opens[0].custody["kind"], "publication")
+            abi = session._original_read_abi(completions=True)
+            self.assertEqual(abi["version"], 2)
+            self.assertIs(read_epochs.validate_abi(
+                abi, dict(session.make_runtime)["/usr/bin/make"],
+            ), abi)
+            with self.assertRaisesRegex(MakeProbeError, "unauthenticated"):
+                session.command(Command(("/usr/bin/python3", "-c", body)))
+        self.assertTrue(session.budget.failed)
+        self.assertEqual(session.budget.deadline, deadline)
+        self.fixture.assert_clean(session)
+
+    def test_native_completion_resource_terminal(self):
+        """An exact funded output followed by one-over, in one original lifetime."""
+        extent = 1024 * 1024
+        self.fixture.add("bounded.py", "import os,sys\nos.write(1,b'x'*int(sys.argv[1]))\n")
+        self.fixture.add("terminal.mk", "include child.mk\nall: ;\n")
+        session = self.fixture.session()
+        deadline = session.budget.deadline
+        with session:
+            self.assertEqual(session.budget.limits.process_output_bytes, extent)
+            observed = session.make("all", makefile="terminal.mk", observe_source_phases=True)
+            self.assertEqual(session._original_source_archive(observed).version, 4)
+            command = lambda size: Command(
+                ("/usr/bin/python3", "/repo/bounded.py", str(size)), code=("bounded.py",),
+            )
+            exact = session.command(command(extent))
+            self.assertEqual(exact.stdout, b"x" * extent)
+            self.assertEqual(exact.returncode, 0)
+            self.assertFalse(session.budget.failed)
+            with self.assertRaisesRegex(MakeProbeError, "output"):
+                session.command(command(extent + 1))
+        self.assertTrue(session.budget.failed)
+        self.assertEqual(session.budget.deadline, deadline)
+        self.fixture.assert_clean(session)
+
+    def test_native_completion_cancellation_terminal(self):
+        """Cancel an observed owned outer child; not source-active register proof."""
+        self.fixture.add("waiting.py", "import time\ntime.sleep(40)\n")
+        self.fixture.add("terminal.mk", "include child.mk\nall: ;\n")
+        session = self.fixture.session(seconds=20)
+        child_handles = []
+        stop = threading.Event()
+
+        def cancel_owned_child():
+            while not stop.wait(0.01):
+                if time.monotonic() >= session.budget.deadline:
+                    return
+                children = tuple(session.budget.children)
+                if children:
+                    child_handles.extend(children)
+                    os.kill(os.getpid(), signal.SIGTERM)
+                    return
+
+        deadline = session.budget.deadline
+        with session:
+            observed = session.make("all", makefile="terminal.mk", observe_source_phases=True)
+            self.assertEqual(session._original_source_archive(observed).version, 4)
+            worker = threading.Thread(target=cancel_owned_child)
+            worker.start()
+            try:
+                with self.assertRaises(KeyboardInterrupt):
+                    session.command(Command(
+                        ("/usr/bin/python3", "/repo/waiting.py"), code=("waiting.py",),
+                    ))
+            finally:
+                stop.set()
+                worker.join(timeout=max(0, deadline - time.monotonic()))
+                self.assertFalse(worker.is_alive())
+        self.assertTrue(child_handles)
+        self.assertTrue(all(child.returncode is not None for child in child_handles))
+        self.assertTrue(session.budget.failed)
+        self.assertEqual(session.budget.deadline, deadline)
+        self.fixture.assert_clean(session)
+
+    def test_native_completion_deadline_terminal(self):
+        """The original deadline kills owned waiting work; no patched clock/reset."""
+        self.fixture.add("waiting.py", "import time\ntime.sleep(40)\n")
+        self.fixture.add("terminal.mk", "include child.mk\nall: ;\n")
+        session = self.fixture.session(seconds=20)
+        deadline = session.budget.deadline
+        child_handles = []
+        stop = threading.Event()
+
+        def observe_owned_child():
+            while not stop.wait(0.01):
+                if time.monotonic() >= deadline:
+                    return
+                children = tuple(session.budget.children)
+                if children:
+                    child_handles.extend(children)
+                    return
+
+        with session:
+            observed = session.make("all", makefile="terminal.mk", observe_source_phases=True)
+            self.assertEqual(session._original_source_archive(observed).version, 4)
+            worker = threading.Thread(target=observe_owned_child)
+            worker.start()
+            try:
+                with self.assertRaisesRegex(MakeProbeError, "deadline"):
+                    session.command(Command(
+                        ("/usr/bin/python3", "/repo/waiting.py"), code=("waiting.py",),
+                    ))
+            finally:
+                stop.set()
+                worker.join(timeout=max(0, deadline - time.monotonic()))
+                self.assertFalse(worker.is_alive())
+        self.assertTrue(child_handles)
+        self.assertTrue(all(child.returncode is not None for child in child_handles))
+        self.assertTrue(session.budget.failed)
+        self.assertGreaterEqual(time.monotonic(), deadline)
+        self.assertEqual(session.budget.deadline, deadline)
+        self.fixture.assert_clean(session)
 
     def test_original_archive_keeps_every_pass_input_status_and_source_version(self):
         with self.fixture.session(runtime_files=("/usr/include/build",)) as session:
