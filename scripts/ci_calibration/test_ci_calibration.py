@@ -40,6 +40,7 @@ CORRECTED_SOURCE_INPUTS = None
 INCLUDE_STATE_INPUTS = None
 INCLUDE_STATE_REBIND_INPUTS = None
 FINITE_REPORT_INPUTS = None
+TEMPLATE_HEADER_INPUTS = None
 WORKER_AST = ast.parse((REPO / "scripts/ci_calibration/worker.py").read_text())
 
 
@@ -540,7 +541,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.INCLUDE_STATE_REBIND_SHA}",
+            f"{'a' * 40} {supervisor.FINITE_REPORT_SHA}",
+            f"{supervisor.FINITE_REPORT_SHA} {supervisor.INCLUDE_STATE_REBIND_SHA}",
             f"{supervisor.INCLUDE_STATE_REBIND_SHA} {supervisor.MEMBER_PIN_SHA}",
             f"{supervisor.MEMBER_PIN_SHA} {supervisor.INCLUDE_STATE_SHA}",
             f"{supervisor.INCLUDE_STATE_SHA} {supervisor.SORT_REPORT_SHA}",
@@ -1061,8 +1063,8 @@ class CalibrationControls(Inert):
 
     def test_runtime_report_source_and_workflow_refuse_all_spent_bindings(self):
         self.assertEqual((policy.BRANCH, policy.WORKFLOW, policy.OUTPUT_PREFIX), (
-            "calibration/issue-180-full-report-finite-1",
-            ".github/workflows/issue180-full-report-finite-1.yml", "issue180-full-report-finite-1-",
+            "calibration/issue-180-template-header-localization-1",
+            ".github/workflows/issue180-template-header-localization-1.yml", "issue180-template-header-localization-1-",
         ))
         self.assertEqual((policy.GRAPH, policy.PYTHON_REPORT_SOURCE, policy.BASE), (
             "615db43edce43103787d70fde82576e9f3884b73",
@@ -1177,7 +1179,7 @@ class CalibrationControls(Inert):
             "79810df78b29eef98ba1da391565f17315352d18",
         ))
         self.assertEqual((policy.BRANCH, policy.GRAPH, policy.BASE), (
-            "calibration/issue-180-full-report-finite-1",
+            "calibration/issue-180-template-header-localization-1",
             "615db43edce43103787d70fde82576e9f3884b73",
             "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a",
         ))
@@ -1701,7 +1703,8 @@ class CalibrationControls(Inert):
 
         def validate(changes):
             supervisor.validate_harness_lineage(
-                [f"{head} {supervisor.INCLUDE_STATE_REBIND_SHA}", *changes], head,
+                [f"{head} {supervisor.FINITE_REPORT_SHA}",
+                 f"{supervisor.FINITE_REPORT_SHA} {supervisor.INCLUDE_STATE_REBIND_SHA}", *changes], head,
             )
 
         validate(chain)
@@ -1728,9 +1731,9 @@ class CalibrationControls(Inert):
 
     def test_include_state_rebind_admits_only_the_fresh_first_owner_event(self):
         self.assertEqual((policy.BRANCH, policy.WORKFLOW, policy.OUTPUT_PREFIX), (
-            "calibration/issue-180-full-report-finite-1",
-            ".github/workflows/issue180-full-report-finite-1.yml",
-            "issue180-full-report-finite-1-",
+            "calibration/issue-180-template-header-localization-1",
+            ".github/workflows/issue180-template-header-localization-1.yml",
+            "issue180-template-header-localization-1-",
         ))
         self.assertEqual((policy.GRAPH, policy.BASE), (
             "615db43edce43103787d70fde82576e9f3884b73", "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a",
@@ -1777,7 +1780,7 @@ class CalibrationControls(Inert):
             ("rebind_inventory", supervisor.INCLUDE_STATE_REBIND_PATHS,
              supervisor.validate_include_state_rebind_inventory, policy.INCLUDE_STATE_REBIND_WORKFLOW),
             ("finite_inventory", supervisor.FINITE_REPORT_PATHS,
-             supervisor.validate_finite_report_inventory, policy.WORKFLOW),
+             supervisor.validate_finite_report_inventory, policy.FINITE_REPORT_WORKFLOW),
         )
         for name, paths, validator, workflow in models:
             self.assertEqual(paths, common | {workflow})
@@ -1819,7 +1822,7 @@ class CalibrationControls(Inert):
                 endpoints[node.func.id] = [ast.unparse(value) for value in node.args[0].args[-2:]]
         self.assertEqual(endpoints, {
             "validate_include_state_rebind_inventory": ["MEMBER_PIN_SHA", "INCLUDE_STATE_REBIND_SHA"],
-            "validate_finite_report_inventory": ["INCLUDE_STATE_REBIND_SHA", "'HEAD'"],
+            "validate_finite_report_inventory": ["INCLUDE_STATE_REBIND_SHA", "FINITE_REPORT_SHA"],
         })
 
     def test_finite_report_requires_only_edge33_over_all_32_frozen_normal_edges(self):
@@ -1834,8 +1837,9 @@ class CalibrationControls(Inert):
         self.assertEqual(historical[0], f"{supervisor.INCLUDE_STATE_REBIND_SHA} {supervisor.MEMBER_PIN_SHA}")
         self.assertEqual(historical[1:], INCLUDE_STATE_REBIND_INPUTS["lineage"])
         head = "a" * 40
-        chain = [f"{head} {supervisor.INCLUDE_STATE_REBIND_SHA}", *historical]
-        self.assertEqual(len(chain), 33)
+        chain = [f"{head} {supervisor.FINITE_REPORT_SHA}",
+                 f"{supervisor.FINITE_REPORT_SHA} {supervisor.INCLUDE_STATE_REBIND_SHA}", *historical]
+        self.assertEqual(len(chain), 34)
         supervisor.validate_harness_lineage(chain, head)
         for index, line in enumerate(chain):
             for kind, changed in (
@@ -1850,12 +1854,104 @@ class CalibrationControls(Inert):
             with self.subTest(changed=changed[:3]), self.assertRaises(policy.GuardError):
                 supervisor.validate_harness_lineage(changed, head)
 
+    def test_template_header_preserves_all_33_old_edges_and_requires_complete_new_edge(self):
+        self.assertIsNotNone(TEMPLATE_HEADER_INPUTS, "requires direct frozen parent Git observations")
+        historical = TEMPLATE_HEADER_INPUTS["lineage"]
+        self.assertEqual(len(historical), 33)
+        self.assertEqual(historical[0], f"{supervisor.FINITE_REPORT_SHA} {supervisor.INCLUDE_STATE_REBIND_SHA}")
+        head = "a" * 40
+        chain = [f"{head} {supervisor.FINITE_REPORT_SHA}", *historical]
+        supervisor.validate_harness_lineage(chain, head)
+        for changed in (chain[:33], chain[1:], list(reversed(chain)), chain + [chain[-1]]):
+                with self.subTest(changed=changed[:2]), self.assertRaises(policy.GuardError):
+                    supervisor.validate_harness_lineage(changed, head)
+        for index, line in enumerate(chain):
+                for changed in (
+                    chain[:index] + chain[index + 1:],
+                    chain[:index] + [line + " " + "b" * 40] + chain[index + 1:],
+                    chain[:index] + [line.split()[0] + " " + "b" * 40] + chain[index + 1:],
+                ):
+                    with self.subTest(index=index), self.assertRaises(policy.GuardError):
+                        supervisor.validate_harness_lineage(changed, head)
+        owner, = [node for node in SUPERVISOR_AST.body if isinstance(node, ast.ClassDef) and node.name == "Owner"]
+        prepare, = [node for node in owner.body if isinstance(node, ast.FunctionDef) and node.name == "prepare"]
+        call, = [node for node in ast.walk(prepare) if isinstance(node, ast.Call)
+                     and isinstance(node.func, ast.Name) and node.func.id == "validate_harness_lineage"]
+        self.assertIn("--max-count=34", [node.value for node in ast.walk(call) if isinstance(node, ast.Constant)])
+        endpoints = {}
+        for node in ast.walk(prepare):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {
+                    "validate_finite_report_inventory", "validate_template_header_inventory",
+                }:
+                    endpoints[node.func.id] = [ast.unparse(value) for value in node.args[0].args[-2:]]
+        self.assertEqual(endpoints, {
+                "validate_finite_report_inventory": ["INCLUDE_STATE_REBIND_SHA", "FINITE_REPORT_SHA"],
+                "validate_template_header_inventory": ["FINITE_REPORT_SHA", "'HEAD'"],
+        })
+
+    def test_template_header_inventory_never_reinterprets_the_spent_finite_workflow(self):
+        self.assertIsNotNone(TEMPLATE_HEADER_INPUTS, "requires direct frozen inventory observations")
+        old = TEMPLATE_HEADER_INPUTS["finite_inventory"]
+        supervisor.validate_finite_report_inventory(old)
+        paths = supervisor.TEMPLATE_HEADER_PATHS
+        self.assertEqual(len(paths), 7)
+        self.assertNotIn(policy.FINITE_REPORT_WORKFLOW, paths)
+        rows = [(b"A" if path == policy.WORKFLOW else b"M", path.encode()) for path in sorted(paths)]
+        data = b"".join(kind + b"\0" + path + b"\0" for kind, path in rows)
+        supervisor.validate_template_header_inventory(data)
+        supervisor.validate_template_header_inventory(b"".join(k + b"\0" + p + b"\0" for k, p in reversed(rows)))
+        for changed in (old, data[:-1], data + data, data + b"M\0" + policy.FINITE_REPORT_WORKFLOW.encode() + b"\0"):
+                with self.assertRaises(policy.GuardError):
+                    supervisor.validate_template_header_inventory(changed)
+        for index, (kind, path) in enumerate(rows):
+                for changed in (
+                    rows[:index] + rows[index + 1:],
+                    rows[:index] + [(b"D", path)] + rows[index + 1:],
+                    rows[:index] + [(b"M" if kind == b"A" else b"A", path)] + rows[index + 1:],
+                ):
+                    with self.subTest(index=index), self.assertRaises(policy.GuardError):
+                        supervisor.validate_template_header_inventory(b"".join(k + b"\0" + p + b"\0" for k, p in changed))
+        for changed in (data, old.replace(policy.FINITE_REPORT_WORKFLOW.encode(), policy.WORKFLOW.encode())):
+                with self.assertRaises(policy.GuardError):
+                    supervisor.validate_finite_report_inventory(changed)
+
+    def test_template_header_changes_only_workflow_identity_and_report_diagnostic(self):
+        old = yaml.load(TEMPLATE_HEADER_INPUTS["workflow"], Loader=yaml.BaseLoader)
+        current = yaml.load(WORKFLOW_TEXT, Loader=yaml.BaseLoader)
+        def rebound(value):
+                if type(value) is str:
+                    return value.replace("issue-180-full-report-finite-1", "issue-180-template-header-localization-1").replace(
+                        "issue180-full-report-finite-1", "issue180-template-header-localization-1")
+                if type(value) is list:
+                    return [rebound(item) for item in value]
+                if type(value) is dict:
+                    return {rebound(key): rebound(item) for key, item in value.items()}
+                return value
+        expected = rebound(old)
+        expected["name"] = "Issue 180 contained template header localization 1"
+        job = expected["jobs"].pop("contained-full-report-finite-1")
+        job["name"] = "Complete unchanged report with original template header diagnostic"
+        expected["jobs"]["contained-template-header-localization-1"] = job
+        self.assertEqual(current, expected)
+        self.assertEqual((policy.GRAPH, policy.BASE, policy.GRAPH_SECONDS), (
+                "615db43edce43103787d70fde82576e9f3884b73", "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a", 3600))
+        self.assertEqual((len(policy.RELAXED), len(policy.ACCOUNTING_COUNTERS), len(policy.ARTIFACT_NAMES)), (14, 19, 5))
+        self.assertEqual((policy.BRANCH, policy.OUTPUT_PREFIX), (
+                "calibration/issue-180-template-header-localization-1", "issue180-template-header-localization-1-"))
+        accepted = policy.validate_event(self.event(), **self.authorization())
+        self.assertTrue(accepted["never_merge"])
+        self.assertFalse(accepted["production_acceptance"])
+        for branch in ("calibration/issue-180-full-report-finite-1",
+                           "recovery/session-1ab6-issue180-template-header-localization1"):
+                with self.assertRaises(policy.GuardError):
+                    policy.validate_event({**self.event(), "ref": "refs/heads/" + branch}, **self.authorization())
+
     def test_finite_report_binding_refuses_spent_sources_and_unallocated_recovery_events(self):
         accepted = policy.validate_event(self.event(), **self.authorization())
         self.assertEqual((accepted["graph_sha"], accepted["base_sha"], accepted["branch"]), (
             "615db43edce43103787d70fde82576e9f3884b73",
             "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a",
-            "calibration/issue-180-full-report-finite-1",
+            "calibration/issue-180-template-header-localization-1",
         ))
         self.assertTrue(accepted["never_merge"])
         self.assertFalse(accepted["production_acceptance"])

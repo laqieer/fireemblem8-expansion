@@ -2375,10 +2375,10 @@ class OriginalImportControls(Inert):
 
     @contextmanager
     def imported(self, kind="source", *, raise_leaf=True, body=None, mutate=None, restoring=None,
-                 owned=(), operation="natural", graph_probe=False):
+                 owned=(), operation="natural", graph_probe=False, source_module=None):
         self.assertIsNotNone(IMPORT_COMPILE_AUDIT, "requires the effect-trapped import runner")
         with LocationControls.fixture(self) as value, ExitStack() as patches:
-            module_name = "graph_probe" if graph_probe else "inert_original"
+            module_name = source_module or ("graph_probe" if graph_probe else "inert_original")
             fullname = observation_failure.SOURCE_PACKAGE + "." + module_name
             filename = "/repo/scripts/validation_ownership/" + module_name + ".py"
             if kind == "foreign":
@@ -4357,7 +4357,7 @@ class IncludeStateControls(Inert):
         for fault in (None, "publication-before", "publication-after", "record"):
             with self.subTest(fault=fault):
                 record = self.entrypoint_case(fault)
-                self.assertEqual(record["source_locations"]["version"], 4)
+                self.assertEqual(record["source_locations"]["version"], 5)
                 self.assertEqual(record["error"]["chain"][0]["type"], "MakeProbeError")
                 self.assertEqual(record["source_locations"]["state"]["status"], "unavailable" if fault == "record" else "partial")
                 if fault != "record":
@@ -4457,6 +4457,491 @@ class IncludeStateControls(Inert):
 
 
 INCLUDE_STATE_PROJECTOR_AST = None
+TEMPLATE_HEADER_PROJECTOR_AST = None
+
+
+class TemplateHeaderControls(Inert):
+    imported = OriginalImportControls.imported
+    blob = staticmethod(OriginalImportControls.blob)
+    BODY, OTHER = OriginalImportControls.BODY, OriginalImportControls.OTHER
+
+    @contextmanager
+    def fixture(self, *, wrapped=True, omit_status=False):
+        # Unissued frame model, not an import or execution of selected source.
+        graph = ModuleType(observation_failure.SOURCE_PACKAGE + ".graph_probe")
+        graph.__file__ = "/repo/scripts/validation_ownership/graph_probe.py"
+        graph.__package__ = observation_failure.SOURCE_PACKAGE
+        graph.__loader__ = SourceFileLoader(graph.__name__, graph.__file__)
+        graph.__spec__ = ModuleSpec(graph.__name__, graph.__loader__, origin=graph.__file__)
+        graph_body = """
+from dataclasses import dataclass, field
+from typing import NamedTuple
+class _SourceSite(NamedTuple):
+    path: str
+    logical: int
+    start: int
+    end: int
+@dataclass(frozen=True)
+class _ModeBinding:
+    origin: str
+    flavor: str
+    value: object
+    inherited: tuple = ()
+    scope: str = None
+@dataclass
+class _MakeSourceMode:
+    budget: object = None
+    site: object = None
+    posix: object = None
+    version: int = 7
+    original_namespace_valid: bool = False
+    namespace_holds: set = field(default_factory=set)
+    definitions: dict = field(default_factory=dict)
+    binding_versions: dict = field(default_factory=dict)
+    template_values: dict = field(default_factory=dict)
+    scope_context: object = None
+"""
+        body = b"""
+from scripts.validation_ownership import graph_probe as graph
+class SourceTemplates:
+    def __init__(self):
+        self.session = SESSION
+    def retain_call(self, mode):
+        prerequisite = EXPRESSION
+        actual_target = TARGET
+        actual_prerequisite = PREREQUISITE
+        raise RuntimeError("private unissued original header refusal")
+def outer():
+    SourceTemplates().retain_call(MODE)
+"""
+        if omit_status:
+            body = body.replace(b"        actual_target = TARGET\n", b"").replace(
+                b"        actual_prerequisite = PREREQUISITE\n", b"")
+        with mock.patch.dict(sys.modules, {graph.__name__: graph}):
+            exec(compile(graph_body, graph.__file__, "exec"), graph.__dict__)
+            with self.imported(body=body, source_module="phase_census") as value:
+                for path in ("Makefile", graph.__file__.removeprefix("/repo/")):
+                    entry = value.authority.GitTreeEntry()
+                    entry.path, entry.mode, entry.object_type, entry.object_id, entry.git_dir = path, "100644", "blob", "c" * 40, None
+                    value.entries[path] = entry
+                def configure(module):
+                    mode = graph._MakeSourceMode(value.budget, graph._SourceSite("Makefile", 4, 7, 9))
+                    mode.definitions = {
+                        "PRIVATE_REF": frozenset((graph._ModeBinding("file", "simple", None),)),
+                        "OTHER_REF": frozenset((graph._ModeBinding("override", "recursive", "private body"),)),
+                    }
+                    mode.binding_versions = {(None, "PRIVATE_REF"): 7, (None, "OTHER_REF"): 6}
+                    mode.template_values = {"PRIVATE_REF": (7, ("header-bound", object()))}
+                    module.SESSION, module.MODE = value.measurement.session, mode
+                    module.EXPRESSION = "$(PRIVATE_REF) ${OTHER_REF} $(PRIVATE_REF)"
+                    module.TARGET, module.PREREQUISITE = "private target", None
+                value.graph.AFTER_LOAD, value.graph.WRAP = configure, wrapped
+                value.mode_graph = graph
+                yield value
+
+    def wire(self, value):
+        return OriginalImportControls.wire(self, value, location_version=5)
+
+    def header(self, value):
+        record, retained = self.wire(value)
+        self.assertIs(value.error, value.original_failure)
+        self.assertFalse(retained)
+        self.assertFalse(record["states"]["completed"])
+        self.assertTrue(record["cleanup"]["source_imports_released"])
+        self.assertEqual(value.observer.location_codes, {})
+        self.assertNotIn(b"PRIVATE_REF", policy.encoded(record))
+        self.assertNotIn(b"OTHER_REF", policy.encoded(record))
+        self.assertNotIn(b"private", policy.encoded(record))
+        return record, record["source_locations"]["template"]
+
+    def test_original_raising_frame_reports_only_finite_site_mode_and_reference_shapes(self):
+        for wrapped in (False, True):
+            with self.subTest(wrapped=wrapped), self.fixture(wrapped=wrapped) as value:
+                value.invoke()
+                record, header = self.header(value)
+                self.assertEqual((header["status"], header["reason"]), ("partial", "finite-selection"))
+                self.assertEqual(header["exception"], int(wrapped))
+                self.assertEqual((header["target"], header["prerequisite"]), ("returned-string", "missing"))
+                self.assertEqual((header["mode"], header["version"], header["original_namespace_valid"]), ("unknown", 7, False))
+                self.assertEqual(header["site"], {
+                    "role": "template", "status": "reported-selected-tree",
+                    "path": "Makefile", "logical": 4, "start": 7, "end": 9,
+                })
+                self.assertEqual(len(header["references"]), 2)
+                first, second = header["references"]
+                self.assertEqual(first["binding_epoch_status"], "different-mode-version")
+                self.assertEqual(second["fact"]["kind"], "header-bound")
+                self.assertEqual(second["bindings"], [{"origin": "file", "flavor": "simple", "body_known": False}])
+                self.assertEqual(record["source_locations"]["context"]["reason"], "guard-unobserved")
+                self.assertEqual(record["source_locations"]["state"]["reason"], "guard-unobserved")
+                self.assertEqual(policy.validate_report_error(json_order(record), self.binding()), record)
+
+    def test_missing_replaced_types_code_frames_and_repeated_guards_are_unavailable(self):
+        for fault in ("code", "type", "mode", "trace", "repeat", "site", "session", "graph", "map"):
+            with self.subTest(fault=fault), self.fixture() as value:
+                value.invoke()
+                module, graph = value.graph.loaded, value.mode_graph
+                if fault == "code":
+                    module.SourceTemplates.retain_call.__code__ = module.SourceTemplates.retain_call.__code__.replace()
+                elif fault == "type":
+                    module.SourceTemplates = type("SourceTemplates", (), {})
+                elif fault == "mode":
+                    module.MODE.__class__ = type("Foreign", (graph._MakeSourceMode,), {})
+                elif fault == "trace":
+                    value.error.__cause__.__traceback__ = None
+                elif fault == "repeat":
+                    try:
+                        module.outer()
+                    except BaseException as following:
+                        value.error.__cause__.__cause__ = following
+                elif fault == "site":
+                    module.MODE.site = graph._SourceSite("Makefile", True, 7, 9)
+                elif fault == "session":
+                    module.SESSION = object()
+                    # Original self still retains the old session; mutate that exact borrowed instance.
+                    trace = value.error.__cause__.__traceback__
+                    while trace.tb_next is not None:
+                        trace = trace.tb_next
+                    trace.tb_frame.f_locals["self"].session = object()
+                    trace = None
+                elif fault == "graph":
+                    module.graph = ModuleType(graph.__name__)
+                else:
+                    module.MODE.definitions = []
+                record, header = self.header(value)
+                self.assertEqual(header["status"], "unavailable")
+                if fault == "repeat":
+                    self.assertEqual(header["reason"], "multiple-guards")
+
+    def test_original_status_binding_fact_and_unknown_reference_variants(self):
+        for fault in ("target", "prerequisite", "literal", "unsupported", "overflow", "absent", "ambiguous", "stale", "scoped"):
+            with self.subTest(fault=fault), self.fixture() as value:
+                module = None
+                configure = value.graph.AFTER_LOAD
+                def change(module):
+                    configure(module)
+                    if fault == "target":
+                        module.TARGET = None
+                    elif fault == "prerequisite":
+                        module.PREREQUISITE = "private returned"
+                    elif fault == "literal":
+                        module.EXPRESSION = "literal"
+                    elif fault == "unsupported":
+                        module.EXPRESSION = "$(wildcard private/*)"
+                    elif fault == "overflow":
+                        module.EXPRESSION = " ".join("$(REF_" + str(i) + ")" for i in range(33))
+                    elif fault == "absent":
+                        module.MODE.definitions = {}
+                    elif fault == "ambiguous":
+                        module.MODE.definitions["PRIVATE_REF"] = frozenset((
+                            value.mode_graph._ModeBinding("file", "simple", None),
+                            value.mode_graph._ModeBinding("unknown", "unknown", None),
+                        ))
+                    elif fault == "stale":
+                        module.MODE.template_values["PRIVATE_REF"] = (6, ("exact", object()))
+                    else:
+                        module.MODE.scope_context = object()
+                value.graph.AFTER_LOAD = change
+                value.invoke()
+                _, header = self.header(value)
+                if fault in {"unsupported", "overflow"}:
+                    self.assertEqual(header["reason"], "reference-shape" if fault == "unsupported" else "reference-bound")
+                else:
+                    self.assertEqual(header["status"], "partial")
+                    if fault == "target":
+                        self.assertEqual(header["target"], "missing")
+                    elif fault == "prerequisite":
+                        self.assertEqual(header["prerequisite"], "returned-string")
+                    elif fault == "literal":
+                        self.assertEqual(header["references"], [])
+                    elif fault == "absent":
+                        self.assertTrue(all(row["status"] == "absent" for row in header["references"]))
+                    elif fault == "ambiguous":
+                        self.assertEqual(header["references"][1]["cardinality"], 2)
+                    elif fault == "stale":
+                        self.assertEqual(header["references"][1]["fact"]["epoch_status"], "different-mode-version")
+                    elif fault == "scoped":
+                        self.assertEqual(header["scope"], "scoped-unresolved")
+
+    def test_v3_v4_compatibility_and_closed_v5_mutations(self):
+        with self.fixture() as value:
+            value.invoke()
+            record, header = self.header(value)
+        for version in (3, 4, 5):
+            observation_failure.validate_locations(observation_failure.location_unavailable("binding-not-ready", version=version),
+                                                   self.binding())
+        for fault in ("authority", "anchor", "value", "fact", "site", "epoch", "duplicate", "selection",
+                      "version", "missing", "count", "truncated"):
+            with self.subTest(fault=fault):
+                changed = copy.deepcopy(record)
+                header = changed["source_locations"]["template"]
+                if fault == "authority":
+                    header["authority"] = True
+                elif fault == "anchor":
+                    locations = changed["source_locations"]
+                    (locations["locations"] or locations["anchors"])[-1]["code"] = "other"
+                elif fault == "value":
+                    header["references"][0]["bindings"][0]["value"] = "private"
+                elif fault == "fact":
+                    header["references"][1]["fact"]["raw"] = "private"
+                elif fault == "site":
+                    header["site"]["start"] = 0
+                elif fault == "epoch":
+                    header["version"] = True
+                elif fault == "duplicate":
+                    header["references"][1]["name"] = 0
+                elif fault == "selection":
+                    header["selection"] = "actual-reads"
+                elif fault == "version":
+                    changed["source_locations"]["version"] = 4
+                elif fault == "count":
+                    header["reference_count"] = 33
+                elif fault == "truncated":
+                    header["references"].pop()
+                else:
+                    del changed["source_locations"]["template"]
+                with self.assertRaises(policy.GuardError):
+                    policy.validate_report_error(changed, self.binding())
+
+    def test_unrelated_original_collapse_preserves_exact_v3_v4_fields_and_no_template_guard(self):
+        observed = {}
+        for version in (3, 4, 5):
+            with self.subTest(version=version), IncludeStateControls.fixture(self) as value:
+                value.invoke()
+                record, _ = OriginalImportControls.wire(self, value, location_version=version)
+                observed[version] = record["source_locations"]
+        current = copy.deepcopy(observed[5])
+        header = current.pop("template")
+        self.assertEqual(header, observation_failure.template_header_unavailable("guard-unobserved"))
+        current["version"] = 4
+        self.assertEqual(current, observed[4])
+        current.pop("state")
+        current["version"] = 3
+        self.assertEqual(current, observed[3])
+
+    def test_resource_epoch_exception_and_clear_failure_never_publish_success(self):
+        for fault in ("work", "output", "epoch", "exception", "clear"):
+            with self.subTest(fault=fault), self.fixture() as value:
+                value.invoke()
+                original = observation_failure._SourceLocations.template_header
+                rows = observation_failure._SourceLocations.state_rows
+                close = observation_failure._SourceLocations.close
+                def bounded(locations, error, context, allowance):
+                    if fault == "work":
+                        locations.work = policy.ORIGINAL_LIMITS["entries"]
+                    return original(locations, error, context, 4095 if fault == "output" else allowance)
+                def altered(locations, *args, **kwargs):
+                    if fault == "exception":
+                        raise MemoryError()
+                    result = rows(locations, *args, **kwargs)
+                    value.graph.loaded.MODE.site = value.mode_graph._SourceSite("Makefile", 5, 8, 9)
+                    return result
+                def failed(locations):
+                    close(locations)
+                    raise OSError("private clear failure")
+                with ExitStack() as patches:
+                    patches.enter_context(mock.patch.object(observation_failure._SourceLocations, "template_header", bounded))
+                    if fault in {"epoch", "exception"}:
+                        patches.enter_context(mock.patch.object(observation_failure._SourceLocations, "state_rows", altered))
+                    if fault == "clear":
+                        patches.enter_context(mock.patch.object(observation_failure._SourceLocations, "close", failed))
+                    record, header = self.header(value)
+                self.assertEqual(header["status"], "unavailable")
+                if fault == "clear":
+                    self.assertIsNone(record["source_locations"]["references_closed"])
+                    self.assertIn("location-publication", [row["stage"] for row in record["secondary"]])
+
+    def test_exact_work_and_output_admission_do_not_reset_original_resource_limits(self):
+        original = observation_failure._SourceLocations.template_header
+        measured = []
+        def observe(locations, error, context, allowance):
+            before = locations.work
+            result = original(locations, error, context, allowance)
+            measured.append(locations.work - before)
+            return result
+        with self.fixture() as value:
+            value.invoke()
+            with mock.patch.object(observation_failure._SourceLocations, "template_header", observe):
+                _, header = self.header(value)
+            self.assertEqual(header["status"], "partial")
+        needed, = measured
+        for over in (0, 1):
+            with self.subTest(over=over), self.fixture() as value:
+                value.invoke()
+                def bounded(locations, error, context, allowance):
+                    locations.work = policy.ORIGINAL_LIMITS["entries"] - needed + over
+                    return original(locations, error, context, allowance)
+                with mock.patch.object(observation_failure._SourceLocations, "template_header", bounded):
+                    _, header = self.header(value)
+                self.assertEqual(header["status"], "unavailable" if over else "partial")
+                if over:
+                    self.assertEqual(header["reason"], "work-bound")
+        for allowance in (6143, 6144):
+            with self.subTest(allowance=allowance), self.fixture() as value:
+                value.invoke()
+                def bounded(locations, error, context, unused):
+                    return original(locations, error, context, allowance)
+                with mock.patch.object(observation_failure._SourceLocations, "template_header", bounded):
+                    _, header = self.header(value)
+                self.assertEqual(header["status"], "partial" if allowance == 6144 else "unavailable")
+                if allowance == 6143:
+                    self.assertEqual(header["reason"], "output-bound")
+
+    def test_mode_site_reference_and_output_exact_boundaries_without_resolver_callbacks(self):
+        with self.fixture(omit_status=True) as value:
+            value.invoke()
+            _, header = self.header(value)
+            self.assertEqual((header["target"], header["prerequisite"]), ("unavailable", "unavailable"))
+        for mode in (False, True, None):
+            with self.subTest(mode=mode), self.fixture() as value:
+                configure = value.graph.AFTER_LOAD
+                def change(module):
+                    configure(module)
+                    module.MODE.posix = mode
+                value.graph.AFTER_LOAD = change
+                value.invoke()
+                called = []
+                def refused(*args, **kwargs):
+                    called.append(True)
+                    raise AssertionError("source evaluation during projection")
+                for name in ("exact_reference", "exact_initializer_value", "original_wildcard", "binding",
+                             "template_snapshot", "raw_binding"):
+                    setattr(value.graph.loaded.MODE, name, refused)
+                with mock.patch.object(value.budget, "charge", side_effect=refused), \
+                     mock.patch.object(value.budget, "remaining", side_effect=refused):
+                    _, header = self.header(value)
+                self.assertEqual(called, [])
+                self.assertEqual(header["mode"], "unknown" if mode is None else "posix" if mode else "ordinary")
+        for count in (32, 33):
+            with self.subTest(count=count), self.fixture() as value:
+                configure = value.graph.AFTER_LOAD
+                def change(module):
+                    configure(module)
+                    module.EXPRESSION = " ".join("$(REF_" + str(i) + ")" for i in range(count))
+                value.graph.AFTER_LOAD = change
+                value.invoke()
+                _, header = self.header(value)
+                self.assertEqual(header["status"], "partial" if count == 32 else "unavailable")
+                if count == 32:
+                    self.assertEqual(header["reference_count"], 32)
+        for end in (policy.ORIGINAL_LIMITS["file_bytes"], policy.ORIGINAL_LIMITS["file_bytes"] + 1):
+            with self.subTest(end=end), self.fixture() as value:
+                value.invoke()
+                value.graph.loaded.MODE.site = value.mode_graph._SourceSite("Makefile", 4, 7, end)
+                _, header = self.header(value)
+                self.assertEqual(header["status"], "partial" if end == policy.ORIGINAL_LIMITS["file_bytes"] else "unavailable")
+        for failure in ("clock", "release"):
+            with self.subTest(failure=failure), self.fixture() as value:
+                value.invoke()
+                if failure == "clock":
+                    value.observer.imports.deadline = 100.0
+                    record, header = self.header(value)
+                else:
+                    class FailedClear(dict):
+                        def clear(self):
+                            super().clear()
+                            raise OSError("private release failure")
+                    value.observer.imports.old_slots = FailedClear()
+                    record, retained = self.wire(value)
+                    header = record["source_locations"]["template"]
+                    self.assertTrue(retained)
+                    self.assertFalse(record["states"]["completed"])
+                    self.assertIsNone(record["cleanup"]["source_imports_released"])
+                    self.assertIn("location-publication", [row["stage"] for row in record["secondary"]])
+                self.assertEqual(header["status"], "unavailable")
+
+    def test_callback_fields_and_live_binding_mutations_remain_unavailable_without_evaluation(self):
+        for fault in ("expression", "site-path", "site-type", "binding", "fact", "version", "scope",
+                      "qualname", "function-metadata"):
+            touched = []
+            class Text(str):
+                def __eq__(self, other):
+                    touched.append("equality")
+                    raise AssertionError("source text callback")
+                def __repr__(self):
+                    touched.append("repr")
+                    raise AssertionError("source text rendering")
+                __hash__ = str.__hash__
+            class Mapping(dict):
+                def __len__(self):
+                    touched.append("length")
+                    raise AssertionError("source function metadata callback")
+            with self.subTest(fault=fault), self.fixture() as value:
+                configure = value.graph.AFTER_LOAD
+                def change(module):
+                    configure(module)
+                    if fault == "expression":
+                        module.EXPRESSION = Text("private expression")
+                    elif fault == "site-path":
+                        module.MODE.site = value.mode_graph._SourceSite(Text("Makefile"), 4, 7, 9)
+                    elif fault == "site-type":
+                        value.mode_graph._SourceSite._fields = Text("private fields")
+                    elif fault == "qualname":
+                        module.SourceTemplates.__qualname__ = Text("SourceTemplates")
+                    elif fault == "function-metadata":
+                        module.SourceTemplates.retain_call.__dict__ = Mapping()
+                value.graph.AFTER_LOAD = change
+                value.invoke()
+                original = observation_failure._SourceLocations.state_binding
+                changed = []
+                def mutate(locations, binding, expected):
+                    result = original(locations, binding, expected)
+                    if fault in {"binding", "fact", "version", "scope"} and not changed:
+                        changed.append(True)
+                        mode = value.graph.loaded.MODE
+                        if fault == "binding":
+                            object.__setattr__(binding, "origin", "unknown")
+                        elif fault == "fact":
+                            mode.template_values["PRIVATE_REF"] = (6, ("header-bound", object()))
+                        elif fault == "version":
+                            mode.version += 1
+                        else:
+                            mode.scope_context = object()
+                    return result
+                with mock.patch.object(observation_failure._SourceLocations, "state_binding", mutate):
+                    _, header = self.header(value)
+                self.assertEqual(touched, [])
+                self.assertEqual(header["status"], "unavailable")
+
+    def test_old_observer_removal_loses_data_and_neutral_order_preserves_it(self):
+        def oracle():
+            with self.fixture() as value:
+                value.invoke()
+                _, header = self.header(value)
+                self.assertEqual(header["status"], "partial")
+                return header
+        expected = oracle()
+        with mock.patch.object(observation_failure._SourceLocations, "template_header",
+                               return_value=observation_failure.template_header_unavailable("guard-unobserved")):
+            with self.assertRaises(AssertionError):
+                oracle()
+        with mock.patch.object(observation_failure._SourceLocations, "project_template",
+                               observation_failure._SourceLocations.project_state):
+            with self.assertRaises(AssertionError):
+                oracle()
+        with self.fixture() as value:
+            configure = value.graph.AFTER_LOAD
+            def reorder(module):
+                configure(module)
+                module.EXPRESSION = "${OTHER_REF} $(PRIVATE_REF)"
+                module.MODE.definitions = dict(reversed(tuple(module.MODE.definitions.items())))
+            value.graph.AFTER_LOAD = reorder
+            value.invoke()
+            record, header = self.header(value)
+            self.assertEqual(header, expected)
+            self.assertEqual(policy.validate_report_error(json_order(record), self.binding()), record)
+        self.assertIsNotNone(TEMPLATE_HEADER_PROJECTOR_AST)
+        class Rename(ast.NodeTransformer):
+            def visit_Name(self, node):
+                if node.id in {"names", "snapshots"}:
+                    node.id = "neutral_" + node.id
+                return node
+        node, = ast.parse(TEMPLATE_HEADER_PROJECTOR_AST).body
+        namespace = dict(vars(observation_failure))
+        exec(compile(ast.fix_missing_locations(ast.Module(body=[Rename().visit(node)], type_ignores=[])),
+                     "<inert-neutral-template-local>", "exec"), namespace)
+        with mock.patch.object(observation_failure._SourceLocations, "template_header", namespace["template_header"]):
+            self.assertEqual(oracle(), expected)
 
 
 def json_order(value):

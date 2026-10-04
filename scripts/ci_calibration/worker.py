@@ -602,7 +602,7 @@ class ReportFailure:
             raise policy.GuardError("report fallback has a foreign run binding")
         self.capture(error, self.stage)
         value = policy.unavailable_report_error(
-            binding, self.error, stage=self.stage, source_cleanup_failures=self.cleanup_failures, location_version=4,
+            binding, self.error, stage=self.stage, source_cleanup_failures=self.cleanup_failures, location_version=5,
         )
         value["secondary"] = list(self.known_secondary)
         try:
@@ -728,7 +728,7 @@ def report(config, *, failure=None):
             try:
                 failure.record = report_error_record(
                     primary, measurement, sampler, observer, binding, secondary, stage=primary_stage,
-                    location_version=4,
+                    location_version=5,
                 )
             finally:
                 if observer is not None:

@@ -1,4 +1,11 @@
-"""Bounded numeric failures and registered source-code locations."""
+"""Bounded numeric failures and registered source-code locations.
+
+Closed v5 adds original template-header metadata to unchanged v3/v4 fields.
+Reference ordinals are a finite possible global selection, never actual reads,
+resolved scoped bindings, returned values or source/namespace authority.
+Returned-string records only the type of an original retained result. Unknown
+expressions, identities, resource bounds and reference retirement fail closed.
+"""
 
 from __future__ import annotations
 
@@ -143,21 +150,26 @@ def validate_make_state(value, locations):
         or len(value["names"]) != len(_MAKE_STATE_NAMES)
     ):
         raise policy.GuardError("retained state lacks its actual registered refusal anchor")
+    validate_state_rows(value["names"], value["version"], _MAKE_STATE_NAMES)
+    return value
+
+
+def validate_state_rows(rows, version, names):
     seen, total = set(), 0
-    for row in value["names"]:
+    for row in rows:
         _location_fields(row)
         policy._component_fields(row, (
             "name status reason cardinality binding_epoch binding_epoch_status bindings fact"
         ))
         if (
-            type(row["name"]) is not str or row["name"] not in _MAKE_STATE_NAMES or row["name"] in seen
+            type(row["name"]) is not type(names[0]) or row["name"] not in names or row["name"] in seen
             or type(row["status"]) is not str or row["status"] not in {"absent", "unique", "ambiguous", "unavailable"}
             or row["cardinality"] is not None and not policy._component_integer(
                 row["cardinality"], policy.ORIGINAL_LIMITS["entries"],
             )
             or row["binding_epoch"] is not None and not policy._component_integer(row["binding_epoch"])
             or type(row["binding_epoch_status"]) is not str
-            or row["binding_epoch_status"] != _make_epoch_status(row["binding_epoch"], value["version"])
+            or row["binding_epoch_status"] != _make_epoch_status(row["binding_epoch"], version)
         ):
             raise policy.GuardError("retained binding contains a foreign name or epoch")
         seen.add(row["name"])
@@ -193,7 +205,7 @@ def validate_make_state(value, locations):
             type(fact["status"]) is not str or fact["status"] not in {"absent", "captured", "unavailable"}
             or fact["epoch"] is not None and not policy._component_integer(fact["epoch"])
             or type(fact["epoch_status"]) is not str
-            or fact["epoch_status"] != _make_epoch_status(fact["epoch"], value["version"])
+            or fact["epoch_status"] != _make_epoch_status(fact["epoch"], version)
             or fact["status"] == "captured" and (
                 type(fact["kind"]) is not str or fact["kind"] not in _MAKE_FACT_KINDS or fact["epoch"] is None
             )
@@ -201,6 +213,86 @@ def validate_make_state(value, locations):
             or fact["status"] == "absent" and fact["epoch"] is not None
         ):
             raise policy.GuardError("retained captured-fact metadata is not its finite tag and epoch")
+    if seen != set(names):
+        raise policy.GuardError("retained selection omitted a binding")
+
+
+_TEMPLATE_REASONS = _MAKE_STATE_REASONS | {"site-unavailable", "reference-shape", "reference-bound"}
+
+
+def template_header_unavailable(reason, *, exception=None):
+    if reason not in _TEMPLATE_REASONS:
+        raise policy.GuardError("unknown template header unavailability reason")
+    return {
+        "kind": "original-template-header", "time": "refusal-time", "use": "report-only",
+        "authority": False, "selection": "possible-prerequisite-references-not-actual-reads",
+        "status": "unavailable", "reason": reason, "exception": exception, "site": None,
+        "target": None, "prerequisite": None, "mode": None, "version": None,
+        "original_namespace_valid": None, "namespace_holds": None, "scope": None,
+        "reference_count": None, "references": [],
+    }
+
+
+def validate_template_header(value, locations):
+    _location_fields(value)
+    policy._component_fields(value, (
+        "kind time use authority selection status reason exception site target prerequisite mode version "
+        "original_namespace_valid namespace_holds scope reference_count references"
+    ))
+    if any(type(value[key]) is not str or value[key] != expected for key, expected in (
+        ("kind", "original-template-header"), ("time", "refusal-time"), ("use", "report-only"),
+        ("selection", "possible-prerequisite-references-not-actual-reads"),
+    )) or value["authority"] is not False or (
+        value["exception"] is not None and not policy._component_integer(value["exception"], 31)
+    ):
+        raise policy.GuardError("template header is not a closed report-only diagnostic")
+    if type(value["status"]) is not str or type(value["references"]) is not list:
+        raise policy.GuardError("template header has unsupported status or reference storage")
+    if value["status"] == "unavailable":
+        if type(value["reason"]) is not str or value["reason"] not in _TEMPLATE_REASONS or (
+            value["references"] or any(value[key] is not None for key in (
+                "site", "target", "prerequisite", "mode", "version",
+                "original_namespace_valid", "namespace_holds", "scope", "reference_count",
+            ))
+        ):
+            raise policy.GuardError("unavailable template header invented original observations")
+        return value
+    raising = [row for row in (*locations["locations"], *locations["anchors"])
+               if row["exception"] == value["exception"]]
+    if (
+        value["status"] != "partial" or type(value["reason"]) is not str or value["reason"] != "finite-selection"
+        or value["exception"] is None or locations["references_closed"] is not True
+        or len(raising) != 1 or raising[0]["file"] != "scripts/validation_ownership/phase_census.py"
+        or raising[0]["code"] != "retain_call"
+        or raising[0].get("role", "registered-raising-frame") != "registered-raising-frame"
+        or type(value["mode"]) is not str or value["mode"] not in {"ordinary", "posix", "unknown"}
+        or not policy._component_integer(value["version"])
+        or type(value["original_namespace_valid"]) is not bool
+        or not policy._component_integer(value["namespace_holds"], policy.ORIGINAL_LIMITS["entries"])
+        or type(value["scope"]) is not str or value["scope"] not in {"global", "scoped-unresolved"}
+        or not policy._component_integer(value["reference_count"], 32)
+        or len(value["references"]) != value["reference_count"]
+        or any(type(value[key]) is not str or value[key] not in {"missing", "returned-string", "unavailable"}
+               for key in ("target", "prerequisite"))
+    ):
+        raise policy.GuardError("template header lacks its registered original refusal frame")
+    site = value["site"]
+    _location_fields(site)
+    if type(site.get("role")) is not str or site["role"] != "template" or type(site.get("status")) is not str:
+        raise policy.GuardError("template site has a foreign role")
+    if site.get("status") == "reported-selected-tree":
+        policy._component_fields(site, "role status path logical start end")
+        if type(site["path"]) is not str or len(site["path"]) > 4096 or (
+            policy._root_path(site["path"]) != site["path"]
+        ) or any(not policy._component_integer(site[key], policy.ORIGINAL_LIMITS["file_bytes"], 1)
+                 for key in ("logical", "start", "end")) or site["start"] > site["end"]:
+            raise policy.GuardError("template site has invalid selected-tree bounds")
+    else:
+        policy._component_fields(site, "role status reason")
+        if site["status"] != "unavailable" or type(site["reason"]) is not str or site["reason"] not in _MAKE_SPAN_REASONS:
+            raise policy.GuardError("template site invented source provenance")
+    if value["references"]:
+        validate_state_rows(value["references"], value["version"], tuple(range(len(value["references"]))))
     return value
 
 
@@ -382,7 +474,7 @@ def _make_source_labels(arguments):
 def location_unavailable(reason, *, references_closed=None, version=3):
     if reason not in LOCATION_REASONS:
         raise policy.GuardError("unknown location unavailability reason")
-    if type(version) is not int or version not in {3, 4}:
+    if type(version) is not int or version not in {3, 4, 5}:
         raise policy.GuardError("unsupported closed location version")
     result = {
         "version": version, "source_revision": policy.GRAPH, "root": "/repo", "api": policy.REPORT_API,
@@ -390,18 +482,20 @@ def location_unavailable(reason, *, references_closed=None, version=3):
         "anchors": [], "references_closed": references_closed,
         "context": make_context_unavailable("guard-unobserved"),
     }
-    if version == 4:
+    if version >= 4:
         result["state"] = make_state_unavailable("guard-unobserved")
+    if version == 5:
+        result["template"] = template_header_unavailable("guard-unobserved")
     return result
 
 
 def validate_locations(value, binding):
     _location_fields(value)
-    if type(value) is not dict or type(value.get("version")) is not int or value["version"] not in {3, 4}:
+    if type(value) is not dict or type(value.get("version")) is not int or value["version"] not in {3, 4, 5}:
         raise policy.GuardError("unsupported closed location version")
     policy._component_fields(value, (
         "version source_revision root api authority status reason locations anchors references_closed context"
-    ) + (" state" if value["version"] == 4 else ""))
+    ) + (" state" if value["version"] >= 4 else "") + (" template" if value["version"] == 5 else ""))
     if (
         value["source_revision"] != binding["source_revision"] or value["root"] != "/repo"
         or value["api"] != binding["api"] or value["authority"] is not False
@@ -449,8 +543,10 @@ def validate_locations(value, binding):
                 raise policy.GuardError("partial source anchor has an unknown observation role")
             previous = row["exception"]
     validate_make_context(value["context"], value)
-    if value["version"] == 4:
+    if value["version"] >= 4:
         validate_make_state(value["state"], value)
+    if value["version"] == 5:
+        validate_template_header(value["template"], value)
     if len(policy.encoded(value)) > policy.ERROR_BYTES:
         raise policy.GuardError("source location evidence exceeds the existing error record bound")
     return value
@@ -1130,17 +1226,17 @@ class _SourceLocations:
         finally:
             binding = expected = data = None
 
-    def state_rows(self, mode, mode_type, binding_type, namespace, allowance):
+    def state_rows(self, mode, mode_type, binding_type, namespace, allowance, names=_MAKE_STATE_NAMES):
         fields = maps = bindings = record = binding = metadata = None
         captured = result = holds = tag = current = original = before = actual = fact = snapshots = details = None
         selection = retained_epoch = None
         try:
             # Conservative admission covers all fixed rows before any source
             # field read. Variable binding storage is admitted before iteration.
-            admitted = 2048 + 1024 * len(_MAKE_STATE_NAMES)
+            admitted = 2048 + 1024 * len(names)
             if admitted > allowance or 16 * admitted > policy.ORIGINAL_LIMITS["file_bytes"]:
                 raise _MakeStateUnavailable("output-bound")
-            self.context_checkpoint(32 * len(_MAKE_STATE_NAMES))
+            self.context_checkpoint(32 * len(names))
             fields = self.state_fields(mode, mode_type)
             version, posix, valid, holds = (fields.get(name) for name in (
                 "version", "posix", "original_namespace_valid", "namespace_holds",
@@ -1159,14 +1255,14 @@ class _SourceLocations:
                 self.state_map(fields.get("template_values")),
             )
             selection = []
-            for name in _MAKE_STATE_NAMES:
+            for name in names:
                 self.context_checkpoint()
                 selection.append((
                     maps[0].get(name), maps[1].get((None, name)), maps[2].get(name),
                     (name in maps[0], (None, name) in maps[1], name in maps[2]),
                 ))
             result, captured = [], []
-            for name, (bindings, retained_epoch, record, presence) in zip(_MAKE_STATE_NAMES, selection):
+            for name, (bindings, retained_epoch, record, presence) in zip(names, selection):
                 self.context_checkpoint()
                 epoch = retained_epoch if policy._component_integer(retained_epoch) else None
                 fact = {"status": "absent", "kind": None, "epoch": None, "epoch_status": "unavailable"}
@@ -1227,7 +1323,7 @@ class _SourceLocations:
                 raise _MakeStateUnavailable("epoch-unavailable")
             for original, epochs in zip(maps, (False, True, False)):
                 self.state_map(original, epochs=epochs)
-            for name, (before, epoch, fact, presence), snapshots in zip(_MAKE_STATE_NAMES, selection, captured):
+            for name, (before, epoch, fact, presence), snapshots in zip(names, selection, captured):
                 actual = maps[1].get((None, name))
                 if (
                     maps[0].get(name) is not before or maps[2].get(name) is not fact
@@ -1333,6 +1429,221 @@ class _SourceLocations:
             raise _LocationUnavailable("location-size-bound")
         allowance = policy.ERROR_BYTES - size + len(policy.encoded(result["state"]))
         result["state"] = self.make_state(error, result, allowance)
+        return result
+
+    def template_guard(self, registered):
+        code = module = namespace = owner = fields = function = graph = metadata = qualified = None
+        try:
+            code, module = registered[0](), registered[1]()
+            if code is None or type(module) is not types.ModuleType or (
+                registered[2] != "scripts/validation_ownership/phase_census.py"
+            ):
+                return None
+            _location_code(code)
+            namespace = _location_fields(types.ModuleType.__getattribute__(module, "__dict__"))
+            owner = namespace.get("SourceTemplates")
+            if type(owner) is not type:
+                return None
+            fields = _location_fields(type.__dict__["__dict__"].__get__(owner, type))
+            self.context_checkpoint(len(fields))
+            function = fields.get("retain_call")
+            qualified = type.__dict__["__qualname__"].__get__(owner, type)
+            if (
+                type(fields.get("__module__")) is not str
+                or fields["__module__"] != SOURCE_PACKAGE + ".phase_census"
+                or type(qualified) is not str or qualified != "SourceTemplates"
+                or type(code.co_qualname) is not str or code.co_qualname != "SourceTemplates.retain_call"
+                or type(function) is not types.FunctionType or function.__code__ is not code
+                or function.__globals__ is not namespace
+                or type(function.__module__) is not str
+                or function.__module__ != SOURCE_PACKAGE + ".phase_census"
+            ):
+                return None
+            metadata = function.__dict__
+            if type(metadata) is not dict:
+                return None
+            self.context_checkpoint(len(metadata))
+            _location_fields(metadata)
+            self.require_registered(code, namespace, registered[2])
+            actual = self.imports.metadata(namespace.get("__loader__"), SOURCE_PACKAGE + ".phase_census",
+                                           initializing=False)
+            if actual[0] is not module:
+                return None
+            graph = namespace.get("graph")
+            if type(graph) is not types.ModuleType:
+                return None
+            fields = _location_fields(types.ModuleType.__getattribute__(graph, "__dict__"))
+            if self.module(fields) != "scripts/validation_ownership/graph_probe.py":
+                return None
+            return owner, fields
+        finally:
+            registered = code = module = namespace = owner = fields = function = graph = metadata = qualified = None
+
+    def template_header(self, error, locations, allowance):
+        current = trace = frame = registered = guard = values = template = mode = fields = site = None
+        candidates = cause = mode_type = binding_type = graph = names = state = snapshots = actual = None
+        expression = match = result = site_type = site_fields = presence = original_scope = original_mode = None
+        index = None
+        try:
+            if allowance < 4096:
+                raise _MakeStateUnavailable("output-bound")
+            self.context_checkpoint(len(locations["locations"]) + len(locations["anchors"]) + 1)
+            candidates = [
+                row for row in (*locations["locations"], *locations["anchors"])
+                if row["file"] == "scripts/validation_ownership/phase_census.py"
+                and row["code"] == "retain_call"
+                and row.get("role", "registered-raising-frame") == "registered-raising-frame"
+            ]
+            if not candidates:
+                return template_header_unavailable("guard-unobserved")
+            if len(candidates) != 1:
+                return template_header_unavailable("multiple-guards")
+            index = candidates[0]["exception"]
+            current = error
+            self.context_checkpoint(index + 1)
+            for _ in range(index):
+                cause = BaseException.__dict__["__cause__"].__get__(current, BaseException)
+                current = cause if cause is not None else BaseException.__dict__["__context__"].__get__(current, BaseException)
+                if current is None:
+                    raise _MakeStateUnavailable("frame-unavailable")
+            trace = BaseException.__dict__["__traceback__"].__get__(current, BaseException)
+            count = 0
+            while trace is not None:
+                if type(trace) is not types.TracebackType or count >= 256:
+                    raise _MakeStateUnavailable("frame-unavailable")
+                self.context_checkpoint()
+                count += 1
+                frame = trace.tb_frame
+                if trace.tb_next is None:
+                    break
+                trace = trace.tb_next
+            if frame is None:
+                raise _MakeStateUnavailable("frame-unavailable")
+            registered = self.registered.get(id(frame.f_code))
+            guard = None if registered is None else self.template_guard(registered)
+            if guard is None:
+                raise _MakeStateUnavailable("guard-unobserved")
+            if registered[0]() is not frame.f_code or (
+                types.ModuleType.__getattribute__(registered[1](), "__dict__") is not frame.f_globals
+            ):
+                raise _MakeStateUnavailable("epoch-unavailable")
+            self.context_checkpoint(frame.f_code.co_nlocals)
+            values = _location_fields(frame.f_locals)
+            snapshots = {name: values.get(name) for name in ("self", "mode", "prerequisite", "actual_target", "actual_prerequisite")}
+            presence = tuple(name in values for name in snapshots)
+            template, mode, expression = (snapshots[name] for name in ("self", "mode", "prerequisite"))
+            fields = self.state_fields(template, guard[0])
+            if fields.get("session") is not self.imports.live(projection=True).session:
+                raise _MakeStateUnavailable("metadata-unavailable")
+            graph = guard[1]
+            mode_type = self.state_type(graph, "_MakeSourceMode")
+            binding_type = self.state_type(graph, "_ModeBinding")
+            fields = self.state_fields(mode, mode_type)
+            original_scope = fields.get("scope_context")
+            original_mode = tuple(fields.get(name) for name in (
+                "version", "posix", "original_namespace_valid", "namespace_holds",
+                "definitions", "binding_versions", "template_values", "budget",
+            ))
+            site = fields.get("site")
+            site_type = graph.get("_SourceSite")
+            if type(site_type) is not type or type(site) is not site_type:
+                raise _MakeStateUnavailable("site-unavailable")
+            site_fields = _location_fields(type.__dict__["__dict__"].__get__(site_type, type))
+            declared_fields = site_fields.get("_fields")
+            ancestry = type.__dict__["__mro__"].__get__(site_type, type)
+            self.context_checkpoint(len(site_fields) + len(ancestry))
+            if (
+                type(declared_fields) is not tuple or len(declared_fields) != 4
+                or any(type(name) is not str for name in declared_fields)
+                or declared_fields != ("path", "logical", "start", "end")
+                or type(site_fields.get("__module__")) is not str
+                or site_fields["__module__"] != SOURCE_PACKAGE + ".graph_probe"
+                or len(ancestry) != 3 or ancestry[0] is not site_type
+                or ancestry[1] is not tuple or ancestry[2] is not object
+                or tuple.__len__(site) != 4
+            ):
+                raise _MakeStateUnavailable("type-unavailable")
+            position = tuple(tuple.__getitem__(site, ordinal) for ordinal in range(4))
+            if type(position[0]) is not str or len(position[0]) > 4096 or any(
+                not policy._component_integer(number, policy.ORIGINAL_LIMITS["file_bytes"], 1)
+                for number in position[1:]
+            ) or position[2] > position[3]:
+                raise _MakeStateUnavailable("site-unavailable")
+            if type(expression) is not str:
+                raise _MakeStateUnavailable("reference-shape")
+            if len(expression) > min(policy.ERROR_BYTES // 4, policy.ORIGINAL_LIMITS["entries"] // 2):
+                raise _MakeStateUnavailable("reference-bound")
+            self.context_checkpoint(2 * len(expression) + 1)
+            names, cursor = set(), 0
+            for match in re.finditer(r"\$\(([A-Za-z_][A-Za-z0-9_]*)\)|\$\{([A-Za-z_][A-Za-z0-9_]*)\}", expression):
+                if "$" in expression[cursor:match.start()]:
+                    raise _MakeStateUnavailable("reference-shape")
+                names.add(match[1] or match[2])
+                if len(names) > 32:
+                    raise _MakeStateUnavailable("reference-bound")
+                cursor = match.end()
+            if "$" in expression[cursor:]:
+                raise _MakeStateUnavailable("reference-shape")
+            names = tuple(sorted(names))
+            state = self.state_rows(mode, mode_type, binding_type, graph, allowance - 2048, names)
+            result = {
+                **template_header_unavailable("state-unavailable", exception=index),
+                "status": "partial", "reason": "finite-selection",
+                "site": self.make_span("template", position),
+                "target": "unavailable" if not presence[3] else "missing" if snapshots["actual_target"] is None else (
+                    "returned-string" if type(snapshots["actual_target"]) is str else "unavailable"),
+                "prerequisite": "unavailable" if not presence[4] else "missing" if snapshots["actual_prerequisite"] is None else (
+                    "returned-string" if type(snapshots["actual_prerequisite"]) is str else "unavailable"),
+                "mode": state["mode"], "version": state["version"],
+                "original_namespace_valid": state["original_namespace_valid"],
+                "namespace_holds": state["namespace_holds"],
+                "scope": "global" if original_scope is None else "scoped-unresolved",
+                "reference_count": len(names),
+                "references": [{**row, "name": ordinal} for ordinal, row in enumerate(state["names"])],
+            }
+            self.context_checkpoint()
+            actual = _location_fields(frame.f_locals)
+            fields = self.state_fields(mode, mode_type)
+            if any(actual.get(name) is not original for name, original in snapshots.items()) or (
+                tuple(name in actual for name in snapshots) != presence
+                or fields.get("site") is not site or fields.get("scope_context") is not original_scope
+                or any(fields.get(name) is not original for name, original in zip((
+                    "version", "posix", "original_namespace_valid", "namespace_holds",
+                    "definitions", "binding_versions", "template_values", "budget",
+                ), original_mode))
+                or (actual_guard := self.template_guard(registered)) is None
+                or actual_guard[0] is not guard[0] or actual_guard[1] is not guard[1]
+                or self.state_fields(template, guard[0]).get("session") is not self.imports.live(projection=True).session
+            ):
+                raise _MakeStateUnavailable("epoch-unavailable")
+            validate_template_header(result, locations)
+            if len(policy.encoded(result)) > allowance:
+                raise _MakeStateUnavailable("output-bound")
+            return result
+        except _MakeStateUnavailable as failure:
+            return template_header_unavailable(failure.reason, exception=index)
+        except _LocationUnavailable as failure:
+            return template_header_unavailable(
+                "work-bound" if failure.reason == "registration-bound" else "epoch-unavailable", exception=index,
+            )
+        except BaseException:
+            return template_header_unavailable("state-unavailable", exception=index)
+        finally:
+            error = locations = current = trace = frame = registered = guard = values = template = mode = fields = site = None
+            candidates = cause = mode_type = binding_type = graph = names = state = snapshots = actual = None
+            expression = match = result = site_type = site_fields = position = actual_guard = None
+            declared_fields = ancestry = None
+            presence = original_scope = original_mode = None
+
+    def project_template(self, error):
+        result = self.project_state(error)
+        result["version"] = 5
+        result["template"] = template_header_unavailable("guard-unobserved")
+        size = len(policy.encoded(result))
+        if size > policy.ERROR_BYTES:
+            raise _LocationUnavailable("location-size-bound")
+        allowance = policy.ERROR_BYTES - size + len(policy.encoded(result["template"]))
+        result["template"] = self.template_header(error, result, allowance)
         return result
 
     def close(self):
@@ -1986,7 +2297,7 @@ class Observer:
         return None
 
     def source_locations(self, error, measurement, *, version=3):
-        if type(version) is not int or version not in {3, 4}:
+        if type(version) is not int or version not in {3, 4, 5}:
             raise policy.GuardError("unsupported closed location version")
         locations = _SourceLocations()
         locations.registered = getattr(self, "location_codes", {})
@@ -2002,7 +2313,9 @@ class Observer:
                     if imports.failed:
                         raise _LocationUnavailable("original-import-unavailable")
                 locations.bind(self, measurement)
-                value = locations.project(error) if version == 3 else locations.project_state(error)
+                value = locations.project(error) if version == 3 else (
+                    locations.project_state(error) if version == 4 else locations.project_template(error)
+                )
             except _LocationUnavailable as unavailable_error:
                 value = location_unavailable(unavailable_error.reason, version=version)
         finally:
