@@ -41,6 +41,7 @@ INCLUDE_STATE_INPUTS = None
 INCLUDE_STATE_REBIND_INPUTS = None
 FINITE_REPORT_INPUTS = None
 TEMPLATE_HEADER_INPUTS = None
+EXACT_COMPOSITION_INPUTS = None
 WORKER_AST = ast.parse((REPO / "scripts/ci_calibration/worker.py").read_text())
 
 
@@ -541,7 +542,8 @@ class CalibrationControls(Inert):
 
     def test_exact_lineage_and_new_workflow_keep_first_attempt_and_closed20(self):
         chain = [
-            f"{'a' * 40} {supervisor.FINITE_REPORT_SHA}",
+            f"{'a' * 40} {supervisor.TEMPLATE_HEADER_SHA}",
+            f"{supervisor.TEMPLATE_HEADER_SHA} {supervisor.FINITE_REPORT_SHA}",
             f"{supervisor.FINITE_REPORT_SHA} {supervisor.INCLUDE_STATE_REBIND_SHA}",
             f"{supervisor.INCLUDE_STATE_REBIND_SHA} {supervisor.MEMBER_PIN_SHA}",
             f"{supervisor.MEMBER_PIN_SHA} {supervisor.INCLUDE_STATE_SHA}",
@@ -759,7 +761,8 @@ class CalibrationControls(Inert):
     def test_corrected_source_binding_uses_actual_diff_and_rejects_spent_source_and_events(self):
         self.assertIsNotNone(CORRECTED_SOURCE_INPUTS, "requires the inspected corrected-source runner")
         inputs = CORRECTED_SOURCE_INPUTS
-        self.assertEqual((inputs.contract["source"], inputs.contract["base"]), (policy.GRAPH, policy.BASE))
+        self.assertEqual((inputs.contract["source"], inputs.contract["base"]), (
+            "615db43edce43103787d70fde82576e9f3884b73", policy.BASE))
         changes = policy.changed_path_set(inputs.diff)
         actual = policy.changed_path_binding(changes)
         self.assertEqual(actual["count"], inputs.contract["changed_paths"]["count"])
@@ -1063,11 +1066,11 @@ class CalibrationControls(Inert):
 
     def test_runtime_report_source_and_workflow_refuse_all_spent_bindings(self):
         self.assertEqual((policy.BRANCH, policy.WORKFLOW, policy.OUTPUT_PREFIX), (
-            "calibration/issue-180-template-header-localization-1",
-            ".github/workflows/issue180-template-header-localization-1.yml", "issue180-template-header-localization-1-",
+            "calibration/issue-180-exact-composition-report-1",
+            ".github/workflows/issue180-exact-composition-report-1.yml", "issue180-exact-composition-report-1-",
         ))
         self.assertEqual((policy.GRAPH, policy.PYTHON_REPORT_SOURCE, policy.BASE), (
-            "615db43edce43103787d70fde82576e9f3884b73",
+            "731bb115eecf995e6fec77a10b605c727fc148e2",
             "6d2725d89df70c30954daade3cca7abc6d3171d4",
             "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a",
         ))
@@ -1179,8 +1182,8 @@ class CalibrationControls(Inert):
             "79810df78b29eef98ba1da391565f17315352d18",
         ))
         self.assertEqual((policy.BRANCH, policy.GRAPH, policy.BASE), (
-            "calibration/issue-180-template-header-localization-1",
-            "615db43edce43103787d70fde82576e9f3884b73",
+            "calibration/issue-180-exact-composition-report-1",
+            "731bb115eecf995e6fec77a10b605c727fc148e2",
             "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a",
         ))
         accepted = policy.validate_event(self.event(), **self.authorization())
@@ -1597,7 +1600,7 @@ class CalibrationControls(Inert):
 
     def test_include_metadata_fixture_is_exact_reflection_not_selected_source_execution(self):
         self.assertIsNotNone(INCLUDE_STATE_INPUTS, "requires inspected inert metadata fixture binding")
-        self.assertEqual(INCLUDE_STATE_INPUTS["source"], policy.GRAPH)
+        self.assertEqual(INCLUDE_STATE_INPUTS["source"], "615db43edce43103787d70fde82576e9f3884b73")
         self.assertEqual(INCLUDE_STATE_INPUTS["api_fixture"], policy.APPEND_REPORT_SOURCE)
         self.assertEqual(INCLUDE_STATE_INPUTS["guard_fixture"], policy.PYTHON_REPORT_SOURCE)
         self.assertEqual(INCLUDE_STATE_INPUTS["fields"], [
@@ -1703,7 +1706,8 @@ class CalibrationControls(Inert):
 
         def validate(changes):
             supervisor.validate_harness_lineage(
-                [f"{head} {supervisor.FINITE_REPORT_SHA}",
+                [f"{head} {supervisor.TEMPLATE_HEADER_SHA}",
+                 f"{supervisor.TEMPLATE_HEADER_SHA} {supervisor.FINITE_REPORT_SHA}",
                  f"{supervisor.FINITE_REPORT_SHA} {supervisor.INCLUDE_STATE_REBIND_SHA}", *changes], head,
             )
 
@@ -1731,12 +1735,12 @@ class CalibrationControls(Inert):
 
     def test_include_state_rebind_admits_only_the_fresh_first_owner_event(self):
         self.assertEqual((policy.BRANCH, policy.WORKFLOW, policy.OUTPUT_PREFIX), (
-            "calibration/issue-180-template-header-localization-1",
-            ".github/workflows/issue180-template-header-localization-1.yml",
-            "issue180-template-header-localization-1-",
+            "calibration/issue-180-exact-composition-report-1",
+            ".github/workflows/issue180-exact-composition-report-1.yml",
+            "issue180-exact-composition-report-1-",
         ))
         self.assertEqual((policy.GRAPH, policy.BASE), (
-            "615db43edce43103787d70fde82576e9f3884b73", "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a",
+            "731bb115eecf995e6fec77a10b605c727fc148e2", "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a",
         ))
         accepted = policy.validate_event(self.event(), **self.authorization())
         self.assertEqual((accepted["graph_sha"], accepted["base_sha"], accepted["branch"]), (
@@ -1837,9 +1841,10 @@ class CalibrationControls(Inert):
         self.assertEqual(historical[0], f"{supervisor.INCLUDE_STATE_REBIND_SHA} {supervisor.MEMBER_PIN_SHA}")
         self.assertEqual(historical[1:], INCLUDE_STATE_REBIND_INPUTS["lineage"])
         head = "a" * 40
-        chain = [f"{head} {supervisor.FINITE_REPORT_SHA}",
+        chain = [f"{head} {supervisor.TEMPLATE_HEADER_SHA}",
+                 f"{supervisor.TEMPLATE_HEADER_SHA} {supervisor.FINITE_REPORT_SHA}",
                  f"{supervisor.FINITE_REPORT_SHA} {supervisor.INCLUDE_STATE_REBIND_SHA}", *historical]
-        self.assertEqual(len(chain), 34)
+        self.assertEqual(len(chain), 35)
         supervisor.validate_harness_lineage(chain, head)
         for index, line in enumerate(chain):
             for kind, changed in (
@@ -1860,7 +1865,8 @@ class CalibrationControls(Inert):
         self.assertEqual(len(historical), 33)
         self.assertEqual(historical[0], f"{supervisor.FINITE_REPORT_SHA} {supervisor.INCLUDE_STATE_REBIND_SHA}")
         head = "a" * 40
-        chain = [f"{head} {supervisor.FINITE_REPORT_SHA}", *historical]
+        chain = [f"{head} {supervisor.TEMPLATE_HEADER_SHA}",
+                 f"{supervisor.TEMPLATE_HEADER_SHA} {supervisor.FINITE_REPORT_SHA}", *historical]
         supervisor.validate_harness_lineage(chain, head)
         for changed in (chain[:33], chain[1:], list(reversed(chain)), chain + [chain[-1]]):
                 with self.subTest(changed=changed[:2]), self.assertRaises(policy.GuardError):
@@ -1877,7 +1883,7 @@ class CalibrationControls(Inert):
         prepare, = [node for node in owner.body if isinstance(node, ast.FunctionDef) and node.name == "prepare"]
         call, = [node for node in ast.walk(prepare) if isinstance(node, ast.Call)
                      and isinstance(node.func, ast.Name) and node.func.id == "validate_harness_lineage"]
-        self.assertIn("--max-count=34", [node.value for node in ast.walk(call) if isinstance(node, ast.Constant)])
+        self.assertIn("--max-count=35", [node.value for node in ast.walk(call) if isinstance(node, ast.Constant)])
         endpoints = {}
         for node in ast.walk(prepare):
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {
@@ -1886,7 +1892,7 @@ class CalibrationControls(Inert):
                     endpoints[node.func.id] = [ast.unparse(value) for value in node.args[0].args[-2:]]
         self.assertEqual(endpoints, {
                 "validate_finite_report_inventory": ["INCLUDE_STATE_REBIND_SHA", "FINITE_REPORT_SHA"],
-                "validate_template_header_inventory": ["FINITE_REPORT_SHA", "'HEAD'"],
+                "validate_template_header_inventory": ["FINITE_REPORT_SHA", "TEMPLATE_HEADER_SHA"],
         })
 
     def test_template_header_inventory_never_reinterprets_the_spent_finite_workflow(self):
@@ -1896,7 +1902,7 @@ class CalibrationControls(Inert):
         paths = supervisor.TEMPLATE_HEADER_PATHS
         self.assertEqual(len(paths), 7)
         self.assertNotIn(policy.FINITE_REPORT_WORKFLOW, paths)
-        rows = [(b"A" if path == policy.WORKFLOW else b"M", path.encode()) for path in sorted(paths)]
+        rows = [(b"A" if path == policy.TEMPLATE_HEADER_WORKFLOW else b"M", path.encode()) for path in sorted(paths)]
         data = b"".join(kind + b"\0" + path + b"\0" for kind, path in rows)
         supervisor.validate_template_header_inventory(data)
         supervisor.validate_template_header_inventory(b"".join(k + b"\0" + p + b"\0" for k, p in reversed(rows)))
@@ -1917,7 +1923,7 @@ class CalibrationControls(Inert):
 
     def test_template_header_changes_only_workflow_identity_and_report_diagnostic(self):
         old = yaml.load(TEMPLATE_HEADER_INPUTS["workflow"], Loader=yaml.BaseLoader)
-        current = yaml.load(WORKFLOW_TEXT, Loader=yaml.BaseLoader)
+        current = yaml.load(EXACT_COMPOSITION_INPUTS["workflow"], Loader=yaml.BaseLoader)
         def rebound(value):
                 if type(value) is str:
                     return value.replace("issue-180-full-report-finite-1", "issue-180-template-header-localization-1").replace(
@@ -1933,11 +1939,12 @@ class CalibrationControls(Inert):
         job["name"] = "Complete unchanged report with original template header diagnostic"
         expected["jobs"]["contained-template-header-localization-1"] = job
         self.assertEqual(current, expected)
-        self.assertEqual((policy.GRAPH, policy.BASE, policy.GRAPH_SECONDS), (
+        self.assertEqual((current["jobs"]["contained-template-header-localization-1"]["steps"][2]["with"]["ref"],
+                          policy.BASE, policy.GRAPH_SECONDS), (
                 "615db43edce43103787d70fde82576e9f3884b73", "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a", 3600))
         self.assertEqual((len(policy.RELAXED), len(policy.ACCOUNTING_COUNTERS), len(policy.ARTIFACT_NAMES)), (14, 19, 5))
         self.assertEqual((policy.BRANCH, policy.OUTPUT_PREFIX), (
-                "calibration/issue-180-template-header-localization-1", "issue180-template-header-localization-1-"))
+                "calibration/issue-180-exact-composition-report-1", "issue180-exact-composition-report-1-"))
         accepted = policy.validate_event(self.event(), **self.authorization())
         self.assertTrue(accepted["never_merge"])
         self.assertFalse(accepted["production_acceptance"])
@@ -1949,14 +1956,15 @@ class CalibrationControls(Inert):
     def test_finite_report_binding_refuses_spent_sources_and_unallocated_recovery_events(self):
         accepted = policy.validate_event(self.event(), **self.authorization())
         self.assertEqual((accepted["graph_sha"], accepted["base_sha"], accepted["branch"]), (
-            "615db43edce43103787d70fde82576e9f3884b73",
+            "731bb115eecf995e6fec77a10b605c727fc148e2",
             "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a",
-            "calibration/issue-180-template-header-localization-1",
+            "calibration/issue-180-exact-composition-report-1",
         ))
         self.assertTrue(accepted["never_merge"])
         self.assertFalse(accepted["production_acceptance"])
         policy.validate_report_binding(self.binding())
         for source in (
+            "615db43edce43103787d70fde82576e9f3884b73",
             policy.INCLUDE_STATE_REBIND_SOURCE, "baa0096d96fce740155d3c701a39b944bf89f808",
             policy.INCLUDE_STATE_SOURCE, policy.SORT_REPORT_SOURCE, policy.STRUCTURAL_REPORT_SOURCE,
             policy.CONSUMER_REPORT_SOURCE, policy.APPEND_REPORT_SOURCE, policy.RUNTIME_REPORT_SOURCE,
@@ -1979,7 +1987,7 @@ class CalibrationControls(Inert):
     def test_finite_source_reflection_checks_every_exact_member_and_conditional_capture_pair(self):
         self.assertIsNotNone(FINITE_REPORT_INPUTS, "requires inspected immutable source AST pairs")
         inputs = FINITE_REPORT_INPUTS["source"]
-        self.assertEqual(inputs["source"], policy.GRAPH)
+        self.assertEqual(inputs["source"], "615db43edce43103787d70fde82576e9f3884b73")
         self.assertEqual(inputs["base"], policy.BASE)
         self.assertEqual(inputs["lineage"], [
             "615db43edce43103787d70fde82576e9f3884b73 baa0096d96fce740155d3c701a39b944bf89f808",
@@ -2017,6 +2025,139 @@ class CalibrationControls(Inert):
                 self.assertTrue(model.accepts(ast.parse("# neutral locations and whitespace\n" + ast.unparse(model.after))))
             for target, kind, candidate in model.mutations():
                 with self.subTest(pair=name, target=target, mutation=kind):
+                    self.assertFalse(model.accepts(candidate))
+
+    def test_exact_composition_preserves_all_34_edges_and_requires_normal_edge35(self):
+        self.assertIsNotNone(EXACT_COMPOSITION_INPUTS, "requires frozen Git observations")
+        historical = EXACT_COMPOSITION_INPUTS["lineage"]
+        self.assertEqual(len(historical), 34)
+        self.assertEqual(historical[0], f"{supervisor.TEMPLATE_HEADER_SHA} {supervisor.FINITE_REPORT_SHA}")
+        head = "a" * 40
+        chain = [f"{head} {supervisor.TEMPLATE_HEADER_SHA}", *historical]
+        self.assertEqual(len(chain), 35)
+        supervisor.validate_harness_lineage(chain, head)
+        for index, line in enumerate(chain):
+            for changed in (
+                chain[:index] + chain[index + 1:],
+                chain[:index] + [line, line] + chain[index + 1:],
+                chain[:index] + [line + " " + "b" * 40] + chain[index + 1:],
+                chain[:index] + [line.split()[0] + " " + "b" * 40] + chain[index + 1:],
+            ):
+                with self.subTest(edge=index), self.assertRaises(policy.GuardError):
+                    supervisor.validate_harness_lineage(changed, head)
+        for changed in (chain[:34], historical, list(reversed(chain))):
+            with self.assertRaises(policy.GuardError):
+                supervisor.validate_harness_lineage(changed, head)
+        owner, = [node for node in SUPERVISOR_AST.body if isinstance(node, ast.ClassDef) and node.name == "Owner"]
+        prepare, = [node for node in owner.body if isinstance(node, ast.FunctionDef) and node.name == "prepare"]
+        endpoints = {
+            node.func.id: [ast.unparse(value) for value in node.args[0].args[-2:]]
+            for node in ast.walk(prepare) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id in {"validate_finite_report_inventory", "validate_template_header_inventory",
+                                 "validate_exact_composition_inventory"}
+        }
+        self.assertEqual(endpoints, {
+            "validate_finite_report_inventory": ["INCLUDE_STATE_REBIND_SHA", "FINITE_REPORT_SHA"],
+            "validate_template_header_inventory": ["FINITE_REPORT_SHA", "TEMPLATE_HEADER_SHA"],
+            "validate_exact_composition_inventory": ["TEMPLATE_HEADER_SHA", "'HEAD'"],
+        })
+
+    def test_exact_composition_actual_staged_inventory_is_separate_from_spent_inventories(self):
+        inputs = EXACT_COMPOSITION_INPUTS
+        specifications = (
+            (inputs["finite_inventory"], supervisor.validate_finite_report_inventory,
+             supervisor.FINITE_REPORT_PATHS, policy.FINITE_REPORT_WORKFLOW),
+            (inputs["template_inventory"], supervisor.validate_template_header_inventory,
+             supervisor.TEMPLATE_HEADER_PATHS, policy.TEMPLATE_HEADER_WORKFLOW),
+            (inputs["inventory"], supervisor.validate_exact_composition_inventory,
+             supervisor.EXACT_COMPOSITION_PATHS, policy.WORKFLOW),
+        )
+        self.assertEqual(len(supervisor.EXACT_COMPOSITION_PATHS), 4)
+        for data, validator, paths, workflow in specifications:
+            rows = data.split(b"\0")
+            pairs = list(zip(rows[:-1:2], rows[1:-1:2]))
+            self.assertEqual(set(pairs), {
+                (b"A" if path == workflow else b"M", path.encode()) for path in paths})
+            validator(data)
+            validator(b"".join(k + b"\0" + p + b"\0" for k, p in reversed(pairs)))
+            for changed in (data[:-1], data + data, "not bytes"):
+                with self.assertRaises(policy.GuardError):
+                    validator(changed)
+            for index, (kind, path) in enumerate(pairs):
+                for changed in (
+                    pairs[:index] + pairs[index + 1:],
+                    pairs[:index] + [(b"D", path)] + pairs[index + 1:],
+                    pairs[:index] + [(b"M" if kind == b"A" else b"A", path)] + pairs[index + 1:],
+                    pairs[:index] + [(kind, b"scripts/ci_calibration/unallocated.py")] + pairs[index + 1:],
+                ):
+                    with self.subTest(workflow=workflow, path=path), self.assertRaises(policy.GuardError):
+                        validator(b"".join(k + b"\0" + p + b"\0" for k, p in changed))
+            for other, _, _, _ in specifications:
+                if other != data:
+                    with self.assertRaises(policy.GuardError):
+                        validator(other)
+
+    def test_exact_composition_workflow_and_event_change_only_identity_and_selected_source(self):
+        old = yaml.load(EXACT_COMPOSITION_INPUTS["workflow"], Loader=yaml.BaseLoader)
+        current = yaml.load(WORKFLOW_TEXT, Loader=yaml.BaseLoader)
+        def rebound(value):
+            if type(value) is str:
+                return value.replace("issue-180-template-header-localization-1",
+                                     "issue-180-exact-composition-report-1").replace(
+                    "issue180-template-header-localization-1", "issue180-exact-composition-report-1")
+            if type(value) is list:
+                return [rebound(item) for item in value]
+            if type(value) is dict:
+                return {rebound(key): rebound(item) for key, item in value.items()}
+            return value
+        expected = rebound(old)
+        expected["name"] = "Issue 180 contained exact composition report 1"
+        job = expected["jobs"].pop("contained-template-header-localization-1")
+        job["name"] = "Complete unchanged report with accepted exact composition source"
+        job["steps"][2]["with"]["ref"] = "731bb115eecf995e6fec77a10b605c727fc148e2"
+        expected["jobs"]["contained-exact-composition-report-1"] = job
+        self.assertEqual(current, expected)
+        self.assertEqual((policy.GRAPH, policy.BASE, policy.GRAPH_SECONDS), (
+            "731bb115eecf995e6fec77a10b605c727fc148e2",
+            "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a", 3600))
+        self.assertEqual((len(policy.RELAXED), len(policy.ACCOUNTING_COUNTERS),
+                          len(policy.ARTIFACT_NAMES)), (14, 19, 5))
+        accepted = policy.validate_event(self.event(), **self.authorization())
+        self.assertTrue(accepted["never_merge"])
+        self.assertFalse(accepted["production_acceptance"])
+        for branch in (
+            "calibration/issue-180-template-header-localization-1",
+            "calibration/issue-180-full-report-finite-1",
+            "recovery/session-1ab6-issue180-exact-composition-report1",
+        ):
+            with self.assertRaises(policy.GuardError):
+                policy.validate_event({**self.event(), "ref": "refs/heads/" + branch}, **self.authorization())
+        for source in ("615db43edce43103787d70fde82576e9f3884b73", policy.BASE, "b" * 40):
+            with self.assertRaises(policy.GuardError):
+                policy.validate_report_binding({**self.binding(), "source_revision": source})
+
+    def test_exact_composition_entire_source_delta_reflection_is_not_behavior_proof(self):
+        inputs = EXACT_COMPOSITION_INPUTS["source"]
+        self.assertEqual((inputs["source"], inputs["parent"], inputs["base"]), (
+            policy.GRAPH, "615db43edce43103787d70fde82576e9f3884b73", policy.BASE))
+        self.assertEqual(inputs["inventory"], {
+            "scripts/validation_ownership/graph_probe.py": (6, 5),
+            "scripts/validation_ownership/tests/test_phase_census.py": (176, 0),
+            "docs/validation-ownership.md": (17, 4),
+            "docs/test-cases/workflow-governance.md": (60, 0),
+        })
+        self.assertEqual(inputs["changed_helpers"], [
+            "_MakeSourceMode._assign", "_MakeSourceMode._template_initializer"])
+        self.assertEqual(inputs["new_helpers"], [])
+        self.assertEqual(inputs["old_test_methods"], 90)
+        for name, model in EXACT_COMPOSITION_INPUTS["source_models"].items():
+            with self.subTest(path=name, control="exact"):
+                self.assertTrue(model.accepts(model.after))
+            if isinstance(model.after, ast.AST):
+                with self.subTest(path=name, control="neutral"):
+                    self.assertTrue(model.accepts(ast.parse("# neutral\n" + ast.unparse(model.after))))
+            for target, kind, candidate in model.mutations():
+                with self.subTest(path=name, target=target, kind=kind):
                     self.assertFalse(model.accepts(candidate))
 
     def test_complete_diff_binding_preserves_additions_deletions_and_both_rename_sides(self):

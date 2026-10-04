@@ -170,17 +170,24 @@ FINITE_REPORT_PATHS = frozenset({
     )),
 })
 FINITE_REPORT_SHA = "4c29f7ad25e53eb10b1d8d06c949662a8e156862"
+TEMPLATE_HEADER_SHA = "ce9c23c97179c2e9f884629fd27d151bcd04b74f"
 TEMPLATE_HEADER_PATHS = frozenset({
-    policy.WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
+    policy.TEMPLATE_HEADER_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "supervisor.py", "worker.py", "observation_failure.py",
         "test_ci_calibration.py", "test_observation_failure.py",
+    )),
+})
+EXACT_COMPOSITION_PATHS = frozenset({
+    policy.WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
+        "policy.py", "supervisor.py", "test_ci_calibration.py",
     )),
 })
 
 
 def validate_harness_lineage(lines, head):
     if lines != [
-        f"{head} {FINITE_REPORT_SHA}",
+        f"{head} {TEMPLATE_HEADER_SHA}",
+        f"{TEMPLATE_HEADER_SHA} {FINITE_REPORT_SHA}",
         f"{FINITE_REPORT_SHA} {INCLUDE_STATE_REBIND_SHA}",
         f"{INCLUDE_STATE_REBIND_SHA} {MEMBER_PIN_SHA}",
         f"{MEMBER_PIN_SHA} {INCLUDE_STATE_SHA}",
@@ -215,7 +222,7 @@ def validate_harness_lineage(lines, head):
         f"{RETAINED_HARNESS_SHA} {PREPARATION_SHA}",
         f"{PREPARATION_SHA} {policy.BASE}",
     ]:
-        raise policy.GuardError("diagnostic requires its exact normal template-header/finite-report/include-state-rebind/member-pin/include-state/sort-report/structural-report/consumer-report/append-report/runtime-report/make-boundary/make-context/import-release/original-import/traceless/partial-anchor/Python-corrected/corrected-report/code-metadata/registration/localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
+        raise policy.GuardError("diagnostic requires its exact normal exact-composition/template-header/finite-report/include-state-rebind/member-pin/include-state/sort-report/structural-report/consumer-report/append-report/runtime-report/make-boundary/make-context/import-release/original-import/traceless/partial-anchor/Python-corrected/corrected-report/code-metadata/registration/localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
 
 
 def validate_correction_inventory(data):
@@ -616,12 +623,28 @@ def validate_template_header_inventory(data):
         raise policy.GuardError("template header requires its complete fixed inventory")
     changes = list(zip(rows[:-1:2], rows[1:-1:2]))
     allowed = {name.encode("ascii") for name in TEMPLATE_HEADER_PATHS}
-    workflow = policy.WORKFLOW.encode("ascii")
+    workflow = policy.TEMPLATE_HEADER_WORKFLOW.encode("ascii")
     if (
         {name for _, name in changes} != allowed or len(changes) != len(allowed)
         or any(kind != (b"A" if name == workflow else b"M") for kind, name in changes)
     ):
         raise policy.GuardError("template header changed a spent or unallocated surface")
+
+
+def validate_exact_composition_inventory(data):
+    if type(data) is not bytes:
+        raise policy.GuardError("exact composition inventory is not a Git byte record")
+    rows = data.split(b"\0")
+    if len(rows) != 2 * len(EXACT_COMPOSITION_PATHS) + 1 or rows[-1] != b"":
+        raise policy.GuardError("exact composition requires its complete fixed inventory")
+    changes = list(zip(rows[:-1:2], rows[1:-1:2]))
+    allowed = {name.encode("ascii") for name in EXACT_COMPOSITION_PATHS}
+    workflow = policy.WORKFLOW.encode("ascii")
+    if (
+        {name for _, name in changes} != allowed or len(changes) != len(allowed)
+        or any(kind != (b"A" if name == workflow else b"M") for kind, name in changes)
+    ):
+        raise policy.GuardError("exact composition changed a spent or unallocated surface")
 
 
 def apparmor_text(name):
@@ -1441,13 +1464,14 @@ class Owner:
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
         validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=34", "HEAD").decode().splitlines(),
+            git(self.harness, "rev-list", "--parents", "--max-count=35", "HEAD").decode().splitlines(),
             self.scope["harness_sha"],
         )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
         if any(
             name and name.decode() not in {
-                policy.WORKFLOW, policy.FINITE_REPORT_WORKFLOW, policy.INCLUDE_STATE_REBIND_WORKFLOW,
+                policy.WORKFLOW, policy.TEMPLATE_HEADER_WORKFLOW, policy.FINITE_REPORT_WORKFLOW,
+                policy.INCLUDE_STATE_REBIND_WORKFLOW,
                 policy.INCLUDE_STATE_WORKFLOW, policy.SORT_REPORT_WORKFLOW,
                 policy.STRUCTURAL_REPORT_WORKFLOW, policy.CONSUMER_REPORT_WORKFLOW,
                 policy.APPEND_REPORT_WORKFLOW, policy.RUNTIME_REPORT_WORKFLOW,
@@ -1567,7 +1591,14 @@ class Owner:
                policy.FINITE_REPORT_WORKFLOW).strip():
             raise policy.GuardError("template header changed the spent finite workflow")
         validate_template_header_inventory(git(
-            self.harness, "diff", "--name-status", "-z", FINITE_REPORT_SHA, "HEAD",
+            self.harness, "diff", "--name-status", "-z", FINITE_REPORT_SHA, TEMPLATE_HEADER_SHA,
+        ))
+        if git(self.harness, "diff", "--name-only", TEMPLATE_HEADER_SHA, "HEAD", "--",
+               policy.TEMPLATE_HEADER_WORKFLOW, "scripts/ci_calibration/worker.py",
+               "scripts/ci_calibration/observation_failure.py").strip():
+            raise policy.GuardError("exact composition changed the frozen template workflow or diagnostic")
+        validate_exact_composition_inventory(git(
+            self.harness, "diff", "--name-status", "-z", TEMPLATE_HEADER_SHA, "HEAD",
         ))
         validate_accounting_workflow(
             git(self.harness, "show", REPORT_FINALIZATION_SHA + ":" + policy.FULL_REPORT_WORKFLOW),
