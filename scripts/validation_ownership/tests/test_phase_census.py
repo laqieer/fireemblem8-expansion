@@ -1,6 +1,7 @@
 """Every-pass obligations from actual native source/image/mutation history."""
 
 import copy
+import hashlib
 from contextlib import contextmanager
 from dataclasses import asdict, replace
 import gc
@@ -19,6 +20,262 @@ from scripts.validation_ownership import graph_probe, make_probe, phase_census, 
 from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
 from scripts.validation_ownership.tests import test_source_phases as phases
 from scripts.validation_ownership.tests import test_foundation as foundation
+
+
+class OriginalCompletionDataApiTests(unittest.TestCase):
+    """Finite unissued DATA models; never shell, native or report proof."""
+
+    def model(self, source, values, *, inputs=(), includes=()):
+        budget = ProbeBudget()
+        sources = {"Makefile": source.encode(), **{name: text.encode() for name, text in includes}}
+        original_sources = {
+            name: read_epochs.OriginalSource(index, 0o644, hashlib.sha256(data).hexdigest(), data)
+            for index, (name, data) in enumerate(sources.items(), 1)
+        }
+        main = read_epochs.OriginalVisit(
+            1, None, "Makefile", 0, 0, 4, 1000, "Makefile", 0, original_sources["Makefile"], (),
+        )
+        visits = [main]
+        directives = [
+            (logical, first, last) for logical, first, last, raw
+            in read_epochs.physical_statements(sources["Makefile"])
+            if raw.startswith("include ")
+        ]
+        for index, (name, _) in enumerate(includes, 2):
+            location = (1, main.source.number, *directives[min(index - 2, len(directives) - 1)])
+            visits.append(read_epochs.OriginalVisit(
+                index, 1, name, 0, 0, 100 + index, 200 + index,
+                name, 0, original_sources[name], (), location,
+            ))
+        selection, completions = [], []
+        pending_values = {name: iter(value) for name, value in values.items() if isinstance(value, list)}
+        for logical, first, last, raw in read_epochs.physical_statements(sources["Makefile"]):
+            match = graph_probe.MODE_ASSIGNMENT.fullmatch(raw)
+            if match is None or match["name"] not in values:
+                continue
+            row = (
+                "Makefile", main.source.sha256, logical, first, last,
+                match["name"], match["operator"], hashlib.sha256(raw.encode()).hexdigest(),
+                raw.startswith("override "),
+            )
+            selection.append(row)
+            value = values[match["name"]]
+            if match["name"] in pending_values:
+                value = next(pending_values[match["name"]])
+            variable = (
+                value if isinstance(value, read_epochs.OriginalVariable)
+                else read_epochs.OriginalVariable(match["name"], value, 2 << 26, "Makefile", first, 0)
+            )
+            completions.append(read_epochs.OriginalCompletion(
+                5 + logical, 1, main.source.number, row, match["name"],
+                match["operator"], "/repo", variable,
+            ))
+        part = read_epochs.OriginalPass(
+            1, 1, 2, 1001, (read_epochs.OriginalScope(False, tuple(inputs)),), tuple(visits),
+            (), tuple(visit.number for visit in visits), (), tuple(completions),
+        )
+        archive = read_epochs.OriginalArchive(
+            "unissued-DATA-model", (part,), tuple(original_sources.values()), 3, tuple(sorted(selection)),
+        )
+        session = SimpleNamespace(budget=budget)
+        proof = SimpleNamespace(
+            session=session, archive=archive, missing={}, require_live=lambda: None,
+        )
+        phase = phase_census.SourcePass(
+            proof, part, SimpleNamespace(directories=(), members={}), (), "all", (), {}, "Makefile",
+        )
+        return phase, sources
+
+    def parse(self, phase, sources, *, callback=True):
+        stream = graph_probe._source_units(
+            sources, budget=phase.session.budget, target="all", original_input=phase.input,
+            namespace=frozenset(sources), native_pass=phase.part,
+            original_forced=phase.forced, original_execution=phase.record_execution,
+            original_completion=phase.complete_assignment if callback else None,
+        )
+        if callback:
+            phase.require_completions_consumed()
+        self.assertEqual(phase.session.budget.runs, 0)
+        self.assertFalse(phase.session.budget.children)
+        return stream
+
+    def test_unknown_simple_is_supplied_only_before_its_next_condition(self):
+        source = (
+            "CAP := $(shell printf model-only)\n"
+            "ifeq ($(CAP),0xCD)\nNEXT := selected\nelse\nNEXT := wrong\nendif\n"
+        )
+        phase, sources = self.model(source, {"CAP": "0xCD"})
+        stream = self.parse(phase, sources)
+        self.assertEqual(stream.mode_state.exact_reference("NEXT"), "selected")
+        unit = stream.ordered[0][2]
+        self.assertTrue(unit.assignment.applies)
+        self.assertTrue(unit.assignment.immediate)
+        self.assertIn("$(shell printf model-only)", unit.assignment.read_value)
+        self.assertEqual(phase.next_completion, 1)
+        removed, sources = self.model(source, {"CAP": "0xCD"})
+        old = self.parse(removed, sources, callback=False)
+        self.assertIsNone(old.mode_state.exact_reference("NEXT"))
+
+    def test_original_generated_cap_condition_uses_its_own_completed_data(self):
+        document = getattr(type(self), "generated_cap_document", None)
+        if document is None:
+            document = (Path(__file__).resolve().parents[3] / "generated_data.mk").read_text()
+        lines = document.splitlines()
+        cap = next(index for index, line in enumerate(lines) if (
+            (match := graph_probe.MODE_ASSIGNMENT.fullmatch(line)) is not None
+            and match["name"] == "GENERATED_DATA_ITEM_CAP"
+        ))
+        source = "\n" * cap + "\n".join(lines[cap:cap + 4]) + "\nMODEL_NEXT := $(GENERATED_DATA_ITEM_CAP)\n"
+        for value in ("0xCD", "0xCE"):
+            inputs = (
+                read_epochs.OriginalVariable(
+                    "GENERATED_DATA_ITEM_CAP_SHELL_ARG", "'" + value + "'", 4 << 26, None, 0, 0,
+                ),
+                read_epochs.OriginalVariable("PYTHON", "python3", 4 << 26, None, 0, 0),
+            )
+            phase, sources = self.model(source, {"GENERATED_DATA_ITEM_CAP": value}, inputs=inputs)
+            stream = self.parse(phase, sources)
+            self.assertEqual(stream.mode_state.exact_reference("MODEL_NEXT"), value)
+            conditional = next(unit for _, _, unit in stream.ordered if unit.text.startswith("ifeq"))
+            error = next(unit for _, _, unit in stream.ordered if unit.text.startswith("$(error"))
+            self.assertTrue(conditional.active)
+            self.assertFalse(error.active)
+            completed = next(unit for _, _, unit in stream.ordered if unit.assignment is not None)
+            self.assertTrue(completed.assignment.immediate)
+
+    def test_known_pure_disagreement_and_missing_late_receipts_fail(self):
+        for source, value in (
+            ("CAP := known\n", "wrong"),
+            ("CAP := $(shell printf model-only)\n", "model"),
+            ("ifdef UNKNOWN\nCAP := $(shell printf model-only)\nendif\n", "model"),
+        ):
+            phase, sources = self.model(source, {"CAP": value})
+            if "ifdef" not in source and "known" not in source:
+                phase.part = phase.part._replace(completions=())
+            with self.subTest(source=source), self.assertRaises(MakeProbeError):
+                self.parse(phase, sources)
+
+    def test_ignored_conditional_and_forced_simple_retain_effect_semantics(self):
+        for operator, rhs in (
+            ("?=", "$(error ignored)"), (":=", "$(shell printf model-only)"), ("+=", "$(shell printf model-only)"),
+        ):
+            prior = read_epochs.OriginalVariable("CAP", "forced", 4 << 26, None, 0, 0)
+            phase, sources = self.model(
+                "CAP " + operator + " " + rhs + "\n", {"CAP": prior}, inputs=(prior,),
+            )
+            stream = self.parse(phase, sources)
+            unit = stream.ordered[0][2]
+            self.assertFalse(unit.assignment.applies)
+            self.assertEqual(unit.assignment.immediate, operator != "?=")
+            self.assertEqual(stream.mode_state.exact_reference("CAP"), "forced")
+            self.assertEqual(phase.part.completions[0].variable.filename, None)
+
+    def test_simple_append_uses_its_known_original_base_and_recursive_stays_raw(self):
+        for result in ("first", "first model-only"):
+            phase, sources = self.model(
+                "CAP := first\nCAP += $(shell model-only)\n", {"CAP": ["first", result]},
+            )
+            stream = self.parse(phase, sources)
+            self.assertEqual(stream.mode_state.exact_reference("CAP"), result)
+            self.assertEqual(phase.next_completion, 2)
+            self.assertTrue(stream.ordered[1][2].assignment.immediate)
+            self.assertEqual(stream.ordered[1][2].assignment.applies, result != "first")
+        phase, sources = self.model(
+            "CAP := first\nCAP += $(shell model-only)\n", {"CAP": ["first", "foreign"]},
+        )
+        with self.assertRaises(MakeProbeError):
+            self.parse(phase, sources)
+        prior = read_epochs.OriginalVariable("CAP", "environment", 1 << 26, None, 0, 0)
+        for result, origin in (("environment", 1), ("environment more", 5)):
+            completed = prior._replace(value=result, flags=origin << 26)
+            phase, sources = self.model(
+                "override CAP += $(shell model-only)\n", {"CAP": completed}, inputs=(prior,),
+            )
+            stream = self.parse(phase, sources)
+            self.assertEqual(stream.mode_state.exact_reference("CAP"), result)
+            binding, = stream.mode_state.raw_binding("CAP")
+            self.assertEqual(binding.origin, "environment" if origin == 1 else "override")
+            self.assertEqual(stream.ordered[0][2].assignment.applies, origin != 1)
+            self.assertTrue(stream.ordered[0][2].assignment.immediate)
+        recursive = read_epochs.OriginalVariable(
+            "CAP", "$(shell model-only)", (2 << 26) | 1, "Makefile", 1, 0,
+        )
+        phase, sources = self.model("CAP = $(shell model-only)\n", {"CAP": recursive})
+        stream = self.parse(phase, sources)
+        self.assertIsNone(stream.mode_state.exact_reference("CAP"))
+        self.assertFalse(stream.ordered[0][2].assignment.immediate)
+        appended = recursive._replace(value=recursive.value + " $(shell append-only)", line=2)
+        phase, sources = self.model(
+            "CAP = $(shell model-only)\nCAP += $(shell append-only)\n",
+            {"CAP": [recursive, appended]},
+        )
+        stream = self.parse(phase, sources)
+        binding, = stream.mode_state.raw_binding("CAP")
+        self.assertEqual((binding.flavor, binding.value), ("recursive", appended.value))
+        self.assertFalse(stream.ordered[1][2].assignment.immediate)
+
+    def test_original_include_location_and_all_word_visits_are_bound(self):
+        source = "ROOT := $(abspath model-only)\ninclude $(ROOT)\n"
+        for actual, includes in (
+            ("child.mk", (("child.mk", "CHILD := yes\n"),)),
+            ("one.mk two.mk", (("one.mk", "ONE := 1\n"), ("two.mk", "TWO := 2\n"))),
+        ):
+            phase, sources = self.model(source, {"ROOT": actual}, includes=includes)
+            # Both words belong to the same original directive occurrence.
+            phase.part = phase.part._replace(visits=tuple(
+                visit if visit.parent is None else visit._replace(location=(1, 1, 2, 2, 2))
+                for visit in phase.part.visits
+            ))
+            stream = self.parse(phase, sources)
+            self.assertEqual(stream.read_sources, tuple(sources))
+            changed, files = self.model(
+                source, {"ROOT": "child.mk"}, includes=(("child.mk", "CHILD := yes\n"),),
+            )
+            changed.part = changed.part._replace(visits=(
+                changed.part.visits[0], changed.part.visits[1]._replace(location=(1, 1, 1, 1, 1)),
+            ))
+            with self.assertRaises(MakeProbeError):
+                self.parse(changed, files)
+
+    def test_recursive_private_foreign_epoch_and_callback_changes_never_grant_simple(self):
+        for defect in ("recursive", "private", "visit", "site", "origin", "version", "archive", "extra"):
+            phase, sources = self.model("CAP := $(shell printf model-only)\n", {"CAP": "model"})
+            receipt, = phase.part.completions
+            if defect in {"recursive", "private", "origin"}:
+                flags = receipt.variable.flags
+                flags |= 1 if defect == "recursive" else 128 if defect == "private" else 4 << 26
+                receipt = receipt._replace(variable=receipt.variable._replace(flags=flags))
+            elif defect == "visit":
+                receipt = receipt._replace(visit=2)
+            elif defect == "site":
+                receipt = receipt._replace(site=receipt.site[:2] + (99,) + receipt.site[3:])
+            if defect not in {"version", "archive", "extra"}:
+                phase.part = phase.part._replace(completions=(receipt,))
+            elif defect == "extra":
+                phase.part = phase.part._replace(completions=(receipt, receipt))
+            else:
+                calls = []
+                def change():
+                    calls.append(None)
+                    if defect == "archive":
+                        phase.proof.archive = phase.proof.archive._replace(scope="foreign")
+                    elif len(calls) == 2:
+                        phase.part = phase.part._replace(exec=2)
+                phase.proof.require_live = change
+            with self.subTest(defect=defect), self.assertRaises(MakeProbeError):
+                self.parse(phase, sources)
+
+    def test_legacy_archive_and_expired_budget_reject_completion_use(self):
+        for defect in ("legacy", "deadline", "cache"):
+            phase, sources = self.model("CAP := $(shell printf model-only)\n", {"CAP": "model"})
+            if defect == "legacy":
+                phase.proof.archive = phase.proof.archive._replace(version=2)
+            elif defect == "deadline":
+                phase.session.budget.started -= phase.session.budget.limits.seconds
+            else:
+                phase.session.budget.limits = replace(phase.session.budget.limits, cache_bytes=1)
+            with self.subTest(defect=defect), self.assertRaises(MakeProbeError):
+                self.parse(phase, sources)
 
 
 class OriginalTemplateApiTests(unittest.TestCase):

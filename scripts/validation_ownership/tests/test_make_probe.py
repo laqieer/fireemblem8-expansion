@@ -23,6 +23,61 @@ from scripts.validation_ownership.tests.test_foundation import _PendingTrafficLi
 ROOT = Path(__file__).resolve().parents[3]
 
 
+class OriginalCompletionSelectionApiTests(unittest.TestCase):
+    """Sparse source-derived selection, not a native resolver or name exemption."""
+
+    def session(self, source, limits=None):
+        session = object.__new__(ProbeSession)
+        session.snapshot = SimpleNamespace(files={
+            "Makefile": source.encode(), "unrelated.bin": b"\xff\x00",
+        })
+        session.budget = ProbeBudget(limits or Limits())
+        return session
+
+    def test_selection_freezes_only_constructor_dependencies_of_source_consumers(self):
+        source = (
+            "ROOT := model-root\n"
+            "CAP := $(shell model-only)\n"
+            "PATH := $(subst .,_, $(ROOT))/$(CAP).mk\n"
+            "UNRELATED := $(shell never-a-consumer)\n"
+            "ifeq ($(CAP),0xCD)\ninclude $(PATH)\nendif\n"
+        )
+        session = self.session(source)
+        rows = session._original_completion_selection()
+        self.assertEqual({row[5] for row in rows}, {"ROOT", "CAP", "PATH"})
+        self.assertEqual(len(rows), 3)
+        self.assertTrue(all(row[0] == "Makefile" for row in rows))
+        self.assertEqual(session.budget.runs, 0)
+        self.assertFalse(session.budget.children)
+        neutral = self.session("# neutral source comment\n" + source)
+        self.assertEqual({row[5] for row in neutral._original_completion_selection()},
+                         {row[5] for row in rows})
+
+    def test_selection_respects_stricter_count_file_and_deadline_bounds(self):
+        source = "CAP := $(shell model-only)\nPATH := $(CAP)\ninclude $(PATH)\n"
+        for defect in ("count", "file", "deadline"):
+            limits = Limits(observations=1) if defect == "count" else (
+                Limits(file_bytes=16) if defect == "file" else Limits())
+            session = self.session(source, limits)
+            if defect == "deadline":
+                session.budget.started -= limits.seconds
+            with self.subTest(defect=defect), self.assertRaises(MakeProbeError):
+                session._original_completion_selection()
+
+    def test_recipe_and_define_consumers_do_not_select_body_assignment_sites(self):
+        source = (
+            "CAP := $(shell model-only)\n"
+            "BEFORE := $(shell model-only)\n"
+            "define MACRO\nCAP := $(BEFORE)\nendef\n"
+            "all:\n\tCAP := $(CAP)\n"
+            "$(eval $(MACRO))\n"
+        )
+        rows = self.session(source)._original_completion_selection()
+        self.assertEqual([(row[5], row[2]) for row in rows], [("CAP", 1), ("BEFORE", 2)])
+        with self.assertRaises(MakeProbeError):
+            self.session("define BROKEN\nCAP := value\n")._original_completion_selection()
+
+
 class OriginalStructuralScopesApiTests(unittest.TestCase):
     """Actual source APIs over unissued data; include/native results stay unavailable."""
 

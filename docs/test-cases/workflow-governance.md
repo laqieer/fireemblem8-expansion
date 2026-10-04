@@ -4763,6 +4763,86 @@ shared fixture, generated output or semantic fingerprint is changed merely to
 make a negative pass. Full native, report/verifier, H1 and CI evidence remains
 required after these deterministic source/API controls.
 
+### Original assignment-completion DATA and include location
+
+This extends **TC-WORKFLOW-GATE-OWNERSHIP-001** for #180, under the original
+completion scope and coupled schema correction. It adds no registry, workflow,
+operator API, public resolver or native retry allocation. The implementation
+uses trace version3 and completion ABI version2; legacy trace1/2 remain data-only.
+Dependencies are the existing source archive, original namespace/lifetime
+custody, producer/effect/mutation journal and source census. There are no new
+gameplay, locale, save, ROM/RAM or modern/archival profile conflicts.
+
+1. From a clean exact assigned source tree, inspect the imports/fixtures and
+   execute only the named inert actual-API classes through the credential-free
+   approved AST test route with process/OS/filesystem effects trapped:
+   `OriginalCompletionDataApiTests`, `CompletionTraceDataApiTests`,
+   `OriginalCompletionSelectionApiTests`, `CompletionEntryImageDataApiTests`
+   and `CompletionEffectDataApiTests` in the existing phase/read/probe/source
+   test modules. Preserve exact commands, stdout, stderr and OS exits. Do not
+   discover the whole native-bearing modules without native authorization.
+   These finite DATA/archive/frame/slot models are unissued and are not shell,
+   kernel breakpoint, native source, reporter or qualification evidence.
+2. Require unknown SIMPLE DATA only at its own completed assignment and before
+   the next condition. Compare pure known DATA, including disagreement refusal.
+   Test ignored `?=`, stronger command-line/environment precedence, simple RHS
+   execution without a store, recursive/append/alias timing and scope/flavor
+   refusal. Keep the source expression, immediate/store effect and independent
+   execution census; a result row cannot establish which RHS functions ran.
+   Remove the completion consumer in memory and require the immediate-condition
+   positive to fail, restore it and require success; keep the old-tree
+   observation distinct from a removal control. Neutral comments and equivalent
+   source refactors preserve semantic results, not incidental source coordinates.
+3. Check sparse source-derived dependency selection with renamed variables,
+   unrelated assignments, stricter source/count/cache limits and deadline.
+   Test immutable archive reconstruction, closed keys/version distinction,
+   malformed/foreign/duplicate/out-of-order/missing rows, wrong source bytes,
+   CWD/visit/pass/epoch/site/scope and callback/lifetime changes. New receipts
+   must neither create a dispatch nor satisfy missing producer/publication data.
+   Existing entry-image and effect-journal bindings must remain exact.
+4. Against the captured actual ELF and independently checked disassembly,
+   derive code sites/layout instead of installing example addresses. Verify
+   instruction/frame/parser/variable-code/flavor-table predicates and closed
+   evaluator/reader/pass control flow. Mutate each relied-on field/site and the
+   flavor table; reject corrupted models. Exercise depth1..8 four-slot schedules,
+   retained pass/source entries, issued-purpose dispatch, top-source return and
+   restoration of actual pass return before resume. These checks are static/
+   modeled engineering evidence, not actual debug-register or OS stop delivery.
+5. **Later separately authorized native qualification, still required:** run
+   actual original standalone assets and modern chains with default/alternative
+   caps/custom profiles. Observe the native cap assignment immediately before
+   its condition, completed manifest/profile/root/output/discovery constructors,
+   exact include operand words and generated contents, and the returned complete
+   report plus serializer/verifier. The preimage is the failing control; do not
+   replace it with a synthetic successful resolver, a source-only capture or
+   phrase-based assertion. Preserve resource and elapsed demand for the full
+   end-to-end result, not only a prefix or isolated cap.
+6. In that native family, include active/skipped/empty/unknown and multiword
+   directives, repeated identical names at different sites, nested/repeated
+   visits, missing generated include followed by publication/remake/reexec and
+   source-version changes. Test default and changed original CWD, aliases and
+   relative/absolute path DATA within the admitted existing grammar. Extra,
+   omitted, reordered or wrong-parent/site visits reject; a locator is never
+   permission to infer unknown/skipped branches or implement expansion.
+7. Qualify actual copied-floc eval with the same filename/line, undefine with
+   garbage RBX, define/endef, target/private/recursive/dynamic scope, original
+   versus temporary modifier slots, CRLF/continuation/final-no-LF physical spans
+   and raw floc line-offset semantics. Test real kernel trap purpose/PC/slot
+   restoration, pass reentry while source-active, child exec/inherited-register
+   clearing, cancellation, stale pins, deadlines and exact/one-over resources.
+   Missing/foreign/corrupt/copied/stale ownership fails closed. Preserve actual
+   observer mapped-symbol load refusal and executable-memory controls; no
+   fabricated successful event can qualify these predicates.
+
+**Reset and limitations:** inert workspaces and substitutions retire after each
+control; never overwrite the accepted tree or mutate a budget/oracle to pass.
+Native fixtures use existing cleanup/custody procedures and need separate
+authorization, not a new workflow. Native qualification is UNKNOWN until actual
+observations exist. Independent H1/review/security/Copilot, full candidate and
+exact-master Build, architecture disposition, issue closure, remote completion
+and completed-worktree cleanup remain unchanged. Rollback is a normal revert
+of this issue's dedicated change.
+
 ### Typed toolchain sidecar and comparator boundary
 
 This is part of **TC-WORKFLOW-GATE-OWNERSHIP-001**, not another case or

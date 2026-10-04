@@ -10,7 +10,48 @@ from unittest.mock import patch
 from scripts.validation_ownership.budget import MakeProbeError
 from scripts.validation_ownership.make_probe import Command
 from scripts.validation_ownership.producer_channel import ProducerChannel
+from scripts.validation_ownership.producer_channel import ChannelError
+from scripts.validation_ownership import source_phases
+from scripts.validation_ownership.tests.test_read_epochs import CompletionTraceDataApiTests
 from scripts.validation_ownership.tests import test_foundation as foundation
+
+
+class CompletionEntryImageDataApiTests(unittest.TestCase):
+    """Versioned capture association over inert archive models."""
+
+    def capture(self):
+        trace = CompletionTraceDataApiTests.trace_data()
+        image = {"directories": {}, "members": {}, "forbidden": [], "stamps": {}}
+        trace["events"][2]["image_sha256"] = source_phases.digest(image)
+        entry = {
+            **{key: trace["events"][2][key] for key in (
+                "barrier", "exec", "pass", "input_sha256", "image_sha256",
+            )},
+            "trace_seq": 2, "image": image,
+        }
+        return trace, {"version": 1, "scope": trace["scope"], "entries": [entry], "closed": True}
+
+    def test_new_capture_keeps_exact_entry_image_binding(self):
+        for version in (2, 3):
+            trace, capture = self.capture()
+            trace["version"] = version
+            self.assertIs(source_phases.validate_capture(capture, trace), capture)
+        for defect in ("version", "scope", "trace_seq", "image", "input", "missing"):
+            trace, capture = self.capture()
+            if defect == "version":
+                trace["version"] = True
+            elif defect == "scope":
+                capture["scope"] += "foreign"
+            elif defect == "missing":
+                capture["entries"] = []
+            elif defect == "image":
+                capture["entries"][0]["image"]["members"]["foreign"] = []
+            elif defect == "input":
+                capture["entries"][0]["input_sha256"] = "0" * 64
+            else:
+                capture["entries"][0]["trace_seq"] += 1
+            with self.subTest(defect=defect), self.assertRaises(ChannelError):
+                source_phases.validate_capture(capture, trace)
 
 
 class SourcePhaseTests(unittest.TestCase):
@@ -77,7 +118,7 @@ class SourcePhaseTests(unittest.TestCase):
                 "all", variables=("FILES", "HIDDEN"), commands=self.commands(session),
                 observe_source_phases=True,
             )
-            self.assertEqual(result.read_trace["version"], 2)
+            self.assertEqual(result.read_trace["version"], 3)
             phases = result.source_phases
             self.assertTrue(phases["closed"])
             self.assertEqual([entry["pass"] for entry in phases["entries"]], [1, 2])

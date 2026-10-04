@@ -1934,8 +1934,79 @@ class ProbeSession:
                 raise MakeProbeError(f"trusted native authority compilation failed: {completed.stderr!r}")
             self.budget.read_bytes(destination, "control")
 
-    def _original_read_abi(self):
-        if self._read_epoch_abi is not None:
+    def _original_completion_selection(self):
+        from . import graph_probe as graph
+
+        rows, dependencies, roots = [], {}, set()
+        for path, data in sorted(self.snapshot.files.items()):
+            if not (path.endswith(".mk") or Path(path).name in {"Makefile", "GNUmakefile"}):
+                continue
+            self.budget.remaining()
+            if len(data) > self.budget.limits.file_bytes:
+                self.budget.reject("completion source exceeds caller's original file admission")
+            self.budget.charge("cache", len(data))
+            digest = hashlib.sha256(data).hexdigest()
+            definition, depth = None, 0
+            for logical, first, last, raw in read_epochs.physical_statements(
+                data, checkpoint=self.budget.remaining, count_limit=self.budget.limits.observation_count,
+            ):
+                self.budget.charge("cache", len(raw.encode()))
+                statement = graph.strip_comment(graph._collapse_make_continuations(raw))
+                header = statement.strip(graph.MAKE_SPACE)
+                if depth:
+                    if not raw.startswith("\t"):
+                        if re.match(r"^define(?:[ \t]|$)", header):
+                            depth += 1
+                        elif re.match(r"^endef(?:[ \t]|$)", header):
+                            depth -= 1
+                            if not depth:
+                                definition = None
+                                continue
+                    names = graph.references(statement)
+                    self.budget.charge("cache", len(encoded(sorted(names))))
+                    dependencies[definition].update(names)
+                    continue
+                assignment = None if raw.startswith("\t") else graph.MODE_ASSIGNMENT.fullmatch(statement)
+                if assignment is None:
+                    names = graph.references(statement)
+                    self.budget.charge("cache", len(encoded(sorted(names))))
+                    macro = None if raw.startswith("\t") else graph.DEFINE.match(header)
+                    if macro is not None:
+                        definition, depth = macro[1], 1
+                        dependencies.setdefault(definition, set()).update(names)
+                    else:
+                        roots.update(names)
+                    continue
+                name = assignment["name"]
+                names = graph.references(assignment["value"])
+                self.budget.charge("cache", len(encoded((name, sorted(names)))))
+                dependencies.setdefault(name, set()).update(names)
+                prefix = statement[:assignment.start("name")].split()
+                if "private" in prefix:
+                    continue
+                row = [
+                    path, digest, logical, first, last, name, assignment["operator"],
+                    hashlib.sha256(raw.encode()).hexdigest(), "override" in prefix,
+                ]
+                self.budget.charge("cache", len(encoded(row)))
+                rows.append(row)
+                if len(rows) > self.budget.limits.observation_count:
+                    self.budget.reject("completion source selection exceeds observation count")
+            if depth:
+                raise MakeProbeError("completion selection encountered an unterminated define body")
+        selected = graph.closure(roots, dependencies, budget=self.budget)
+        self.budget.charge("cache", len(encoded(sorted(selected))))
+        result = sorted(row for row in rows if row[5] in selected)
+        read_epochs.validate_selection(
+            result, count_limit=self.budget.limits.observation_count,
+            file_limit=self.budget.limits.file_bytes,
+        )
+        return result
+
+    def _original_read_abi(self, *, completions=False):
+        if self._read_epoch_abi is not None and (
+            not completions or self._read_epoch_abi["version"] == 2
+        ):
             return self._read_epoch_abi
         data = dict(self.make_runtime)["/usr/bin/make"]
         if self.budget.read_bytes(_trusted_runtime_path("/usr/bin/make"), "control") != data:
@@ -1959,7 +2030,20 @@ class ProbeSession:
         )
         if second.returncode or self.budget.read_bytes(_trusted_runtime_path("/usr/bin/make"), "control") != data:
             raise MakeProbeError("actual Make source-reader decoding failed or changed")
-        self._read_epoch_abi = read_epochs.make_abi(data, first.stdout, second.stdout)
+        if not completions:
+            self._read_epoch_abi = read_epochs.make_abi(data, first.stdout, second.stdout)
+            self.budget.charge("cache", len(encoded(self._read_epoch_abi)))
+            return self._read_epoch_abi
+        source, _ = read_epochs.source_graph(image, target, read_epochs.instructions(second.stdout, image))
+        evaluator = read_epochs.evaluator_target(image, source)
+        third = self.budget.run(
+            ["/usr/bin/objdump", "-d", "-w", "--start-address=" + hex(evaluator),
+             "--stop-address=" + hex(source[0]), "/usr/bin/make"],
+            env=ENVIRONMENT,
+        )
+        if third.returncode or self.budget.read_bytes(_trusted_runtime_path("/usr/bin/make"), "control") != data:
+            raise MakeProbeError("actual Make completion decoding failed or changed")
+        self._read_epoch_abi = read_epochs.make_abi(data, first.stdout, second.stdout, third.stdout)
         self.budget.charge("cache", len(encoded(self._read_epoch_abi)))
         return self._read_epoch_abi
 
@@ -2701,9 +2785,12 @@ class ProbeSession:
             config["producer_scope"] = self.base.name + "/" + root.name
             if observe_read_epochs:
                 config["read_epochs"] = {
-                    "version": 2 if observe_source_phases else 1,
-                    "scope": config["producer_scope"], "abi": self._original_read_abi(),
+                    "version": 3 if observe_source_phases else 1,
+                    "scope": config["producer_scope"],
+                    "abi": self._original_read_abi(completions=observe_source_phases),
                 }
+                if observe_source_phases:
+                    config["read_epochs"]["selection"] = self._original_completion_selection()
             if observe_source_phases:
                 config["source_effects"] = {"version": 1, "scope": config["producer_scope"]}
             if observe_source_journal:

@@ -238,7 +238,8 @@ class _ValueReadState:
         budget = mode.budget
         identity = (
             mode.site, mode.scope_context, mode.namespace, mode.definitions,
-            mode.template_mode, mode.original_input, mode.original_execution, budget,
+            mode.template_mode, mode.original_input, mode.original_execution,
+            mode.original_completion, mode.original_visit, budget,
         )
         clock = None if budget is None else (budget.started, budget.deadline, budget.limits)
         return identity, mode.version, mode.original_namespace_valid, clock
@@ -374,6 +375,8 @@ class _MakeSourceMode:
     original_wildcard: object = None
     original_include_value: object = None
     original_execution: object = None
+    original_completion: object = None
+    original_visit: object = None
     invocation_inputs: frozenset = frozenset()
     namespace_holds: set = field(default_factory=set)
     scope_declarations: list = field(default_factory=list)
@@ -759,6 +762,7 @@ class _MakeSourceMode:
         version, site, scope, namespace = self.version, self.site, self.scope_context, self.namespace
         budget, definitions = self.budget, self.definitions
         template, original_input, execution = self.template_mode, self.original_input, self.original_execution
+        completion, visit = self.original_completion, self.original_visit
         clock = None if budget is None else (budget.started, budget.deadline, budget.limits)
 
         def require_live():
@@ -771,6 +775,7 @@ class _MakeSourceMode:
                 or self.definitions is not definitions or self.budget is not budget
                 or self.template_mode is not template or self.original_input is not original_input
                 or self.original_execution is not execution
+                or self.original_completion is not completion or self.original_visit is not visit
                 or budget is not None and (
                     (budget.started, budget.deadline) != clock[:2] or budget.limits is not clock[2]
                 )
@@ -1196,6 +1201,7 @@ class _MakeSourceMode:
             return None
         version, site, scope, namespace = self.version, self.site, self.scope_context, self.namespace
         template, original_input, execution = self.template_mode, self.original_input, self.original_execution
+        completion, visit = self.original_completion, self.original_visit
         budget = self.budget
         clock = None if budget is None else (budget.started, budget.deadline, budget.limits)
 
@@ -1210,6 +1216,7 @@ class _MakeSourceMode:
                 or self.definitions.get(name) is not bindings or self.template_values.get(name) is not record
                 or self.template_mode is not template or self.original_input is not original_input
                 or self.original_execution is not execution
+                or self.original_completion is not completion or self.original_visit is not visit
                 or budget is not None and (
                     (budget.started, budget.deadline) != clock[:2] or budget.limits is not clock[2]
                 )
@@ -2200,11 +2207,25 @@ def make_source_units(
             created_bindings = ()
             if not raw.startswith("\t") and active is not False:
                 if assignment:
+                    assignment_version = mode.version
+                    before = ()
+                    if mode.original_completion is not None and assignment["operator"] == "+=":
+                        before = mode.binding(assignment["name"])
+                        if len(before) == 1:
+                            old, = before
+                            if old.flavor == "simple" and old.value is None:
+                                before = frozenset((old._replace(value=mode.exact_reference(assignment["name"])),))
                     effect = mode.assign(
                         assignment["name"], assignment["operator"], assignment["value"],
                         override="override" in declaration[:assignment.start("name")].split(),
                         active=_mode_and(active, None) if provisional else active,
                     )
+                    if mode.original_completion is not None:
+                        effect = mode.original_completion(
+                            mode, assignment, effect, active, assignment_version,
+                            private="private" in declaration[:assignment.start("name")].split(),
+                            before=before,
+                        )
                 elif (target_assignment := _scoped_assignment(MODE_TARGET_ASSIGNMENT.fullmatch(declaration))) is not None:
                     effect = mode.assign_targets(
                         target_assignment,
@@ -2258,6 +2279,7 @@ def _source_units(
     original_wildcard=None,
     native_pass=None, admitted_missing=frozenset(), original_forced=(),
     original_include_value=None, original_execution=None, original_invocation_inputs=(),
+    original_completion=None,
 ):
     decoded = {}
     mode = _MakeSourceMode(
@@ -2271,6 +2293,7 @@ def _source_units(
         original_wildcard=original_wildcard,
         original_include_value=original_include_value,
         original_execution=original_execution,
+        original_completion=original_completion,
         invocation_inputs=frozenset(original_invocation_inputs),
     )
     if target is not None:
@@ -2281,7 +2304,7 @@ def _source_units(
     native_index = 0
     unproven_include = False
 
-    def visit(path, *, known=True):
+    def visit(path, *, known=True, parent_site=None):
         nonlocal native_index
         mode.checkpoint()
         if path in reading:
@@ -2298,6 +2321,12 @@ def _source_units(
                 or native.parent != (native_parents[-1] if native_parents else None)
             ):
                 raise MakeProbeError("source interpretation differs from actual native visit/parent order")
+            if original_completion is not None:
+                expected = None if not native_parents else (
+                    native_parents[-1], mode.original_visit.source.number, *tuple(parent_site)[1:],
+                )
+                if native.location != expected:
+                    raise MakeProbeError("native include location differs from original directive occurrence")
             if native.error:
                 if native.number not in admitted_missing or native.error != 2 or native.source is not None:
                     raise MakeProbeError("source interpretation cannot omit an unproven failed include")
@@ -2327,6 +2356,8 @@ def _source_units(
         read_sources.append(path)
         if native is not None:
             native_parents.append(native.number)
+        previous_visit = mode.original_visit
+        mode.original_visit = native
 
         def included(names, active, current_mode):
             nonlocal unproven_include
@@ -2338,9 +2369,10 @@ def _source_units(
             if active is None and names:
                 current_mode.uncertain("unproven include condition")
                 unproven_include = True
+            directive_site = current_mode.site
             for name in names:
                 if name in sources or native_pass is not None:
-                    visit(name, known=known and active is True)
+                    visit(name, known=known and active is True, parent_site=directive_site)
                 else:
                     current_mode.uncertain("unobserved included source")
                     unproven_include = True
@@ -2368,6 +2400,7 @@ def _source_units(
         reading.remove(path)
         if native is not None:
             native_parents.pop()
+        mode.original_visit = previous_visit
 
     if sources:
         visit(next(iter(sources)))
@@ -3364,6 +3397,11 @@ def _prepare_rule_templates(
         original_forced=() if phase is None else phase.forced,
         original_include_value=None if phase is None else template_mode.text,
         original_execution=None if phase is None else phase.record_execution,
+        original_completion=(
+            phase.complete_assignment
+            if phase is not None and getattr(getattr(phase.proof, "archive", None), "version", None) == 3
+            else None
+        ),
         original_invocation_inputs=() if phase is None else tuple(name for _, name, _ in phase.state),
     )
     if literal_modules:
@@ -3886,13 +3924,19 @@ def references(line):
     return names
 
 
-def closure(names, dependencies):
+def closure(names, dependencies, *, budget=None):
     pending, result = set(names), set()
     while pending:
+        if budget is not None:
+            budget.remaining()
+            if len(pending) + len(result) > budget.limits.observation_count:
+                budget.reject("Make dependency closure exceeds the existing observation bound")
         name = pending.pop()
         if name not in result:
+            if budget is not None:
+                budget.charge("cache", 128 + len(name.encode()))
             result.add(name)
-            pending.update(dependencies.get(name, ()))
+            pending.update(item for item in dependencies.get(name, ()) if item not in result)
     return result
 
 

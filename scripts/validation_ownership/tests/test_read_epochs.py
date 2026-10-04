@@ -2,24 +2,319 @@
 
 import base64
 import copy
+import ctypes
 from contextlib import ExitStack
 from dataclasses import replace
 import errno
+import hashlib
 import json
 from pathlib import Path
 import posixpath
 import shlex
 import signal
 import struct
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from scripts.validation_ownership import read_epochs
+from scripts.validation_ownership import read_trace
 from scripts.validation_ownership import make_probe
-from scripts.validation_ownership.budget import MakeProbeError
+from scripts.validation_ownership.authority import encoded
+from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.make_probe import Command
 from scripts.validation_ownership.tests import test_foundation as foundation
+
+
+class CompletionTraceDataApiTests(unittest.TestCase):
+    """Unissued archive, frame and slot models; not hardware qualification."""
+
+    @staticmethod
+    def trace_data():
+        data, child = b"CAP := $(shell model-only)\ninclude child.mk\n", b"CHILD := yes\n"
+        source = {
+            "id": 1, "mode": 0o644, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+            "data": base64.b64encode(data).decode(),
+        }
+        selection = [
+            "Makefile", source["sha256"], 1, 1, 1, "CAP", ":=",
+            hashlib.sha256(b"CAP := $(shell model-only)").hexdigest(), False,
+        ]
+        inputs = [{"parent": False, "variables": []}]
+        events = [
+            {"kind": "exec", "exec": 1},
+            {"kind": "pass-entry", "exec": 1, "pass": 1, "inputs": inputs},
+            {"kind": "entry-image", "exec": 1, "pass": 1, "barrier": 1,
+             "input_sha256": hashlib.sha256(encoded(inputs)).hexdigest(), "image_sha256": "a" * 64},
+            {"kind": "source-entry", "exec": 1, "pass": 1, "visit": 1, "parent": None,
+             "name": "Makefile", "flags": 0, "location": None},
+            {"kind": "source-open", "exec": 1, "pass": 1, "visit": 1, "name": "Makefile",
+             "mode": "r", "result": 3, "source": 1, "identity": [1, 2, 0o100644, len(data), 4, 5, 1]},
+            {"kind": "assignment-completion", "exec": 1, "pass": 1, "visit": 1, "source": 1,
+             "site": selection, "name": "CAP", "operator": ":=", "cwd": "/repo",
+             "variable": ["CAP", "model-only", 2 << 26, "Makefile", 1, 0]},
+            {"kind": "source-entry", "exec": 1, "pass": 1, "visit": 2, "parent": 1,
+             "name": "child.mk", "flags": 0, "location": [1, 1, 2, 2, 2]},
+            {"kind": "source-open", "exec": 1, "pass": 1, "visit": 2, "name": "child.mk",
+             "mode": "r", "result": 4, "source": 2, "identity": [1, 3, 0o100644, len(child), 4, 5, 1]},
+            {"kind": "source-exit", "exec": 1, "pass": 1, "visit": 2, "resolved": "child.mk",
+             "flags": 0, "error": 0, "source": 2},
+            {"kind": "source-exit", "exec": 1, "pass": 1, "visit": 1, "resolved": "Makefile",
+             "flags": 0, "error": 0, "source": 1},
+            {"kind": "pass-exit", "exec": 1, "pass": 1, "goals": [1, 2]},
+            {"kind": "complete", "execs": 1, "passes": 1, "visits": 2},
+        ]
+        for sequence, event in enumerate(events, 1):
+            event["seq"] = sequence
+        return {
+            "version": 3, "scope": "unissued-model", "selection": [selection], "events": events,
+            "sources": [source, {
+                "id": 2, "mode": 0o644, "bytes": len(child), "sha256": hashlib.sha256(child).hexdigest(),
+                "data": base64.b64encode(child).decode(),
+            }], "complete": True,
+        }
+
+    def test_closed_archive_reconstructs_immutable_sparse_rows_and_original_locations(self):
+        trace = self.trace_data()
+        budget = ProbeBudget()
+        archive = read_epochs.reconstruct_archive(trace, budget=budget)
+        part, = archive.passes
+        receipt, = part.completions
+        self.assertEqual(archive.version, 3)
+        self.assertEqual(receipt.variable.value, "model-only")
+        self.assertEqual((receipt.seq, receipt.visit, receipt.cwd), (6, 1, "/repo"))
+        self.assertEqual(part.visits[1].location, (1, 1, 2, 2, 2))
+        with self.assertRaises(AttributeError):
+            receipt.cwd = "/foreign"
+        trace["events"][5]["variable"][1] = "mutated-after-data-reconstruction"
+        self.assertEqual(receipt.variable.value, "model-only")
+        self.assertGreater(budget.bytes["cache"], 0)
+        self.assertEqual(budget.runs, 0)
+
+    def test_old_archives_cannot_smuggle_new_rows_or_locations(self):
+        for version in (1, 2, True, 4):
+            trace = self.trace_data()
+            trace["version"] = version
+            with self.subTest(version=version), self.assertRaises(read_epochs.ReadEpochError):
+                read_epochs.validate_trace(trace, trace["scope"], count_limit=32, file_limit=1024)
+
+    def test_completion_foreign_corrupt_unordered_and_exact_over_bounds_reject(self):
+        for defect in (
+            "exec", "pass", "visit", "source", "name", "operator", "cwd", "variable",
+            "site", "selection", "bytes", "location", "repeat", "count", "file",
+        ):
+            trace = self.trace_data()
+            row = trace["events"][5]
+            count, file_limit = len(trace["events"]), 1024
+            if defect in {"exec", "pass", "visit", "source"}:
+                row[defect] += 1
+            elif defect in {"name", "operator", "cwd"}:
+                row[defect] = "foreign"
+            elif defect == "variable":
+                row["variable"][2] |= 128
+            elif defect == "site":
+                row["site"][3] += 1
+            elif defect == "selection":
+                trace["selection"].append(list(trace["selection"][0]))
+            elif defect == "bytes":
+                trace["sources"][0]["data"] = ""
+            elif defect == "location":
+                trace["events"][6]["location"][1] = 2
+            elif defect == "repeat":
+                trace["events"].insert(6, copy.deepcopy(row))
+                for sequence, event in enumerate(trace["events"], 1):
+                    event["seq"] = sequence
+                count += 1
+            elif defect == "count":
+                count -= 1
+            else:
+                file_limit = trace["sources"][0]["bytes"] - 1
+            with self.subTest(defect=defect), self.assertRaises(read_epochs.ReadEpochError):
+                read_epochs.validate_trace(trace, trace["scope"], count_limit=count, file_limit=file_limit)
+        exact = self.trace_data()
+        self.assertIs(read_epochs.validate_trace(
+            exact, exact["scope"], count_limit=len(exact["events"]), file_limit=1024,
+        ), exact)
+
+    def test_physical_spans_preserve_crlf_continuations_and_final_no_lf(self):
+        for data in (b"A := first\\\n next\nB := final", b"A := first\\\r\n next\r\nB := final"):
+            self.assertEqual(read_epochs.statement_at(data, 1, 2), (1, 1, 2, "A := first\\\n next"))
+            self.assertEqual(read_epochs.statement_at(data, 3, 1), (2, 3, 3, "B := final"))
+            with self.assertRaises(read_epochs.ReadEpochError):
+                read_epochs.statement_at(data, 1, 1)
+
+    def model_trace(self):
+        trace = object.__new__(read_trace.NativeReadTrace)
+        trace.version, trace.bias, trace.pid = 3, 0x10000, 17
+        trace.abi = {
+            "read_all": [0x100, 0x200], "source": [0x300, 0x400],
+            "globals": {"reading_file": 0x600},
+            "completion": {
+                "pc": 0x500, "reader_ebuffer": -128, "reader_floc": -88,
+                "reader_return": 0x380, "eval_return": 0x900,
+                "eval_ebuffer": -304, "eval_floc": -352, "modifiers": -236, "nlines": -288,
+            },
+        }
+        trace.pass_frame = {"return": 0x20000}
+        trace.config = {"observation_count": 1000, "deadline": 1e20}
+        trace.events, trace.traps, trace.writes, trace.reads = [], 0, [], []
+        trace.policy = SimpleNamespace(charge_metadata=lambda size: trace.writes.append(("charge", size)))
+        trace.debug = lambda pid, index, value: trace.writes.append((index, value))
+        trace.execs = trace.passes = 1
+        trace.io = None
+        trace.sources = self.trace_data()["sources"]
+        trace.selection = tuple(tuple(row) for row in self.trace_data()["selection"])
+        trace.selection_index = MappingProxyType({row[:5]: row for row in trace.selection})
+        trace.statement_indexes = {
+            1: read_epochs._statement_index(base64.b64decode(trace.sources[0]["data"], validate=True)),
+        }
+        trace.active = [{
+            "return": 0x20100, "frame": 0x1000, "visit": 1, "name": "Makefile",
+            "source": 1, "pin": 37, "closed": False, "identity": ("modeled-pin",),
+        }]
+        trace.native = SimpleNamespace(publication_identity=lambda value: value)
+        self.memory_values = {
+            (0xE00, 16): struct.pack("<QQ", 0x1000, trace.bias + 0x380),
+            (0xE00 - 304, 8): (0xF80).to_bytes(8, "little"),
+            (0xE00 - 352, 8): (0xFA8).to_bytes(8, "little"),
+            (trace.bias + 0x600, 8): (0xFA8).to_bytes(8, "little"),
+            (0xF80 + 32, 8): (0x7000).to_bytes(8, "little"),
+            (0xFA8, 8): (0x8000).to_bytes(8, "little"),
+            (0xFA8 + 8, 16): struct.pack("<QQ", 1, 999),
+            (0xE00 - 288, 8): (1).to_bytes(8, "little"),
+            (0xE00 - 236, 4): (1).to_bytes(4, "little"),
+            (0x9000, 48): struct.pack("<QQQQQII", 0x8001, 0x8002, 0x8000, 1, 999, 3, 2 << 26),
+        }
+        def memory(address, count):
+            trace.reads.append((address, count))
+            if (address, count) not in self.memory_values:
+                raise AssertionError("unadmitted memory read " + repr((address, count)))
+            return self.memory_values[address, count]
+        trace.memory = memory
+        strings = {0x8000: "Makefile", 0x8001: "CAP", 0x8002: "model-only"}
+        trace.string = lambda address, maximum: strings[address]
+        return trace, SimpleNamespace(rsp=0xD00, rbp=0xE00, rbx=0x9000)
+
+    def test_four_slots_keep_entries_and_restore_pass_return_at_every_depth(self):
+        for depth in range(1, 9):
+            trace, _ = self.model_trace()
+            trace.active = [{"return": 0x20100 + index} for index in range(depth)]
+            for count in range(depth, 0, -1):
+                trace.arm()
+                self.assertEqual(trace.slots[0], trace.bias + 0x100)
+                self.assertEqual(trace.slots[1], trace.bias + 0x300)
+                self.assertEqual(trace.slots[2], 0x20100 + count - 1)
+                self.assertEqual(trace.purposes[3], "assignment-completion")
+                self.assertLessEqual(len(trace.slots), 4)
+                trace.active.pop()
+            trace.arm()
+            self.assertNotIn(2, trace.slots)
+            self.assertEqual(trace.slots[3], trace.pass_frame["return"])
+            self.assertEqual(trace.purposes[3], "pass-return")
+        trace.active = [{"return": trace.bias + 0x500}]
+        with self.assertRaises(read_epochs.ReadEpochError):
+            trace.arm()
+
+    def test_completion_predicate_and_undefine_guard_precede_variable_dereference(self):
+        for defect in (None, "undefine", "define", "private", "saved", "return", "buffer", "floc", "fp", "nlines", "pin"):
+            trace, registers = self.model_trace()
+            if defect in {"undefine", "define", "private"}:
+                modifiers = {"undefine": 4, "define": 3, "private": 33}[defect]
+                self.memory_values[0xE00 - 236, 4] = modifiers.to_bytes(4, "little")
+                registers.rbx = 0xBAD
+            elif defect == "saved":
+                self.memory_values[0xE00, 16] = struct.pack("<QQ", 0x1001, trace.bias + 0x380)
+            elif defect == "return":
+                self.memory_values[0xE00, 16] = struct.pack("<QQ", 0x1000, trace.bias + 0x381)
+            elif defect in {"buffer", "floc", "fp", "nlines"}:
+                address = {"buffer": 0xE00 - 304, "floc": trace.bias + 0x600,
+                           "fp": 0xF80 + 32, "nlines": 0xE00 - 288}[defect]
+                self.memory_values[address, 8] = bytes(8)
+            with patch.object(read_trace, "os", SimpleNamespace(
+                fstat=lambda pin: ("foreign-pin",) if defect == "pin" else ("modeled-pin",),
+            )):
+                if defect is None:
+                    trace.assignment_completion(registers, SimpleNamespace(cwd="/repo"))
+                    self.assertEqual(trace.events[0]["variable"][1], "model-only")
+                    self.assertEqual(trace.events[0]["cwd"], "/repo")
+                    self.assertEqual(trace.events[0]["site"][2:5], [1, 1, 1])
+                else:
+                    with self.subTest(defect=defect), self.assertRaises(read_epochs.ReadEpochError):
+                        trace.assignment_completion(registers, SimpleNamespace(cwd="/repo"))
+                    self.assertNotIn((registers.rbx, 48), trace.reads)
+                    self.assertEqual(trace.events, [])
+
+    def test_copied_floc_eval_is_not_original_source_or_variable_authority(self):
+        trace, registers = self.model_trace()
+        self.memory_values[0xE00, 16] = struct.pack("<QQ", 0xF00, trace.bias + 0x900)
+        self.memory_values[0xE00 - 304, 8] = (0xA000).to_bytes(8, "little")
+        self.memory_values[0xE00 - 352, 8] = (0xA028).to_bytes(8, "little")
+        self.memory_values[trace.bias + 0x600, 8] = (0xA028).to_bytes(8, "little")
+        self.memory_values[0xA000 + 32, 8] = bytes(8)
+        trace.assignment_completion(registers, SimpleNamespace(cwd="/repo"))
+        self.assertEqual(trace.events, [])
+        self.assertNotIn((registers.rbx, 48), trace.reads)
+        with self.assertRaises(read_epochs.ReadEpochError):
+            trace.source_location(registers, trace.active[-1], allow_eval=False)
+
+    def test_modeled_kernel_purpose_dispatch_and_outer_return_restore(self):
+        class Registers(ctypes.Structure):
+            _fields_ = [(name, ctypes.c_ulonglong) for name in ("rip", "rsp", "rax", "eflags")]
+
+        for defect in (None, "pid", "signal", "pc", "multiple", "purpose", "reentry", "outer"):
+            trace, _ = self.model_trace()
+            trace.arm()
+            seen = []
+            registers = Registers(trace.slots[3], 0, 0, 0)
+            fired = 8
+            if defect == "pc":
+                registers.rip += 1
+            elif defect == "multiple":
+                fired = 12
+            elif defect == "purpose":
+                trace.purposes[3] = "unissued"
+            elif defect == "reentry":
+                fired, registers.rip = 1, trace.slots[0]
+            elif defect == "outer":
+                current = trace.active[-1]
+                current.update(stack=0x1008, source=None, pin=None, flags=0)
+                registers.rip, registers.rsp, registers.rax = trace.slots[2], 0x1010, 0xA000
+                self.memory_values[0xA000, 64] = struct.pack(
+                    "<QQQQIiQQQ", 0, 0x8000, 0, 0, 0, 2, 0, 0, 0,
+                )
+                fired, trace.goals = 4, {}
+            def ptrace(request, pid, address, pointer):
+                if request == read_trace.GETSIGINFO:
+                    info = ctypes.cast(pointer, ctypes.POINTER(ctypes.c_ubyte * 128)).contents
+                    info[8:12] = (3 if defect == "signal" else 4).to_bytes(4, "little")
+                elif request == 12:
+                    ctypes.memmove(pointer, ctypes.byref(registers), ctypes.sizeof(registers))
+                elif request == 13:
+                    changed = ctypes.cast(pointer, ctypes.POINTER(Registers)).contents
+                    seen.append(("resume-flag", bool(changed.eflags & (1 << 16))))
+                else:
+                    raise AssertionError("unadmitted ptrace request")
+            def debug(pid, index, value=None):
+                if value is None:
+                    self.assertEqual(index, 6)
+                    return fired
+                trace.writes.append((index, value))
+            trace.native = SimpleNamespace(Registers=Registers, GETREGS=12, SETREGS=13, ptrace=ptrace)
+            trace.debug = debug
+            trace.assignment_completion = lambda *args: seen.append(("completion",))
+            if defect in {None, "outer"}:
+                trace.trap(17, SimpleNamespace(role="make"))
+                self.assertIn(("resume-flag", True), seen)
+                if defect is None:
+                    self.assertIn(("completion",), seen)
+                else:
+                    self.assertEqual(trace.purposes[3], "pass-return")
+                    self.assertEqual(trace.slots[3], trace.pass_frame["return"])
+                    self.assertEqual(trace.events[0]["kind"], "source-exit")
+            else:
+                with self.subTest(defect=defect), self.assertRaises(read_epochs.ReadEpochError):
+                    trace.trap(18 if defect == "pid" else 17, SimpleNamespace(role="make"))
+                self.assertEqual(seen, [])
 
 
 class SourcePinLifetimeTests(unittest.TestCase):

@@ -6,13 +6,64 @@ from pathlib import Path
 import shlex
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from scripts.validation_ownership import make_probe
+from scripts.validation_ownership import source_effects
 from scripts.validation_ownership.budget import MakeProbeError
 from scripts.validation_ownership.make_probe import Command
 from scripts.validation_ownership.producer_channel import ProducerChannel
+from scripts.validation_ownership.producer_channel import ChannelError
+from scripts.validation_ownership.tests.test_read_epochs import CompletionTraceDataApiTests
 from scripts.validation_ownership.tests import test_foundation as foundation
 from scripts.validation_ownership.tests import test_source_phases as phases
+
+
+class CompletionEffectDataApiTests(unittest.TestCase):
+    """Original effect/source clocks stay independent of completed DATA."""
+
+    def test_new_trace_keeps_effect_context_and_live_observer_version_checks(self):
+        trace = CompletionTraceDataApiTests.trace_data()
+        contexts = source_effects._read_contexts(trace)
+        self.assertEqual(contexts[6], {"exec": 1, "pass": 1, "stage": "source-read", "visit": 1})
+        self.assertEqual(contexts[9], contexts[6])
+        self.assertEqual(contexts[11], {"exec": 1, "pass": 1, "stage": "after-read", "visit": None})
+        journal = {"version": 1, "scope": trace["scope"], "events": [], "closed": True}
+        self.assertIs(source_effects.validate_journal(
+            journal, trace, dispatches=[], requests=[], publications=[], count_limit=32, file_limit=1024,
+        ), journal)
+        for version in (2, 3):
+            policy = SimpleNamespace(
+                config={"producer_scope": trace["scope"]},
+                read_trace=SimpleNamespace(version=version),
+            )
+            observer = source_effects.NativeSourceEffects(policy, {"version": 1, "scope": trace["scope"]})
+            self.assertIs(observer.trace, policy.read_trace)
+        for version in (1, True, 4):
+            policy.read_trace.version = version
+            with self.subTest(version=version), self.assertRaises(ChannelError):
+                source_effects.NativeSourceEffects(policy, {"version": 1, "scope": trace["scope"]})
+
+    def test_receipt_does_not_create_source_effect_or_publish_a_producer(self):
+        trace = CompletionTraceDataApiTests.trace_data()
+        journal = {"version": 1, "scope": trace["scope"], "events": [], "closed": True}
+        for defect in ("dispatch", "publication", "origin", "version"):
+            changed = copy.deepcopy(trace)
+            bad = copy.deepcopy(journal)
+            dispatches, publications = [], []
+            if defect == "dispatch":
+                dispatches = [{"sequence": 1, "executable": "/usr/bin/forbidden"}]
+            elif defect == "publication":
+                publications = [{}]
+            elif defect == "origin":
+                bad["events"] = [{"seq": 1, "kind": "origin", "trace_seq": 6}]
+            else:
+                changed["version"] = 4
+            with self.subTest(defect=defect), self.assertRaises(ChannelError):
+                source_effects.validate_journal(
+                    bad, changed, dispatches=dispatches, requests=[], publications=publications,
+                    count_limit=32, file_limit=1024,
+                )
 
 
 class SourceEffectTests(unittest.TestCase):

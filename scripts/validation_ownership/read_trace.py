@@ -11,6 +11,7 @@ import stat
 import struct
 import sys
 import time
+from types import MappingProxyType
 
 if __package__:
     from .authority import encoded
@@ -49,21 +50,42 @@ class NativeReadTrace:
                 raise read_epochs.ReadEpochError("read trace runtime image changed during capture")
         self.image_identity = before.st_dev, before.st_ino
         self.abi = read_epochs.validate_abi(config["abi"], self.image)
+        self.selection = ()
+        self.selection_index = MappingProxyType({})
+        if self.version == 3:
+            if self.abi["version"] != 2:
+                raise read_epochs.ReadEpochError("completion trace lacks its machine-derived completion ABI")
+            read_epochs.validate_selection(
+                config["selection"], count_limit=self.config["observation_count"],
+                file_limit=self.config["file_limit"],
+            )
+            self.policy.charge_metadata(len(encoded(config["selection"])))
+            self.selection = tuple(tuple(row) for row in config["selection"])
+            index = {}
+            for row in self.selection:
+                self.deadline()
+                key = row[:5]
+                self.policy.charge_metadata(sys.getsizeof({None: None}) + sys.getsizeof(key))
+                index[key] = row
+            self.selection_index = MappingProxyType(index)
         source = read_epochs.Elf(self.image).bytes(self.abi["source"][0], 8, executable=True)
         if not source.startswith((b"\x55\x48\x89\xe5", b"\xf3\x0f\x1e\xfa\x55\x48\x89\xe5")):
             raise read_epochs.ReadEpochError("source reader lacks its verified frame-pointer ABI")
         self.events, self.sources = [], []
         self.pool = {}
+        self.statement_indexes = {}
         self.execs = self.passes = self.visits = 0
         self.pid = self.bias = None
         self.slots = {}
+        self.purposes = {}
+        self.traps = 0
         self.active = []
         self.pass_frame = None
         self.goals = {}
         self.io = None
 
     def event(self, kind, **fields):
-        if len(self.events) >= self.config["observation_count"]:
+        if len(self.events) + getattr(self, "traps", 0) >= self.config["observation_count"]:
             raise read_epochs.ReadEpochError("original read event count exceeds its existing bound")
         row = {"seq": len(self.events) + 1, "kind": kind, **fields}
         self.policy.charge_metadata(len(encoded(row)))
@@ -74,6 +96,7 @@ class NativeReadTrace:
         return {"exec": self.execs, "pass": self.passes}
 
     def memory(self, address, count):
+        self.deadline()
         self.policy.charge_metadata(count)
         return self.native.memory(self.pid, address, count)
 
@@ -99,7 +122,9 @@ class NativeReadTrace:
             raise read_epochs.ReadEpochError("original read trace exhausted the existing deadline")
 
     def debug(self, pid, index, value=None):
+        self.deadline()
         if value is None:
+            self.policy.charge_metadata(8)
             return self.native.ptrace(3, pid, DEBUG_REGISTER_OFFSET + 8 * index) & ((1 << 64) - 1)
         self.native.ptrace(6, pid, DEBUG_REGISTER_OFFSET + 8 * index, value)
 
@@ -118,6 +143,7 @@ class NativeReadTrace:
         self.pid = pid
         self.bias = None
         self.slots = {}
+        self.purposes = {}
         self.execs += 1
         self.event("exec", exec=self.execs)
 
@@ -130,7 +156,7 @@ class NativeReadTrace:
         if len(data) > 65536:
             raise read_epochs.ReadEpochError("Make runtime mapping exceeds the existing bound")
         bases = []
-        code = []
+        code, readonly = [], []
         for line in data.splitlines():
             fields = line.split(None, 5)
             if len(fields) < 5:
@@ -145,6 +171,8 @@ class NativeReadTrace:
                 bases.append(first)
             if fields[1] == b"r-xp":
                 code.append((first, last))
+            if fields[1] in {b"r-xp", b"r--p"}:
+                readonly.append((first, last))
         if len(bases) != 1:
             raise read_epochs.ReadEpochError("Make read trace has no unique actual image mapping")
         image = read_epochs.Elf(self.image)
@@ -152,20 +180,35 @@ class NativeReadTrace:
         if len(load) != 1:
             raise read_epochs.ReadEpochError("Make read trace has an unsupported ELF load origin")
         self.bias = bases[0] - load[0]
-        for name in ("read_all", "source"):
-            start, end = self.abi[name]
+        spans = [self.abi[name] for name in ("read_all", "source")]
+        if self.version == 3:
+            spans += [self.abi["completion"]["evaluator"], *self.abi["completion"]["relied_code"]]
+        for start, end in spans:
             if not any(left <= self.bias + start < self.bias + end <= right for left, right in code):
                 raise read_epochs.ReadEpochError("read trace site is not readonly executable Make code")
             if self.memory(self.bias + start, end - start) != image.bytes(start, end - start, executable=True):
                 raise read_epochs.ReadEpochError("read trace instruction image differs from captured Make")
+        if self.version == 3:
+            start, end = self.abi["completion"]["flavor_table"]
+            if (
+                not any(left <= self.bias + start < self.bias + end <= right for left, right in readonly)
+                or self.memory(self.bias + start, end - start) != image.bytes(start, end - start)
+            ):
+                raise read_epochs.ReadEpochError("completion flavor table lacks immutable live Make mapping")
         self.arm()
 
     def arm(self):
         slots = {0: self.bias + self.abi["read_all"][0], 1: self.bias + self.abi["source"][0]}
+        purposes = {0: "pass-entry", 1: "source-entry"}
         if self.active:
             slots[2] = self.active[-1]["return"]
-        if self.pass_frame is not None:
+            purposes[2] = "source-return"
+            if self.version == 3:
+                slots[3] = self.bias + self.abi["completion"]["pc"]
+                purposes[3] = "assignment-completion"
+        if self.pass_frame is not None and not (self.active and self.version == 3):
             slots[3] = self.pass_frame["return"]
+            purposes[3] = "pass-return"
         if len(set(slots.values())) != len(slots):
             raise read_epochs.ReadEpochError("overlapping original read breakpoint sites")
         self.debug(self.pid, 7, 0)
@@ -174,6 +217,7 @@ class NativeReadTrace:
         self.debug(self.pid, 6, 0)
         self.debug(self.pid, 7, sum(1 << (2 * index) for index in slots))
         self.slots = slots
+        self.purposes = purposes
 
     def caller(self, registers, target):
         returned = self.number(registers.rsp)
@@ -187,20 +231,28 @@ class NativeReadTrace:
         return {"return": returned, "stack": registers.rsp, "frame": registers.rsp - 8}
 
     def trap(self, pid, state):
+        self.deadline()
+        self.traps += 1
+        self.policy.charge_metadata(64)
+        if self.traps + len(self.events) >= self.config["observation_count"]:
+            raise read_epochs.ReadEpochError("original read traps exceed existing observation bound")
         if pid != self.pid or state.role != "make" or self.bias is None:
             raise read_epochs.ReadEpochError("foreign process claimed an original read breakpoint")
         info = (ctypes.c_ubyte * 128)()
+        self.policy.charge_metadata(ctypes.sizeof(info))
         self.native.ptrace(GETSIGINFO, pid, 0, ctypes.byref(info))
         if int.from_bytes(bytes(info[8:12]), "little", signed=True) != TRAP_HWBKPT:
             raise read_epochs.ReadEpochError("original read event is not a kernel hardware breakpoint")
         fired = self.debug(pid, 6) & 15
         indices = [index for index in range(4) if fired & (1 << index)]
         registers = self.native.Registers()
+        self.policy.charge_metadata(ctypes.sizeof(registers))
         self.native.ptrace(self.native.GETREGS, pid, 0, ctypes.byref(registers))
         if len(indices) != 1 or self.slots.get(indices[0]) != registers.rip:
             raise read_epochs.ReadEpochError("original read breakpoint is stale or unissued")
         index = indices[0]
-        if index == 0:
+        purpose = self.purposes.get(index)
+        if purpose == "pass-entry":
             if self.pass_frame is not None or self.active or self.passes + 1 != self.execs:
                 raise read_epochs.ReadEpochError("repeated original read entry in one exec")
             self.pass_frame = self.caller(registers, registers.rip)
@@ -213,12 +265,12 @@ class NativeReadTrace:
                 count_limit=self.config["observation_count"], string=self.string,
             )
             entry = self.event("pass-entry", **self.context(), inputs=inputs)
-            if self.version == 2:
+            if self.version in {2, 3}:
                 self.pending_barrier = {
                     "barrier": self.barriers + 1, "exec": self.execs, "pass": self.passes,
                     "trace_seq": entry["seq"], "input_sha256": source_phases.digest(inputs),
                 }
-        elif index == 1:
+        elif purpose == "source-entry":
             if self.pass_frame is None or self.io is not None:
                 raise read_epochs.ReadEpochError("source entry has no original pass")
             frame = self.caller(registers, registers.rip)
@@ -228,12 +280,22 @@ class NativeReadTrace:
                 raise read_epochs.ReadEpochError("source entry has unsupported name/flags")
             self.visits += 1
             parent = self.active[-1]["visit"] if self.active else None
+            location = None
+            if self.version == 3 and self.active:
+                if frame["return"] != self.bias + self.abi["completion"]["include_return"]:
+                    raise read_epochs.ReadEpochError("source include entry has a foreign evaluator caller")
+                location = self.source_location(registers, self.active[-1], allow_eval=False)
             frame.update({"visit": self.visits, "name": name, "flags": flags, "source": None, "pin": None, "closed": False})
-            self.event("source-entry", **self.context(), visit=self.visits, parent=parent, name=name, flags=flags)
+            self.event(
+                "source-entry", **self.context(), visit=self.visits, parent=parent, name=name, flags=flags,
+                **({"location": location} if self.version == 3 else {}),
+            )
             self.active.append(frame)
-        elif index == 2:
+        elif purpose == "source-return":
             self.source_return(registers)
-        else:
+        elif purpose == "assignment-completion":
+            self.assignment_completion(registers, state)
+        elif purpose == "pass-return":
             if self.active or self.io is not None or self.pass_frame is None or registers.rsp != self.pass_frame["stack"] + 8:
                 raise read_epochs.ReadEpochError("original read return has an incomplete source stack")
             goals, visited, pointer = [], set(), registers.rax
@@ -247,9 +309,82 @@ class NativeReadTrace:
                 raise read_epochs.ReadEpochError("original read goal chain omitted a source visit")
             self.event("pass-exit", **self.context(), goals=goals)
             self.pass_frame = None
+        else:
+            raise read_epochs.ReadEpochError("original read trap has no issued slot purpose")
         registers.eflags |= 1 << 16
         self.native.ptrace(self.native.SETREGS, pid, 0, ctypes.byref(registers))
         self.arm()
+
+    def source_location(self, registers, current, *, allow_eval):
+        """Validate ancestry before interpreting source fields or a variable."""
+        abi, evaluator, reader = self.abi["completion"], registers.rbp, current["frame"]
+        if not registers.rsp <= evaluator < reader:
+            raise read_epochs.ReadEpochError("completion evaluator escaped the actual source stack")
+        saved, returned = struct.unpack("<QQ", self.memory(evaluator, 16))
+        if returned == self.bias + abi["eval_return"]:
+            if not allow_eval or saved == reader:
+                raise read_epochs.ReadEpochError("include attempted copied-floc original source authority")
+            buffer = self.number(evaluator + abi["eval_ebuffer"])
+            floc = self.number(evaluator + abi["eval_floc"])
+            if (
+                not evaluator < saved < reader
+                or self.number(buffer + 32) != 0 or floc != buffer + 40
+                or self.number(self.bias + self.abi["globals"]["reading_file"]) != floc
+            ):
+                raise read_epochs.ReadEpochError("unselected eval completion has unverified ancestry")
+            return None
+        if saved != reader or returned != self.bias + abi["reader_return"]:
+            raise read_epochs.ReadEpochError("completion has no direct original reader frame/return")
+        buffer, floc = reader + abi["reader_ebuffer"], reader + abi["reader_floc"]
+        if (
+            self.number(evaluator + abi["eval_ebuffer"]) != buffer
+            or self.number(evaluator + abi["eval_floc"]) != floc
+            or self.number(self.bias + self.abi["globals"]["reading_file"]) != floc
+            or self.number(buffer + 32) == 0
+            or current["source"] is None or current["pin"] is None or current["closed"]
+            or self.native.publication_identity(os.fstat(current["pin"])) != current["identity"]
+        ):
+            raise read_epochs.ReadEpochError("completion lost original ebuffer/stream/pin/source custody")
+        if self.string(self.number(floc), 4096) != current["name"]:
+            raise read_epochs.ReadEpochError("completion floc names another original reader")
+        start, offset = struct.unpack("<QQ", self.memory(floc + 8, 16))
+        nlines = self.number(evaluator + abi["nlines"])
+        span = self.statement_indexes.get(current["source"], {}).get(start)
+        if span is None or nlines < 1 or span[2] != start + nlines - 1:
+            raise read_epochs.ReadEpochError("completion nlines differs from pinned original source chunk")
+        logical, first, last, _ = span
+        # offset is intentionally not treated as a character column.
+        return [current["visit"], current["source"], logical, first, last]
+
+    def assignment_completion(self, registers, state):
+        if self.version != 3 or not self.active or self.pass_frame is None or self.io is not None:
+            raise read_epochs.ReadEpochError("completion has no active original source/pass")
+        current, abi = self.active[-1], self.abi["completion"]
+        location = self.source_location(registers, current, allow_eval=True)
+        if location is None:
+            return
+        modifiers = int.from_bytes(self.memory(registers.rbp + abi["modifiers"], 4), "little")
+        key = (
+            current["name"].removeprefix("/repo/"),
+            self.sources[current["source"] - 1]["sha256"], *location[2:],
+        )
+        self.policy.charge_metadata(len(encoded(key)))
+        row = self.selection_index.get(key)
+        if row is None:
+            return
+        if modifiers & ~0x3F or not modifiers & 1 or modifiers & (2 | 4 | 32):
+            raise read_epochs.ReadEpochError("selected completion is not an ordinary nonprivate assignment")
+        if bool(modifiers & 16) != row[8]:
+            raise read_epochs.ReadEpochError("completion modifiers differ from original assignment spelling")
+        variable = read_epochs.original_variable(self.memory, registers.rbx, self.string)
+        if variable[0] != row[5] or variable[2] & (1 << 7):
+            raise read_epochs.ReadEpochError("selected completion returned a foreign/private effective variable")
+        if not isinstance(state.cwd, str) or not state.cwd.startswith("/"):
+            raise read_epochs.ReadEpochError("completion lacks actual supervised CWD")
+        self.event(
+            "assignment-completion", **self.context(), visit=current["visit"], source=current["source"],
+            site=list(row), name=row[5], operator=row[6], cwd=state.cwd, variable=variable,
+        )
 
     def confirm_barrier(self, request, image_sha256):
         if self.pending_barrier != {
@@ -332,6 +467,12 @@ class NativeReadTrace:
                     self.policy.charge_metadata(len(encoded(row)))
                     self.sources.append(row)
                     self.pool[key] = snapshot
+                if self.version == 3 and snapshot not in self.statement_indexes:
+                    self.policy.charge_metadata(len(data))
+                    self.statement_indexes[snapshot] = read_epochs._statement_index(
+                        bytes(data), checkpoint=self.deadline,
+                        count_limit=self.config["observation_count"], reserve=self.policy.charge_metadata,
+                    )
                 current.update(source=snapshot, pin=pin, identity=identity, descriptor=descriptor, path=path)
                 pin = -1
             finally:
@@ -381,11 +522,13 @@ class NativeReadTrace:
     def finish(self):
         if (
             self.active or self.pass_frame is not None or self.io is not None or self.pending_barrier is not None
-            or not self.passes or self.passes != self.execs or self.version == 2 and self.barriers != self.passes
+            or not self.passes or self.passes != self.execs or self.version in {2, 3} and self.barriers != self.passes
         ):
             raise read_epochs.ReadEpochError("original read trace ended with incomplete native state")
         self.event("complete", execs=self.execs, passes=self.passes, visits=self.visits)
         result = {"version": self.version, "scope": self.scope, "events": self.events, "sources": self.sources, "complete": True}
+        if self.version == 3:
+            result["selection"] = [list(row) for row in self.selection]
         read_epochs.validate_trace(result, self.scope, count_limit=self.config["observation_count"],
                                    file_limit=self.config["file_limit"], reserve=self.policy.charge_metadata)
         return result

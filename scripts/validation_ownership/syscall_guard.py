@@ -1533,8 +1533,9 @@ class Policy:
             request = config["read_epochs"]
             if (
                 self.mode != "make" or not isinstance(request, dict)
-                or set(request) != {"version", "scope", "abi"}
-                or type(request["version"]) is not int or request["version"] not in {1, 2}
+                or type(request.get("version")) is not int or request["version"] not in {1, 2, 3}
+                or set(request) != {"version", "scope", "abi"} | (
+                    {"selection"} if request["version"] == 3 else set())
                 or request["scope"] != config.get("producer_scope")
             ):
                 raise Violation("original-read observation lacks its exact Make scope")

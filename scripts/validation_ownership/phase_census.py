@@ -5,6 +5,7 @@ from __future__ import annotations
 from itertools import chain
 from pathlib import PurePosixPath
 import sys
+from types import MappingProxyType
 import traceback
 from typing import NamedTuple
 from .authority import encoded, relative_path
@@ -12,6 +13,7 @@ from .budget import MakeProbeError
 from .graph_commands import _shell_tokens
 from .make_probe import _NamespaceUnavailable
 from . import graph_probe as graph
+from . import read_epochs
 
 
 ORIGINS = {
@@ -165,6 +167,166 @@ class SourcePass:
         self.scope_parents = {}
         self.scope_graph_error = None
         self.scope_mode = None
+        self.next_completion = 0
+        self.completion_archive = getattr(proof, "archive", None)
+        selected = {}
+        if self.completion_archive is not None and self.completion_archive.version == read_epochs.COMPLETION_VERSION:
+            for row in self.completion_archive.selection:
+                self.session.budget.remaining()
+                key = row[:5]
+                if key in selected:
+                    raise MakeProbeError("original completion selection has duplicate source sites")
+                self.session.budget.charge(
+                    "cache", len(encoded(row)) + sys.getsizeof({None: None}) + sys.getsizeof(key),
+                )
+                selected[key] = row
+        self.completion_selection = MappingProxyType(selected)
+
+    def complete_assignment(self, mode, assignment, effect, active, version, *, private=False, before=()):
+        archive, part, proof = self.proof.archive, self.part, self.proof
+        context = (
+            mode.original_visit, mode.site, mode.scope_context, mode.namespace, mode.budget,
+            mode.original_completion, mode.original_execution, mode.original_input,
+        )
+        clock = (mode.budget.started, mode.budget.deadline, mode.budget.limits) if mode.budget is not None else None
+        index = self.next_completion
+        selection = self.completion_selection
+        destination = assignment["name"]
+
+        def destination_state():
+            return (
+                mode.definitions.get(destination), mode.binding_versions.get((None, destination)),
+                mode.template_values.get(destination),
+            )
+
+        retained = destination_state()
+
+        def require_context():
+            if (
+                self.proof is not proof or proof.archive is not archive or self.part is not part
+                or self.completion_archive is not archive or self.completion_selection is not selection
+                or self.next_completion != index or mode.version != version
+                or any(left is not right for left, right in zip(context, (
+                    mode.original_visit, mode.site, mode.scope_context, mode.namespace, mode.budget,
+                    mode.original_completion, mode.original_execution, mode.original_input,
+                )))
+                or mode.budget is not None and (
+                    (mode.budget.started, mode.budget.deadline) != clock[:2]
+                    or mode.budget.limits is not clock[2]
+                )
+            ):
+                raise MakeProbeError("original completion context/custody changed")
+
+        self.proof.require_live()
+        require_context()
+        if any(left is not right for left, right in zip(retained, destination_state())):
+            raise MakeProbeError("completed destination changed during initial custody validation")
+        if self.proof.archive.version != read_epochs.COMPLETION_VERSION:
+            raise MakeProbeError("legacy original archive cannot grant assignment-completion DATA")
+        visit = mode.original_visit
+        if visit is None or visit.source is None or mode.site is None:
+            raise MakeProbeError("original completion lacks its current source visit")
+        key = (_path(visit.name), visit.source.sha256, *tuple(mode.site)[1:])
+        self.session.budget.remaining()
+        selected = selection.get(key)
+        self.session.budget.charge("cache", len(encoded(key)))
+        if selected is None:
+            return effect
+        if private or active is not True or mode.scope_context is not None:
+            raise MakeProbeError("selected original completion has an unproven condition/scope")
+        if self.next_completion >= len(self.part.completions):
+            raise MakeProbeError("selected original assignment omitted its same-time completion")
+        receipt = self.part.completions[self.next_completion]
+        if (
+            receipt.visit != visit.number or receipt.source != visit.source.number
+            or receipt.site != selected or receipt.name != assignment["name"]
+            or receipt.operator != assignment["operator"]
+            or not visit.entry_seq < receipt.seq < visit.exit_seq
+            or not mode.original_namespace_valid or mode.version != version
+        ):
+            raise MakeProbeError("original completion is foreign, late or crossed an uncertain source epoch")
+        row = receipt.variable
+        origin = (row.flags >> 26) & 7
+        if (
+            row.flags & UNSUPPORTED_INPUT_FLAGS or origin not in ORIGINS
+        ):
+            raise MakeProbeError("completed original binding has unsupported effective flavor/precedence")
+        expected = mode.raw_binding(receipt.name)
+        actual_flavor = "recursive" if row.flags & 1 else "simple"
+        append_choice = None
+        if assignment["operator"] == "+=" and any(
+            binding.flavor == "simple" and binding.value is None for binding in expected
+        ) and effect.applies is True:
+            if (
+                len(before) != 1 or effect.immediate is not True
+            ):
+                raise MakeProbeError("completed append has ambiguous original base/flavor")
+            prior, = before
+            stored_origin = "override" if selected[8] else "file"
+            store = graph._ModeBinding(stored_origin, "simple", None)
+            if (
+                prior.flavor != "simple" or prior.value is None
+                or store not in expected
+                or any(candidate != store and not (
+                    candidate.origin == prior.origin and candidate.flavor == prior.flavor
+                    and candidate.value in {None, prior.value}
+                ) for candidate in expected)
+            ):
+                raise MakeProbeError("completed append lacks a single known original SIMPLE base")
+            prefix = prior.value + (" " if prior.value else "")
+            if ORIGINS[origin] == prior.origin and row.value == prior.value:
+                binding = prior
+            elif (
+                ORIGINS[origin] == stored_origin and row.value.startswith(prefix)
+                and len(row.value) > len(prefix)
+            ):
+                binding = store
+            else:
+                raise MakeProbeError("completed append is neither original empty-RHS nor store outcome")
+            append_choice = binding
+        elif len(expected) != 1:
+            raise MakeProbeError("completed original binding has ambiguous source precedence")
+        else:
+            binding, = expected
+        if binding.origin != ORIGINS[origin] or binding.flavor != actual_flavor:
+            raise MakeProbeError("completed original binding differs from independent source flavor/precedence")
+        exact = binding.value
+        if binding.flavor == "simple" and exact is None:
+            exact = mode.exact_reference(receipt.name)
+        if exact is not None and exact != row.value:
+            raise MakeProbeError("completed original value differs from independently known DATA")
+        if exact is None and binding.flavor == "simple":
+            if effect.applies is not True or effect.immediate is not True:
+                raise MakeProbeError("unknown completed SIMPLE DATA lacks an admitted original store")
+            mode.retain_binding(receipt.name, (graph._ModeBinding(binding.origin, "simple", row.value),))
+            mode.template_values.pop(receipt.name, None)
+        elif append_choice is not None:
+            mode.retain_binding(receipt.name, (append_choice,))
+            mode.template_values.pop(receipt.name, None)
+        retained = destination_state()
+        self.proof.require_live()
+        require_context()
+        if any(left is not right for left, right in zip(retained, destination_state())):
+            raise MakeProbeError("completed destination changed during final custody validation")
+        if (
+            mode.original_visit is not visit or mode.site is None or tuple(mode.site)[1:] != key[2:]
+            or mode.version != version or not mode.original_namespace_valid
+        ):
+            raise MakeProbeError("completion consumer context changed during custody validation")
+        self.next_completion += 1
+        if (
+            assignment["operator"] == "+=" and effect.applies is True and effect.immediate is True
+            and len(before) == 1
+        ):
+            prior, = before
+            if prior.flavor == "simple" and prior.value == row.value and prior.origin == ORIGINS[origin]:
+                return effect._replace(applies=False)
+        return effect
+
+    def require_completions_consumed(self):
+        self.proof.require_live()
+        if self.next_completion != len(self.part.completions):
+            raise MakeProbeError("source traversal omitted original assignment-completion receipts")
 
     def input(self, name):
         self.read_inputs.add(name)
@@ -1126,6 +1288,7 @@ def analyze(session, observation, target, state, commands, *, primary_source="Ma
             session, target, state, commands, observation, phase.sources,
             primary_source=primary_source, external_names=external_names, phase=phase,
         )
+        phase.require_completions_consumed()
         phase.prepare_deferred_reads(stream)
         stream = stream._replace(native_exports=tuple(sorted(phase.expanding_exports)))
         usage = graph.source_census(

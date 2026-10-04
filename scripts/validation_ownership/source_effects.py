@@ -105,7 +105,8 @@ def validate_journal(value, trace, *, dispatches, requests, publications, count_
         or type(value["version"]) is not int or value["version"] != 1 or value["closed"] is not True
         or not isinstance(value["scope"], str) or not value["scope"]
         or not isinstance(value["events"], list) or len(value["events"]) > count_limit
-        or not isinstance(trace, dict) or trace.get("version") != 2
+        or not isinstance(trace, dict) or type(trace.get("version")) is not int
+        or trace["version"] not in {2, 3}
     ):
         raise ChannelError("incomplete or malformed native source-effect observation")
     read_epochs.validate_trace(trace, value["scope"], count_limit=count_limit, file_limit=file_limit)
@@ -215,7 +216,8 @@ class NativeSourceEffects:
             not isinstance(config, dict) or set(config) != {"version", "scope"}
             or type(config["version"]) is not int or config["version"] != 1
             or config["scope"] != policy.config.get("producer_scope")
-            or policy.read_trace is None or policy.read_trace.version != 2
+            or policy.read_trace is None or type(policy.read_trace.version) is not int
+            or policy.read_trace.version not in {2, 3}
         ):
             raise ChannelError("source effects require their exact original-entry Make trace")
         self.policy, self.trace, self.scope = policy, policy.read_trace, config["scope"]

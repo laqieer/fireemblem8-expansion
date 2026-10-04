@@ -254,7 +254,7 @@ metadata-neutral helpers. A separate closed barrier/acknowledgement binds
 scope, exec, pass, original-input event and image digest without consuming a
 producer slot or changing the native dispatch/job dictionaries.
 
-Version2 read traces require each `entry-image` immediately after its actual
+Legacy version2 and version3 read traces require each `entry-image` immediately after its actual
 `pass-entry`. `MakeObservation.source_phases` describes those images, while
 the owning session retains their real image objects and view/lifetime binding.
 Copies, mutations, foreign scopes or expired views do not acquire that binding.
@@ -300,6 +300,67 @@ semantics. Native return flags retain their unsigned32 ABI bound.
 This is a lossless source-data archive, not an include-omission permission,
 namespace certificate, source interpreter or completed obligation union.
 Those consumers still require the independent coverage and use-context proof.
+
+Version3 extends this same archive with **sparse original assignment-completion
+DATA**, not terminal values or file-entry snapshots. Before launch, the existing
+source consumer references select a bounded dependency closure of ordinary
+literal-name assignment sites in immutable Make sources. Each selected site
+binds its source bytes, logical statement, physical span, name, operator and
+override spelling. Unresolved destinations are not sampled; computed consumers
+still need their existing finite name proof. Legacy version1/2 archives retain
+their old data contracts but cannot grant completion DATA.
+
+The GNU4.3 x86-64 completion ABI is derived from actual instruction operands,
+direct calls, closed evaluator/reader/pass control flow, variable allocation
+and flag code, and the independent flavor-table arms. No local executable
+address is a universal offset. The supervisor verifies live readonly code/data
+against the captured executable before arming. Slots0/1 remain pass/source entry;
+slot2 is the top source's actual caller return. Only while a source is active,
+slot3 replaces pass return with completion. At the outer source return, it
+restores the real pass return before resuming. Stops dispatch by issued purpose,
+with the existing kernel hardware-trap and exact-PC checks; no software patch
+or fifth slot is used.
+
+Completion checks the direct saved reader frame/return, original ebuffer and
+fstart pointer identities, `reading_file`, nonnull stream, actual source pin/
+version, and current physical start/read count before decoding a binding.
+Original assignment-kind bits guard variable-pointer access; undefine, define,
+private, target or copied-floc eval contexts do not become ordinary SIMPLE
+DATA. The legacy raw `column` field is GNU floc's **line offset**, not a character
+column. Include entry records its verified original parent directive span;
+this locator is not a complete expansion or a resolver.
+
+The existing source walk consumes a receipt only at that assignment completion,
+before the next condition or include. It compares independently known values
+exactly, checks source-derived effective flavor/precedence, and supplies only
+unknown SIMPLE stored DATA. Recursive raw results remain recursive; ignored
+`?=` is not RHS execution, while a stronger binding may reject a simple store
+after its RHS executes. An immediate append requires its single known original
+SIMPLE base; an empty RHS retains that binding and origin without a store,
+while a nonempty RHS must preserve the original prefix and store precedence.
+The empty-append store flag is refined without suppressing its immediate RHS
+or read census; this does not issue native execution/effect proof.
+This disambiguates only that current append, never an earlier unknown branch.
+Source effects, execution/read census, producer/job
+bindings and publication/remake/reexec evidence remain independent and required.
+A receipt never repairs earlier uncertainty, restores a namespace/epoch, or
+infers an empty/skipped include from absent visits. Include names, parents,
+word order, repetitions, status and bytes must still match the finite original
+operand proof, all and only.
+
+New fields are closed-schema, immutable on reconstruction and covered by the
+existing observation/view/lifetime fingerprint. All selection/source scans,
+traps, raw reads, events and retained values charge existing limits/deadlines;
+immutable source-span and sparse-site indexes avoid rescanning the complete
+source/selection on every stop or assignment, and charge their retained storage.
+stricter caller limits are not refunded or expanded. Missing, foreign, copied,
+corrupt, stale or out-of-lifetime data refuses. The implementation's inert
+API/binary/schedule models are **not native qualification**: actual hardware,
+the original standalone and modern chains, complete report/serializer/verifier,
+resource measurements, H1 and every final delivery gate remain required.
+See the existing [tester procedure](test-cases/workflow-governance.md#original-assignment-completion-data-and-include-location).
+This changes no ROM/RAM/save, localization, gameplay or modern/archival build
+behavior; rollback remains reverting the dedicated issue change.
 
 `observe_source_journal=True` adds a default-off **fixed-original-directory**
 mutation collector and implies those source observations. Independent kernel

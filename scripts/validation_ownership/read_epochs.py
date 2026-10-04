@@ -7,6 +7,8 @@ from collections import Counter
 import hashlib
 import re
 import struct
+import sys
+from types import MappingProxyType
 from typing import NamedTuple
 
 if __package__:
@@ -20,8 +22,9 @@ else:
 
 
 GLOBALS = ("current_variable_set_list", "reading_file", "hash_deleted_item")
-NORETURN = frozenset({"fatal", "die", "out_of_memory", "__stack_chk_fail"})
+NORETURN = frozenset({"fatal", "die", "out_of_memory", "__stack_chk_fail", "__assert_fail", "abort"})
 MAX_INSTRUCTIONS = 4096
+COMPLETION_VERSION = 3
 
 
 class ReadEpochError(MakeProbeError):
@@ -156,8 +159,8 @@ def source_target(image, decoded):
     return candidates[0]
 
 
-def source_graph(image, begin, decoded):
-    pending, seen, returns = [begin], set(), []
+def control_graph(image, begin, decoded):
+    pending, seen, returns, edges = [begin], set(), [], {}
     names = {value: name for name, (value, _, kind) in image.symbols.items() if kind == 2}
     while pending:
         address = pending.pop()
@@ -168,6 +171,7 @@ def source_graph(image, begin, decoded):
         seen.add(address)
         raw = decoded[address]
         following = address + len(raw)
+        edges[address] = []
         if raw in (b"\xc3", b"\xf3\xc3"):
             continue
         target = direct_call(address, raw)
@@ -178,24 +182,198 @@ def source_graph(image, begin, decoded):
                 continue
             if name == "fopen":
                 returns.append(following)
+            edges[address] = [following]
             pending.append(following)
             continue
         if raw[0] in {0xE9, 0xEB} or 0x70 <= raw[0] <= 0x7F or raw[:1] == b"\x0f" and len(raw) == 6 and 0x80 <= raw[1] <= 0x8F:
             start = 2 if raw[0] == 0x0F else 1
             target = following + int.from_bytes(raw[start:], "little", signed=True)
             pending.append(target)
+            edges[address].append(target)
             if raw[0] not in {0xE9, 0xEB}:
                 pending.append(following)
+                edges[address].append(following)
             continue
-        if raw[0] == 0xFF and len(raw) > 1 and (raw[1] >> 3) & 7 in {2, 3, 4, 5}:
+        opcode = 0
+        while opcode < len(raw) and (
+            raw[opcode] in {0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65, 0x66, 0x67, 0xF0, 0xF2, 0xF3}
+            or 0x40 <= raw[opcode] <= 0x4F
+        ):
+            opcode += 1
+        if (
+            opcode + 1 < len(raw) and raw[opcode] == 0xFF
+            and (raw[opcode + 1] >> 3) & 7 in {2, 3, 4, 5}
+        ):
             raise ReadEpochError("source-reader indirect control flow is unsupported")
         pending.append(following)
+        edges[address] = [following]
+    return seen, returns, edges
+
+
+def source_graph(image, begin, decoded):
+    seen, returns, _ = control_graph(image, begin, decoded)
     if not returns:
         raise ReadEpochError("source reader lacks its real fopen call sites")
     return [begin, max(address + len(decoded[address]) for address in seen)], sorted(set(returns))
 
 
-def make_abi(data, read_disassembly, source_disassembly):
+def _unique(pattern, body, label):
+    matches = list(re.finditer(pattern, body, re.S))
+    if len(matches) != 1:
+        raise ReadEpochError("completion ABI lacks one machine predicate: " + label + " (matches=" + str(len(matches)) + ")")
+    return matches[0]
+
+
+def evaluator_target(image, source):
+    start, end = source
+    body = image.bytes(start, end - start, executable=True)
+    call = _unique(rb"\x4d\x89\x55\x00(\xe8....)\x48\x8b\x7d.\x4d\x89\x7d\x00",
+                   body, "direct reader evaluator call")
+    return direct_call(start + call.start(1), call[1])
+
+
+def completion_abi(image, source):
+    """Derive coordinates from code operands, never from a host address table."""
+    begin, end = source
+    reader = image.bytes(begin, end - begin, executable=True)
+    setup = _unique(rb"\x4c\x8d\x55(.)\x48\x8d\x45(.)", reader, "reader ebuffer/floc")
+    reader_floc, reader_ebuffer = (int.from_bytes(setup[i], "little", signed=True) for i in (1, 2))
+    if reader_floc - reader_ebuffer != 40:
+        raise ReadEpochError("completion reader floc is not the LP64 ebuffer member")
+    evaluator = evaluator_target(image, source)
+    if not 0 < begin - evaluator <= 65536:
+        raise ReadEpochError("completion evaluator has no bounded original code span")
+    body = image.bytes(evaluator, begin - evaluator, executable=True)
+    if not body.startswith(b"\x55\x48\x89\xe5"):
+        raise ReadEpochError("completion evaluator lacks its frame-pointer entry")
+    entry = _unique(rb"\x48\x89\xbd(....)", body[:128], "saved original ebuffer")
+    floc = _unique(rb"\x48\x8d\x47(.)\x48\x89\x85(....)", body[:128], "saved fstart")
+    if floc[1] != b"\x28":
+        raise ReadEpochError("completion evaluator has a foreign floc layout")
+    target, _ = image.symbol("try_variable_definition", 2)
+    calls = [
+        offset for offset in range(len(body) - 4)
+        if direct_call(evaluator + offset, body[offset:offset + 5]) == target
+        and body[offset + 5:offset + 9] == b"\x44\x0f\xb6\x95"
+    ]
+    if len(calls) != 1:
+        raise ReadEpochError("completion evaluator lacks one ordinary definition call")
+    tail = calls[0] + 5
+    modifiers = _unique(
+        rb"\x44\x0f\xb6\x95....\x48\x89\xc3\x41\xf6\xc2\x08"
+        rb"\x74\x04\x80\x63\x2f\x9f\x41\x83\xe2\x20"
+        rb"\x74\x04\x80\x4b\x2c\x80", body[tail:tail + 64], "post-modifier effective variable",
+    )
+    completion = evaluator + tail + modifiers.end()
+    pending = _unique(
+        rb"\xc7\x85....\x00\x00\x00\x00\x45\x31\xe4\x45\x31\xed"
+        rb"\x48\xc7\x85....\x00\x00\x00\x00.*?\xe9(....)",
+        body[completion - evaluator:completion - evaluator + 64], "completion to next-line loop",
+    )
+    branch = completion + pending.end() - 5
+    loop = branch + 5 + int.from_bytes(pending[1], "little", signed=True)
+    line = image.bytes(loop, 33, executable=True)
+    match = re.match(
+        rb"\x48\x8b\x9d(....)\x48\x8b\x85(....)\x48\x01\x43\x30"
+        rb"\x48\x89\xdf\xe8....\x48\x89\x85(....)", line, re.S,
+    )
+    if match is None or match[1] != entry[1] or match[2] != match[3]:
+        raise ReadEpochError("completion current physical-line count is not reader-derived")
+    original_modifiers = _unique(
+        rb"\x44\x0f\xb6\x95(....)\x49\x89\xc3\x41\xf6\xc2\x01", body,
+        "original assignment-kind modifiers",
+    )
+    modifier_address = _unique(
+        b"\x48\x8d\x85" + re.escape(original_modifiers[1]), body[:512],
+        "address of original modifier structure",
+    )
+    saved_modifiers = _unique(rb"\x48\x89\x85(....)", body[
+        modifier_address.end():modifier_address.end() + 192], "saved original modifier pointer")
+    parser_call = _unique(
+        b"\x48\x8b\xb5" + re.escape(saved_modifiers[1]) + rb"(\xe8....)"
+        + re.escape(original_modifiers[0]), body, "original modifier parser writer/read association",
+    )
+    parser = direct_call(evaluator + parser_call.start(1), parser_call[1])
+    if parser is None or not 0 < evaluator - parser <= 65536:
+        raise ReadEpochError("completion original modifier parser has a foreign code extent")
+    include_calls = [
+        evaluator + offset + 5 for offset in range(len(body) - 4)
+        if direct_call(evaluator + offset, body[offset:offset + 5]) == begin
+    ]
+    if len(include_calls) != 1:
+        raise ReadEpochError("completion evaluator lacks one direct original include call")
+    returned = _unique(
+        rb"\x4d\x89\x55\x00(\xe8....)\x48\x8b\x7d.\x4d\x89\x7d\x00",
+        reader, "reader evaluation return",
+    )
+    relied = []
+    for name in ("try_variable_definition", "define_variable_in_set", "do_variable_definition"):
+        address, size = image.symbol(name, 2)
+        if not 0 < size <= 65536:
+            raise ReadEpochError("completion variable decoder code is oversized")
+        relied.append([address, address + size])
+    definition = image.bytes(*(
+        relied[1][0], relied[1][1] - relied[1][0]), executable=True)
+    for pattern in (
+        rb"\xbf\x30\x00\x00\x00", rb"\x41\x89\x5e\x28",
+        rb"\x49\x89\x46\x08", rb"\x49\x89\x46\x20", rb"\x41\x0f\x11\x46\x10",
+        rb"\xc1\xe3\x1a", rb"\xc0\xe8\x02",
+    ):
+        if not 1 <= len(list(re.finditer(pattern, definition, re.S))) <= 16:
+            raise ReadEpochError("completion raw variable layout code is absent or ambiguous")
+    flavor = image.bytes(relied[2][0], relied[2][1] - relied[2][0], executable=True)
+    table_lea = _unique(
+        rb"\x48\x8d\x15(....)\x45\x89\xc4\x48\x63\x04\x82\x48\x01\xd0\x3e\xff\xe0",
+        flavor, "bounded variable flavor table",
+    )
+    table = relied[2][0] + table_lea.start() + 7 + int.from_bytes(table_lea[1], "little", signed=True)
+    destinations = [table + offset for offset in struct.unpack("<7i", image.bytes(table, 28))]
+    if len(set(destinations)) != 6 or destinations[3] != destinations[6]:
+        raise ReadEpochError("completion variable flavors have a foreign dispatch table")
+    for address in destinations:
+        image.bytes(address, 1, executable=True)
+    arms = (
+        rb"\x4c\x8d\x25....\x4c\x8b\x2d....\x48\x89\xde\x31\xff"
+        rb"\x48\xc7\xc2\xff\xff\xff\xff\x4d\x8b\x34\x24"
+        rb"\x49\xc7\x04\x24\x00\x00\x00\x00\xe8....\x4c\x89\x2d....\x45\x31\xc0",
+        rb"\x45\x31\xe4\x45\x31\xed\x41\xb8\x01\x00\x00\x00\x45\x31\xf6",
+        rb"\x4c\x8b\xb5....\x4c\x89\xf7\xe8....\x8b\xb5",
+        rb"\x4c\x8b\xb5....\x4c\x89\xf7\xe8....\x4c\x89\xf7\x45\x31\xf6",
+        rb"\x4c\x8d\x25....\x48\xc7\xc2\xff\xff\xff\xff\x48\x89\xde\x31\xff",
+    )
+    expected_arms = [
+        relied[2][0] + _unique(arm, flavor, "source-backed flavor arm " + str(index)).start()
+        for index, arm in enumerate(arms)
+    ]
+    if destinations[1:6] != expected_arms:
+        raise ReadEpochError("completion flavor table does not enter its independently located code arms")
+    abort = direct_call(destinations[0], image.bytes(destinations[0], 5, executable=True))
+    if abort is None or image.plt_name(abort) != "abort":
+        raise ReadEpochError("completion invalid-flavor arm has no actual abort call")
+    relied.append([parser, evaluator])
+    eval_buffer, eval_size = image.symbol("eval_buffer", 2)
+    eval_code = image.bytes(eval_buffer, eval_size, executable=True)
+    eval_calls = [
+        eval_buffer + offset + 5 for offset in range(len(eval_code) - 4)
+        if direct_call(eval_buffer + offset, eval_code[offset:offset + 5]) == evaluator
+    ]
+    if len(eval_calls) != 1:
+        raise ReadEpochError("completion copied-floc evaluator has no distinct actual caller")
+    relied.append([eval_buffer, eval_buffer + eval_size])
+    return {
+        "evaluator": [evaluator, begin], "pc": completion,
+        "reader_return": begin + returned.end(1), "include_return": include_calls[0],
+        "reader_ebuffer": reader_ebuffer, "reader_floc": reader_floc,
+        "eval_ebuffer": int.from_bytes(entry[1], "little", signed=True),
+        "eval_floc": int.from_bytes(floc[2], "little", signed=True),
+        "modifiers": int.from_bytes(original_modifiers[1], "little", signed=True),
+        "nlines": int.from_bytes(match[2], "little", signed=True),
+        "loop": loop, "relied_code": relied, "flavor_table": [table, table + 28],
+        "eval_return": eval_calls[0],
+    }
+
+
+def make_abi(data, read_disassembly, source_disassembly, evaluator_disassembly=None):
     image = Elf(data)
     read = instructions(read_disassembly, image)
     target = source_target(image, read)
@@ -207,6 +385,24 @@ def make_abi(data, read_disassembly, source_disassembly):
         "globals": {name: image.symbol(name, 1)[0] for name in GLOBALS},
         "source_opens": opens,
     }
+    if evaluator_disassembly is not None:
+        completion = completion_abi(image, source)
+        decoded = instructions(evaluator_disassembly, image)
+        seen, _, edges = control_graph(image, completion["evaluator"][0], decoded)
+        pc = completion["pc"]
+        predecessors = [address for address, following in edges.items() if pc in following]
+        if (
+            len(predecessors) != 3 or pc not in seen or completion["loop"] not in seen
+            or any(not completion["evaluator"][0] <= address < completion["evaluator"][1] for address in seen)
+            or not any(decoded[address][:1] == b"\xe9" for address in predecessors)
+        ):
+            raise ReadEpochError("completion evaluator assignment/undefine control flow is unclosed")
+        for start in (result["read_all"][0], source[0]):
+            code = read if start == result["read_all"][0] else instructions(source_disassembly, image)
+            nodes, _, _ = control_graph(image, start, code)
+            if sum(code[address] == b"\xc3" for address in nodes) != 1:
+                raise ReadEpochError("completion slot borrowing lacks one ordinary caller return")
+        result.update(version=2, completion=completion)
     validate_abi(result, data)
     return result
 
@@ -214,8 +410,9 @@ def make_abi(data, read_disassembly, source_disassembly):
 def validate_abi(value, data):
     if (
         not isinstance(value, dict)
-        or set(value) != {"version", "image_sha256", "read_all", "source", "globals", "source_opens"}
-        or type(value["version"]) is not int or value["version"] != 1
+        or type(value.get("version")) is not int or value["version"] not in {1, 2}
+        or set(value) != {"version", "image_sha256", "read_all", "source", "globals", "source_opens"} | (
+            {"completion"} if value["version"] == 2 else set())
         or value["image_sha256"] != hashlib.sha256(data).hexdigest()
         or not isinstance(value["globals"], dict) or set(value["globals"]) != set(GLOBALS)
         or not isinstance(value["source_opens"], list) or not 1 <= len(value["source_opens"]) <= 64
@@ -265,6 +462,8 @@ def validate_abi(value, data):
         target = direct_call(address - 5, image.bytes(address - 5, 5, executable=True))
         if target is None or image.plt_name(target) != "fopen":
             raise ReadEpochError("source open is not an actual fopen call")
+    if value["version"] == 2 and value["completion"] != completion_abi(image, value["source"]):
+        raise ReadEpochError("completion ABI differs from independent machine operand discovery")
     return value
 
 
@@ -310,6 +509,7 @@ class OriginalVisit(NamedTuple):
     error: int
     source: OriginalSource | None
     opens: tuple[OriginalOpen, ...]
+    location: tuple | None = None
 
 
 class OriginalOtherOpen(NamedTuple):
@@ -331,12 +531,130 @@ class OriginalPass(NamedTuple):
     other_opens: tuple[OriginalOtherOpen, ...]
     goal_visits: tuple[int, ...]
     entry_image: tuple | None
+    completions: tuple = ()
 
 
 class OriginalArchive(NamedTuple):
     scope: str
     passes: tuple[OriginalPass, ...]
     sources: tuple[OriginalSource, ...]
+    version: int = 1
+    selection: tuple = ()
+
+
+class OriginalCompletion(NamedTuple):
+    seq: int
+    visit: int
+    source: int
+    site: tuple
+    name: str
+    operator: str
+    cwd: str
+    variable: OriginalVariable
+
+
+def physical_statements(data, *, checkpoint=lambda: None, count_limit=None):
+    """Physical spans, independent of floc.offset (which is a line offset)."""
+    if not isinstance(data, bytes) or b"\0" in data:
+        raise ReadEpochError("completion source has unsupported bytes")
+    text = data.decode("utf-8", "strict")
+    pending, start, logical = [], 1, 0
+    newline_count = text.count("\n")
+    for index, line in enumerate(text.split("\n"), 1):
+        checkpoint()
+        if count_limit is not None and index > count_limit:
+            raise ReadEpochError("completion physical source scan exceeds observation bound")
+        has_lf = index <= newline_count
+        if has_lf and line.endswith("\r"):
+            line = line[:-1]
+        pending.append(line)
+        slashes = len(line) - len(line.rstrip("\\"))
+        if has_lf and slashes % 2:
+            continue
+        logical += 1
+        yield logical, start, index, "\n".join(pending)
+        pending, start = [], index + 1
+
+
+def statement_at(data, start, nlines, *, checkpoint=lambda: None, count_limit=None):
+    if type(start) is not int or type(nlines) is not int or start < 1 or nlines < 1:
+        raise ReadEpochError("completion has an invalid physical statement span")
+    for logical, first, last, raw in physical_statements(
+        data, checkpoint=checkpoint, count_limit=count_limit,
+    ):
+        if first == start and last == start + nlines - 1:
+            return logical, first, last, raw
+        if first > start:
+            break
+    raise ReadEpochError("completion physical line count differs from original source bytes")
+
+
+def _statement_index(data, *, checkpoint=lambda: None, count_limit=None, reserve=lambda size: None):
+    rows = {}
+    reserve(sys.getsizeof(rows))
+    for logical, first, last, raw in physical_statements(
+        data, checkpoint=checkpoint, count_limit=count_limit,
+    ):
+        value = (logical, first, last, hashlib.sha256(raw.encode()).hexdigest())
+        reserve(
+            sys.getsizeof({None: None}) + sys.getsizeof(first) + sys.getsizeof(value)
+            + sum(sys.getsizeof(item) for item in value),
+        )
+        rows[first] = value
+    return MappingProxyType(rows)
+
+
+def variable_row(row):
+    if (
+        not isinstance(row, (list, tuple)) or len(row) != 6
+        or not isinstance(row[0], str) or not 1 <= len(row[0].encode()) <= 128 or "\0" in row[0]
+        or not isinstance(row[1], str) or len(row[1].encode()) > 65536 or "\0" in row[1]
+        or any(type(row[index]) is not int or not 0 <= row[index] < 1 << 64 for index in (2, 4, 5))
+        or row[2] >= 1 << 31 or (row[2] >> 26) & 7 > 6 or (row[2] >> 23) & 7 > 6
+        or row[3] is not None and (not isinstance(row[3], str) or len(row[3].encode()) > 4096 or "\0" in row[3])
+    ):
+        raise ReadEpochError("original raw variable binding is malformed")
+    return row
+
+
+def original_variable(memory, pointer, string):
+    if not pointer:
+        raise ReadEpochError("ordinary original assignment returned no effective variable")
+    name_ptr, value_ptr, filename, line, offset, length, flags = struct.unpack(
+        "<QQQQQII", memory(pointer, 48))
+    name, value = string(name_ptr, 129), string(value_ptr, 65536)
+    if name is None or value is None or len(name.encode()) != length:
+        raise ReadEpochError("completed original variable lacks its bounded raw name/value")
+    return list(variable_row([name, value, flags, string(filename, 4096), line, offset]))
+
+
+def validate_selection(selection, *, count_limit, file_limit):
+    if not isinstance(selection, list) or len(selection) > count_limit:
+        raise ReadEpochError("completion selection exceeds its finite source bound")
+    previous = None
+    for row in selection:
+        if (
+            not isinstance(row, list) or len(row) != 9
+            or not isinstance(row[0], str) or not row[0] or len(row[0].encode()) > 4096
+            or row[0].startswith("/") or ".." in row[0].split("/") or "\0" in row[0]
+            or "\\" in row[0] or any(part in {"", "."} for part in row[0].split("/"))
+            or any(ord(character) < 32 or ord(character) == 127 for character in row[0])
+            or not isinstance(row[1], str) or not re.fullmatch("[0-9a-f]{64}", row[1])
+            or any(type(row[index]) is not int or not 1 <= row[index] <= file_limit for index in (2, 3, 4))
+            or row[4] < row[3]
+            or not isinstance(row[5], str) or not 1 <= len(row[5].encode()) <= 128
+            or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]*", row[5]) is None
+            or len(row[5].encode()) > 128
+            or row[6] not in {":=", "::=", "=", "?=", "+=", "!="}
+            or not isinstance(row[7], str) or not re.fullmatch("[0-9a-f]{64}", row[7])
+            or type(row[8]) is not bool
+        ):
+            raise ReadEpochError("completion selection has a malformed immutable source site")
+        key = tuple(row)
+        if previous is not None and key <= previous:
+            raise ReadEpochError("completion selected sites are repeated or unordered")
+        previous = key
+    return selection
 
 
 def reconstruct_archive(trace, *, budget):
@@ -358,7 +676,7 @@ def reconstruct_archive(trace, *, budget):
         budget.remaining()
         kind = event["kind"]
         if kind == "exec":
-            executions[event["exec"]] = {"visits": [], "other": [], "image": None}
+            executions[event["exec"]] = {"visits": [], "other": [], "image": None, "completions": []}
         elif kind == "pass-entry":
             executions[event["exec"]]["entry"] = event
         elif kind == "entry-image":
@@ -376,6 +694,11 @@ def reconstruct_archive(trace, *, budget):
             ))
         elif kind == "source-exit":
             visits[event["visit"]]["exit"] = event
+        elif kind == "assignment-completion":
+            executions[event["exec"]]["completions"].append(OriginalCompletion(
+                event["seq"], event["visit"], event["source"], tuple(event["site"]),
+                event["name"], event["operator"], event["cwd"], OriginalVariable(*event["variable"]),
+            ))
         elif kind == "other-open":
             executions[event["exec"]]["other"].append(OriginalOtherOpen(
                 event["seq"], event["pass"], event["visit"], event["name"], event["mode"], event["result"],
@@ -394,14 +717,19 @@ def reconstruct_archive(trace, *, budget):
                 number, started["parent"], started["name"], started["flags"], ended["flags"],
                 started["seq"], ended["seq"], ended["resolved"], ended["error"],
                 None if ended["source"] is None else sources[ended["source"]], tuple(visit["opens"]),
+                None if started.get("location") is None else tuple(started["location"]),
             ))
         passes.append(OriginalPass(
             execution, entry["pass"], entry["seq"], returned["seq"],
             tuple(OriginalScope(scope["parent"], tuple(OriginalVariable(*row) for row in scope["variables"]))
                   for scope in entry["inputs"]),
             tuple(ordered), tuple(value["other"]), tuple(returned["goals"]), value["image"],
+            tuple(value["completions"]),
         ))
-    return OriginalArchive(trace["scope"], tuple(passes), tuple(sources.values()))
+    return OriginalArchive(
+        trace["scope"], tuple(passes), tuple(sources.values()), trace["version"],
+        tuple(tuple(row) for row in trace.get("selection", ())),
+    )
 
 
 def original_inputs(memory, pointer, deleted, *, count_limit, string):
@@ -444,14 +772,18 @@ def original_inputs(memory, pointer, deleted, *, count_limit, string):
 
 def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size: None):
     if (
-        not isinstance(value, dict) or set(value) != {"version", "scope", "events", "sources", "complete"}
-        or type(value["version"]) is not int or value["version"] not in {1, 2} or value["scope"] != scope
+        not isinstance(value, dict) or type(value.get("version")) is not int or value["version"] not in {1, 2, 3}
+        or set(value) != {"version", "scope", "events", "sources", "complete"} | (
+            {"selection"} if value["version"] == COMPLETION_VERSION else set())
+        or value["scope"] != scope
         or value["complete"] is not True or not isinstance(value["events"], list)
         or not 1 <= len(value["events"]) <= count_limit or not isinstance(value["sources"], list)
         or len(value["sources"]) > count_limit
     ):
         raise ReadEpochError("incomplete or foreign original read trace")
-    sources = {}
+    sources, source_indexes = {}, {}
+    selection = validate_selection(value["selection"], count_limit=count_limit, file_limit=file_limit) if value["version"] == 3 else []
+    selected = {tuple(row) for row in selection}
     for row in value["sources"]:
         if (
             not isinstance(row, dict) or set(row) != {"id", "mode", "bytes", "sha256", "data"}
@@ -470,6 +802,18 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
         if len(data) != row["bytes"] or hashlib.sha256(data).hexdigest() != row["sha256"] or base64.b64encode(data).decode() != row["data"]:
             raise ReadEpochError("original source snapshot differs from its captured bytes")
         sources[row["id"]] = row
+
+    def source_span(number, first, last):
+        if number not in source_indexes:
+            reserve(sources[number]["bytes"])
+            data = base64.b64decode(sources[number]["data"], validate=True)
+            source_indexes[number] = _statement_index(
+                data, count_limit=count_limit, reserve=reserve,
+            )
+        span = source_indexes[number].get(first)
+        if span is None or span[2] != last:
+            raise ReadEpochError("completion location differs from original physical source")
+        return span
     execs = passes = visits = 0
     active = []
     opened = {}
@@ -479,6 +823,8 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
     terminal = False
     barriers = 0
     pending_image = None
+    completed = set()
+    previous_sites = {}
     keys = {
         "exec": {"exec"}, "pass-entry": {"exec", "pass", "inputs"},
         "source-entry": {"exec", "pass", "visit", "parent", "name", "flags"},
@@ -488,6 +834,11 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
         "pass-exit": {"exec", "pass", "goals"}, "complete": {"execs", "passes", "visits"},
         "entry-image": {"exec", "pass", "barrier", "input_sha256", "image_sha256"},
     }
+    if value["version"] == 3:
+        keys["source-entry"] |= {"location"}
+        keys["assignment-completion"] = {
+            "exec", "pass", "visit", "source", "site", "name", "operator", "cwd", "variable",
+        }
     for sequence, event in enumerate(value["events"], 1):
         if (
             terminal or not isinstance(event, dict) or not isinstance(event.get("kind"), str)
@@ -504,7 +855,7 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
             execs += 1
             continue
         if kind == "complete":
-            if in_pass or active or not passes or value["version"] == 2 and barriers != passes or any(
+            if in_pass or active or not passes or value["version"] in {2, 3} and barriers != passes or any(
                 type(event[name]) is not int or event[name] != expected
                 for name, expected in (("execs", execs), ("passes", passes), ("visits", visits))
             ):
@@ -550,14 +901,14 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
             passes += 1
             in_pass = True
             pass_visits = set()
-            if value["version"] == 2:
+            if value["version"] in {2, 3}:
                 pending_image = hashlib.sha256(encoded(inputs)).hexdigest()
             continue
         if not in_pass or event["pass"] != passes:
             raise ReadEpochError("source event has no active original pass")
         if kind == "entry-image":
             if (
-                value["version"] != 2 or pending_image is None
+                value["version"] not in {2, 3} or pending_image is None
                 or type(event["barrier"]) is not int or event["barrier"] != barriers + 1
                 or event["input_sha256"] != pending_image
                 or not isinstance(event["image_sha256"], str) or not re.fullmatch("[0-9a-f]{64}", event["image_sha256"])
@@ -574,10 +925,52 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
                 or type(event["flags"]) is not int or not 0 <= event["flags"] <= 15
             ):
                 raise ReadEpochError("invalid original source entry")
+            if value["version"] == 3:
+                location = event["location"]
+                if active:
+                    if (
+                        not isinstance(location, list) or len(location) != 5
+                        or any(type(item) is not int for item in location)
+                        or location[0] != active[-1]["visit"]
+                        or location[1] != opened[location[0]] or location[1] not in sources
+                    ):
+                        raise ReadEpochError("include location has no original parent source version")
+                    logical, first, last, _ = source_span(location[1], location[3], location[4])
+                    if [logical, first, last] != location[2:]:
+                        raise ReadEpochError("include directive location differs from original physical source")
+                elif location is not None:
+                    raise ReadEpochError("root source visit borrowed a directive location")
             visits += 1
             active.append(event)
             pass_visits.add(visits)
             opened[visits] = None
+        elif kind == "assignment-completion":
+            site = event["site"]
+            validate_selection([site], count_limit=count_limit, file_limit=file_limit)
+            if (
+                not active or type(event["visit"]) is not int or event["visit"] != active[-1]["visit"]
+                or type(event["source"]) is not int or event["source"] != opened[event["visit"]]
+                or event["source"] not in sources or not isinstance(site, list) or len(site) != 9
+                or tuple(site) not in selected or event["name"] != site[5] or event["operator"] != site[6]
+                or not isinstance(event["cwd"], str) or not event["cwd"].startswith("/")
+                or len(event["cwd"].encode()) > 4096 or "\0" in event["cwd"]
+                or (event["visit"], site[2]) in completed
+                or site[2] <= previous_sites.get(event["visit"], 0)
+                or active[-1]["name"].removeprefix("/repo/") != site[0]
+            ):
+                raise ReadEpochError("completion has a foreign, repeated, late or unselected occurrence")
+            row = variable_row(event["variable"])
+            if row[0] != event["name"] or row[2] & (1 << 7):
+                raise ReadEpochError("completion returned a foreign or private binding")
+            source = sources[event["source"]]
+            logical, first, last, raw_digest = source_span(event["source"], site[3], site[4])
+            if (
+                source["sha256"] != site[1] or [logical, first, last] != site[2:5]
+                or raw_digest != site[7]
+            ):
+                raise ReadEpochError("completion source bytes differ from its frozen selection")
+            completed.add((event["visit"], site[2]))
+            previous_sites[event["visit"]] = site[2]
         elif kind in {"source-open", "other-open"}:
             if (
                 not isinstance(event["name"], str) or not event["name"] or len(event["name"].encode()) > 4096 or "\0" in event["name"]
