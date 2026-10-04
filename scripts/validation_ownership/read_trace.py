@@ -569,9 +569,7 @@ class NativeReadTrace:
         if current["pin"] is not None:
             if not current["closed"] or self.native.publication_identity(os.fstat(current["pin"])) != current["identity"]:
                 raise read_epochs.ReadEpochError("original source was changed or not closed before return")
-            path = self.native.posixpath.normpath(
-                resolved if resolved.startswith("/") else "/repo/" + resolved
-            )
+            path = read_epochs._resolved_source_path(resolved)
             if path != current["path"]:
                 raise read_epochs.ReadEpochError("original source status names a different actual stream")
             pin, current["pin"] = current["pin"], None

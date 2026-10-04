@@ -4808,6 +4808,16 @@ gameplay, locale, save, ROM/RAM or modern/archival profile conflicts.
    CWD/visit/pass/epoch/site/scope and callback/lifetime changes. New receipts
    must neither create a dispatch nor satisfy missing producer/publication data.
    Existing entry-image and effect-journal bindings must remain exact.
+   For every successful version4 source open, retain the exact raw callback
+   name independently from the descriptor path and bind the matching source
+   return to that descriptor path using the live POSIX normalization rule.
+   Exercise `./sub.mk` with descriptor path `sub.mk`, ordinary and
+   `/repo/sub.mk` spellings, and confined root-relative `dir/../sub.mk`;
+   reconstructed evidence must retain the raw open name. Reject a mismatched
+   exit path, normalized root escape, foreign source identity, and wrong
+   publication/inventory pin or version. Repeat the binding for a generated
+   publication. These lexical cases do not qualify arbitrary CWD or symlink
+   resolution.
 4. Against the captured actual ELF and independently checked disassembly,
    derive code sites/layout instead of installing example addresses. Verify
    instruction/frame/parser/variable-code/flavor-table predicates and closed

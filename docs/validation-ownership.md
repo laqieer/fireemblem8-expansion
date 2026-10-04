@@ -327,6 +327,16 @@ permission to infer a missing visit. Legacy version1/2 remain data-only, and
 version3 keeps its existing contract; neither receives version4 inventory or
 source-open authority.
 
+For version4, `source-open.name` remains the raw observer callback spelling;
+selection and custody use `source-open.path`, captured from the actual
+descriptor and pinned bytes. At the matching successful `source-exit`, the
+reported resolved path is normalized with the same POSIX rule used by the
+live trace (absolute spellings directly, relative spellings under `/repo`),
+then required to match that descriptor path. Thus equivalent spellings such
+as `./sub.mk` do not erase raw evidence or change which bytes/path authorize
+selection. This does not infer symlink resolution or broaden accepted
+non-root-CWD paths.
+
 The GNU4.3 x86-64 completion ABI is derived from actual instruction operands,
 direct calls, closed evaluator/reader/pass control flow, variable allocation
 and flag code, and the independent flavor-table arms. No local executable

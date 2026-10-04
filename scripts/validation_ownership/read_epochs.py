@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 from collections import Counter
 import hashlib
+import posixpath
 import re
 import struct
 import sys
@@ -29,6 +30,10 @@ COMPLETION_VERSION = 4
 
 class ReadEpochError(MakeProbeError):
     pass
+
+
+def _resolved_source_path(resolved):
+    return posixpath.normpath(resolved if resolved.startswith("/") else "/repo/" + resolved)
 
 
 class Elf:
@@ -1208,9 +1213,6 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
                             or any(part in {"", "."} for part in path.split("/"))
                         ):
                             raise ReadEpochError("completion source open has an invalid immutable path")
-                        source_name = event["name"].removeprefix("/repo/")
-                        if source_name != path:
-                            raise ReadEpochError("completion source open differs from its original visit spelling")
                         row = inventory.get(path)
                         if isinstance(custody, dict) and custody.get("kind") in {"snapshot", "prior-publication"}:
                             expected_keys = {"kind"} if custody["kind"] == "snapshot" else {"kind", "owner", "serial"}
@@ -1258,6 +1260,9 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
                 or (event["error"] == 0) != (event["source"] is not None)
             ):
                 raise ReadEpochError("original source return/status is inconsistent")
+            if value["version"] == COMPLETION_VERSION and event["source"] is not None:
+                if _resolved_source_path(event["resolved"]) != "/repo/" + opened_paths[event["visit"]]:
+                    raise ReadEpochError("completion source return names a different actual stream")
             active.pop()
         elif kind == "pass-exit":
             goals = event["goals"]

@@ -146,6 +146,60 @@ class CompletionTraceDataApiTests(unittest.TestCase):
             with self.subTest(defect=defect), self.assertRaises(read_epochs.ReadEpochError):
                 read_epochs.validate_trace(changed, changed["scope"], count_limit=32, file_limit=1024)
 
+    def test_v4_binds_resolved_source_to_descriptor_path_not_callback_spelling(self):
+        for callback_name, resolved in (
+            ("./sub.mk", "sub.mk"),
+            ("sub.mk", "./sub.mk"),
+            ("sub.mk", "/repo/sub.mk"),
+            ("/repo/sub.mk", "/repo/sub.mk"),
+            ("dir/../sub.mk", "dir/../sub.mk"),
+        ):
+            trace = self.trace_data_v4()
+            opened = [row for row in trace["events"] if row["kind"] == "source-open"][1]
+            exited = next(
+                row for row in trace["events"]
+                if row["kind"] == "source-exit" and row["visit"] == 2
+            )
+            opened["name"] = callback_name
+            opened["path"] = "sub.mk"
+            trace["selection"]["inventory"][1]["path"] = "sub.mk"
+            exited["resolved"] = resolved
+            with self.subTest(callback_name=callback_name, resolved=resolved):
+                self.assertIs(read_epochs.validate_trace(
+                    trace, trace["scope"], count_limit=32, file_limit=1024,
+                ), trace)
+                archive = read_epochs.reconstruct_archive(trace, budget=ProbeBudget())
+                opened_archive = archive.passes[0].visits[1].opens[0]
+                self.assertEqual((opened_archive.name, opened_archive.path), (callback_name, "sub.mk"))
+
+        for resolved in ("other.mk", "../sub.mk", "/outside/sub.mk", "/repo/../outside/sub.mk"):
+            trace = self.trace_data_v4()
+            opened = [row for row in trace["events"] if row["kind"] == "source-open"][1]
+            exited = next(
+                row for row in trace["events"]
+                if row["kind"] == "source-exit" and row["visit"] == 2
+            )
+            opened["name"] = "./sub.mk"
+            opened["path"] = "sub.mk"
+            trace["selection"]["inventory"][1]["path"] = "sub.mk"
+            exited["resolved"] = resolved
+            with self.subTest(rejected_resolved=resolved), self.assertRaises(read_epochs.ReadEpochError):
+                read_epochs.validate_trace(trace, trace["scope"], count_limit=32, file_limit=1024)
+
+        foreign = self.trace_data_v4()
+        opened = [row for row in foreign["events"] if row["kind"] == "source-open"][1]
+        exited = next(
+            row for row in foreign["events"]
+            if row["kind"] == "source-exit" and row["visit"] == 2
+        )
+        opened["name"] = "./sub.mk"
+        opened["path"] = "sub.mk"
+        foreign["selection"]["inventory"][1]["path"] = "sub.mk"
+        exited["resolved"] = "sub.mk"
+        exited["source"] = 1
+        with self.assertRaises(read_epochs.ReadEpochError):
+            read_epochs.validate_trace(foreign, foreign["scope"], count_limit=32, file_limit=1024)
+
     def test_prior_publication_open_requires_its_exact_frozen_pin(self):
         trace = self.trace_data_v4()
         source = trace["sources"][1]
@@ -178,7 +232,7 @@ class CompletionTraceDataApiTests(unittest.TestCase):
         source.update(bytes=len(data), sha256=hashlib.sha256(data).hexdigest(),
                       data=base64.b64encode(data).decode())
         opened["path"] = "build/remade.mk"
-        opened["name"] = "build/remade.mk"
+        opened["name"] = "./build/remade.mk"
         trace["events"][6]["name"] = "build/remade.mk"
         trace["events"][8]["resolved"] = "build/remade.mk"
         opened["custody"] = {
@@ -198,6 +252,18 @@ class CompletionTraceDataApiTests(unittest.TestCase):
         self.assertIs(read_epochs.validate_trace(
             trace, trace["scope"], count_limit=32, file_limit=1024,
         ), trace)
+        archive = read_epochs.reconstruct_archive(trace, budget=ProbeBudget())
+        self.assertEqual(
+            (archive.passes[0].visits[1].opens[0].name, archive.passes[0].visits[1].opens[0].path),
+            ("./build/remade.mk", "build/remade.mk"),
+        )
+        wrong_exit = copy.deepcopy(trace)
+        next(
+            row for row in wrong_exit["events"]
+            if row["kind"] == "source-exit" and row["visit"] == 2
+        )["resolved"] = "build/foreign.mk"
+        with self.assertRaises(read_epochs.ReadEpochError):
+            read_epochs.validate_trace(wrong_exit, wrong_exit["scope"], count_limit=32, file_limit=1024)
         late = copy.deepcopy(trace)
         late_data = b"include $(LATE)\n"
         late["sources"][1].update(
