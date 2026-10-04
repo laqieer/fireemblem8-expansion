@@ -4154,6 +4154,66 @@ Reset each memory model and retain session-only preimages/results; no native
 cleanup is needed for inert cases. Revert or fix forward through normal
 ancestry if later qualification exposes a regression.
 
+### Exact original constructor-composition precision
+
+This extends **TC-WORKFLOW-GATE-OWNERSHIP-001** for #180 / PR #186 under
+[scope5980444731](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5980444731).
+The confirmed source defect is independent of attribution of native
+run37204671020: a known exact inline-wildcard composition lost its value at
+simple assignment. All eighteen diagnostic allocations remain spent.
+
+Use the clean assigned source/host prerequisites and the focused
+`test_phase_census.OriginalExactCompositionApiTests` class. Inspect and
+AST-select the actual source APIs into a credential-free
+`/usr/bin/python3 -I -S -B` process; preload standard-library dependencies and
+the unchanged framework documents before trapping filesystem, process,
+network, ctypes/native, evaluation, imports and namespace effects. Set the
+class's `framework_documents` to those preloaded documents for this inert
+route. Fixed regular/directory rows must reach the actual
+`ProbeSession._wildcard_image` and `_star_name`, never a successful mocked
+resolver or source proof. No Make/compiler, public report, native allocation,
+remote action or package installation belongs to this local procedure.
+
+1. Assign `INPUT := include/header.h $(wildcard src/*.c)` with the fixed
+   regular path `src/input.c`. Require exact initializer and captured value
+   `include/header.h src/input.c`, then retain `out/early` with both
+   prerequisites. Repeat with `::=`, braces, leading/trailing literal fragments,
+   adjacent wildcards and exact empty wildcards; preserve original spaces.
+2. Consume that value through direct/computed headers and simple/recursive
+   aliases. Mutate an original operand after assignment: simple captures keep
+   the earlier value and recursive bodies read the later one. Exercise common
+   conditional replacement, append and complete finite normalization; genuine
+   divergent, unknown, cyclic, unsafe and effectful inputs retain rejection.
+3. Select complete multiline declarations from unchanged `generated_data.mk`
+   by their first physical line, retaining each whole logical chunk. Include
+   both unchanged generation/modern-override macros and their calls. Require
+   all eight rules and all nine characters literal paths plus every matched
+   shared/table/asset script in the finite image. Equivalent config/macro
+   renaming must retain identical targets and prerequisites.
+4. Refuse the original namespace image and require the composition to remain
+   header-bound/nonvalue. Exact consumers, terminal borrowing and unissued
+   source/runtime routes must still reject. Retain existing scoped/inherited,
+   stale/changed/restored consumption, reentrant, entry/cache/total/depth/
+   deadline and sticky-failure controls without changing limits or assertions.
+5. Load the exact preceding source methods as a negative control, without
+   modifying the tested input. Record the actual regression failures and
+   characters-header refusal. Restore that same preimage and repeat; then
+   restore candidate source and require the regression to pass. A neutral
+   implementation-local rename and equivalent source naming remain green.
+   Record actual assertions, returned headers, stdout/stderr and direct exits,
+   not arbitrary pass strings or synthetic native/worker observations.
+
+Dependencies remain the existing literal/finite/constructor/fact, assignment,
+read-lifetime, namespace, source-authority and resource contracts; there is no
+new operator, registry, service, quota, flag or independent issue dependency.
+Unproved data remains incompatible with exact admission. No ROM/RAM, save,
+localization, generated content or modern/archival build-output change is
+introduced. Reset each memory-only model; retain preimage/results only in
+session storage. Revert or fix forward through normal ancestry if later
+qualification exposes a regression. Local evidence is not full native report,
+H1, resource sizing, independent review, Build, merge/master, issue closure or
+remote completion; all coordinator-owned final gates remain required.
+
 #### Mixed-fact transitive and scoped provenance follow-up
 
 The same **TC-WORKFLOW-GATE-OWNERSHIP-001** includes MF-REVIEW-001/002 under

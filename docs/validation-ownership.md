@@ -1852,11 +1852,24 @@ expressions. Every literal separator and every component must prove safe;
 unknown, malformed, effectful or staged components are not empty strings.
 References use the original assignment-time literals or current-version
 header bounds, including existing bare aliases, never a later native value.
-The actual mixed characters-config initializer (nine literal paths followed
-by an asset-script wildcard) uses this generic composition, not a table,
-macro or filename exemption. Recursive compositions and appends do not gain
-new snapshot semantics. Bounds cannot supply exact template parameters,
+Constructor compositions first retain an established exact original value;
+a weaker header bound must not displace a proven singleton assignment value.
+The actual multiline characters-config initializer (nine literal paths followed
+by an asset-script wildcard) therefore retains its exact assignment-time data
+when the original finite image is available. Only an unavailable exact image
+uses the generic header-bound fallback, not a table, macro or filename exemption.
+Existing literal/reference-only fact shapes remain unchanged. Recursive
+compositions and appends do not gain new snapshot semantics. Bounds cannot supply exact template parameters,
 targets, comparison operands, recipe values or native-value claims.
+
+The [exact-composition regression procedure](test-cases/workflow-governance.md#exact-original-constructor-composition-precision)
+covers immediate/braced/fragment/empty-wildcard values, forwarded/computed
+consumers, assignment timing, conditional append/replacement and both original
+framework macros. Its fixed unissued directory rows exercise the actual wildcard
+image helper; they grant no native/source authority. Restoring the old initializer
+and assignment selection recovers the exact-known loss. This source correction
+does not attribute the exclusive cause of the failed native report, allocate
+another run or qualify any final report/resource/CI gate.
 
 The separate exact initializer path supports bounded original `notdir`,
 `addprefix`, `sort` and substitution-reference chains, including nested literal

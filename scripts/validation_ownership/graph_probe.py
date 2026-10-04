@@ -1102,10 +1102,8 @@ class _MakeSourceMode:
                     literal = self.literal_text(expression)
                 except RecursionError:
                     return None
-                if literal is not None:
-                    header = self.template_header_composition(expression)
-                    if header is not None or not _original_constructor_expression(expression):
-                        return header
+                if literal is not None and not _original_constructor_expression(expression):
+                    return self.template_header_composition(expression)
             value = self.exact_initializer_value(expression)
             if value is not None:
                 return "exact", value
@@ -1659,7 +1657,10 @@ class _MakeSourceMode:
             ):
                 # Keep the existing singleton assignment-time fact contract.
                 template_value = self.template_initializer(value)
-                if template_value is not None and active is True and effect.applies is True:
+                if (
+                    template_value is not None and template_value[0] != "header-bound"
+                    and active is True and effect.applies is True
+                ):
                     literal_choices = None
             if literal_choices is None and (
                 operator == "+=" or scope is not None and self.original_execution is not None

@@ -6,6 +6,7 @@ from dataclasses import asdict, replace
 import gc
 from pathlib import Path, PurePosixPath
 import shlex
+import stat
 import subprocess
 import sys
 import tracemalloc
@@ -374,6 +375,181 @@ class OriginalFiniteTemplateApiTests(unittest.TestCase):
         with self.assertRaisesRegex(MakeProbeError, "borrow a terminal native value"):
             mode.template_mode.native_value("WORDS")
         self.inert(mode, original)
+
+
+class OriginalExactCompositionApiTests(unittest.TestCase):
+    """Exact DATA over finite unissued directory rows, not source authority."""
+
+    parse = OriginalFiniteTemplateApiTests.parse
+    inert = OriginalFiniteTemplateApiTests.inert
+
+    def mode(self, *, bound=False, paths=("src/input.c",)):
+        mode, original = OriginalFiniteTemplateApiTests().mode()
+        namespace = set(paths) | {"."}
+        namespace.update(parent.as_posix() for path in paths for parent in PurePosixPath(path).parents)
+        members = {}
+        for path in sorted(namespace - {"."}):
+            parent = PurePosixPath(path).parent.as_posix()
+            kind = stat.S_IFREG if path in paths else stat.S_IFDIR
+            members.setdefault(parent, []).append((PurePosixPath(path).name, (0, 0, kind)))
+        image = SimpleNamespace(members=members, forbidden=())
+        mode.namespace = frozenset(namespace)
+        owner = SimpleNamespace(budget=mode.budget, _original_runtime_wildcard=OriginalFiniteTemplateApiTests().unavailable)
+        def wildcard(pattern):
+            if bound:
+                raise make_probe._NamespaceUnavailable("unadmitted finite namespace")
+            return make_probe.ProbeSession._wildcard_image(
+                owner, image, pattern, lambda name: image.members.get(name, ()), observation=None,
+            )
+        mode.original_wildcard = wildcard
+        return mode, original
+
+    @staticmethod
+    def source(prefix, prerequisite="$(INPUT)"):
+        return (
+            prefix + "\nPARAMS := early\n"
+            "define RULE\nout/$(1): " + prerequisite + "\nendef\n"
+            "$(foreach item,$(PARAMS),$(eval $(call RULE,$(item))))\n"
+        )
+
+    def headers(self, mode):
+        return [unit.source_rule for call in mode.template_mode.calls
+                for unit in call.units if unit.recipe_ordinal is None]
+
+    def test_exact_constructor_fragments_preserve_assignment_and_header_values(self):
+        for operator in (":=", "::="):
+            for expression, expected in (
+                ("include/header.h $(wildcard src/*.c)", "include/header.h src/input.c"),
+                ("${wildcard src/*.c} include/header.h", "src/input.c include/header.h"),
+                ("prefix$(wildcard src/*.c)suffix", "prefixsrc/input.csuffix"),
+                ("$(wildcard src/*.c)${wildcard src/*.c}", "src/input.csrc/input.c"),
+                ("include/header.h $(wildcard absent/*.c)", "include/header.h "),
+                ("$(wildcard absent/*.c)${wildcard absent/*.c}", ""),
+            ):
+                with self.subTest(operator=operator, expression=expression):
+                    mode, original = self.mode()
+                    self.assertEqual(mode.template_initializer(expression), ("exact", expected))
+                    self.parse(mode, self.source("INPUT " + operator + " " + expression))
+                    self.assertEqual(mode.exact_reference("INPUT"), expected)
+                    self.assertEqual(mode.literal_values("$(INPUT)"), {expected})
+                    header, = self.headers(mode)
+                    self.assertEqual(header.targets, ("out/early",))
+                    self.assertEqual(header.prerequisites, tuple(expected.split()))
+                    self.inert(mode, original)
+
+    def test_alias_direct_and_computed_consumers_keep_complete_exact_headers(self):
+        for prefix, prerequisite in (
+            ("INPUT := include/header.h $(wildcard src/*.c)", "$(INPUT)"),
+            ("INPUT := include/header.h $(wildcard src/*.c)\nALIAS := $(INPUT)", "${ALIAS}"),
+            ("INPUT := include/header.h $(wildcard src/*.c)\nALIAS = $(INPUT)", "$(ALIAS)"),
+            ("INPUT_early := include/header.h $(wildcard src/*.c)", "$(INPUT_$(1))"),
+            ("KEY := early\nINPUT_early := include/header.h $(wildcard src/*.c)\n"
+             "ALIAS := $(INPUT_$(KEY))", "$(ALIAS)"),
+            ("", "include/header.h ${wildcard src/*.c}"),
+        ):
+            with self.subTest(prefix=prefix, prerequisite=prerequisite):
+                mode, original = self.mode()
+                self.parse(mode, self.source(prefix, prerequisite))
+                header, = self.headers(mode)
+                self.assertEqual(header.prerequisites, ("include/header.h", "src/input.c"))
+                self.inert(mode, original)
+
+    def test_simple_capture_and_recursive_use_preserve_original_assignment_timing(self):
+        for operator, expected in ((":=", ("before", "src/input.c")), ("=", ("after", "src/input.c"))):
+            with self.subTest(operator=operator):
+                mode, original = self.mode()
+                self.parse(mode, self.source(
+                    "DATA := before\nINPUT " + operator + " $(DATA) $(wildcard src/*.c)\nDATA := after",
+                ))
+                header, = self.headers(mode)
+                self.assertEqual(header.prerequisites, expected)
+                self.inert(mode, original)
+
+    def test_conditional_append_replacement_and_common_finite_consumers(self):
+        for tail, prerequisite, expected in (
+            ("INPUT += tail", "$(INPUT)", ("include/header.h", "src/input.c", "tail")),
+            ("ifdef SELECT\nINPUT := include/header.h src/input.c\nendif",
+             "$(INPUT)", ("include/header.h", "src/input.c")),
+            ("ifdef SELECT\nINPUT += src/input.c\nendif\nCOMMON := $(sort $(INPUT))",
+             "$(COMMON)", ("include/header.h", "src/input.c")),
+        ):
+            with self.subTest(tail=tail):
+                mode, original = self.mode()
+                self.parse(mode, self.source(
+                    "INPUT := include/header.h $(wildcard src/*.c)\n" + tail, prerequisite,
+                ))
+                header, = self.headers(mode)
+                self.assertEqual(header.prerequisites, expected)
+                self.inert(mode, original)
+
+    framework_documents = None
+
+    def test_actual_multiline_framework_and_renamed_equivalent_retain_all_eight_rules(self):
+        documents = self.framework_documents
+        if documents is None:
+            root = Path(__file__).resolve().parents[3]
+            documents = ((root / "generated_data.mk").read_text(), (root / "modern.mk").read_text())
+        generated, modern = documents
+        names = {
+            "GENERATED_DATA_PY", "GENERATED_DATA_OUT_DIR", "GENERATED_DATA_LINKED_HAND_SOURCES",
+            "GENERATED_DATA_LINKED_TABLES", "GENERATED_DATA_SHARED_PY_SOURCES",
+            "GENERATED_DATA_ITEM_CAP_STAMP", "GENERATED_DATA_ACTIVE_HEADER",
+            *("GENERATED_DATA_CONFIG_INPUTS_" + name for name in ("classes", "items", "supports", "characters")),
+        }
+        declarations = [chunk.text for chunk in graph_probe._make_logical_chunks(generated)
+                        if (match := graph_probe.ASSIGNMENT.match(chunk.text.split("\n", 1)[0]))
+                        and match["name"] in names]
+        source = "PYTHON := python3\n" + "\n".join(declarations) + "\nMODERN_OUTPUT_DIR := build/modern\n"
+        for text, macro in ((generated, "GENERATED_DATA_LINK_TABLE_RULES"),
+                            (modern, "GENERATED_DATA_MODERN_OVERRIDE_RULES")):
+            start = text.index("define " + macro + "\n")
+            stop = text.index("\nendef", start) + len("\nendef")
+            caller, = [line for line in text.splitlines() if line.startswith("$(foreach ") and macro in line]
+            source += text[start:stop] + "\n" + caller + "\n"
+        tables = ("classes", "items", "supports", "characters")
+        paths = ("scripts/generated_data/__init__.py", "scripts/assets/__init__.py", "scripts/assets/cli.py",
+                 *(f"scripts/generated_data/{name}/schema.py" for name in tables))
+        literals = (
+            "include/constants/characters.h", "include/constants/classes.h", "include/bmunit.h",
+            "include/bmitem.h", "include/constants/msg.h", "src/portrait_data.c", "src/face.c",
+            "assets/manifest.json", "assets/portrait_registry.json",
+        )
+        for renamed in (False, True):
+            with self.subTest(renamed=renamed):
+                mode, original = self.mode(paths=paths)
+                selected = source.replace("GENERATED_DATA_CONFIG_INPUTS", "PROJECT_INPUTS").replace(
+                    "GENERATED_DATA_LINK_TABLE_RULES", "PROJECT_RULE",
+                ) if renamed else source
+                self.parse(mode, selected)
+                rules = {header.targets[0]: header.prerequisites for header in self.headers(mode)}
+                self.assertEqual(len(rules), 8)
+                for name in tables:
+                    self.assertEqual(rules[f"build/modern/src/data_{name}.o"],
+                                     (f"build/generated/data/data_{name}.c",))
+                self.assertEqual(rules["build/generated/data/data_characters.c"], (
+                    "src/data/characters.json", "scripts/generated_data/__init__.py",
+                    "scripts/generated_data/characters/schema.py", *literals,
+                    "scripts/assets/__init__.py", "scripts/assets/cli.py",
+                ))
+                self.inert(mode, original)
+
+    def test_bound_only_composition_never_supplies_an_exact_consumer(self):
+        for operator in (":=", "::="):
+            with self.subTest(operator=operator):
+                mode, original = self.mode(bound=True)
+                expression = "include/header.h $(wildcard src/*.c)"
+                self.assertEqual(mode.template_initializer(expression),
+                                 ("header-bound", ("composition", expression)))
+                self.parse(mode, "INPUT " + operator + " " + expression + "\nALIAS := $(INPUT)\n")
+                self.assertTrue(mode.template_header_reference("INPUT"))
+                self.assertIsNone(mode.exact_reference("INPUT"))
+                self.assertIsNone(mode.literal_values("$(ALIAS)"))
+                with self.assertRaisesRegex(MakeProbeError, "lacks exact original"):
+                    self.parse(mode, self.source("", "$(ALIAS)"))
+                self.assertFalse(mode.template_mode.calls)
+                with self.assertRaisesRegex(MakeProbeError, "borrow a terminal native value"):
+                    mode.template_mode.native_value("INPUT")
+                self.inert(mode, original)
 
 
 class OriginalRuntimeWildcardSourceApiTests(unittest.TestCase):
