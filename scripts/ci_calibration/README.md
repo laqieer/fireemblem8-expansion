@@ -1,5 +1,94 @@
 # Contained original-include retained-state diagnostic
 
+## Accepted finite DATA full-report identity preparation
+
+**Local-only five-path identity/admission/source-reflection child for #180 /
+#186; ineligible WIP, never merge. No native allocation, trigger push, retry
+or report completion is authorized.** Assignment
+`issue180-finite-report-rebind-f417` is one normal child of
+`c17d4302372600fb422b0a05bcfbe2858a7b6849`, tree
+`54c49cdd47e266d193339606cccc8850685e64d3`, without upstream merges.
+Frozen scope:
+[5976677657](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5976677657).
+The complete finite DATA source family, including the coordinator's two
+conditional-capture connections, was accepted under
+[5976677537](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5976677537)
+by distinct read-only reviewer `a9100eaa-1314-44b7-bca1-5dea6e389dce`.
+Source acceptance is not harness, native, shipping or final-gate authority.
+
+Select immutable `615db43edce43103787d70fde82576e9f3884b73` and unchanged
+BASE `ec1dc8553419c8833a687fd8d4a6521a4e29ff7a`. Its actual normal parents
+are `baa0096d96fce740155d3c701a39b944bf89f808` and
+`fb24e38cffae626f8d7b47ff6baf7a88d8db76c8`. The complete BASE source diff
+is 123 paths, +87,531/-843 (88,374 changed lines), not just the final
+104-line conditional delta. All19 old workflows and32 historical normal
+edges remain fixed; add only closed fresh edge33. Localization2 keeps its
+own workflow, sourcefb24, exactc17 endpoint and complete five-path inventory.
+All older metadata, pin/release, diagnostic, runtime and source inventories
+and endpoints remain independent and unchanged.
+
+For existing `TC-ISSUE180-ORIGINAL-IMPORT-001`, compare the complete parsed
+new workflow with localization2, allowing only identity/job/output labels
+and the selected source checkout. Observe exact Git inventories and33-edge
+lineage, then execute focused actual event, source-binding and inventory
+predicates with missing/wrong/extra/merge/attempt/recovery-ref negatives,
+reversal and neutral AST controls. Reflect, never import or execute,
+selected615: bind every changed/added finite projector, helper, reference,
+constructor, scalar, adapter, include and conditional-capture member to
+its complete immutable AST pair. Preserve unrelated module/class bodies,
+public signatures, production phase_census, source authority/resources,
+all454 parent helper/test methods and assertions, and all four conditional
+methods. Extra or wrong bodies, signatures, classes, module statements,
+consumers and captures must refuse; there is no whole-class/name-only waiver.
+Retain every older source pair/reflection assertion.
+
+Use only inspected credential-free `-I -S -B` finite selectors, a small
+metadata/pin/lifetime compatibility subset for
+`TC-ISSUE180-MEMBER-PIN-RACE-001`, and parsed property contracts. Never run
+real `test_output_phase` process/pipe/watchdog methods. Record actual fresh
+method/subtest/parameter events and script exits separately from supplied
+historical source59/146+62/262 and coordinator63/182+62/262 evidence.
+The historical18-case conditional matrix,16 losses reduced to zero,
+neutral witness and12/12/16 connection-restoration losses are unissued DATA
+evidence, not fresh harness or native proof. Do not rerun the old273/1767
+matrix, whole source behavior, native report, build or profile sweeps.
+Operational effect traps are not hostile same-UID isolation. Runtime-owner
+PID/RSS/OS exit and CLI event/receipt authority remain unknown.
+
+Protected observer/worker/entry/kernel/root_stage/runtime-view/volume,
+production, pin/release and v3/v4 protocol code is unchanged. One original
+complete CURRENT/BASE/source/Make/generator/lifecycle `graph_report.check`
+and the original serializer retain one shared budget/session and absolute
+3600-second clock,14 cumulative queries with signed64 sentinel
+9223372036854775807,19 counters, seven fresh qualifiers, five bounded
+artifacts and every original hard/unit/input/record/stream/plan/context/
+entry/file/live/funded-VM/physical/source/namespace/ownership/error/cleanup
+boundary. Pins, read-only credentials, first-owner public push/run1attempt1
+and70/90-minute timeouts are unchanged. ESRCH exits still earn zero held
+credit, at least two actual captures remain required, and all captured-handle
+release/close chains, pre-outer/lifetime/watchdog/terminal gates stay exact.
+No sample, quota, refund, reset, timeout, resource or workload limit changes.
+
+All16 native allocations remain spent. Last native run37055185452 at
+c17/sourcefb24 returned zero reports/serializations:203 runs/one state,
+711,323,010 accounted bytes,894,496,768-byte physical peak,11 PIDs, failed
+seven qualifiers and cleanup. Late v4's20-name state is partial/report-only/
+authorityfalse, without raw values or evaluation. Two known C_OBJECTS
+bodies and unknown ALL_DEPS are not original values, joint/read-set/query/
+include authority or an exclusive cause. Selected615 is not guaranteed to
+clear every original barrier.
+
+Main/laqieer alone immediately owner-pushes the exact local child on
+`recovery/session-f417-issue180-full-report-finite1`, a nontriggering ref.
+The future `calibration/issue-180-full-report-finite-1` ref stays absent and
+unallocated until separate fresh exact-harness review and frozen allocation.
+All report/serializer/verifier/resource/native/H1/security/Copilot/Build/
+master/architecture/merge/closure/remote-completion/cleanup gates remain
+mandatory and open. There are no new services, gates, dependencies,
+source copies, committed content-hash ledgers, feature/profile, save,
+generated-data, localization, ROM or RAM changes. Prior sections below
+retain historical evidence and do not claim fresh execution.
+
 ## Original-include localization2 identity preparation
 
 **Local-only identity/admission child for #180 / #186; ineligible WIP,

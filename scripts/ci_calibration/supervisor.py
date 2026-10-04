@@ -65,6 +65,7 @@ STRUCTURAL_REPORT_SHA = "ca119454f152251798f22a171bf9d07466160834"
 SORT_REPORT_SHA = "7e5a5bf1b7d4aa5d3b5c64d70654a96ba6732e50"
 INCLUDE_STATE_SHA = "8c1874e56b7a7de42254d60db926d77930894adc"
 MEMBER_PIN_SHA = "8d57389c40a48c7bfc1cd10cd9a6a75a6981af1f"
+INCLUDE_STATE_REBIND_SHA = "c17d4302372600fb422b0a05bcfbe2858a7b6849"
 COMPONENT_PATHS = frozenset({
     policy.COMPONENT_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "worker.py", "root_stage.py", "supervisor.py", "observation_failure.py", "README.md",
@@ -159,6 +160,11 @@ MEMBER_PIN_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
     "supervisor.py", "test_output_phase.py", "README.md",
 ))
 INCLUDE_STATE_REBIND_PATHS = frozenset({
+    policy.INCLUDE_STATE_REBIND_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
+        "policy.py", "supervisor.py", "test_ci_calibration.py", "README.md",
+    )),
+})
+FINITE_REPORT_PATHS = frozenset({
     policy.WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "supervisor.py", "test_ci_calibration.py", "README.md",
     )),
@@ -167,7 +173,8 @@ INCLUDE_STATE_REBIND_PATHS = frozenset({
 
 def validate_harness_lineage(lines, head):
     if lines != [
-        f"{head} {MEMBER_PIN_SHA}",
+        f"{head} {INCLUDE_STATE_REBIND_SHA}",
+        f"{INCLUDE_STATE_REBIND_SHA} {MEMBER_PIN_SHA}",
         f"{MEMBER_PIN_SHA} {INCLUDE_STATE_SHA}",
         f"{INCLUDE_STATE_SHA} {SORT_REPORT_SHA}",
         f"{SORT_REPORT_SHA} {STRUCTURAL_REPORT_SHA}",
@@ -200,7 +207,7 @@ def validate_harness_lineage(lines, head):
         f"{RETAINED_HARNESS_SHA} {PREPARATION_SHA}",
         f"{PREPARATION_SHA} {policy.BASE}",
     ]:
-        raise policy.GuardError("diagnostic requires its exact normal include-state-rebind/member-pin/include-state/sort-report/structural-report/consumer-report/append-report/runtime-report/make-boundary/make-context/import-release/original-import/traceless/partial-anchor/Python-corrected/corrected-report/code-metadata/registration/localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
+        raise policy.GuardError("diagnostic requires its exact normal finite-report/include-state-rebind/member-pin/include-state/sort-report/structural-report/consumer-report/append-report/runtime-report/make-boundary/make-context/import-release/original-import/traceless/partial-anchor/Python-corrected/corrected-report/code-metadata/registration/localization/rebind/telemetry/accounting/finalization/error-correction/report/correction/component/root20/root19/root18/root17/preparation/BASE lineage")
 
 
 def validate_correction_inventory(data):
@@ -569,12 +576,28 @@ def validate_include_state_rebind_inventory(data):
         raise policy.GuardError("include-state rebind requires its complete fixed inventory")
     changes = list(zip(rows[:-1:2], rows[1:-1:2]))
     allowed = {name.encode("ascii") for name in INCLUDE_STATE_REBIND_PATHS}
-    workflow = policy.WORKFLOW.encode("ascii")
+    workflow = policy.INCLUDE_STATE_REBIND_WORKFLOW.encode("ascii")
     if (
         {name for _, name in changes} != allowed or len(changes) != len(allowed)
         or any(kind != (b"A" if name == workflow else b"M") for kind, name in changes)
     ):
         raise policy.GuardError("include-state rebind changed a spent or unallocated surface")
+
+
+def validate_finite_report_inventory(data):
+    if type(data) is not bytes:
+        raise policy.GuardError("finite report inventory is not a Git byte record")
+    rows = data.split(b"\0")
+    if len(rows) != 2 * len(FINITE_REPORT_PATHS) + 1 or rows[-1] != b"":
+        raise policy.GuardError("finite report rebind requires its complete fixed inventory")
+    changes = list(zip(rows[:-1:2], rows[1:-1:2]))
+    allowed = {name.encode("ascii") for name in FINITE_REPORT_PATHS}
+    workflow = policy.WORKFLOW.encode("ascii")
+    if (
+        {name for _, name in changes} != allowed or len(changes) != len(allowed)
+        or any(kind != (b"A" if name == workflow else b"M") for kind, name in changes)
+    ):
+        raise policy.GuardError("finite report rebind changed a spent or unallocated surface")
 
 
 def apparmor_text(name):
@@ -1394,13 +1417,14 @@ class Owner:
         if git(self.harness, "status", "--porcelain=v1", "--untracked-files=all").strip():
             raise policy.GuardError("workflow harness has uncommitted source changes")
         validate_harness_lineage(
-            git(self.harness, "rev-list", "--parents", "--max-count=32", "HEAD").decode().splitlines(),
+            git(self.harness, "rev-list", "--parents", "--max-count=33", "HEAD").decode().splitlines(),
             self.scope["harness_sha"],
         )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
         if any(
             name and name.decode() not in {
-                policy.WORKFLOW, policy.INCLUDE_STATE_WORKFLOW, policy.SORT_REPORT_WORKFLOW,
+                policy.WORKFLOW, policy.INCLUDE_STATE_REBIND_WORKFLOW,
+                policy.INCLUDE_STATE_WORKFLOW, policy.SORT_REPORT_WORKFLOW,
                 policy.STRUCTURAL_REPORT_WORKFLOW, policy.CONSUMER_REPORT_WORKFLOW,
                 policy.APPEND_REPORT_WORKFLOW, policy.RUNTIME_REPORT_WORKFLOW,
                 policy.MAKE_CONTEXT_WORKFLOW, policy.ORIGINAL_IMPORT_WORKFLOW,
@@ -1510,7 +1534,10 @@ class Owner:
             self.harness, "diff", "--name-status", "-z", INCLUDE_STATE_SHA, MEMBER_PIN_SHA,
         ))
         validate_include_state_rebind_inventory(git(
-            self.harness, "diff", "--name-status", "-z", MEMBER_PIN_SHA, "HEAD",
+            self.harness, "diff", "--name-status", "-z", MEMBER_PIN_SHA, INCLUDE_STATE_REBIND_SHA,
+        ))
+        validate_finite_report_inventory(git(
+            self.harness, "diff", "--name-status", "-z", INCLUDE_STATE_REBIND_SHA, "HEAD",
         ))
         validate_accounting_workflow(
             git(self.harness, "show", REPORT_FINALIZATION_SHA + ":" + policy.FULL_REPORT_WORKFLOW),
