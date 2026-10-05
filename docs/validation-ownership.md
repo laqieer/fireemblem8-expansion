@@ -549,20 +549,33 @@ define/private/undefine operations cannot manufacture those receipts. This
 covers the real admitted source path, not arbitrary forged reader frames,
 unexported modifier/RBX samples or every exclusion predicate in isolation.
 
-**Unresolved machine criterion:** the closed returned trace has source,
-completion and pass events, but no child DR0..DR3/DR6/DR7 readback, siginfo/PC/
-issued-purpose transcript, modifier/RBX/reader-frame samples, inherited-slot
-readback after producer exec, source-active cancellation point, or source-pin
-release/close observations. `ReadTrace.arm`, `trap`, `assignment_completion`
-and `close` consume those facts inside the syscall child; the current trace
-cannot supply them to a trusted worker projection. Actual ABI2 validation and
-ordinary-command forgery rejection are feasible but do not prove those
-unexported states. The kernel/frame/pin selector intentionally names that
-partial boundary, not a completed hardware certificate. Native changed-CWD,
-stale live pins and adversarial frame/modifier controls likewise remain
-unqualified. Parent mocks and inert schedule models cannot fill this gap.
-No production observation hook is authorized here; the coordinator must
-disposition the precisely missing child seam before claiming those criteria.
+Version4 native traces now include a closed optional `machine` observation
+projection from the same syscall supervisor. Register snapshots retain actual
+clear/arm readbacks; traps retain actual signal code, PC, DR6 and issued slot
+purpose; successful source returns retain retired pin identity. Rows bind to
+semantic trace sequence, child PID and exec/pass context, stay inside existing
+count/deadline/byte accounting, and undergo closed-schema validation. Every
+semantic entry/return/completion must have its corresponding trap observation
+and every successfully opened source must have its retirement row. Invalid
+address/control/status/purpose/signal, foreign child/context, changed pin or
+missing retirement refuses. General older/synthetic archives without this
+field remain valid; machine qualification must explicitly require it.
+Execution observations require their immediately preceding same-child clear.
+Every semantic Make exec must bind to the observed Make PID; helper exec
+sequence/PID pairs must match the actual source-effect dispatch map. Dispatch
+rows include that actual PID only for traces with machine projection. Removing
+clears or removing/changing a helper exec/clear pair cannot borrow another
+dispatch's evidence.
+`test_native_completion_kernel_frame_pin_terminal` checks actual native
+read/remake/reexec/producer observations and mutations of that projection.
+This is operational evidence, not authentication or a hardware certificate.
+
+**Unresolved machine criterion:** modifier/RBX/reader-frame samples,
+source-active cancellation, arbitrary changed-reader-frame adversaries,
+stale live pins, and complete source-close/teardown observations remain
+unqualified. Basic actual register/trap/pin rows do not fill those gaps or prove
+the complete original runtime family. Native changed-CWD likewise remains
+unqualified. Parent mocks and inert schedule models cannot fill these gaps.
 
 Fresh source-test review and separate contained execution authorization are
 still required for each invocation. Full report/serializer/verifier and

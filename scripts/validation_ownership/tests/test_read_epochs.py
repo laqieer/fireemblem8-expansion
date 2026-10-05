@@ -1297,7 +1297,18 @@ class ReadEpochTests(unittest.TestCase):
         self.fixture.assert_clean(session)
 
     def test_native_completion_kernel_frame_pin_terminal(self):
-        """Real forged notification refusal; child slot/pin readback remains unknown."""
+        """Real native state projection and forged notification refusal."""
+        from scripts.validation_ownership import source_effects
+        from scripts.validation_ownership.producer_channel import ChannelError
+
+        actual_bindings = []
+        original_validator = source_effects.validate_journal
+
+        def retain_bindings(value, trace, **kwargs):
+            result = original_validator(value, trace, **kwargs)
+            actual_bindings.append((value, trace, kwargs))
+            return result
+
         body = (
             "import ctypes\n"
             "lib=ctypes.CDLL(None)\n"
@@ -1308,12 +1319,13 @@ class ReadEpochTests(unittest.TestCase):
         session = self.fixture.session(runtime_files=("/usr/include/build",))
         deadline = session.budget.deadline
         with session:
-            observed = session.make(
-                "all", commands={"python3 writer.py": Command(
-                    ("/usr/bin/python3", "/repo/writer.py"), code=("writer.py",),
-                    outputs=("build/remade.mk",),
-                )}, observe_source_phases=True,
-            )
+            with patch.object(source_effects, "validate_journal", retain_bindings):
+                observed = session.make(
+                    "all", commands={"python3 writer.py": Command(
+                        ("/usr/bin/python3", "/repo/writer.py"), code=("writer.py",),
+                        outputs=("build/remade.mk",),
+                    )}, observe_source_phases=True,
+                )
             archive = session._original_source_archive(observed)
             self.assertEqual(archive.version, read_epochs.COMPLETION_VERSION)
             self.assertTrue(any(part.completions for part in archive.passes))
@@ -1327,6 +1339,87 @@ class ReadEpochTests(unittest.TestCase):
             self.assertIs(read_epochs.validate_abi(
                 abi, dict(session.make_runtime)["/usr/bin/make"],
             ), abi)
+            machine = observed.read_trace["machine"]
+            self.assertTrue(machine["closed"])
+            rows = machine["events"]
+            armed = [row for row in rows if row["kind"] == "arm"]
+            trapped = [row for row in rows if row["kind"] == "trap"]
+            retired = [row for row in rows if row["kind"] == "pin-retired"]
+            self.assertTrue(armed)
+            self.assertEqual(
+                {row["purpose"] for row in trapped},
+                {"pass-entry", "source-entry", "source-return", "pass-return", "assignment-completion"},
+            )
+            successful = [
+                event for event in observed.read_trace["events"]
+                if event["kind"] == "source-exit" and event["source"] is not None
+            ]
+            self.assertEqual(
+                {(row["visit"], row["source"]) for row in retired},
+                {(event["visit"], event["source"]) for event in successful},
+            )
+            make_pid = armed[0]["pid"]
+            self.assertTrue(any(row["kind"] == "clear" and row["pid"] != make_pid for row in rows))
+            for defect in (
+                "address", "control", "status", "purpose", "signal", "pin", "missing", "clears",
+                "make-pid",
+            ):
+                broken = copy.deepcopy(observed.read_trace)
+                state = broken["machine"]["events"]
+                arm = next(row for row in state if row["kind"] == "arm")
+                trap = next(row for row in state if row["kind"] == "trap")
+                pin = next(row for row in state if row["kind"] == "pin-retired")
+                if defect == "address":
+                    arm["registers"][0] += 1
+                elif defect == "control":
+                    arm["registers"][5] = 0
+                elif defect == "status":
+                    trap["status"] = 0
+                elif defect == "purpose":
+                    trap["purpose"] = "unissued"
+                elif defect == "signal":
+                    trap["sigcode"] = 0
+                elif defect == "pin":
+                    pin["identity"][1] += 1
+                elif defect == "missing":
+                    state.remove(pin)
+                    for seq, row in enumerate(state, 1):
+                        row["seq"] = seq
+                elif defect == "clears":
+                    state[:] = [row for row in state if row["kind"] != "clear"]
+                    for seq, row in enumerate(state, 1):
+                        row["seq"] = seq
+                else:
+                    execution = next(row for row in state if row["kind"] == "execute" and row["make"])
+                    prior = state[state.index(execution) - 1]
+                    execution["pid"] += 1000000
+                    prior["pid"] = execution["pid"]
+                with self.subTest(defect=defect), self.assertRaises(read_epochs.ReadEpochError):
+                    read_epochs.validate_trace(
+                        broken, broken["scope"], count_limit=session.budget.limits.observation_count,
+                        file_limit=session.budget.limits.file_bytes,
+                    )
+            value, trace, arguments = next(
+                entry for entry in actual_bindings if entry[1] is observed.read_trace
+            )
+            for defect in ("omitted-child", "child-pid"):
+                broken = copy.deepcopy(trace)
+                rows = broken["machine"]["events"]
+                child = next(row for row in rows if row["kind"] == "execute" and not row["make"])
+                child_index = rows.index(child)
+                if defect == "omitted-child":
+                    del rows[child_index - 1:child_index + 1]
+                    for seq, row in enumerate(rows, 1):
+                        row["seq"] = seq
+                else:
+                    child["pid"] += 1000000
+                    rows[child_index - 1]["pid"] = child["pid"]
+                read_epochs.validate_trace(
+                    broken, broken["scope"], count_limit=session.budget.limits.observation_count,
+                    file_limit=session.budget.limits.file_bytes,
+                )
+                with self.subTest(defect=defect), self.assertRaisesRegex(ChannelError, "actual source dispatch"):
+                    original_validator(value, broken, **arguments)
             with self.assertRaisesRegex(MakeProbeError, "unauthenticated"):
                 session.command(Command(("/usr/bin/python3", "-c", body)))
         self.assertTrue(session.budget.failed)

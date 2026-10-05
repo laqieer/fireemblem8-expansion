@@ -125,7 +125,9 @@ def validate_journal(value, trace, *, dispatches, requests, publications, count_
         if (
             not isinstance(event, dict) or not isinstance(event.get("kind"), str)
             or event["kind"] not in EVENT_FIELDS
-            or set(event) != EVENT_FIELDS[event["kind"]] | {"seq", "kind", "trace_seq"}
+            or set(event) != EVENT_FIELDS[event["kind"]] | {"seq", "kind", "trace_seq"} | (
+                {"pid"} if "machine" in trace and event["kind"] == "dispatch" else set()
+            )
             or type(event["seq"]) is not int or event["seq"] != sequence
             or type(event["trace_seq"]) is not int
             or not previous_trace <= event["trace_seq"] < len(trace["events"])
@@ -162,6 +164,8 @@ def validate_journal(value, trace, *, dispatches, requests, publications, count_
         if kind == "dispatch":
             if dispatch in dispatched or origin in dispatched.values() or event["context_sha256"] != digest(core):
                 raise ChannelError("native source dispatch is duplicated or differs from actual execution")
+            if "machine" in trace and (type(event["pid"]) is not int or event["pid"] <= 0):
+                raise ChannelError("native machine dispatch lacks its actual child PID")
             dispatched[dispatch] = origin
             continue
         producer = event["producer"]
@@ -208,6 +212,17 @@ def validate_journal(value, trace, *, dispatches, requests, publications, count_
     ):
         raise ChannelError("native source-effect observation omitted an origin, execution or publication")
     if trace["version"] == 4:
+        if "machine" in trace:
+            executed = [
+                (event["dispatch"], event["pid"]) for event in trace["machine"]["events"]
+                if event["kind"] == "execute" and not event["make"]
+            ]
+            bound = {
+                (event["dispatch"], event["pid"]) for event in value["events"]
+                if event["kind"] == "dispatch"
+            }
+            if len(executed) != len(actual) or set(executed) != bound:
+                raise ChannelError("native child clearing omits an actual source dispatch")
         publications_by_event = {
             event["seq"]: event for event in value["events"] if event["kind"] == "publication"
         }
@@ -284,7 +299,10 @@ class NativeSourceEffects:
             or any(core[name] != self.origins[origin][name] for name in ("executable", "rebuilding_makefiles"))
         ):
             raise ChannelError("successful source helper exec lost its issued native origin")
-        self.event("dispatch", origin=origin, dispatch=dispatch, context_sha256=digest(core))
+        self.event(
+            "dispatch", origin=origin, dispatch=dispatch, context_sha256=digest(core),
+            **({"pid": pid} if getattr(self.trace, "machine", None) is not None else {}),
+        )
         self.bindings[dispatch] = pid, state.pidfd, state, core
 
     def producer(self, pid, state, producer):

@@ -4945,6 +4945,25 @@ Cleanup is automatic. This control has no bug preimage because it strengthens
 evidence for existing correct behavior. It does not prove arbitrary forged
 frames, exported register/modifier samples or full machine qualification.
 
+Contract6002189638 projects the retained native child facts through the
+existing version4 trace's optional closed `machine` field. Run the existing
+`ReadEpochTests.test_native_completion_kernel_frame_pin_terminal` in the
+supported native environment. Actual read/remake/reexec must supply all issued
+trap purposes, actual clear/arm register readbacks, producer-child clearing,
+and a retired pin identity for each successful original source return.
+Mutating actual address/control/status/purpose/signal/pin facts or removing a
+retirement row must reject parsed validation. Older general trace fixtures and
+default-off observation remain supported, but cannot substitute for this
+machine evidence. No manual criterion applies; temporary children/files are
+reaped/removed by the existing lifetime. This projection is not authentication,
+complete reader-frame/modifier evidence, source-active cancellation or a
+complete original-family qualification. All other gate holds remain.
+Removing every clear or jointly changing a Make execute/clear PID must reject.
+Removing a helper execute and its clear, or changing both PIDs, must reject
+against the actual source-effect dispatch bindings even if the general trace
+remains structurally valid. These controls retain the real validator inputs;
+they do not manufacture a parallel dispatch registry.
+
 The original family also includes `native-one.dat` and then
 `./native-one.dat`. GNU Make reports both visit names as `native-one.dat`;
 the second spelling does not create a different source. Require distinct visit

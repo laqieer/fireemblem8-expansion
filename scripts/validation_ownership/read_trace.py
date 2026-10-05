@@ -98,6 +98,21 @@ class NativeReadTrace:
         self.pass_frame = None
         self.goals = {}
         self.io = None
+        self.machine = [] if self.version == read_epochs.COMPLETION_VERSION else None
+
+    def machine_event(self, kind, pid, **fields):
+        rows = getattr(self, "machine", None)
+        if rows is None:
+            return
+        if len(rows) + len(self.events) + self.traps >= self.config["observation_count"]:
+            raise read_epochs.ReadEpochError("native machine observations exceed the existing bound")
+        row = {
+            "seq": len(rows) + 1, "kind": kind, "trace_seq": len(self.events), "pid": pid,
+            "exec": self.execs, "pass": self.passes,
+            **fields,
+        }
+        self.policy.charge_metadata(len(encoded(row)))
+        rows.append(row)
 
     def event(self, kind, **fields):
         if len(self.events) + getattr(self, "traps", 0) >= self.config["observation_count"]:
@@ -146,15 +161,17 @@ class NativeReadTrace:
         mask = 0xE00F if index == 6 else (1 << 64) - 1
         if observed & mask != value & mask:
             raise read_epochs.ReadEpochError("original read debug-register write failed kernel readback")
+        return observed
 
     def clear(self, pid):
-        self.debug(pid, 7, 0)
-        self.debug(pid, 6, 0)
-        for index in range(4):
-            self.debug(pid, index, 0)
+        control = self.debug(pid, 7, 0)
+        status = self.debug(pid, 6, 0)
+        addresses = [self.debug(pid, index, 0) for index in range(4)]
+        self.machine_event("clear", pid, registers=[*addresses, status, control])
 
-    def actual_exec(self, pid, make):
+    def actual_exec(self, pid, make, dispatch=None):
         self.clear(pid)
+        self.machine_event("execute", pid, make=make, dispatch=dispatch)
         if not make:
             return
         if self.active or self.pass_frame is not None or self.io is not None or self.pending_barrier is not None or self.execs != self.passes:
@@ -233,12 +250,15 @@ class NativeReadTrace:
         if len(set(slots.values())) != len(slots):
             raise read_epochs.ReadEpochError("overlapping original read breakpoint sites")
         self.debug(self.pid, 7, 0)
-        for index in range(4):
-            self.debug(self.pid, index, slots.get(index, 0))
-        self.debug(self.pid, 6, 0)
-        self.debug(self.pid, 7, sum(1 << (2 * index) for index in slots))
+        addresses = [self.debug(self.pid, index, slots.get(index, 0)) for index in range(4)]
+        status = self.debug(self.pid, 6, 0)
+        control = self.debug(self.pid, 7, sum(1 << (2 * index) for index in slots))
         self.slots = slots
         self.purposes = purposes
+        self.machine_event(
+            "arm", self.pid, registers=[*addresses, status, control],
+            slots=[[index, address, purposes[index]] for index, address in sorted(slots.items())],
+        )
 
     def caller(self, registers, target):
         returned = self.number(registers.rsp)
@@ -264,7 +284,8 @@ class NativeReadTrace:
         self.native.ptrace(GETSIGINFO, pid, 0, ctypes.byref(info))
         if int.from_bytes(bytes(info[8:12]), "little", signed=True) != TRAP_HWBKPT:
             raise read_epochs.ReadEpochError("original read event is not a kernel hardware breakpoint")
-        fired = self.debug(pid, 6) & 15
+        status = self.debug(pid, 6)
+        fired = status & 15
         indices = [index for index in range(4) if fired & (1 << index)]
         registers = self.native.Registers()
         self.policy.charge_metadata(ctypes.sizeof(registers))
@@ -273,6 +294,10 @@ class NativeReadTrace:
             raise read_epochs.ReadEpochError("original read breakpoint is stale or unissued")
         index = indices[0]
         purpose = self.purposes.get(index)
+        self.machine_event(
+            "trap", pid, index=index, purpose=purpose, pc=registers.rip,
+            status=status, sigcode=TRAP_HWBKPT,
+        )
         if purpose == "pass-entry":
             if self.pass_frame is not None or self.active or self.passes + 1 != self.execs:
                 raise read_epochs.ReadEpochError("repeated original read entry in one exec")
@@ -578,6 +603,11 @@ class NativeReadTrace:
         self.goals[pointer] = current["visit"]
         self.event("source-exit", **self.context(), visit=current["visit"], resolved=resolved,
                    flags=flags, error=error, source=current["source"])
+        if current["source"] is not None:
+            self.machine_event(
+                "pin-retired", self.pid, visit=current["visit"], source=current["source"],
+                identity=list(current["identity"]),
+            )
         self.active.pop()
 
     def finish(self):
@@ -593,6 +623,7 @@ class NativeReadTrace:
             result["selection"] = [list(row) for row in self.selection]
         elif self.version == read_epochs.COMPLETION_VERSION:
             result["selection"] = self.selection
+            result["machine"] = {"version": 1, "events": self.machine, "closed": True}
         read_epochs.validate_trace(result, self.scope, count_limit=self.config["observation_count"],
                                    file_limit=self.config["file_limit"], reserve=self.policy.charge_metadata)
         return result

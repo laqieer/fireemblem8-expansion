@@ -4294,7 +4294,10 @@ def supervise(config, drop_privileges):
                     stderr_role = policy.stderr_setup.executed(stopped, state)
             state.role = state.pending[1]
             if policy.read_trace is not None:
-                policy.read_trace.actual_exec(stopped, state.role == "make")
+                policy.read_trace.actual_exec(
+                    stopped, state.role == "make",
+                    None if state.role == "make" else state.native_dispatch_sequence,
+                )
             if policy.source_effects is not None and state.role == "helper":
                 policy.source_effects.helper_exec(stopped, state)
             state.bootstrap = False

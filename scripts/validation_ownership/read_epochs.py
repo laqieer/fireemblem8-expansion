@@ -1028,11 +1028,163 @@ def original_inputs(memory, pointer, deleted, *, count_limit, string):
     return result
 
 
+def validate_machine_observations(value, trace, *, count_limit):
+    if (
+        not isinstance(value, dict) or set(value) != {"version", "events", "closed"}
+        or type(value["version"]) is not int or value["version"] != 1 or value["closed"] is not True
+        or not isinstance(value["events"], list) or not 1 <= len(value["events"]) <= count_limit
+    ):
+        raise ReadEpochError("incomplete native machine observations")
+    common = {"seq", "kind", "trace_seq", "pid", "exec", "pass"}
+    fields = {
+        "clear": {"registers"}, "arm": {"registers", "slots"},
+        "trap": {"index", "purpose", "pc", "status", "sigcode"},
+        "pin-retired": {"visit", "source", "identity"},
+        "execute": {"make", "dispatch"},
+    }
+    purposes = {"pass-entry", "source-entry", "source-return", "pass-return", "assignment-completion"}
+    armed, retired = {}, set()
+    previous = 0
+    make_pid = None
+    make_execs, child_dispatches = set(), set()
+    for number, row in enumerate(value["events"], 1):
+        if (
+            not isinstance(row, dict) or not isinstance(row.get("kind"), str)
+            or row["kind"] not in fields or set(row) != common | fields[row["kind"]]
+            or type(row["seq"]) is not int or row["seq"] != number
+            or type(row["trace_seq"]) is not int
+            or not previous <= row["trace_seq"] < len(trace["events"])
+            or type(row["pid"]) is not int or row["pid"] <= 0
+            or any(type(row[key]) is not int or row[key] < 0 for key in ("exec", "pass"))
+            or row["pass"] > row["exec"]
+        ):
+            raise ReadEpochError("malformed or unordered native machine observation")
+        previous = row["trace_seq"]
+        context = trace["events"][previous - 1] if previous else None
+        if (
+            previous == 0 and (row["kind"] not in {"clear", "execute"} or row["exec"] or row["pass"])
+            or context is not None and "exec" in context and row["exec"] != context["exec"]
+            or context is not None and "pass" in context and row["pass"] != context["pass"]
+        ):
+            raise ReadEpochError("native machine observation has a foreign trace context")
+        kind, pid = row["kind"], row["pid"]
+        if kind in {"clear", "arm"}:
+            registers = row["registers"]
+            if (
+                not isinstance(registers, list) or len(registers) != 6
+                or any(type(item) is not int or not 0 <= item < 1 << 64 for item in registers)
+                or registers[4] & 0xE00F
+            ):
+                raise ReadEpochError("invalid native register readback")
+            if kind == "clear":
+                if any(registers[:4]) or registers[5]:
+                    raise ReadEpochError("native clear retained an enabled or stale slot")
+                armed.pop(pid, None)
+                continue
+            slots = row["slots"]
+            if not isinstance(slots, list) or not 2 <= len(slots) <= 4:
+                raise ReadEpochError("native arm lacks issued slots")
+            issued = {}
+            for slot in slots:
+                if (
+                    not isinstance(slot, list) or len(slot) != 3
+                    or type(slot[0]) is not int or not 0 <= slot[0] < 4 or slot[0] in issued
+                    or type(slot[1]) is not int or not 0 < slot[1] < 1 << 64
+                    or not isinstance(slot[2], str) or slot[2] not in purposes
+                ):
+                    raise ReadEpochError("native arm has an invalid or duplicate slot")
+                issued[slot[0]] = slot[1:]
+            if (
+                len({slot[0] for slot in issued.values()}) != len(issued)
+                or issued.get(0, [None, None])[1] != "pass-entry"
+                or issued.get(1, [None, None])[1] != "source-entry"
+                or 2 in issued and issued[2][1] != "source-return"
+                or 3 in issued and issued[3][1] not in {"assignment-completion", "pass-return"}
+                or registers[:4] != [issued.get(index, [0])[0] for index in range(4)]
+                or registers[5] != sum(1 << (2 * index) for index in issued)
+            ):
+                raise ReadEpochError("native readback differs from its issued slots/control")
+            if make_pid is not None and pid != make_pid:
+                raise ReadEpochError("native arm belongs to a foreign Make child")
+            make_pid = pid
+            armed[pid] = issued
+        elif kind == "trap":
+            if (
+                any(type(row[key]) is not int for key in ("index", "pc", "status", "sigcode"))
+                or not 0 <= row["status"] < 1 << 64 or not 0 < row["pc"] < 1 << 64
+                or row["sigcode"] != 4 or not 0 <= row["index"] < 4
+                or row["status"] & 15 != 1 << row["index"]
+                or armed.get(pid, {}).get(row["index"]) != [row["pc"], row["purpose"]]
+            ):
+                raise ReadEpochError("native trap lacks its issued kernel slot/purpose")
+            armed.pop(pid)
+        elif kind == "execute":
+            prior = value["events"][number - 2] if number > 1 else None
+            if (
+                type(row["make"]) is not bool or prior is None or prior["kind"] != "clear"
+                or any(prior[key] != row[key] for key in ("trace_seq", "pid", "exec", "pass"))
+                or row["make"] and row["dispatch"] is not None
+                or not row["make"] and (
+                    type(row["dispatch"]) is not int or row["dispatch"] <= 0
+                    or row["dispatch"] in child_dispatches
+                )
+            ):
+                raise ReadEpochError("native execution lacks its immediately preceding child clear")
+            if row["make"]:
+                make_execs.add((previous + 1, row["exec"] + 1, pid))
+            else:
+                child_dispatches.add(row["dispatch"])
+        else:
+            if (
+                context is None or context["kind"] != "source-exit"
+                or pid != make_pid
+                or any(type(row[key]) is not int or row[key] <= 0 for key in ("visit", "source"))
+                or (row["visit"], row["source"]) != (context["visit"], context["source"])
+                or context["error"] != 0 or row["visit"] in retired
+            ):
+                raise ReadEpochError("native pin retirement lacks its successful source return")
+            opens = [
+                event for event in trace["events"][:previous]
+                if event["kind"] == "source-open" and event["visit"] == row["visit"]
+                and event["source"] == row["source"]
+            ]
+            if len(opens) != 1 or row["identity"] != opens[0]["identity"]:
+                raise ReadEpochError("native retired pin identity differs from its actual open")
+            retired.add(row["visit"])
+    expected = {
+        event["visit"] for event in trace["events"]
+        if event["kind"] == "source-exit" and event["source"] is not None
+    }
+    trap_kinds = {
+        "pass-entry": "pass-entry", "source-entry": "source-entry",
+        "source-exit": "source-return", "assignment-completion": "assignment-completion",
+        "pass-exit": "pass-return",
+    }
+    required = {
+        (event["seq"] - 1, trap_kinds[event["kind"]])
+        for event in trace["events"] if event["kind"] in trap_kinds
+    }
+    observed = {
+        (row["trace_seq"], row["purpose"]) for row in value["events"] if row["kind"] == "trap"
+    }
+    if (
+        retired != expected or not required <= observed
+        or len(value["events"]) + len(trace["events"]) > count_limit
+        or make_execs != {
+            (event["seq"], event["exec"], make_pid)
+            for event in trace["events"] if event["kind"] == "exec"
+        }
+    ):
+        raise ReadEpochError("native machine observations omit traps or live pin retirement")
+    return value
+
+
 def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size: None):
     if (
         not isinstance(value, dict) or type(value.get("version")) is not int or value["version"] not in {1, 2, 3, 4}
         or set(value) != {"version", "scope", "events", "sources", "complete"} | (
-            {"selection"} if value["version"] in {3, COMPLETION_VERSION} else set())
+            {"selection"} if value["version"] in {3, COMPLETION_VERSION} else set()) | (
+            {"machine"} if value["version"] == COMPLETION_VERSION and "machine" in value else set())
         or value["scope"] != scope
         or value["complete"] is not True or not isinstance(value["events"], list)
         or not 1 <= len(value["events"]) <= count_limit or not isinstance(value["sources"], list)
@@ -1347,4 +1499,7 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
             in_pass = False
     if not terminal or passes != execs or not visits or used_sources != set(sources):
         raise ReadEpochError("original read trace has no complete terminal lifetime")
+    if "machine" in value:
+        reserve(len(encoded(value["machine"])))
+        validate_machine_observations(value["machine"], value, count_limit=count_limit)
     return value
