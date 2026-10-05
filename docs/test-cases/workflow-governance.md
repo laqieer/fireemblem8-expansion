@@ -4892,6 +4892,22 @@ The finite original regular-source fixture does not admit absent gitlinks or
 qualify the original whole-root namespace. Any original command/producer
 admission failure remains a failure without exemptions or replacement output.
 
+For `TC-WORKFLOW-GATE-OWNERSHIP-001`, contract5994896550 corrects only the
+original-completion fixture's empty-argument registration. Run
+`python3 -m unittest scripts.validation_ownership.tests.test_phase_census.OriginalCompletionFixtureApiTests.test_empty_command_registration_from_make_argv -v`
+with GNU Make 4.3, Python and `/usr/bin/printf`. From a clean temporary directory,
+the test intercepts printf operands from actual Make, forwards them to printf,
+and checks that the empty append leaves `RESULT=keep`. Original single quotes
+and neutral spacing yield the same empty argv element and the
+existing authority key `printf %s ""`. The old single-quoted registry key fails
+this lookup; missing, different and extra operands remain unregistered, while
+shell-command spelling remains exact and malformed shell argv rejects.
+Temporary files are removed automatically. No feature, save, ROM or profile
+interaction changes; all four eager RHS and eight original profiles remain.
+This local argv interception is not machine qualification: run 37312363120's
+`make_probe5274` refusal after three commands and every native/resource,
+security, review and delivery hold remain until separately qualified.
+
 **Exact remaining machine hold:** the current child trace does not return
 DR0..DR3/DR6/DR7, hardware siginfo/PC/purpose/restore samples, modifier/RBX/
 reader-frame observations, inherited registers after child exec, source-active

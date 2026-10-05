@@ -15,6 +15,7 @@ import shlex
 import stat
 import subprocess
 import sys
+import tempfile
 import tracemalloc
 from types import SimpleNamespace
 import unittest
@@ -166,7 +167,65 @@ def original_completion_fixture_paths(loader):
     return tuple(sorted(selected)), blobs
 
 
+def original_completion_fixture_commands():
+    return {
+        spelling: make_probe.Command(("/usr/bin/printf", "%s", value))
+        for spelling, value in (
+            ("printf %s 0xCD", "0xCD"), ("printf %s eager", "eager"),
+            ("printf %s tail", "tail"), ('printf %s ""', ""),
+        )
+    }
+
+
 class OriginalCompletionFixtureApiTests(unittest.TestCase):
+    def test_empty_command_registration_from_make_argv(self):
+        from scripts.validation_ownership.authority import _event_command
+
+        commands = original_completion_fixture_commands()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            interceptor = root / "printf"
+            interceptor.write_text(
+                f"#!{sys.executable}\n"
+                "import json, os, sys\n"
+                "from pathlib import Path\n"
+                "Path('argv.json').write_text(json.dumps(sys.argv[1:]))\n"
+                "os.execv('/usr/bin/printf', ['printf', *sys.argv[1:]])\n"
+            )
+            interceptor.chmod(0o755)
+            for expression in ("printf %s ''", "printf  %s  ''"):
+                with self.subTest(expression=expression):
+                    (root / "argv.json").unlink(missing_ok=True)
+                    observed = subprocess.run(
+                        ["/usr/bin/make", "-rR", "--no-print-directory", "-f", "-", "all"],
+                        input="EMPTY := keep\nEMPTY += $(shell " + expression + ")\n"
+                        "$(info RESULT=$(EMPTY))\n.PHONY: all\nall: ;\n",
+                        cwd=root, env={**graph_probe.ENVIRONMENT, "PATH": directory + ":/usr/bin:/bin"},
+                        text=True, capture_output=True, timeout=10,
+                    )
+                    self.assertEqual(observed.returncode, 0, observed.stderr)
+                    self.assertEqual(observed.stderr, "")
+                    self.assertEqual(observed.stdout.splitlines()[0], "RESULT=keep")
+                    arguments = json.loads((root / "argv.json").read_text())
+                    self.assertEqual(arguments, ["%s", ""])
+                    # A shebang replaces argv[0]; retain the intercepted program name.
+                    key = _event_command({"arguments": ["printf", *arguments]})
+                    self.assertEqual(key, 'printf %s ""')
+                    self.assertEqual(commands[key].argv, ("/usr/bin/printf", "%s", ""))
+        for arguments in (
+            ["printf", "%s"], ["printf", "%s", "different"],
+            ["printf", "%s", "", ""],
+        ):
+            with self.subTest(arguments=arguments):
+                self.assertNotIn(_event_command({"arguments": arguments}), commands)
+        self.assertEqual(_event_command({"arguments": ["/bin/sh", "-c", "printf %s ''"]}),
+                         "printf %s ''")
+        self.assertEqual(_event_command({"arguments": ["/bin/sh", "-c", "printf  %s  ''"]}),
+                         "printf  %s  ''")
+        self.assertNotIn("printf %s ''", commands)
+        with self.assertRaises(MakeProbeError):
+            _event_command({"arguments": ["/bin/sh", "-c"]})
+
     def model(self):
         values = {
             path: b"all: ;\n" for path in ("Makefile", "assets.mk", "generated_data.mk", "modern.mk")
@@ -1244,13 +1303,7 @@ class PhaseCensusTests(unittest.TestCase):
             for name, data in original_sources.items():
                 self.assertEqual(session.snapshot.files[name], data)
             state = (("command-line", "IGNORED", "forced"),)
-            family_commands = {
-                spelling: make_probe.Command(("/usr/bin/printf", "%s", value))
-                for spelling, value in (
-                    ("printf %s 0xCD", "0xCD"), ("printf %s eager", "eager"),
-                    ("printf %s tail", "tail"), ("printf %s ''", ""),
-                )
-            }
+            family_commands = original_completion_fixture_commands()
             family = session.make(
                 "all", makefile="native-completion.mk", variables=("RESULT", "TEXT"),
                 assignments=state, commands=family_commands, observe_source_journal=True,
@@ -1281,7 +1334,7 @@ class PhaseCensusTests(unittest.TestCase):
             self.assertEqual(
                 [graph_probe._event_command(row) for row in family.semantics["native_dispatches"]
                  if row["kind"] == "value"],
-                ["printf %s 0xCD", "printf %s eager", "printf %s tail", "printf %s ''"],
+                ["printf %s 0xCD", "printf %s eager", "printf %s tail", 'printf %s ""'],
             )
             runs = budget.runs
             _, _, streams, _ = phase_census.analyze(
