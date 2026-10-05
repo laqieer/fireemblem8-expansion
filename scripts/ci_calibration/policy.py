@@ -51,11 +51,12 @@ NATIVE_SOURCE = "890fe6768550dbb1f9b48b03560c42fbe19a9d4c"
 NATIVE_IMPLEMENTATION = "6116e01d571929f42cffdaefcb65dd90c65bd975"
 NATIVE_AUTHORED_SOURCE = "de5f3f93e3866885e7471f1987f124eed5ad93cf"
 NATIVE_MANIFEST_SOURCE = "7acc47a1f9f2308c843c7c1c0d482ce34627b116"
-NATIVE_BRANCH = "calibration/issue-180-native-completion-family-1"
-NATIVE_WORKFLOW = ".github/workflows/issue180-native-completion-family-1.yml"
+SPENT_NATIVE_WORKFLOW = ".github/workflows/issue180-native-completion-family-1.yml"
+NATIVE_BRANCH = "calibration/issue-180-native-completion-diagnostic-1"
+NATIVE_WORKFLOW = ".github/workflows/issue180-native-completion-diagnostic-1.yml"
 NATIVE_PROFILE = "native-completion-trace4-abi2-v1"
 NATIVE_KIND = "native-completion-qualification"
-NATIVE_OUTPUT_PREFIX = "issue180-native-completion-family-1-"
+NATIVE_OUTPUT_PREFIX = "issue180-native-completion-diagnostic-1-"
 NATIVE_SELECTORS = (
     "scripts.validation_ownership.tests.test_phase_census.PhaseCensusTests."
     "test_native_completion_original_profile_family",
@@ -239,7 +240,7 @@ def validate_native_error(value, selection):
 
 def native_event(event, *, profile, selector, **identity):
     selection = native_selection(profile, selector)
-    # Only the positive family's future first-created workflow is prepared.
+    # Only the separate positive diagnostic's first-created workflow is prepared.
     if selector != NATIVE_SELECTORS[0]:
         raise GuardError("terminal selectors have no execution allocation or workflow")
     scope = validate_event(event, native=True, **identity)

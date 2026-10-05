@@ -162,6 +162,7 @@ class NativeSelectionControls(unittest.TestCase):
             policy.validate_event(native, **self.identity())
         for event, selector in (
             (old, policy.NATIVE_SELECTORS[0]),
+            (self.event("calibration/issue-180-native-completion-family-1"), policy.NATIVE_SELECTORS[0]),
             *((native, selector) for selector in policy.NATIVE_SELECTORS[1:]),
         ):
             with self.assertRaises(policy.GuardError):
@@ -183,7 +184,10 @@ class NativeSelectionControls(unittest.TestCase):
 
     def test_native_lineage_keeps_exact_profile_repair_rebind_and_preparation_chain(self):
         lines = [
-            f"{'a' * 40} {supervisor.NATIVE_REBIND_SHA}",
+            f"{'a' * 40} {supervisor.NATIVE_FAMILY_SHA}",
+            f"{supervisor.NATIVE_FAMILY_SHA} {supervisor.NATIVE_DIAGNOSTIC_SHA}",
+            f"{supervisor.NATIVE_DIAGNOSTIC_SHA} {supervisor.NATIVE_PROFILE_SHA}",
+            f"{supervisor.NATIVE_PROFILE_SHA} {supervisor.NATIVE_REBIND_SHA}",
             f"{supervisor.NATIVE_REBIND_SHA} {supervisor.NATIVE_PREPARATION_SHA}",
             f"{supervisor.NATIVE_PREPARATION_SHA} {supervisor.NATIVE_PARENT}",
         ]
@@ -193,18 +197,36 @@ class NativeSelectionControls(unittest.TestCase):
             supervisor.validate_harness_lineage = lambda history, head: calls.append((history, head))
             supervisor.validate_native_lineage(lines + ["old-edge"], "a" * 40)
             self.assertEqual(calls, [(["old-edge"], supervisor.NATIVE_PARENT)])
-            with self.assertRaises(policy.GuardError):
-                supervisor.validate_native_lineage([f"{'a' * 40} {'b' * 40}"], "a" * 40)
+            for index in range(len(lines)):
+                for changed in (
+                    lines[:index] + lines[index + 1:],
+                    lines[:index] + [lines[index] + " " + "b" * 40] + lines[index + 1:],
+                    lines[:index] + [lines[index].split()[0] + " " + "b" * 40] + lines[index + 1:],
+                ):
+                    with self.assertRaises(policy.GuardError):
+                        supervisor.validate_native_lineage(changed + ["old-edge"], "a" * 40)
         finally:
             supervisor.validate_harness_lineage = original
-        data = b"A\0" + policy.NATIVE_WORKFLOW.encode() + b"\0M\0scripts/ci_calibration/policy.py\0"
+        workflows = {policy.SPENT_NATIVE_WORKFLOW, policy.NATIVE_WORKFLOW}
+        data = b"".join(
+            (b"A" if name in workflows else b"M") + b"\0" + name.encode() + b"\0"
+            for name in sorted(supervisor.NATIVE_PATHS)
+        )
         supervisor.validate_native_inventory(data)
         for changed in (
             data + b"M\0" + policy.WORKFLOW.encode() + b"\0",
             data.replace(b"A\0", b"M\0", 1), data + b"M\0src/proc.c\0",
+            b"\0".join(data.split(b"\0")[2:]),
         ):
             with self.assertRaises(policy.GuardError):
                 supervisor.validate_native_inventory(changed)
+
+    def test_spent_native_workflow_requires_exact_immutable_bytes(self):
+        original = b"name: spent\non: push\n"
+        supervisor.validate_spent_native_workflow(original, original)
+        for current in (original + b"\n", b"", bytearray(original)):
+            with self.assertRaises(policy.GuardError):
+                supervisor.validate_spent_native_workflow(current, original)
 
     def test_native_source_inventory_keeps_each_complete_reviewed_stage(self):
         for stage, paths in (

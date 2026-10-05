@@ -2,6 +2,28 @@
 
 ## Native completion preparation: no execution allocation
 
+Disposition comment5990329748 authorizes preparation of a separately named
+diagnostic successor, not qualification. The spent family1 run37277238489
+remains failed with no retry, refund, reset or outcome substitution. The new
+`calibration/issue-180-native-completion-diagnostic-1` first-created owner push
+uses `issue180-native-completion-diagnostic-1.yml` and the corresponding output
+prefix. Run1/attempt1, exact source890fe, positive selector, original profile,
+Limits, containment and five artifacts are unchanged. No runtime allocation
+exists yet; independent exact-head review and clean/pushed custody remain
+coordinator prerequisites. A diagnostic return grants no report, serializer,
+verifier, H1, terminal or shipping authority.
+
+The future head has exactly41 normal edges: head->b155->5acd->e3e->34e->dbd
+->e938 followed by the unchanged35 historical edges. The nine-path cumulative
+native inventory requires both workflows added from e938 and the seven named
+harness modifications. Preflight compares spent family1 bytes to immutable
+e3e Git content; changing even whitespace rejects. Credential-free inert
+`NativeSelectionControls` cover the new first-created event, old-ref denial,
+each preparation-edge drift, complete inventory and spent-byte invariance.
+Source APIs and source edges remain unchanged. Source budget fit, original
+cleanup, four machine criteria and the sticky architecture hold remain unknown
+or held. All19 original full-report allocations remain spent.
+
 The bounded failure-publication correction for #180 / #186 is never-merge
 preparation, not a new allocation. The spent native run's inner cause and
 original cleanup remain unknown. A retained recorder publishes only its closed
@@ -32,7 +54,7 @@ Assignment `issue180-native-harness-1ab6`, scope comment5982866338, is one
 normal never-merge child of `e93847725f58a89bca2a94af2d4acaae6a89cebf`.
 The first35 historical edges, old workflow bytes and old report source731
 remain unchanged. Edge36 is the reviewed native preparation; edge37 is its
-normal exact-source rebind. The combined native inventory remains eight paths.
+normal exact-source rebind. The original combined native inventory was eight paths.
 Edge38 corrects the rebind adapter's complete five-field profile vector,
 including the selected manifest. Every standalone/modern profile forwards
 those exact original assignments once; missing, extra, reordered or mismatched
@@ -52,8 +74,8 @@ in `scripts.validation_ownership.tests.test_phase_census`, and
 `ReadEpochTests.test_native_completion_{kernel_frame_pin,resource,cancellation,deadline}_terminal`
 in `scripts.validation_ownership.tests.test_read_epochs`; braces describe four
 literal enum members, not shell expansion or programmable arguments.
-Only the positive family's new workflow/first-owner-created
-`calibration/issue-180-native-completion-family-1` push is prepared.
+Only the separately named positive diagnostic's first-owner-created
+`calibration/issue-180-native-completion-diagnostic-1` push is prepared.
 No terminal workflow, retry, old allocation, discovery runner or report is
 authorized. All19 previous full-report allocations remain spent.
 

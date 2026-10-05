@@ -185,8 +185,12 @@ EXACT_COMPOSITION_PATHS = frozenset({
 NATIVE_PARENT = "e93847725f58a89bca2a94af2d4acaae6a89cebf"
 NATIVE_PREPARATION_SHA = "dbd0905cb0bbabc8979c0521e39f0a7c64aa0f34"
 NATIVE_REBIND_SHA = "34e494405a246e37b245a66a44de4ba2a6c09d74"
+NATIVE_PROFILE_SHA = "e3eac9508412b316f11f5665f3a688e5c9368c84"
+NATIVE_DIAGNOSTIC_SHA = "5acd99fcd79f938a4d76fb4280a96713cff44f66"
+NATIVE_FAMILY_SHA = "b155ac1abae46a3495f3799061107252ed7c6433"
 NATIVE_PATHS = frozenset({
-    policy.NATIVE_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
+    policy.SPENT_NATIVE_WORKFLOW, policy.NATIVE_WORKFLOW,
+    *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "supervisor.py", "worker.py", "root_stage.py",
         "test_ci_calibration.py", "test_root_stage.py", "README.md",
     )),
@@ -235,12 +239,19 @@ def validate_native_source_inventory(data, stage):
 
 
 def validate_native_lineage(lines, head):
-    if len(lines) < 3 or lines[:3] != [
-        f"{head} {NATIVE_REBIND_SHA}", f"{NATIVE_REBIND_SHA} {NATIVE_PREPARATION_SHA}",
+    if len(lines) < 6 or lines[:6] != [
+        f"{head} {NATIVE_FAMILY_SHA}", f"{NATIVE_FAMILY_SHA} {NATIVE_DIAGNOSTIC_SHA}",
+        f"{NATIVE_DIAGNOSTIC_SHA} {NATIVE_PROFILE_SHA}", f"{NATIVE_PROFILE_SHA} {NATIVE_REBIND_SHA}",
+        f"{NATIVE_REBIND_SHA} {NATIVE_PREPARATION_SHA}",
         f"{NATIVE_PREPARATION_SHA} {NATIVE_PARENT}",
     ]:
-        raise policy.GuardError("native profile repair differs from its exact rebind/preparation chain")
-    validate_harness_lineage(lines[3:], NATIVE_PARENT)
+        raise policy.GuardError("native diagnostic differs from its exact normal repair/preparation chain")
+    validate_harness_lineage(lines[6:], NATIVE_PARENT)
+
+
+def validate_spent_native_workflow(current, pinned):
+    if type(current) is not bytes or type(pinned) is not bytes or not pinned or current != pinned:
+        raise policy.GuardError("native diagnostic changed the immutable spent workflow")
 
 
 def validate_native_inventory(data):
@@ -251,9 +262,9 @@ def validate_native_inventory(data):
         raise policy.GuardError("native preparation needs a complete nonempty Git inventory")
     changes = list(zip(rows[:-1:2], rows[1:-1:2]))
     allowed = {name.encode("ascii") for name in NATIVE_PATHS}
-    workflow = policy.NATIVE_WORKFLOW.encode("ascii")
-    if (b"A", workflow) not in changes or len(changes) > 8 or any(
-        name not in allowed or kind != (b"A" if name == workflow else b"M")
+    workflows = {name.encode("ascii") for name in (policy.SPENT_NATIVE_WORKFLOW, policy.NATIVE_WORKFLOW)}
+    if {name for _, name in changes} != allowed or len(changes) != len(allowed) or any(
+        name not in allowed or kind != (b"A" if name in workflows else b"M")
         for kind, name in changes
     ) or len({name for _, name in changes}) != len(changes):
         raise policy.GuardError("native preparation changed a preserved or unallocated path")
@@ -1570,10 +1581,14 @@ class Owner:
             raise policy.GuardError("workflow harness has uncommitted source changes")
         if native:
             validate_native_lineage(
-                git(self.harness, "rev-list", "--parents", "--max-count=38", "HEAD").decode().splitlines(),
+                git(self.harness, "rev-list", "--parents", "--max-count=41", "HEAD").decode().splitlines(),
                 self.scope["harness_sha"],
             )
             validate_native_inventory(git(self.harness, "diff", "--name-status", "-z", NATIVE_PARENT, "HEAD"))
+            validate_spent_native_workflow(
+                git(self.harness, "show", "HEAD:" + policy.SPENT_NATIVE_WORKFLOW),
+                git(self.harness, "show", NATIVE_PROFILE_SHA + ":" + policy.SPENT_NATIVE_WORKFLOW),
+            )
         else:
             validate_harness_lineage(
                 git(self.harness, "rev-list", "--parents", "--max-count=35", "HEAD").decode().splitlines(),
@@ -1582,7 +1597,8 @@ class Owner:
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
         if any(
             name and name.decode() not in {
-                policy.WORKFLOW, policy.NATIVE_WORKFLOW, policy.TEMPLATE_HEADER_WORKFLOW, policy.FINITE_REPORT_WORKFLOW,
+                policy.WORKFLOW, policy.NATIVE_WORKFLOW, policy.SPENT_NATIVE_WORKFLOW,
+                policy.TEMPLATE_HEADER_WORKFLOW, policy.FINITE_REPORT_WORKFLOW,
                 policy.INCLUDE_STATE_REBIND_WORKFLOW,
                 policy.INCLUDE_STATE_WORKFLOW, policy.SORT_REPORT_WORKFLOW,
                 policy.STRUCTURAL_REPORT_WORKFLOW, policy.CONSUMER_REPORT_WORKFLOW,
