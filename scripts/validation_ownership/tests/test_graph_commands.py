@@ -204,6 +204,16 @@ class SelectedManifestAdmissionTests(unittest.TestCase):
         self.assertEqual(self.children, [])
         self.assertEqual(self.installs, [])
 
+    def test_generation_retains_published_stamp_as_identity_bound_input(self):
+        stamp = "build/selected.manifest-selection"
+        self.session.published_sources[stamp] = SimpleNamespace(data=b"published stamp")
+        self.session.snapshot.files[stamp] = b"published stamp"
+        command = self.register(self.generation(), "asset-manifest-include-remake")
+        self.assertNotIn(stamp, command.outputs)
+        self.assertIn(stamp, command.sources)
+        self.assertNotIn(stamp, self.installs[-1][1])
+        self.assertIn(stamp, json.loads(command.argv[-1]))
+
     def test_generation_writer_refuses_changed_plan_before_staging(self):
         from scripts.assets import manifest
 
@@ -226,6 +236,37 @@ class SelectedManifestAdmissionTests(unittest.TestCase):
                         stage.assert_called_once_with(outputs, "build/selected", "/work")
                     else:
                         with self.assertRaisesRegex(manifest.GeneratedDataError, "issued output plan"):
+                            exec(body, {})
+                        stage.assert_not_called()
+
+    def test_generation_writer_checks_actual_retained_stamp_before_staging(self):
+        from scripts.assets import manifest
+
+        stamp = "build/selected.manifest-selection"
+        self.session.published_sources[stamp] = SimpleNamespace(data=b"published stamp")
+        self.session.snapshot.files[stamp] = b"published stamp"
+        command = self.register(self.generation(), "asset-manifest-include-remake")
+        names = json.loads(command.argv[-1])
+        for content in (b"selected profile", b"different profile", None):
+            with self.subTest(content=content):
+                outputs = dict.fromkeys(names, b"generated content")
+                outputs[stamp] = b"selected profile"
+                with mock.patch.object(manifest, "render_generation_artifact", return_value=outputs), \
+                     mock.patch.object(manifest, "stage_generation_artifact") as stage, \
+                     mock.patch.object(Path, "read_bytes", side_effect=(
+                         FileNotFoundError(stamp) if content is None else lambda: content
+                     )), \
+                     mock.patch.object(sys, "argv", ["-c", *command.argv[6:]]), \
+                     mock.patch.object(sys, "path", list(sys.path)):
+                    body = compile(command.argv[5], "<issued retained stamp writer>", "exec")
+                    if content == b"selected profile":
+                        exec(body, {})
+                        self.assertNotIn(stamp, outputs)
+                        stage.assert_called_once_with(outputs, "build/selected", "/work")
+                    else:
+                        with self.assertRaises(
+                            FileNotFoundError if content is None else manifest.GeneratedDataError,
+                        ):
                             exec(body, {})
                         stage.assert_not_called()
 

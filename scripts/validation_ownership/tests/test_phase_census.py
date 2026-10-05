@@ -1332,7 +1332,7 @@ class PhaseCensusTests(unittest.TestCase):
     def test_native_original_generation_default_routes_complete_private_outputs(self):
         self._native_captured_generation(staging=True, cap=0xCD, routed=True, custom=0)
 
-    def _native_captured_generation(self, *, staging, cap, routed=False, custom=1):
+    def _native_captured_generation(self, *, staging, cap, routed=False, custom=1, retained_stamp=False):
         from scripts.assets import manifest
         from scripts.validation_ownership.authority import AuthorityLoader, git_tree_entries
         from scripts.validation_ownership.python_commands import python_command
@@ -1369,10 +1369,71 @@ class PhaseCensusTests(unittest.TestCase):
             [str(Path(name).relative_to(foundation.ROOT)), len(data), hashlib.sha256(data).hexdigest()]
             for name, data in sorted(expected.items())
         ]
+        if retained_stamp:
+            self.fixture.add("stamp-prelude.mk", (
+                "STAMP := $(shell python3 stamp-writer)\n"
+                "VALUE := $(shell python3 generation-writer)\nall: ;\n"
+            ))
         entries, revision = self.fixture.capture_tree(budget)
         loader = AuthorityLoader(self.fixture.root, entries, revision, budget=budget)
         with make_probe.ProbeSession(loader, scratch_root=self.fixture.scratch, budget=budget) as session:
             sources = session.sources((source, *manifest.discovery_sources(records)))
+            stamp = output + ".manifest-selection"
+            if retained_stamp:
+                from scripts.validation_ownership.graph_commands import asset_generation_command
+                stamp_command = python_command(
+                    session,
+                    "from pathlib import Path;"
+                    "out=Path('/work')/sys.argv[1];out.parent.mkdir(parents=True,exist_ok=True);"
+                    "out.write_text(sys.argv[2])",
+                    (stamp, expected[str(foundation.ROOT / stamp)].decode()),
+                    outputs=(stamp,), publication_policy="if-content-changed",
+                )
+                captured = []
+                test = self
+                class Commands(dict):
+                    def __contains__(self, name):
+                        return name in {"python3 stamp-writer", "python3 generation-writer"}
+
+                    def __getitem__(self, name):
+                        if name == "python3 stamp-writer":
+                            return session._native_context_command(stamp_command)
+                        original_stamp = session.published_sources[stamp]
+                        original_identity = session.source_owners((stamp,))
+                        original_stat = (session.tree / stamp).stat()
+                        writer = asset_generation_command(
+                            session, source, output, stamp, str(custom), hex(cap),
+                        )
+                        result = session.command(writer)
+                        test.assertEqual(
+                            {item.path: item.data for item in result.generated},
+                            {str(Path(name).relative_to(foundation.ROOT)): data
+                             for name, data in expected.items() if name != str(foundation.ROOT / stamp)},
+                        )
+                        test.assertTrue(all(item.mode == 0o600 for item in result.generated))
+                        test.assertEqual(result.metadata, ())
+                        test.assertEqual(result.consumed, session.sources((*sources, stamp)))
+                        test.assertIn("scripts/assets/manifest.py", result.code_consumed)
+                        test.assertIs(session.published_sources[stamp], original_stamp)
+                        test.assertEqual(session.source_owners((stamp,)), original_identity)
+                        after = (session.tree / stamp).stat()
+                        test.assertEqual(
+                            (after.st_dev, after.st_ino, after.st_mode, after.st_mtime_ns),
+                            (original_stat.st_dev, original_stat.st_ino,
+                             original_stat.st_mode, original_stat.st_mtime_ns),
+                        )
+                        test.assertEqual((session.tree / stamp).read_bytes(), original_stamp.data)
+                        captured.append(result)
+                        return python_command(session, "print('retained')")
+
+                observed = session.make(
+                    "all", makefile="stamp-prelude.mk", variables=("VALUE",), commands=Commands(),
+                )
+                self.assertEqual(observed.semantics["domains"]["VALUE"]["value"], "retained")
+                self.assertEqual(len(captured), 1)
+                self.assertFalse(budget.failed)
+                self.addCleanup(self.fixture.assert_clean, session)
+                return
             body = (
                 "import hashlib,json,os;"
                 "from scripts.assets.manifest import render_generation_artifact,stage_generation_artifact;"
@@ -1441,6 +1502,9 @@ class PhaseCensusTests(unittest.TestCase):
             self.assertIn("scripts/assets/manifest.py", result.code_consumed)
             self.assertFalse(budget.failed)
         self.fixture.assert_clean(session)
+
+    def test_native_original_generation_retains_published_selection_stamp(self):
+        self._native_captured_generation(staging=True, cap=0xCD, routed=True, custom=0, retained_stamp=True)
 
     def test_native_completion_original_profile_family(self):
         """One immutable source tree/session; no native qualification is inferred."""

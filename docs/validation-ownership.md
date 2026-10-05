@@ -550,6 +550,16 @@ flag. Ordinary reusable commands and metadata validation retain their lossless
 metadata transport. This removes replay machinery that publication does not
 consume; it does not raise, refund or transfer a resource limit.
 
+If the exact selection stamp already has a session publication, generation
+admits that identity-bound version as a writer input. The actual writer requires
+its bytes to equal the complete renderer's stamp, then omits it from staging
+and publication. This preserves the original `_write_if_changed` no-op and
+existing owner, inode and mode rather than manufacturing a second producer.
+A missing stamp is still generated. Different bytes or a missing/stale admitted
+stamp refuse; cross-producer replacement and public retirement remain held.
+The complete generated-file plan is checked before retention, and ordinary
+conflicting-producer refusals are unchanged.
+
 Four `ReadEpochTests` selectors are separate complete terminal invocations:
 `test_native_completion_kernel_frame_pin_terminal`,
 `test_native_completion_resource_terminal`,

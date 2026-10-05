@@ -191,18 +191,27 @@ def asset_generation_command(session, source, output, stamp, custom, cap):
         relative_path(name)
         if name != stamp and not name.startswith(output + "/"):
             raise MakeProbeError("asset generation output plan escaped its exact output root")
+    retained_stamp = stamp in session.published_sources
+    destinations = tuple(name for name in names if not retained_stamp or name != stamp)
+    writer_sources = sources if not retained_stamp else session.sources((*sources, stamp))
+    retain = (
+        "from pathlib import Path;"
+        "\nif Path('/repo',sys.argv[7]).read_bytes()!=outputs[sys.argv[7]]:"
+        " raise GeneratedDataError('asset generation retained stamp differs from its selected profile')\n"
+        "del outputs[sys.argv[7]]\n"
+    ) if retained_stamp else ""
     lock = output + ".asset-manifest-generate.lock"
     command = python_command(
         session,
         render + "from scripts.assets.manifest import stage_generation_artifact,GeneratedDataError;"
         "\nif sorted(outputs)!=json.loads(sys.argv[8]):"
         " raise GeneratedDataError('asset generation changed its issued output plan')\n"
-        "stage_generation_artifact(outputs,sys.argv[2],'/work')",
+        + retain + "stage_generation_artifact(outputs,sys.argv[2],'/work')",
         (*arguments, json.dumps(names)),
-        sources=sources, directories=directories, outputs=tuple(sorted((*names, lock))),
+        sources=writer_sources, directories=directories, outputs=tuple(sorted((*destinations, lock))),
         code=("scripts/assets/manifest.py",),
     )
-    return session._private_install_command(command, tuple(names))
+    return session._private_install_command(command, destinations)
 
 
 def asset_selection_stamp_command(session, command):
