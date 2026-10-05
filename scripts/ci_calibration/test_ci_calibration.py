@@ -696,7 +696,8 @@ class NativeSelectionControls(unittest.TestCase):
 
     def test_native_lineage_keeps_exact_profile_repair_rebind_and_preparation_chain(self):
         lines = [
-            f"{'a' * 40} {supervisor.NATIVE_ROUTE_PARENT_SHA}",
+            f"{'a' * 40} {supervisor.NATIVE_EMPTY_PREPARATION_SHA}",
+            f"{supervisor.NATIVE_EMPTY_PREPARATION_SHA} {supervisor.NATIVE_ROUTE_PARENT_SHA}",
             f"{supervisor.NATIVE_ROUTE_PARENT_SHA} {supervisor.NATIVE_DEEP_DIAGNOSTIC_SHA}",
             f"{supervisor.NATIVE_DEEP_DIAGNOSTIC_SHA} {supervisor.NATIVE_CONSUMER_PREPARATION_SHA}",
             f"{supervisor.NATIVE_CONSUMER_PREPARATION_SHA} {supervisor.NATIVE_CONSUMER_SITE_SHA}",
@@ -723,11 +724,19 @@ class NativeSelectionControls(unittest.TestCase):
         ]
         actual = subprocess.run(
             ["/usr/bin/git", "-C", str(REPO), "rev-list", "--parents", "--max-count=58",
-             supervisor.NATIVE_ROUTE_PARENT_SHA],
+             supervisor.NATIVE_EMPTY_PREPARATION_SHA],
             check=True, capture_output=True,
         ).stdout.decode().splitlines()
+        with self.assertRaises(policy.GuardError):
+            supervisor.validate_native_lineage(
+                [f"{'a' * 40} {supervisor.NATIVE_EMPTY_PREPARATION_SHA}", *actual], "a" * 40,
+            )
+        complete = subprocess.run(
+            ["/usr/bin/git", "-C", str(REPO), "rev-list", "--parents", "--max-count=59",
+             supervisor.NATIVE_EMPTY_PREPARATION_SHA], check=True, capture_output=True,
+        ).stdout.decode().splitlines()
         supervisor.validate_native_lineage(
-            [f"{'a' * 40} {supervisor.NATIVE_ROUTE_PARENT_SHA}", *actual], "a" * 40,
+            [f"{'a' * 40} {supervisor.NATIVE_EMPTY_PREPARATION_SHA}", *complete], "a" * 40,
         )
         calls = []
         original = supervisor.validate_harness_lineage

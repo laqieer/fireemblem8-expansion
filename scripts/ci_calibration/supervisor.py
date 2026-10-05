@@ -208,6 +208,7 @@ NATIVE_CONSUMER_SITE_SHA = "9f178b69d3fcd37ed3dfe813445aabc87bf0071a"
 NATIVE_CONSUMER_PREPARATION_SHA = "0b86ba6bc38fa54f21efadfb88f93ea95a5f6a95"
 NATIVE_DEEP_DIAGNOSTIC_SHA = "9c9edd61013652ad8e0e799c2589dc07a6d825e9"
 NATIVE_ROUTE_PARENT_SHA = "1b24ac2aed8cde1f2d7ea3e2605a87ff18b14ef2"
+NATIVE_EMPTY_PREPARATION_SHA = "eeb9c119bc9b05a967a11eae99617c958fdfd4f3"
 NATIVE_LEXER_SOURCE_SHA = "78fd889eb00aeeeb44dc35870a6d2fe52c773158"
 NATIVE_LEXER_PATHS = frozenset({
     ".github/validation-ownership-graph.json", "docs/validation-ownership.md",
@@ -362,8 +363,9 @@ def validate_native_nullable_stage(data, sizes):
 
 
 def validate_native_lineage(lines, head):
-    if len(lines) < 24 or lines[:24] != [
-        f"{head} {NATIVE_ROUTE_PARENT_SHA}",
+    if len(lines) < 25 or lines[:25] != [
+        f"{head} {NATIVE_EMPTY_PREPARATION_SHA}",
+        f"{NATIVE_EMPTY_PREPARATION_SHA} {NATIVE_ROUTE_PARENT_SHA}",
         f"{NATIVE_ROUTE_PARENT_SHA} {NATIVE_DEEP_DIAGNOSTIC_SHA}",
         f"{NATIVE_DEEP_DIAGNOSTIC_SHA} {NATIVE_CONSUMER_PREPARATION_SHA}",
         f"{NATIVE_CONSUMER_PREPARATION_SHA} {NATIVE_CONSUMER_SITE_SHA}",
@@ -389,7 +391,7 @@ def validate_native_lineage(lines, head):
         f"{NATIVE_PREPARATION_SHA} {NATIVE_PARENT}",
     ]:
         raise policy.GuardError("native family differs from its exact normal repair/preparation chain")
-    validate_harness_lineage(lines[24:], NATIVE_PARENT)
+    validate_harness_lineage(lines[25:], NATIVE_PARENT)
 
 
 def validate_preparation_paths(changed):
@@ -1767,7 +1769,7 @@ class Owner:
             raise policy.GuardError("workflow harness has uncommitted source changes")
         if native:
             validate_native_lineage(
-                git(self.harness, "rev-list", "--parents", "--max-count=58", "HEAD").decode().splitlines(),
+                git(self.harness, "rev-list", "--parents", "--max-count=60", "HEAD").decode().splitlines(),
                 self.scope["harness_sha"],
             )
             validate_native_inventory(git(self.harness, "diff", "--name-status", "-z", NATIVE_PARENT, "HEAD"))

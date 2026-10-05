@@ -17,6 +17,10 @@ its schema and `root_stage.py` are unchanged.
 All eleven historical workflow files remain byte-pinned, including the spent
 deep-1 workflow at the exact parent. The cumulative FINAL inventory contains
 twenty paths and preserves the complete original normal repair lineage.
+The incomplete `eeb9c119` preparation is retained as a checkpoint. Original
+preparation acquires exactly 60 history rows: 25 native-prefix rows plus the
+unchanged 35-row harness tail. A truncated acquisition must refuse; complete
+committed preparation, not a synthetic-head helper, establishes this boundary.
 Focused literal event/workflow, source stage/endpoints, actual inventory,
 current/neutral `source_status`, parent-negative and recorder-drift controls
 must pass before commit. Save the evidence as `empty-route-validation`.
