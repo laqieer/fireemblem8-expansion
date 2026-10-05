@@ -4980,6 +4980,16 @@ the unchanged original eight-profile family must still establish aggregate
 resource fitness. Restoring source declarations on the literal-only writer
 reproduces the native declared/consumed mismatch.
 
+For the custom profile, source closure must include every actual public-effect
+collision scan input. `CustomSpellEffectKind.source_dependencies` reuses the
+scanner's `PUBLIC_EFFECT_SYMBOL_PATHS`; discovery, source stamps, generated Make
+dependencies and the original fixture consume that same closure. Run
+`AssetManifestTests.test_custom_discovery_covers_actual_public_effect_collision_reads`:
+actual scanner reads must be admitted by discovery and each generated target's
+dependencies; the default profile must not acquire these custom-only inputs.
+This source-closure check does not establish full generator output/lifecycle
+custody or aggregate runtime fitness.
+
 **Exact remaining machine hold:** the current child trace does not return
 DR0..DR3/DR6/DR7, hardware siginfo/PC/purpose/restore samples, modifier/RBX/
 reader-frame observations, inherited registers after child exec, source-active

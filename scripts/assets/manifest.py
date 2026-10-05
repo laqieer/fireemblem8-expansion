@@ -1982,7 +1982,7 @@ class CustomSpellEffectKind:
 
     def source_dependencies(self, record):
         del record
-        return (
+        return tuple(dict.fromkeys((
             "include/constants/songs.h",
             "include/constants/items.h",
             "include/constants/items_expansion.h",
@@ -1993,7 +1993,8 @@ class CustomSpellEffectKind:
             "src/data/items.json",
             "src/data/items_expansion.json",
             "src/spellassoc-data.c",
-        )
+            *custom_spell.PUBLIC_EFFECT_SYMBOL_PATHS,
+        )))
 
     def generated_outputs(self, record, out_dir):
         del record, out_dir

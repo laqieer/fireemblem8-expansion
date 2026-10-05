@@ -973,6 +973,24 @@ class AssetManifestTests(unittest.TestCase):
             self.assertEqual(manifest.render_discovery_makefile(captured), expected)
         self.assertEqual(manifest.discovery_sources(captured), manifest.discovery_sources(ordinary))
 
+    def test_custom_discovery_covers_actual_public_effect_collision_reads(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifests", "custom-spell-reference.json")
+        records = manifest.load_and_validate(source, 1, item_id_cap=0xCD)
+        with mock.patch("builtins.open", wraps=open) as opened:
+            symbols = manifest.custom_spell.public_effect_symbols(REPO_ROOT)
+        self.assertTrue(symbols)
+        reads = {
+            os.path.relpath(os.fspath(call.args[0]), REPO_ROOT)
+            for call in opened.call_args_list
+        }
+        self.assertTrue(reads)
+        self.assertLessEqual(reads, set(manifest.discovery_sources(records)))
+        record, = (record for record in records if record.kind == manifest.CustomSpellEffectKind.name)
+        for _target, dependencies in manifest.CustomSpellEffectKind().make_dependencies(record):
+            self.assertLessEqual(reads, set(dependencies))
+        default = manifest.load_discovery(os.path.join(REPO_ROOT, "assets", "manifest.json"))
+        self.assertFalse(reads & set(manifest.discovery_sources(default)))
+
     def test_captured_discovery_rejects_missing_source_membership(self):
         source = os.path.join(REPO_ROOT, "assets", "manifest.json")
         records = manifest.load_discovery(source)
