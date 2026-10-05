@@ -334,6 +334,12 @@ DATA**, not terminal values or file-entry snapshots. Before launch, the existing
 source consumer references select a bounded dependency closure of ordinary
 literal-name assignment sites. Each selected site binds its source bytes,
 logical statement, physical span, name, operator and override spelling.
+The package graph planner and standalone completion observer share the pure
+`make_lexical` implementation; completion does not import graph-domain planning.
+The existing private reviewed-source Git archive install delivers this module,
+and the verifier runtime inventory and `paths.ownership` owner declaration
+include it. This boundary changes no source authority, native gate, parser
+semantics, budget, profile, ROM, save, or localization contract.
 Version3 retains its original immutable-source selection format and machine
 predicates. Version4 closes the selection over the complete immutable regular
 snapshot and already-published sources, independent of filename extension.

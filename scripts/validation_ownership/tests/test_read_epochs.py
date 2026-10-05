@@ -16,6 +16,9 @@ import shlex
 import signal
 import stat
 import struct
+import subprocess
+import sys
+import tempfile
 import threading
 import time
 from types import MappingProxyType, SimpleNamespace
@@ -88,6 +91,145 @@ class CompletionReferenceScreenApiTests(unittest.TestCase):
         with self.assertRaisesRegex(read_epochs.ReadEpochError, "expired screening deadline"):
             read_epochs.completion_reference_names(b"$(A" + b"x" * 20000, checkpoint=deadline)
         self.assertEqual(len(checkpoints), 3)
+
+
+class CompletionLexicalBoundaryApiTests(unittest.TestCase):
+    """Actual APIs in a private standalone file closure, without graph modules."""
+
+    SOURCES = (
+        b"A = 1\n",
+        b"override A := $(B) # $(IGNORED)\nprivate P = ${C}\ninclude $(A)\n",
+        b"define MACRO\n$(call WRAP,${ARG})\ndefine INNER\n$(NEST)\nendef\nendef\n$(MACRO)\n",
+        b"A = $(B) \\\n ${C}\nifdef \\\r\n FLAG\r\n",
+        b"A = $$B $$(ESCAPED) $z $@ $9 $(<D) ${BRACED}\n",
+        b"A = $(and ,$(PRUNED)) $(origin META) $(flavor TYPE) $(value BODY)\n",
+        b"A = $(call WRAP,$(call INNER,${ARG}))\n",
+        b"A = $(if yes,$(LIVE),$(OTHER))\nA += $(TAIL)\n.MODE ?= $(DOT)\n",
+        b"A = $(BROKEN\n",
+        b"A = $(strip (broken)\n",
+        b"define OPEN\n$(BODY)\n",
+        b"A = \0\n",
+        b"A = \xff\n",
+    )
+    RUNTIME = ("read_epochs.py", "make_lexical.py", "authority.py", "budget.py",
+               "lifecycle.py", "producer_channel.py")
+    RUNNER = '''
+import base64
+import json
+import sys
+import read_epochs
+
+def canonical(value):
+    if isinstance(value, set):
+        return sorted(value)
+    if isinstance(value, (list, tuple)):
+        return [canonical(item) for item in value]
+    if isinstance(value, dict):
+        return {key: canonical(item) for key, item in value.items()}
+    return value
+
+def observe(data, limit=None, stop=None, charge_stop=None):
+    result = []
+    for function in (read_epochs.completion_source_facts, read_epochs.completion_reference_names):
+        checkpoints, charges = [], []
+        def checkpoint():
+            checkpoints.append(1)
+            if stop is not None and len(checkpoints) == stop:
+                raise read_epochs.ReadEpochError("checkpoint stopped")
+        def charge(size):
+            charges.append(size)
+            if charge_stop is not None and len(charges) == charge_stop:
+                raise read_epochs.ReadEpochError("charge stopped")
+        try:
+            args = ("Makefile", data) if function is read_epochs.completion_source_facts else (data,)
+            value = function(*args, checkpoint=checkpoint, charge=charge, count_limit=limit)
+            outcome = {"value": canonical(value)}
+        except (ValueError, RuntimeError, ImportError) as error:
+            outcome = {"error": type(error).__name__, "message": str(error)}
+        result.append([outcome, len(checkpoints), charges])
+    return result
+
+if __name__ == "__main__":
+    requests = json.load(sys.stdin)
+    output = [observe(base64.b64decode(data), limit, stop, charge_stop)
+              for data, limit, stop, charge_stop in requests]
+    assert not any(name in sys.modules for name in ("graph_probe", "make_probe", "scripts"))
+    print(json.dumps(output, sort_keys=True))
+'''
+
+    @classmethod
+    def requests(cls):
+        return [(source, None, None, None) for source in cls.SOURCES] + [
+            (b"A = $(B)\nC = $(D)\n", 1, None, None),
+            (b"$(A) ${B} $(C)", 2, None, None),
+            (b"A = $(B)\nC = $(D)\n", None, 2, None),
+            (b"$(A" + b"x" * 20000, None, 3, None),
+            (b"A = $(B)\n", None, None, 1),
+            (b"$(A) $(B)", None, None, 2),
+        ]
+
+    @classmethod
+    def standalone(cls, module_root):
+        with tempfile.TemporaryDirectory(prefix="completion-lexical-") as directory:
+            root = Path(directory)
+            for name in cls.RUNTIME:
+                source = module_root / name
+                if source.exists():
+                    (root / name).write_bytes(source.read_bytes())
+            (root / "runner.py").write_text(cls.RUNNER)
+            requests = [[base64.b64encode(data).decode(), limit, stop, charge_stop]
+                        for data, limit, stop, charge_stop in cls.requests()]
+            result = subprocess.run(
+                [sys.executable, "-E", "-S", "-B", str(root / "runner.py")],
+                input=json.dumps(requests), text=True, capture_output=True,
+                cwd=root, env={}, timeout=30, check=True,
+            )
+            return json.loads(result.stdout)
+
+    def test_package_and_real_standalone_facts_screening_and_controls(self):
+        # Test harness only: both observations call the actual imported API.
+        namespace = {"__name__": "package_check"}
+        exec(self.RUNNER.replace("import read_epochs", "from scripts.validation_ownership import read_epochs"),
+             namespace)
+        expected = [namespace["observe"](*request) for request in self.requests()]
+        observed = self.standalone(Path(read_epochs.__file__).parent)
+        self.assertEqual(observed, expected)
+        rows, roots, dependencies = observed[1][0][0]["value"]
+        self.assertEqual([row[5:7] for row in rows], [["A", ":="]])
+        self.assertTrue(rows[0][8])
+        self.assertEqual(roots, ["A"])
+        self.assertEqual(dependencies, {"A": ["B"], "P": ["C"]})
+        self.assertEqual(observed[5][0][0]["value"][2]["A"], ["BODY", "META", "TYPE"])
+        self.assertIn("PRUNED", observed[5][1][0]["value"])
+        self.assertEqual(observed[6][0][0]["value"][2]["A"], ["ARG", "INNER", "WRAP"])
+        for index in (10, 11, 12, 13, 14, 15, 16, 17, 18):
+            self.assertTrue(any("error" in result[0] for result in observed[index]))
+
+    def test_shared_identity_graph_seam_and_lexical_budget(self):
+        from scripts.validation_ownership import graph_probe, make_lexical
+        for name in ("_UnresolvedName", "_make_expression_spans", "_make_function",
+                     "_join_make_text", "_prune_and", "MODE_ASSIGNMENT", "MAKE_SPACE"):
+            self.assertIs(getattr(graph_probe, name), getattr(make_lexical, name))
+        with patch.object(graph_probe, "_make_reference_base", return_value="PATCHED"):
+            self.assertEqual(graph_probe.references("$(ACTUAL)"), {"PATCHED"})
+        events = []
+        budget = SimpleNamespace(
+            remaining=lambda: events.append(("checkpoint",)),
+            charge=lambda kind, size: events.append((kind, size)),
+            reject=lambda message: (_ for _ in ()).throw(MakeProbeError(message)),
+        )
+        self.assertEqual(list(make_lexical._make_expression_spans("$(A)", budget=budget)),
+                         [(0, 4, "A")])
+        self.assertEqual(events, [("checkpoint",), ("cache", 64),
+                                  ("checkpoint",), ("checkpoint",), ("cache", 76)])
+        events.clear()
+        self.assertEqual(make_lexical._join_make_text(("A", "B"), budget), "AB")
+        self.assertEqual(events, [("cache", 4), ("cache", 4)])
+        self.assertIsNone(make_lexical._join_make_text((None,), budget))
+        with self.assertRaisesRegex(MakeProbeError, "reference depth bound"):
+            list(make_lexical._make_expression_spans("$(" * 513, budget=budget))
+        with self.assertRaises(make_lexical._UnresolvedName):
+            list(make_lexical._make_expression_spans("$(OPEN", require_complete=True))
 
 
 class CompletionTraceDataApiTests(unittest.TestCase):

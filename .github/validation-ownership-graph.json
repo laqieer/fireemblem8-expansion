@@ -1942,6 +1942,10 @@
         },
         {
           "kind": "exact",
+          "path": "scripts/validation_ownership/make_lexical.py"
+        },
+        {
+          "kind": "exact",
           "path": "scripts/validation_ownership/read_trace.py"
         },
         {

@@ -13,10 +13,12 @@ from types import MappingProxyType
 from typing import NamedTuple
 
 if __package__:
+    from . import make_lexical
     from .authority import encoded
     from .budget import MakeProbeError
     from .producer_channel import ChannelError, validate_publication_identity
 else:
+    import make_lexical
     from authority import encoded
     from budget import MakeProbeError
     from producer_channel import ChannelError, validate_publication_identity
@@ -645,11 +647,7 @@ def completion_reference_names(data, *, names=None, checkpoint=lambda: None, cou
     if stack:
         tokens(start, len(text))
     checkpoint()
-    if __package__:
-        from . import graph_probe
-    else:
-        import graph_probe
-    collapsed = graph_probe._collapse_make_continuations(text.replace("\r\n", "\n"))
+    collapsed = make_lexical._collapse_make_continuations(text.replace("\r\n", "\n"))
     for match in re.finditer(
         r"(?<![A-Za-z0-9_])(?:ifdef|ifndef)\s+([A-Za-z_][A-Za-z0-9_]*)", collapsed,
     ):
@@ -664,18 +662,14 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
         raise ReadEpochError("completion source facts require an exact byte source")
     if b"\0" in data:
         raise ReadEpochError("completion source has unsupported bytes")
-    if __package__:
-        from . import graph_probe
-    else:
-        import graph_probe
     rows, dependencies, roots = [], {}, set()
     definition, depth = None, 0
     digest = hashlib.sha256(data).hexdigest()
     for logical, first, last, raw in physical_statements(
         data, checkpoint=checkpoint, count_limit=count_limit,
     ):
-        statement = graph_probe.strip_comment(graph_probe._collapse_make_continuations(raw))
-        header = statement.strip(graph_probe.MAKE_SPACE)
+        statement = make_lexical.strip_comment(make_lexical._collapse_make_continuations(raw))
+        header = statement.strip(make_lexical.MAKE_SPACE)
         if depth:
             if not raw.startswith("\t"):
                 if re.match(r"^define(?:[ \t]|$)", header):
@@ -685,15 +679,15 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
                     if not depth:
                         definition = None
                         continue
-            names = graph_probe.references(statement)
+            names = make_lexical.references(statement)
             charge(len(encoded(sorted(names))))
             dependencies[definition].update(names)
             continue
-        assignment = None if raw.startswith("\t") else graph_probe.MODE_ASSIGNMENT.fullmatch(statement)
+        assignment = None if raw.startswith("\t") else make_lexical.MODE_ASSIGNMENT.fullmatch(statement)
         if assignment is None:
-            names = graph_probe.references(statement)
+            names = make_lexical.references(statement)
             charge(len(encoded(sorted(names))))
-            macro = None if raw.startswith("\t") else graph_probe.DEFINE.match(header)
+            macro = None if raw.startswith("\t") else make_lexical.DEFINE.match(header)
             if macro is not None:
                 definition, depth = macro[1], 1
                 dependencies.setdefault(definition, set()).update(names)
@@ -701,7 +695,7 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
                 roots.update(names)
             continue
         name = assignment["name"]
-        names = graph_probe.references(assignment["value"])
+        names = make_lexical.references(assignment["value"])
         charge(len(encoded((name, sorted(names)))))
         dependencies.setdefault(name, set()).update(names)
         prefix = statement[:assignment.start("name")].split()
