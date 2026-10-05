@@ -4931,6 +4931,16 @@ correcting only that representation still fails the final v4-prefixed key
 comparison. Both corrections preserve every independent source/epoch check,
 v3 behavior and existing native/profile/resource/delivery holds.
 
+Run `OriginalCompletionDataApiTests.test_leading_dot_include_keeps_actual_repeated_source_visits`
+to exercise the source parser's same-source repeated include and native
+directive-location checks. Literal, variable-expanded and literal-wildcard
+includes strip only leading `./`, as GNU Make does. Absolute paths, parent
+components, internal dot components, empty results and doubled separators
+remain refused by the unchanged authority validator. Restoring direct
+canonical-path validation before stripping the leading prefix recovers the
+original-family refusal; no fixture bytes, source identity checks or budgets
+are changed.
+
 **Exact remaining machine hold:** the current child trace does not return
 DR0..DR3/DR6/DR7, hardware siginfo/PC/purpose/restore samples, modifier/RBX/
 reader-frame observations, inherited registers after child exec, source-active

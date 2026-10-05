@@ -440,6 +440,27 @@ class OriginalCompletionDataApiTests(unittest.TestCase):
             with self.assertRaises(MakeProbeError):
                 self.parse(rejected, sources)
 
+    def test_leading_dot_include_keeps_actual_repeated_source_visits(self):
+        phase, sources = self.model(
+            "include child.mk\ninclude ./child.mk\n", {},
+            includes=(("child.mk", "CHILD := known\n"), ("child.mk", "CHILD := known\n")),
+        )
+        stream = self.parse(phase, sources)
+        self.assertEqual(stream.mode_state.exact_reference("CHILD"), "known")
+        mode = graph_probe._MakeSourceMode(namespace=frozenset(("child.mk",)))
+        for expression in ("./child.mk", "././child.mk"):
+            self.assertEqual(graph_probe._include_names("include " + expression, mode), ["child.mk"])
+            self.assertEqual(
+                graph_probe._include_names("include $(wildcard " + expression + ")", mode),
+                ["child.mk"],
+            )
+        mode.assign("INC", ":=", "./child.mk")
+        self.assertEqual(graph_probe._include_names("include $(INC)", mode), ["child.mk"])
+        for path in ("/child.mk", "../child.mk", "./../child.mk", "sub/./child.mk",
+                     "sub/../child.mk", "./", ".//child.mk"):
+            with self.subTest(path=path), self.assertRaises(MakeProbeError):
+                graph_probe._include_names("include " + path, mode)
+
     def test_original_generated_cap_condition_uses_its_own_completed_data(self):
         document = getattr(type(self), "generated_cap_document", None)
         if document is None:

@@ -1908,6 +1908,12 @@ def _mode_not(value):
     return None if value is None else not value
 
 
+def _include_path(path):
+    while path.startswith("./"):
+        path = path[2:]
+    return relative_path(path)
+
+
 def _include_names(header, mode=None):
     include = re.fullmatch(r"(?:-?include|sinclude)(?:[ \t\r\n\v\f]+(.*))?", header)
     if include is None:
@@ -1926,10 +1932,11 @@ def _include_names(header, mode=None):
                 return None
             if literal is not None and not any(character in literal for character in "$*?[]~\\#;:|"):
                 paths = re.findall(r"[^ \t\r\n\v\f]+", literal)
+                normalized = []
                 for path in paths:
                     mode.checkpoint()
-                    relative_path(path)
-                return [path for path in paths if path in mode.namespace]
+                    normalized.append(_include_path(path))
+                return [path for path in normalized if path in mode.namespace]
         if mode is None:
             return None
         try:
@@ -1944,11 +1951,12 @@ def _include_names(header, mode=None):
     if any(character in expression for character in "*?[]~\\\r\n\v\f"):
         return None
     paths = re.findall(r"[^ \t]+", expression)
+    normalized = []
     for path in paths:
         if mode is not None:
             mode.checkpoint()
-        relative_path(path)
-    return paths
+        normalized.append(_include_path(path))
+    return normalized
 
 
 def _make_logical_chunks(text):
