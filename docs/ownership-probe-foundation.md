@@ -118,6 +118,16 @@ Run the following controls individually from the same clean host checkout:
    The externally injected SIGKILL control may reject at the earlier vanished
    ptrace target or terminal provenance check; it does not prove both paths.
 
+The round-three supplier reconsideration removes duplicated syscall-origin
+observation. Native loader and dependency negative-purpose checks share one
+owned kernel-entry/mapping/instruction reader; each retains its separate
+captured-image and operation predicates. Actual bounded mapping bytes remain
+charged, with no budget change, reset or exempt category. A plain namespace
+launcher cannot supply the required source/caller/job/generated custody, while
+per-command replay exceeded the original aggregate budget. Neither is an
+acceptable replacement. This simplification does not release the original
+graph's held architecture disposition or qualify the complete native supplier.
+
 Readonly dispatch admits only the original Make image and captured shell.
 It cannot produce generated files or execute arbitrary native tools.
 Source/caller/job provenance, generated mutation/version custody and complete

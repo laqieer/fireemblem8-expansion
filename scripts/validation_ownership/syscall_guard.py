@@ -1172,12 +1172,12 @@ class Policy:
         except OSError as error:
             raise Violation("dependency runtime instruction span is unavailable") from error
 
-    def native_loader_origin(self, state):
-        if not self.native_readonly or state.native_stop is None:
-            raise Violation("native loader probe lacks its owned syscall stop")
-        pid, number, ip = state.native_stop
+    def syscall_origin(self, state, stop, label):
+        if stop is None:
+            raise Violation(f"{label} lacks its owned syscall stop")
+        pid, number, ip = stop
         if self.processes.get(pid) is not state or state.pidfd < 0 or state.kernel_call != number or ip < 2:
-            raise Violation("native loader probe lost its owned syscall stop")
+            raise Violation(f"{label} is not owned by the stopped tracee")
         information = (ctypes.c_ubyte * 128)()
         ptrace(0x420E, pid, len(information), ctypes.byref(information))
         if (
@@ -1186,87 +1186,59 @@ class Policy:
             or int.from_bytes(bytes(information[8:16]), "little") != ip
             or int.from_bytes(bytes(information[24:32]), "little") != number
         ):
-            raise Violation("native loader probe lost its actual syscall-entry stop")
-        image = self.config["native_interpreter"]
-        if image not in self.runtime_closure:
-            raise Violation("native interpreter is not in captured runtime closure")
-        identity = self.dependency_image_identity(Path(self.config["root"]) / image.lstrip("/"))
+            raise Violation(f"{label} lost its actual syscall-entry stop")
         self.charge_metadata(2)
         instruction = memory(pid, ip - 2, 2)
         if instruction != b"\x0f\x05":
-            raise Violation("native loader probe has an unsupported syscall instruction")
+            raise Violation(f"{label} has an unsupported syscall instruction")
         with open(f"/proc/{pid}/maps", "rb") as source:
-            self.charge_metadata(SYSCALL_MEMORY_LIMIT + 1)
             data = source.read(SYSCALL_MEMORY_LIMIT + 1)
+        self.charge_metadata(len(data))
         if len(data) > SYSCALL_MEMORY_LIMIT:
-            raise Violation("native loader mapping exceeds observation bound")
+            raise Violation(f"{label} mapping exceeds observation bound")
         found = None
         for line in data.splitlines():
             fields = line.split(None, 5)
             if len(fields) < 5:
-                raise Violation("malformed native loader mapping")
+                raise Violation(f"malformed {label} mapping")
             try:
                 start, end = (int(value, 16) for value in fields[0].split(b"-"))
                 major, minor = (int(value, 16) for value in fields[3].split(b":"))
                 inode = int(fields[4])
             except ValueError as error:
-                raise Violation("malformed native loader mapping identity") from error
+                raise Violation(f"malformed {label} mapping identity") from error
             if start <= ip - 2 < ip < end:
                 if fields[1] != b"r-xp" or inode <= 0 or found is not None:
-                    raise Violation("native loader probe lacks one readonly executable mapping")
+                    raise Violation(f"{label} lacks one readonly executable mapping")
                 found = (os.makedev(major, minor), inode), (start, end, fields[2])
         if found is None:
-            raise Violation("native loader syscall has no mapped origin")
-        if found[0] != identity:
+            raise Violation(f"{label} syscall has no mapped origin")
+        return found[0], found[1], ip, instruction
+
+    def native_loader_origin(self, state):
+        if not self.native_readonly:
+            raise Violation("native loader probe is outside its readonly lane")
+        origin, mapping, ip, instruction = self.syscall_origin(
+            state, state.native_stop, "native loader probe",
+        )
+        image = self.config["native_interpreter"]
+        if image not in self.runtime_closure:
+            raise Violation("native interpreter is not in captured runtime closure")
+        identity = self.dependency_image_identity(Path(self.config["root"]) / image.lstrip("/"))
+        if origin != identity:
             return False
-        self.verify_dependency_mapping_span(image, *found[1], ip, instruction, identity=identity)
+        self.verify_dependency_mapping_span(image, *mapping, ip, instruction, identity=identity)
         return True
 
     def dependency_negative_purpose(self, state, path, operation):
         if state.dependency_stop is None or state.dependency_image not in self.config["dependency"]["executables"]:
             raise Violation("dependency negative probe has no verified syscall context")
         pid, number, ip = state.dependency_stop
-        if self.processes.get(pid) is not state or state.pidfd < 0 or state.kernel_call != number:
-            raise Violation("dependency negative probe is not owned by the stopped tracee")
         self.reserve_observation("accessed", f"dependency-purpose:{pid}:{number}:{ip}:{operation}:{path}")
-        information = (ctypes.c_ubyte * 128)()
-        ptrace(0x420E, pid, len(information), ctypes.byref(information))
-        if (
-            information[0] != 1
-            or int.from_bytes(bytes(information[4:8]), "little") != 0xC000003E
-            or int.from_bytes(bytes(information[8:16]), "little") != ip
-            or int.from_bytes(bytes(information[24:32]), "little") != number
-            or ip < 2
-        ):
-            raise Violation("dependency negative probe lost its actual syscall-entry stop")
-        self.charge_metadata(2)
-        instruction = memory(pid, ip - 2, 2)
-        if instruction != b"\x0f\x05":
-            raise Violation("dependency negative probe has an unsupported syscall instruction")
+        origin, mapping, ip, instruction = self.syscall_origin(
+            state, state.dependency_stop, "dependency negative probe",
+        )
         self.verify_dependency_image(pid, state.dependency_image)
-        with open(f"/proc/{pid}/maps", "rb") as source:
-            data = source.read(SYSCALL_MEMORY_LIMIT + 1)
-        self.charge_metadata(len(data))
-        if len(data) > SYSCALL_MEMORY_LIMIT:
-            raise Violation("dependency syscall mapping exceeds the observation bound")
-        origin = mapping = None
-        for line in data.splitlines():
-            fields = line.split(None, 5)
-            if len(fields) < 5:
-                raise Violation("malformed dependency syscall mapping")
-            try:
-                start, end = (int(value, 16) for value in fields[0].split(b"-"))
-                major, minor = (int(value, 16) for value in fields[3].split(b":"))
-                inode = int(fields[4])
-            except ValueError as error:
-                raise Violation("malformed dependency syscall mapping identity") from error
-            if start <= ip - 2 < ip < end:
-                if fields[1] != b"r-xp" or inode <= 0 or origin is not None:
-                    raise Violation("dependency syscall origin is not one readonly executable image")
-                origin = os.makedev(major, minor), inode
-                mapping = start, end, fields[2]
-        if origin is None:
-            raise Violation("dependency syscall origin has no executable mapping")
         for image in (self.dependency_interpreter, self.dependency_libc):
             if self.dependency_image_identity(Path(self.config["root"]) / image.lstrip("/")) != self.dependency_image_ids[image]:
                 raise Violation("dependency purpose image changed after resolution")
