@@ -32,6 +32,7 @@ from scripts.validation_ownership import budget as budgeting
 
 
 REPO = Path(__file__).resolve().parents[2]
+SOURCE_REPO = REPO.parent / "issue180-original-completion"
 WORKFLOW_TEXT = (REPO / policy.WORKFLOW).read_text()
 NATIVE_WORKFLOW_TEXT = (REPO / policy.NATIVE_WORKFLOW).read_text()
 SUPERVISOR_AST = ast.parse((REPO / "scripts/ci_calibration/supervisor.py").read_text())
@@ -47,6 +48,107 @@ WORKER_AST = ast.parse((REPO / "scripts/ci_calibration/worker.py").read_text())
 
 
 class NativeSelectionControls(unittest.TestCase):
+    def test_callsite_stage_uses_exact_clean_source_git_facts(self):
+        def git(root, *args):
+            return subprocess.run(
+                ["/usr/bin/git", "-C", str(root), *args], check=True, capture_output=True,
+            ).stdout
+
+        self.assertEqual(git(SOURCE_REPO, "rev-parse", "HEAD").decode().strip(),
+                         supervisor.NATIVE_CALLSITE_SOURCE_SHA)
+        self.assertEqual(git(SOURCE_REPO, "status", "--porcelain=v1",
+                             "--untracked-files=all"), b"")
+        self.assertEqual(git(SOURCE_REPO, "rev-parse",
+                             supervisor.NATIVE_CALLSITE_SOURCE_SHA + "^").decode().strip(),
+                         supervisor.NATIVE_CALLSITE_PARENT_SHA)
+        paths = git(
+            SOURCE_REPO, "diff", "--no-ext-diff", "--no-textconv", "--no-renames",
+            "--name-status", "-z", supervisor.NATIVE_CALLSITE_PARENT_SHA,
+            supervisor.NATIVE_CALLSITE_SOURCE_SHA,
+        )
+        sizes = git(
+            SOURCE_REPO, "diff", "--no-ext-diff", "--no-textconv", "--numstat",
+            supervisor.NATIVE_CALLSITE_PARENT_SHA, supervisor.NATIVE_CALLSITE_SOURCE_SHA,
+        )
+        supervisor.validate_native_source_stage(paths, sizes, "callsite")
+        with self.assertRaises(policy.GuardError):
+            supervisor.validate_native_source_stage(
+                b"", git(SOURCE_REPO, "diff", "--numstat",
+                         supervisor.NATIVE_CALLSITE_PARENT_SHA,
+                         supervisor.NATIVE_CALLSITE_PARENT_SHA), "callsite",
+            )
+        with self.assertRaises(policy.GuardError):
+            supervisor.validate_native_source_stage(
+                paths + b"M\0src/proc.c\0", sizes + b"1\t0\tsrc/proc.c\n", "callsite",
+            )
+        self.assertEqual(git(
+            REPO, "diff", "--name-only", supervisor.NATIVE_RECORDER_PARENT_SHA, "HEAD", "--",
+            "scripts/ci_calibration/root_stage.py",
+        ), b"")
+
+    def test_original_source_status_runs_against_current_and_neutral_ast(self):
+        owner_node, = [node for node in SUPERVISOR_AST.body
+                       if isinstance(node, ast.ClassDef) and node.name == "Owner"]
+        method, = [node for node in owner_node.body if isinstance(node, ast.FunctionDef)
+                   and node.name == "source_status"]
+        namespace = dict(vars(supervisor))
+        exec(compile(ast.Module(body=[ast.parse(ast.unparse(method)).body[0]],
+                               type_ignores=[]), "<neutral-source-status>", "exec"), namespace)
+        neutral_method = namespace["source_status"]
+
+        def observe(function, label):
+            owner = supervisor.Owner.__new__(supervisor.Owner)
+            owner.candidate = SOURCE_REPO
+            owner.gitlinks = []
+            owner.scope = {"graph_sha": policy.NATIVE_SOURCE, "workload_kind": policy.NATIVE_KIND}
+            function(owner, label)
+            return owner.scope["source_status_" + label], owner.gitlinks
+
+        current = observe(supervisor.Owner.source_status, "current")
+        neutral = observe(neutral_method, "neutral")
+        self.assertEqual(current, neutral)
+        self.assertEqual(current[0],
+                         "exact HEAD/BASE and clean with initialized pinned submodules")
+        parent = supervisor.Owner.__new__(supervisor.Owner)
+        parent.candidate = SOURCE_REPO
+        parent.gitlinks = []
+        parent.scope = {
+            "graph_sha": supervisor.NATIVE_CALLSITE_PARENT_SHA,
+            "workload_kind": policy.NATIVE_KIND,
+        }
+        with self.assertRaises(policy.GuardError):
+            supervisor.Owner.source_status(parent, "parent")
+
+    def test_callsite_prepare_ast_round_trip_is_neutral(self):
+        owner, = [node for node in SUPERVISOR_AST.body
+                  if isinstance(node, ast.ClassDef) and node.name == "Owner"]
+        selected = [node for node in owner.body if isinstance(node, ast.FunctionDef)
+                    and node.name in {"prepare", "source_status"}]
+        self.assertEqual({node.name for node in selected}, {"prepare", "source_status"})
+        normalized = ast.parse(ast.unparse(ast.Module(body=selected, type_ignores=[])))
+        self.assertEqual(ast.dump(normalized), ast.dump(ast.Module(body=selected, type_ignores=[])))
+
+    def test_all_seven_prior_workflows_match_their_pinned_git_bytes(self):
+        pins = (
+            (policy.SPENT_NATIVE_WORKFLOW, supervisor.NATIVE_PROFILE_SHA),
+            (policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW, supervisor.NATIVE_COUNTER_BASE_SHA),
+            (policy.SPENT_NATIVE_FAMILY_WORKFLOW, supervisor.NATIVE_CORRECTED_FAMILY_SHA),
+            (policy.SPENT_NATIVE_REFUSAL_WORKFLOW, supervisor.NATIVE_REFUSAL_ROUTE_SHA),
+            (policy.SPENT_NATIVE_TYPED_WORKFLOW, supervisor.NATIVE_TYPED_PREPARATION_SHA),
+            (policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW, supervisor.NATIVE_TYPED_ROUTE_SHA),
+            (policy.SPENT_NATIVE_TYPED_ROUTE_WORKFLOW, supervisor.NATIVE_RECORDER_PARENT_SHA),
+        )
+        for path, revision in pins:
+            current = subprocess.run(
+                ["/usr/bin/git", "-C", str(REPO), "show", "HEAD:" + path],
+                check=True, capture_output=True,
+            ).stdout
+            pinned = subprocess.run(
+                ["/usr/bin/git", "-C", str(REPO), "show", revision + ":" + path],
+                check=True, capture_output=True,
+            ).stdout
+            supervisor.validate_spent_native_workflow(current, pinned)
+
     def test_actual_prepare_path_consumer(self):
         owner, = [n for n in SUPERVISOR_AST.body if isinstance(n, ast.ClassDef) and n.name == "Owner"]
         prepare, = [n for n in owner.body if isinstance(n, ast.FunctionDef) and n.name == "prepare"]
@@ -66,7 +168,8 @@ class NativeSelectionControls(unittest.TestCase):
         self.assertTrue({
             policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
             policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
-            policy.SPENT_NATIVE_TYPED_WORKFLOW, policy.NATIVE_WORKFLOW,
+            policy.SPENT_NATIVE_TYPED_WORKFLOW, policy.SPENT_NATIVE_TYPED_ROUTE_WORKFLOW,
+            policy.NATIVE_WORKFLOW,
             policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW,
         } <= {path.decode() for path in actual.split(b"\0") if path})
         supervisor.validate_native_inventory(native)
@@ -88,7 +191,8 @@ class NativeSelectionControls(unittest.TestCase):
         for module, line in ((None, None), ("read_trace", 1), ("read_epochs", 2147483647)):
             value = {"status": "observed", "reason": None, "ok": False,
                      "returncode": None, "diagnostic": {
-                         "version": 1, "tag": 1, "errno": 13, "module": module, "line": line}}
+                         "version": 2, "tag": 1, "errno": 13, "module": module, "line": line,
+                         "location_kind": "unknown" if module is None else "origin"}}
             self.assertEqual(policy.validate_native_refusal(
                 policy.parse_json(policy.encoded(value))), value)
             with self.assertRaises(policy.GuardError):
@@ -109,7 +213,8 @@ class NativeSelectionControls(unittest.TestCase):
     def test_refusal_wire_is_finite_strict_and_success_is_distinct(self):
         observed = {
             "status": "observed", "reason": None, "ok": False, "returncode": -1,
-            "diagnostic": {"version": 1, "tag": 1, "errno": 13, "module": "read_trace", "line": 1},
+            "diagnostic": {"version": 2, "tag": 1, "errno": 13, "module": "read_trace",
+                           "line": 1, "location_kind": "origin"},
         }
         policy.validate_native_refusal(policy.parse_json(policy.encoded(observed)))
         for field, wrong in (
@@ -127,16 +232,32 @@ class NativeSelectionControls(unittest.TestCase):
             with self.assertRaises(policy.GuardError):
                 policy.validate_native_refusal({**value, "diagnostic": observed["diagnostic"]})
         diagnostic = observed["diagnostic"]
+        for kind in ("origin", "callsite"):
+            policy.validate_native_diagnostic({**diagnostic, "location_kind": kind})
+        unknown = {**diagnostic, "module": None, "line": None, "location_kind": "unknown"}
+        policy.validate_native_diagnostic(unknown)
         for tag in range(1, 9):
             policy.validate_native_diagnostic({**diagnostic, "tag": tag, "errno": None})
         for field, wrong in (
-            ("version", True), ("version", 2), ("tag", True), ("tag", 0), ("tag", 9),
+            ("version", True), ("version", 1), ("version", 3), ("tag", True), ("tag", 0), ("tag", 9),
             ("errno", True), ("errno", -1), ("errno", 4096), ("module", "foreign"),
             ("module", []), ("module", None), ("line", None), ("line", True), ("line", 0),
             ("line", 2147483648),
+            ("location_kind", None), ("location_kind", True), ("location_kind", "foreign"),
         ):
             with self.assertRaises(policy.GuardError):
                 policy.validate_native_diagnostic({**diagnostic, field: wrong})
+        for wrong in (
+            {**diagnostic, "location_kind": "unknown"},
+            {**unknown, "location_kind": "origin"},
+            {**unknown, "location_kind": "callsite"},
+            {**diagnostic, "location_kind": "origin", "module": None, "line": None},
+            {**diagnostic, "location_kind": "callsite", "module": "foreign"},
+            {**diagnostic, "location_kind": "callsite", "line": 0},
+            {**diagnostic, "location_kind": type("LocationKind", (str,), {})("origin")},
+        ):
+            with self.assertRaises(policy.GuardError):
+                policy.validate_native_diagnostic(wrong)
         for missing in diagnostic:
             with self.assertRaises(policy.GuardError):
                 policy.validate_native_diagnostic({k: v for k, v in diagnostic.items() if k != missing})
@@ -154,6 +275,9 @@ class NativeSelectionControls(unittest.TestCase):
             with self.assertRaises(policy.GuardError):
                 policy._validate_historical_native_refusal({**old, "ok": True})
             policy._validate_historical_native_refusal({**old, "ok": True, "returncode": 0})
+        with self.assertRaises(policy.GuardError):
+            policy.validate_native_diagnostic({"version": 1, "tag": 1, "errno": None,
+                                               "module": None, "line": None})
 
     def test_native_failure_schema_and_terminal_order_cover_all_selectors(self):
         for selector in policy.NATIVE_SELECTORS:
@@ -290,6 +414,9 @@ class NativeSelectionControls(unittest.TestCase):
             (self.event("calibration/issue-180-native-completion-family-2"), policy.NATIVE_SELECTORS[0]),
             (self.event("calibration/issue-180-native-completion-refusal-1"), policy.NATIVE_SELECTORS[0]),
             (self.event("calibration/issue-180-native-completion-refusal-2"), policy.NATIVE_SELECTORS[0]),
+            (self.event("calibration/issue-180-native-completion-typed-2"), policy.NATIVE_SELECTORS[0]),
+            (self.event("calibration/issue-180-native-completion-typed-1"), policy.NATIVE_SELECTORS[0]),
+            (self.event("calibration/issue180-native-completion-callsite-1"), policy.NATIVE_SELECTORS[0]),
             *((native, selector) for selector in policy.NATIVE_SELECTORS[1:]),
         ):
             with self.assertRaises(policy.GuardError):
@@ -309,13 +436,15 @@ class NativeSelectionControls(unittest.TestCase):
             with self.assertRaises(policy.GuardError):
                 policy.native_event(self.event(policy.NATIVE_BRANCH), profile=policy.NATIVE_PROFILE, selector=policy.NATIVE_SELECTORS[0], **identity)
 
-    def test_frozen_typed2_contract_event_not_policy_derived(self):
-        event = self.event("calibration/issue-180-native-completion-typed-2")
+    def test_frozen_callsite_contract_event_not_policy_derived(self):
+        event = self.event("calibration/issue-180-native-completion-callsite-1")
         policy.validate_event(event, native=True, **self.identity())
         for branch in (
+            "calibration/issue-180-native-completion-typed-2",
             "calibration/issue-180-native-completion-typed-1",
             "calibration/issue180-native-completion-typed-1",
             "calibration/issue180-native-completion-typed-2",
+            "calibration/issue180-native-completion-callsite-1",
             "calibration/issue-180-native-completion-family-1",
             "calibration/issue-180-native-completion-diagnostic-1",
             "calibration/issue-180-native-completion-family-2",
@@ -332,7 +461,8 @@ class NativeSelectionControls(unittest.TestCase):
 
     def test_native_lineage_keeps_exact_profile_repair_rebind_and_preparation_chain(self):
         lines = [
-            f"{'a' * 40} {supervisor.NATIVE_TYPED_CORRECTION_SHA}",
+            f"{'a' * 40} {supervisor.NATIVE_RECORDER_PARENT_SHA}",
+            f"{supervisor.NATIVE_RECORDER_PARENT_SHA} {supervisor.NATIVE_TYPED_CORRECTION_SHA}",
             f"{supervisor.NATIVE_TYPED_CORRECTION_SHA} {supervisor.NATIVE_TYPED_ROUTE_SHA}",
             f"{supervisor.NATIVE_TYPED_ROUTE_SHA} {supervisor.NATIVE_CONSUMER_SHA}",
             f"{supervisor.NATIVE_CONSUMER_SHA} {supervisor.NATIVE_CONSUMER_PARENT_SHA}",
@@ -371,6 +501,7 @@ class NativeSelectionControls(unittest.TestCase):
             policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
             policy.SPENT_NATIVE_TYPED_WORKFLOW,
             policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW,
+            policy.SPENT_NATIVE_TYPED_ROUTE_WORKFLOW,
             policy.NATIVE_WORKFLOW,
         }
         data = b"".join(
@@ -389,7 +520,8 @@ class NativeSelectionControls(unittest.TestCase):
     def test_spent_native_workflow_requires_exact_immutable_bytes(self):
         for workflow in (policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
                          policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
-                         policy.SPENT_NATIVE_TYPED_WORKFLOW, policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW):
+                         policy.SPENT_NATIVE_TYPED_WORKFLOW, policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW,
+                         policy.SPENT_NATIVE_TYPED_ROUTE_WORKFLOW):
             with self.subTest(workflow=workflow):
                 original = ("name: " + workflow + "\non: push\n").encode()
                 supervisor.validate_spent_native_workflow(original, original)
@@ -406,6 +538,7 @@ class NativeSelectionControls(unittest.TestCase):
             ("nullable", supervisor.NATIVE_NULLABLE_PATHS),
             ("diagnostic", supervisor.NATIVE_DIAGNOSTIC_SOURCE_PATHS),
             ("consumer", supervisor.NATIVE_CONSUMER_PATHS),
+            ("callsite", supervisor.NATIVE_CALLSITE_PATHS),
         ):
             rows = [b"M\0" + path.encode() + b"\0" for path in sorted(paths)]
             data = b"".join(rows)
@@ -423,6 +556,7 @@ class NativeSelectionControls(unittest.TestCase):
         for stage, paths, changed_lines in (
             ("diagnostic", supervisor.NATIVE_DIAGNOSTIC_SOURCE_PATHS, 347),
             ("consumer", supervisor.NATIVE_CONSUMER_PATHS, 371),
+            ("callsite", supervisor.NATIVE_CALLSITE_PATHS, 127),
         ):
             inventory = b"".join(b"M\0" + path.encode() + b"\0" for path in sorted(paths))
             counts = [(changed_lines, 0), *((0, 0) for _ in range(len(paths) - 1))]
@@ -461,13 +595,13 @@ class NativeSelectionControls(unittest.TestCase):
             with self.assertRaises(policy.GuardError):
                 supervisor.validate_native_nullable_stage(data, changed)
 
-    def test_typed_workflow_selects_exact_source_and_stays_preparation_only(self):
+    def test_callsite_workflow_selects_exact_source_and_stays_preparation_only(self):
         workflow = yaml.load(NATIVE_WORKFLOW_TEXT, Loader=yaml.BaseLoader)
-        self.assertEqual(workflow["on"], {"push": {"branches": ["calibration/issue-180-native-completion-typed-2"]}})
+        self.assertEqual(workflow["on"], {"push": {"branches": ["calibration/issue-180-native-completion-callsite-1"]}})
         self.assertEqual(workflow["permissions"], {"contents": "read"})
         self.assertEqual(workflow["concurrency"]["cancel-in-progress"], "false")
         job, = workflow["jobs"].values()
-        self.assertEqual(job["name"], "One typed-source observation; qualification remains incomplete")
+        self.assertEqual(job["name"], "One callsite observation; qualification remains incomplete")
         self.assertEqual((job["runs-on"], job["timeout-minutes"]), ("ubuntu-latest", "90"))
         self.assertEqual(len(job["steps"]), 6)
         predicates = {part.strip() for part in job["if"].split("&&")}
@@ -480,7 +614,7 @@ class NativeSelectionControls(unittest.TestCase):
         })
         checkouts = [step for step in job["steps"] if step.get("uses", "").startswith("actions/checkout@")]
         self.assertEqual([step["with"]["ref"] for step in checkouts], [
-            "${{ github.sha }}", "efc5eb6991bc2c1efb02f1f2e7595f27bb9aa24f",
+            "${{ github.sha }}", "a1f142786ce00ca72cdb5a249e174ac3dde9b4d4",
         ])
         self.assertEqual(
             [step["uses"] for step in checkouts],

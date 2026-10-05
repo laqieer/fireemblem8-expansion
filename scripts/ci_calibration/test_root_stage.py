@@ -43,7 +43,8 @@ class NativeRefusalControls(unittest.TestCase):
 
     def observed(self, **changes):
         return {"ok": False, "returncode": None, "failure_diagnostic": {
-            "version": 1, "tag": 1, "errno": 13, "module": "read_trace", "line": 1,
+            "version": 2, "tag": 1, "errno": 13, "module": "read_trace", "line": 1,
+            "location_kind": "origin",
         }, **changes}
 
     def caught(self, session, observed):

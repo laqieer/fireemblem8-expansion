@@ -1,6 +1,36 @@
 # Contained original-include retained-state diagnostic
 
-## Typed-source rebind preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
+## Callsite-source rebind preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
+
+The first-created `calibration/issue-180-native-completion-callsite-1` route
+consumes source `a1f142786ce00ca72cdb5a249e174ac3dde9b4d4` with the existing
+`native-completion-trace4-abi2-v1` profile, positive family selector, original
+quotas, single lifetime, seven containment qualifiers and five bounded
+artifacts. It does not grant execution or qualification authority. The
+typed-2 route and all six other historical workflows remain byte-pinned;
+historical refs and spelling variants are rejected.
+
+The producer's current failure diagnostic is a closed version-2 record with
+`tag`, `errno`, `module`, `line`, and `location_kind`. `location_kind` is
+`unknown` only when both location fields are null; `origin` and `callsite`
+require a known closed module and positive line. Current consumption rejects
+version 1, malformed kinds, unknown modules, and partial locations. The
+explicit historical refusal parser remains separate and continues to accept
+its version-1 `match`/`sites` record; it is never a fallback for the current
+route.
+
+The normal harness lineage extends `ea014e6d2d69a3373e925107623505392ac492e9`
+through its reviewed `3d202487ce1b87cffa727703e1f81b973bc3811c` and
+`f69e4c5bbcf21f1617f02fa5119ebffa6203d068` edges. The full 16-path inventory
+retains all seven earlier workflows and adds only the callsite workflow;
+the current six-file stage is limited to policy, supervisor, focused policy
+and root-stage tests, this README, and that new workflow. Source preparation
+separately validates the five-path, 127-line `efc5eb6991bc2c1efb02f1f2e7595f27bb9aa24f`
+to `a1f142786ce00ca72cdb5a249e174ac3dde9b4d4` stage. `root_stage.py` stays
+frozen at parent `ea014e6d2d69a3373e925107623505392ac492e9`. No source edits,
+native attempt, runtime allocation, push, or delivery gate is included here.
+
+## Prior typed-source rebind preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
 
 The first-created `calibration/issue-180-native-completion-typed-2` route
 rebinds the existing native preparation to source `efc5eb6991bc2c1efb02f1f2e7595f27bb9aa24f`,
@@ -140,14 +170,9 @@ native run, new workflow, quota change, ROM/RAM/save impact, or new
 dependency/conflict is authorized. Run37286481824 remains spent; architecture
 heldde5, all machine holds and final gates remain.
 
-The copied diagnostic has exactly version1, tag1..8, errno null or 0..4095
-(numeric errno only for tag1), and module/line both null or a closed
-`read_trace`/`read_epochs`/`syscall_guard` enum with line1..2147483647.
-Booleans, unknown/extra/missing fields and partial locations reject. Failed
-null status retains the diagnostic; successful results contain no failure
-record. Current refusal has `diagnostic`, never `match`/`sites`. Run focused
-tests against exact parentf1e (negative) and a neutral AST layout (positive).
-This is observation only, not proof of the original refusal or qualification.
+That route consumed the prior five-field version-1 diagnostic. It is
+historical-only now; the current version-2 producer requires `location_kind`
+and cannot degrade to the old record or historical `match`/`sites` shape.
 
 ## Aggregate-only telemetry correction (TC-CI-AGGREGATE-001, #180)
 

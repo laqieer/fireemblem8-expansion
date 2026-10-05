@@ -198,7 +198,16 @@ NATIVE_CONSUMER_PARENT_SHA = "f1e04f02b9f40bf23791311cddf1c1ff0db08312"
 NATIVE_CONSUMER_SHA = "bb6a9451b44e64b4c9ce68fbef60416e682c710e"
 NATIVE_TYPED_ROUTE_SHA = "f69e4c5bbcf21f1617f02fa5119ebffa6203d068"
 NATIVE_TYPED_CORRECTION_SHA = "3d202487ce1b87cffa727703e1f81b973bc3811c"
+NATIVE_RECORDER_PARENT_SHA = "ea014e6d2d69a3373e925107623505392ac492e9"
 NATIVE_TYPED_PREPARATION_SHA = NATIVE_CONSUMER_PARENT_SHA
+NATIVE_CALLSITE_PARENT_SHA = "efc5eb6991bc2c1efb02f1f2e7595f27bb9aa24f"
+NATIVE_CALLSITE_SOURCE_SHA = "a1f142786ce00ca72cdb5a249e174ac3dde9b4d4"
+NATIVE_CALLSITE_PATHS = frozenset({
+    "docs/test-cases/workflow-governance.md", "docs/validation-ownership.md",
+    "scripts/validation_ownership/lifecycle.py",
+    "scripts/validation_ownership/tests/test_foundation.py",
+    "scripts/validation_ownership/tests/test_make_probe.py",
+})
 NATIVE_NULLABLE_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
     "policy.py", "root_stage.py", "test_ci_calibration.py", "test_root_stage.py", "README.md",
 ))
@@ -219,6 +228,7 @@ NATIVE_PATHS = frozenset({
     policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
     policy.SPENT_NATIVE_TYPED_WORKFLOW,
     policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW,
+    policy.SPENT_NATIVE_TYPED_ROUTE_WORKFLOW,
     policy.NATIVE_WORKFLOW,
     *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "supervisor.py", "worker.py", "root_stage.py", "observation_failure.py",
@@ -267,6 +277,7 @@ def validate_native_source_inventory(data, stage):
         "nullable": NATIVE_NULLABLE_PATHS,
         "diagnostic": NATIVE_DIAGNOSTIC_SOURCE_PATHS,
         "consumer": NATIVE_CONSUMER_PATHS,
+        "callsite": NATIVE_CALLSITE_PATHS,
     }
     if stage not in expected or type(data) is not bytes:
         raise policy.GuardError("native source inventory has an unknown stage or representation")
@@ -282,11 +293,12 @@ def validate_native_source_inventory(data, stage):
 
 def validate_native_source_stage(data, sizes, stage):
     validate_native_source_inventory(data, stage)
-    if type(sizes) is not bytes or stage not in {"diagnostic", "consumer"}:
+    if type(sizes) is not bytes or stage not in {"diagnostic", "consumer", "callsite"}:
         raise policy.GuardError("native source stage sizes are not immutable Git data")
     expected_paths, expected_lines = {
         "diagnostic": (NATIVE_DIAGNOSTIC_SOURCE_PATHS, 347),
         "consumer": (NATIVE_CONSUMER_PATHS, 371),
+        "callsite": (NATIVE_CALLSITE_PATHS, 127),
     }[stage]
     expected_path_bytes = {path.encode("ascii") for path in expected_paths}
     rows = [row.split(b"\t") for row in sizes.splitlines()]
@@ -314,8 +326,9 @@ def validate_native_nullable_stage(data, sizes):
 
 
 def validate_native_lineage(lines, head):
-    if len(lines) < 17 or lines[:17] != [
-        f"{head} {NATIVE_TYPED_CORRECTION_SHA}",
+    if len(lines) < 18 or lines[:18] != [
+        f"{head} {NATIVE_RECORDER_PARENT_SHA}",
+        f"{NATIVE_RECORDER_PARENT_SHA} {NATIVE_TYPED_CORRECTION_SHA}",
         f"{NATIVE_TYPED_CORRECTION_SHA} {NATIVE_TYPED_ROUTE_SHA}",
         f"{NATIVE_TYPED_ROUTE_SHA} {NATIVE_CONSUMER_SHA}",
         f"{NATIVE_CONSUMER_SHA} {NATIVE_CONSUMER_PARENT_SHA}",
@@ -334,7 +347,7 @@ def validate_native_lineage(lines, head):
         f"{NATIVE_PREPARATION_SHA} {NATIVE_PARENT}",
     ]:
         raise policy.GuardError("native family differs from its exact normal repair/preparation chain")
-    validate_harness_lineage(lines[17:], NATIVE_PARENT)
+    validate_harness_lineage(lines[18:], NATIVE_PARENT)
 
 
 def validate_preparation_paths(changed):
@@ -343,6 +356,7 @@ def validate_preparation_paths(changed):
             policy.WORKFLOW, policy.NATIVE_WORKFLOW, policy.SPENT_NATIVE_WORKFLOW,
             policy.SPENT_NATIVE_TYPED_WORKFLOW,
             policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW,
+            policy.SPENT_NATIVE_TYPED_ROUTE_WORKFLOW,
             policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
             policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
             policy.TEMPLATE_HEADER_WORKFLOW, policy.FINITE_REPORT_WORKFLOW,
@@ -381,6 +395,7 @@ def validate_native_inventory(data):
             policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
             policy.SPENT_NATIVE_TYPED_WORKFLOW,
             policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW,
+            policy.SPENT_NATIVE_TYPED_ROUTE_WORKFLOW,
             policy.NATIVE_WORKFLOW,
         )
     }
@@ -1702,7 +1717,7 @@ class Owner:
             raise policy.GuardError("workflow harness has uncommitted source changes")
         if native:
             validate_native_lineage(
-                git(self.harness, "rev-list", "--parents", "--max-count=52", "HEAD").decode().splitlines(),
+                git(self.harness, "rev-list", "--parents", "--max-count=53", "HEAD").decode().splitlines(),
                 self.scope["harness_sha"],
             )
             validate_native_inventory(git(self.harness, "diff", "--name-status", "-z", NATIVE_PARENT, "HEAD"))
@@ -1726,6 +1741,11 @@ class Owner:
                 git(self.harness, "show", "HEAD:" + policy.SPENT_NATIVE_TYPED_WORKFLOW),
                 git(self.harness, "show", NATIVE_TYPED_PREPARATION_SHA + ":" + policy.SPENT_NATIVE_TYPED_WORKFLOW),
             )
+            validate_spent_native_workflow(
+                git(self.harness, "show", "HEAD:" + policy.SPENT_NATIVE_TYPED_ROUTE_WORKFLOW),
+                git(self.harness, "show", NATIVE_RECORDER_PARENT_SHA + ":"
+                   + policy.SPENT_NATIVE_TYPED_ROUTE_WORKFLOW),
+            )
             validate_native_source_stage(
                 git(self.harness, "diff", "--name-status", "-z", NATIVE_CONSUMER_PARENT_SHA, NATIVE_CONSUMER_SHA),
                 git(self.harness, "diff", "--numstat", NATIVE_CONSUMER_PARENT_SHA, NATIVE_CONSUMER_SHA),
@@ -1739,9 +1759,9 @@ class Owner:
                 git(self.harness, "diff", "--name-status", "-z", NATIVE_REFUSAL_ROUTE_SHA, NATIVE_NULLABLE_SHA),
                 git(self.harness, "diff", "--numstat", NATIVE_REFUSAL_ROUTE_SHA, NATIVE_NULLABLE_SHA),
             )
-            if git(self.harness, "diff", "--name-only", NATIVE_CONSUMER_SHA, "HEAD", "--",
+            if git(self.harness, "diff", "--name-only", NATIVE_RECORDER_PARENT_SHA, "HEAD", "--",
                    "scripts/ci_calibration/root_stage.py").strip():
-                raise policy.GuardError("native refusal route changed the frozen diagnostic recorder")
+                raise policy.GuardError("native callsite route changed the frozen diagnostic recorder")
         else:
             validate_harness_lineage(
                 git(self.harness, "rev-list", "--parents", "--max-count=35", "HEAD").decode().splitlines(),
@@ -1957,7 +1977,7 @@ class Owner:
                 (policy.NATIVE_MANIFEST_SOURCE, policy.NATIVE_AUTHORED_SOURCE),
                 (policy.NATIVE_PREVIOUS_SOURCE, policy.NATIVE_MANIFEST_SOURCE),
                 (policy.NATIVE_SCREENING_SOURCE, policy.NATIVE_PREVIOUS_SOURCE),
-                (source, policy.NATIVE_SCREENING_SOURCE),
+                (NATIVE_CALLSITE_SOURCE_SHA, NATIVE_CALLSITE_PARENT_SHA),
             ):
                 if git(self.candidate, "rev-list", "--parents", "--max-count=1", child).decode().strip() != (
                     child + " " + parent
@@ -1969,13 +1989,14 @@ class Owner:
                 (policy.NATIVE_IMPLEMENTATION, policy.NATIVE_AUTHORED_SOURCE, "tests"),
                 (policy.NATIVE_AUTHORED_SOURCE, policy.NATIVE_PREVIOUS_SOURCE, "redesign"),
                 (policy.NATIVE_PREVIOUS_SOURCE, policy.NATIVE_SCREENING_SOURCE, "screening"),
-                (policy.NATIVE_SCREENING_SOURCE, source, "diagnostic"),
+                (policy.NATIVE_SCREENING_SOURCE, NATIVE_CALLSITE_PARENT_SHA, "diagnostic"),
+                (NATIVE_CALLSITE_PARENT_SHA, source, "callsite"),
             ):
                 paths = git(
                     self.candidate, "diff", "--no-ext-diff", "--no-textconv", "--no-renames",
                     "--name-status", "-z", before, after,
                 )
-                if stage == "diagnostic":
+                if stage in {"diagnostic", "callsite"}:
                     validate_native_source_stage(paths, git(
                         self.candidate, "diff", "--no-ext-diff", "--no-textconv", "--numstat", before, after,
                     ), stage)

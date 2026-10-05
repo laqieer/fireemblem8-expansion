@@ -49,7 +49,7 @@ BASE = "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"
 GRAPH = "731bb115eecf995e6fec77a10b605c727fc148e2"
 NATIVE_PREVIOUS_SOURCE = "890fe6768550dbb1f9b48b03560c42fbe19a9d4c"
 NATIVE_SCREENING_SOURCE = "2d84af156041593a16081550c5f461c877e7bcd0"
-NATIVE_SOURCE = "efc5eb6991bc2c1efb02f1f2e7595f27bb9aa24f"
+NATIVE_SOURCE = "a1f142786ce00ca72cdb5a249e174ac3dde9b4d4"
 NATIVE_IMPLEMENTATION = "6116e01d571929f42cffdaefcb65dd90c65bd975"
 NATIVE_AUTHORED_SOURCE = "de5f3f93e3866885e7471f1987f124eed5ad93cf"
 NATIVE_MANIFEST_SOURCE = "7acc47a1f9f2308c843c7c1c0d482ce34627b116"
@@ -59,11 +59,12 @@ SPENT_NATIVE_FAMILY_WORKFLOW = ".github/workflows/issue180-native-completion-fam
 SPENT_NATIVE_REFUSAL_WORKFLOW = ".github/workflows/issue180-native-completion-refusal-1.yml"
 SPENT_NATIVE_TYPED_WORKFLOW = ".github/workflows/issue180-native-completion-refusal-2.yml"
 UNEXECUTED_NATIVE_TYPED_WORKFLOW = ".github/workflows/issue180-native-completion-typed-1.yml"
-NATIVE_BRANCH = "calibration/issue-180-native-completion-typed-2"
-NATIVE_WORKFLOW = ".github/workflows/issue180-native-completion-typed-2.yml"
+SPENT_NATIVE_TYPED_ROUTE_WORKFLOW = ".github/workflows/issue180-native-completion-typed-2.yml"
+NATIVE_BRANCH = "calibration/issue-180-native-completion-callsite-1"
+NATIVE_WORKFLOW = ".github/workflows/issue180-native-completion-callsite-1.yml"
 NATIVE_PROFILE = "native-completion-trace4-abi2-v1"
 NATIVE_KIND = "native-completion-qualification"
-NATIVE_OUTPUT_PREFIX = "issue180-native-completion-typed-2-"
+NATIVE_OUTPUT_PREFIX = "issue180-native-completion-callsite-1-"
 NATIVE_SELECTORS = (
     "scripts.validation_ownership.tests.test_phase_census.PhaseCensusTests."
     "test_native_completion_original_profile_family",
@@ -277,18 +278,22 @@ def native_refusal_unavailable(reason):
 
 
 def validate_native_diagnostic(value):
-    if type(value) is not dict or len(value) != 5 or any(type(key) is not str for key in value):
+    if type(value) is not dict or len(value) != 6 or any(type(key) is not str for key in value):
         raise GuardError("native producer diagnostic requires builtin fields")
-    _component_fields(value, "version tag errno module line")
+    _component_fields(value, "version tag errno module line location_kind")
     if (
-        type(value["version"]) is not int or value["version"] != 1
+        type(value["version"]) is not int or value["version"] != 2
         or not _component_integer(value["tag"], 8, 1)
         or not (value["errno"] is None or (
             value["tag"] == 1 and _component_integer(value["errno"], 4095)
         ))
+        or type(value["location_kind"]) is not str
         or not (
-            value["module"] is None and value["line"] is None
-            or type(value["module"]) is str and value["module"] in NATIVE_REFUSAL_MODULES
+            value["location_kind"] == "unknown"
+            and value["module"] is None and value["line"] is None
+            or type(value["location_kind"]) is str
+            and value["location_kind"] in {"origin", "callsite"}
+            and type(value["module"]) is str and value["module"] in NATIVE_REFUSAL_MODULES
             and _component_integer(value["line"], 2147483647, 1)
         )
     ):
