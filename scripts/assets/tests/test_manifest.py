@@ -1106,6 +1106,118 @@ class AssetManifestTests(unittest.TestCase):
                         custom_spell_effects=custom, item_id_cap=cap,
                     )
 
+    def test_private_staging_preserves_real_generation_pruning_and_unchanged_files(self):
+        original_dir = os.path.join(TEST_ROOT, "ordinary")
+        logical_dir = os.path.relpath(original_dir, REPO_ROOT)
+        staging_root = os.path.join(TEST_ROOT, "staging")
+        os.makedirs(staging_root)
+        staged_dir = os.path.join(staging_root, logical_dir)
+        for custom in (1, 0):
+            source = os.path.join(
+                REPO_ROOT, "assets",
+                "manifests/custom-spell-reference.json" if custom else "manifest.json",
+            )
+            for destination in (original_dir, staged_dir):
+                os.makedirs(os.path.join(destination, "custom_spell"), exist_ok=True)
+                for name in ("custom_spell/obsolete.bin", "ch2_main_map.inc",
+                             "custom_spell/" + manifest.ATOMIC_WRITE_TEMP_PREFIX + "previous"):
+                    with open(os.path.join(destination, name), "wb") as handle:
+                        handle.write(b"previous")
+            records = manifest.generate(
+                source, original_dir, custom, item_id_cap=0xCE,
+                selection_stamp=original_dir + ".manifest-selection",
+            )
+            identities = captured_discovery_identities(source, records)
+            outputs = manifest.render_generation_artifact(
+                source, logical_dir, tracked_sources=frozenset(row[0] for row in identities),
+                source_identities=identities, custom_spell_effects=custom, item_id_cap=0xCE,
+                selection_stamp=logical_dir + ".manifest-selection",
+            )
+            manifest.stage_generation_artifact(outputs, logical_dir, staging_root)
+            for name, content in outputs.items():
+                with open(os.path.join(staging_root, name), "rb") as handle:
+                    self.assertEqual(handle.read(), content)
+                with open(os.path.join(REPO_ROOT, name), "rb") as handle:
+                    self.assertEqual(handle.read(), content)
+            for destination in (original_dir, staged_dir):
+                self.assertFalse(os.path.exists(os.path.join(destination, "custom_spell/obsolete.bin")))
+                self.assertFalse(os.path.exists(os.path.join(destination, "ch2_main_map.inc")))
+                self.assertTrue(os.path.isfile(destination + manifest.GENERATION_LOCK_SUFFIX))
+                leftovers = {
+                    os.path.relpath(os.path.join(directory, name), destination)
+                    for directory, _dirs, files in os.walk(destination) for name in files
+                    if name.startswith(manifest.ATOMIC_WRITE_TEMP_PREFIX)
+                }
+                self.assertEqual(
+                    leftovers, {"custom_spell/" + manifest.ATOMIC_WRITE_TEMP_PREFIX + "previous"},
+                )
+            before = {
+                name: (os.stat(os.path.join(staging_root, name)).st_ino,
+                       os.stat(os.path.join(staging_root, name)).st_mtime_ns)
+                for name in outputs
+            }
+            manifest.stage_generation_artifact(outputs, logical_dir, staging_root)
+            after = {
+                name: (os.stat(os.path.join(staging_root, name)).st_ino,
+                       os.stat(os.path.join(staging_root, name)).st_mtime_ns)
+                for name in outputs
+            }
+            self.assertEqual(after, before)
+            if not custom:
+                self.assertFalse(any(
+                    name.endswith(".bin")
+                    for _directory, _dirs, files in os.walk(os.path.join(staged_dir, "custom_spell"))
+                    for name in files
+                ))
+
+    def test_private_staging_rejects_maps_and_symlinks_before_effects(self):
+        staging_root = os.path.join(TEST_ROOT, "staging")
+        os.makedirs(staging_root)
+        logical = "build/generated/assets"
+        invalid = (
+            {}, {logical + "/file": "not bytes"},
+            {"../foreign": b""}, {"/build/generated/assets/file": b""},
+            {"build/other/file": b""}, {logical + "/../file": b""},
+            {logical + ".manifest-selection": b""},
+            {logical + "/file": b"", logical + "/file/nested": b""},
+        )
+        for outputs in invalid:
+            with self.subTest(outputs=outputs):
+                with self.assertRaises(GeneratedDataError):
+                    manifest.stage_generation_artifact(outputs, logical, staging_root)
+                self.assertEqual(os.listdir(staging_root), [])
+        outside = os.path.join(TEST_ROOT, "outside")
+        with open(outside, "wb") as handle:
+            handle.write(b"preserve")
+        destination = os.path.join(staging_root, logical)
+        os.makedirs(destination)
+        os.symlink(outside, os.path.join(destination, "foreign"))
+        with self.assertRaises(GeneratedDataError):
+            manifest.stage_generation_artifact(
+                {logical + "/foreign": b"replace"}, logical, staging_root,
+            )
+        with open(outside, "rb") as handle:
+            self.assertEqual(handle.read(), b"preserve")
+        self.assertFalse(os.path.exists(destination + manifest.GENERATION_LOCK_SUFFIX))
+
+    def test_private_staging_write_failure_preserves_target_and_cleans_new_temporary(self):
+        staging_root = os.path.join(TEST_ROOT, "staging")
+        os.makedirs(staging_root)
+        logical = "build/generated/assets"
+        name = logical + "/asset_manifest.mk"
+        manifest.stage_generation_artifact({name: b"original"}, logical, staging_root)
+        target = os.path.join(staging_root, name)
+        before = os.stat(target).st_ino
+        failure = OSError("injected original atomic replacement failure")
+        with mock.patch.object(manifest.os, "replace", side_effect=failure):
+            with self.assertRaises(OSError) as caught:
+                manifest.stage_generation_artifact({name: b"replacement"}, logical, staging_root)
+        self.assertIs(caught.exception, failure)
+        with open(target, "rb") as handle:
+            self.assertEqual(handle.read(), b"original")
+        self.assertEqual(os.stat(target).st_ino, before)
+        self.assertEqual(os.listdir(os.path.dirname(target)), ["asset_manifest.mk"])
+
     def test_captured_discovery_rejects_missing_source_membership(self):
         source = os.path.join(REPO_ROOT, "assets", "manifest.json")
         records = manifest.load_discovery(source)

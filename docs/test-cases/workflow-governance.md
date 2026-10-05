@@ -5011,6 +5011,27 @@ roots, and `test_captured_generation_rejects_invalid_logical_outputs_before_sour
 for output/stamp admission refusals. This rendering API alone does not establish
 native publication, stale-output retirement or lifecycle equivalence.
 
+`PhaseCensusTests.test_native_captured_generation_renderer` executes the real
+full captured renderer at cap `0xCE` with custom spells enabled inside one
+ordinary confined session and its original budgets. Require all 34 output
+entries and exact source consumption plus real teardown. The combined banim
+linker script contains namespace-specific absolute output paths: its ordinary
+oracle uses the real `banim_expected_outputs` renderer at `/repo`, not the
+coordinator filesystem root or arbitrary text replacement. This independent
+single-command regression is not eight-profile qualification, publication or
+a budget reset of `test_native_completion_original_profile_family`.
+
+`stage_generation_artifact` translates only output destinations into a selected
+private staging root. It shares ordinary generation's lock, stale custom/retired
+output pruning, path checks and atomic if-changed writer. Run
+`AssetManifestTests.test_private_staging_preserves_real_generation_pruning_and_unchanged_files`
+for real ordinary-file equivalence, custom-to-default pruning, stamp bytes,
+lock presence and unchanged inode/mtime; original stale atomic-temp preservation
+must remain visible rather than be claimed as cleanup. Run
+`test_private_staging_rejects_maps_and_symlinks_before_effects` for invalid maps
+and source/destination escape refusals. Public ownership, retirement and native
+publication are not established by this private writer alone.
+
 **Exact remaining machine hold:** the current child trace does not return
 DR0..DR3/DR6/DR7, hardware siginfo/PC/purpose/restore samples, modifier/RBX/
 reader-frame observations, inherited registers after child exec, source-active

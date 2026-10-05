@@ -1288,6 +1288,62 @@ class PhaseCensusTests(unittest.TestCase):
             observe_source_journal=True, source_journal_mode=source_directories.MODE,
         )
 
+    def test_native_captured_generation_renderer(self):
+        from scripts.assets import manifest
+        from scripts.validation_ownership.authority import AuthorityLoader, git_tree_entries
+        from scripts.validation_ownership.python_commands import python_command
+
+        budget = ProbeBudget()
+        self.addCleanup(budget.close)
+        loader = AuthorityLoader(
+            foundation.ROOT, git_tree_entries(foundation.ROOT, "HEAD", budget=budget),
+            "HEAD", budget=budget,
+        )
+        paths, selected_blobs = original_completion_fixture_paths(loader)
+        for name in paths:
+            self.fixture.add(
+                name, selected_blobs[name] if name in selected_blobs
+                else loader.read_blob(name, "native captured renderer source"),
+                loader.entries[name].mode,
+            )
+        source = "assets/manifests/custom-spell-reference.json"
+        records = manifest.load_and_validate(
+            str(foundation.ROOT / source), 1, item_id_cap=0xCE,
+        )
+        output = "build/generated/assets"
+        expected = manifest.expected_outputs(records, str(foundation.ROOT / output))
+        linker = output + "/banim/linker_script_banim.txt"
+        expected[str(foundation.ROOT / linker)] = manifest.banim_expected_outputs(
+            records, "/repo/" + output,
+        )["/repo/" + linker].encode("utf-8")
+        oracle = [
+            [str(Path(name).relative_to(foundation.ROOT)), len(data), hashlib.sha256(data).hexdigest()]
+            for name, data in sorted(expected.items())
+        ]
+        entries, revision = self.fixture.capture_tree(budget)
+        loader = AuthorityLoader(self.fixture.root, entries, revision, budget=budget)
+        with make_probe.ProbeSession(loader, scratch_root=self.fixture.scratch, budget=budget) as session:
+            sources = session.sources((source, *manifest.discovery_sources(records)))
+            command = python_command(
+                session,
+                "import hashlib,json;from scripts.assets.manifest import render_generation_artifact;"
+                "outputs=render_generation_artifact(sys.argv[1],sys.argv[2],"
+                "tracked_sources=frozenset(json.loads(sys.argv[3])),source_identities=json.loads(sys.argv[4]),"
+                "custom_spell_effects=1,item_id_cap=206);"
+                "print(json.dumps([[p,len(d),hashlib.sha256(d).hexdigest()] for p,d in sorted(outputs.items())]))",
+                (source, output, json.dumps(sources), json.dumps(session.source_owners(sources))),
+                sources=sources, code=("scripts/assets/manifest.py",),
+                directories=("assets/portraits/eirika", "graphics/custom_spell/reference",
+                             "graphics/custom_spell/reference/images"),
+            )
+            result = session.command(command)
+            self.assertEqual(json.loads(result.stdout), oracle)
+            self.assertEqual(len(oracle), 34)
+            self.assertEqual(result.consumed, sources)
+            self.assertIn("scripts/assets/manifest.py", result.code_consumed)
+            self.assertFalse(budget.failed)
+        self.fixture.assert_clean(session)
+
     def test_native_completion_original_profile_family(self):
         """One immutable source tree/session; no native qualification is inferred."""
         from scripts.validation_ownership.authority import AuthorityLoader, git_tree_entries

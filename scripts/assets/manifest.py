@@ -7,6 +7,7 @@ import fcntl
 import hashlib
 import json
 import os
+from pathlib import Path
 import re
 import shutil
 import stat
@@ -2852,8 +2853,7 @@ def render_generation_artifact(
     manifest_path, logical_dir, *, tracked_sources, source_identities,
     custom_spell_effects, item_id_cap, selection_stamp=None
 ):
-    if not isinstance(logical_dir, str) or not logical_dir:
-        raise GeneratedDataError("captured generation requires a canonical logical output directory")
+    out_dir = _generation_logical_dir(logical_dir)
     if type(custom_spell_effects) is not int or custom_spell_effects not in (0, 1):
         raise GeneratedDataError("captured generation custom spell selection must be 0 or 1")
     if type(item_id_cap) is not int:
@@ -2862,8 +2862,6 @@ def render_generation_artifact(
         idspace.validate_domain_cap(idspace.domain_by_key("item"), item_id_cap)
     except idspace.CapError as error:
         raise GeneratedDataError(str(error)) from error
-    _output_path(logical_dir + "/asset_manifest.mk", ASSET_BUILD_ROOT, repository_relative=True)
-    out_dir = _logical_output_dir(os.path.join(REPO_ROOT, logical_dir))
     if selection_stamp is not None and selection_stamp != logical_dir + ".manifest-selection":
         raise GeneratedDataError("captured generation selection stamp differs from its output root")
     records = load_captured_and_validate(
@@ -2879,6 +2877,52 @@ def render_generation_artifact(
             manifest_path, custom_spell_effects, item_id_cap
         ).encode("utf-8")
     return outputs
+
+
+def _generation_logical_dir(logical_dir):
+    if not isinstance(logical_dir, str) or not logical_dir:
+        raise GeneratedDataError("captured generation requires a canonical logical output directory")
+    _output_path(logical_dir + "/asset_manifest.mk", ASSET_BUILD_ROOT, repository_relative=True)
+    return _logical_output_dir(os.path.join(REPO_ROOT, logical_dir))
+
+
+def stage_generation_artifact(outputs, logical_dir, staging_root):
+    _generation_logical_dir(logical_dir)
+    if (
+        not isinstance(staging_root, str) or staging_root != os.path.abspath(staging_root)
+        or os.path.realpath(staging_root) != staging_root or not os.path.isdir(staging_root)
+    ):
+        raise GeneratedDataError("generation staging root must be a canonical real directory")
+    if not isinstance(outputs, dict) or not outputs:
+        raise GeneratedDataError("generation staging requires a complete output byte map")
+    logical_root = os.path.join(REPO_ROOT, logical_dir)
+    stamp = logical_dir + ".manifest-selection"
+    staged = {}
+    stamp_content = None
+    for name, content in outputs.items():
+        if not isinstance(name, str) or not isinstance(content, bytes):
+            raise GeneratedDataError("generation staging requires logical string paths and byte contents")
+        _output_path(name, ASSET_BUILD_ROOT, repository_relative=True)
+        if name == stamp:
+            stamp_content = content
+        else:
+            _output_path(name, logical_root, repository_relative=True)
+            staged[_safe_output_path(os.path.join(staging_root, name), staging_root)] = content
+    if not staged:
+        raise GeneratedDataError("generation staging requires output files, not only a selection stamp")
+    if any(
+        str(parent) in staged for path in staged for parent in Path(path).parents
+    ):
+        raise GeneratedDataError("generation staging outputs have conflicting file namespaces")
+    out_dir = _safe_output_path(os.path.join(staging_root, logical_dir), staging_root)
+    stamp_path = (
+        _safe_output_path(os.path.join(staging_root, stamp), staging_root)
+        if stamp_content is not None else None
+    )
+    with _generation_lock(out_dir):
+        _apply_generation_outputs(out_dir, staged)
+        if stamp_content is not None:
+            _write_bytes_if_changed(stamp_path, stamp_content)
 
 
 def _prune_obsolete_custom_spell_outputs(out_dir, expected_paths):
@@ -2980,12 +3024,7 @@ def generate(
             item_id_cap=item_id_cap,
         )
         outputs = expected_outputs(records, out_dir)
-        _prune_obsolete_custom_spell_outputs(out_dir, outputs)
-        _prune_retired_outputs(out_dir)
-        for path in outputs:
-            _safe_output_path(path, out_dir)
-        for path, content in outputs.items():
-            _write_bytes_if_changed(path, content)
+        _apply_generation_outputs(out_dir, outputs)
         if selection_stamp is not None:
             _write_selection_stamp(
                 selection_stamp,
@@ -2995,6 +3034,15 @@ def generate(
                 item_id_cap,
             )
     return records
+
+
+def _apply_generation_outputs(out_dir, outputs):
+    _prune_obsolete_custom_spell_outputs(out_dir, outputs)
+    _prune_retired_outputs(out_dir)
+    for path in outputs:
+        _safe_output_path(path, out_dir)
+    for path, content in outputs.items():
+        _write_bytes_if_changed(path, content)
 
 
 def check(manifest_path, out_dir, custom_spell_effects=None, item_id_cap=None):
