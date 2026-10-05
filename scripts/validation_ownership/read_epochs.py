@@ -721,6 +721,14 @@ def completion_sites(path, data, names, *, checkpoint=lambda: None, count_limit=
     return [row for row in rows if row[5] in selected]
 
 
+def require_completion_reference_closure(references, selected_names):
+    if any(
+        name not in selected_names and make_lexical.SCOPED.fullmatch("$(" + name + ")") is None
+        for name in references
+    ):
+        raise ReadEpochError("opened source adds a consumer outside the frozen name closure")
+
+
 def statement_at(data, start, nlines, *, checkpoint=lambda: None, count_limit=None):
     if type(start) is not int or type(nlines) is not int or start < 1 or nlines < 1:
         raise ReadEpochError("completion has an invalid physical statement span")
@@ -1312,8 +1320,7 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
                             path, data, checkpoint=lambda: reserve(0),
                             count_limit=count_limit, charge=reserve,
                         )
-                        if set(references) - selected_names:
-                            raise ReadEpochError("opened source adds a consumer outside frozen closure")
+                        require_completion_reference_closure(references, selected_names)
                         sites = [item for item in rows if item[5] in selected_names]
                         opened_paths[event["visit"]] = path
                         opened_sites[event["visit"]] = {tuple(site): site for site in sites}

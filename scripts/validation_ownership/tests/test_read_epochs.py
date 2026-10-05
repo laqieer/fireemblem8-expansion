@@ -35,6 +35,23 @@ from scripts.validation_ownership.tests import test_foundation as foundation
 
 
 class CompletionReferenceScreenApiTests(unittest.TestCase):
+    def test_global_completion_closure_preserves_scoped_recipe_references(self):
+        source = (
+            b"CAP := $(GLOBAL)\nall: ; echo $@ $< $* $% $+ $? $^ $| "
+            b"$(@D) $(<F) $(1) ${9}\n"
+        )
+        _, references, _ = read_epochs.completion_source_facts("Makefile", source)
+        selected = read_epochs.completion_reference_names(source)
+        self.assertTrue({"@", "<", "*", "@D", "<F", "1", "9"} <= references)
+        self.assertFalse({"@", "<", "*", "@D", "<F", "1", "9"} & selected)
+        read_epochs.require_completion_reference_closure(references, selected)
+        for name in ("MISSING", "@DD", "10", "(1)", "../CAP"):
+            with self.subTest(name=name), self.assertRaises(read_epochs.ReadEpochError):
+                read_epochs.require_completion_reference_closure(references | {name}, selected)
+        _, global_roots, _ = read_epochs.completion_source_facts("Makefile", b"all: ; echo $(MISSING)\n")
+        with self.assertRaises(read_epochs.ReadEpochError):
+            read_epochs.require_completion_reference_closure(global_roots, selected)
+
     def test_raw_names_cover_actual_references_without_lazy_pruning(self):
         from scripts.validation_ownership import graph_probe
         cases = (

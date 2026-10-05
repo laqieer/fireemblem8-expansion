@@ -4941,6 +4941,17 @@ canonical-path validation before stripping the leading prefix recovers the
 original-family refusal; no fixture bytes, source identity checks or budgets
 are changed.
 
+Run `CompletionReferenceScreenApiTests.test_global_completion_closure_preserves_scoped_recipe_references`
+from `test_read_epochs`. Both native source-open production and archive
+validation apply the same frozen-global-name closure check. Exact automatic
+variable and call-digit names from the existing scoped grammar are not global
+assignment completions; keep them in parsed recipe references but do not add
+them to the global frozen-name schema. Unknown ordinary names, malformed
+automatic forms and multi-digit forms still refuse. Restoring raw reference
+set subtraction rejects the real original sources at `@`, `<`, `*` and `@D`.
+This does not grant recipe/target context or completed DATA: existing source
+analysis and native site/epoch checks remain mandatory.
+
 **Exact remaining machine hold:** the current child trace does not return
 DR0..DR3/DR6/DR7, hardware siginfo/PC/purpose/restore samples, modifier/RBX/
 reader-frame observations, inherited registers after child exec, source-active

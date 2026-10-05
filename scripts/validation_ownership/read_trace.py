@@ -522,10 +522,7 @@ class NativeReadTrace:
                         checkpoint=self.deadline, count_limit=self.config["observation_count"],
                         charge=self.policy.charge_metadata,
                     )
-                    if set(references) - self.selection_names:
-                        raise read_epochs.ReadEpochError(
-                            "opened source adds a consumer outside the frozen name closure"
-                        )
+                    read_epochs.require_completion_reference_closure(references, self.selection_names)
                     sites = [site for site in rows if site[5] in self.selection_names]
                     selection_index = MappingProxyType({tuple(site[:5]): site for site in sites})
                 current.update(
