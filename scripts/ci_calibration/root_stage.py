@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
+from types import SimpleNamespace, FunctionType
 from contextlib import ExitStack
 import dataclasses
+import ast
 import importlib
 import subprocess
 import time
@@ -232,6 +233,117 @@ class ReportMeasurement:
         return result
 
 
+class NativeRefusalObservation:
+    """Literal diagnostics only; never source execution or qualification authority."""
+
+    def __init__(self, session_type, root):
+        self.session_type = session_type
+        self.code = None
+        self.globals = None
+        self.catalog = ()
+        self.reason = "catalog-unavailable"
+        self.retired = False
+        try:
+            method = type.__getattribute__(session_type, "__dict__").get("_sandbox_run")
+            if type(method) is not FunctionType or (
+                method.__globals__.get("__name__") != "scripts.validation_ownership.make_probe"
+                or type.__getattribute__(session_type, "__module__") != "scripts.validation_ownership.make_probe"
+            ):
+                self.reason = "original-code-unavailable"
+                return
+            self.code = method.__code__
+            self.globals = method.__globals__
+            rows, extent = [], 0
+            for module in policy.NATIVE_REFUSAL_MODULES:
+                with (root / "scripts/validation_ownership" / (module + ".py")).open("rb") as stream:
+                    raw = stream.read(policy.NATIVE_REFUSAL_BYTES - extent + 1)
+                extent += len(raw)
+                if extent > policy.NATIVE_REFUSAL_BYTES:
+                    self.reason = "catalog-bound"
+                    return
+                tree = ast.parse(raw)
+                count = 0
+                for node in ast.walk(tree):
+                    count += 1
+                    if count > 262144:
+                        self.reason = "catalog-bound"
+                        return
+                    if not isinstance(node, ast.Raise) or not isinstance(node.exc, ast.Call):
+                        continue
+                    for argument in node.exc.args:
+                        if isinstance(argument, ast.Constant) and type(argument.value) is str:
+                            if len(argument.value) > policy.ERROR_BYTES or len(rows) >= 4096:
+                                self.reason = "catalog-bound"
+                                return
+                            rows.append((argument.value, module, node.lineno))
+            self.catalog = tuple(rows)
+            self.reason = None
+        except (OSError, SyntaxError, ValueError, RecursionError):
+            self.reason = "catalog-unavailable"
+
+    def retire(self):
+        self.catalog = ()
+        self.code = self.globals = self.session_type = None
+        self.retired = True
+
+    def capture(self, error, session):
+        try:
+            return self._capture(error, session)
+        finally:
+            self.retire()
+
+    def _capture(self, error, session):
+        def unavailable(reason):
+            return policy.native_refusal_unavailable(reason)
+
+        if self.retired:
+            return unavailable("retired")
+        if self.reason is not None:
+            return unavailable(self.reason)
+        if type(session) is not self.session_type:
+            return unavailable("session-unavailable")
+        current, seen, frames, found = error, set(), set(), []
+        while current is not None:
+            if id(current) in seen or len(seen) >= 32:
+                return unavailable("exception-chain-bound")
+            seen.add(id(current))
+            trace = BaseException.__getattribute__(current, "__traceback__")
+            while trace is not None:
+                if id(trace) in frames or len(frames) >= 256:
+                    return unavailable("frame-bound")
+                frames.add(id(trace))
+                frame = trace.tb_frame
+                if frame.f_code is self.code and frame.f_globals is self.globals:
+                    local = frame.f_locals
+                    if type(local) is not dict or len(local) > 256 or local.get("self") is not session:
+                        return unavailable("foreign-session")
+                    observed = local.get("observed")
+                    if type(observed) is not dict or len(observed) > 256 or any(type(key) is not str for key in observed):
+                        return unavailable("malformed-observation")
+                    text, ok, returncode = (
+                        observed.get("error"), observed.get("ok"), observed.get("returncode"),
+                    )
+                    if type(text) is not str or len(text) > policy.ERROR_BYTES or (
+                        type(ok) is not bool or type(returncode) is not int
+                        or not -(1 << 31) <= returncode < (1 << 31)
+                    ):
+                        return unavailable("malformed-observation")
+                    sites = sorted(set(
+                        (module, line) for literal, module, line in self.catalog if literal == text
+                    ))
+                    status = "unique" if len(sites) == 1 else "ambiguous" if sites else "unknown"
+                    found.append({
+                        "status": "observed", "reason": None, "ok": ok, "returncode": returncode,
+                        "match": status, "sites": [{"module": module, "line": line} for module, line in sites],
+                    })
+                trace = trace.tb_next
+            cause = BaseException.__getattribute__(current, "__cause__")
+            current = cause if cause is not None else BaseException.__getattribute__(current, "__context__")
+        if len(found) != 1:
+            return unavailable("frame-ambiguous" if found else "frame-unobserved")
+        return policy.validate_native_refusal(found[0])
+
+
 class NativeRecorder:
     """Finite test-reference injection; production authority methods stay original."""
 
@@ -258,6 +370,18 @@ class NativeRecorder:
         self.secondary_errors = 0
         self.method_returned = False
         self.references_restored = False
+        self.refusal_observer = None
+        self.primary_error = None
+        self.refusal = policy.native_refusal_unavailable("not-captured")
+
+    def capture_first(self, error):
+        self.primary_error = policy.component_secondary_error(error)
+        if self.refusal_observer is not None:
+            try:
+                self.refusal = self.refusal_observer.capture(error, self.session)
+            except BaseException:
+                self.refusal = policy.native_refusal_unavailable("projection-failed")
+                self.refusal_observer.retire()
 
     def remaining(self):
         if time.monotonic() >= self.config["deadline"]:
@@ -451,6 +575,7 @@ class NativeRecorder:
             limits=budgeting.Limits, budget=budgeting.ProbeBudget, loader=AuthorityLoader,
             entries=GitTreeEntries, session=ProbeSession, popen=subprocess.Popen,
         )
+        self.refusal_observer = NativeRefusalObservation(ProbeSession, Path("/repo"))
         self.progress_stage = "setup"
         terminal_short = self.selection["selector"] in policy.NATIVE_SELECTORS[-2:]
         limits = self.api.limits(seconds=20) if terminal_short else self.api.limits()
@@ -520,6 +645,7 @@ class NativeRecorder:
                 except BaseException as error:
                     self.first = error
                     self.first_stage = self.progress_stage
+                    self.capture_first(error)
                     raise
                 finally:
                     self.progress_stage = "finalize"
@@ -527,6 +653,7 @@ class NativeRecorder:
             if self.first is None:
                 self.first = error
                 self.first_stage = self.progress_stage
+                self.capture_first(error)
             elif error is not self.first:
                 self.secondary_errors += 1
                 withdrawal_error = error
@@ -547,6 +674,7 @@ class NativeRecorder:
                     self.first = first = policy.GuardError("native reference restoration failed")
                     self.first_stage = "finalize"
                     self.failure_kind = "harness-guard"
+                    self.capture_first(first)
                 else:
                     self.secondary_errors += 1
             try:
@@ -564,9 +692,11 @@ class NativeRecorder:
                     self.first = first = error
                     self.first_stage = "finalize"
                     self.failure_kind = "cleanup"
+                    self.capture_first(first)
                 else:
                     self.secondary_errors += 1
             self.observations.clear()
+            self.refusal_observer.retire()
         if withdrawal_error is not None:
             raise withdrawal_error
         ended = time.monotonic()
@@ -581,6 +711,11 @@ class NativeRecorder:
         )
         self.progress_stage = "counter-publication"
         result = {
+            "version": 2, "primary_error": self.primary_error,
+            "refusal": self.refusal if first is not None else {
+                "status": "success", "reason": None, "ok": None, "returncode": None,
+                "match": None, "sites": [],
+            },
             "selection": self.selection, "states": self.states, "operations": self.operations,
             "clock": {
                 "started": self.budget.started, "deadline": self.budget.deadline,

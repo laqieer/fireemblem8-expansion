@@ -47,6 +47,30 @@ WORKER_AST = ast.parse((REPO / "scripts/ci_calibration/worker.py").read_text())
 
 
 class NativeSelectionControls(unittest.TestCase):
+    def test_refusal_wire_is_finite_strict_and_success_is_distinct(self):
+        observed = {
+            "status": "observed", "reason": None, "ok": False, "returncode": -1,
+            "match": "unique", "sites": [{"module": "read_trace", "line": 1}],
+        }
+        policy.validate_native_refusal(policy.parse_json(policy.encoded(observed)))
+        for field, wrong in (
+            ("status", []), ("reason", "private"), ("ok", 0), ("returncode", True),
+            ("returncode", 1 << 31), ("match", "ambiguous"), ("sites", ()),
+            ("sites", [{"module": "foreign", "line": 1}]),
+            ("sites", [{"module": "read_trace", "line": True}]),
+            ("sites", observed["sites"] * 2),
+        ):
+            with self.assertRaises(policy.GuardError):
+                policy.validate_native_refusal({**observed, field: wrong})
+        with self.assertRaises(policy.GuardError):
+            policy.validate_native_refusal({**observed, "raw": "private"})
+        for status, reason in (("success", None), ("unavailable", "frame-unobserved")):
+            value = {**observed, "status": status, "reason": reason, "ok": None,
+                     "returncode": None, "match": None, "sites": []}
+            policy.validate_native_refusal(value)
+            with self.assertRaises(policy.GuardError):
+                policy.validate_native_refusal({**value, "sites": observed["sites"]})
+
     def test_native_failure_schema_and_terminal_order_cover_all_selectors(self):
         for selector in policy.NATIVE_SELECTORS:
             selection = policy.native_selection(policy.NATIVE_PROFILE, selector)

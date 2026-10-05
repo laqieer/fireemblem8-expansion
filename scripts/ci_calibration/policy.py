@@ -255,13 +255,79 @@ def native_event(event, *, profile, selector, **identity):
     return scope
 
 
-def validate_native_result(value, selection):
+NATIVE_REFUSAL_MODULES = ("read_trace", "read_epochs", "syscall_guard")
+NATIVE_REFUSAL_BYTES = 2 * MIB
+NATIVE_REFUSAL_REASONS = frozenset({
+    "not-captured", "catalog-unavailable", "catalog-bound", "original-code-unavailable",
+    "retired", "session-unavailable", "exception-chain-bound", "frame-bound",
+    "foreign-session", "malformed-observation", "frame-ambiguous", "frame-unobserved",
+    "projection-failed",
+})
+
+
+def native_refusal_unavailable(reason):
+    return {
+        "status": "unavailable", "reason": reason, "ok": None, "returncode": None,
+        "match": None, "sites": [],
+    }
+
+
+def validate_native_refusal(value):
+    _component_fields(value, "status reason ok returncode match sites")
+    if type(value["status"]) is not str or value["status"] not in {"success", "unavailable", "observed"}:
+        raise GuardError("native refusal status is not closed")
+    sites = value["sites"]
+    if type(sites) is not list or len(sites) > 4096:
+        raise GuardError("native refusal sites exceed the catalog bound")
+    identities = set()
+    for row in sites:
+        _component_fields(row, "module line")
+        if type(row["module"]) is not str or row["module"] not in NATIVE_REFUSAL_MODULES or (
+            not _component_integer(row["line"], NATIVE_REFUSAL_BYTES, 1)
+        ):
+            raise GuardError("native refusal site is not a closed numeric location")
+        identity = row["module"], row["line"]
+        if identity in identities:
+            raise GuardError("native refusal repeats a catalog site")
+        identities.add(identity)
+    if value["status"] == "observed":
+        if value["reason"] is not None or type(value["ok"]) is not bool or (
+            type(value["returncode"]) is not int or not -(1 << 31) <= value["returncode"] < (1 << 31)
+            or type(value["match"]) is not str or value["match"] not in {"unique", "ambiguous", "unknown"}
+            or value["match"] != ("unique" if len(sites) == 1 else "ambiguous" if sites else "unknown")
+        ):
+            raise GuardError("native refusal observation is malformed")
+    elif sites or value["ok"] is not None or value["returncode"] is not None or value["match"] is not None or (
+        value["status"] == "success" and value["reason"] is not None
+        or value["status"] == "unavailable" and (
+            type(value["reason"]) is not str or value["reason"] not in NATIVE_REFUSAL_REASONS
+        )
+    ):
+        raise GuardError("native refusal unavailable/success record invents observations")
+    return value
+
+
+def validate_native_result(value, selection, *, historical=False):
     if selection != native_selection(selection.get("profile"), selection.get("selector")):
         raise GuardError("native result selection changed")
-    _component_fields(value, (
+    fields = (
         "selection states operations archives archive_refusals counters cleanup children method_returned clock "
         "first_stage failure_kind secondary_errors machine_holds qualification"
-    ))
+    )
+    if type(historical) is not bool:
+        raise GuardError("native historical parsing is not deliberate")
+    _component_fields(value, fields if historical else fields + " version primary_error refusal")
+    if not historical:
+        if type(value["version"]) is not int or value["version"] != 2:
+            raise GuardError("native result version is not current")
+        validate_native_refusal(value["refusal"])
+        if value["first_stage"] is None:
+            if value["primary_error"] is not None or value["refusal"]["status"] != "success":
+                raise GuardError("native successful result invents a first failure")
+        else:
+            validate_component_error_record(value["primary_error"])
+            if value["refusal"]["status"] == "success":
+                raise GuardError("native failed result discarded its diagnostic failure")
     if value["selection"] != selection or value["qualification"] != "incomplete":
         raise GuardError("native preparation cannot claim complete machine qualification")
     if value["machine_holds"] != list(NATIVE_MACHINE_HOLDS):

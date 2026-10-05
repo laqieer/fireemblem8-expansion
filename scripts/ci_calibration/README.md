@@ -1,5 +1,41 @@
 # Contained original-include retained-state diagnostic
 
+## Native refusal observation (TC-CI-NATIVE-REFUSAL-001, #180)
+
+Contract comment5991346968 permits diagnostics only, not another invocation.
+Before the selected method, the recorder freezes literal string arguments of
+Raise calls in exactly source2d84's `read_trace.py`, `read_epochs.py`, and
+`syscall_guard.py` from the existing immutable read-only `/repo` preparation.
+The total read bound is 2 MiB, with 262144 AST nodes per file, 4096 catalog
+entries, and 65536 characters per literal. Dynamic expressions are excluded.
+Exact string equality projects only a closed module enum and numeric source
+line. Multiple distinct matching sites remain ambiguous; empty or unknown
+errors stay unknown. This static literal diagnostic is not behavioral proof
+or a source-attribution authority.
+
+The first caught error uses the existing safe component error record, before
+reference withdrawal and fixture teardown. Up to 32 chained exceptions and
+256 retained traceback frames are inspected for the frozen original
+`_sandbox_run` code identity and the very same session `self`. Only builtin
+dictionary/string/bool/integer retained fields are admitted; `ok` and signed
+32-bit `returncode` are observations, not success authority. No candidate
+property, exception argument, raw message, path or traceback is exported.
+The catalog and code/session-type references retire immediately after capture,
+or at finalization on success. Failed projection is explicitly unavailable,
+independent of the original cause and existing cleanup channels.
+
+Current normal results require version2, `primary_error`, and `refusal`;
+success has its own distinct empty diagnostic record. Historical unversioned
+normal results require an explicit `historical=True` parser call and are not
+accepted on the current route. The safe native error fallback is unchanged.
+Use the saved credential-free isolated harness route with inert original-code
+frames: exact literal positive; foreign code/session, shadowed method,
+dynamic/unknown/ambiguous literal, malformed fields, catalog/chain/frame
+bounds, cycles, retirement/replay and success controls. No source imports,
+native run, new workflow, quota change, ROM/RAM/save impact, or new
+dependency/conflict is authorized. Run37286481824 remains spent; architecture
+heldde5, all machine holds and final gates remain.
+
 ## Aggregate-only telemetry correction (TC-CI-AGGREGATE-001, #180)
 
 Original `ProbeBudget.charge("total", amount)` is aggregate-only scan work.
