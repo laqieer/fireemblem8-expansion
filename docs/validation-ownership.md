@@ -1,5 +1,26 @@
 # Validation ownership graph
 
+Failed syscall-supervisor reports may include `failure_diagnostic` version 1:
+exact keys `version`, `tag`, `errno`, `module`, `line`. Tags reuse lifecycle's
+numeric exception projection (1–6 known kinds, 7 unknown, 8 unavailable);
+errno is null or a 0–4095 integer for tag 1. Module/line are both null or one
+of `syscall_guard`, `read_trace`, `read_epochs` and a positive signed-32-bit
+line. Ownership requires exact module globals and registered function-code
+identity, including nested function code; filenames grant no ownership.
+The traceback walk stops at 64 frames and projects no location on overflow.
+No exception text, path, arguments, history or traceback is exported in this
+field. Existing local error text is unchanged.
+
+The primary exception is projected before cleanup; otherwise the first
+reportable cleanup/channel exception owns the diagnostic. Publication follows
+cleanup so late close failures cannot leave a success report. Successful
+reports have no diagnostic; historical failed reports may omit it. Make
+strictly validates optional diagnostics but never uses them as authority,
+qualification or success evidence. Existing report control-byte accounting
+includes the field; no quotas, confinement, profiles or runtime policy change.
+These source-only controls do not attribute the held native failure or clear
+any independent review, architecture, harness or final-delivery gate. graph
+
 Issue [#180](https://github.com/laqieer/fireemblem8-expansion/issues/180)
 is an accepted **framework capability**: a machine-readable, fail-closed map
 from admitted repository paths to existing validation evidence. It records

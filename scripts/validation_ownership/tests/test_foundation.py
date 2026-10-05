@@ -57,6 +57,137 @@ from scripts.validation_ownership.python_commands import (
 ROOT = Path(__file__).resolve().parents[3]
 
 
+class FailureDiagnosticApiTests(unittest.TestCase):
+    """Selected real source APIs only; no candidate module or native launch."""
+
+    def load(self, filename, names, extra=None):
+        import ast
+        from types import CodeType, FunctionType
+        tree = ast.parse((ROOT / "scripts/validation_ownership" / filename).read_text())
+        nodes = [node for node in tree.body if getattr(node, "name", None) in names
+                 or isinstance(node, ast.Assign)
+                 and any(isinstance(target, ast.Name) and target.id in names for target in node.targets)]
+        scope = {"__name__": "selected_" + filename, "CodeType": CodeType, "FunctionType": FunctionType,
+                 "MakeProbeError": RuntimeError, **(extra or {})}
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), filename, "exec"), scope)
+        return scope
+
+    def helpers(self):
+        return self.load("lifecycle.py", {
+            "_ERROR_TYPES", "_integer", "_error_value", "_failure_diagnostic", "_validate_failure_diagnostic",
+        })
+
+    def test_projection_uses_real_raise_and_exact_namespace_code(self):
+        from types import FunctionType
+        helpers = self.helpers()
+        owner = self.load("read_epochs.py", {"ReadEpochError", "Elf"})
+        try:
+            owner["Elf"](b"")
+        except RuntimeError as error:
+            record = helpers["_failure_diagnostic"](error, (("read_epochs", owner),))
+            trace = error.__traceback__
+            while trace.tb_next:
+                trace = trace.tb_next
+            self.assertEqual(record, {"version": 1, "tag": 4, "errno": None,
+                                     "module": "read_epochs", "line": trace.tb_lineno})
+        foreign = dict(owner, __file__="read_epochs.py")
+        forged = FunctionType(owner["Elf"].__init__.__code__, foreign)
+        owner["foreign"] = forged
+        exec("def wrapper(): return foreign(None, b'')", owner)
+        try:
+            owner["wrapper"]()
+        except RuntimeError as error:
+            self.assertIsNone(helpers["_failure_diagnostic"](error, (("read_epochs", owner),))["module"])
+        owner["raw_code"] = forged.__code__.replace()
+        unregistered = FunctionType(owner["raw_code"], owner)
+        try:
+            unregistered(None, b"")
+        except RuntimeError as error:
+            self.assertIsNone(helpers["_failure_diagnostic"](error, (("read_epochs", owner),))["module"])
+
+    def test_projection_bounds_frames_and_handles_unknown_errno(self):
+        helpers = self.helpers()
+        owner = {"__name__": "bounded"}
+        exec("def recurse(n):\n if n: return recurse(n-1)\n def inner(): raise OSError(5, 'private')\n inner()\n", owner)
+        for depth in (1, 70):
+            try:
+                owner["recurse"](depth)
+            except OSError as error:
+                record = helpers["_failure_diagnostic"](error, (("syscall_guard", owner),))
+                self.assertEqual(record["errno"], 5)
+                self.assertEqual(record["module"], "syscall_guard" if depth == 1 else None)
+        for error, tag in ((Exception("private"), 7), (OSError(-1, "private"), 8)):
+            self.assertEqual(helpers["_failure_diagnostic"](error, ()),
+                             {"version": 1, "tag": tag, "errno": None, "module": None, "line": None})
+
+    def test_actual_supervisor_catch_cleanup_and_report_wiring(self):
+        import ast
+        helpers = self.helpers()
+        tree = ast.parse((ROOT / "scripts/validation_ownership/syscall_guard.py").read_text())
+        supervisor = next(node for node in tree.body if getattr(node, "name", None) == "supervise")
+        terminal = next(node for node in supervisor.body if isinstance(node, ast.Try)
+                        and any(isinstance(item, ast.FunctionDef) and item.name == "write_report"
+                                for item in node.finalbody))
+        setup = ast.parse(
+            "error = primary = diagnostic = result = None\nmain_status = None\n"
+            "processes = {}\nnewborn_stops = {}\ndiagnostic_owners = ()\n"
+        ).body
+        terminal.body = ast.parse("if supplied is not None: raise supplied").body
+        function = ast.FunctionDef(
+            name="exercise", args=ast.parse("def f(supplied): pass").body[0].args,
+            body=setup + [terminal, ast.parse("return result").body[0]], decorator_list=[],
+        )
+        captured, errors = [], []
+        def cleanup(actions, **unused):
+            for action in actions:
+                try:
+                    action()
+                except BaseException as error:
+                    errors.append(error)
+        def fail(error):
+            def action(*args, **kwargs):
+                if error is not None:
+                    raise error
+            return action
+        policy = SimpleNamespace(
+            consumed=set(), code_consumed=set(), accessed=set(), total_processes=0, live_process_peak=0,
+            calls=0, written=0, created=0, memory_peak=0, observation_bytes=0,
+            observation_attempts={}, metadata={}, events=[], stderr_setup=None,
+            filter_kernel=None, header_runtime=None, toolchain=None, directory_installs=None,
+            read_trace=None, source_effects=None, journal_receipts=None,
+            producer_issued=0, producer_completed=0, producer_pending_peak=0, publication_confirmation=None,
+        )
+        scope = {**helpers, "policy": policy, "config": {"report": "inert", "producer_scope": "inert"},
+                 "channel": None, "finish_cleanup": cleanup, "signal_tracees": lambda *args: None,
+                 "encode_metadata_transport": lambda value: value, "json": json,
+                 "Path": lambda path: SimpleNamespace(write_text=lambda text, **kwargs: captured.append(json.loads(text))),
+                 "encoded": lambda value: b""}
+        exec(compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])),
+                     "supervisor-selected", "exec"), scope)
+        primary = OSError(5, "local-primary")
+        secondary = ValueError("local-cleanup")
+        for supplied, cleanup_error, channel_error, late_error, expected in (
+            (primary, secondary, RuntimeError("channel"), None, 1),
+            (None, secondary, RuntimeError("channel"), None, 2),
+            (None, None, RuntimeError("channel"), None, 4),
+            (None, None, None, secondary, 2),
+            (None, None, None, None, None),
+        ):
+            with self.subTest(expected=expected):
+                scope["channel"] = SimpleNamespace(finish=fail(channel_error), close=fail(late_error))
+                policy.close_private_install_parents = fail(cleanup_error)
+                record = scope["exercise"](supplied)
+                self.assertEqual(record, captured[-1])
+                self.assertIsNone(record["returncode"])
+                self.assertEqual(record["ok"], expected is None)
+                if expected is None:
+                    self.assertNotIn("failure_diagnostic", record)
+                else:
+                    self.assertEqual(record["failure_diagnostic"]["tag"], expected)
+                    self.assertTrue(helpers["_validate_failure_diagnostic"](record["failure_diagnostic"]))
+        self.assertIn(secondary, errors)
+
+
 class FoundationTests(unittest.TestCase):
     def setUp(self):
         self.directory = ROOT / "build/test-artifacts/ownership-foundation-tests" / secrets.token_hex(12)

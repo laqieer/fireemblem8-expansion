@@ -19,6 +19,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from types import CodeType, FunctionType
 
 
 LIBC = ctypes.CDLL(None, use_errno=True)
@@ -81,6 +82,67 @@ def _error_value(error):
 def _forget_error(error):
     for name in ("__traceback__", "__context__", "__cause__"):
         BaseException.__setattr__(error, name, None)
+
+
+def _failure_diagnostic(error, owners):
+    """Project only numeric failure data and exact reviewed code ownership."""
+    tag, number = _error_value(error)
+    registered = []
+    for name, namespace in owners:
+        codes = set()
+        classes = set()
+        code_pending = []
+        pending = list(namespace.values())
+        while pending:
+            value = pending.pop()
+            if type(value) is FunctionType and value.__globals__ is namespace:
+                code_pending.append(value.__code__)
+            elif (type(value) is type and id(value) not in classes
+                  and value.__module__ == namespace.get("__name__")):
+                classes.add(id(value))
+                pending.extend(vars(value).values())
+            elif type(value) in (staticmethod, classmethod):
+                pending.append(value.__func__)
+        while code_pending:
+            code = code_pending.pop()
+            if id(code) not in codes:
+                codes.add(id(code))
+                code_pending.extend(item for item in code.co_consts if type(item) is CodeType)
+        registered.append((name, namespace, codes))
+    module = line = None
+    trace = BaseException.__getattribute__(error, "__traceback__")
+    for _ in range(64):
+        if trace is None:
+            break
+        module = line = None
+        frame = trace.tb_frame
+        for name, namespace, codes in registered:
+            if frame.f_globals is namespace and id(frame.f_code) in codes:
+                module, line = name, trace.tb_lineno
+                break
+        trace = trace.tb_next
+    else:
+        if trace is not None:
+            module = line = None
+    return {"version": 1, "tag": tag, "errno": number, "module": module, "line": line}
+
+
+def _validate_failure_diagnostic(value):
+    if type(value) is not dict or set(value) != {"version", "tag", "errno", "module", "line"}:
+        return False
+    return (
+        type(value["version"]) is int and value["version"] == 1
+        and _integer(value["tag"], 1, 8)
+        and (value["errno"] is None or (
+            value["tag"] == 1 and _integer(value["errno"], 0, 4095)
+        ))
+        and (
+            value["module"] is None and value["line"] is None
+            or type(value["module"]) is str
+            and value["module"] in ("syscall_guard", "read_trace", "read_epochs")
+            and _integer(value["line"], 1, 2147483647)
+        )
+    )
 
 
 @dataclass(frozen=True, slots=True)

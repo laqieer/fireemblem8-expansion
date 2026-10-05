@@ -34,7 +34,7 @@ from .authority import (
     _read_event_frames, _read_events, encoded, parse_json, relative_path,
 )
 from .budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget, text
-from .lifecycle import cleanup_scope, finish_cleanup
+from .lifecycle import cleanup_scope, finish_cleanup, _validate_failure_diagnostic
 from . import metadata_transport
 from . import private_install as install_protocol
 from . import header_effects
@@ -3207,10 +3207,15 @@ class ProbeSession:
                 {"source_effects"} if observe_source_phases and observed.get("ok") is True
                 and observed.get("returncode") == 0 else set()
             ) | (
+                {"failure_diagnostic"} if observed.get("ok") is False
+                and "failure_diagnostic" in observed else set()
+            ) | (
                 {"source_journal"} if observe_source_journal and observed.get("ok") is True
                 and observed.get("returncode") == 0 else set()
             ):
                 raise MakeProbeError("malformed supervisor result")
+            if "failure_diagnostic" in observed and not _validate_failure_diagnostic(observed["failure_diagnostic"]):
+                raise MakeProbeError("malformed supervisor failure diagnostic")
             observations = observed["observations"]
             collections = [observed[name] for name in ("consumed", "code_consumed", "accessed")]
             if (

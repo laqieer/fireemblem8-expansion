@@ -27,7 +27,8 @@ from pathlib import Path, PurePosixPath
 
 if __package__:
     from .authority import _event_command, _read_events, encoded, parse_json
-    from .lifecycle import cleanup_scope, finish_cleanup
+    from .lifecycle import cleanup_scope, finish_cleanup, _failure_diagnostic
+    from . import read_trace, read_epochs
     from .metadata_transport import encode_metadata_transport
     from . import private_install as install_protocol
     from . import header_effects
@@ -49,7 +50,8 @@ if __package__:
     )
 else:
     from authority import _event_command, _read_events, encoded, parse_json
-    from lifecycle import cleanup_scope, finish_cleanup
+    from lifecycle import cleanup_scope, finish_cleanup, _failure_diagnostic
+    import read_trace, read_epochs
     from metadata_transport import encode_metadata_transport
     import private_install as install_protocol
     import header_effects
@@ -4075,6 +4077,11 @@ def supervise(config, drop_privileges):
     vfork_waiters = {}
     error = None
     primary = None
+    diagnostic = None
+    diagnostic_owners = (
+        ("syscall_guard", globals()), ("read_trace", vars(read_trace)),
+        ("read_epochs", vars(read_epochs)),
+    )
     result = None
     main_status = None
     if config["process_limit"] < 1 or config["descendant_limit"] < 1:
@@ -4706,6 +4713,7 @@ def supervise(config, drop_privileges):
             raise Violation("private install command omitted a declared installation")
     except BaseException as failure:
         primary = failure
+        diagnostic = _failure_diagnostic(failure, diagnostic_owners)
         error = str(failure)
         if policy.stderr_setup is not None and policy.stderr_setup.failed is not None:
             first = policy.stderr_setup.failed
@@ -4761,8 +4769,7 @@ def supervise(config, drop_privileges):
                     error = str(failure)
                 raise
 
-        def write_report():
-            nonlocal result
+        def complete_header():
             try:
                 if error is None and policy.filter_kernel is not None and main_status == 0:
                     policy.header_completion(main_status)
@@ -4775,6 +4782,9 @@ def supervise(config, drop_privileges):
                     "stage": toolchain_runtime.STAGES[policy.toolchain["stage"]],
                     "stdin": bytes(policy.toolchain_stdin).decode("utf-8", "strict"), "eof": policy.toolchain_eof,
                 }).decode("ascii"))
+
+        def write_report():
+            nonlocal result
             result = {
                 "ok": error is None,
                 "returncode": main_status,
@@ -4798,6 +4808,12 @@ def supervise(config, drop_privileges):
                 result["observation_bytes"] = policy.observation_bytes
             if config.get("dependency"):
                 result["executed"] = policy.executed
+            if channel is not None:
+                result["rendezvous"] = {
+                    "issued": policy.producer_issued, "completed": policy.producer_completed,
+                    "pending_peak": policy.producer_pending_peak,
+                    "publication": policy.publication_confirmation,
+                }
             if error is None and main_status == 0 and policy.read_trace is not None:
                 result["read_trace"] = policy.read_trace.finish()
                 if policy.source_effects is not None:
@@ -4813,15 +4829,6 @@ def supervise(config, drop_privileges):
                     }
                     if policy.directory_installs is not None:
                         result["source_journal"]["directories"] = policy.directory_installs.receipts
-            if channel is not None:
-                result["rendezvous"] = {
-                    "issued": policy.producer_issued, "completed": policy.producer_completed,
-                    "pending_peak": policy.producer_pending_peak,
-                    "publication": policy.publication_confirmation,
-                }
-            Path(config["report"]).write_text(
-                json.dumps(result, sort_keys=True, separators=(",", ":")), encoding="ascii",
-            )
         def finish_channel():
             nonlocal error
             if channel is not None:
@@ -4835,13 +4842,38 @@ def supervise(config, drop_privileges):
                     if error is None:
                         error = str(failure)
                     raise
-        finish_cleanup([
-            reap_owned, close_install_parents, finish_channel, write_report,
+        def reportable_cleanup(action):
+            nonlocal diagnostic, error
+            try:
+                action()
+            except BaseException as failure:
+                if diagnostic is None:
+                    diagnostic = _failure_diagnostic(failure, diagnostic_owners)
+                if error is None:
+                    error = str(failure)
+                raise
+
+        def publish_report():
+            result["ok"], result["error"] = error is None, error
+            if diagnostic is not None:
+                result["failure_diagnostic"] = diagnostic
+                for name in ("read_trace", "source_effects", "source_journal"):
+                    result.pop(name, None)
+            Path(config["report"]).write_text(
+                json.dumps(result, sort_keys=True, separators=(",", ":")), encoding="ascii",
+            )
+
+        actions = [
+            reap_owned, close_install_parents, finish_channel, complete_header, write_report,
             lambda: setattr(policy, "header_runtime", None),
             *([] if policy.toolchain is None or policy.toolchain["stage"] != 4
               else [policy.toolchain_intermediate.close]),
             *([] if policy.directory_installs is None else [policy.directory_installs.close]),
             *([] if policy.read_trace is None else [policy.read_trace.close]),
             *([] if channel is None else [channel.close]),
+        ]
+        finish_cleanup([
+            *(lambda action=action: reportable_cleanup(action) for action in actions),
+            publish_report,
         ], primary=primary)
     return 0 if result["ok"] else 125

@@ -17,10 +17,50 @@ from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.budget import Limits, MAX_PLANNED_STATE_BYTES
 from scripts.validation_ownership.graph_probe import _MakeSourceMode, make_source_units, run_probe, source_census
 from scripts.validation_ownership.make_probe import Command, ProbeSession
-from scripts.validation_ownership.tests.test_foundation import _PendingTrafficLimits
+from scripts.validation_ownership.tests.test_foundation import _PendingTrafficLimits, FailureDiagnosticApiTests
 
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+class FailureDiagnosticParserTests(unittest.TestCase):
+    def test_actual_report_parser_optional_failed_only_closed_values(self):
+        import ast
+        helpers = FailureDiagnosticApiTests().helpers()
+        tree = ast.parse((ROOT / "scripts/validation_ownership/make_probe.py").read_text())
+        method = next(node for node in ast.walk(tree)
+                      if isinstance(node, ast.FunctionDef) and node.name == "_sandbox_run")
+        block = next(node.body for node in ast.walk(method) if hasattr(node, "body") and isinstance(node.body, list)
+                     and any(isinstance(item, ast.Assign) and any(
+                         isinstance(target, ast.Name) and target.id == "observed" for target in item.targets
+                     ) for item in node.body))
+        index = next(index for index, node in enumerate(block) if isinstance(node, ast.Assign)
+                     and any(isinstance(target, ast.Name) and target.id == "observed" for target in node.targets))
+        checks = block[index + 1:index + 3]
+        scope = {**helpers, "MakeProbeError": RuntimeError, "channel": None, "stderr_launch": None,
+                 "dependency": None, "observe_read_epochs": False, "observe_source_phases": False,
+                 "observe_source_journal": False}
+        check = compile(ast.Module(body=checks, type_ignores=[]), "selected-parser", "exec")
+        base = dict.fromkeys(("ok", "returncode", "error", "consumed", "code_consumed", "accessed",
+                             "processes", "syscalls", "written_bytes", "created_files", "memory_peak",
+                             "observation_bytes", "live_process_peak", "observations", "metadata", "events"))
+        valid = {"version": 1, "tag": 1, "errno": 5, "module": "syscall_guard", "line": 1}
+        for record in ({**base, "ok": False}, {**base, "ok": True},
+                       {**base, "ok": False, "failure_diagnostic": valid}):
+            exec(check, {**scope, "observed": record})
+        invalid = [None, {}, {**valid, "extra": 1}, type("Foreign", (dict,), {})(valid)]
+        for key, values in {"version": (True, 2), "tag": (True, 0, 9), "errno": (True, -1, 4096),
+                            "module": ("foreign", None, 1), "line": (None, True, 0, 2147483648)}.items():
+            invalid.extend({**valid, key: value} for value in values)
+        invalid.append({**valid, "tag": 8})
+        for diagnostic in invalid:
+            with self.subTest(diagnostic=diagnostic), self.assertRaises(RuntimeError):
+                exec(check, {**scope, "observed": {**base, "ok": False, "failure_diagnostic": diagnostic}})
+        with self.assertRaises(RuntimeError):
+            exec(check, {**scope, "observed": {**base, "ok": True, "failure_diagnostic": valid}})
+        exec(check, {**scope, "observed": {**base, "ok": False, "failure_diagnostic": {
+            **valid, "module": None, "line": None, "errno": None, "tag": 7,
+        }}})
 
 
 class OriginalCompletionSelectionApiTests(unittest.TestCase):

@@ -8466,6 +8466,28 @@ removing their disposable fixtures. This is host regression evidence, not
 full-graph fit, H1, native authority or calibration. Nine jobs, 34 commands,
 publication policy/schema and all original resource limits are unchanged.
 
+### Source-only failed-supervisor diagnostic control (#180)
+
+This extends **TC-WORKFLOW-GATE-OWNERSHIP-001** without native qualification.
+From a clean source tree, select `FailureDiagnosticApiTests` and
+`FailureDiagnosticParserTests` through the saved isolated AST-check pattern:
+`env -i HOME=/nonexistent PATH=/usr/bin /usr/bin/python3 -I -S -B <checker>`.
+Do not import candidate modules into a credential-bearing collector.
+Raise the real selected `read_epochs.Elf` constructor with empty bytes; expect
+the numeric lifecycle error tag and actual raise line owned by its exact
+namespace/code tree. Foreign globals and unregistered code must produce null
+location even with a forged filename; over-64-frame errors also have null
+location. Exercise actual supervisor catch, cleanup and publication with inert
+inputs: primary outranks cleanup/channel, otherwise first cleanup/channel wins,
+null exit remains null, success has no field. Run the real parser statements:
+old failed reports remain accepted; malformed keys/types/tags/errno/module-line
+pairs and success diagnostics reject. Repeat with the exact pre-fix parent
+(must fail) and a semantics-preserving AST/layout control (must pass).
+No native execution, remote operation, save/profile migration or feature
+interaction is involved. Clean up only named session artifacts if needed.
+These controls do not prove the unknown native cause, harness consumption,
+architecture disposition or any remaining final gate.
+
 ## TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001: Confine and bound authentic probe execution
 
 The [namespace-image CI extension](#namespace-image-ci-regression-correction)
