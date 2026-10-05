@@ -86,6 +86,23 @@ Run the following controls individually from the same clean host checkout:
    `$(shell)` retains its output and `.SHELLSTATUS`, an explicitly ignored
    recipe continues, and an unignored recipe still fails through final Make
    status 2. Supervisor confinement violations never become ignored errors.
+5. Run its `test_native_readonly_recursive_observer_dispatch_refuses`.
+   An unused recursive variable containing `$(shell)` must refuse if exit
+   observation would execute it. Refusal is explicit; the readonly component
+   does not yet provide complete side-effect-free recursive-value observation.
+6. Run its `test_native_readonly_shell_loader_probes_cannot_select_false_absence`
+   and `test_native_readonly_loader_rejects_stale_stop_foreign_origin_and_replacement`.
+   Shell builtins probing either absent `/etc/ld.so.cache` or
+   `/etc/ld.so.preload` must refuse instead of selecting an absent branch.
+   Genuine loader startup is admitted only from an owned actual syscall-entry
+   stop, the captured interpreter's readonly executable mapping and matching
+   instruction bytes. An altered actual stop, foreign libc origin or attempted
+   private readonly image replacement must reject. The replacement attempt
+   fails at the readonly filesystem boundary, not at a claimed inode detector.
+7. Run its `test_native_readonly_runtime_overlap_uses_captured_bytes` and
+   `test_native_readonly_conflicting_runtime_capture_refuses`.
+   Shared images compare against already charged captured Make bytes; a disk
+   reread trap must not fire and a conflicting captured library must refuse.
 
 Readonly dispatch admits only the original Make image and captured shell.
 It cannot produce generated files or execute arbitrary native tools.

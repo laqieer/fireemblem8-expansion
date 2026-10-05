@@ -220,6 +220,8 @@ int posix_spawn(pid_t *pid, const char *path, const posix_spawn_file_actions_t *
         spawn = dlsym(RTLD_NEXT, "posix_spawn");
     if (!spawn)
         fail();
+    if (native_readonly && finishing)
+        fail();
     /* Redirect execution, never Make's visible variables, origins or flags.
      * The kernel supervisor authenticates this notification and the child's
      * stdout FD. Recursive/remake contexts conservatively require mappings. */

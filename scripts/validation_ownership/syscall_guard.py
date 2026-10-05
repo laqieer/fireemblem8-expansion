@@ -206,6 +206,7 @@ class Process:
     exec_path: str | None = None
     dependency_image: str | None = None
     dependency_stop: tuple[int, int, int] | None = None
+    native_stop: tuple[int, int, int] | None = None
     path_context: tuple[str, int, str | None] | None = None
 
     def clone(self):
@@ -1105,7 +1106,9 @@ class Policy:
             return
         if operation == "metadata" and path in self.runtime_directories:
             return
-        if not state.observer_ready and operation in {"read", "metadata"} and path in self.loader_probes:
+        if not state.observer_ready and operation in {"read", "metadata"} and path in self.loader_probes and (
+            state.role != "native" or self.native_loader_origin(state)
+        ):
             try:
                 (Path(self.config["root"]) / path.lstrip("/")).lstat()
             except FileNotFoundError:
@@ -1130,7 +1133,7 @@ class Policy:
         ):
             raise Violation("dependency executable differs from its verified image")
 
-    def verify_dependency_mapping_span(self, image, start, end, raw_offset, ip, instruction):
+    def verify_dependency_mapping_span(self, image, start, end, raw_offset, ip, instruction, *, identity=None):
         if not re.fullmatch(rb"[0-9a-fA-F]{1,16}", raw_offset):
             raise Violation("dependency mapping offset is malformed")
         offset = int(raw_offset, 16)
@@ -1150,7 +1153,7 @@ class Policy:
                 before = os.fstat(source.fileno())
                 if not stat.S_ISREG(before.st_mode) or (
                     before.st_dev, before.st_ino
-                ) != self.dependency_image_ids[image]:
+                ) != (self.dependency_image_ids[image] if identity is None else identity):
                     raise Violation("opened dependency mapping image has a different identity")
                 if position > before.st_size - len(instruction):
                     raise Violation("dependency instruction span exceeds its runtime image")
@@ -1165,6 +1168,56 @@ class Policy:
                     raise Violation("dependency mapped instruction differs from its runtime image")
         except OSError as error:
             raise Violation("dependency runtime instruction span is unavailable") from error
+
+    def native_loader_origin(self, state):
+        if not self.native_readonly or state.native_stop is None:
+            raise Violation("native loader probe lacks its owned syscall stop")
+        pid, number, ip = state.native_stop
+        if self.processes.get(pid) is not state or state.pidfd < 0 or state.kernel_call != number or ip < 2:
+            raise Violation("native loader probe lost its owned syscall stop")
+        information = (ctypes.c_ubyte * 128)()
+        ptrace(0x420E, pid, len(information), ctypes.byref(information))
+        if (
+            information[0] != 1
+            or int.from_bytes(bytes(information[4:8]), "little") != 0xC000003E
+            or int.from_bytes(bytes(information[8:16]), "little") != ip
+            or int.from_bytes(bytes(information[24:32]), "little") != number
+        ):
+            raise Violation("native loader probe lost its actual syscall-entry stop")
+        image = self.config["native_interpreter"]
+        if image not in self.runtime_closure:
+            raise Violation("native interpreter is not in captured runtime closure")
+        identity = self.dependency_image_identity(Path(self.config["root"]) / image.lstrip("/"))
+        self.charge_metadata(2)
+        instruction = memory(pid, ip - 2, 2)
+        if instruction != b"\x0f\x05":
+            raise Violation("native loader probe has an unsupported syscall instruction")
+        with open(f"/proc/{pid}/maps", "rb") as source:
+            self.charge_metadata(SYSCALL_MEMORY_LIMIT + 1)
+            data = source.read(SYSCALL_MEMORY_LIMIT + 1)
+        if len(data) > SYSCALL_MEMORY_LIMIT:
+            raise Violation("native loader mapping exceeds observation bound")
+        found = None
+        for line in data.splitlines():
+            fields = line.split(None, 5)
+            if len(fields) < 5:
+                raise Violation("malformed native loader mapping")
+            try:
+                start, end = (int(value, 16) for value in fields[0].split(b"-"))
+                major, minor = (int(value, 16) for value in fields[3].split(b":"))
+                inode = int(fields[4])
+            except ValueError as error:
+                raise Violation("malformed native loader mapping identity") from error
+            if start <= ip - 2 < ip < end:
+                if fields[1] != b"r-xp" or inode <= 0 or found is not None:
+                    raise Violation("native loader probe lacks one readonly executable mapping")
+                found = (os.makedev(major, minor), inode), (start, end, fields[2])
+        if found is None:
+            raise Violation("native loader syscall has no mapped origin")
+        if found[0] != identity:
+            return False
+        self.verify_dependency_mapping_span(image, *found[1], ip, instruction, identity=identity)
+        return True
 
     def dependency_negative_purpose(self, state, path, operation):
         if state.dependency_stop is None or state.dependency_image not in self.config["dependency"]["executables"]:
@@ -1468,6 +1521,7 @@ class Policy:
         state.metadata_pending = None
         state.path_context = None
         state.dependency_stop = (pid, r.orig_rax, r.rip) if self.config.get("dependency") else None
+        state.native_stop = (pid, r.orig_rax, r.rip) if self.native_readonly and state.role == "native" else None
         state.observations.clear()
         state.observation_needs_bytes = False
         trusted = self.observer(state, r)

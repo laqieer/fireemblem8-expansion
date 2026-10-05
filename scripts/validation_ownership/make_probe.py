@@ -947,7 +947,7 @@ class ProbeSession:
             for target, data in native_runtime:
                 destination = root / target.lstrip("/")
                 if destination.exists():
-                    if destination.read_bytes() != data:
+                    if dict(self.make_runtime).get(target) != data:
                         raise MakeProbeError("native shell runtime conflicts with captured Make runtime")
                 else:
                     _mkdir_target(root, target).write_bytes(data)
@@ -1051,6 +1051,7 @@ class ProbeSession:
         }
         if native_runtime:
             config["native_readonly"] = True
+            config["native_interpreter"] = _make_interpreter(dict(native_runtime)["/bin/sh"])
         if dependency is not None:
             if mode != "compile":
                 raise MakeProbeError("dependency profile requires compiler confinement")

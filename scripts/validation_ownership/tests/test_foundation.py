@@ -178,6 +178,116 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(completed.stdout, b"done\n")
         self.assert_clean(session)
 
+    def test_native_readonly_recursive_observer_dispatch_refuses(self):
+        self.add("Makefile", (
+            "VALUE = $(shell v=unexpected; printf '%s' \"$$v\")\n"
+            ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n"
+        ))
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "readonly native GNU Make failed: 125"):
+            with session:
+                session._native_make_readonly("all", variables=("VALUE",))
+        self.assert_clean(session)
+
+    def test_native_readonly_shell_loader_probes_cannot_select_false_absence(self):
+        for path in ("/etc/ld.so.cache", "/etc/ld.so.preload"):
+            with self.subTest(path=path):
+                self.add("Makefile", (
+                    f"VALUE := $(shell if [ -e {path} ]; then printf present; else printf absent; fi)\n"
+                    ".PHONY: all\nall:\n\t@:\n"
+                ))
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "uncaptured Make runtime access"):
+                    with session:
+                        session._native_make_readonly("all", variables=("VALUE",))
+                self.assert_clean(session)
+
+    def test_native_readonly_runtime_overlap_uses_captured_bytes(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n")
+        with self.session() as session:
+            original = Path.read_bytes
+            def read(path):
+                if str(path).startswith(str(session.base / "native-readonly-root-")):
+                    self.fail("private runtime reread bypassed budget")
+                return original(path)
+            with patch.object(Path, "read_bytes", read):
+                completed, _, _ = session._native_make_readonly("all")
+            self.assertEqual(completed.stdout, b"done\n")
+        self.assert_clean(session)
+
+    def test_native_readonly_conflicting_runtime_capture_refuses(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@:\n")
+        from scripts.validation_ownership import make_probe
+        original = make_probe._executable_runtime
+        def capture(path, budget):
+            result = original(path, budget)
+            if path == "/usr/bin/sh":
+                return tuple(
+                    (name, data + b"changed" if name != path else data) for name, data in result
+                )
+            return result
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "native shell runtime conflicts"):
+            with session, patch.object(make_probe, "_executable_runtime", capture):
+                session._native_make_readonly("all")
+        self.assert_clean(session)
+
+    @contextmanager
+    def native_supervisor(self, body):
+        bootstrap = (
+            "import json,os,sys\nfrom pathlib import Path\n"
+            f"sys.path.insert(0,{str(TRUSTED_ROOT)!r})\n"
+            "import syscall_guard as guard,sandbox_exec\n"
+            + body + "\nraise SystemExit(sandbox_exec.main())\n"
+        )
+        run = ProbeBudget.run
+        def instrument(budget, argv, **kwargs):
+            if len(argv) >= 2 and argv[-2] == str(TRUSTED_ROOT / "sandbox_exec.py"):
+                if json.loads(Path(argv[-1]).read_bytes()).get("native_readonly"):
+                    argv = [*argv[:-2], "-c", bootstrap, argv[-1]]
+            return run(budget, argv, **kwargs)
+        with patch.object(ProbeBudget, "run", instrument):
+            yield
+
+    def test_native_readonly_loader_rejects_stale_stop_foreign_origin_and_replacement(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n")
+        for body, error in (
+            (
+                "original=guard.Policy.native_loader_origin\n"
+                "def stale(self,state):\n"
+                " pid,number,ip=state.native_stop\n"
+                " state.native_stop=(pid,number,ip+1)\n"
+                " return original(self,state)\n"
+                "guard.Policy.native_loader_origin=stale\n",
+                "native loader probe lost its actual syscall-entry stop",
+            ),
+            (
+                "original=guard.Policy.native_loader_origin\n"
+                "def replaced(self,state):\n"
+                " path=Path(self.config['root'])/self.config['native_interpreter'].lstrip('/')\n"
+                " temporary=path.with_name(path.name+'.replaced')\n"
+                " temporary.write_bytes(path.read_bytes());temporary.chmod(0o555)\n"
+                " os.replace(temporary,path)\n"
+                " return original(self,state)\n"
+                "guard.Policy.native_loader_origin=replaced\n",
+                "Read-only file system",
+            ),
+            (
+                "original=guard.Policy.native_loader_origin\n"
+                "def foreign(self,state):\n"
+                " self.config['native_interpreter']=next(path for path in self.runtime_closure if path.endswith('/libc.so.6'))\n"
+                " return original(self,state)\n"
+                "guard.Policy.native_loader_origin=foreign\n",
+                "uncaptured Make runtime access",
+            ),
+        ):
+            with self.subTest(error=error), self.native_supervisor(body):
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    with session:
+                        session._native_make_readonly("all")
+                self.assert_clean(session)
+
     def test_native_readonly_ignored_recipe_status_is_owned_by_make(self):
         self.add("Makefile", (
             ".PHONY: all\nall:\n\t-@v=ignored; exit 7\n"
