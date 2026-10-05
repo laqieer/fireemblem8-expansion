@@ -44,22 +44,32 @@ class FailureDiagnosticParserTests(unittest.TestCase):
         base = dict.fromkeys(("ok", "returncode", "error", "consumed", "code_consumed", "accessed",
                              "processes", "syscalls", "written_bytes", "created_files", "memory_peak",
                              "observation_bytes", "live_process_peak", "observations", "metadata", "events"))
-        valid = {"version": 1, "tag": 1, "errno": 5, "module": "syscall_guard", "line": 1}
+        valid = {"version": 2, "tag": 1, "errno": 5, "module": "syscall_guard", "line": 1,
+                 "location_kind": "origin"}
         for record in ({**base, "ok": False}, {**base, "ok": True},
-                       {**base, "ok": False, "failure_diagnostic": valid}):
+                       {**base, "ok": False, "failure_diagnostic": valid},
+                       {**base, "ok": False, "failure_diagnostic": {**valid, "location_kind": "callsite"}}):
             exec(check, {**scope, "observed": record})
         invalid = [None, {}, {**valid, "extra": 1}, type("Foreign", (dict,), {})(valid)]
-        for key, values in {"version": (True, 2), "tag": (True, 0, 9), "errno": (True, -1, 4096),
+        invalid.append({key: value for key, value in valid.items() if key != "location_kind"})
+        for key, values in {"version": (True, 1, 3), "tag": (True, 0, 9), "errno": (True, -1, 4096),
+                            "location_kind": (None, True, 1, "foreign", "unknown",
+                                              type("ForeignKind", (str,), {})("origin")),
                             "module": ("foreign", None, 1), "line": (None, True, 0, 2147483648)}.items():
             invalid.extend({**valid, key: value} for value in values)
         invalid.append({**valid, "tag": 8})
+        for kind in ("origin", "callsite"):
+            invalid.append({**valid, "module": None, "line": None, "location_kind": kind})
+        invalid.append({**valid, "version": 1, "location_kind": "callsite"})
+        invalid.append({**valid, "module": None, "line": None,
+                        "location_kind": type("ForeignKind", (str,), {})("unknown")})
         for diagnostic in invalid:
             with self.subTest(diagnostic=diagnostic), self.assertRaises(RuntimeError):
                 exec(check, {**scope, "observed": {**base, "ok": False, "failure_diagnostic": diagnostic}})
         with self.assertRaises(RuntimeError):
             exec(check, {**scope, "observed": {**base, "ok": True, "failure_diagnostic": valid}})
         exec(check, {**scope, "observed": {**base, "ok": False, "failure_diagnostic": {
-            **valid, "module": None, "line": None, "errno": None, "tag": 7,
+            **valid, "module": None, "line": None, "errno": None, "tag": 7, "location_kind": "unknown",
         }}})
 
 

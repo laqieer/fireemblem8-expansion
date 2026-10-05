@@ -88,7 +88,7 @@ class FailureDiagnosticApiTests(unittest.TestCase):
             trace = error.__traceback__
             while trace.tb_next:
                 trace = trace.tb_next
-            self.assertEqual(record, {"version": 1, "tag": 4, "errno": None,
+            self.assertEqual(record, {"version": 2, "tag": 4, "errno": None, "location_kind": "origin",
                                      "module": "read_epochs", "line": trace.tb_lineno})
         foreign = dict(owner, __file__="read_epochs.py")
         forged = FunctionType(owner["Elf"].__init__.__code__, foreign)
@@ -97,13 +97,45 @@ class FailureDiagnosticApiTests(unittest.TestCase):
         try:
             owner["wrapper"]()
         except RuntimeError as error:
-            self.assertIsNone(helpers["_failure_diagnostic"](error, (("read_epochs", owner),))["module"])
+            record = helpers["_failure_diagnostic"](error, (("read_epochs", owner),))
+            self.assertEqual(record["location_kind"], "callsite")
+            self.assertEqual(record["module"], "read_epochs")
+            self.assertEqual(record["line"], error.__traceback__.tb_next.tb_lineno)
         owner["raw_code"] = forged.__code__.replace()
         unregistered = FunctionType(owner["raw_code"], owner)
         try:
             unregistered(None, b"")
         except RuntimeError as error:
             self.assertIsNone(helpers["_failure_diagnostic"](error, (("read_epochs", owner),))["module"])
+
+    def test_real_registered_event_retains_callsite_across_json_typeerror(self):
+        from types import MappingProxyType
+        helpers = self.helpers()
+        authority = self.load("authority.py", {"encoded"}, {"json": json})
+        owner = self.load("read_trace.py", {"NativeReadTrace"}, {"encoded": authority["encoded"]})
+        trace = object.__new__(owner["NativeReadTrace"])
+        trace.events = []
+        trace.config = {"observation_count": 4}
+        charges = []
+        trace.policy = SimpleNamespace(charge_metadata=charges.append)
+        payload = {"value": 1}
+        self.assertEqual(trace.event("control", payload=payload)["payload"], payload)
+        with self.assertRaises(TypeError):
+            try:
+                trace.event("injected", payload=MappingProxyType(payload))
+            except TypeError as error:
+                frames = error.__traceback__
+                while frames.tb_frame.f_globals is not owner:
+                    frames = frames.tb_next
+                record = helpers["_failure_diagnostic"](error, (("read_trace", owner),))
+                self.assertEqual(record, {
+                    "version": 2, "tag": 7, "errno": None, "module": "read_trace",
+                    "line": frames.tb_lineno, "location_kind": "callsite",
+                })
+                self.assertTrue(helpers["_validate_failure_diagnostic"](record))
+                raise
+        self.assertEqual(len(trace.events), 1)
+        self.assertEqual(len(charges), 1)
 
     def test_projection_bounds_frames_and_handles_unknown_errno(self):
         helpers = self.helpers()
@@ -116,9 +148,19 @@ class FailureDiagnosticApiTests(unittest.TestCase):
                 record = helpers["_failure_diagnostic"](error, (("syscall_guard", owner),))
                 self.assertEqual(record["errno"], 5)
                 self.assertEqual(record["module"], "syscall_guard" if depth == 1 else None)
+                self.assertEqual(record["location_kind"], "origin" if depth == 1 else "unknown")
+                if depth != 1:
+                    self.assertIsNone(record["line"])
         for error, tag in ((Exception("private"), 7), (OSError(-1, "private"), 8)):
             self.assertEqual(helpers["_failure_diagnostic"](error, ()),
-                             {"version": 1, "tag": tag, "errno": None, "module": None, "line": None})
+                             {"version": 2, "tag": tag, "errno": None, "module": None,
+                              "line": None, "location_kind": "unknown"})
+        try:
+            json.dumps(object())
+        except TypeError as error:
+            self.assertEqual(helpers["_failure_diagnostic"](error, ()),
+                             {"version": 2, "tag": 7, "errno": None, "module": None,
+                              "line": None, "location_kind": "unknown"})
 
     def test_actual_supervisor_catch_cleanup_and_report_wiring(self):
         import ast
@@ -183,7 +225,11 @@ class FailureDiagnosticApiTests(unittest.TestCase):
                 if expected is None:
                     self.assertNotIn("failure_diagnostic", record)
                 else:
-                    self.assertEqual(record["failure_diagnostic"]["tag"], expected)
+                    self.assertEqual(record["failure_diagnostic"], {
+                        "version": 2, "tag": expected,
+                        "errno": 5 if expected == 1 else None,
+                        "module": None, "line": None, "location_kind": "unknown",
+                    })
                     self.assertTrue(helpers["_validate_failure_diagnostic"](record["failure_diagnostic"]))
         self.assertIn(secondary, errors)
 

@@ -8474,14 +8474,23 @@ From a clean source tree, select `FailureDiagnosticApiTests` and
 `env -i HOME=/nonexistent PATH=/usr/bin /usr/bin/python3 -I -S -B <checker>`.
 Do not import candidate modules into a credential-bearing collector.
 Raise the real selected `read_epochs.Elf` constructor with empty bytes; expect
-the numeric lifecycle error tag and actual raise line owned by its exact
-namespace/code tree. Foreign globals and unregistered code must produce null
-location even with a forged filename; over-64-frame errors also have null
+the version-2 numeric lifecycle error tag, `origin` kind and actual raise line
+owned by its exact namespace/code tree. Call the real selected
+`NativeReadTrace.event` with a dict payload (success), then an injected
+mapping-proxy payload through real `authority.encoded` and stdlib JSON
+(TypeError). Expect tag 7 and the retained `read_trace` line with `callsite`,
+not a foreign exception origin; no failed event or metadata charge is added.
+This injection does not explain the remote failure: its cause remains unknown.
+Foreign globals following an owned wrapper retain that wrapper's callsite;
+foreign-only or unregistered code produces `unknown` and null location even
+with a forged filename. Over-64-frame errors also produce `unknown` and null
 location. Exercise actual supervisor catch, cleanup and publication with inert
 inputs: primary outranks cleanup/channel, otherwise first cleanup/channel wins,
 null exit remains null, success has no field. Run the real parser statements:
-old failed reports remain accepted; malformed keys/types/tags/errno/module-line
-pairs and success diagnostics reject. Repeat with the exact pre-fix parent
+historical failed reports without a diagnostic remain accepted; version-1
+diagnostics, malformed keys/types/tags/errno/module-line/kind pairs and success
+diagnostics reject. `unknown` with a site and `origin`/`callsite` without one
+reject. Repeat with the exact pre-fix parent
 (must fail) and a semantics-preserving AST/layout control (must pass).
 No native execution, remote operation, save/profile migration or feature
 interaction is involved. Clean up only named session artifacts if needed.

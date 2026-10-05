@@ -110,35 +110,44 @@ def _failure_diagnostic(error, owners):
                 code_pending.extend(item for item in code.co_consts if type(item) is CodeType)
         registered.append((name, namespace, codes))
     module = line = None
+    location_kind = "unknown"
     trace = BaseException.__getattribute__(error, "__traceback__")
     for _ in range(64):
         if trace is None:
             break
-        module = line = None
+        location_kind = "callsite" if module is not None else "unknown"
         frame = trace.tb_frame
         for name, namespace, codes in registered:
             if frame.f_globals is namespace and id(frame.f_code) in codes:
                 module, line = name, trace.tb_lineno
+                location_kind = "origin"
                 break
         trace = trace.tb_next
     else:
         if trace is not None:
             module = line = None
-    return {"version": 1, "tag": tag, "errno": number, "module": module, "line": line}
+            location_kind = "unknown"
+    return {"version": 2, "tag": tag, "errno": number, "module": module, "line": line,
+            "location_kind": location_kind}
 
 
 def _validate_failure_diagnostic(value):
-    if type(value) is not dict or set(value) != {"version", "tag", "errno", "module", "line"}:
+    if type(value) is not dict or set(value) != {
+        "version", "tag", "errno", "module", "line", "location_kind",
+    }:
         return False
     return (
-        type(value["version"]) is int and value["version"] == 1
+        type(value["version"]) is int and value["version"] == 2
         and _integer(value["tag"], 1, 8)
         and (value["errno"] is None or (
             value["tag"] == 1 and _integer(value["errno"], 0, 4095)
         ))
+        and type(value["location_kind"]) is str
         and (
-            value["module"] is None and value["line"] is None
-            or type(value["module"]) is str
+            value["location_kind"] == "unknown"
+            and value["module"] is None and value["line"] is None
+            or value["location_kind"] in ("origin", "callsite")
+            and type(value["module"]) is str
             and value["module"] in ("syscall_guard", "read_trace", "read_epochs")
             and _integer(value["line"], 1, 2147483647)
         )
