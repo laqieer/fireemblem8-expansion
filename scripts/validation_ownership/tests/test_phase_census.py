@@ -1,11 +1,16 @@
 """Every-pass obligations from actual native source/image/mutation history."""
 
+import ast
+from collections.abc import Mapping
 import copy
+import fnmatch
 import hashlib
 from contextlib import contextmanager
 from dataclasses import asdict, replace
 import gc
+import json
 from pathlib import Path, PurePosixPath
+import re
 import shlex
 import stat
 import subprocess
@@ -20,6 +25,216 @@ from scripts.validation_ownership import graph_probe, make_probe, phase_census, 
 from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
 from scripts.validation_ownership.tests import test_source_phases as phases
 from scripts.validation_ownership.tests import test_foundation as foundation
+
+
+def original_completion_fixture_paths(loader):
+    """Conservative original input pool; native missing-input checks stay mandatory."""
+    from scripts.assets.manifest import _load_manifest_root, discovery_sources
+    from scripts.generated_data.json_loader import parse_json_text
+    from scripts.validation_ownership import python_commands
+
+    regular = {
+        path for path, entry in loader.entries.items()
+        if entry.mode in {"100644", "100755"} and entry.object_type == "blob"
+    }
+    blobs = {}
+
+    def blob(path):
+        if path not in regular:
+            raise MakeProbeError(f"original fixture input is not an immutable regular source: {path}")
+        if path not in blobs:
+            data = loader.read_blob(path, "original fixture dependency declaration")
+            loader.budget.charge("cache", len(data))
+            blobs[path] = data
+        return blobs[path]
+
+    class OriginalBlobs(Mapping):
+        def __iter__(self):
+            return iter(regular)
+
+        def __len__(self):
+            return len(regular)
+
+        def __getitem__(self, path):
+            return blob(path)
+
+    view = SimpleNamespace(snapshot=SimpleNamespace(files=OriginalBlobs()))
+    contracts_path = ".github/validation-ownership-make-dynamics.json"
+    contracts = json.loads(blob(contracts_path))["contracts"]
+    selected = {contracts_path}
+    pending = ["Makefile", "assets.mk", "generated_data.mk", "modern.mk"]
+    statements = {}
+    while pending:
+        path = pending.pop()
+        if path in statements:
+            continue
+        selected.add(path)
+        statements[path] = [
+            graph_probe._collapse_make_continuations(raw)
+            for _, _, _, raw in read_epochs.physical_statements(blob(path))
+        ]
+        for statement in statements[path]:
+            match = re.fullmatch(r"-?include\s+(.+)", statement.strip())
+            if match and "$" not in match[1]:
+                for child in match[1].split():
+                    if child in regular:
+                        pending.append(child)
+                    elif not statement.lstrip().startswith("-include "):
+                        raise MakeProbeError(f"original fixture required literal include is missing: {child}")
+
+    for contract in contracts:
+        selected.update(contract["input_files"])
+        code = tuple(path for path in contract["input_files"] if path.endswith(".py"))
+        if code:
+            selected.update(python_commands.python_code_closure(view, "", code))
+    for module in ("scripts.assets", "scripts.generated_data.chapterobjectives.enabled"):
+        roots = python_commands._python_module_paths(regular, module, main=True)
+        selected.update(python_commands.python_code_closure(view, "", roots))
+    # Registry modules and bundle support pools are intentionally conservative.
+    # They are fixture inputs, not an inferred ownership classification.
+    selected.update(
+        path for path in regular
+        if path.startswith("scripts/generated_data/") and path.endswith(".py")
+        or path.startswith(("include/", "src/events/"))
+        or path.startswith("src/data/") and path.endswith(".json")
+        or PurePosixPath(path).parent.as_posix() in {"assets/tmx", "graphics/map/layout"}
+    )
+    for manifest in ("assets/manifest.json", "assets/manifests/custom-spell-reference.json"):
+        records = _load_manifest_root(parse_json_text(blob(manifest).decode("utf-8"), path=manifest))
+        selected.update((manifest, *discovery_sources(records)))
+    selected.update(python_commands.python_code_closure(view, "", ("scripts/assets/manifest.py",)))
+
+    literals = {}
+    for source, rows in statements.items():
+        for statement in rows:
+            match = re.fullmatch(
+                r"\s*([A-Za-z0-9_]+)\s*(?::=|\?=|=)\s*(.*?)\s*",
+                statement.split("#", 1)[0],
+            )
+            if match and "$" not in match[2]:
+                literals.setdefault(match[1], set()).add(match[2])
+            if not statement.lstrip().startswith("#"):
+                for program in re.finditer(r' -c "([^"]+)"', statement):
+                    try:
+                        ast.parse(program[1])
+                    except SyntaxError:
+                        continue
+                    selected.update(python_commands.python_code_closure(view, program[1]))
+
+    # This is only a superset projection of literal namespace declarations.
+    # It does not resolve Make DATA, conditions, generated includes or recipes.
+    for rows in statements.values():
+        for statement in rows:
+            if statement.lstrip().startswith("#"):
+                continue
+            offset = 0
+            while (start := statement.find("$(wildcard ", offset)) != -1:
+                index, depth = start + 2, 1
+                while index < len(statement) and depth:
+                    if statement[index:index + 2] == "$(":
+                        depth += 1
+                        index += 2
+                    elif statement[index] == ")":
+                        depth -= 1
+                        index += 1
+                    else:
+                        index += 1
+                if depth:
+                    raise MakeProbeError("unclosed original fixture wildcard declaration")
+                operand = statement[start + len("$(wildcard "):index - 1]
+                operand = re.sub(
+                    r"\$\(([A-Za-z0-9_]+)\)",
+                    lambda match: next(iter(literals[match[1]]))
+                    if len(literals.get(match[1], ())) == 1 else match[0],
+                    operand,
+                )
+                if "$" not in operand:
+                    for pattern in operand.split():
+                        selected.update(
+                            path for path in regular
+                            if PurePosixPath(path).parent == PurePosixPath(pattern).parent
+                            and fnmatch.fnmatchcase(PurePosixPath(path).name, PurePosixPath(pattern).name)
+                        )
+                offset = index
+    selected.update(
+        path for path in regular if path.startswith(("texts/", "scripts/assets/"))
+    )
+    selected.update(("scripts/arm_compressing_linker.py", "linker_script_banim.txt"))
+    for path in selected:
+        if path not in regular:
+            raise MakeProbeError(f"original fixture declaration names a missing regular source: {path}")
+    return tuple(sorted(selected)), blobs
+
+
+class OriginalCompletionFixtureApiTests(unittest.TestCase):
+    def model(self):
+        values = {
+            path: b"all: ;\n" for path in ("Makefile", "assets.mk", "generated_data.mk", "modern.mk")
+        }
+        values.update({
+            ".github/validation-ownership-make-dynamics.json": b'{"contracts":[]}',
+            "assets/manifest.json": b'{"schemaVersion":1,"assets":[]}',
+            "assets/manifests/custom-spell-reference.json": b'{"schemaVersion":1,"assets":[]}',
+            "assets/portrait_registry.json": b"{}",
+            "scripts/assets/manifest.py": b"",
+            "scripts/arm_compressing_linker.py": b"",
+            "linker_script_banim.txt": b"",
+            "src/a.c": b"int value;\n",
+            "src/sub/unselected.c": b"int other;\n",
+            "texts/a.txt": b"message",
+            "texts/unmatched.bin": b"\0",
+            "docs/unselected.md": b"not a producer",
+        })
+        values["Makefile"] = b"C_SUBDIR := src\nFILES := $(wildcard $(C_SUBDIR)/*.c)\n"
+        charges = []
+        loader = SimpleNamespace(
+            entries={path: SimpleNamespace(mode="100644", object_type="blob") for path in values},
+            read_blob=lambda path, label: values[path],
+            budget=SimpleNamespace(charge=lambda category, size: charges.append((category, size))),
+        )
+        return loader, values, charges
+
+    def test_literal_namespace_and_complete_find_pool_keep_original_bytes(self):
+        loader, values, charges = self.model()
+        paths, cached = original_completion_fixture_paths(loader)
+        self.assertIn("src/a.c", paths)
+        self.assertNotIn("src/sub/unselected.c", paths)
+        self.assertNotIn("docs/unselected.md", paths)
+        self.assertIn("texts/a.txt", paths)
+        self.assertIn("texts/unmatched.bin", paths)
+        for path in ("Makefile", "assets.mk", "generated_data.mk", "modern.mk"):
+            self.assertEqual(cached[path], values[path])
+        self.assertEqual(sum(size for category, size in charges), sum(map(len, cached.values())))
+        self.assertTrue(all(category == "cache" for category, size in charges))
+
+    def test_missing_declared_source_and_unsupported_schema_reject(self):
+        loader, values, _ = self.model()
+        values[".github/validation-ownership-make-dynamics.json"] = (
+            b'{"contracts":[{"input_files":["missing/owned.dat"]}]}'
+        )
+        with self.assertRaisesRegex(MakeProbeError, "missing regular source"):
+            original_completion_fixture_paths(loader)
+        loader, values, _ = self.model()
+        values["assets/manifest.json"] = b'{"schemaVersion":2,"assets":[]}'
+        from scripts.generated_data.diagnostics import GeneratedDataError
+        with self.assertRaisesRegex(GeneratedDataError, "unsupported schema version"):
+            original_completion_fixture_paths(loader)
+        loader, values, _ = self.model()
+        values["Makefile"] = b"include missing.mk\n"
+        with self.assertRaisesRegex(MakeProbeError, "required literal include is missing"):
+            original_completion_fixture_paths(loader)
+        values["Makefile"] = b"-include missing.mk\n"
+        original_completion_fixture_paths(loader)
+
+    def test_nonregular_source_rejects_and_neutral_comment_keeps_pool(self):
+        loader, values, _ = self.model()
+        original, _ = original_completion_fixture_paths(loader)
+        values["Makefile"] = b"# Neutral namespace comment\n" + values["Makefile"]
+        neutral, _ = original_completion_fixture_paths(loader)
+        self.assertEqual(original, neutral)
+        loader.entries["Makefile"].mode = "120000"
+        with self.assertRaisesRegex(MakeProbeError, "immutable regular source"):
+            original_completion_fixture_paths(loader)
 
 
 class OriginalCompletionDataApiTests(unittest.TestCase):
@@ -972,11 +1187,14 @@ class PhaseCensusTests(unittest.TestCase):
             name: loader.read_blob(name, "original native Make source")
             for name in ("Makefile", "assets.mk", "generated_data.mk", "modern.mk")
         }
-        # Prepare complete fixture files, then capture them once through actual Git.
-        for name, entry in loader.entries.items():
-            if entry.mode in {"100644", "100755"} and entry.object_type == "blob":
-                self.fixture.add(name, (foundation.ROOT / name).read_bytes(), entry.mode)
-                (self.fixture.root / name).chmod(0o755 if entry.mode == "100755" else 0o644)
+        paths, selected_blobs = original_completion_fixture_paths(loader)
+        for name in paths:
+            entry = loader.entries[name]
+            data = selected_blobs.get(name)
+            if data is None:
+                data = loader.read_blob(name, "original native fixture source")
+            self.fixture.add(name, data, entry.mode)
+            (self.fixture.root / name).chmod(0o755 if entry.mode == "100755" else 0o644)
         self.fixture.add("native-completion.mk", (
             "CAP := $(shell printf %s 0xCD)\n"
             "ifeq ($(CAP),0xCD)\nNEXT := selected\nelse\n$(error wrong original condition)\nendif\n"
@@ -1006,10 +1224,12 @@ class PhaseCensusTests(unittest.TestCase):
             ))["contracts"]
         }
         profiles = (
-            ("", "0xCD", "0", "build/expansion-modern"),
-            ("0xCE", "0xCE", "0", "build/native-completion-alt"),
-            ("", "0xCD", "1", "build/native-completion-custom"),
-            ("0xCE", "0xCE", "1", "build/native-completion-alt-custom"),
+            ("", "0xCD", "0", "build/expansion-modern", "assets/manifest.json"),
+            ("0xCE", "0xCE", "0", "build/native-completion-alt", "assets/manifest.json"),
+            ("", "0xCD", "1", "build/native-completion-custom",
+             "assets/manifests/custom-spell-reference.json"),
+            ("0xCE", "0xCE", "1", "build/native-completion-alt-custom",
+             "assets/manifests/custom-spell-reference.json"),
         )
         names = (
             "GENERATED_DATA_ITEM_CAP", "ASSET_RESOLVED_ITEM_ID_CAP", "ASSET_MANIFEST_KEY",
@@ -1090,12 +1310,13 @@ class PhaseCensusTests(unittest.TestCase):
             self.assertEqual(budget.deadline, deadline)
             self.assertIs(budget.limits, limits)
             observation_count = 0
-            for cap, expected_cap, custom, root in profiles:
+            for cap, expected_cap, custom, root, manifest in profiles:
                 state = (
                     ("command-line", "PYTHON", "python3"),
                     ("command-line", "FE8_ITEM_ID_CAP", cap),
                     ("command-line", "EXPANSION_CUSTOM_SPELL_EFFECTS", custom),
                     ("command-line", "MODERN_BUILD_ROOT", root),
+                    ("command-line", "ASSET_MANIFEST", manifest),
                 )
                 for primary in ("assets.mk", "Makefile"):
                     observed = session.make(
@@ -1110,8 +1331,10 @@ class PhaseCensusTests(unittest.TestCase):
                     self.assertTrue(observed.source_journal["closed"])
                     values = observed.semantics["domains"]
                     self.assertEqual(values["ASSET_RESOLVED_ITEM_ID_CAP"]["value"], expected_cap)
-                    key = "assets_manifest_json-custom" + custom + "-cap" + expected_cap
+                    manifest_key = manifest.replace("/", "_").replace(".", "_")
+                    key = manifest_key + "-custom" + custom + "-cap" + expected_cap
                     # abspath includes /repo; Make's two substitutions retain that prefix.
+                    self.assertEqual(values["ASSET_MANIFEST_KEY"]["value"], "_repo_" + manifest_key)
                     self.assertEqual(values["ASSET_PROFILE_KEY"]["value"], "_repo_" + key)
                     expected_root = (
                         "build/generated/assets" if primary == "assets.mk"
@@ -1202,8 +1425,33 @@ class PhaseCensusTests(unittest.TestCase):
             self.assertEqual(observation_count, 8)
             self.assertFalse(budget.failed)
         self.fixture.assert_clean(session)
+        self.assertFalse(budget.failed)
+
+    def test_native_completion_archive_retirement_terminal(self):
+        """Independent retirement refusal; not a failed positive-family budget."""
+        from scripts.validation_ownership.authority import AuthorityLoader
+
+        budget = ProbeBudget()
+        self.fixture.add("Makefile", "CAP := $(shell printf %s 0xCD)\nall: ;\n")
+        entries, revision = self.fixture.capture_tree(budget)
+        loader = AuthorityLoader(self.fixture.root, entries, revision, budget=budget)
+        with make_probe.ProbeSession(
+            loader, scratch_root=self.fixture.scratch, budget=budget,
+        ) as session:
+            observed = session.make(
+                "all", variables=("CAP",),
+                commands={"printf %s 0xCD": make_probe.Command(("/usr/bin/printf", "%s", "0xCD"))},
+                observe_source_journal=True, source_journal_mode=source_directories.MODE,
+            )
+            archive = session._original_source_archive(observed)
+            self.assertEqual(archive.version, read_epochs.COMPLETION_VERSION)
+            self.assertTrue(archive.passes)
+            self.assertFalse(budget.failed)
+        self.fixture.assert_clean(session)
+        self.assertTrue(budget.closed)
         with self.assertRaises(MakeProbeError):
             session._original_source_archive(observed)
+        self.assertTrue(budget.failed)
 
     def test_native_original_conditional_append_keeps_literal_and_computed_outcomes(self):
         for initial in ("out/first.o", "$(addprefix out/,first.o)"):

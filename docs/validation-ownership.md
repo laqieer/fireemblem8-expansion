@@ -394,7 +394,7 @@ behavior; rollback remains reverting the dedicated issue change.
 
 ### Authored native completion cases (not executed qualification)
 
-The five explicit selectors below extend the existing native owners, not a new
+The six explicit selectors below extend the existing native owners, not a new
 gate, launcher mode or qualification protocol. They are **authored and
 source-checked only**. No native import, test discovery, Make, compiler,
 namespace allocation or remote CI was authorized or run during authoring.
@@ -402,7 +402,7 @@ Their expected assertions are not captured machine outcomes.
 
 `PhaseCensusTests.test_native_completion_original_profile_family` uses one
 original `ProbeBudget` and one `ProbeSession` for the entire positive family.
-It prepares complete regular files selected by the original Git path inventory,
+It prepares a conservative finite pool of complete regular immutable Git files,
 preserves their executable modes and uses the existing fixture's actual
 immutable Git capture; it does not extract a cap declaration or replace an
 original producer. The original Git declarations are independently read for
@@ -411,12 +411,22 @@ snapshot is admitted once through the existing budget API. This component fixtur
 finite native source cases; it is not a full original-root/gitlink/report/H1
 qualification. Its original `assets.mk`, `generated_data.mk`, `modern.mk` and
 root `Makefile` bytes must equal the captured immutable objects.
-Source-only size inspection found 11,041 regular objects totaling 151,072,100
-bytes: two complete native snapshots would charge at least 604,288,400 snapshot
-bytes, already over the original 384-MiB quota. The test therefore uses normal
-fixture preparation and one native snapshot, not duplicate pre-capture or a
-larger/refunded limit. Fixture disk work is not claimed as measured native
-resource evidence; total execution/preparation demand remains to be observed.
+The fixture derives registered inputs and Python import closure, literal Make
+include/namespace declarations, version-1 asset discovery sources, and
+conservative registry, header, data and find pools. Literal projection is not
+a Make interpreter: it does not resolve conditions, generated includes or
+recipes, and cannot establish native closure. Find pools retain every descendant,
+including unmatched files; no names-only substitutes are written.
+Source-only execution of the fixture API selected 2,076 files / 60,344,631 bytes
+instead of the previous 151,102,705-byte full regular tree. Declaration caching
+charges another 1,697,352 bytes. Singleton selection, one snapshot's payload,
+nine completion scans and this declaration cache have a known payload subtotal
+of 725,832,924 bytes before framing, runtime, generated content and other
+charges. This is not a complete upper bound or proof of fitting the unchanged
+805,306,368-byte total quota. Preparation and execution retain the original
+deadline and all quotas; actual native closure, total demand and cleanup must
+still be observed. `OriginalCompletionFixtureApiTests` exercises source-pool,
+nonregular/missing-input/schema and neutral-refactor controls, not native proof.
 
 The finite case exercises a native shell-completed cap before its condition,
 ignored conditional RHS, eagerly executed simple RHS without a stronger
@@ -428,18 +438,21 @@ checks actual dispatches independently of stored assignment DATA.
 Then both standalone `assets.mk` and the root modern chain use the existing
 `print-ASSET_OUTPUT_DIR` target and complete registered `MakeCommands` map:
 
-| Cap input / resolved cap | Custom spells | Modern build root |
-| --- | --- | --- |
-| empty / `0xCD` | `0` | `build/expansion-modern` |
-| `0xCE` / `0xCE` | `0` | `build/native-completion-alt` |
-| empty / `0xCD` | `1` | `build/native-completion-custom` |
-| `0xCE` / `0xCE` | `1` | `build/native-completion-alt-custom` |
+| Cap input / resolved cap | Custom spells | Modern build root | Manifest |
+| --- | --- | --- | --- |
+| empty / `0xCD` | `0` | `build/expansion-modern` | `assets/manifest.json` |
+| `0xCE` / `0xCE` | `0` | `build/native-completion-alt` | `assets/manifest.json` |
+| empty / `0xCD` | `1` | `build/native-completion-custom` | `assets/manifests/custom-spell-reference.json` |
+| `0xCE` / `0xCE` | `1` | `build/native-completion-alt-custom` | `assets/manifests/custom-spell-reference.json` |
 
 No discovery exclusion or external-name exemption is added. The test requires
 the actual cap completion, inactive error condition, manifest/profile/root/
 output/discovery values, native recipe operands, exact source/open custody,
-generated include contents, complete source census and copied/expired archive
-refusal. Any unsupported original command, missing source, refusal, exhausted
+generated include contents, complete source census and copied archive refusal.
+`PhaseCensusTests.test_native_completion_archive_retirement_terminal` separately
+requires expired-archive refusal in its own original lifetime. It does not
+terminally fail the positive family's budget after successful cleanup.
+Any unsupported original command, missing source, refusal, exhausted
 budget or failed assertion stops the family; it never creates a replacement
 budget, calls an adapter to manufacture output or qualifies a successful prefix.
 
