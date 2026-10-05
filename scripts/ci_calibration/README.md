@@ -2,22 +2,24 @@
 
 ## Native refusal route preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
 
-Contract comment5991510796 authorizes preparation only of the first-created
-`calibration/issue-180-native-completion-refusal-1` route and matching
-`issue180-native-completion-refusal-1-` output prefix. It reuses source2d84,
+Contract comment5991854506 authorizes preparation only of the first-created
+`calibration/issue-180-native-completion-refusal-2` route and matching
+`issue180-native-completion-refusal-2-` output prefix. It reuses source2d84,
 BASEec1, the existing positive selector/profile, one original lifetime, all
 original quotas, seven containment qualifiers and five bounded artifacts.
-The three spent native workflows remain byte-identical at their actual
+The four spent native workflows remain byte-identical at their actual
 original heads; every spent ref, run2, attempt2 and non-creation event rejects.
 There is no source, worker, telemetry, selector, quota or production change.
 
-The normal Git chain is successor -> 6e6 -> 7da -> be8 and all prior edges
-(45 edges to BASEec1). The 6e6 diagnostic delta is a separate immutable
+The normal Git chain is successor -> 2be6 -> 7f2 -> 6e6 -> 7da -> be8 and all prior edges
+(47 edges to BASEec1, including all 45 earlier edges). The 6e6 diagnostic delta is a separate immutable
 five-path, 418-changed-line stage, not the six-path source-screening delta.
-The complete harness inventory has twelve paths. The frozen 6e6 recorder
+The complete harness inventory has thirteen paths, adding only the new workflow.
+The nullable correction is a separate immutable five-path, 103-changed-line
+stage from 7f2 to 2be6. The frozen 2be6 recorder
 cannot change on this route; existing root MAX/model protection remains.
 
-Tester procedure: from clean parent6e6 and source2d84, use the saved
+Tester procedure: from clean parent2be6 and source2d84, use the saved
 credential-free isolated AST route with inert APIs. Parse the actual workflow;
 exercise first-use event/selection, stale bindings, each lineage edge, complete
 inventory, spent-byte mutation, unchanged source stages and current result
@@ -27,6 +29,12 @@ Runtime authorization still needs independent exact-head review, a separately
 published allocation and an absent first-use ref; preparation creates no ref.
 Actual refusal capture and complete family fit remain unobserved. Heldde5,
 all four machine holds and every final eligibility gate remain unchanged.
+Runtime allocation is NONE. Fresh independent exact-head review must precede
+any separate allocation. Reusing a spent workflow/ref would violate the
+single-attempt boundary; the existing parser is the smaller valid mechanism.
+Full-report, H1, shipping-resource and delivery gates are unchanged. There is
+no ROM/RAM, save, generated-data, locale or supported-build impact; dependencies
+are the existing harness/source bindings, with no new production conflicts.
 
 ## Native refusal observation (TC-CI-NATIVE-REFUSAL-001, #180)
 

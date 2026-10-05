@@ -192,9 +192,15 @@ NATIVE_COUNTER_BASE_SHA = "0ded2474d3e5a16a330cff9a4afd6181f90383ae"
 NATIVE_COUNTER_REPAIR_SHA = "be8ee61019cc6248d848ac9dd72aec9ed4744549"
 NATIVE_CORRECTED_FAMILY_SHA = "7da7de74510236bea91773338b7d2a44e5aa91e3"
 NATIVE_REFUSAL_SHA = "6e6a1f130cd307df866d7850553853ac4fcc4ba0"
+NATIVE_REFUSAL_ROUTE_SHA = "7f21396350ba27007874dc5fe4f7719989bbec4c"
+NATIVE_NULLABLE_SHA = "2be6ebf39e9c164c406335c12d1abf1d24cec72b"
+NATIVE_NULLABLE_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
+    "policy.py", "root_stage.py", "test_ci_calibration.py", "test_root_stage.py", "README.md",
+))
 NATIVE_PATHS = frozenset({
     policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
-    policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.NATIVE_WORKFLOW,
+    policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
+    policy.NATIVE_WORKFLOW,
     *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "supervisor.py", "worker.py", "root_stage.py", "observation_failure.py",
         "test_ci_calibration.py", "test_root_stage.py", "README.md",
@@ -239,6 +245,7 @@ def validate_native_source_inventory(data, stage):
         "implementation": NATIVE_IMPLEMENTATION_PATHS, "tests": NATIVE_TEST_PATHS,
         "redesign": NATIVE_REDESIGN_PATHS,
         "screening": NATIVE_SCREENING_PATHS,
+        "nullable": NATIVE_NULLABLE_PATHS,
     }
     if stage not in expected or type(data) is not bytes:
         raise policy.GuardError("native source inventory has an unknown stage or representation")
@@ -252,9 +259,25 @@ def validate_native_source_inventory(data, stage):
         raise policy.GuardError("native source inventory omitted or changed a coupled family member")
 
 
+def validate_native_nullable_stage(data, sizes):
+    validate_native_source_inventory(data, "nullable")
+    if type(sizes) is not bytes:
+        raise policy.GuardError("native nullable size record is not immutable Git data")
+    rows = [row.split(b"\t") for row in sizes.splitlines()]
+    if len(rows) != 5 or any(
+        len(row) != 3 or not row[0].isdigit() or not row[1].isdigit()
+        for row in rows
+    ) or {row[2] for row in rows} != {name.encode() for name in NATIVE_NULLABLE_PATHS} or (
+        sum(int(row[0]) + int(row[1]) for row in rows) != 103
+    ):
+        raise policy.GuardError("native nullable correction changed its bounded five-path stage")
+
+
 def validate_native_lineage(lines, head):
-    if len(lines) < 10 or lines[:10] != [
-        f"{head} {NATIVE_REFUSAL_SHA}",
+    if len(lines) < 12 or lines[:12] != [
+        f"{head} {NATIVE_NULLABLE_SHA}",
+        f"{NATIVE_NULLABLE_SHA} {NATIVE_REFUSAL_ROUTE_SHA}",
+        f"{NATIVE_REFUSAL_ROUTE_SHA} {NATIVE_REFUSAL_SHA}",
         f"{NATIVE_REFUSAL_SHA} {NATIVE_CORRECTED_FAMILY_SHA}",
         f"{NATIVE_CORRECTED_FAMILY_SHA} {NATIVE_COUNTER_REPAIR_SHA}",
         f"{NATIVE_COUNTER_REPAIR_SHA} {NATIVE_COUNTER_BASE_SHA}",
@@ -266,7 +289,7 @@ def validate_native_lineage(lines, head):
         f"{NATIVE_PREPARATION_SHA} {NATIVE_PARENT}",
     ]:
         raise policy.GuardError("native family differs from its exact normal repair/preparation chain")
-    validate_harness_lineage(lines[10:], NATIVE_PARENT)
+    validate_harness_lineage(lines[12:], NATIVE_PARENT)
 
 
 def validate_spent_native_workflow(current, pinned):
@@ -285,7 +308,8 @@ def validate_native_inventory(data):
     workflows = {
         name.encode("ascii") for name in (
             policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
-            policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.NATIVE_WORKFLOW,
+            policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
+            policy.NATIVE_WORKFLOW,
         )
     }
     if {name for _, name in changes} != allowed or len(changes) != len(allowed) or any(
@@ -1606,7 +1630,7 @@ class Owner:
             raise policy.GuardError("workflow harness has uncommitted source changes")
         if native:
             validate_native_lineage(
-                git(self.harness, "rev-list", "--parents", "--max-count=45", "HEAD").decode().splitlines(),
+                git(self.harness, "rev-list", "--parents", "--max-count=47", "HEAD").decode().splitlines(),
                 self.scope["harness_sha"],
             )
             validate_native_inventory(git(self.harness, "diff", "--name-status", "-z", NATIVE_PARENT, "HEAD"))
@@ -1622,7 +1646,15 @@ class Owner:
                 git(self.harness, "show", "HEAD:" + policy.SPENT_NATIVE_FAMILY_WORKFLOW),
                 git(self.harness, "show", NATIVE_CORRECTED_FAMILY_SHA + ":" + policy.SPENT_NATIVE_FAMILY_WORKFLOW),
             )
-            if git(self.harness, "diff", "--name-only", NATIVE_REFUSAL_SHA, "HEAD", "--",
+            validate_spent_native_workflow(
+                git(self.harness, "show", "HEAD:" + policy.SPENT_NATIVE_REFUSAL_WORKFLOW),
+                git(self.harness, "show", NATIVE_REFUSAL_ROUTE_SHA + ":" + policy.SPENT_NATIVE_REFUSAL_WORKFLOW),
+            )
+            validate_native_nullable_stage(
+                git(self.harness, "diff", "--name-status", "-z", NATIVE_REFUSAL_ROUTE_SHA, NATIVE_NULLABLE_SHA),
+                git(self.harness, "diff", "--numstat", NATIVE_REFUSAL_ROUTE_SHA, NATIVE_NULLABLE_SHA),
+            )
+            if git(self.harness, "diff", "--name-only", NATIVE_NULLABLE_SHA, "HEAD", "--",
                    "scripts/ci_calibration/root_stage.py").strip():
                 raise policy.GuardError("native refusal route changed the frozen diagnostic recorder")
         else:

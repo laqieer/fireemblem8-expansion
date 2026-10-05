@@ -216,6 +216,7 @@ class NativeSelectionControls(unittest.TestCase):
             (self.event("calibration/issue-180-native-completion-family-1"), policy.NATIVE_SELECTORS[0]),
             (self.event("calibration/issue-180-native-completion-diagnostic-1"), policy.NATIVE_SELECTORS[0]),
             (self.event("calibration/issue-180-native-completion-family-2"), policy.NATIVE_SELECTORS[0]),
+            (self.event("calibration/issue-180-native-completion-refusal-1"), policy.NATIVE_SELECTORS[0]),
             *((native, selector) for selector in policy.NATIVE_SELECTORS[1:]),
         ):
             with self.assertRaises(policy.GuardError):
@@ -237,7 +238,9 @@ class NativeSelectionControls(unittest.TestCase):
 
     def test_native_lineage_keeps_exact_profile_repair_rebind_and_preparation_chain(self):
         lines = [
-            f"{'a' * 40} {supervisor.NATIVE_REFUSAL_SHA}",
+            f"{'a' * 40} {supervisor.NATIVE_NULLABLE_SHA}",
+            f"{supervisor.NATIVE_NULLABLE_SHA} {supervisor.NATIVE_REFUSAL_ROUTE_SHA}",
+            f"{supervisor.NATIVE_REFUSAL_ROUTE_SHA} {supervisor.NATIVE_REFUSAL_SHA}",
             f"{supervisor.NATIVE_REFUSAL_SHA} {supervisor.NATIVE_CORRECTED_FAMILY_SHA}",
             f"{supervisor.NATIVE_CORRECTED_FAMILY_SHA} {supervisor.NATIVE_COUNTER_REPAIR_SHA}",
             f"{supervisor.NATIVE_COUNTER_REPAIR_SHA} {supervisor.NATIVE_COUNTER_BASE_SHA}",
@@ -266,7 +269,8 @@ class NativeSelectionControls(unittest.TestCase):
             supervisor.validate_harness_lineage = original
         workflows = {
             policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
-            policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.NATIVE_WORKFLOW,
+            policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
+            policy.NATIVE_WORKFLOW,
         }
         data = b"".join(
             (b"A" if name in workflows else b"M") + b"\0" + name.encode() + b"\0"
@@ -283,7 +287,7 @@ class NativeSelectionControls(unittest.TestCase):
 
     def test_spent_native_workflow_requires_exact_immutable_bytes(self):
         for workflow in (policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
-                         policy.SPENT_NATIVE_FAMILY_WORKFLOW):
+                         policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW):
             with self.subTest(workflow=workflow):
                 original = ("name: " + workflow + "\non: push\n").encode()
                 supervisor.validate_spent_native_workflow(original, original)
@@ -297,6 +301,7 @@ class NativeSelectionControls(unittest.TestCase):
             ("tests", supervisor.NATIVE_TEST_PATHS),
             ("redesign", supervisor.NATIVE_REDESIGN_PATHS),
             ("screening", supervisor.NATIVE_SCREENING_PATHS),
+            ("nullable", supervisor.NATIVE_NULLABLE_PATHS),
         ):
             rows = [b"M\0" + path.encode() + b"\0" for path in sorted(paths)]
             data = b"".join(rows)
@@ -309,6 +314,21 @@ class NativeSelectionControls(unittest.TestCase):
                 supervisor.validate_native_source_inventory(data.replace(b"M\0", b"A\0", 1), stage)
         with self.assertRaises(policy.GuardError):
             supervisor.validate_native_source_inventory(data, "unreviewed")
+
+    def test_nullable_stage_preserves_complete_bounded_correction(self):
+        paths = sorted(supervisor.NATIVE_NULLABLE_PATHS)
+        data = b"".join(b"M\0" + path.encode() + b"\0" for path in paths)
+        rows = [
+            str(99 if index == 0 else 1).encode() + b"\t0\t" + path.encode() + b"\n"
+            for index, path in enumerate(paths)
+        ]
+        sizes = b"".join(rows)
+        supervisor.validate_native_nullable_stage(data, sizes)
+        supervisor.validate_native_nullable_stage(data, b"".join(reversed(rows)))
+        for changed in (sizes.replace(b"99\t", b"98\t"), sizes + rows[0],
+                        b"".join(rows[1:]), sizes.replace(b"\t0\t", b"\t-\t", 1)):
+            with self.assertRaises(policy.GuardError):
+                supervisor.validate_native_nullable_stage(data, changed)
 
     def test_refusal_workflow_selects_exact_source_and_stays_preparation_only(self):
         workflow = yaml.load(NATIVE_WORKFLOW_TEXT, Loader=yaml.BaseLoader)
