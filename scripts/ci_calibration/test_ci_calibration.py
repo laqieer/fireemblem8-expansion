@@ -189,6 +189,7 @@ class NativeSelectionControls(unittest.TestCase):
             (old, policy.NATIVE_SELECTORS[0]),
             (self.event("calibration/issue-180-native-completion-family-1"), policy.NATIVE_SELECTORS[0]),
             (self.event("calibration/issue-180-native-completion-diagnostic-1"), policy.NATIVE_SELECTORS[0]),
+            (self.event("calibration/issue-180-native-completion-family-2"), policy.NATIVE_SELECTORS[0]),
             *((native, selector) for selector in policy.NATIVE_SELECTORS[1:]),
         ):
             with self.assertRaises(policy.GuardError):
@@ -210,7 +211,9 @@ class NativeSelectionControls(unittest.TestCase):
 
     def test_native_lineage_keeps_exact_profile_repair_rebind_and_preparation_chain(self):
         lines = [
-            f"{'a' * 40} {supervisor.NATIVE_COUNTER_REPAIR_SHA}",
+            f"{'a' * 40} {supervisor.NATIVE_REFUSAL_SHA}",
+            f"{supervisor.NATIVE_REFUSAL_SHA} {supervisor.NATIVE_CORRECTED_FAMILY_SHA}",
+            f"{supervisor.NATIVE_CORRECTED_FAMILY_SHA} {supervisor.NATIVE_COUNTER_REPAIR_SHA}",
             f"{supervisor.NATIVE_COUNTER_REPAIR_SHA} {supervisor.NATIVE_COUNTER_BASE_SHA}",
             f"{supervisor.NATIVE_COUNTER_BASE_SHA} {supervisor.NATIVE_FAMILY_SHA}",
             f"{supervisor.NATIVE_FAMILY_SHA} {supervisor.NATIVE_DIAGNOSTIC_SHA}",
@@ -237,7 +240,7 @@ class NativeSelectionControls(unittest.TestCase):
             supervisor.validate_harness_lineage = original
         workflows = {
             policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
-            policy.NATIVE_WORKFLOW,
+            policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.NATIVE_WORKFLOW,
         }
         data = b"".join(
             (b"A" if name in workflows else b"M") + b"\0" + name.encode() + b"\0"
@@ -253,7 +256,8 @@ class NativeSelectionControls(unittest.TestCase):
                 supervisor.validate_native_inventory(changed)
 
     def test_spent_native_workflow_requires_exact_immutable_bytes(self):
-        for workflow in (policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW):
+        for workflow in (policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
+                         policy.SPENT_NATIVE_FAMILY_WORKFLOW):
             with self.subTest(workflow=workflow):
                 original = ("name: " + workflow + "\non: push\n").encode()
                 supervisor.validate_spent_native_workflow(original, original)
@@ -280,13 +284,13 @@ class NativeSelectionControls(unittest.TestCase):
         with self.assertRaises(policy.GuardError):
             supervisor.validate_native_source_inventory(data, "unreviewed")
 
-    def test_family2_workflow_selects_exact_source_and_stays_preparation_only(self):
+    def test_refusal_workflow_selects_exact_source_and_stays_preparation_only(self):
         workflow = yaml.load(NATIVE_WORKFLOW_TEXT, Loader=yaml.BaseLoader)
         self.assertEqual(workflow["on"], {"push": {"branches": [policy.NATIVE_BRANCH]}})
         self.assertEqual(workflow["permissions"], {"contents": "read"})
         self.assertEqual(workflow["concurrency"]["cancel-in-progress"], "false")
         job, = workflow["jobs"].values()
-        self.assertEqual(job["name"], "One corrected source-family observation; qualification remains incomplete")
+        self.assertEqual(job["name"], "One native refusal observation; qualification remains incomplete")
         self.assertEqual((job["runs-on"], job["timeout-minutes"]), ("ubuntu-latest", "90"))
         self.assertEqual(len(job["steps"]), 6)
         predicates = {part.strip() for part in job["if"].split("&&")}

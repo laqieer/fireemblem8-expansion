@@ -1,5 +1,33 @@
 # Contained original-include retained-state diagnostic
 
+## Native refusal route preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
+
+Contract comment5991510796 authorizes preparation only of the first-created
+`calibration/issue-180-native-completion-refusal-1` route and matching
+`issue180-native-completion-refusal-1-` output prefix. It reuses source2d84,
+BASEec1, the existing positive selector/profile, one original lifetime, all
+original quotas, seven containment qualifiers and five bounded artifacts.
+The three spent native workflows remain byte-identical at their actual
+original heads; every spent ref, run2, attempt2 and non-creation event rejects.
+There is no source, worker, telemetry, selector, quota or production change.
+
+The normal Git chain is successor -> 6e6 -> 7da -> be8 and all prior edges
+(45 edges to BASEec1). The 6e6 diagnostic delta is a separate immutable
+five-path, 418-changed-line stage, not the six-path source-screening delta.
+The complete harness inventory has twelve paths. The frozen 6e6 recorder
+cannot change on this route; existing root MAX/model protection remains.
+
+Tester procedure: from clean parent6e6 and source2d84, use the saved
+credential-free isolated AST route with inert APIs. Parse the actual workflow;
+exercise first-use event/selection, stale bindings, each lineage edge, complete
+inventory, spent-byte mutation, unchanged source stages and current result
+schema. Missing/extra/altered members and historical current-route records
+must reject. Expect no source imports, native execution or remote effects.
+Runtime authorization still needs independent exact-head review, a separately
+published allocation and an absent first-use ref; preparation creates no ref.
+Actual refusal capture and complete family fit remain unobserved. Heldde5,
+all four machine holds and every final eligibility gate remain unchanged.
+
 ## Native refusal observation (TC-CI-NATIVE-REFUSAL-001, #180)
 
 Contract comment5991346968 permits diagnostics only, not another invocation.

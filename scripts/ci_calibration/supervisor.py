@@ -190,9 +190,11 @@ NATIVE_DIAGNOSTIC_SHA = "5acd99fcd79f938a4d76fb4280a96713cff44f66"
 NATIVE_FAMILY_SHA = "b155ac1abae46a3495f3799061107252ed7c6433"
 NATIVE_COUNTER_BASE_SHA = "0ded2474d3e5a16a330cff9a4afd6181f90383ae"
 NATIVE_COUNTER_REPAIR_SHA = "be8ee61019cc6248d848ac9dd72aec9ed4744549"
+NATIVE_CORRECTED_FAMILY_SHA = "7da7de74510236bea91773338b7d2a44e5aa91e3"
+NATIVE_REFUSAL_SHA = "6e6a1f130cd307df866d7850553853ac4fcc4ba0"
 NATIVE_PATHS = frozenset({
     policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
-    policy.NATIVE_WORKFLOW,
+    policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.NATIVE_WORKFLOW,
     *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "supervisor.py", "worker.py", "root_stage.py", "observation_failure.py",
         "test_ci_calibration.py", "test_root_stage.py", "README.md",
@@ -251,8 +253,10 @@ def validate_native_source_inventory(data, stage):
 
 
 def validate_native_lineage(lines, head):
-    if len(lines) < 8 or lines[:8] != [
-        f"{head} {NATIVE_COUNTER_REPAIR_SHA}",
+    if len(lines) < 10 or lines[:10] != [
+        f"{head} {NATIVE_REFUSAL_SHA}",
+        f"{NATIVE_REFUSAL_SHA} {NATIVE_CORRECTED_FAMILY_SHA}",
+        f"{NATIVE_CORRECTED_FAMILY_SHA} {NATIVE_COUNTER_REPAIR_SHA}",
         f"{NATIVE_COUNTER_REPAIR_SHA} {NATIVE_COUNTER_BASE_SHA}",
         f"{NATIVE_COUNTER_BASE_SHA} {NATIVE_FAMILY_SHA}",
         f"{NATIVE_FAMILY_SHA} {NATIVE_DIAGNOSTIC_SHA}",
@@ -262,7 +266,7 @@ def validate_native_lineage(lines, head):
         f"{NATIVE_PREPARATION_SHA} {NATIVE_PARENT}",
     ]:
         raise policy.GuardError("native family differs from its exact normal repair/preparation chain")
-    validate_harness_lineage(lines[8:], NATIVE_PARENT)
+    validate_harness_lineage(lines[10:], NATIVE_PARENT)
 
 
 def validate_spent_native_workflow(current, pinned):
@@ -281,7 +285,7 @@ def validate_native_inventory(data):
     workflows = {
         name.encode("ascii") for name in (
             policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
-            policy.NATIVE_WORKFLOW,
+            policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.NATIVE_WORKFLOW,
         )
     }
     if {name for _, name in changes} != allowed or len(changes) != len(allowed) or any(
@@ -1602,7 +1606,7 @@ class Owner:
             raise policy.GuardError("workflow harness has uncommitted source changes")
         if native:
             validate_native_lineage(
-                git(self.harness, "rev-list", "--parents", "--max-count=43", "HEAD").decode().splitlines(),
+                git(self.harness, "rev-list", "--parents", "--max-count=45", "HEAD").decode().splitlines(),
                 self.scope["harness_sha"],
             )
             validate_native_inventory(git(self.harness, "diff", "--name-status", "-z", NATIVE_PARENT, "HEAD"))
@@ -1614,6 +1618,13 @@ class Owner:
                 git(self.harness, "show", "HEAD:" + policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW),
                 git(self.harness, "show", NATIVE_COUNTER_BASE_SHA + ":" + policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW),
             )
+            validate_spent_native_workflow(
+                git(self.harness, "show", "HEAD:" + policy.SPENT_NATIVE_FAMILY_WORKFLOW),
+                git(self.harness, "show", NATIVE_CORRECTED_FAMILY_SHA + ":" + policy.SPENT_NATIVE_FAMILY_WORKFLOW),
+            )
+            if git(self.harness, "diff", "--name-only", NATIVE_REFUSAL_SHA, "HEAD", "--",
+                   "scripts/ci_calibration/root_stage.py").strip():
+                raise policy.GuardError("native refusal route changed the frozen diagnostic recorder")
         else:
             validate_harness_lineage(
                 git(self.harness, "rev-list", "--parents", "--max-count=35", "HEAD").decode().splitlines(),
@@ -1624,6 +1635,7 @@ class Owner:
             name and name.decode() not in {
                 policy.WORKFLOW, policy.NATIVE_WORKFLOW, policy.SPENT_NATIVE_WORKFLOW,
                 policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
+                policy.SPENT_NATIVE_FAMILY_WORKFLOW,
                 policy.TEMPLATE_HEADER_WORKFLOW, policy.FINITE_REPORT_WORKFLOW,
                 policy.INCLUDE_STATE_REBIND_WORKFLOW,
                 policy.INCLUDE_STATE_WORKFLOW, policy.SORT_REPORT_WORKFLOW,
