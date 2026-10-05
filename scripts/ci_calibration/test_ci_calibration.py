@@ -107,7 +107,7 @@ class NativeSelectionControls(unittest.TestCase):
                 paths + b"M\0src/proc.c\0", sizes + b"1\t0\tsrc/proc.c\n", "callsite",
             )
         self.assertEqual(git(
-            REPO, "diff", "--name-only", supervisor.NATIVE_CONSUMER_SITE_SHA, "HEAD", "--",
+            REPO, "diff", "--name-only", supervisor.NATIVE_DEEP_DIAGNOSTIC_SHA, "HEAD", "--",
             "scripts/ci_calibration/root_stage.py",
         ), b"")
 
@@ -186,30 +186,41 @@ class NativeSelectionControls(unittest.TestCase):
             with self.assertRaises(policy.GuardError):
                 exec(code, namespace)
         self.assertEqual(calls, [(
-            "diff", "--name-only", "9f178b69d3fcd37ed3dfe813445aabc87bf0071a",
+            "diff", "--name-only", "9c9edd61013652ad8e0e799c2589dc07a6d825e9",
             "HEAD", "--", "scripts/ci_calibration/root_stage.py",
         )] * 4)
 
-    def test_consumer_site_stage_and_final_inventory_use_actual_git(self):
-        before = "0b992652410fce38497f3bf3b5c525810188531e"
-        after = "9f178b69d3fcd37ed3dfe813445aabc87bf0071a"
+    def test_deep_consumer_stage_and_final_inventory_use_actual_git(self):
+        before = "0b86ba6bc38fa54f21efadfb88f93ea95a5f6a95"
+        after = "9c9edd61013652ad8e0e799c2589dc07a6d825e9"
         def git(*args):
             return subprocess.run(
                 ["/usr/bin/git", "-C", str(REPO), *args], check=True, capture_output=True,
             ).stdout
         paths = git("diff", "--name-status", "-z", before, after)
         sizes = git("diff", "--numstat", before, after)
-        supervisor.validate_native_source_stage(paths, sizes, "consumer-site")
+        self.assertEqual(supervisor.NATIVE_DEEP_DIAGNOSTIC_SHA, after)
+        self.assertEqual(supervisor.NATIVE_CONSUMER_PREPARATION_SHA, before)
+        self.assertEqual(supervisor.NATIVE_CONSUMER_PATHS, {
+            "scripts/ci_calibration/README.md", "scripts/ci_calibration/policy.py",
+            "scripts/ci_calibration/root_stage.py", "scripts/ci_calibration/test_ci_calibration.py",
+            "scripts/ci_calibration/test_root_stage.py",
+        })
+        self.assertEqual(sum(sum(map(int, row.split(b"\t")[:2]))
+                             for row in sizes.splitlines()), 206)
+        supervisor.validate_native_source_stage(paths, sizes, "deep-consumer")
         for bad_paths, bad_sizes in (
             (git("diff", "--name-status", "-z", before, before), b""),
             (paths, sizes + sizes.splitlines()[0] + b"\n"),
             (paths + b"M\0src/proc.c\0", sizes),
+            (paths.replace(b"M\0", b"A\0", 1), sizes),
+            (paths, sizes.replace(b"31\t2\t", b"30\t2\t")),
+            (paths, b"\n".join(sizes.splitlines()[:-1]) + b"\n"),
         ):
             with self.assertRaises(policy.GuardError):
-                supervisor.validate_native_source_stage(bad_paths, bad_sizes, "consumer-site")
-        self.assertEqual(len(supervisor.NATIVE_PATHS), 18)
-        inventory = git("diff", "--name-status", "-z", supervisor.NATIVE_PARENT, after)
-        inventory += b"A\0.github/workflows/issue180-native-completion-consumer-1.yml\0"
+                supervisor.validate_native_source_stage(bad_paths, bad_sizes, "deep-consumer")
+        self.assertEqual(len(supervisor.NATIVE_PATHS), 19)
+        inventory = git("diff", "--cached", "--name-status", "-z", supervisor.NATIVE_PARENT)
         supervisor.validate_native_inventory(inventory)
         with self.assertRaises(policy.GuardError):
             supervisor.validate_native_inventory(inventory.replace(
@@ -254,6 +265,24 @@ class NativeSelectionControls(unittest.TestCase):
         with self.assertRaises(policy.GuardError):
             supervisor.Owner.source_status(parent, "parent")
 
+    def test_original_prepare_deep_stage_call_and_endpoint_drift(self):
+        owner, = [n for n in SUPERVISOR_AST.body if isinstance(n, ast.ClassDef) and n.name == "Owner"]
+        prepare, = [n for n in owner.body if isinstance(n, ast.FunctionDef) and n.name == "prepare"]
+        call, = [n for n in ast.walk(prepare) if isinstance(n, ast.Expr)
+                 and isinstance(n.value, ast.Call) and isinstance(n.value.func, ast.Name)
+                 and n.value.func.id == "validate_native_source_stage"
+                 and isinstance(n.value.args[-1], ast.Constant)
+                 and n.value.args[-1].value == "deep-consumer"]
+        for node in (call, ast.parse(ast.unparse(call)).body[0]):
+            namespace = dict(vars(supervisor), self=SimpleNamespace(harness=REPO))
+            code = compile(ast.Module(body=[node], type_ignores=[]), "<prepare-deep-stage>", "exec")
+            exec(code, namespace)
+            for drift in ("0b86ba6bc38fa54f21efadfb88f93ea95a5f6a95",
+                          "9f178b69d3fcd37ed3dfe813445aabc87bf0071a"):
+                namespace["NATIVE_DEEP_DIAGNOSTIC_SHA"] = drift
+                with self.subTest(drift=drift), self.assertRaises(policy.GuardError):
+                    exec(code, namespace)
+
     def test_callsite_prepare_ast_round_trip_is_neutral(self):
         owner, = [node for node in SUPERVISOR_AST.body
                   if isinstance(node, ast.ClassDef) and node.name == "Owner"]
@@ -263,7 +292,7 @@ class NativeSelectionControls(unittest.TestCase):
         normalized = ast.parse(ast.unparse(ast.Module(body=selected, type_ignores=[])))
         self.assertEqual(ast.dump(normalized), ast.dump(ast.Module(body=selected, type_ignores=[])))
 
-    def test_all_nine_prior_workflows_match_their_pinned_git_bytes(self):
+    def test_all_ten_prior_workflows_match_their_pinned_git_bytes(self):
         pins = (
             (policy.SPENT_NATIVE_WORKFLOW, supervisor.NATIVE_PROFILE_SHA),
             (policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW, supervisor.NATIVE_COUNTER_BASE_SHA),
@@ -274,6 +303,7 @@ class NativeSelectionControls(unittest.TestCase):
             (policy.SPENT_NATIVE_TYPED_ROUTE_WORKFLOW, supervisor.NATIVE_RECORDER_PARENT_SHA),
             (policy.SPENT_NATIVE_CALLSITE_WORKFLOW, supervisor.NATIVE_LEXER_PARENT_SHA),
             (policy.SPENT_NATIVE_LEXER_WORKFLOW, supervisor.NATIVE_LEXER_PREPARATION_SHA),
+            (policy.SPENT_NATIVE_CONSUMER_WORKFLOW, "0b86ba6bc38fa54f21efadfb88f93ea95a5f6a95"),
         )
         for path, revision in pins:
             current = subprocess.run(
@@ -312,7 +342,7 @@ class NativeSelectionControls(unittest.TestCase):
             policy.SPENT_NATIVE_CALLSITE_WORKFLOW,
         } <= {path.decode() for path in actual.split(b"\0") if path})
         supervisor.validate_native_inventory(native)
-        self.assertEqual(len(native.split(b"\0")[:-1]) // 2, 17)
+        self.assertEqual(len(native.split(b"\0")[:-1]) // 2, 19)
         def observed_git(root, *args):
             calls.append((root, args))
             return raw
@@ -576,10 +606,31 @@ class NativeSelectionControls(unittest.TestCase):
             with self.assertRaises(policy.GuardError):
                 policy.native_event(self.event(policy.NATIVE_BRANCH), profile=policy.NATIVE_PROFILE, selector=policy.NATIVE_SELECTORS[0], **identity)
 
-    def test_frozen_consumer_contract_event_not_policy_derived(self):
-        event = self.event("calibration/issue-180-native-completion-consumer-1")
+    def test_frozen_deep_contract_event_not_policy_derived(self):
+        event = self.event("calibration/issue-180-native-completion-deep-1")
         policy.validate_event(event, native=True, **self.identity())
+        tree = ast.parse((REPO / "scripts/ci_calibration/policy.py").read_text())
+        method, = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                   and node.name == "validate_event"]
+        neutral = dict(vars(policy))
+        exec(compile(ast.parse(ast.unparse(method)), "<neutral-event>", "exec"), neutral)
+        self.assertEqual(
+            neutral["validate_event"](event, native=True, **self.identity()),
+            policy.validate_event(event, native=True, **self.identity()),
+        )
+        parent_text = subprocess.run(
+            ["/usr/bin/git", "-C", str(REPO), "show",
+             "9c9edd61013652ad8e0e799c2589dc07a6d825e9:scripts/ci_calibration/policy.py"],
+            check=True, capture_output=True,
+        ).stdout
+        parent_namespace = {"__name__": "parent_policy"}
+        exec(compile(parent_text, "<parent-policy>", "exec"), parent_namespace)
+        with self.assertRaises(parent_namespace["GuardError"]):
+            parent_namespace["validate_event"](event, native=True, **self.identity())
         for branch in (
+            "calibration/issue-180-native-completion-consumer-1",
+            "calibration/issue180-native-completion-deep-1",
+            "calibration/issue-180-native-completion-deep1",
             "calibration/issue-180-native-completion-typed-2",
             "calibration/issue-180-native-completion-typed-1",
             "calibration/issue180-native-completion-typed-1",
@@ -606,7 +657,9 @@ class NativeSelectionControls(unittest.TestCase):
 
     def test_native_lineage_keeps_exact_profile_repair_rebind_and_preparation_chain(self):
         lines = [
-            f"{'a' * 40} {supervisor.NATIVE_CONSUMER_SITE_SHA}",
+            f"{'a' * 40} {supervisor.NATIVE_DEEP_DIAGNOSTIC_SHA}",
+            f"{supervisor.NATIVE_DEEP_DIAGNOSTIC_SHA} {supervisor.NATIVE_CONSUMER_PREPARATION_SHA}",
+            f"{supervisor.NATIVE_CONSUMER_PREPARATION_SHA} {supervisor.NATIVE_CONSUMER_SITE_SHA}",
             f"{supervisor.NATIVE_CONSUMER_SITE_SHA} {supervisor.NATIVE_LEXER_PREPARATION_SHA}",
             f"{supervisor.NATIVE_LEXER_PREPARATION_SHA} {supervisor.NATIVE_LEXER_PARENT_SHA}",
             f"{supervisor.NATIVE_LEXER_PARENT_SHA} {supervisor.NATIVE_RECORDER_PARENT_SHA}",
@@ -629,12 +682,12 @@ class NativeSelectionControls(unittest.TestCase):
             f"{supervisor.NATIVE_PREPARATION_SHA} {supervisor.NATIVE_PARENT}",
         ]
         actual = subprocess.run(
-            ["/usr/bin/git", "-C", str(REPO), "rev-list", "--parents", "--max-count=55",
-             "9f178b69d3fcd37ed3dfe813445aabc87bf0071a"],
+            ["/usr/bin/git", "-C", str(REPO), "rev-list", "--parents", "--max-count=57",
+             "9c9edd61013652ad8e0e799c2589dc07a6d825e9"],
             check=True, capture_output=True,
         ).stdout.decode().splitlines()
         supervisor.validate_native_lineage(
-            [f"{'a' * 40} 9f178b69d3fcd37ed3dfe813445aabc87bf0071a", *actual], "a" * 40,
+            [f"{'a' * 40} 9c9edd61013652ad8e0e799c2589dc07a6d825e9", *actual], "a" * 40,
         )
         calls = []
         original = supervisor.validate_harness_lineage
@@ -660,6 +713,7 @@ class NativeSelectionControls(unittest.TestCase):
             policy.SPENT_NATIVE_TYPED_ROUTE_WORKFLOW,
             policy.SPENT_NATIVE_CALLSITE_WORKFLOW,
             policy.SPENT_NATIVE_LEXER_WORKFLOW,
+            policy.SPENT_NATIVE_CONSUMER_WORKFLOW,
             policy.NATIVE_WORKFLOW,
         }
         data = b"".join(
@@ -680,7 +734,7 @@ class NativeSelectionControls(unittest.TestCase):
                          policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
                          policy.SPENT_NATIVE_TYPED_WORKFLOW, policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW,
                          policy.SPENT_NATIVE_TYPED_ROUTE_WORKFLOW, policy.SPENT_NATIVE_CALLSITE_WORKFLOW,
-                         policy.SPENT_NATIVE_LEXER_WORKFLOW):
+                         policy.SPENT_NATIVE_LEXER_WORKFLOW, policy.SPENT_NATIVE_CONSUMER_WORKFLOW):
             with self.subTest(workflow=workflow):
                 original = ("name: " + workflow + "\non: push\n").encode()
                 supervisor.validate_spent_native_workflow(original, original)
@@ -756,16 +810,18 @@ class NativeSelectionControls(unittest.TestCase):
             with self.assertRaises(policy.GuardError):
                 supervisor.validate_native_nullable_stage(data, changed)
 
-    def test_consumer_workflow_selects_exact_source_and_stays_preparation_only(self):
+    def test_deep_workflow_selects_exact_source_and_stays_preparation_only(self):
         self.assertEqual(policy.NATIVE_WORKFLOW,
-                         ".github/workflows/issue180-native-completion-consumer-1.yml")
-        self.assertEqual(policy.NATIVE_OUTPUT_PREFIX, "issue180-native-completion-consumer-1-")
+                         ".github/workflows/issue180-native-completion-deep-1.yml")
+        self.assertEqual(policy.NATIVE_OUTPUT_PREFIX, "issue180-native-completion-deep-1-")
         workflow = yaml.load(NATIVE_WORKFLOW_TEXT, Loader=yaml.BaseLoader)
-        self.assertEqual(workflow["on"], {"push": {"branches": ["calibration/issue-180-native-completion-consumer-1"]}})
+        self.assertEqual(workflow["on"], {"push": {"branches": ["calibration/issue-180-native-completion-deep-1"]}})
         self.assertEqual(workflow["permissions"], {"contents": "read"})
+        self.assertEqual(workflow["concurrency"]["group"], "issue180-native-completion-deep-1")
+        self.assertEqual(set(workflow["jobs"]), {"contained-native-completion-deep-1"})
         self.assertEqual(workflow["concurrency"]["cancel-in-progress"], "false")
         job, = workflow["jobs"].values()
-        self.assertEqual(job["name"], "One consumer-site observation; qualification remains incomplete")
+        self.assertEqual(job["name"], "One deep-consumer observation; qualification remains incomplete")
         self.assertEqual((job["runs-on"], job["timeout-minutes"]), ("ubuntu-latest", "90"))
         self.assertEqual(len(job["steps"]), 6)
         predicates = {part.strip() for part in job["if"].split("&&")}

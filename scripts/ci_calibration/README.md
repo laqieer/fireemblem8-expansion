@@ -1,5 +1,36 @@
 # Contained original-include retained-state diagnostic
 
+## Deep-route preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
+
+Contract5994678733 prepares only literal
+`calibration/issue-180-native-completion-deep-1` and
+`.github/workflows/issue180-native-completion-deep-1.yml` at parent9c9.
+Source78fd889, BASEec1, original profile/positive selector, all six selectors,
+quotas and artifacts are unchanged. All ten older workflows remain byte-exact,
+including spent consumer-1 at0b86 and unexecuted typed-1. Historical and typo
+refs reject. The complete FINAL inventory has nineteen paths; normal repair
+lineage includes 9f1->0b86->9c9 before this preparation. The diagnostic
+0b86->9c9 stage is exactly five paths and 206 changed lines. Recorder freeze
+is accepted `9c9edd61013652ad8e0e799c2589dc07a6d825e9`, not9f1/0b86.
+Existing source-stage endpoints/inventories, result v5, cleanup and retirement
+are unchanged.
+
+Run focused literal event/workflow, actual Git inventory/lineage/stage,
+current/neutral source_status, parent-negative and recorder-drift controls
+before commit; save observations in session `deep-route-validation`.
+Focused helpers are not complete preparation proof. After immediate owner-push,
+the coordinator runs original committed complete prepare/source_status:
+current/neutral exit0 with 32 applicable predicates and zero missing, and
+parent/drift exit1. Fresh independent coupled review precedes any separately
+authorized first-use runtime allocation. Preserve the local typo checkout;
+the coordinator publishes through the explicit assigned ref.
+Allocation authority is NONE. Nine native failures remain spent; root cause
+is unknown. No retries, refunds, quota/selector/source-authority expansion,
+native/root/mount/remote operation or ROM/RAM/save/locale impact is introduced.
+No new production dependencies/conflicts exist. Heldde5, four machine holds,
+full report/H1/resources/security/Copilot/candidate/master/merge/closure/remote
+gates remain unchanged.
+
 ## Deep session consumer (TC-CI-NATIVE-CONSUMER-SITE-001, #180)
 
 Contract5994537979 changes only diagnostic projection at parent0b86ba6.
