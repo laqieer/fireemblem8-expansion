@@ -1,5 +1,37 @@
 # Contained original-include retained-state diagnostic
 
+## Aggregate-only telemetry correction (TC-CI-AGGREGATE-001, #180)
+
+Original `ProbeBudget.charge("total", amount)` is aggregate-only scan work.
+Current budget snapshots emit `version: 2` and mandatory `aggregate_only_bytes`;
+`present_categories` retains the actual ledger keys, including `total` when
+present. The eight named category rows and nineteen accounting records remain
+unchanged. Aggregate-only bytes contribute once to `total` / `total_bytes`,
+under the existing aggregate cap, never a ninth quota or a source refund.
+Historical unversioned snapshots are accepted only with the exact old field
+set, eight named categories, and their exact sum. A partial current shape is
+rejected, not silently interpreted as a missing zero. Report execution, root
+ledger parsing and admission collection preserve aggregate-only work.
+
+The tester-facing procedure is the saved credential-free actual-API route:
+start at the assigned clean harness/source revisions, extract the unchanged
+pure original budget API, charge category-only, aggregate-only and mixed
+ledgers, then encode/parse snapshots and accounting records. Expect the exact
+sum once, unchanged category caps and registry, exact-cap admission, and
+one-over refusal retaining the spent ledger. Malformed/negative/inconsistent
+records and missing current fields must fail. Failed/closed snapshots remain
+diagnostic; they cannot qualify completion. The original 0ded projection must
+reject the valid aggregate-only control. No native import, native execution,
+Make, or remote action is part of this case. All six native selectors retain
+bounded error projections without raw messages.
+
+This fixes the confirmed counter predicate only. Diagnostic run37280700670
+remains failed: primary `ReadEpochError` is UNKNOWN; secondary `GuardError` is
+consistent with this defect, not proof of an exclusive cause. All nineteen
+historical report allocations remain spent. No limits, budgets, source,
+workflow, lineage, allocations, machine holds or final gates change. No
+ROM/RAM/save/generated-data/profile impact or new dependency/conflict exists.
+
 ## Native completion preparation: no execution allocation
 
 Disposition comment5990329748 authorizes preparation of a separately named

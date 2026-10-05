@@ -2712,6 +2712,125 @@ class CalibrationControls(Inert):
             supervisor.io_peaks({"7:1": {"wbytes": 100}}, {"7:1": {"wbytes": 1}}, 1, {})
 
 
+class AggregateCounterControls(Inert):
+    def test_actual_category_mixed_and_aggregate_ledgers_roundtrip_once(self):
+        for amounts in ({"control": 3}, {"total": 17}, {"control": 3, "total": 17},
+                        {"total": 0}):
+            with self.subTest(amounts=amounts):
+                budget = budgeting.ProbeBudget()
+                for name, amount in amounts.items():
+                    budget.charge(name, amount)
+                counters = policy.parse_json(policy.encoded(policy.counter_snapshot(budget)))
+                policy.validate_component_counters(counters)
+                self.assertEqual(counters["budget"]["version"], 2)
+                self.assertEqual(counters["budget"]["aggregate_only_bytes"], amounts.get("total", 0))
+                self.assertEqual(set(counters["budget"]["categories"]), set(policy.BYTE_CATEGORIES))
+                self.assertEqual(counters["budget"]["present_categories"], sorted(amounts))
+                values = policy.accounting_values(counters)
+                self.assertEqual(values["total_bytes"], sum(amounts.values()))
+                self.assertEqual(values["control_bytes"], amounts.get("control", 0))
+                self.assertEqual(set(values), set(policy.ACCOUNTING_COUNTERS))
+                registry = policy.AccountingRegistry(budget)
+                sampled = registry.observe(counters, 0)
+                policy.validate_accounting(policy.parse_json(policy.encoded(sampled)), counters)
+                self.assertEqual(sampled["records"]["total_bytes"]["latest"], sum(amounts.values()))
+                self.assertEqual(budget.bytes, amounts)
+
+    def test_actual_exact_cap_refusal_retains_failed_closed_diagnostic_ledger(self):
+        for amounts in ({"control": 23}, {"total": 23}, {"control": 6, "total": 17}):
+            with self.subTest(amounts=amounts):
+                budget = budgeting.ProbeBudget(budgeting.Limits(total_bytes=23))
+                for name, amount in amounts.items():
+                    budget.charge(name, amount)
+                self.assertEqual(policy.counter_snapshot(budget)["budget"]["total"], 23)
+                with self.assertRaises(budgeting.MakeProbeError):
+                    budget.charge("total", 1)
+                self.assertEqual(budget.bytes, amounts)
+                budget.close()
+                counters = policy.counter_snapshot(budget)
+                self.assertTrue(counters["budget"]["failed"])
+                self.assertTrue(counters["budget"]["closed"])
+                registry = policy.AccountingRegistry(budget)
+                policy.validate_accounting(registry.observe(counters, 0), counters)
+                with self.assertRaises(policy.GuardError):
+                    policy.validate_component_counters(counters, complete=True)
+                with self.assertRaises(policy.GuardError):
+                    registry.observe(counters, 0, final=True)
+
+    def test_current_schema_rejects_missing_malformed_or_inconsistent_aggregate(self):
+        budget = budgeting.ProbeBudget()
+        budget.charge("control", 3)
+        budget.charge("total", 17)
+        original = policy.counter_snapshot(budget)
+        for fault in ("missing", "version", "negative", "bool", "float", "string", "overflow",
+                      "sum", "absent", "duplicate", "category"):
+            with self.subTest(fault=fault):
+                counters = copy.deepcopy(original)
+                row = counters["budget"]
+                if fault == "missing":
+                    del row["aggregate_only_bytes"]
+                elif fault == "version":
+                    row["version"] = True
+                elif fault in ("negative", "bool", "float", "string", "overflow"):
+                    row["aggregate_only_bytes"] = {
+                        "negative": -1, "bool": True, "float": 17.0, "string": "17",
+                        "overflow": policy.POLICY_SENTINEL + 1,
+                    }[fault]
+                elif fault == "sum":
+                    row["total"] += 17
+                elif fault == "absent":
+                    row["present_categories"].remove("total")
+                elif fault == "duplicate":
+                    row["present_categories"].append("total")
+                else:
+                    row["categories"]["total"] = row["categories"]["control"]
+                with self.assertRaises(policy.GuardError):
+                    policy.validate_component_counters(counters)
+        for amount in (-1, True, 17.0, "17", policy.POLICY_SENTINEL + 1):
+            budget.bytes["total"] = amount
+            with self.assertRaises(policy.GuardError):
+                policy.counter_snapshot(budget)
+
+    def test_historical_shape_is_explicit_and_cannot_hide_aggregate_only_bytes(self):
+        budget = budgeting.ProbeBudget()
+        budget.charge("control", 3)
+        historical = policy.counter_snapshot(budget)
+        del historical["budget"]["version"]
+        del historical["budget"]["aggregate_only_bytes"]
+        policy.validate_component_counters(policy.parse_json(policy.encoded(historical)))
+        self.assertEqual(policy.accounting_values(historical)["total_bytes"], 3)
+        sampled = policy.AccountingRegistry(budget).observe(historical, 0)
+        policy.validate_accounting(sampled, historical)
+        for fault in ("aggregate", "field", "version"):
+            counters = copy.deepcopy(historical)
+            if fault == "aggregate":
+                counters["budget"]["present_categories"].append("total")
+                counters["budget"]["total"] += 17
+            else:
+                counters["budget"]["aggregate_only_bytes" if fault == "field" else "version"] = 2
+            with self.assertRaises(policy.GuardError):
+                policy.validate_component_counters(counters)
+
+    def test_report_and_root_consumers_preserve_actual_aggregate_ledger(self):
+        budget = self.budget()
+        budget.plan(1)
+        budget.runs = 1
+        budget.charge("control", 3)
+        budget.charge("total", 17)
+        session = self.session(budget)
+        report = self.raw_report(budget, session)
+        budget.close()
+        counters = policy.counter_snapshot(budget, session)
+        policy.summarize_report(report, self.changes(), counters, self.binding())
+        root = {"phase": "completed-root-only", "semantics": "diagnostic",
+                "budget": {"bytes": dict(budget.bytes), "total": sum(budget.bytes.values()),
+                           "runs": 1, "states": 1, "failed": False, "closed": True}}
+        policy.validate_root_counters(policy.parse_json(policy.encoded(root)))
+        root["budget"]["total"] += 17
+        with self.assertRaises(policy.GuardError):
+            policy.validate_root_counters(root)
+
+
 class AccountingControls(Inert):
     def test_factory_distinguishes_omission_from_every_explicit_limits_object(self):
         for limits in (

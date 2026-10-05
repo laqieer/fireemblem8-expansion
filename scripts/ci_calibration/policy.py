@@ -502,7 +502,7 @@ def counter_snapshot(budget, session=None):
     if type(budget.bytes) is not dict:
         raise GuardError("actual byte ledger is not a closed mapping")
     amounts = budget.bytes.copy()
-    if not amounts.keys() <= set(BYTE_CATEGORIES) or any(
+    if not amounts.keys() <= {*BYTE_CATEGORIES, "total"} or any(
         not _component_integer(value) for value in amounts.values()
     ) or sum(amounts.values()) > POLICY_SENTINEL:
         raise GuardError("unknown, malformed or overflowing observed accounting category")
@@ -519,6 +519,7 @@ def counter_snapshot(budget, session=None):
         }
     result = {
         "budget": {
+            "version": 2, "aggregate_only_bytes": amounts.get("total", 0),
             "categories": categories, "present_categories": sorted(amounts), "total": sum(amounts.values()),
             "total_cap": quotas["total_bytes"]["diagnostic"], "runs": budget.runs, "states": budget.states,
             "planned_state_bytes": budget.planned_state_bytes, "failed": budget.failed, "closed": budget.closed,
@@ -613,9 +614,15 @@ def validate_component_counters(value, *, complete=False):
         if complete or session is not None:
             raise GuardError("component counters lack the actual budget")
         return value
-    _component_fields(
-        budget, "categories present_categories total total_cap runs states planned_state_bytes failed closed quotas observation_alias",
-    )
+    fields = "categories present_categories total total_cap runs states planned_state_bytes failed closed quotas observation_alias"
+    # Unversioned historical snapshots contain only the eight category ledgers.
+    legacy = type(budget) is dict and set(budget) == set(fields.split())
+    _component_fields(budget, fields if legacy else fields + " version aggregate_only_bytes")
+    if not legacy and (
+        type(budget["version"]) is not int or budget["version"] != 2
+        or not _component_integer(budget["aggregate_only_bytes"])
+    ):
+        raise GuardError("current aggregate-only counter is missing or malformed")
     validate_counter_quotas(budget["quotas"])
     alias = budget["observation_alias"]
     _component_fields(alias, "declared entries effective")
@@ -630,14 +637,18 @@ def validate_component_counters(value, *, complete=False):
     if (
         type(budget["categories"]) is not dict or budget["categories"].keys() != set(BYTE_CATEGORIES)
         or type(budget["present_categories"]) is not list
-        or any(type(name) is not str or name not in BYTE_CATEGORIES for name in budget["present_categories"])
+        or any(type(name) is not str or name not in (
+            set(BYTE_CATEGORIES) if legacy else {*BYTE_CATEGORIES, "total"}
+        ) for name in budget["present_categories"])
         or len(set(budget["present_categories"])) != len(budget["present_categories"])
         or any(not _component_integer(budget[name]) for name in ("total", "total_cap", "runs", "states", "planned_state_bytes"))
         or budget["total_cap"] != budget["quotas"]["total_bytes"]["diagnostic"]
         or type(budget["failed"]) is not bool or type(budget["closed"]) is not bool
     ):
         raise GuardError("component budget counters are malformed")
-    total = 0
+    total = 0 if legacy else budget["aggregate_only_bytes"]
+    if not legacy and "total" not in budget["present_categories"] and total != 0:
+        raise GuardError("aggregate-only charge lacks its actual ledger entry")
     for name, row in budget["categories"].items():
         _component_fields(row, "charged original_cap diagnostic_cap remaining exceeds_original")
         if (
@@ -1325,7 +1336,8 @@ def summarize_report(report, changes, counters, binding):
     expected_execution = {
         "revision": GRAPH, "base_revision": BASE, "runs": counters["budget"]["runs"],
         "states": counters["budget"]["states"],
-        "bytes": {name: counters["budget"]["categories"][name]["charged"]
+        "bytes": {name: (counters["budget"]["aggregate_only_bytes"] if name == "total"
+                        else counters["budget"]["categories"][name]["charged"])
                   for name in counters["budget"]["present_categories"]},
         "processes": counters["session"]["processes_used"],
         "live_process_peak": counters["session"]["live_process_peak"],
@@ -1807,7 +1819,7 @@ def validate_root_counters(value):
     ):
         raise GuardError("root counters lack their actual completed diagnostic lifetime")
     budget = value["budget"]
-    categories = {name[:-6] for name in RELAXED if name.endswith("_bytes") and name != "total_bytes"}
+    categories = {*BYTE_CATEGORIES, "total"}
     if (
         not isinstance(budget["bytes"], dict) or not budget["bytes"]
         or not set(budget["bytes"]) <= categories

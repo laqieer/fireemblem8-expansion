@@ -2351,7 +2351,7 @@ class Observer:
         total_cap = self.budget.cumulative_limit("total_bytes")
         original_cap = getattr(self.budget.limits, category + "_bytes")
         if (
-            not amounts.keys() <= set(policy.BYTE_CATEGORIES)
+            not amounts.keys() <= {*policy.BYTE_CATEGORIES, "total"}
             or any(not scalar(number) for number in amounts.values())
             or amounts.get(category, 0) != charged or charged > cap
             or not scalar(total_cap, positive=True)

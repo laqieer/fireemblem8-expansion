@@ -126,6 +126,7 @@ class NativeAdapterControls(Inert):
                     def method(inner):
                         limits = budgeting.Limits(seconds=20) if selector in policy.NATIVE_SELECTORS[-2:] else None
                         inner.budget = selected.ProbeBudget(limits)
+                        inner.budget.charge("total", 17)
                         if earlier == "method":
                             raise first
 
