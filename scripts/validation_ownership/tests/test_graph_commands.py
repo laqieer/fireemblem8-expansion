@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import stat
 import struct
+import tempfile
 from threading import get_ident
 from types import SimpleNamespace
 import unittest
@@ -212,6 +213,41 @@ class SelectedManifestAdmissionTests(unittest.TestCase):
         ):
             with self.subTest(command=command), self.assertRaises(MakeProbeError):
                 graph_commands.asset_selection_stamp_command(self.session, command)
+
+    def test_stamp_admits_original_make_expanded_recipe_indentation(self):
+        text = (ROOT / "assets.mk").read_text()
+        rule = text.split("$(ASSET_SELECTION_STAMP): FORCE_ASSET_SELECTION\n", 1)[1].split("\n\n", 1)[0]
+        makefile = (
+            "ASSET_SELECTION_STAMP := build/selected.manifest-selection\n"
+            f"ASSET_MANIFEST := /repo/{self.source}\n"
+            "EXPANSION_CUSTOM_SPELL_EFFECTS := 1\nASSET_RESOLVED_ITEM_ID_CAP := 0xFF\n"
+            ".PHONY: FORCE_ASSET_SELECTION\nFORCE_ASSET_SELECTION:\n"
+            "$(ASSET_SELECTION_STAMP): FORCE_ASSET_SELECTION\n" + rule + "\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(
+                ["/usr/bin/make", "-rR", "--no-print-directory", "-n", "-f", "-",
+                 "build/selected.manifest-selection"],
+                input=makefile, cwd=directory, env=ENVIRONMENT,
+                text=True, capture_output=True, timeout=10, check=True,
+            )
+        command = result.stdout.split("\n", 1)[1].rstrip("\n")
+        self.assertIn("\n\t'manifest=", command)
+        self.assertIn("\n\trm -f", command)
+        registration = self.register(command, "asset-selection-stamp-remake")
+        self.assertEqual(registration.outputs, ("build/selected.manifest-selection",))
+        self.assertEqual(registration.sources, tuple(sorted([self.source, *self.paths])))
+        self.assertEqual(registration.argv[-1],
+                         f"manifest=/repo/{self.source}\ncustom_spell_effects=1\nitem_id_cap=0xFF\n")
+        self.assertEqual(registration.publication_policy, "if-content-changed")
+        for changed in (
+            command.replace("cmp -s", "cmp"),
+            command.replace("mv -f", "cp"),
+            command.replace("manifest=/repo/", "manifest=/other/"),
+            command.replace("\n\t'manifest=", "\n\t\t'manifest="),
+        ):
+            with self.subTest(command=changed), self.assertRaises(MakeProbeError):
+                graph_commands.asset_selection_stamp_command(self.session, changed)
 
 
 class _LookupImagePath:

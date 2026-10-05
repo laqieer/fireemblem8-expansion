@@ -157,12 +157,12 @@ def asset_selection_stamp_command(session, command):
         r'tmp="(?P<output>build/[A-Za-z0-9_./-]+\.manifest-selection)\.\$\$\.tmp"; \\\n'
         r'''trap 'rm -f "\$tmp"' EXIT HUP INT TERM; \\\n'''
         r"""printf '%s\\n' \\\n"""
-        r"""'manifest=/repo/(?P<source>[A-Za-z0-9_./-]+)' \\\n"""
-        r"""'custom_spell_effects=(?P<custom>[01])' \\\n"""
-        r"""'item_id_cap=(?P<cap>0x[0-9A-F]{2})' > "\$tmp"; \\\n"""
+        r"""\t?'manifest=/repo/(?P<source>[A-Za-z0-9_./-]+)' \\\n"""
+        r"""\t?'custom_spell_effects=(?P<custom>[01])' \\\n"""
+        r"""\t?'item_id_cap=(?P<cap>0x[0-9A-F]{2})' > "\$tmp"; \\\n"""
         r'if test -f "(?P=output)" && cmp -s "\$tmp" "(?P=output)"; then \\\n'
-        r'rm -f "\$tmp"; \\\nelse \\\n'
-        r'mv -f "\$tmp" "(?P=output)"; \\\nfi'
+        r'\t?rm -f "\$tmp"; \\\nelse \\\n'
+        r'\t?mv -f "\$tmp" "(?P=output)"; \\\nfi'
     )
     match = re.fullmatch(pattern, command)
     if match is None:

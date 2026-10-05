@@ -4952,6 +4952,17 @@ set subtraction rejects the real original sources at `@`, `<`, `*` and `@D`.
 This does not grant recipe/target context or completed DATA: existing source
 analysis and native site/epoch checks remain mandatory.
 
+Run `SelectedManifestAdmissionTests.test_stamp_admits_original_make_expanded_recipe_indentation`
+from `test_graph_commands`. The regression expands the original `assets.mk`
+stamp recipe with actual GNU Make dry-run output, then checks adapter-owned
+sources, output, manifest/profile content and if-content-changed policy. The
+original recipe retains one nested tab on the three printf operands and the
+rm/mv branches. Admit zero or one tab only at these five positions, preserving
+synthetic controls and every literal operation/path/profile binding. Changed
+comparison, move operation, manifest root or doubled indentation still refuses.
+The old regex rejects the actual original recipe. This host admission proof
+does not establish native publication, complete profile runtime or delivery.
+
 **Exact remaining machine hold:** the current child trace does not return
 DR0..DR3/DR6/DR7, hardware siginfo/PC/purpose/restore samples, modifier/RBX/
 reader-frame observations, inherited registers after child exec, source-active
