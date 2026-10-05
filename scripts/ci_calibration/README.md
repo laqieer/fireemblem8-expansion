@@ -19,6 +19,17 @@ The nullable correction is a separate immutable five-path, 103-changed-line
 stage from 7f2 to 2be6. The frozen 2be6 recorder
 cannot change on this route; existing root MAX/model protection remains.
 
+Comment5991979200 corrects the final BASE-to-HEAD path consumer, which rejected
+the already-preserved refusal-1 workflow. `Owner.prepare` now calls the pure
+path validator with the same Git path list; only that missing workflow is added.
+The correction is one exact normal edge above a3c4ec1 (48 edges through BASE),
+not permission for arbitrary successors. For TC-CI-NATIVE-REFUSAL-ROUTE-001,
+run the actual parsed preparation path statements with the complete Git path
+set: parent must reject refusal-1, corrected and neutral AST forms must pass.
+Every policy workflow remains admitted; unknown workflows and production paths
+reject, and the existing calibration-script prefix behavior is unchanged.
+Use inert Git input only; allocation remains NONE and all holds remain.
+
 Tester procedure: from clean parent2be6 and source2d84, use the saved
 credential-free isolated AST route with inert APIs. Parse the actual workflow;
 exercise first-use event/selection, stale bindings, each lineage edge, complete

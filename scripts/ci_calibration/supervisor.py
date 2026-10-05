@@ -274,8 +274,9 @@ def validate_native_nullable_stage(data, sizes):
 
 
 def validate_native_lineage(lines, head):
-    if len(lines) < 12 or lines[:12] != [
-        f"{head} {NATIVE_NULLABLE_SHA}",
+    if len(lines) < 13 or lines[:13] != [
+        f"{head} a3c4ec144e7c5acd2d30019e147ae6520cf1bee7",
+        f"a3c4ec144e7c5acd2d30019e147ae6520cf1bee7 {NATIVE_NULLABLE_SHA}",
         f"{NATIVE_NULLABLE_SHA} {NATIVE_REFUSAL_ROUTE_SHA}",
         f"{NATIVE_REFUSAL_ROUTE_SHA} {NATIVE_REFUSAL_SHA}",
         f"{NATIVE_REFUSAL_SHA} {NATIVE_CORRECTED_FAMILY_SHA}",
@@ -289,7 +290,30 @@ def validate_native_lineage(lines, head):
         f"{NATIVE_PREPARATION_SHA} {NATIVE_PARENT}",
     ]:
         raise policy.GuardError("native family differs from its exact normal repair/preparation chain")
-    validate_harness_lineage(lines[12:], NATIVE_PARENT)
+    validate_harness_lineage(lines[13:], NATIVE_PARENT)
+
+
+def validate_preparation_paths(changed):
+    if any(
+        name and name.decode() not in {
+            policy.WORKFLOW, policy.NATIVE_WORKFLOW, policy.SPENT_NATIVE_WORKFLOW,
+            policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
+            policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
+            policy.TEMPLATE_HEADER_WORKFLOW, policy.FINITE_REPORT_WORKFLOW,
+            policy.INCLUDE_STATE_REBIND_WORKFLOW,
+            policy.INCLUDE_STATE_WORKFLOW, policy.SORT_REPORT_WORKFLOW,
+            policy.STRUCTURAL_REPORT_WORKFLOW, policy.CONSUMER_REPORT_WORKFLOW,
+            policy.APPEND_REPORT_WORKFLOW, policy.RUNTIME_REPORT_WORKFLOW,
+            policy.MAKE_CONTEXT_WORKFLOW, policy.ORIGINAL_IMPORT_WORKFLOW,
+            policy.TRACELESS_ANCHOR_WORKFLOW, policy.PARTIAL_ANCHOR_WORKFLOW,
+            policy.PYTHON_REPORT_WORKFLOW, policy.CORRECTED_REPORT_WORKFLOW,
+            policy.LOCALIZATION_WORKFLOW, policy.FULL_REPORT_WORKFLOW,
+            policy.COMPONENT_WORKFLOW, policy.PREVIOUS_WORKFLOW,
+        }
+        and not name.decode().startswith("scripts/ci_calibration/")
+        for name in changed
+    ):
+        raise policy.GuardError("native preparation branch modified a production surface")
 
 
 def validate_spent_native_workflow(current, pinned):
@@ -1630,7 +1654,7 @@ class Owner:
             raise policy.GuardError("workflow harness has uncommitted source changes")
         if native:
             validate_native_lineage(
-                git(self.harness, "rev-list", "--parents", "--max-count=47", "HEAD").decode().splitlines(),
+                git(self.harness, "rev-list", "--parents", "--max-count=48", "HEAD").decode().splitlines(),
                 self.scope["harness_sha"],
             )
             validate_native_inventory(git(self.harness, "diff", "--name-status", "-z", NATIVE_PARENT, "HEAD"))
@@ -1663,26 +1687,7 @@ class Owner:
                 self.scope["harness_sha"],
             )
         changed = git(self.harness, "diff", "--name-only", "-z", policy.BASE, "HEAD").split(b"\0")
-        if any(
-            name and name.decode() not in {
-                policy.WORKFLOW, policy.NATIVE_WORKFLOW, policy.SPENT_NATIVE_WORKFLOW,
-                policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
-                policy.SPENT_NATIVE_FAMILY_WORKFLOW,
-                policy.TEMPLATE_HEADER_WORKFLOW, policy.FINITE_REPORT_WORKFLOW,
-                policy.INCLUDE_STATE_REBIND_WORKFLOW,
-                policy.INCLUDE_STATE_WORKFLOW, policy.SORT_REPORT_WORKFLOW,
-                policy.STRUCTURAL_REPORT_WORKFLOW, policy.CONSUMER_REPORT_WORKFLOW,
-                policy.APPEND_REPORT_WORKFLOW, policy.RUNTIME_REPORT_WORKFLOW,
-                policy.MAKE_CONTEXT_WORKFLOW, policy.ORIGINAL_IMPORT_WORKFLOW,
-                policy.TRACELESS_ANCHOR_WORKFLOW, policy.PARTIAL_ANCHOR_WORKFLOW,
-                policy.PYTHON_REPORT_WORKFLOW, policy.CORRECTED_REPORT_WORKFLOW,
-                policy.LOCALIZATION_WORKFLOW, policy.FULL_REPORT_WORKFLOW,
-                policy.COMPONENT_WORKFLOW, policy.PREVIOUS_WORKFLOW,
-            }
-            and not name.decode().startswith("scripts/ci_calibration/")
-            for name in changed
-        ):
-            raise policy.GuardError("native preparation branch modified a production surface")
+        validate_preparation_paths(changed)
         preserved = (
             policy.PREVIOUS_WORKFLOW, "scripts/ci_calibration/entry.py", "scripts/ci_calibration/kernel.py",
             "scripts/ci_calibration/runtime_view.py", "scripts/ci_calibration/volume_mount.py",

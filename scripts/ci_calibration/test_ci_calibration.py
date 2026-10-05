@@ -47,6 +47,30 @@ WORKER_AST = ast.parse((REPO / "scripts/ci_calibration/worker.py").read_text())
 
 
 class NativeSelectionControls(unittest.TestCase):
+    def test_actual_prepare_path_consumer(self):
+        owner, = [n for n in SUPERVISOR_AST.body if isinstance(n, ast.ClassDef) and n.name == "Owner"]
+        prepare, = [n for n in owner.body if isinstance(n, ast.FunctionDef) and n.name == "prepare"]
+        start, = [i for i, n in enumerate(prepare.body) if isinstance(n, ast.Assign)
+                  and any(isinstance(t, ast.Name) and t.id == "changed" for t in n.targets)]
+        body = prepare.body[start:start + 2]
+        calls = []
+        def observed_git(root, *args):
+            calls.append((root, args))
+            return raw
+        namespace = dict(vars(supervisor), git=observed_git, self=SimpleNamespace(harness="inert"))
+        code = compile(ast.Module(body=body, type_ignores=[]), "<actual-prepare-paths>", "exec")
+        # Derive the family from policy, not a second hand-maintained allowlist.
+        workflows = {value for name, value in vars(policy).items() if name.endswith("WORKFLOW")}
+        for paths in (workflows, workflows | {"scripts/ci_calibration/new.py"}, {""}):
+            raw = b"\0".join(path.encode() for path in sorted(paths)) + b"\0"
+            exec(code, namespace)
+        for path in ("src/proc.c", ".github/workflows/unknown.yml", "scripts/ci_calibration.py",
+                     "scripts/validation_ownership/budget.py"):
+            raw = b"\0".join(path.encode() for path in sorted(workflows)) + b"\0" + path.encode() + b"\0"
+            with self.assertRaises(policy.GuardError):
+                exec(code, namespace)
+        self.assertEqual(calls, [("inert", ("diff", "--name-only", "-z", policy.BASE, "HEAD"))] * 7)
+
     def test_failed_nullable_refusal_wire_preserves_unknown_status(self):
         for match, sites in (
             ("unique", [{"module": "read_trace", "line": 1}]),
@@ -238,7 +262,8 @@ class NativeSelectionControls(unittest.TestCase):
 
     def test_native_lineage_keeps_exact_profile_repair_rebind_and_preparation_chain(self):
         lines = [
-            f"{'a' * 40} {supervisor.NATIVE_NULLABLE_SHA}",
+            f"{'a' * 40} a3c4ec144e7c5acd2d30019e147ae6520cf1bee7",
+            f"a3c4ec144e7c5acd2d30019e147ae6520cf1bee7 {supervisor.NATIVE_NULLABLE_SHA}",
             f"{supervisor.NATIVE_NULLABLE_SHA} {supervisor.NATIVE_REFUSAL_ROUTE_SHA}",
             f"{supervisor.NATIVE_REFUSAL_ROUTE_SHA} {supervisor.NATIVE_REFUSAL_SHA}",
             f"{supervisor.NATIVE_REFUSAL_SHA} {supervisor.NATIVE_CORRECTED_FAMILY_SHA}",
