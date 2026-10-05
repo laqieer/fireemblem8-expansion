@@ -1289,6 +1289,12 @@ class PhaseCensusTests(unittest.TestCase):
         )
 
     def test_native_captured_generation_renderer(self):
+        self._native_captured_generation(staging=False, cap=0xCE)
+
+    def test_native_captured_generation_private_writer(self):
+        self._native_captured_generation(staging=True, cap=0xCD)
+
+    def _native_captured_generation(self, *, staging, cap):
         from scripts.assets import manifest
         from scripts.validation_ownership.authority import AuthorityLoader, git_tree_entries
         from scripts.validation_ownership.python_commands import python_command
@@ -1308,7 +1314,7 @@ class PhaseCensusTests(unittest.TestCase):
             )
         source = "assets/manifests/custom-spell-reference.json"
         records = manifest.load_and_validate(
-            str(foundation.ROOT / source), 1, item_id_cap=0xCE,
+            str(foundation.ROOT / source), 1, item_id_cap=cap,
         )
         output = "build/generated/assets"
         expected = manifest.expected_outputs(records, str(foundation.ROOT / output))
@@ -1316,6 +1322,11 @@ class PhaseCensusTests(unittest.TestCase):
         expected[str(foundation.ROOT / linker)] = manifest.banim_expected_outputs(
             records, "/repo/" + output,
         )["/repo/" + linker].encode("utf-8")
+        if staging:
+            expected[str(foundation.ROOT / (output + ".manifest-selection"))] = (
+                manifest._selection_stamp_content("/repo/" + source, 1, cap).encode("utf-8")
+            )
+            expected[str(foundation.ROOT / (output + manifest.GENERATION_LOCK_SUFFIX))] = b""
         oracle = [
             [str(Path(name).relative_to(foundation.ROOT)), len(data), hashlib.sha256(data).hexdigest()]
             for name, data in sorted(expected.items())
@@ -1324,21 +1335,51 @@ class PhaseCensusTests(unittest.TestCase):
         loader = AuthorityLoader(self.fixture.root, entries, revision, budget=budget)
         with make_probe.ProbeSession(loader, scratch_root=self.fixture.scratch, budget=budget) as session:
             sources = session.sources((source, *manifest.discovery_sources(records)))
-            command = python_command(
-                session,
-                "import hashlib,json;from scripts.assets.manifest import render_generation_artifact;"
+            body = (
+                "import hashlib,json,os;"
+                "from scripts.assets.manifest import render_generation_artifact,stage_generation_artifact;"
                 "outputs=render_generation_artifact(sys.argv[1],sys.argv[2],"
                 "tracked_sources=frozenset(json.loads(sys.argv[3])),source_identities=json.loads(sys.argv[4]),"
-                "custom_spell_effects=1,item_id_cap=206);"
-                "print(json.dumps([[p,len(d),hashlib.sha256(d).hexdigest()] for p,d in sorted(outputs.items())]))",
+                "custom_spell_effects=1,item_id_cap=" + str(cap)
+                + (",selection_stamp=sys.argv[2]+'.manifest-selection'" if staging else "")
+                + ");"
+            )
+            if staging:
+                body += (
+                    "stage_generation_artifact(outputs,sys.argv[2],'/work');"
+                    "before={p:(os.stat('/work/'+p).st_ino,os.stat('/work/'+p).st_mtime_ns) for p in outputs};"
+                    "stage_generation_artifact(outputs,sys.argv[2],'/work');"
+                    "after={p:(os.stat('/work/'+p).st_ino,os.stat('/work/'+p).st_mtime_ns) for p in outputs};"
+                    "assert before==after;"
+                    "outputs[sys.argv[2]+'.asset-manifest-generate.lock']=b'';"
+                )
+            body += (
+                "print(json.dumps([[p,len(d),hashlib.sha256(d).hexdigest()] "
+                "for p,d in sorted(outputs.items())]))"
+            )
+            command = python_command(
+                session,
+                body,
                 (source, output, json.dumps(sources), json.dumps(session.source_owners(sources))),
                 sources=sources, code=("scripts/assets/manifest.py",),
+                outputs=tuple(row[0] for row in oracle) if staging else (),
                 directories=("assets/portraits/eirika", "graphics/custom_spell/reference",
                              "graphics/custom_spell/reference/images"),
             )
+            if staging:
+                command = session._private_install_command(
+                    command, tuple(name for name in command.outputs
+                                   if not name.endswith(manifest.GENERATION_LOCK_SUFFIX)),
+                )
             result = session.command(command)
             self.assertEqual(json.loads(result.stdout), oracle)
-            self.assertEqual(len(oracle), 34)
+            self.assertEqual(len(oracle), 36 if staging else 34)
+            if staging:
+                self.assertEqual(
+                    {item.path: item.data for item in result.generated},
+                    {str(Path(name).relative_to(foundation.ROOT)): data for name, data in expected.items()},
+                )
+                self.assertTrue(all(item.mode == 0o600 for item in result.generated))
             self.assertEqual(result.consumed, sources)
             self.assertIn("scripts/assets/manifest.py", result.code_consumed)
             self.assertFalse(budget.failed)
