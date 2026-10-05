@@ -4908,6 +4908,17 @@ This local argv interception is not machine qualification: run 37312363120's
 `make_probe5274` refusal after three commands and every native/resource,
 security, review and delivery hold remain until separately qualified.
 
+The original family also includes `native-one.dat` and then
+`./native-one.dat`. GNU Make reports both visit names as `native-one.dat`;
+the second spelling does not create a different source. Require distinct visit
+numbers, the same owned source object, normalized open path and original bytes.
+Run the original `PhaseCensusTests.test_native_completion_original_profile_family`
+selector under the existing Linux/native prerequisites. The pre-correction
+expectation of a `./native-one.dat` visit name fails after the first closed
+archive, as reproduced by the credential-free original-family execution.
+Correcting this test expectation does not change the fixture Make bytes,
+source authority, any profile, quota, or machine-qualification requirement.
+
 **Exact remaining machine hold:** the current child trace does not return
 DR0..DR3/DR6/DR7, hardware siginfo/PC/purpose/restore samples, modifier/RBX/
 reader-frame observations, inherited registers after child exec, source-active

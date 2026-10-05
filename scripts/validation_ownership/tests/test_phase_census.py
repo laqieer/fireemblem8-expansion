@@ -1319,7 +1319,7 @@ class PhaseCensusTests(unittest.TestCase):
             visits = archive.passes[0].visits
             self.assertEqual([visit.name for visit in visits], [
                 "native-completion.mk", "native-one.dat", "native-two",
-                *("native-depth" + str(depth) for depth in range(1, 9)), "./native-one.dat",
+                *("native-depth" + str(depth) for depth in range(1, 9)), "native-one.dat",
             ])
             self.assertIs(visits[1].source, visits[-1].source)
             self.assertNotEqual(visits[1].number, visits[-1].number)
