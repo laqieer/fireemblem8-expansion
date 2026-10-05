@@ -2,6 +2,23 @@
 
 ## Native completion preparation: no execution allocation
 
+The bounded failure-publication correction for #180 / #186 is never-merge
+preparation, not a new allocation. The spent native run's inner cause and
+original cleanup remain unknown. A retained recorder publishes only its closed
+current stage, exact finite selection and bounded type/errno/cause projections.
+An earlier recorded source failure remains primary when later finalization,
+counter publication, result validation or result publication fails; the later
+exception is secondary. No exception messages, paths or tracebacks are emitted.
+Unavailable exception metadata stays explicitly incomplete through the existing
+component projection. Without a recorder, only the generic unavailable error
+is permitted. The parser validates this closed schema instead of erasing it,
+rejecting private/extra fields, selection/stage drift and post-failure replay.
+Every error retains unknown cleanup and incomplete qualification. All six
+selectors share this diagnostic path; no budget, source API, workflow,
+inventory, historical lineage, allocation or final gate is changed.
+`NativeSelectionControls` and `NativeAdapterControls` provide credential-free
+inert schema and worker/recorder/parser controls; they are not native proof.
+
 Assignment `issue180-native-harness-1ab6`, scope comment5982866338, is one
 normal never-merge child of `e93847725f58a89bca2a94af2d4acaae6a89cebf`.
 The first35 historical edges, old workflow bytes and old report source731

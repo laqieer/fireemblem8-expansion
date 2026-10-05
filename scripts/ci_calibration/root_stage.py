@@ -254,6 +254,7 @@ class NativeRecorder:
         self.first = None
         self.first_stage = None
         self.failure_kind = None
+        self.progress_stage = "worker-entrypoint"
         self.secondary_errors = 0
         self.method_returned = False
         self.references_restored = False
@@ -441,6 +442,7 @@ class NativeRecorder:
             self.config.get("source_revision") != policy.NATIVE_SOURCE or "report_binding" in self.config
         ):
             raise policy.GuardError("native adapter has no contained source-only invocation")
+        self.progress_stage = "candidate-import"
         from scripts.validation_ownership import budget as budgeting
         from scripts.validation_ownership.authority import AuthorityLoader, GitTreeEntries
         from scripts.validation_ownership.make_probe import ProbeSession
@@ -449,6 +451,7 @@ class NativeRecorder:
             limits=budgeting.Limits, budget=budgeting.ProbeBudget, loader=AuthorityLoader,
             entries=GitTreeEntries, session=ProbeSession, popen=subprocess.Popen,
         )
+        self.progress_stage = "setup"
         terminal_short = self.selection["selector"] in policy.NATIVE_SELECTORS[-2:]
         limits = self.api.limits(seconds=20) if terminal_short else self.api.limits()
         start = self.config["deadline"] - policy.GRAPH_SECONDS
@@ -460,7 +463,7 @@ class NativeRecorder:
 
         self.budget = OriginalClockBudget(limits)
         initial_limits = dataclasses.asdict(limits)
-        stage = "candidate-import"
+        self.progress_stage = "candidate-import"
         first = None
         setup = False
         try:
@@ -505,29 +508,42 @@ class NativeRecorder:
 
                     phase_proxy.analyze = analyze
                     self.bind(stack, selected, "phase_census", phase_proxy)
-                stage = "setup"
-                self.remaining()
-                self.case.setUp()
-                setup = True
-                stage = "method"
-                method(self.case)
-                self.method_returned = True
+                try:
+                    self.progress_stage = "setup"
+                    self.remaining()
+                    self.case.setUp()
+                    setup = True
+                    self.progress_stage = "method"
+                    method(self.case)
+                    self.method_returned = True
+                except BaseException as error:
+                    self.first = error
+                    self.first_stage = self.progress_stage
+                    raise
+                finally:
+                    self.progress_stage = "finalize"
         except BaseException as error:
-            first = error
-            self.first_stage = stage
+            if self.first is None:
+                self.first = error
+                self.first_stage = self.progress_stage
+            elif error is not self.first:
+                self.secondary_errors += 1
+            first = self.first
             self.failure_kind = (
-                "source-refusal" if isinstance(error, budgeting.MakeProbeError) else
-                "authored-assertion" if isinstance(error, AssertionError) else
-                "harness-guard" if isinstance(error, policy.GuardError) else "unexpected"
+                "source-refusal" if isinstance(first, budgeting.MakeProbeError) else
+                "authored-assertion" if isinstance(first, AssertionError) else
+                "harness-guard" if isinstance(first, policy.GuardError) else "unexpected"
             )
         finally:
+            self.progress_stage = "finalize"
             self.references_restored = all(
                 (name in vars(owner)) == present and (not present or vars(owner)[name] is original)
                 for owner, name, present, original in self.bindings.values()
             )
             if not self.references_restored:
                 if first is None:
-                    first, self.first_stage = policy.GuardError("native reference restoration failed"), "finalize"
+                    self.first = first = policy.GuardError("native reference restoration failed")
+                    self.first_stage = "finalize"
                     self.failure_kind = "harness-guard"
                 else:
                     self.secondary_errors += 1
@@ -543,7 +559,8 @@ class NativeRecorder:
                     self.case.tearDown()
             except BaseException as error:
                 if first is None:
-                    first, self.first_stage = error, "finalize"
+                    self.first = first = error
+                    self.first_stage = "finalize"
                     self.failure_kind = "cleanup"
                 else:
                     self.secondary_errors += 1
@@ -558,6 +575,7 @@ class NativeRecorder:
             fixture_removed=None if not setup else not self.case.fixture.directory.exists(),
             references_restored=self.references_restored,
         )
+        self.progress_stage = "counter-publication"
         result = {
             "selection": self.selection, "states": self.states, "operations": self.operations,
             "clock": {
@@ -580,5 +598,6 @@ class NativeRecorder:
             "secondary_errors": self.secondary_errors,
             "machine_holds": list(policy.NATIVE_MACHINE_HOLDS), "qualification": "incomplete",
         }
+        self.progress_stage = "result-validation"
         policy.validate_native_result(result, self.selection)
         return result, first is None

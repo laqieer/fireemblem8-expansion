@@ -199,6 +199,44 @@ def native_selection(profile, selector):
     }
 
 
+NATIVE_ERROR_STAGES = frozenset({
+    "worker-entrypoint", "candidate-import", "setup", "method", "finalize",
+    "counter-publication", "result-validation", "result-publication",
+})
+
+
+def validate_native_error(value, selection):
+    if selection != native_selection(selection.get("profile"), selection.get("selector")):
+        raise GuardError("native error selection changed")
+    if value == {"native_failure": "setup-or-publication-unavailable"}:
+        return value
+    _component_fields(value, "native_failure selection stage primary secondary cleanup qualification")
+    if (
+        value["native_failure"] != "bounded-stage-error" or value["selection"] != selection
+        or type(value["stage"]) is not str or value["stage"] not in NATIVE_ERROR_STAGES
+        or value["cleanup"] is not None or value["qualification"] != "incomplete"
+    ):
+        raise GuardError("native failure lacks its closed stage, selection or unknown cleanup")
+    rows = [value["primary"]]
+    if value["secondary"] is not None:
+        rows.append(value["secondary"])
+    for row in rows:
+        _component_fields(row, "stage error")
+        if type(row["stage"]) is not str or row["stage"] not in NATIVE_ERROR_STAGES:
+            raise GuardError("native failure projection has an unknown stage")
+        validate_component_error_record(row["error"])
+    if (
+        value["secondary"] is None and value["primary"]["stage"] != value["stage"]
+        or value["secondary"] is not None and (
+            value["secondary"]["stage"] != value["stage"]
+            or value["stage"] not in {"finalize", "counter-publication", "result-validation", "result-publication"}
+            or value["primary"]["stage"] not in {"candidate-import", "setup", "method", "finalize"}
+        )
+    ):
+        raise GuardError("native failure projection lost its current exception stage")
+    return value
+
+
 def native_event(event, *, profile, selector, **identity):
     selection = native_selection(profile, selector)
     # Only the positive family's future first-created workflow is prepared.

@@ -585,6 +585,7 @@ class ReportFailure:
         self.stage = "worker-entrypoint"
         self.known_secondary = []
         self.secondary = []
+        self.native_recorder = None
 
     def capture(self, primary, stage):
         if self.primary is not None:
@@ -592,6 +593,28 @@ class ReportFailure:
         self.primary, self.stage = primary, stage
         self.error = policy.component_secondary_error(primary)
         self.cleanup_failures = policy.source_cleanup_count(primary)
+
+    def native_fallback(self, config, error):
+        selection = policy.native_selection(config["profile"], config["selector"])
+        recorder = self.native_recorder
+        if recorder is None:
+            return policy.validate_native_error(
+                {"native_failure": "setup-or-publication-unavailable"}, selection,
+            )
+        primary = recorder.first if recorder.first is not None else error
+        stage = recorder.progress_stage
+        value = {
+            "native_failure": "bounded-stage-error", "selection": recorder.selection,
+            "stage": stage, "primary": {
+                "stage": recorder.first_stage if recorder.first is not None else stage,
+                "error": policy.component_secondary_error(primary),
+            },
+            "secondary": None if error is primary else {
+                "stage": stage, "error": policy.component_secondary_error(error),
+            },
+            "cleanup": None, "qualification": "incomplete",
+        }
+        return policy.validate_native_error(value, selection)
 
     def retain_secondaries(self, value):
         self.known_secondary = copy.deepcopy(policy.validate_report_secondaries(value))
@@ -774,7 +797,9 @@ def main(config, *, failure=None):
             from . import root_stage
         else:
             import root_stage
-        result, returned = root_stage.NativeRecorder(config).run()
+        failure.native_recorder = root_stage.NativeRecorder(config)
+        result, returned = failure.native_recorder.run()
+        failure.native_recorder.progress_stage = "result-publication"
         kernel.emit(config["scope"], "result", result)
         return 0 if returned else 1
     if mode == "report":
@@ -837,6 +862,8 @@ def entrypoint():
                     kernel.emit(active["scope"], "error", failure.fallback(active, error))
                 except BaseException:
                     print("report failure evidence unavailable on its bounded channel", file=sys.stderr)
+            elif active.get("mode") == "native-completion":
+                kernel.emit(active["scope"], "error", failure.native_fallback(active, error))
             else:
                 kernel.emit(active["scope"], "error", policy.error_record(error))
         else:

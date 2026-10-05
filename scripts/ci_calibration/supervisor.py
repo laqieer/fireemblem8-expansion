@@ -1178,7 +1178,7 @@ class Protocol:
                 if kind == "result":
                     policy.validate_native_result(record["data"], self.native_selection)
                 elif kind == "error":
-                    record["data"] = {"native_failure": "setup-or-publication-unavailable"}
+                    policy.validate_native_error(record["data"], self.native_selection)
                     self.failed = True
                 elif kind != "ready":
                     raise policy.GuardError("native stream contains another workload or raw output")

@@ -30,6 +30,136 @@ IMPORT_RELEASE_PREIMAGE = None
 
 
 class NativeAdapterControls(Inert):
+    def test_actual_native_worker_recorder_parser_failure_lifecycle_all_selectors(self):
+        import types
+        cases = (
+            (None, "candidate-import"), (None, "setup"),
+            (None, "finalize"), (None, "counter-publication"), (None, "result-validation"),
+            (None, "result-publication"),
+            ("candidate-import", "counter-publication"), ("setup", "counter-publication"),
+            ("method", "finalize"), ("method", "counter-publication"),
+            ("method", "reference-withdrawal"),
+            ("method", "result-validation"), ("method", "result-publication"),
+        )
+        for selector in policy.NATIVE_SELECTORS:
+            for earlier, later in cases:
+                with self.subTest(selector=selector, earlier=earlier, later=later), ExitStack() as stack:
+                    withdrawal = later == "reference-withdrawal"
+                    if withdrawal:
+                        later = "counter-publication"
+                    first = RuntimeError("private earlier source message")
+                    second = OSError(errno.EIO, "/private/later/path")
+                    foundation = types.ModuleType("scripts.validation_ownership.tests.test_foundation")
+                    tests = types.ModuleType("scripts.validation_ownership.tests")
+                    tests.test_foundation = foundation
+                    authority = types.ModuleType("scripts.validation_ownership.authority")
+                    authority.AuthorityLoader = authority.GitTreeEntries = type("Unused", (), {})
+                    foundation.ProbeSession = type("UnusedSession", (), {})
+                    foundation.ProbeBudget = budgeting.ProbeBudget
+                    selected = types.ModuleType("inert_native_case")
+                    selected.ProbeBudget = budgeting.ProbeBudget
+                    selected.make_probe = SimpleNamespace(ProbeSession=foundation.ProbeSession)
+                    selected.phase_census = SimpleNamespace(analyze=lambda: None)
+                    module_name, class_name, method_name = selector.rsplit(".", 2)
+
+                    class Case:
+                        def __init__(inner, name):
+                            self.assertEqual(name, method_name)
+                            inner.fixture = SimpleNamespace(directory=SimpleNamespace(exists=lambda: False))
+
+                        def setUp(inner):
+                            if earlier == "setup":
+                                raise first
+
+                        def tearDown(inner):
+                            pass
+
+                    def method(inner):
+                        limits = budgeting.Limits(seconds=20) if selector in policy.NATIVE_SELECTORS[-2:] else None
+                        inner.budget = selected.ProbeBudget(limits)
+                        if earlier == "method":
+                            raise first
+
+                    setattr(Case, method_name, method)
+                    setattr(selected, class_name, Case)
+                    stack.enter_context(mock.patch.dict(sys.modules, {
+                        authority.__name__: authority, tests.__name__: tests,
+                        foundation.__name__: foundation, module_name: selected,
+                    }))
+                    if earlier == "candidate-import":
+                        stack.enter_context(mock.patch.object(root_stage.importlib, "import_module", side_effect=first))
+                    elif later == "candidate-import":
+                        # The actual pre-method authority import fails without loading candidate code.
+                        stack.enter_context(mock.patch.dict(sys.modules, {authority.__name__: None}))
+                    if later == "setup":
+                        stack.enter_context(mock.patch.object(budgeting, "Limits", side_effect=second))
+                    if later == "counter-publication":
+                        stack.enter_context(mock.patch.object(policy, "counter_snapshot", side_effect=second))
+                    if withdrawal:
+                        original_bind = root_stage.NativeRecorder.bind
+
+                        def bind(recorder, references, owner, name, replacement):
+                            original_bind(recorder, references, owner, name, replacement)
+                            if owner is root_stage.subprocess:
+                                def refuse_withdrawal():
+                                    self.assertEqual(recorder.progress_stage, "finalize")
+                                    raise second
+                                references.callback(refuse_withdrawal)
+
+                        stack.enter_context(mock.patch.object(root_stage.NativeRecorder, "bind", bind))
+                    if later == "finalize":
+                        stack.enter_context(mock.patch.object(root_stage, "cleanup_state", side_effect=second))
+                    if later == "result-validation":
+                        stack.enter_context(mock.patch.object(policy, "validate_native_result", side_effect=second))
+                    config = {
+                        "scope": "inert", "mode": "native-completion", "source_revision": policy.NATIVE_SOURCE,
+                        "profile": policy.NATIVE_PROFILE, "selector": selector, "deadline": 3700.0,
+                    }
+                    frames = []
+
+                    def emit(scope, kind, data):
+                        if kind == "result" and later == "result-publication":
+                            raise second
+                        frames.append(policy.encoded({"scope": scope, "kind": kind, "data": data}) + b"\n")
+
+                    stack.enter_context(mock.patch.object(worker, "require_contained", return_value={}))
+                    stack.enter_context(mock.patch.object(kernel, "owned_config", return_value=config))
+                    stack.enter_context(mock.patch.object(kernel, "emit", side_effect=emit))
+                    stack.enter_context(mock.patch.object(sys, "argv", ["worker", "inert-config"]))
+                    # Inert path setup must not leave a persistent /repo import entry.
+                    stack.enter_context(mock.patch.object(sys, "path", list(sys.path)))
+                    self.assertEqual(worker.entrypoint(), 1)
+                    parser = supervisor.Protocol(
+                        "inert", policy.ERROR_BYTES,
+                        native_selection=policy.native_selection(policy.NATIVE_PROFILE, selector),
+                    )
+                    records = parser.feed(b"".join(frames))
+                    value = records[-1]["data"]
+                    self.assertEqual(records[-1]["kind"], "error")
+                    self.assertEqual(value["stage"], later)
+                    self.assertEqual(value["primary"]["stage"], earlier or later)
+                    expected_primary = (
+                        policy.component_secondary_error(first) if earlier is not None
+                        else value["primary"]["error"] if later == "candidate-import"
+                        else policy.component_secondary_error(second)
+                    )
+                    self.assertEqual(value["primary"]["error"], expected_primary)
+                    if later == "candidate-import":
+                        self.assertEqual(value["primary"]["error"]["chain"][0]["type"], "ModuleNotFoundError")
+                    if earlier is not None:
+                        self.assertEqual(value["secondary"], {
+                            "stage": later, "error": policy.component_secondary_error(second),
+                        })
+                    else:
+                        self.assertIsNone(value["secondary"])
+                    self.assertIsNone(value["cleanup"])
+                    self.assertTrue(parser.failed)
+                    self.assertFalse(parser.finished)
+                    self.assertNotIn("private", policy.encoded(value).decode())
+                    self.assertIs(foundation.ProbeBudget, budgeting.ProbeBudget)
+                    self.assertIs(selected.ProbeBudget, budgeting.ProbeBudget)
+                    self.assertNotIn("ProbeSession", vars(Case))
+
     def recorder(self, selector=0):
         recorder = root_stage.NativeRecorder({
             "profile": policy.NATIVE_PROFILE, "selector": policy.NATIVE_SELECTORS[selector],

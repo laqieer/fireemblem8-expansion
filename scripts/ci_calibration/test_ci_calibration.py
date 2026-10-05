@@ -46,6 +46,93 @@ WORKER_AST = ast.parse((REPO / "scripts/ci_calibration/worker.py").read_text())
 
 
 class NativeSelectionControls(unittest.TestCase):
+    def test_native_failure_schema_and_terminal_order_cover_all_selectors(self):
+        for selector in policy.NATIVE_SELECTORS:
+            selection = policy.native_selection(policy.NATIVE_PROFILE, selector)
+            failure = worker.ReportFailure()
+            failure.native_recorder = root_stage.NativeRecorder({
+                "profile": policy.NATIVE_PROFILE, "selector": selector,
+            })
+            failure.native_recorder.progress_stage = "method"
+            cause = OSError(13, "/private/path secret")
+            error = RuntimeError("private message")
+            error.__cause__ = cause
+            value = failure.native_fallback(selection, error)
+            self.assertEqual(value["primary"]["error"]["chain"], [
+                {"type": "RuntimeError", "errno": None}, {"type": "PermissionError", "errno": 13},
+            ])
+            self.assertIsNone(value["cleanup"])
+            self.assertEqual(value["qualification"], "incomplete")
+            self.assertNotIn("private", policy.encoded(value).decode())
+
+            def frame(kind, data):
+                return policy.encoded({"scope": "inert", "kind": kind, "data": data}) + b"\n"
+
+            for ready in (False, True):
+                parser = supervisor.Protocol("inert", policy.ERROR_BYTES, native_selection=selection)
+                if ready:
+                    parser.feed(frame("ready", {}))
+                self.assertEqual(parser.feed(frame("error", value))[0]["data"], value)
+                self.assertTrue(parser.failed)
+                self.assertFalse(parser.finished)
+                for kind in ("ready", "error", "result"):
+                    with self.assertRaises(policy.GuardError):
+                        parser.feed(frame(kind, value))
+            mutants = []
+            for field, replacement in (
+                ("stage", "private stage"), ("stage", []), ("cleanup", True),
+                ("qualification", "complete"), ("primary", None),
+                ("secondary", {"stage": "setup", "error": value["primary"]["error"]}),
+                ("selection", policy.native_selection(
+                    policy.NATIVE_PROFILE,
+                    policy.NATIVE_SELECTORS[(policy.NATIVE_SELECTORS.index(selector) + 1) % 6],
+                )),
+            ):
+                mutant = copy.deepcopy(value)
+                mutant[field] = replacement
+                mutants.append(mutant)
+            for target, field, replacement in (
+                ("outer", "message", "private"), ("primary", "traceback", "private"),
+                ("projection", "frames", []), ("projection", "complete", "yes"),
+                ("projection", "reason", "private"), ("chain", "errno", True),
+                ("chain", "type", "/private/path"), ("chain", "message", "private"),
+            ):
+                mutant = copy.deepcopy(value)
+                owner = (
+                    mutant if target == "outer" else mutant["primary"] if target == "primary"
+                    else mutant["primary"]["error"] if target == "projection"
+                    else mutant["primary"]["error"]["chain"][0]
+                )
+                owner[field] = replacement
+                mutants.append(mutant)
+            mutants += [{"chain": [], "frames": []}, {"native_failure": "private"}]
+            for mutant in mutants:
+                parser = supervisor.Protocol("inert", policy.ERROR_BYTES, native_selection=selection)
+                with self.assertRaises(policy.GuardError):
+                    parser.feed(frame("error", mutant))
+                self.assertFalse(parser.failed)
+            generic = worker.ReportFailure().native_fallback(selection, error)
+            self.assertEqual(generic, {"native_failure": "setup-or-publication-unavailable"})
+            self.assertEqual(policy.validate_native_error(generic, selection), generic)
+            emitted = []
+            with mock.patch.object(worker, "require_contained", return_value={}), mock.patch.object(
+                kernel, "owned_config", return_value={
+                    **selection, "scope": "inert", "mode": "native-completion", "source_revision": "b" * 40,
+                },
+            ), mock.patch.object(kernel, "emit", side_effect=lambda scope, kind, data: emitted.append(
+                frame(kind, data),
+            )), mock.patch.object(sys, "argv", ["worker", "inert-config"]):
+                self.assertEqual(worker.entrypoint(), 1)
+            parser = supervisor.Protocol("inert", policy.ERROR_BYTES, native_selection=selection)
+            self.assertEqual(parser.feed(b"".join(emitted))[-1]["data"], generic)
+            self.assertTrue(parser.failed)
+            with mock.patch.object(policy, "component_error_record", side_effect=RuntimeError("private")):
+                incomplete = failure.native_fallback(selection, error)
+            self.assertEqual(incomplete["primary"]["error"], {
+                "chain": [], "complete": False, "reason": "secondary-format-failed",
+            })
+            policy.validate_native_error(incomplete, selection)
+
     def identity(self):
         return dict(
             sha="a" * 40, run_id="123", attempt="1", run_number="1",
