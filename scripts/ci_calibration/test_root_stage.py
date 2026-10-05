@@ -30,6 +30,35 @@ IMPORT_RELEASE_PREIMAGE = None
 
 
 class NativeAdapterControls(Inert):
+    def test_native_fallback_construction_write_flush_fail_closed_without_traceback(self):
+        for selector in policy.NATIVE_SELECTORS:
+            for fault in ("construction", "write", "flush"):
+                with self.subTest(selector=selector, fault=fault), ExitStack() as stack:
+                    original = RuntimeError("PRIVATE_ORIGINAL /private/original")
+                    later = OSError(errno.EIO, "PRIVATE_LATER /private/later")
+                    config = {
+                        "scope": "inert", "mode": "native-completion",
+                        "profile": policy.NATIVE_PROFILE, "selector": selector,
+                    }
+                    stack.enter_context(mock.patch.object(kernel, "owned_config", return_value=config))
+                    stack.enter_context(mock.patch.object(worker, "main", side_effect=original))
+                    stack.enter_context(mock.patch.object(sys, "argv", ["worker", "inert-config"]))
+                    captured = io.StringIO()
+                    stack.enter_context(mock.patch.object(sys, "stderr", captured))
+                    if fault == "construction":
+                        stack.enter_context(mock.patch.object(worker.ReportFailure, "native_fallback", side_effect=later))
+                    else:
+                        channel = SimpleNamespace(
+                            write=mock.Mock(side_effect=later if fault == "write" else None),
+                            flush=mock.Mock(side_effect=later if fault == "flush" else None),
+                        )
+                        stack.enter_context(mock.patch.object(sys, "stdout", SimpleNamespace(buffer=channel)))
+                    self.assertEqual(worker.entrypoint(), 1)
+                    self.assertEqual(captured.getvalue(), "native failure evidence unavailable on its bounded channel\n")
+                    if fault != "construction":
+                        self.assertEqual(channel.write.call_count, 1)
+                        self.assertEqual(channel.flush.call_count, int(fault == "flush"))
+
     def test_actual_native_worker_recorder_parser_failure_lifecycle_all_selectors(self):
         import types
         cases = (
@@ -40,13 +69,18 @@ class NativeAdapterControls(Inert):
             ("method", "finalize"), ("method", "counter-publication"),
             ("method", "reference-withdrawal"),
             ("method", "result-validation"), ("method", "result-publication"),
+            ("make-proxy-read", "reference-withdrawal"),
+            ("make-proxy-wrap", "reference-withdrawal"),
+            ("phase-proxy-wrap", "reference-withdrawal"),
         )
         for selector in policy.NATIVE_SELECTORS:
             for earlier, later in cases:
+                if earlier == "phase-proxy-wrap" and selector != policy.NATIVE_SELECTORS[0]:
+                    continue
                 with self.subTest(selector=selector, earlier=earlier, later=later), ExitStack() as stack:
                     withdrawal = later == "reference-withdrawal"
                     if withdrawal:
-                        later = "counter-publication"
+                        later = "finalize"
                     first = RuntimeError("private earlier source message")
                     second = OSError(errno.EIO, "/private/later/path")
                     foundation = types.ModuleType("scripts.validation_ownership.tests.test_foundation")
@@ -56,10 +90,25 @@ class NativeAdapterControls(Inert):
                     authority.AuthorityLoader = authority.GitTreeEntries = type("Unused", (), {})
                     foundation.ProbeSession = type("UnusedSession", (), {})
                     foundation.ProbeBudget = budgeting.ProbeBudget
-                    selected = types.ModuleType("inert_native_case")
+                    class Selected(types.ModuleType):
+                        def __getattribute__(inner, name):
+                            if earlier == "make-proxy-read" and name == "make_probe":
+                                raise first
+                            return super().__getattribute__(name)
+
+                    class PrivateProxy:
+                        @property
+                        def __dict__(inner):
+                            raise first
+
+                    selected = Selected("inert_native_case")
                     selected.ProbeBudget = budgeting.ProbeBudget
                     selected.make_probe = SimpleNamespace(ProbeSession=foundation.ProbeSession)
                     selected.phase_census = SimpleNamespace(analyze=lambda: None)
+                    if earlier == "make-proxy-wrap":
+                        selected.make_probe = PrivateProxy()
+                    if earlier == "phase-proxy-wrap":
+                        selected.phase_census = PrivateProxy()
                     module_name, class_name, method_name = selector.rsplit(".", 2)
 
                     class Case:
@@ -107,7 +156,7 @@ class NativeAdapterControls(Inert):
                                 references.callback(refuse_withdrawal)
 
                         stack.enter_context(mock.patch.object(root_stage.NativeRecorder, "bind", bind))
-                    if later == "finalize":
+                    if later == "finalize" and not withdrawal:
                         stack.enter_context(mock.patch.object(root_stage, "cleanup_state", side_effect=second))
                     if later == "result-validation":
                         stack.enter_context(mock.patch.object(policy, "validate_native_result", side_effect=second))
@@ -137,7 +186,10 @@ class NativeAdapterControls(Inert):
                     value = records[-1]["data"]
                     self.assertEqual(records[-1]["kind"], "error")
                     self.assertEqual(value["stage"], later)
-                    self.assertEqual(value["primary"]["stage"], earlier or later)
+                    primary_stage = "candidate-import" if earlier in {
+                        "make-proxy-read", "make-proxy-wrap", "phase-proxy-wrap",
+                    } else earlier or later
+                    self.assertEqual(value["primary"]["stage"], primary_stage)
                     expected_primary = (
                         policy.component_secondary_error(first) if earlier is not None
                         else value["primary"]["error"] if later == "candidate-import"

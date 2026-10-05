@@ -18,6 +18,15 @@ selectors share this diagnostic path; no budget, source API, workflow,
 inventory, historical lineage, allocation or final gate is changed.
 `NativeSelectionControls` and `NativeAdapterControls` provide credential-free
 inert schema and worker/recorder/parser controls; they are not native proof.
+Failure construction and error-channel write/flush faults terminate nonzero
+with only a fixed unavailable stderr notice, never an implicit raw traceback.
+Primary capture covers instrumentation/proxy construction before setup as well
+as the method; reference withdrawal starts in `finalize`. A withdrawal failure
+after an earlier failure is propagated only after existing cleanup attempts,
+so the fallback retains that earlier primary and the withdrawal as secondary.
+All six selectors cover make-proxy read/wrapping faults with withdrawal; the
+positive selector also covers its phase proxy. These controls grant no native
+execution or cleanup acceptance.
 
 Assignment `issue180-native-harness-1ab6`, scope comment5982866338, is one
 normal never-merge child of `e93847725f58a89bca2a94af2d4acaae6a89cebf`.

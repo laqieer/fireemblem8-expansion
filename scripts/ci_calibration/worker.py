@@ -863,7 +863,10 @@ def entrypoint():
                 except BaseException:
                     print("report failure evidence unavailable on its bounded channel", file=sys.stderr)
             elif active.get("mode") == "native-completion":
-                kernel.emit(active["scope"], "error", failure.native_fallback(active, error))
+                try:
+                    kernel.emit(active["scope"], "error", failure.native_fallback(active, error))
+                except BaseException:
+                    print("native failure evidence unavailable on its bounded channel", file=sys.stderr)
             else:
                 kernel.emit(active["scope"], "error", policy.error_record(error))
         else:

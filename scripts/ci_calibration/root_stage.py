@@ -465,6 +465,7 @@ class NativeRecorder:
         initial_limits = dataclasses.asdict(limits)
         self.progress_stage = "candidate-import"
         first = None
+        withdrawal_error = None
         setup = False
         try:
             self.remaining()
@@ -474,41 +475,41 @@ class NativeRecorder:
             method = getattr(owner, method_name)
             self.case = owner(method_name)
             with ExitStack() as stack:
-                self.bind(stack, subprocess, "Popen", self.popen)
-                self.bind(stack, selected, "ProbeBudget", self.budget_for)
-                self.bind(stack, foundation, "ProbeBudget", self.budget_for)
-                # The positive method uses its module's direct constructor, not case.session().
-                proxy = SimpleNamespace(**vars(selected.make_probe))
-                session_constructor = self.session_for
+                try:
+                    self.bind(stack, subprocess, "Popen", self.popen)
+                    self.bind(stack, selected, "ProbeBudget", self.budget_for)
+                    self.bind(stack, foundation, "ProbeBudget", self.budget_for)
+                    # The positive method uses its module's direct constructor, not case.session().
+                    proxy = SimpleNamespace(**vars(selected.make_probe))
+                    session_constructor = self.session_for
 
-                def construct(*args, **keywords):
-                    value = session_constructor(*args, **keywords)
-                    self.watch_session(stack)
-                    return value
-
-                proxy.ProbeSession = construct
-                self.bind(stack, selected, "make_probe", proxy)
-                self.bind(stack, foundation, "ProbeSession", construct)
-                if self.selection["selector"] == policy.NATIVE_SELECTORS[0]:
-                    analyzer = selected.phase_census
-                    phase_proxy = SimpleNamespace(**vars(analyzer))
-
-                    def analyze(*args, **keywords):
-                        value = analyzer.analyze(*args, **keywords)
-                        observed = args[1]
-                        archive = self.session._original_source_archive(observed)
-                        phases = [stream.mode_state.scope_lookup_guard.__self__ for stream in value[2]]
-                        complete = len(phases) == len(archive.passes) and all(
-                            phase.next_completion == len(phase.part.completions) for phase in phases
-                        )
-                        for row in self.archives:
-                            if row["member"] == self.members.get(id(observed)):
-                                row["frontier_consumed"] = complete
+                    def construct(*args, **keywords):
+                        value = session_constructor(*args, **keywords)
+                        self.watch_session(stack)
                         return value
 
-                    phase_proxy.analyze = analyze
-                    self.bind(stack, selected, "phase_census", phase_proxy)
-                try:
+                    proxy.ProbeSession = construct
+                    self.bind(stack, selected, "make_probe", proxy)
+                    self.bind(stack, foundation, "ProbeSession", construct)
+                    if self.selection["selector"] == policy.NATIVE_SELECTORS[0]:
+                        analyzer = selected.phase_census
+                        phase_proxy = SimpleNamespace(**vars(analyzer))
+
+                        def analyze(*args, **keywords):
+                            value = analyzer.analyze(*args, **keywords)
+                            observed = args[1]
+                            archive = self.session._original_source_archive(observed)
+                            phases = [stream.mode_state.scope_lookup_guard.__self__ for stream in value[2]]
+                            complete = len(phases) == len(archive.passes) and all(
+                                phase.next_completion == len(phase.part.completions) for phase in phases
+                            )
+                            for row in self.archives:
+                                if row["member"] == self.members.get(id(observed)):
+                                    row["frontier_consumed"] = complete
+                            return value
+
+                        phase_proxy.analyze = analyze
+                        self.bind(stack, selected, "phase_census", phase_proxy)
                     self.progress_stage = "setup"
                     self.remaining()
                     self.case.setUp()
@@ -528,6 +529,7 @@ class NativeRecorder:
                 self.first_stage = self.progress_stage
             elif error is not self.first:
                 self.secondary_errors += 1
+                withdrawal_error = error
             first = self.first
             self.failure_kind = (
                 "source-refusal" if isinstance(first, budgeting.MakeProbeError) else
@@ -565,6 +567,8 @@ class NativeRecorder:
                 else:
                     self.secondary_errors += 1
             self.observations.clear()
+        if withdrawal_error is not None:
+            raise withdrawal_error
         ended = time.monotonic()
         self.first = first
         cleanup = cleanup_state(self.session, self.budget)
