@@ -2008,6 +2008,7 @@ def supervise(config, drop_privileges):
             if code != 0 and not (
                 stopped == pid and (config["mode"] == "make"
                 or config.get("metadata_validation") and code in {1, 2})
+                or policy.native_readonly and state.role == "native"
             ):
                 raise Violation(f"sandbox process exited unsuccessfully: {code}")
             return

@@ -79,6 +79,13 @@ Run the following controls individually from the same clean host checkout:
    Explicit optional runtime, mapped publication, altered executable authority,
    metadata replay, dependency confinement or a mismatched native environment
    cannot be combined with this lane.
+4. Run its `test_native_readonly_shell_status_reaches_make_semantics`,
+   `test_native_readonly_ignored_recipe_status_is_owned_by_make` and
+   `test_native_readonly_unignored_recipe_status_still_fails_make`.
+   An authenticated shell's nonzero status must reach original Make:
+   `$(shell)` retains its output and `.SHELLSTATUS`, an explicitly ignored
+   recipe continues, and an unignored recipe still fails through final Make
+   status 2. Supervisor confinement violations never become ignored errors.
 
 Readonly dispatch admits only the original Make image and captured shell.
 It cannot produce generated files or execute arbitrary native tools.

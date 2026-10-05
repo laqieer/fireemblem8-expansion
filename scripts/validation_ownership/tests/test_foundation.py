@@ -163,6 +163,40 @@ class FoundationTests(unittest.TestCase):
             ):
                 Policy({**valid, **changes})
 
+    def test_native_readonly_shell_status_reaches_make_semantics(self):
+        self.add("Makefile", (
+            "VALUE := $(shell printf observed; exit 7)\n"
+            "STATUS := $(.SHELLSTATUS)\n"
+            ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n"
+        ))
+        with self.session() as session:
+            completed, semantics, _ = session._native_make_readonly(
+                "all", variables=("VALUE", "STATUS"),
+            )
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "observed")
+            self.assertEqual(semantics["domains"]["STATUS"]["value"], "7")
+            self.assertEqual(completed.stdout, b"done\n")
+        self.assert_clean(session)
+
+    def test_native_readonly_ignored_recipe_status_is_owned_by_make(self):
+        self.add("Makefile", (
+            ".PHONY: all\nall:\n\t-@v=ignored; exit 7\n"
+            "\t@v=done; printf '%s\\n' \"$$v\"\n"
+        ))
+        with self.session() as session:
+            completed, _, _ = session._native_make_readonly("all")
+            self.assertEqual(completed.stdout, b"done\n")
+            self.assertIn(b"Error 7 (ignored)", completed.stderr)
+        self.assert_clean(session)
+
+    def test_native_readonly_unignored_recipe_status_still_fails_make(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@v=failed; exit 7\n")
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "readonly native GNU Make failed: 2"):
+            with session:
+                session._native_make_readonly("all")
+        self.assert_clean(session)
+
     def capture_supervisor_report(self, session, operation):
         original = session.budget.read_bytes
         captured = {}
