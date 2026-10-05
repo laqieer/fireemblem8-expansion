@@ -62,6 +62,7 @@ class NativeSelectionControls(unittest.TestCase):
                 site = {"line": line, "location_kind": kind}
                 parsed = policy.parse_json(policy.encoded(site))
                 self.assertEqual(policy.validate_native_consumer_site(parsed), site)
+                self.assertEqual(set(parsed), {"line", "location_kind"})
         for site in (
             Mapping(line=1, location_kind="origin"), Value(), {},
             {"line": 1, "location_kind": "unknown"}, {"line": True, "location_kind": "origin"},

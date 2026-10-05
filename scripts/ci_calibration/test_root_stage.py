@@ -69,6 +69,8 @@ class NativeRefusalControls(unittest.TestCase):
             self.assertIsNone(observer.session_type)
             self.assertIsNone(observer.globals)
             self.assertIsNone(observer.code)
+            self.assertEqual(observer.codes, {})
+            self.assertEqual(observer.method_codes, frozenset())
             self.assertEqual(observer.capture(error, session)["reason"], "retired")
             self.assertIsNone(observer.consumer_site)
             self.assertNotIn(b"PRIVATE", policy.encoded(result))
@@ -266,6 +268,69 @@ class NativeRefusalControls(unittest.TestCase):
             self.assertEqual(observer.capture(error, session)["reason"], "malformed-observation")
             self.assertIsNotNone(observer.consumer_site)
 
+    def test_deep_closure_identity_bindings_and_code_bound(self):
+        from types import FunctionType
+        namespace = {"__name__": "scripts.validation_ownership.make_probe"}
+        exec(
+            "class Session:\n"
+            "    def callback(self):\n"
+            "        def nested():\n"
+            "            raise RuntimeError()\n"
+            "        nested()\n"
+            "    def _sandbox_run(self, callback):\n"
+            "        callback()\n", namespace,
+        )
+        owner = namespace["Session"]
+        def foreign_terminal():
+            raise RuntimeError()
+        for variant in ("owned", "foreign-self", "foreign-globals", "duplicate-code", "other-exception"):
+            session = owner()
+            observer = root_stage.NativeRefusalObservation(owner)
+            callback = session.callback
+            if variant == "foreign-self":
+                callback = owner().callback
+            elif variant in ("foreign-globals", "duplicate-code"):
+                method = owner.callback
+                callback = lambda: FunctionType(
+                    method.__code__ if variant == "foreign-globals" else method.__code__.replace(
+                        co_consts=tuple(value.replace() if isinstance(value, type(method.__code__)) else value
+                                        for value in method.__code__.co_consts)),
+                    {"__name__": "foreign"} if variant == "foreign-globals" else namespace,
+                )(session)
+            elif variant == "other-exception":
+                callback = foreign_terminal
+            try:
+                session._sandbox_run(callback)
+            except RuntimeError as error:
+                if variant == "other-exception":
+                    try:
+                        session.callback()
+                    except RuntimeError as secondary:
+                        secondary.__context__ = None
+                        error.__cause__ = secondary
+                result = observer.capture(error, session)
+                self.assertEqual(result["status"], "unavailable")
+                if variant in ("foreign-self", "foreign-globals"):
+                    self.assertIsNone(observer.consumer_site)
+                else:
+                    self.assertEqual(observer.consumer_site["location_kind"],
+                                     "callsite" if variant in ("duplicate-code", "other-exception") else "origin")
+        session = owner()
+        code = owner.callback.__code__
+        for count in (4092, 4093):
+            # Three method codes, the original nested code, and these unique constants.
+            constants = tuple(code.replace(co_name=str(index)) for index in range(count))
+            owner.extra = FunctionType(code.replace(co_consts=constants), namespace)
+            observer = root_stage.NativeRefusalObservation(owner)
+            self.assertEqual(observer.reason is None, count == 4092)
+            if count == 4093:
+                self.assertEqual(observer.codes, {})
+                self.assertIsNone(observer.code)
+                self.assertIsNone(observer.globals)
+                self.assertIsNone(observer.session_type)
+            observer.retire()
+        del owner.extra
+
     def test_actual_original_consumer_site_independent_of_producer(self):
         source = Path(__file__).resolve().parents[2].parent / "issue180-original-completion"
         tree = ast.parse((source / "scripts/validation_ownership/make_probe.py").read_text())
@@ -273,8 +338,10 @@ class NativeRefusalControls(unittest.TestCase):
                      and node.name == "ProbeSession")
         method = next(node for node in owner.body if isinstance(node, ast.FunctionDef)
                       and node.name == "_sandbox_run")
+        callback = next(node for node in owner.body if isinstance(node, ast.FunctionDef)
+                        and node.name == "_require_live_dispatch")
         extracted = ast.fix_missing_locations(ast.Module(body=[
-            ast.ClassDef(name="ProbeSession", bases=[], keywords=[], body=[method], decorator_list=[]),
+            ast.ClassDef(name="ProbeSession", bases=[], keywords=[], body=[method, callback], decorator_list=[]),
         ], type_ignores=[]))
         class ConsumerError(RuntimeError):
             pass
@@ -299,6 +366,11 @@ class NativeRefusalControls(unittest.TestCase):
                 files.pop(self.path, None)
             def is_file(self):
                 return self.path in files
+            @property
+            def name(self):
+                return self.path.rsplit("/", 1)[-1]
+            def mkdir(self, *, mode):
+                pass
 
         decoded = []
         def decode(*args, **kwargs):
@@ -312,7 +384,7 @@ class NativeRefusalControls(unittest.TestCase):
             "source_journal": SimpleNamespace(MODE="journal"),
             "source_directories": SimpleNamespace(MODE="directories"),
             "header_protocol": SimpleNamespace(FILTER_PURPOSE="inert"),
-            "MakeProbeError": ConsumerError, "ChannelError": ConsumerError,
+            "MakeProbeError": ConsumerError, "ChannelError": type("InertChannelError", (RuntimeError,), {}),
             "os": os, "Path": InertPath, "TRUSTED_ROOT": InertPath("/inert"),
             "ENVIRONMENT": {}, "cleanup_scope": cleanup,
             "_remove_owned_tree": lambda path: None, "encoded": policy.encoded,
@@ -320,9 +392,15 @@ class NativeRefusalControls(unittest.TestCase):
             "_validate_failure_diagnostic": lambda value: True,
             "metadata_transport": SimpleNamespace(decode_metadata_transport=decode),
             "install_protocol": SimpleNamespace(validate_records=lambda *args: []),
+            "ALIASES": (),
+            "signal": SimpleNamespace(SIG_BLOCK=0, SIG_SETMASK=1, SIGINT=2, SIGTERM=15,
+                                      pthread_sigmask=lambda *args: ()),
+            "ProducerChannel": SimpleNamespace(listen=lambda *args, **kwargs:
+                SimpleNamespace(endpoint="inert", close=lambda: None)),
         }
         exec(compile(extracted, "<original-consumer>", "exec"), namespace)
-        for variant in ("malformed", "validation-origin", "validation-callsite", "producer", "success"):
+        for variant in ("dispatch-origin", "dispatch-validation", "session-callback",
+                        "malformed", "validation-origin", "validation-callsite", "producer", "success"):
             with self.subTest(variant=variant):
                 session = namespace["ProbeSession"]()
                 session.base = InertPath("/inert/base")
@@ -338,6 +416,12 @@ class NativeRefusalControls(unittest.TestCase):
                 session.sudo_drop = False
                 session.parked_capsules = ()
                 session.launcher = ()
+                session.make_runtime = ()
+                session.published_sources = ()
+                session._live_dispatches = ()
+                session._require_runtime_image = lambda image: None
+                session._namespace_frames = ()
+                session._runtime_image = None
                 for name in ("processes_used", "syscalls_used", "files_created", "observations_used",
                              "live_process_peak", "memory_peak"):
                     setattr(session, name, 0)
@@ -356,12 +440,20 @@ class NativeRefusalControls(unittest.TestCase):
                 elif variant == "producer":
                     observed["failure_diagnostic"] = self.observed()["failure_diagnostic"]
                 def run(*args, **kwargs):
+                    if variant.startswith("dispatch-"):
+                        packet = {} if variant == "dispatch-origin" else {
+                            "kind": "finished", "scope": session.base.name + "/" + session.base.name,
+                            "issued": 0, "completed": 0, "publication": {},
+                        }
+                        kwargs["producer_handler"](policy.encoded(packet))
+                    elif variant == "session-callback":
+                        session._require_live_dispatch()
                     (session.base / "report-1.json").write_bytes(b"")
                     return SimpleNamespace(returncode=0, stderr=b"")
                 session.budget = SimpleNamespace(
                     remaining=lambda: None, cumulative_limit=lambda name: 1000000,
                     limits=SimpleNamespace(**dict.fromkeys((
-                        "file_bytes", "address_space_bytes", "processes", "descendants",
+                        "file_bytes", "address_space_bytes", "processes", "descendants", "pending",
                         "syscalls", "sandbox_bytes", "created_files", "entries", "observation_count",
                     ), 1000000)), bytes={}, deadline=1000000, run=run,
                     charge=lambda *args: None, read_bytes=lambda *args: policy.encoded(observed),
@@ -370,13 +462,23 @@ class NativeRefusalControls(unittest.TestCase):
                 decoded.clear()
                 try:
                     result = session._sandbox_run(
-                        session.base, mode="command", argv=["/inert/command"], environment={},
+                        session.base, mode="make" if variant.startswith("dispatch-") else "command",
+                        argv=["/inert/command"], environment={},
                         mounts=[session._mount(session.tree, "/repo")],
+                        producer_handler=(lambda *args: None) if variant.startswith("dispatch-") else None,
                     )
                 except ConsumerError as error:
                     trace = error.__traceback__
                     while trace.tb_frame.f_code is not type(session)._sandbox_run.__code__:
                         trace = trace.tb_next
+                    if variant.startswith("dispatch-") or variant == "session-callback":
+                        self.assertNotIn("observed", trace.tb_frame.f_locals)
+                        while trace.tb_next is not None:
+                            trace = trace.tb_next
+                        self.assertEqual(trace.tb_frame.f_code.co_name, {
+                            "dispatch-origin": "dispatch", "dispatch-validation": "validate_confirmation",
+                            "session-callback": "_require_live_dispatch",
+                        }[variant])
                     refusal = observer.capture(error, session)
                     self.assertEqual(observer.consumer_site, {
                         "line": trace.tb_lineno,
@@ -864,7 +966,7 @@ class NativeAdapterControls(Inert):
         self.assertIs(foundation.ProbeSession, Session)
         self.assertIs(foundation.ProbeBudget, original_budget.ProbeBudget)
         self.assertNotIn(str(first), repr(result))
-        self.assertEqual(result["version"], 4)
+        self.assertEqual(result["version"], 5)
         self.assertIsNone(result["consumer_site"])
         site_result = {**result, "consumer_site": {"line": 1, "location_kind": "callsite"}}
         policy.validate_native_result(policy.parse_json(policy.encoded(site_result)), recorder.selection)
@@ -888,6 +990,9 @@ class NativeAdapterControls(Inert):
         previous["version"] = 3
         self.assertIs(policy.validate_native_result(previous, recorder.selection, historical=True), previous)
         self.assertNotIn("consumer_site", previous)
+        outer_only = {**site_result, "version": 4}
+        self.assertIs(policy.validate_native_result(outer_only, recorder.selection, historical=True), outer_only)
+        self.assertEqual(outer_only["consumer_site"], site_result["consumer_site"])
         with self.assertRaises(policy.GuardError):
             policy.validate_native_result({**previous, "version": 4}, recorder.selection)
         old = {**previous, "version": 2, "refusal": {

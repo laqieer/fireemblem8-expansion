@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace, FunctionType
+from types import SimpleNamespace, FunctionType, CodeType
 from contextlib import ExitStack
 import dataclasses
 import importlib
@@ -239,6 +239,7 @@ class NativeRefusalObservation:
         self.session_type = session_type
         self.code = None
         self.globals = None
+        self.codes, self.method_codes = {}, frozenset()
         self.reason = "original-code-unavailable"
         self.retired = False
         self.consumer_site = None
@@ -250,10 +251,27 @@ class NativeRefusalObservation:
             return
         self.code = method.__code__
         self.globals = method.__globals__
+        methods = {
+            id(value.__code__): value.__code__ for value in type.__getattribute__(session_type, "__dict__").values()
+            if type(value) is FunctionType and value.__globals__ is self.globals
+        }
+        codes, pending = {}, list(methods.values())
+        while pending:
+            code = pending.pop()
+            if id(code) in codes:
+                continue
+            if len(codes) >= 4096:
+                self.retire()
+                self.retired = False
+                return
+            codes[id(code)] = code
+            pending.extend(value for value in code.co_consts if type(value) is CodeType)
+        self.codes, self.method_codes = codes, frozenset(methods)
         self.reason = None
 
     def retire(self):
         self.code = self.globals = self.session_type = None
+        self.codes, self.method_codes = {}, frozenset()
         self.retired = True
 
     def capture(self, error, session):
@@ -274,38 +292,48 @@ class NativeRefusalObservation:
         if type(session) is not self.session_type:
             return unavailable("session-unavailable")
         current, seen, frames, found = error, set(), set(), []
+        valid_lines = True
         while current is not None:
             if id(current) in seen or len(seen) >= 32:
                 return unavailable("exception-chain-bound")
             seen.add(id(current))
             trace = BaseException.__dict__["__traceback__"].__get__(current, BaseException)
+            anchors, deepest = [], None
             while trace is not None:
                 if id(trace) in frames or len(frames) >= 256:
                     return unavailable("frame-bound")
                 frames.add(id(trace))
                 frame = trace.tb_frame
-                if frame.f_code is self.code:
+                if id(frame.f_code) in self.codes:
                     if frame.f_globals is not self.globals:
                         return unavailable("frame-unobserved")
                     local = frame.f_locals
                     if type(local) is not dict or len(local) > 256 or (
-                        any(type(key) is not str for key in local) or local.get("self") is not session
+                        any(type(key) is not str for key in local)
+                        or (id(frame.f_code) in self.method_codes or "self" in local)
+                        and local.get("self") is not session
                     ):
                         return unavailable("foreign-session")
-                    found.append((trace, local))
+                    if frame.f_code is self.code:
+                        anchors.append(local)
+                    deepest = trace
+                    line = trace.tb_lineno
+                    if not policy._component_integer(line, 2147483647, 1) or not any(
+                        start <= trace.tb_lasti < end and source_line == line
+                        for start, end, source_line in frame.f_code.co_lines()
+                    ):
+                        valid_lines = False
                 trace = trace.tb_next
+            found.extend((local, deepest) for local in anchors)
             cause = BaseException.__dict__["__cause__"].__get__(current, BaseException)
             current = cause if cause is not None else (
                 BaseException.__dict__["__context__"].__get__(current, BaseException)
             )
         if len(found) != 1:
             return unavailable("frame-ambiguous" if found else "frame-unobserved")
-        trace, local = found[0]
+        local, trace = found[0]
         line = trace.tb_lineno
-        if policy._component_integer(line, 2147483647, 1) and any(
-            start <= trace.tb_lasti < end and source_line == line
-            for start, end, source_line in self.code.co_lines()
-        ):
+        if valid_lines:
             self.consumer_site = {
                 "line": line, "location_kind": "origin" if trace.tb_next is None else "callsite",
             }
@@ -705,7 +733,7 @@ class NativeRecorder:
         )
         self.progress_stage = "counter-publication"
         result = {
-            "version": 4, "primary_error": self.primary_error,
+            "version": 5, "primary_error": self.primary_error,
             "consumer_site": self.consumer_site,
             "refusal": self.refusal if first is not None else {
                 "status": "success", "reason": None, "ok": None, "returncode": None,

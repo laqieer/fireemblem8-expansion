@@ -388,14 +388,15 @@ def validate_native_result(value, selection, *, historical=False):
     if type(historical) is not bool:
         raise GuardError("native historical parsing is not deliberate")
     versioned = not historical or type(value) is dict and "version" in value
+    has_site = not historical or versioned and value.get("version") == 4
     _component_fields(value, fields + " version primary_error refusal" + (
-        "" if historical else " consumer_site"
+        " consumer_site" if has_site else ""
     ) if versioned else fields)
     if versioned:
-        if type(value["version"]) is not int or value["version"] not in ((2, 3) if historical else (4,)):
+        if type(value["version"]) is not int or value["version"] not in ((2, 3, 4) if historical else (5,)):
             raise GuardError("native result version is not current")
         (_validate_historical_native_refusal if value["version"] == 2 else validate_native_refusal)(value["refusal"])
-        if not historical:
+        if has_site:
             validate_native_consumer_site(value["consumer_site"])
             if value["first_stage"] is None and value["consumer_site"] is not None:
                 raise GuardError("native successful result invents a consumer exception site")

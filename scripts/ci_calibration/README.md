@@ -1,5 +1,34 @@
 # Contained original-include retained-state diagnostic
 
+## Deep session consumer (TC-CI-NATIVE-CONSUMER-SITE-001, #180)
+
+Contract5994537979 changes only diagnostic projection at parent0b86ba6.
+Normal result v5 gives `consumer_site` session-method scope, not historical
+v4's outer `_sandbox_run` scope. Deliberate historical v1-v4 parsing returns
+the same payload without fabricating fields or upgrading v4 sites.
+The unique original `_sandbox_run` code/globals/self anchor remains mandatory.
+The same original class's FunctionType methods with identical globals and
+their recursive CodeType constants form a finite closure of at most 4096
+codes. The deepest owned frame in that anchor's exception traceback supplies
+the nullable builtin line/kind pair; another exception's site is never used.
+Methods require exact self; nested closures require it when present. Foreign
+globals/self, multiple anchors, cycles, invalid owned line tables and the
+unchanged 32-exception/256-frame bounds publish no partial site. Terminal owned
+frames mean origin; foreign terminal frames mean callsite. All code, class and
+namespace references are retired.
+
+An absent pre-result `observed` remains unavailable/malformed-observation, not
+malformed supervisor JSON evidence. Run the credential-free isolated checker
+in session `deep-consumer-validation/check.py` with current, neutral and parent
+modes. Current/neutral must pass; parent must fail actual AST-extracted original
+nested dispatch/validation and session-method callback site selection before
+any producer result. Synthetic foreign/bound/cycle controls are supplementary.
+Source78fd889, producer diagnostic status/schema, first cause, six selectors,
+primary/secondary cleanup and every final hold are unchanged. Run37309605807
+failed before observed JSON; deeper host root cause remains unknown. Nine failed
+native allocations remain spent. No new route, workflow, allocation, native,
+root, mount, remote, quota, ROM/RAM/save/locale or source changes are authorized.
+
 ## Consumer-route preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
 
 Contract5994290979 prepares only literal
@@ -46,7 +75,7 @@ The existing producer refusal schema/status is unchanged: `ok=True` is never
 reinterpreted as a producer refusal or native success. No raw errors, messages,
 paths, traceback strings or qualification authority are exported. First cause,
 all six selectors, primary/secondary cleanup and reference retirement remain.
-Current v4 requires the nullable field; explicit historical parsing retains
+Historical v4 requires the nullable field; explicit historical parsing retains
 unversioned v1, v2 and v3 records without fabricating consumer sites.
 
 Use the saved credential-free isolated loader with the exact source78fd889
@@ -262,7 +291,7 @@ Code/globals/session-type references retire immediately after capture,
 or at finalization on success. Failed projection is explicitly unavailable,
 independent of the original cause and existing cleanup channels.
 
-Current normal results require version4, `primary_error`, `refusal`, and nullable `consumer_site`;
+Current normal results require version5, `primary_error`, `refusal`, and nullable `consumer_site`;
 success has its own distinct empty diagnostic record. Historical unversioned
 and version2/version3 normal results require an explicit `historical=True` parser call and are not
 accepted on the current route. The safe native error fallback is unchanged.
