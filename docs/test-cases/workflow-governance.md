@@ -5157,6 +5157,29 @@ renderer at `/repo` for the namespace-bound linker oracle. This single-command
 control uses its original one-session limits and does not prove public output
 publication/retirement or reset/qualify the original eight-profile family.
 
+For [contract6002765077](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6002765077),
+run `PhaseCensusTests.test_native_original_generation_routes_complete_private_outputs`
+and `PhaseCensusTests.test_native_original_generation_default_routes_complete_private_outputs`
+from `scripts.validation_ownership.tests.test_phase_census`. Use the same
+Linux/native prerequisites and original budget. The actual original generation
+invocation must resolve the immutable manifest/source closure, render the exact
+output plan, rerender/stage the real bytes and install all declared regular
+outputs. Require complete custom-enabled cap0xCE and default cap0xCD file sets,
+exact bytes and mode0o600, selected stamp bytes, retained empty lock, source/code
+consumption and clean teardown. The unchanged original renderer at `/repo`
+supplies the absolute-path linker oracle.
+
+Run `SelectedManifestAdmissionTests` in
+`scripts.validation_ownership.tests.test_graph_commands` for closed option,
+profile/source and malformed/foreign/incomplete/duplicate/oversized plan
+refusals. These finite API fixtures are not native evidence. The pre-fix actual
+original family rejects `/repo/build` metadata because the CLI was registered
+with no output declarations. No broadened source permission or adjusted budget
+is permitted. This compatibility route does not qualify whole-Make natural
+execution or public obsolete-output retirement; all original-family/report/
+resource/architecture/final holds remain. Fixture cleanup is automatic; no
+ROM/save/profile behavior change or manual judgment applies.
+
 **Exact remaining machine hold:** version4 now returns the bounded actual
 clear/arm register, kernel trap and successful pin-retirement observations
 described above. The active/deferred cancellation pair additionally observes

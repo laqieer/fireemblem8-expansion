@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import stat
 import struct
+import sys
 import tempfile
 from threading import get_ident
 from types import SimpleNamespace
@@ -67,7 +68,7 @@ class SelectedManifestAdmissionTests(unittest.TestCase):
                 absent_paths=frozenset(),
             ),
             published_sources={}, loader=SimpleNamespace(entries={}),
-            budget=SimpleNamespace(remaining=lambda: None),
+            budget=SimpleNamespace(remaining=lambda: None, limits=SimpleNamespace(created_files=64)),
         )
         self.session.sources = lambda paths: ProbeSession.sources(self.session, paths)
         self.session.source_owners = lambda paths: [
@@ -78,6 +79,8 @@ class SelectedManifestAdmissionTests(unittest.TestCase):
         self.session.command = self.child
         self.context = []
         self.session._native_context_command = lambda command: self.context.append(command) or command
+        self.installs = []
+        self.session._private_install_command = self.private_install
         self.session._live_dispatches = []
         self.factory = mock.patch.object(
             self.shared, "python_code_closure", side_effect=lambda session, body, code: tuple(code),
@@ -89,6 +92,15 @@ class SelectedManifestAdmissionTests(unittest.TestCase):
         self.children.append(command)
         if len(command.argv) == 7:
             return SimpleNamespace(stdout=json.dumps(self.paths).encode())
+        if any("render_generation_artifact" in word for word in command.argv):
+            source, output, paths, identities, custom, cap, stamp = command.argv[-7:]
+            self.assertEqual(source, self.source)
+            self.assertEqual(json.loads(paths), sorted([self.source, *self.paths]))
+            self.assertEqual(json.loads(identities), [list(row) for row in self.session.source_owners(json.loads(paths))])
+            self.assertEqual((custom, cap, stamp), ("1", "0xFF", output + ".manifest-selection"))
+            return SimpleNamespace(stdout=json.dumps(sorted([
+                stamp, output + "/asset_manifest.mk", output + "/portrait_data.c",
+            ])).encode())
         source, paths, identities = command.argv[-3:]
         self.assertEqual(source, self.source)
         self.assertEqual(json.loads(paths), sorted([self.source, *self.paths]))
@@ -97,6 +109,11 @@ class SelectedManifestAdmissionTests(unittest.TestCase):
             [list(row) for row in self.session.source_owners(json.loads(paths))],
         )
         return SimpleNamespace(stdout=b"")
+
+    def private_install(self, command, destinations):
+        self.installs.append((command, destinations))
+        self.assertEqual(set(command.outputs) - set(destinations), {"build/selected.asset-manifest-generate.lock"})
+        return command
 
     def discovery(self, source=None):
         return (
@@ -130,8 +147,8 @@ class SelectedManifestAdmissionTests(unittest.TestCase):
                 self.assertEqual(discovery.sources, expected)
                 self.assertEqual(discovery.outputs, ("build/selected.mk",))
                 self.assertEqual(generation.sources, expected)
-                self.assertIn(source, generation.argv[-1])
-                self.assertIs(self.context[-1], generation)
+                self.assertEqual(source, generation.argv[-8])
+                self.assertIs(self.installs[-1][0], generation)
         self.assertEqual(len(self.children), 9)
 
     def test_validation_stays_with_discovery_consumer_and_generation(self):
@@ -151,6 +168,66 @@ class SelectedManifestAdmissionTests(unittest.TestCase):
                     self.session, self.stamp().replace(self.source, source),
                 )
         self.assertEqual(self.children, [])
+
+    def test_generation_plan_rejects_foreign_incomplete_duplicate_and_excessive_outputs(self):
+        valid = ["build/selected.manifest-selection", "build/selected/asset_manifest.mk"]
+        cases = (
+            None, [], valid[:1], valid[1:], [*valid, valid[1]],
+            [*valid, "build/foreign.mk"], [*valid, "build/selected/../escaped"],
+            [*valid, "build/selected/" + "x" * 4096], [*valid, 17],
+            [*valid, *(f"build/selected/extra{number:03d}" for number in range(64))],
+        )
+        for names in cases:
+            with self.subTest(names=names):
+                original = self.session.command
+                def corrupted(command):
+                    result = self.child(command)
+                    if any("render_generation_artifact" in word for word in command.argv):
+                        result.stdout = json.dumps(names).encode()
+                    return result
+                self.session.command = corrupted
+                before = len(self.installs)
+                try:
+                    with self.assertRaises(MakeProbeError):
+                        self.register(self.generation(), "asset-manifest-include-remake")
+                finally:
+                    self.session.command = original
+                self.assertEqual(len(self.installs), before)
+
+    def test_generation_profile_rejects_before_source_capture_or_install(self):
+        for custom, cap in (("2", "0xFF"), ("1", "-1"), ("1", "unknown"), (1, "255"), ("1", 255)):
+            with self.subTest(custom=custom, cap=cap), self.assertRaises(MakeProbeError):
+                graph_commands.asset_generation_command(
+                    self.session, self.source, "build/selected",
+                    "build/selected.manifest-selection", custom, cap,
+                )
+        self.assertEqual(self.children, [])
+        self.assertEqual(self.installs, [])
+
+    def test_generation_writer_refuses_changed_plan_before_staging(self):
+        from scripts.assets import manifest
+
+        command = self.register(self.generation(), "asset-manifest-include-remake")
+        names = json.loads(command.argv[-1])
+        for defect in (None, "missing", "foreign"):
+            with self.subTest(defect=defect):
+                outputs = dict.fromkeys(names, b"actual fixture bytes")
+                if defect == "missing":
+                    del outputs[names[0]]
+                elif defect == "foreign":
+                    outputs["build/foreign.mk"] = b"foreign"
+                with mock.patch.object(manifest, "render_generation_artifact", return_value=outputs), \
+                     mock.patch.object(manifest, "stage_generation_artifact") as stage, \
+                     mock.patch.object(sys, "argv", ["-c", *command.argv[6:]]), \
+                     mock.patch.object(sys, "path", list(sys.path)):
+                    body = compile(command.argv[5], "<issued generation writer>", "exec")
+                    if defect is None:
+                        exec(body, {})
+                        stage.assert_called_once_with(outputs, "build/selected", "/work")
+                    else:
+                        with self.assertRaisesRegex(manifest.GeneratedDataError, "issued output plan"):
+                            exec(body, {})
+                        stage.assert_not_called()
 
     def test_manifest_path_and_source_controls(self):
         self.session.snapshot.files["build/manifest.json"] = b"manifest"

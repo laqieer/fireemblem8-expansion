@@ -1326,7 +1326,13 @@ class PhaseCensusTests(unittest.TestCase):
     def test_native_captured_generation_private_writer(self):
         self._native_captured_generation(staging=True, cap=0xCD)
 
-    def _native_captured_generation(self, *, staging, cap):
+    def test_native_original_generation_routes_complete_private_outputs(self):
+        self._native_captured_generation(staging=True, cap=0xCE, routed=True)
+
+    def test_native_original_generation_default_routes_complete_private_outputs(self):
+        self._native_captured_generation(staging=True, cap=0xCD, routed=True, custom=0)
+
+    def _native_captured_generation(self, *, staging, cap, routed=False, custom=1):
         from scripts.assets import manifest
         from scripts.validation_ownership.authority import AuthorityLoader, git_tree_entries
         from scripts.validation_ownership.python_commands import python_command
@@ -1344,9 +1350,9 @@ class PhaseCensusTests(unittest.TestCase):
                 else loader.read_blob(name, "native captured renderer source"),
                 loader.entries[name].mode,
             )
-        source = "assets/manifests/custom-spell-reference.json"
+        source = "assets/manifests/custom-spell-reference.json" if custom else "assets/manifest.json"
         records = manifest.load_and_validate(
-            str(foundation.ROOT / source), 1, item_id_cap=cap,
+            str(foundation.ROOT / source), custom, item_id_cap=cap,
         )
         output = "build/generated/assets"
         expected = manifest.expected_outputs(records, str(foundation.ROOT / output))
@@ -1356,7 +1362,7 @@ class PhaseCensusTests(unittest.TestCase):
         )["/repo/" + linker].encode("utf-8")
         if staging:
             expected[str(foundation.ROOT / (output + ".manifest-selection"))] = (
-                manifest._selection_stamp_content("/repo/" + source, 1, cap).encode("utf-8")
+                manifest._selection_stamp_content("/repo/" + source, custom, cap).encode("utf-8")
             )
             expected[str(foundation.ROOT / (output + manifest.GENERATION_LOCK_SUFFIX))] = b""
         oracle = [
@@ -1372,7 +1378,7 @@ class PhaseCensusTests(unittest.TestCase):
                 "from scripts.assets.manifest import render_generation_artifact,stage_generation_artifact;"
                 "outputs=render_generation_artifact(sys.argv[1],sys.argv[2],"
                 "tracked_sources=frozenset(json.loads(sys.argv[3])),source_identities=json.loads(sys.argv[4]),"
-                "custom_spell_effects=1,item_id_cap=" + str(cap)
+                "custom_spell_effects=" + str(custom) + ",item_id_cap=" + str(cap)
                 + (",selection_stamp=sys.argv[2]+'.manifest-selection'" if staging else "")
                 + ");"
             )
@@ -1403,9 +1409,27 @@ class PhaseCensusTests(unittest.TestCase):
                     command, tuple(name for name in command.outputs
                                    if not name.endswith(manifest.GENERATION_LOCK_SUFFIX)),
                 )
+            if routed:
+                from scripts.validation_ownership.graph_commands import MakeCommands
+                contracts = {
+                    row["id"]: row for row in json.loads(loader.read_blob(
+                        ".github/validation-ownership-make-dynamics.json", "original generation contract",
+                    ))["contracts"]
+                }
+                adapter = object.__new__(MakeCommands)
+                adapter.session = session
+                command = adapter._register(
+                    f'python3 -m scripts.assets --custom-spell-effects "{custom}" --item-id-cap "{hex(cap)}" '
+                    f'--selection-stamp "{output}.manifest-selection" --manifest "{source}" '
+                    f'--out-dir "{output}" generate',
+                    contracts["asset-manifest-include-remake"],
+                )
             result = session.command(command)
-            self.assertEqual(json.loads(result.stdout), oracle)
-            self.assertEqual(len(oracle), 36 if staging else 34)
+            if not routed:
+                self.assertEqual(json.loads(result.stdout), oracle)
+            else:
+                self.assertEqual(result.stdout, b"")
+            self.assertEqual(len(oracle), (34 if custom else 19) + (2 if staging else 0))
             if staging:
                 self.assertEqual(
                     {item.path: item.data for item in result.generated},

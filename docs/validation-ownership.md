@@ -526,6 +526,20 @@ Any unsupported original command, missing source, refusal, exhausted
 budget or failed assertion stops the family; it never creates a replacement
 budget, calls an adapter to manufacture output or qualifies a successful prefix.
 
+The existing asset-generation command adapter uses the captured renderer and
+private writer rather than invoking a repository-writing CLI with no declared
+outputs. A confined renderer supplies the exact output plan. The adapter rejects
+missing inventory/stamp, foreign roots, duplicate/noncanonical paths and count
+overflow before issuing the writer. The writer rerenders immutable sources,
+requires the same complete path set, stages in `/work`, and uses the existing
+identity-bound private-install protocol for generated regular files and stamp.
+The retained empty generation lock is also declared, but not installed through
+the regular-file rename permission. No `/repo/build` permission is added.
+Planning and writing are separate charged executions; this compatibility route
+is not the selected single whole-Make execution redesign. Private pruning does
+not prove retirement of previously published obsolete public files. Complete
+public version/lifecycle and original-family resource qualification remain held.
+
 Four `ReadEpochTests` selectors are separate complete terminal invocations:
 `test_native_completion_kernel_frame_pin_terminal`,
 `test_native_completion_resource_terminal`,

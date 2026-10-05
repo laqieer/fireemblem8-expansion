@@ -152,6 +152,59 @@ def asset_discovery_command(session: ProbeSession, source: str, logical_output: 
     )
 
 
+def asset_generation_command(session, source, output, stamp, custom, cap):
+    if (
+        type(custom) is not str or custom not in {"0", "1"} or type(cap) is not str
+        or not re.fullmatch(r"(?:0[xX][0-9a-fA-F]+|[0-9]+)", cap)
+    ):
+        raise MakeProbeError("asset generation requires explicit supported profile values")
+    relative_path(output)
+    if not output.startswith("build/") or stamp != output + ".manifest-selection":
+        raise MakeProbeError("asset generation selection stamp differs from its output")
+    sources, identities = shared_python_commands.asset_manifest_source_pool(session, source)
+    directories = tuple(sorted({
+        str(PurePosixPath(path).parent) for path in sources
+        if str(PurePosixPath(path).parent) != "."
+    }))
+    arguments = (source, output, json.dumps(sources), json.dumps(identities), custom, cap, stamp)
+    render = (
+        "import json;from scripts.assets.manifest import render_generation_artifact;"
+        "outputs=render_generation_artifact(sys.argv[1],sys.argv[2],"
+        "tracked_sources=frozenset(json.loads(sys.argv[3])),source_identities=json.loads(sys.argv[4]),"
+        "custom_spell_effects=int(sys.argv[5]),"
+        "item_id_cap=int(sys.argv[6],16 if sys.argv[6].lower().startswith('0x') else 10),"
+        "selection_stamp=sys.argv[7]);"
+    )
+    plan = python_command(
+        session, render + "print(json.dumps(sorted(outputs)))", arguments,
+        sources=sources, directories=directories, code=("scripts/assets/manifest.py",),
+    )
+    names = parse_json(session.command(plan).stdout, "asset generation output plan")
+    if (
+        not isinstance(names, list) or not names
+        or len(names) + 1 > session.budget.limits.created_files
+        or any(not isinstance(name, str) for name in names) or names != sorted(set(names))
+        or stamp not in names or output + "/asset_manifest.mk" not in names
+    ):
+        raise MakeProbeError("asset generation returned an incomplete or excessive output plan")
+    for name in names:
+        relative_path(name)
+        if name != stamp and not name.startswith(output + "/"):
+            raise MakeProbeError("asset generation output plan escaped its exact output root")
+    lock = output + ".asset-manifest-generate.lock"
+    command = python_command(
+        session,
+        render + "from scripts.assets.manifest import stage_generation_artifact,GeneratedDataError;"
+        "\nif sorted(outputs)!=json.loads(sys.argv[8]):"
+        " raise GeneratedDataError('asset generation changed its issued output plan')\n"
+        "stage_generation_artifact(outputs,sys.argv[2],'/work')",
+        (*arguments, json.dumps(names)),
+        sources=sources, directories=directories, outputs=tuple(sorted((*names, lock))),
+        code=("scripts/assets/manifest.py",),
+    )
+    return session._private_install_command(command, tuple(names))
+
+
 def asset_selection_stamp_command(session, command):
     pattern = (
         r'tmp="(?P<output>build/[A-Za-z0-9_./-]+\.manifest-selection)\.\$\$\.tmp"; \\\n'
@@ -834,8 +887,7 @@ class MakeCommands:
             source, output, stamp = tokens[10], relative_path(tokens[12]), relative_path(tokens[8])
             if not output.startswith("build/") or stamp != output + ".manifest-selection":
                 raise MakeProbeError("asset generation selection stamp differs from its output")
-            selected, _ = shared_python_commands.asset_manifest_sources(self.session, source)
-            sources.extend(selected)
+            return asset_generation_command(self.session, source, output, stamp, tokens[4], tokens[6])
         if contract["id"] == "modern-expansion-config-resolution":
             sources.append("config.mk")
         registration = python_command(
