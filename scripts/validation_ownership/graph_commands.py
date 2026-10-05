@@ -137,7 +137,7 @@ _python_source_paths = shared_python_commands._python_source_paths
 
 def asset_discovery_command(session: ProbeSession, source: str, logical_output: str):
     relative_path(logical_output)
-    sources, identities = shared_python_commands.asset_manifest_sources(session, source)
+    sources, identities = shared_python_commands.asset_manifest_source_pool(session, source)
     return python_command(
         session,
         "import json;from pathlib import Path;"
@@ -168,7 +168,7 @@ def asset_selection_stamp_command(session, command):
     if match is None:
         raise MakeProbeError("asset selection stamp differs from its literal recipe")
     source, output = match["source"], relative_path(match["output"])
-    shared_python_commands.asset_manifest_sources(session, source)
+    shared_python_commands.asset_manifest_path(session, source)
     content = (
         f"manifest=/repo/{source}\ncustom_spell_effects={match['custom']}\n"
         f"item_id_cap={match['cap']}\n"

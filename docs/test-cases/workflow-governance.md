@@ -4964,12 +4964,20 @@ The old regex rejects the actual original recipe. This host admission proof
 does not establish native publication, complete profile runtime or delivery.
 
 The stamp writer consumes no repository source: it writes only the original
-recipe's expanded literal manifest/profile fields. Require `sources=()` for
-that writer, while its preceding real manifest discovery and validation
-commands retain their exact manifest/asset source closures and identities.
-Do not introduce artificial reads or relax declared/consumed source equality.
-The same admission regressions inspect all three registrations; restoring asset
-source declarations on the literal-only writer fails their source contract and
+recipe's expanded literal manifest/profile fields. Require `sources=()` and
+canonical immutable manifest-path admission without a manifest-discovery child.
+Discovery captures its exact source pool through native manifest discovery;
+its real renderer validates complete captured identities and source bytes
+before producing output. Generation retains its separate preliminary full
+validation. Run `SelectedManifestAdmissionTests.test_validation_stays_with_discovery_consumer_and_generation`
+and the `AssetManifestTests.test_discovery_artifact_*` consumer controls for
+rendering equivalence, missing/foreign identities, malformed admission,
+nonregular/replaced source and escaping-output refusals. Do not introduce
+artificial reads or relax declared/consumed source equality.
+Removing duplicate prevalidation from the already-validating discovery
+renderer does not remove a consumer validation boundary or raise budgets;
+the unchanged original eight-profile family must still establish aggregate
+resource fitness. Restoring source declarations on the literal-only writer
 reproduces the native declared/consumed mismatch.
 
 **Exact remaining machine hold:** the current child trace does not return

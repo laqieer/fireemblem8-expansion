@@ -132,7 +132,25 @@ class SelectedManifestAdmissionTests(unittest.TestCase):
                 self.assertEqual(generation.sources, expected)
                 self.assertIn(source, generation.argv[-1])
                 self.assertIs(self.context[-1], generation)
-        self.assertEqual(len(self.children), 12)
+        self.assertEqual(len(self.children), 9)
+
+    def test_validation_stays_with_discovery_consumer_and_generation(self):
+        discovery = self.register(self.discovery(), "asset-discovery-include-remake")
+        self.assertEqual(len(self.children), 1)
+        self.assertEqual(self.children[0].sources, (self.source,))
+        self.assertEqual(json.loads(discovery.argv[-1]),
+                         [list(row) for row in self.session.source_owners(discovery.sources)])
+        self.children.clear()
+        self.register(self.generation(), "asset-manifest-include-remake")
+        self.assertEqual(len(self.children), 2)
+        self.assertEqual(self.children[1].sources, tuple(sorted([self.source, *self.paths])))
+        self.children.clear()
+        for source in ("missing.json", "assets/./manifest.json", "../manifest.json", "build/input"):
+            with self.subTest(source=source), self.assertRaises(MakeProbeError):
+                graph_commands.asset_selection_stamp_command(
+                    self.session, self.stamp().replace(self.source, source),
+                )
+        self.assertEqual(self.children, [])
 
     def test_manifest_path_and_source_controls(self):
         self.session.snapshot.files["build/manifest.json"] = b"manifest"
@@ -198,9 +216,7 @@ class SelectedManifestAdmissionTests(unittest.TestCase):
         registration = self.register(self.stamp(), "asset-selection-stamp-remake")
         self.assertEqual(registration.outputs, ("build/selected.manifest-selection",))
         self.assertEqual(registration.sources, ())
-        discovery, validation = self.children
-        self.assertEqual(discovery.sources, (self.source,))
-        self.assertEqual(validation.sources, tuple(sorted([self.source, *self.paths])))
+        self.assertEqual(self.children, [])
         self.assertEqual(
             registration.argv[-1],
             f"manifest=/repo/{self.source}\ncustom_spell_effects=1\nitem_id_cap=0xFF\n",
@@ -240,9 +256,7 @@ class SelectedManifestAdmissionTests(unittest.TestCase):
         registration = self.register(command, "asset-selection-stamp-remake")
         self.assertEqual(registration.outputs, ("build/selected.manifest-selection",))
         self.assertEqual(registration.sources, ())
-        discovery, validation = self.children
-        self.assertEqual(discovery.sources, (self.source,))
-        self.assertEqual(validation.sources, tuple(sorted([self.source, *self.paths])))
+        self.assertEqual(self.children, [])
         self.assertEqual(registration.argv[-1],
                          f"manifest=/repo/{self.source}\ncustom_spell_effects=1\nitem_id_cap=0xFF\n")
         self.assertEqual(registration.publication_policy, "if-content-changed")

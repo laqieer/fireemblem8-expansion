@@ -186,7 +186,7 @@ def python_command(session, body, arguments=(), *, sources=(), outputs=(), direc
     return session._native_context_command(command) if stderr_effects else command
 
 
-def asset_manifest_sources(session, source):
+def asset_manifest_path(session, source):
     source = relative_path(source)
     if (
         source == "build" or source.startswith("build/")
@@ -195,6 +195,11 @@ def asset_manifest_sources(session, source):
     ):
         raise MakeProbeError("asset manifest must be an immutable regular repository source")
     session.sources((source,))
+    return source
+
+
+def asset_manifest_source_pool(session, source):
+    source = asset_manifest_path(session, source)
     discovery = python_command(
         session,
         "import json;from scripts.assets.manifest import load_manifest,discovery_sources;"
@@ -218,6 +223,11 @@ def asset_manifest_sources(session, source):
             raise MakeProbeError("asset dependency must be an immutable regular repository source")
     sources = session.sources((source, *paths))
     identities = session.source_owners(sources)
+    return sources, identities
+
+
+def asset_manifest_sources(session, source):
+    sources, identities = asset_manifest_source_pool(session, source)
     validation = python_command(
         session,
         "import json;from scripts.assets.manifest import _captured_discovery;"
