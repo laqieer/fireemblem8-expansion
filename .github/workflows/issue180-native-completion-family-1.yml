@@ -59,7 +59,7 @@ jobs:
       timeout-minutes: 10
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        ref: de5f3f93e3866885e7471f1987f124eed5ad93cf
+        ref: 890fe6768550dbb1f9b48b03560c42fbe19a9d4c
         path: candidate
         fetch-depth: 0
         submodules: recursive

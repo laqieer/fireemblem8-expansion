@@ -40,7 +40,9 @@ class NativeAdapterControls(Inert):
         )
         recorder.api = SimpleNamespace(limits=self.limits_type)
         recorder.budget = SimpleNamespace(
-            limits=self.limits_type(seconds=20 if selector in (3, 4) else 3600),
+            limits=self.limits_type(
+                seconds=20 if policy.NATIVE_SELECTORS[selector] in policy.NATIVE_SELECTORS[-2:] else 3600,
+            ),
             failed=False, closed=False,
         )
 

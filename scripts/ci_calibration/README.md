@@ -5,16 +5,19 @@
 Assignment `issue180-native-harness-1ab6`, scope comment5982866338, is one
 normal never-merge child of `e93847725f58a89bca2a94af2d4acaae6a89cebf`.
 The first35 historical edges, old workflow bytes and old report source731
-remain unchanged. Only edge36 and the eight-path native inventory are added.
-The provisional source is `de5f3f93e3866885e7471f1987f124eed5ad93cf`,
+remain unchanged. Edge36 is the reviewed native preparation; edge37 is its
+normal exact-source rebind. The combined native inventory remains eight paths.
+The source prepared for contained qualification is `890fe6768550dbb1f9b48b03560c42fbe19a9d4c`,
 including the complete fifteen-path731->6116 implementation and four-path
-6116->de5 authored-test/documentation delta, against unchanged BASEec1.
+6116->de5 authored-test/documentation delta and the reviewed eight-path
+de5->890fe finite-fixture/selected-manifest redesign, against unchanged BASEec1.
 Source review, harness review and an explicit future allocation are separate
 conditions. This preparation branch is not a workflow trigger.
 
 The existing supervisor accepts the closed pair
 `--profile native-completion-trace4-abi2-v1 --selector <authored selector>`.
 The finite selectors are `PhaseCensusTests.test_native_completion_original_profile_family`
+and `PhaseCensusTests.test_native_completion_archive_retirement_terminal`
 in `scripts.validation_ownership.tests.test_phase_census`, and
 `ReadEpochTests.test_native_completion_{kernel_frame_pin,resource,cancellation,deadline}_terminal`
 in `scripts.validation_ownership.tests.test_read_epochs`; braces describe four
@@ -35,13 +38,13 @@ fields, including the authored20-second cancellation/deadline budgets;
 neither accounting sentinels nor failed-budget resets are installed.
 An exhausted preparation or unsupported original consumer is a failed/unknown
 qualification, never a successful family or permission to widen a quota.
-The positive source method also ends with an expected out-of-lifetime archive
-query. Its original `_source_phase_images` calls `budget.remaining()` after
-closure, setting the original failed flag. The adapter records this transition
-and does not reset it or classify that terminal budget as successful. Complete
-positive qualification therefore also requires a coordinator disposition of
-this existing source/acceptance coupling before allocation; no source edit or
-caller guard bypass is authorized by this preparation.
+The reviewed source moves the expected out-of-lifetime archive query into an
+independent original retirement lifetime. The positive family must finish with
+an unfailed budget; the retirement selector must observe the original failed
+closed budget. Neither route resets a budget. The finite source fixture is a
+conservative source-declared pool, not a statically closed native-read model.
+Its measured payload components do not establish complete quota fit; actual
+closure, demand and cleanup must succeed inside the unchanged contained route.
 
 The adapter observes actual original Make/command returns, real Popen handles,
 parsed original archives, source/visit/publication counts, source-completion

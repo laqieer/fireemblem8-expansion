@@ -94,8 +94,11 @@ class NativeSelectionControls(unittest.TestCase):
             with self.assertRaises(policy.GuardError):
                 policy.native_event(self.event(policy.NATIVE_BRANCH), profile=policy.NATIVE_PROFILE, selector=policy.NATIVE_SELECTORS[0], **identity)
 
-    def test_native_lineage_adds_one_edge_without_reinterpreting_the_old_chain(self):
-        lines = [f"{'a' * 40} {supervisor.NATIVE_PARENT}"]
+    def test_native_lineage_adds_reviewed_preparation_and_rebind_without_reinterpreting_old_chain(self):
+        lines = [
+            f"{'a' * 40} {supervisor.NATIVE_PREPARATION_SHA}",
+            f"{supervisor.NATIVE_PREPARATION_SHA} {supervisor.NATIVE_PARENT}",
+        ]
         calls = []
         original = supervisor.validate_harness_lineage
         try:
@@ -114,6 +117,21 @@ class NativeSelectionControls(unittest.TestCase):
         ):
             with self.assertRaises(policy.GuardError):
                 supervisor.validate_native_inventory(changed)
+
+    def test_native_source_inventory_keeps_each_complete_reviewed_stage(self):
+        for stage, paths in (
+            ("implementation", supervisor.NATIVE_IMPLEMENTATION_PATHS),
+            ("tests", supervisor.NATIVE_TEST_PATHS),
+            ("redesign", supervisor.NATIVE_REDESIGN_PATHS),
+        ):
+            rows = [b"M\0" + path.encode() + b"\0" for path in sorted(paths)]
+            data = b"".join(rows)
+            supervisor.validate_native_source_inventory(data, stage)
+            for changed in (b"".join(rows[1:]), data + rows[0], data + b"M\0src/proc.c\0"):
+                with self.subTest(stage=stage), self.assertRaises(policy.GuardError):
+                    supervisor.validate_native_source_inventory(changed, stage)
+        with self.assertRaises(policy.GuardError):
+            supervisor.validate_native_source_inventory(data, "unreviewed")
 
 
 class Inert(unittest.TestCase):

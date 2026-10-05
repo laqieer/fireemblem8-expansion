@@ -183,6 +183,7 @@ EXACT_COMPOSITION_PATHS = frozenset({
     )),
 })
 NATIVE_PARENT = "e93847725f58a89bca2a94af2d4acaae6a89cebf"
+NATIVE_PREPARATION_SHA = "dbd0905cb0bbabc8979c0521e39f0a7c64aa0f34"
 NATIVE_PATHS = frozenset({
     policy.NATIVE_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "supervisor.py", "worker.py", "root_stage.py",
@@ -204,10 +205,22 @@ NATIVE_TEST_PATHS = frozenset({
     "scripts/validation_ownership/tests/test_read_epochs.py",
     "docs/validation-ownership.md", "docs/test-cases/workflow-governance.md",
 })
+NATIVE_REDESIGN_PATHS = frozenset({
+    ".github/validation-ownership-make-dynamics.json",
+    "scripts/validation_ownership/graph_commands.py",
+    "scripts/validation_ownership/python_commands.py",
+    "scripts/validation_ownership/tests/test_graph_commands.py",
+    "scripts/validation_ownership/tests/test_phase_census.py",
+    "docs/ownership-probe-producers.md",
+    "docs/validation-ownership.md", "docs/test-cases/workflow-governance.md",
+})
 
 
 def validate_native_source_inventory(data, stage):
-    expected = {"implementation": NATIVE_IMPLEMENTATION_PATHS, "tests": NATIVE_TEST_PATHS}
+    expected = {
+        "implementation": NATIVE_IMPLEMENTATION_PATHS, "tests": NATIVE_TEST_PATHS,
+        "redesign": NATIVE_REDESIGN_PATHS,
+    }
     if stage not in expected or type(data) is not bytes:
         raise policy.GuardError("native source inventory has an unknown stage or representation")
     rows = data.split(b"\0")
@@ -221,9 +234,11 @@ def validate_native_source_inventory(data, stage):
 
 
 def validate_native_lineage(lines, head):
-    if not lines or lines[0] != f"{head} {NATIVE_PARENT}":
-        raise policy.GuardError("native preparation is not one normal child of the frozen harness")
-    validate_harness_lineage(lines[1:], NATIVE_PARENT)
+    if len(lines) < 2 or lines[:2] != [
+        f"{head} {NATIVE_PREPARATION_SHA}", f"{NATIVE_PREPARATION_SHA} {NATIVE_PARENT}",
+    ]:
+        raise policy.GuardError("native rebinding is not one normal child of the reviewed preparation")
+    validate_harness_lineage(lines[2:], NATIVE_PARENT)
 
 
 def validate_native_inventory(data):
@@ -1553,7 +1568,7 @@ class Owner:
             raise policy.GuardError("workflow harness has uncommitted source changes")
         if native:
             validate_native_lineage(
-                git(self.harness, "rev-list", "--parents", "--max-count=36", "HEAD").decode().splitlines(),
+                git(self.harness, "rev-list", "--parents", "--max-count=37", "HEAD").decode().splitlines(),
                 self.scope["harness_sha"],
             )
             validate_native_inventory(git(self.harness, "diff", "--name-status", "-z", NATIVE_PARENT, "HEAD"))
@@ -1783,14 +1798,20 @@ class Owner:
         if git(self.candidate, "rev-parse", policy.BASE + "^{commit}").decode().strip() != policy.BASE:
             raise policy.GuardError("candidate lacks the exact BASE history")
         if source == policy.NATIVE_SOURCE:
-            if git(self.candidate, "rev-list", "--parents", "--max-count=1", source).decode().strip() != (
-                source + " " + policy.NATIVE_IMPLEMENTATION
+            for child, parent in (
+                (policy.NATIVE_AUTHORED_SOURCE, policy.NATIVE_IMPLEMENTATION),
+                (policy.NATIVE_MANIFEST_SOURCE, policy.NATIVE_AUTHORED_SOURCE),
+                (source, policy.NATIVE_MANIFEST_SOURCE),
             ):
-                raise policy.GuardError("authored native source is not the exact normal implementation child")
+                if git(self.candidate, "rev-list", "--parents", "--max-count=1", child).decode().strip() != (
+                    child + " " + parent
+                ):
+                    raise policy.GuardError("native source differs from the reviewed normal source chain")
             git(self.candidate, "merge-base", "--is-ancestor", policy.GRAPH, policy.NATIVE_IMPLEMENTATION)
             for before, after, stage in (
                 (policy.GRAPH, policy.NATIVE_IMPLEMENTATION, "implementation"),
-                (policy.NATIVE_IMPLEMENTATION, source, "tests"),
+                (policy.NATIVE_IMPLEMENTATION, policy.NATIVE_AUTHORED_SOURCE, "tests"),
+                (policy.NATIVE_AUTHORED_SOURCE, source, "redesign"),
             ):
                 validate_native_source_inventory(git(
                     self.candidate, "diff", "--no-ext-diff", "--no-textconv", "--no-renames",

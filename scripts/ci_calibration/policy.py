@@ -47,8 +47,10 @@ PREVIOUS_WORKFLOW = ".github/workflows/issue180-ci-baseline-20.yml"
 OUTPUT_PREFIX = "issue180-exact-composition-report-1-"
 BASE = "ec1dc8553419c8833a687fd8d4a6521a4e29ff7a"
 GRAPH = "731bb115eecf995e6fec77a10b605c727fc148e2"
-NATIVE_SOURCE = "de5f3f93e3866885e7471f1987f124eed5ad93cf"
+NATIVE_SOURCE = "890fe6768550dbb1f9b48b03560c42fbe19a9d4c"
 NATIVE_IMPLEMENTATION = "6116e01d571929f42cffdaefcb65dd90c65bd975"
+NATIVE_AUTHORED_SOURCE = "de5f3f93e3866885e7471f1987f124eed5ad93cf"
+NATIVE_MANIFEST_SOURCE = "7acc47a1f9f2308c843c7c1c0d482ce34627b116"
 NATIVE_BRANCH = "calibration/issue-180-native-completion-family-1"
 NATIVE_WORKFLOW = ".github/workflows/issue180-native-completion-family-1.yml"
 NATIVE_PROFILE = "native-completion-trace4-abi2-v1"
@@ -59,7 +61,12 @@ NATIVE_SELECTORS = (
     "test_native_completion_original_profile_family",
     *("scripts.validation_ownership.tests.test_read_epochs.ReadEpochTests."
       "test_native_completion_" + suffix + "_terminal"
-      for suffix in ("kernel_frame_pin", "resource", "cancellation", "deadline")),
+      for suffix in ("kernel_frame_pin", "resource")),
+    "scripts.validation_ownership.tests.test_phase_census.PhaseCensusTests."
+    "test_native_completion_archive_retirement_terminal",
+    *("scripts.validation_ownership.tests.test_read_epochs.ReadEpochTests."
+      "test_native_completion_" + suffix + "_terminal"
+      for suffix in ("cancellation", "deadline")),
 )
 NATIVE_MEMBERS = ("source-family", *(
     primary + "-" + profile
