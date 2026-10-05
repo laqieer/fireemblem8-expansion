@@ -197,7 +197,10 @@ class SelectedManifestAdmissionTests(unittest.TestCase):
     def test_stamp_binds_literal_manifest_profile_destination(self):
         registration = self.register(self.stamp(), "asset-selection-stamp-remake")
         self.assertEqual(registration.outputs, ("build/selected.manifest-selection",))
-        self.assertEqual(registration.sources, tuple(sorted([self.source, *self.paths])))
+        self.assertEqual(registration.sources, ())
+        discovery, validation = self.children
+        self.assertEqual(discovery.sources, (self.source,))
+        self.assertEqual(validation.sources, tuple(sorted([self.source, *self.paths])))
         self.assertEqual(
             registration.argv[-1],
             f"manifest=/repo/{self.source}\ncustom_spell_effects=1\nitem_id_cap=0xFF\n",
@@ -236,7 +239,10 @@ class SelectedManifestAdmissionTests(unittest.TestCase):
         self.assertIn("\n\trm -f", command)
         registration = self.register(command, "asset-selection-stamp-remake")
         self.assertEqual(registration.outputs, ("build/selected.manifest-selection",))
-        self.assertEqual(registration.sources, tuple(sorted([self.source, *self.paths])))
+        self.assertEqual(registration.sources, ())
+        discovery, validation = self.children
+        self.assertEqual(discovery.sources, (self.source,))
+        self.assertEqual(validation.sources, tuple(sorted([self.source, *self.paths])))
         self.assertEqual(registration.argv[-1],
                          f"manifest=/repo/{self.source}\ncustom_spell_effects=1\nitem_id_cap=0xFF\n")
         self.assertEqual(registration.publication_policy, "if-content-changed")

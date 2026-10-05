@@ -168,7 +168,7 @@ def asset_selection_stamp_command(session, command):
     if match is None:
         raise MakeProbeError("asset selection stamp differs from its literal recipe")
     source, output = match["source"], relative_path(match["output"])
-    sources, _ = shared_python_commands.asset_manifest_sources(session, source)
+    shared_python_commands.asset_manifest_sources(session, source)
     content = (
         f"manifest=/repo/{source}\ncustom_spell_effects={match['custom']}\n"
         f"item_id_cap={match['cap']}\n"
@@ -178,7 +178,7 @@ def asset_selection_stamp_command(session, command):
         "from pathlib import Path;"
         "out=Path('/work')/sys.argv[1];out.parent.mkdir(parents=True,exist_ok=True);"
         "out.write_text(sys.argv[2])",
-        (output, content), sources=sources, outputs=(output,),
+        (output, content), outputs=(output,),
         publication_policy="if-content-changed",
     ))
 

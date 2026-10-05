@@ -4963,6 +4963,15 @@ comparison, move operation, manifest root or doubled indentation still refuses.
 The old regex rejects the actual original recipe. This host admission proof
 does not establish native publication, complete profile runtime or delivery.
 
+The stamp writer consumes no repository source: it writes only the original
+recipe's expanded literal manifest/profile fields. Require `sources=()` for
+that writer, while its preceding real manifest discovery and validation
+commands retain their exact manifest/asset source closures and identities.
+Do not introduce artificial reads or relax declared/consumed source equality.
+The same admission regressions inspect all three registrations; restoring asset
+source declarations on the literal-only writer fails their source contract and
+reproduces the native declared/consumed mismatch.
+
 **Exact remaining machine hold:** the current child trace does not return
 DR0..DR3/DR6/DR7, hardware siginfo/PC/purpose/restore samples, modifier/RBX/
 reader-frame observations, inherited registers after child exec, source-active
