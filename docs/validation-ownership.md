@@ -540,6 +540,15 @@ parse-time producer test separately covers ordinary native dispatch with these
 checks enabled. These are actual write/readback controls, not an exported
 complete hardware transcript or proof of every Make frame/pin/termination.
 
+`ReadEpochTests.test_native_reader_frame_exclusions_keep_only_original_assignments`
+executes actual define/private/undefine/eval and ordinary source assignments.
+Final Make values must prove that these operations ran; the version4 archive
+must retain the actual source and only the two selected ordinary physical
+assignment receipts with original values and parsed sites. Eval-produced and
+define/private/undefine operations cannot manufacture those receipts. This
+covers the real admitted source path, not arbitrary forged reader frames,
+unexported modifier/RBX samples or every exclusion predicate in isolation.
+
 **Unresolved machine criterion:** the closed returned trace has source,
 completion and pass events, but no child DR0..DR3/DR6/DR7 readback, siginfo/PC/
 issued-purpose transcript, modifier/RBX/reader-frame samples, inherited-slot

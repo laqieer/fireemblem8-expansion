@@ -4932,6 +4932,19 @@ enabled. No profile/save/ROM/ABI behavior changes; each read remains charged.
 This is neither full source/frame/pin/active-termination qualification nor an
 exported transcript; all original machine and delivery holds remain.
 
+Contract6001923603 adds a real admitted-source exclusion control for the same
+case. Run
+`python3 -m unittest scripts.validation_ownership.tests.test_read_epochs.ReadEpochTests.test_native_reader_frame_exclusions_keep_only_original_assignments -v`
+in the supported native observer environment. Actual Make must preserve a
+define body as data, execute private/eval assignments, remove the undefined
+binding after its earlier value was consumed, and evaluate the ordinary value.
+The version4 source archive must retain original bytes and exactly the two
+selected ordinary physical assignments, with actual values and matching parsed
+source sites; the excluded operations must not produce those receipts.
+Cleanup is automatic. This control has no bug preimage because it strengthens
+evidence for existing correct behavior. It does not prove arbitrary forged
+frames, exported register/modifier samples or full machine qualification.
+
 The original family also includes `native-one.dat` and then
 `./native-one.dat`. GNU Make reports both visit names as `native-one.dat`;
 the second spelling does not create a different source. Require distinct visit

@@ -1244,6 +1244,58 @@ class ReadEpochTests(unittest.TestCase):
         with patch.object(session, "_make", with_phases):
             return self.observe(session, True)
 
+    def test_native_reader_frame_exclusions_keep_only_original_assignments(self):
+        source = (
+            "REMOVED := before\n"
+            "SEEN := $(REMOVED)\n"
+            "undefine REMOVED\n"
+            "define BLOCK\n"
+            "BODY_ASSIGN := not-an-original-assignment\n"
+            "endef\n"
+            "private PRIVATE_ONLY := hidden\n"
+            "$(eval EVAL_VALUE := generated-only)\n"
+            "PLAIN := original\n"
+            "CHECK := $(BLOCK)|$(BODY_ASSIGN)|$(PRIVATE_ONLY)|$(EVAL_VALUE)\n"
+            "ifeq ($(PLAIN),original)\n"
+            "endif\n"
+            "all: ;\n"
+        )
+        self.fixture.add("Makefile", source)
+        with self.fixture.session() as session:
+            observed = session.make(
+                "all", variables=(
+                    "REMOVED", "SEEN", "BLOCK", "BODY_ASSIGN", "PRIVATE_ONLY", "EVAL_VALUE", "PLAIN",
+                ),
+                observe_source_phases=True,
+            )
+            actual = observed.semantics["domains"]
+            self.assertEqual(actual["REMOVED"]["value"], "")
+            self.assertEqual(actual["SEEN"]["value"], "before")
+            self.assertEqual(actual["BLOCK"]["value"], "BODY_ASSIGN := not-an-original-assignment")
+            self.assertEqual(actual["BODY_ASSIGN"]["value"], "")
+            self.assertEqual(actual["PRIVATE_ONLY"]["value"], "hidden")
+            self.assertEqual(actual["EVAL_VALUE"]["value"], "generated-only")
+            self.assertEqual(actual["PLAIN"]["value"], "original")
+            archive = session._original_source_archive(observed)
+            self.assertEqual(archive.version, read_epochs.COMPLETION_VERSION)
+            self.assertEqual(len(archive.passes), 1)
+            self.assertEqual(archive.passes[0].visits[0].source.data, source.encode())
+            rows = [
+                row for row in observed.read_trace["events"]
+                if row["kind"] == "assignment-completion"
+            ]
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(
+                {(row["variable"][0], row["variable"][1]) for row in rows},
+                {("REMOVED", "before"), ("PLAIN", "original")},
+            )
+            for row in rows:
+                site = row["site"]
+                statement = read_epochs.statement_at(source.encode(), site[3], site[4] - site[3] + 1)
+                self.assertEqual(statement[:3], tuple(site[2:5]))
+                self.assertEqual(statement[3], row["variable"][0] + " := " + row["variable"][1])
+        self.fixture.assert_clean(session)
+
     def test_native_completion_kernel_frame_pin_terminal(self):
         """Real forged notification refusal; child slot/pin readback remains unknown."""
         body = (
