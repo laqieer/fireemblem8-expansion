@@ -227,6 +227,18 @@ class Policy:
     def __init__(self, config):
         self.config = config
         self.mode = config["mode"]
+        self.native_readonly = config.get("native_readonly", False)
+        if type(self.native_readonly) is not bool or (
+            not self.native_readonly and "VO_OBSERVE_NATIVE_READONLY" in config.get("environment", {})
+        ) or self.native_readonly and (
+            self.mode != "make"
+            or config["executables"] != ["/usr/bin/make", "/bin/sh"]
+            or config.get("producer_endpoint") or config.get("published")
+            or config.get("mapping_entries") or config.get("metadata_validation")
+            or config.get("runtime_files") or config.get("dependency")
+            or config.get("environment", {}).get("VO_OBSERVE_NATIVE_READONLY") != "1"
+        ):
+            raise Violation("invalid readonly native Make authority")
         self.code = {"/repo/" + path for path in config["code"]}
         self.sources = {"/repo/" + path for path in config["sources"]}
         self.enumerations = {posixpath.normpath("/repo/" + path) for path in config["enumerations"]}
@@ -1273,6 +1285,8 @@ class Policy:
             return
         if path == "/dev/null":
             return
+        if self.native_readonly and operation == "write":
+            raise Violation(f"readonly native Make filesystem write denied: {path}")
         if state.role == "helper":
             if operation == "metadata" and path in {"/", "/bin", "/usr", "/usr/bin", "/proc/self/exe"}:
                 return
@@ -1284,7 +1298,10 @@ class Policy:
                 self.defer_observation(state, "accessed", path)
                 return
             raise Violation(f"interceptor attempted nonprotocol filesystem access: {path}")
-        if self.mode == "make" and state.role == "make" and not state.observer_ready:
+        if self.mode == "make" and (
+            state.role == "make" and not state.observer_ready
+            or self.native_readonly and state.role == "native"
+        ):
             if not (path == "/repo" or path.startswith("/repo/")):
                 self.make_runtime_access(state, path, operation)
                 return
@@ -1651,7 +1668,14 @@ class Policy:
                     if self.make_restarts > 64:
                         raise Violation("Make restart exceeded the existing pass bound")
                     role = "make"
-                elif path == "/control/interceptor" and state.dispatch:
+                elif self.native_readonly and path == "/bin/sh" and state.dispatch:
+                    if state.dispatch[0] != path:
+                        raise Violation("native shell differs from authenticated Make dispatch")
+                    role = "native"
+                    state.exec_path = path
+                    self.reserve_observation("accessed", "native-shell:" + str(pid) + ":" + path)
+                    state.dispatch = None
+                elif not self.native_readonly and path == "/control/interceptor" and state.dispatch:
                     role = "helper"
                     source, required = state.dispatch
                     state.helper_kind = VO_VALUE if (
@@ -2015,6 +2039,11 @@ def supervise(config, drop_privileges):
         elif sig == signal.SIGTRAP and event == 4:
             if state.pending is None or state.pending[0] != "exec":
                 raise Violation("unapproved executable transition")
+            if policy.native_readonly and state.pending[1] == "native":
+                if state.exec_path != "/bin/sh":
+                    raise Violation("native shell exec has no admitted image")
+                policy.observe("accessed", "native-shell:" + str(stopped) + ":" + state.exec_path)
+                state.exec_path = None
             if config.get("dependency"):
                 if state.exec_path is None:
                     raise Violation("dependency exec has no admitted image")

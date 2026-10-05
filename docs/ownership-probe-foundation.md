@@ -50,6 +50,44 @@ all eight original profiles in one budget, complete resource fitness and every
 candidate/master delivery gate remain required by #270 and #180. Runtime
 capture alone must never be reported as native-evaluator qualification.
 
+### Internal readonly dispatch component
+
+The next component of `TC-WORKFLOW-NATIVE-MAKE-001` exercises the internal
+`ProbeSession._native_make_readonly` seam. It is not the graph's qualified
+evaluator and is not an alternative validation selection. It shares request
+admission, the original Make observer and the existing syscall supervisor.
+Original authenticated Make dispatch reaches the exact captured system shell
+at `/bin/sh`; the shell and its complete loader closure are private captured
+files, not a host runtime mount. No replay interceptor or mapped-command
+result supplies shell expansion or recipe stdout.
+
+Run the following controls individually from the same clean host checkout:
+
+1. Run `python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_readonly_original_shell_and_recipe_without_replay`.
+   Original shell builtins must read the immutable admitted `input.txt`,
+   populate the observed `VALUE` domain and execute a real recipe. Require
+   actual recipe stdout, two authenticated native shell observations and the
+   admitted source-access observation, while trapping any per-command replay.
+   This is actual source-value/access evidence, not complete read-event custody.
+2. Run the same class's
+   `test_native_readonly_actual_write_and_foreign_execution_refuse`.
+   An actual shell source-write attempt and an unadmitted executable must
+   refuse; source stays unchanged and all owned processes/roots are closed.
+3. Run its
+   `test_native_readonly_mapped_runtime_authority_refuses_before_dispatch`
+   and `test_native_readonly_guard_rejects_cross_lane_configuration`.
+   Explicit optional runtime, mapped publication, altered executable authority,
+   metadata replay, dependency confinement or a mismatched native environment
+   cannot be combined with this lane.
+
+Readonly dispatch admits only the original Make image and captured shell.
+It cannot produce generated files or execute arbitrary native tools.
+Source/caller/job provenance, generated mutation/version custody and complete
+unchanged-budget eight-profile fitness still require the complete #270
+implementation; these passing controls do not qualify those missing contracts.
+Ordinary live/mapped Make remains unchanged. No save, localization, ROM/RAM,
+modern/archival build profile or public configuration change is involved.
+
 ## Run the real consumer
 
 From a source checkout:

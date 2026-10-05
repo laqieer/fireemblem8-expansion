@@ -920,7 +920,7 @@ class ProbeSession:
         finally:
             os.close(directory)
 
-    def _new_root(self, name, *, make=False):
+    def _new_root(self, name, *, make=False, native_runtime=()):
         root = self.base / name
         root.mkdir()
         for directory in ("repo", "usr", "work", "dev", "control", "lib", "lib64", "bin"):
@@ -939,11 +939,19 @@ class ProbeSession:
                 (root / target.lstrip("/")).chmod(0o555)
             shutil.copyfile(self.base / "observer.so", _mkdir_target(root, "/lib/vo-observer.so"))
             (root / "lib/vo-observer.so").chmod(0o555)
-            for target in sorted(set(ALIASES) | {
+            for target in (() if native_runtime else sorted(set(ALIASES) | {
                 item.canonical for item in self.runtime_inputs if item.path in self.runtime_dispatch
-            }):
+            })):
                 shutil.copyfile(self.base / "interceptor", _mkdir_target(root, target))
                 (root / target.lstrip("/")).chmod(0o555)
+            for target, data in native_runtime:
+                destination = root / target.lstrip("/")
+                if destination.exists():
+                    if destination.read_bytes() != data:
+                        raise MakeProbeError("native shell runtime conflicts with captured Make runtime")
+                else:
+                    _mkdir_target(root, target).write_bytes(data)
+                    destination.chmod(0o555)
             for item in self.runtime_inputs:
                 for parent, present in reversed(item.parents):
                     if present and parent != "/":
@@ -963,7 +971,7 @@ class ProbeSession:
         self, root, *, mode, argv, environment, mounts, code=(), sources=(),
         directories=(), executables=None, mapping_entries=(), metadata_validation=False,
         producer_handler=None, publication_observer=None, publication_allowed=True,
-        dependency=None,
+        dependency=None, native_runtime=(),
     ):
         self.budget.remaining()
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
@@ -979,6 +987,14 @@ class ProbeSession:
         executable = ["/usr/bin/make", "/control/interceptor", *ALIASES, *self.runtime_dispatch] if mode == "make" else (
             [argv[0]] if executables is None else list(executables)
         )
+        if native_runtime:
+            if (
+                mode != "make" or self.runtime_root is not None or self.runtime_inputs
+                or self.published_sources or producer_handler is not None
+                or mapping_entries or metadata_validation or dependency is not None
+            ):
+                raise MakeProbeError("native readonly invocation conflicts with mapped/runtime/publication authority")
+            executable = ["/usr/bin/make", "/bin/sh"]
         file_remaining = min(
             self.budget.limits.file_bytes,
             self.budget.limits.event_bytes - self.budget.bytes.get("event", 0),
@@ -998,7 +1014,9 @@ class ProbeSession:
                 if path not in self.snapshot.files and path not in self.snapshot.gitlink_roots
                 and path not in self.snapshot.absent_paths
             ],
-            "runtime_closure": [name for name, _ in self.make_runtime] if mode == "make" else [],
+            "runtime_closure": sorted({
+                name for name, _ in (*self.make_runtime, *native_runtime)
+            }) if mode == "make" else [],
             "runtime_files": sorted({name for item in self.runtime_inputs for name in (item.path, item.canonical)}),
             "runtime_aliases": sorted({alias for item in self.runtime_inputs for alias, _ in item.aliases}),
             "intercepted_runtime": sorted({
@@ -1031,6 +1049,8 @@ class ProbeSession:
                 self.budget.limits.control_bytes - self.budget.bytes.get("control", 0),
             ),
         }
+        if native_runtime:
+            config["native_readonly"] = True
         if dependency is not None:
             if mode != "compile":
                 raise MakeProbeError("dependency profile requires compiler confinement")
@@ -1780,11 +1800,7 @@ class ProbeSession:
             native=tool,
         )
 
-    @terminal_failure
-    def make(
-        self, target: str, *, makefile="Makefile", variables=(), assignments=(),
-        owner_inputs=(), commands=None,
-    ) -> MakeObservation:
+    def _make_request(self, target, makefile, variables, assignments, owner_inputs):
         self.budget.remaining()
         if not TARGET.fullmatch(target) or target.startswith(("-", "/")) or ".." in target.split("/"):
             raise MakeProbeError("invalid requested Make target")
@@ -1819,6 +1835,54 @@ class ProbeSession:
                 environment[name] = value
             else:
                 cli.append(name + "=" + value)
+        return variables, cli, environment
+
+    @terminal_failure
+    def _native_make_readonly(self, target, *, makefile="Makefile", variables=()):
+        variables, cli, environment = self._make_request(target, makefile, variables, (), ())
+        if self.runtime_root is not None or self.runtime_inputs or self.published_sources or self.make_depth:
+            raise MakeProbeError("readonly native Make requires an unmapped immutable source session")
+        captured = _executable_runtime("/usr/bin/sh", self.budget)
+        native_runtime = tuple(
+            ("/bin/sh" if name == "/usr/bin/sh" else name, data) for name, data in captured
+        )
+        environment["VO_OBSERVE_NATIVE_READONLY"] = "1"
+        root_name = f"native-readonly-root-{self.serial + 1}"
+        root = self.base / root_name
+        control = self.base / f"control-{self.serial + 1}"
+        with cleanup_scope([
+            lambda: _remove_owned_tree(control), lambda: _remove_owned_tree(root),
+        ]):
+            self._new_root(root_name, make=True, native_runtime=native_runtime)
+            control.mkdir(mode=0o700)
+            result_path = control / "result"
+            result_path.touch()
+            completed, observed = self._sandbox_run(
+                root, mode="make", argv=["/usr/bin/make", "-f", makefile, *cli, target],
+                environment=environment, native_runtime=native_runtime,
+                mounts=[
+                    self._mount(self.tree, "/repo"),
+                    self._mount(control, "/control", writable=True),
+                    self._mount(Path("/dev/null"), "/dev/null", writable=True),
+                ],
+            )
+            if completed.returncode:
+                raise MakeProbeError(
+                    f"readonly native GNU Make failed: {completed.returncode}; {completed.stderr!r}"
+                )
+            semantics = _read_observation(
+                self.budget.read_bytes(result_path, "control"), target, variables,
+            )
+            return completed, semantics, observed
+
+    @terminal_failure
+    def make(
+        self, target: str, *, makefile="Makefile", variables=(), assignments=(),
+        owner_inputs=(), commands=None,
+    ) -> MakeObservation:
+        variables, cli, environment = self._make_request(
+            target, makefile, variables, assignments, owner_inputs,
+        )
         root_name = f"make-root-{self.serial + 1}"
         root = self.base / root_name
         control = self.base / f"control-{self.serial + 1}"

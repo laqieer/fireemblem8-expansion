@@ -97,6 +97,72 @@ class FoundationTests(unittest.TestCase):
         self.assertEqual(session.pending_commands, 0)
         self.assertFalse(self.scratch.exists())
 
+    def test_native_readonly_original_shell_and_recipe_without_replay(self):
+        self.add("input.txt", "original\n")
+        self.add("Makefile", (
+            "VALUE := $(shell read -r v < input.txt; printf '%s' \"$$v\")\n"
+            ".PHONY: all\nall:\n\t@v=recipe; printf '%s\\n' \"$$v\"\n"
+        ))
+        with self.session() as session, patch.object(
+            session, "command", side_effect=AssertionError("per-command replay invoked"),
+        ) as replay:
+            completed, semantics, observed = session._native_make_readonly("all", variables=("VALUE",))
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "original")
+            self.assertEqual(completed.stdout, b"recipe\n")
+            executions = [value for value in observed["accessed"] if value.startswith("native-shell:")]
+            self.assertEqual(len(executions), 2)
+            self.assertTrue(all(value.endswith(":/bin/sh") for value in executions))
+            self.assertEqual(observed["events"], [])
+            self.assertIn("/repo/input.txt", observed["accessed"])
+            self.assertFalse(session.cache)
+            self.assertFalse(session.mappings)
+            replay.assert_not_called()
+        self.assert_clean(session)
+
+    def test_native_readonly_actual_write_and_foreign_execution_refuse(self):
+        for recipe, diagnostic in (
+            ("v=x; printf '%s' \"$$v\" > changed.txt", "readonly native Make filesystem write"),
+            ("v=x; /usr/bin/printf '%s' \"$$v\"", "untrusted executable dispatch"),
+        ):
+            with self.subTest(recipe=recipe):
+                self.add("Makefile", ".PHONY: all\nall:\n\t@" + recipe + "\n")
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, diagnostic):
+                    with session:
+                        session._native_make_readonly("all")
+                self.assert_clean(session)
+                self.assertFalse((self.root / "changed.txt").exists())
+
+    def test_native_readonly_mapped_runtime_authority_refuses_before_dispatch(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@:\n")
+        session = self.session(runtime_files=("/usr/include/stdio.h",))
+        with self.assertRaisesRegex(MakeProbeError, "unmapped immutable source session"):
+            with session, patch.object(session, "_sandbox_run") as launch:
+                session._native_make_readonly("all")
+        launch.assert_not_called()
+        self.assert_clean(session)
+
+    def test_native_readonly_guard_rejects_cross_lane_configuration(self):
+        from scripts.validation_ownership.syscall_guard import Policy, Violation
+
+        valid = {
+            "mode": "make", "native_readonly": True,
+            "executables": ["/usr/bin/make", "/bin/sh"],
+            "environment": {"VO_OBSERVE_NATIVE_READONLY": "1"},
+        }
+        for changes in (
+            {"native_readonly": 1}, {"native_readonly": False},
+            {"mode": "command"}, {"executables": ["/usr/bin/make", "/usr/bin/python3"]},
+            {"producer_endpoint": "/control/producer"}, {"published": [["foreign"]]},
+            {"mapping_entries": ["foreign"]}, {"metadata_validation": True},
+            {"runtime_files": ["/usr/bin/sh"]}, {"dependency": {"foreign": True}},
+            {"environment": {}},
+        ):
+            with self.subTest(changes=changes), self.assertRaisesRegex(
+                Violation, "invalid readonly native Make authority",
+            ):
+                Policy({**valid, **changes})
+
     def capture_supervisor_report(self, session, operation):
         original = session.budget.read_bytes
         captured = {}

@@ -78,6 +78,7 @@ static size_t used;
 static size_t capacity;
 static int finishing;
 static long make_pid;
+static int native_readonly;
 
 /* The syscall supervisor authorizes control I/O only at this trusted code IP,
  * not at libc IPs reachable from Make's file/include/eval builtins. */
@@ -102,6 +103,7 @@ __attribute__((constructor)) static void setup(void)
     const char *goal = getenv("VO_OBSERVE_TARGET");
     const char *variables = getenv("VO_OBSERVE_NAMES");
     const char *limit = getenv("VO_OBSERVE_BYTES");
+    const char *native = getenv("VO_OBSERVE_NATIVE_READONLY");
     char *end = NULL;
     unsigned long bound;
 
@@ -111,6 +113,9 @@ __attribute__((constructor)) static void setup(void)
     if (!end || *end || !bound || bound > MAX_RESULT)
         fail();
     capacity = bound;
+    if (native && strcmp(native, "1"))
+        fail();
+    native_readonly = native != NULL;
     target = strdup(goal);
     names = strdup(variables);
     parsed_names = strdup(variables);
@@ -130,6 +135,7 @@ __attribute__((constructor)) static void setup(void)
     unsetenv("VO_OBSERVE_TARGET");
     unsetenv("VO_OBSERVE_NAMES");
     unsetenv("VO_OBSERVE_BYTES");
+    unsetenv("VO_OBSERVE_NATIVE_READONLY");
     unsetenv("LD_PRELOAD");
     make_pid = raw_call(SYS_getpid, VO_READY, 0, 0);
 }
@@ -146,6 +152,8 @@ int execvp(const char *file, char *const argv[])
     snprintf(limit, sizeof(limit), "%zu", capacity);
     if (setenv("VO_OBSERVE_TARGET", target, 1) || setenv("VO_OBSERVE_NAMES", names, 1)
         || setenv("VO_OBSERVE_BYTES", limit, 1) || setenv("LD_PRELOAD", "/lib/vo-observer.so", 1))
+        fail();
+    if (native_readonly && setenv("VO_OBSERVE_NATIVE_READONLY", "1", 1))
         fail();
     status = raw_call(SYS_execve, (long)file, (long)argv, (long)environ);
     errno = (int)-status;
@@ -216,7 +224,7 @@ int posix_spawn(pid_t *pid, const char *path, const posix_spawn_file_actions_t *
      * The kernel supervisor authenticates this notification and the child's
      * stdout FD. Recursive/remake contexts conservatively require mappings. */
     raw_call(SYS_getpid, VO_DISPATCH, (long)path, recursive_graph());
-    status = spawn(pid, VO_INTERCEPTOR, actions, attributes, argv, envp);
+    status = spawn(pid, native_readonly ? path : VO_INTERCEPTOR, actions, attributes, argv, envp);
     raw_call(SYS_getpid, VO_DISPATCH, 0, 0);
     return status;
 }
