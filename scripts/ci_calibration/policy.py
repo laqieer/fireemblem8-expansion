@@ -293,7 +293,10 @@ def validate_native_refusal(value):
         identities.add(identity)
     if value["status"] == "observed":
         if value["reason"] is not None or type(value["ok"]) is not bool or (
-            type(value["returncode"]) is not int or not -(1 << 31) <= value["returncode"] < (1 << 31)
+            not (
+                value["returncode"] is None and value["ok"] is False
+                or type(value["returncode"]) is int and -(1 << 31) <= value["returncode"] < (1 << 31)
+            )
             or type(value["match"]) is not str or value["match"] not in {"unique", "ambiguous", "unknown"}
             or value["match"] != ("unique" if len(sites) == 1 else "ambiguous" if sites else "unknown")
         ):

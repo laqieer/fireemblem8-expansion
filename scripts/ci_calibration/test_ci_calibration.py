@@ -47,6 +47,32 @@ WORKER_AST = ast.parse((REPO / "scripts/ci_calibration/worker.py").read_text())
 
 
 class NativeSelectionControls(unittest.TestCase):
+    def test_failed_nullable_refusal_wire_preserves_unknown_status(self):
+        for match, sites in (
+            ("unique", [{"module": "read_trace", "line": 1}]),
+            ("ambiguous", [{"module": "read_trace", "line": 1},
+                           {"module": "read_epochs", "line": 1}]),
+            ("unknown", []),
+        ):
+            value = {"status": "observed", "reason": None, "ok": False,
+                     "returncode": None, "match": match, "sites": sites}
+            self.assertEqual(policy.validate_native_refusal(
+                policy.parse_json(policy.encoded(value))), value)
+            with self.assertRaises(policy.GuardError):
+                policy.validate_native_refusal({**value, "ok": True})
+            for missing in value:
+                with self.assertRaises(policy.GuardError):
+                    policy.validate_native_refusal(
+                        {key: item for key, item in value.items() if key != missing})
+            for code in (True, False, "0", -(1 << 31) - 1, 1 << 31):
+                with self.assertRaises(policy.GuardError):
+                    policy.validate_native_refusal({**value, "returncode": code})
+            for ok in (False, True):
+                for code in (-(1 << 31), 0, (1 << 31) - 1):
+                    integer = {**value, "ok": ok, "returncode": code}
+                    self.assertEqual(policy.validate_native_refusal(
+                        policy.parse_json(policy.encoded(integer))), integer)
+
     def test_refusal_wire_is_finite_strict_and_success_is_distinct(self):
         observed = {
             "status": "observed", "reason": None, "ok": False, "returncode": -1,

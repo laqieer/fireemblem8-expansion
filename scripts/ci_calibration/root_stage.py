@@ -318,14 +318,19 @@ class NativeRefusalObservation:
                     if type(local) is not dict or len(local) > 256 or local.get("self") is not session:
                         return unavailable("foreign-session")
                     observed = local.get("observed")
-                    if type(observed) is not dict or len(observed) > 256 or any(type(key) is not str for key in observed):
+                    if type(observed) is not dict or len(observed) > 256 or (
+                        any(type(key) is not str for key in observed)
+                        or not {"error", "ok", "returncode"} <= observed.keys()
+                    ):
                         return unavailable("malformed-observation")
                     text, ok, returncode = (
-                        observed.get("error"), observed.get("ok"), observed.get("returncode"),
+                        observed["error"], observed["ok"], observed["returncode"],
                     )
                     if type(text) is not str or len(text) > policy.ERROR_BYTES or (
-                        type(ok) is not bool or type(returncode) is not int
-                        or not -(1 << 31) <= returncode < (1 << 31)
+                        type(ok) is not bool or not (
+                            returncode is None and ok is False
+                            or type(returncode) is int and -(1 << 31) <= returncode < (1 << 31)
+                        )
                     ):
                         return unavailable("malformed-observation")
                     sites = sorted(set(

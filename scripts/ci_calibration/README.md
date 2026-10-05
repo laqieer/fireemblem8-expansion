@@ -45,8 +45,12 @@ The first caught error uses the existing safe component error record, before
 reference withdrawal and fixture teardown. Up to 32 chained exceptions and
 256 retained traceback frames are inspected for the frozen original
 `_sandbox_run` code identity and the very same session `self`. Only builtin
-dictionary/string/bool/integer retained fields are admitted; `ok` and signed
-32-bit `returncode` are observations, not success authority. No candidate
+dictionary/string/bool/integer retained fields are admitted, with explicit
+`error`, `ok`, and `returncode` keys required. Signed 32-bit integer
+`returncode` values reject booleans; `None` is admitted only with `ok=False`.
+Source2d84's supervisor initializes its status to `None` and publishes it when
+a refusal does not reach normal exit assignment. Unknown status is not zero
+or successful exit. These fields are observations, not success authority. No candidate
 property, exception argument, raw message, path or traceback is exported.
 The catalog and code/session-type references retire immediately after capture,
 or at finalization on success. Failed projection is explicitly unavailable,
@@ -63,6 +67,16 @@ bounds, cycles, retirement/replay and success controls. No source imports,
 native run, new workflow, quota change, ROM/RAM/save impact, or new
 dependency/conflict is authorized. Run37286481824 remains spent; architecture
 heldde5, all machine holds and final gates remain.
+
+For comment5991756406's nullable-status regression, use the same isolated
+inert-frame route: failed null with a known unique literal retains that site;
+unknown and ambiguous literals retain their respective classifications.
+Success with a bounded integer remains valid; success-null, bool/string,
+missing keys and out-of-range statuses reject. Run these focused cases against
+the exact parent (must fail) and a semantics-preserving AST formatting control
+(must pass). This fixes a confirmed producer-consumer contract mismatch, not
+the original refusal: run37289800731 reported malformed observation, but its
+hidden status was not observed. It remains spent; no runtime is authorized.
 
 ## Aggregate-only telemetry correction (TC-CI-AGGREGATE-001, #180)
 

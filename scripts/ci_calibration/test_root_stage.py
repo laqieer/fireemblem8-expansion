@@ -78,6 +78,47 @@ class NativeRefusalControls(unittest.TestCase):
             self.assertEqual(result["match"], status)
             self.assertEqual(len(result["sites"]), 2 if status == "ambiguous" else 0)
 
+    def test_failed_nullable_status_preserves_literal_matching(self):
+        for sources, text, match, sites in (
+            ([b'raise RuntimeError("guard")\n', b"", b""], "guard", "unique", 1),
+            ([b'raise RuntimeError("guard")\n', b"", b""], "unknown", "unknown", 0),
+            ([b'raise RuntimeError("guard")\n', b'raise RuntimeError("guard")\n', b""],
+             "guard", "ambiguous", 2),
+        ):
+            with self.subTest(match=match):
+                session, observer = self.model(sources)
+                observed = {"error": text, "ok": False, "returncode": None}
+                result = observer.capture(self.caught(session, observed), session)
+                self.assertEqual(result["status"], "observed")
+                self.assertIs(result["ok"], False)
+                self.assertIsNone(result["returncode"])
+                self.assertEqual(result["match"], match)
+                self.assertEqual(len(result["sites"]), sites)
+                if match == "unique":
+                    self.assertEqual(result["sites"], [{"module": "read_trace", "line": 1}])
+                self.assertEqual(policy.validate_native_refusal(
+                    policy.parse_json(policy.encoded(result))), result)
+
+    def test_status_types_bounds_and_mandatory_observation_keys(self):
+        for ok in (False, True):
+            for code in (-(1 << 31), 0, (1 << 31) - 1):
+                session, observer = self.model()
+                result = observer.capture(self.caught(
+                    session, {"error": "guard", "ok": ok, "returncode": code}), session)
+                self.assertEqual((result["status"], result["ok"], result["returncode"]),
+                                 ("observed", ok, code))
+        valid = {"error": "guard", "ok": False, "returncode": None}
+        invalid = [{**valid, "ok": True}]
+        invalid += [{**valid, "returncode": code}
+                    for code in (True, False, "0", -(1 << 31) - 1, 1 << 31)]
+        invalid += [{key: value for key, value in valid.items() if key != missing}
+                    for missing in valid]
+        for observed in invalid:
+            with self.subTest(observed=observed):
+                session, observer = self.model()
+                self.assertEqual(observer.capture(self.caught(session, observed), session)["reason"],
+                                 "malformed-observation")
+
     def test_foreign_code_session_and_shadowed_method_are_unavailable(self):
         session, observer = self.model()
         other = type(session)()
