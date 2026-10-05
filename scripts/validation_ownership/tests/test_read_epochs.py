@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import posixpath
+import re
 import shlex
 import signal
 import stat
@@ -28,6 +29,65 @@ from scripts.validation_ownership.authority import encoded
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.make_probe import Command
 from scripts.validation_ownership.tests import test_foundation as foundation
+
+
+class CompletionReferenceScreenApiTests(unittest.TestCase):
+    def test_raw_names_cover_actual_references_without_lazy_pruning(self):
+        from scripts.validation_ownership import graph_probe
+        cases = (
+            "A := $(B)\nB := $(C)\ninclude $(A)\n",
+            "$(call WRAP,$(call INNER,${ARG}),$(origin META),$(value BODY))",
+            "ifdef \\\n DIRECT\nifndef SECOND\n",
+            "ifdef \\\r\n CRLF\r\n",
+            "$A $z $$B $$(ESCAPED) ${BRACED} $@ $9 $(<D)",
+            "payload $(OUTER $(INNER) unrelated TAIL",
+            "$(and ,$(PRUNED)) $(call EAGER,$(RHS))",
+            "$(shell (echo $(VALUE)))",
+            "EAGER := ifdef RHS_OPERAND\n",
+        )
+        for source in cases:
+            names = read_epochs.completion_reference_names(source.encode(), count_limit=32768)
+            actual = set()
+            for _, _, _, raw in read_epochs.physical_statements(source.encode()):
+                statement = graph_probe.strip_comment(graph_probe._collapse_make_continuations(raw))
+                actual.update(graph_probe.references(statement))
+                assignment = graph_probe.ASSIGNMENT.fullmatch(statement)
+                if assignment:
+                    actual.update(graph_probe.references(assignment["value"]))
+            valid = {name for name in actual if re.fullmatch(graph_probe.IDENTIFIER, name)}
+            with self.subTest(source=source):
+                self.assertTrue(valid <= names, valid - names)
+        self.assertTrue(
+            {"PRUNED", "EAGER", "RHS"} <= read_epochs.completion_reference_names(cases[6].encode()),
+        )
+        self.assertTrue(
+            {"OUTER", "INNER", "TAIL"} <= read_epochs.completion_reference_names(cases[5].encode()),
+        )
+        self.assertFalse(
+            {"@", "9", "<D"} & read_epochs.completion_reference_names(cases[4].encode()),
+        )
+
+    def test_name_length_count_and_long_no_newline_deadline(self):
+        exact = "A" * 128
+        self.assertEqual(
+            read_epochs.completion_reference_names(("$(" + exact + ")").encode()), {exact},
+        )
+        self.assertEqual(
+            read_epochs.completion_reference_names(("$(" + exact + "A) $(SHORT)").encode()),
+            {"SHORT"},
+        )
+        self.assertEqual(read_epochs.completion_reference_names(b"$(A) ${B}", count_limit=2), {"A", "B"})
+        with self.assertRaises(read_epochs.ReadEpochError):
+            read_epochs.completion_reference_names(b"$(A) ${B} $(C)", count_limit=2)
+        checkpoints = []
+
+        def deadline():
+            checkpoints.append(True)
+            if len(checkpoints) == 3:
+                raise read_epochs.ReadEpochError("expired screening deadline")
+        with self.assertRaisesRegex(read_epochs.ReadEpochError, "expired screening deadline"):
+            read_epochs.completion_reference_names(b"$(A" + b"x" * 20000, checkpoint=deadline)
+        self.assertEqual(len(checkpoints), 3)
 
 
 class CompletionTraceDataApiTests(unittest.TestCase):
@@ -279,7 +339,11 @@ class CompletionTraceDataApiTests(unittest.TestCase):
             read_epochs.validate_trace(late, late["scope"], count_limit=32, file_limit=1024)
 
     def test_actual_source_open_pins_sites_before_resuming_or_refuses_late_consumers(self):
-        for data, accepted in ((b"CAP := generated-value\n", True), (b"include $(LATE)\n", False)):
+        for data, accepted in (
+            (b"CAP := generated-value\n", True),
+            (b"include $(LATE)\n", False),
+            (b"{}\n" * 33, False),
+        ):
             trace = object.__new__(read_trace.NativeReadTrace)
             caller, frame, address, descriptor = 0x1020, 0x2000, 0x3000, 5
             mode = stat.S_IFREG | 0o644

@@ -309,15 +309,30 @@ logical statement, physical span, name, operator and override spelling.
 Version3 retains its original immutable-source selection format and machine
 predicates. Version4 closes the selection over the complete immutable regular
 snapshot and already-published sources, independent of filename extension.
-Only bounded UTF-8 text without NUL contributes source facts; unsupported or
+Only bounded UTF-8 text without NUL contributes screened names; unsupported or
 oversized content cannot become selection authority. The resulting inventory
 binds each path, mode, size, digest, screening result and, for prior
-publications, its owner, serial and identity. The consumer-name closure stays
-frozen before launch; it is not expanded from later source versions.
+publications, its owner, serial and identity. Before launch, version4 screens a
+conservative union of identifier tokens inside every raw dollar expression,
+including nested/escaped expressions, short references and unclosed tails,
+plus conditional operands after continuation collapse (including assignment
+RHS operands). It does not parse every owned payload as Make or prune lazy
+expressions. Unreferenced assignment targets need not be selected; tokens in
+function arguments or unrelated text may conservatively select extra names.
+Scoped/automatic references are not literal selection names. Maximal tokens
+longer than the existing 128-byte name bound cannot be admitted literal names
+and are not split into invented shorter names.
+This frozen superset is not expanded from later source versions. Selection
+version1 retains its closed inventory/name wire contract; it never promises a
+minimal name set, so no schema or native consumer version changes are needed.
 
 Version4 derives candidate assignment sites again from the exact pinned bytes
 at each successful original source-open, before source parsing resumes, and
-only for names in that frozen closure. The trace binds that source version to
+only for names in that frozen superset. Actual opened Make source still passes
+the original physical-statement, define-body, site-count and name guards.
+Unrelated large data can be inventoried without interpreting its grammar;
+the same bytes opened as Make source must still fail those exact guards.
+The trace binds that source version to
 its immutable snapshot/prior-publication inventory entry or exact publication
 event. Repeated visits and changed versions of one path remain distinct.
 Publication-backed sources may contribute sites but may not introduce

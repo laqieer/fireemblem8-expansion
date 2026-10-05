@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 class OriginalCompletionSelectionApiTests(unittest.TestCase):
-    """Sparse source-derived selection, not a native resolver or name exemption."""
+    """Conservative frozen names, not a native resolver or name exemption."""
 
     def session(self, source, limits=None):
         session = object.__new__(ProbeSession)
@@ -37,7 +37,7 @@ class OriginalCompletionSelectionApiTests(unittest.TestCase):
         session.published_versions = {}
         return session
 
-    def test_selection_freezes_only_constructor_dependencies_of_source_consumers(self):
+    def test_selection_freezes_conservative_raw_references_not_assignment_targets(self):
         source = (
             "ROOT := model-root\n"
             "CAP := $(shell model-only)\n"
@@ -47,7 +47,8 @@ class OriginalCompletionSelectionApiTests(unittest.TestCase):
         )
         session = self.session(source)
         selection = session._original_completion_selection()
-        self.assertEqual(selection["names"], ["CAP", "PATH", "ROOT"])
+        self.assertTrue({"CAP", "PATH", "ROOT"} <= set(selection["names"]))
+        self.assertNotIn("UNRELATED", selection["names"])
         self.assertEqual(selection["scan"]["entries"], len(selection["inventory"]))
         self.assertEqual(selection["scan"]["binary"], 1)
         self.assertEqual(
@@ -56,7 +57,7 @@ class OriginalCompletionSelectionApiTests(unittest.TestCase):
         )
         self.assertEqual(session.budget.runs, 0)
         self.assertFalse(session.budget.children)
-        neutral = self.session("# neutral source comment\n" + source)
+        neutral = self.session("# neutral source comment\n" + source.replace("ROOT :=", "ROOT  :="))
         self.assertEqual(neutral._original_completion_selection()["names"], selection["names"])
 
     def test_selection_scans_extensionless_and_arbitrary_suffix_sources_and_prior_publications(self):
@@ -96,7 +97,7 @@ class OriginalCompletionSelectionApiTests(unittest.TestCase):
         published, = [row for row in selected["inventory"] if row["path"] == "generated"]
         self.assertEqual((published["kind"], published["owner"], published["serial"]),
                          ("prior-publication", "b" * 64, 1))
-        self.assertEqual(selected["names"], ["CAP"])
+        self.assertTrue({"CAP", "published", "shell"} <= set(selected["names"]))
         self.assertEqual(
             [row[5] for row in read_epochs.completion_sites("generated", generated, selected["names"])],
             ["CAP"],
@@ -118,7 +119,7 @@ class OriginalCompletionSelectionApiTests(unittest.TestCase):
         self.assertEqual(screens["binary.mk"], "binary")
         self.assertEqual(screens["invalid.mk"], "invalid-utf8")
         self.assertEqual(screens["oversize.mk"], "oversize-binary")
-        self.assertEqual(selection["names"], [])
+        self.assertEqual(selection["names"], ["shell", "valid"])
         with self.assertRaises(MakeProbeError):
             read_epochs.completion_sites("binary.mk", b"\0CAP := hidden\n", selection["names"])
         oversized_text = self.session("include source.mk\n")
@@ -162,7 +163,33 @@ class OriginalCompletionSelectionApiTests(unittest.TestCase):
         rows = read_epochs.completion_sites("Makefile", source.encode(), selected["names"])
         self.assertEqual([(row[5], row[2]) for row in rows], [("CAP", 1), ("BEFORE", 2)])
         with self.assertRaises(MakeProbeError):
-            self.session("define BROKEN\nCAP := value\n")._original_completion_selection()
+            read_epochs.completion_sites("Makefile", b"define BROKEN\nCAP := value\n", ["CAP"])
+
+    def test_unrelated_large_data_is_inventory_not_make_grammar_until_opened(self):
+        session = self.session("CAP := $(VALUE)\ninclude $(CAP)\n")
+        data = b'{"unrelated": true}\n' * 32769
+        session.snapshot.files["data/arbitrary.payload"] = data
+        session.snapshot.modes["data/arbitrary.payload"] = "100755"
+        selected = session._original_completion_selection()
+        entry, = [row for row in selected["inventory"] if row["path"] == "data/arbitrary.payload"]
+        self.assertEqual(entry, {
+            "path": "data/arbitrary.payload", "kind": "snapshot", "mode": 0o755,
+            "size": len(data), "sha256": hashlib.sha256(data).hexdigest(), "screen": "text",
+        })
+        self.assertEqual(selected["names"], ["CAP", "VALUE"])
+        self.assertEqual(selected["scan"]["bytes"], sum(map(len, session.snapshot.files.values())))
+        with self.assertRaisesRegex(read_epochs.ReadEpochError, "physical source scan"):
+            read_epochs.completion_source_facts("data/arbitrary.payload", data, count_limit=32768)
+
+    def test_screening_name_inventory_and_cache_bounds_are_exact(self):
+        session = self.session("include $(A) $(B)\n", Limits(observations=2))
+        self.assertEqual(session._original_completion_selection()["names"], ["A", "B"])
+        session = self.session("include $(A) $(B) $(C)\n", Limits(observations=2))
+        with self.assertRaises(MakeProbeError):
+            session._original_completion_selection()
+        session = self.session("include $(A)\n", Limits(cache_bytes=1))
+        with self.assertRaises(MakeProbeError):
+            session._original_completion_selection()
 
 
 class OriginalStructuralScopesApiTests(unittest.TestCase):

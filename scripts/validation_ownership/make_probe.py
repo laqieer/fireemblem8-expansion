@@ -1935,8 +1935,6 @@ class ProbeSession:
             self.budget.read_bytes(destination, "control")
 
     def _original_completion_selection(self):
-        from . import graph_probe as graph
-
         sources = {path: ("snapshot", data) for path, data in self.snapshot.files.items()}
         for path, item in self.published_sources.items():
             sources[path] = ("publication", item.data)
@@ -1948,8 +1946,7 @@ class ProbeSession:
             for _, (_, data) in ordered
         )
         self.budget.charge("total", scan_work)
-        roots, dependencies, inventory = set(), {}, []
-        total_sites = 0
+        selected, inventory = set(), []
         selected_bytes = sum(
             len(data) for _, (_, data) in ordered if len(data) <= self.budget.limits.file_bytes
         )
@@ -1998,18 +1995,11 @@ class ProbeSession:
             inventory.append(entry)
             if screen != "text":
                 continue
-            rows, references, edges = read_epochs.completion_source_facts(
-                path, data, checkpoint=self.budget.remaining,
+            read_epochs.completion_reference_names(
+                data, names=selected, checkpoint=self.budget.remaining,
                 count_limit=self.budget.limits.observation_count,
                 charge=lambda size: self.budget.charge("cache", size),
             )
-            if len(rows) > self.budget.limits.observation_count - total_sites:
-                self.budget.reject("completion source sites exceed observation count")
-            total_sites += len(rows)
-            roots.update(references)
-            for name, values in edges.items():
-                dependencies.setdefault(name, set()).update(values)
-        selected = graph.closure(roots, dependencies, budget=self.budget)
         selection = {
             "version": 1,
             "snapshot_sha256": self.snapshot.digest,

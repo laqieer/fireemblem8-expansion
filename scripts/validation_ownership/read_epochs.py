@@ -584,6 +584,81 @@ def physical_statements(data, *, checkpoint=lambda: None, count_limit=None):
         pending, start = [], index + 1
 
 
+def completion_reference_names(data, *, names=None, checkpoint=lambda: None, count_limit=None, charge=lambda size: None):
+    """Conservative prelaunch names, not Make grammar or assignment-site authority."""
+    if not isinstance(data, bytes) or b"\0" in data:
+        raise ReadEpochError("completion screening has unsupported bytes")
+    text = data.decode("utf-8", "strict")
+    names = set() if names is None else names
+
+    def retain(name):
+        # A longer maximal token cannot be an admitted literal name. Do not
+        # split it into invented shorter references.
+        if len(name) <= 128 and name not in names:
+            if count_limit is not None and len(names) >= count_limit:
+                raise ReadEpochError("completion reference names exceed observation bound")
+            charge(128 + len(name))
+            names.add(name)
+
+    def tokens(start, stop):
+        token, length = [], 0
+        for index in range(start, stop + 1):
+            if (index - start) % 4096 == 0:
+                checkpoint()
+            character = text[index] if index < stop else ""
+            letter = bool(character) and character in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_"
+            if letter or length and character and character in "0123456789":
+                length += 1
+                if length <= 128:
+                    token.append(character)
+            elif length:
+                if length <= 128:
+                    retain("".join(token))
+                token, length = [], 0
+
+    stack, start, index, next_checkpoint = [], None, 0, 0
+    while index < len(text):
+        if index >= next_checkpoint:
+            checkpoint()
+            next_checkpoint = index + 4096
+        pair = text[index:index + 2]
+        if pair in {"$(", "${"}:
+            if not stack:
+                start = index + 2
+            charge(64)
+            stack.append(")" if pair == "$(" else "}")
+            index += 2
+            continue
+        if text[index] == "$" and len(pair) == 2 and pair[1] in (
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+        ):
+            retain(pair[1])
+        if stack:
+            if text[index] == stack[-1]:
+                stack.pop()
+                if not stack:
+                    tokens(start, index)
+            elif text[index] == ("(" if stack[-1] == ")" else "{"):
+                charge(64)
+                stack.append(stack[-1])
+        index += 1
+    if stack:
+        tokens(start, len(text))
+    checkpoint()
+    if __package__:
+        from . import graph_probe
+    else:
+        import graph_probe
+    collapsed = graph_probe._collapse_make_continuations(text.replace("\r\n", "\n"))
+    for match in re.finditer(
+        r"(?<![A-Za-z0-9_])(?:ifdef|ifndef)\s+([A-Za-z_][A-Za-z0-9_]*)", collapsed,
+    ):
+        checkpoint()
+        retain(match[1])
+    checkpoint()
+    return names
+
+
 def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=None, charge=lambda size: None):
     if not isinstance(path, str) or not path or not isinstance(data, bytes):
         raise ReadEpochError("completion source facts require an exact byte source")

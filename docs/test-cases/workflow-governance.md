@@ -4795,11 +4795,24 @@ gameplay, locale, save, ROM/RAM or modern/archival profile conflicts.
    positive to fail, restore it and require success; keep the old-tree
    observation distinct from a removal control. Neutral comments and equivalent
    source refactors preserve semantic results, not incidental source coordinates.
-3. Check sparse source-derived dependency selection with renamed variables,
+3. Check conservative raw-reference selection with renamed variables,
    extensionless and arbitrary-suffix sources, prior publications, unrelated
    assignments, strict text screening, stricter source/count/cache limits and
    deadline. Require the prelaunch inventory to bind exact immutable source
-   versions and only the frozen consumer-name closure. At each version4 source
+   versions and the frozen conservative consumer-name superset. Keep every
+   owned payload regardless of suffix, including unrelated data with more than
+   32,768 physical lines. Prelaunch must retain its exact mode/size/digest and
+   screen without invoking Make grammar; opening those bytes as Make source
+   must still refuse the unchanged physical-statement bound. Compare the
+   screened identifiers against actual reference APIs on the four original
+   Makefiles, nested calls/introspection, eager chains, short/escaped references,
+   unclosed tails, LF/CRLF continuations and conditional assignment RHS operands.
+   Preserve references discarded by lazy pruning as conservative extras.
+   Test exact/one-over name count, inventory/cache/file/work bounds, 128-byte
+   names, unsplit overlong tokens and deadline expiry on a long no-LF payload.
+   Use the pre-fix selection method as the large-data negative control and
+   neutral comment/assignment-spacing changes as the equivalent control.
+   At each version4 source
    open, derive ordinary assignment sites from the exact opened bytes; test
    prior/new publication custody, repeated visits and changed versions of the
    same path. A late publication reference outside the frozen closure must
