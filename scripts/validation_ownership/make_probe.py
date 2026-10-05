@@ -825,7 +825,7 @@ class ProbeSession:
     def _compile_interceptor(self):
         for source, flags, output in (
             ("shell_interceptor.c", ["-static"], "interceptor"),
-            ("make_observer.c", ["-shared", "-fPIC"], "observer.so"),
+            ("make_observer.c", ["-shared", "-fPIC", "-fno-omit-frame-pointer"], "observer.so"),
         ):
             destination = self.base / output
             command = [
@@ -971,7 +971,7 @@ class ProbeSession:
         self, root, *, mode, argv, environment, mounts, code=(), sources=(),
         directories=(), executables=None, mapping_entries=(), metadata_validation=False,
         producer_handler=None, publication_observer=None, publication_allowed=True,
-        dependency=None, native_runtime=(),
+        dependency=None, native_runtime=(), read_abi=None,
     ):
         self.budget.remaining()
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
@@ -1052,6 +1052,12 @@ class ProbeSession:
         if native_runtime:
             config["native_readonly"] = True
             config["native_interpreter"] = _make_interpreter(dict(native_runtime)["/bin/sh"])
+        if read_abi is not None:
+            if not native_runtime:
+                raise MakeProbeError("source read observation requires original readonly native execution")
+            config["read_epochs"] = {
+                "version": 1, "scope": self.base.name + "/" + root.name, "abi": read_abi,
+            }
         if dependency is not None:
             if mode != "compile":
                 raise MakeProbeError("dependency profile requires compiler confinement")
@@ -1268,6 +1274,9 @@ class ProbeSession:
                 "metadata", "events",
             } | ({"rendezvous"} if channel is not None else set()) | (
                 {"executed"} if dependency is not None else set()
+            ) | (
+                {"read_trace"} if read_abi is not None and observed.get("ok") is True
+                and observed.get("returncode") == 0 else set()
             ):
                 raise MakeProbeError("malformed supervisor result")
             observations = observed["observations"]
@@ -1305,6 +1314,13 @@ class ProbeSession:
             settle({name: observed[name] for name in counter_names}, failed=observed["ok"] is not True)
             if result.returncode or observed["ok"] is not True:
                 raise MakeProbeError(f"confined {mode} probe rejected: {observed['error']}; {result.stderr!r}")
+            if read_abi is not None and observed["returncode"] == 0:
+                from .read_epochs import validate_trace
+                validate_trace(
+                    observed["read_trace"], config["read_epochs"]["scope"],
+                    count_limit=config["observation_count"], file_limit=config["file_limit"],
+                    reserve=lambda size: self.budget.charge("control", size),
+                )
             if dependency is not None and observed["executed"] != dependency["executables"]:
                 raise MakeProbeError("dependency result lacks its actual driver/cc1 execution")
             if channel is not None:
@@ -1839,7 +1855,7 @@ class ProbeSession:
         return variables, cli, environment
 
     @terminal_failure
-    def _native_make_readonly(self, target, *, makefile="Makefile", variables=()):
+    def _native_make_readonly(self, target, *, makefile="Makefile", variables=(), observe_reads=False):
         variables, cli, environment = self._make_request(target, makefile, variables, (), ())
         if self.runtime_root is not None or self.runtime_inputs or self.published_sources or self.make_depth:
             raise MakeProbeError("readonly native Make requires an unmapped immutable source session")
@@ -1848,6 +1864,11 @@ class ProbeSession:
             ("/bin/sh" if name == "/usr/bin/sh" else name, data) for name, data in captured
         )
         environment["VO_OBSERVE_NATIVE_READONLY"] = "1"
+        if type(observe_reads) is not bool:
+            raise MakeProbeError("invalid native read observation request")
+        read_abi = self._native_read_abi() if observe_reads else None
+        if observe_reads:
+            environment["VO_OBSERVE_READS"] = "1"
         root_name = f"native-readonly-root-{self.serial + 1}"
         root = self.base / root_name
         control = self.base / f"control-{self.serial + 1}"
@@ -1860,7 +1881,7 @@ class ProbeSession:
             result_path.touch()
             completed, observed = self._sandbox_run(
                 root, mode="make", argv=["/usr/bin/make", "-f", makefile, *cli, target],
-                environment=environment, native_runtime=native_runtime,
+                environment=environment, native_runtime=native_runtime, read_abi=read_abi,
                 mounts=[
                     self._mount(self.tree, "/repo"),
                     self._mount(control, "/control", writable=True),
@@ -1875,6 +1896,32 @@ class ProbeSession:
                 self.budget.read_bytes(result_path, "control"), target, variables,
             )
             return completed, semantics, observed
+
+    def _native_read_abi(self):
+        from . import read_epochs
+        data = dict(self.make_runtime)["/usr/bin/make"]
+        path = self.base / "read-abi-make"
+        path.write_bytes(data)
+        image = read_epochs.Elf(data)
+        first = self.budget.run(
+            ["/usr/bin/objdump", "-d", "-w", "--disassemble=read_all_makefiles", str(path)],
+            env=ENVIRONMENT,
+        )
+        if first.returncode:
+            raise MakeProbeError("cannot decode captured Make read entry")
+        target = read_epochs.source_target(image, read_epochs.instructions(first.stdout, image))
+        end = min(
+            start + size for start, extent, offset, size, flags in image.loads
+            if start <= target < start + size and flags & 1
+        )
+        second = self.budget.run(
+            ["/usr/bin/objdump", "-d", "-w", "--start-address=" + hex(target),
+             "--stop-address=" + hex(min(target + 65536, end)), str(path)],
+            env=ENVIRONMENT,
+        )
+        if second.returncode:
+            raise MakeProbeError("cannot decode captured Make source reader")
+        return read_epochs.make_abi(data, first.stdout, second.stdout)
 
     @terminal_failure
     def make(

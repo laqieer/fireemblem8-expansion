@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 if __package__:
+    from .read_trace import NativeReadTrace
     from .authority import _event_command, _read_events, encoded, parse_json
     from .lifecycle import finish_cleanup
     from .metadata_transport import encode_metadata_transport
@@ -33,6 +34,7 @@ if __package__:
         publication_identity, validate_publication_identity,
     )
 else:
+    from read_trace import NativeReadTrace
     from authority import _event_command, _read_events, encoded, parse_json
     from lifecycle import finish_cleanup
     from metadata_transport import encode_metadata_transport
@@ -43,6 +45,7 @@ else:
 
 
 LIBC = ctypes.CDLL(None, use_errno=True)
+VO_SOURCE_IO = 0x564F4D4B00000008
 LIBC.ptrace.restype = ctypes.c_long
 WALL = 0x40000000
 TRACEME, PEEKDATA, SYSCALL, GETREGS, SETREGS, SETOPTIONS = 0, 2, 24, 12, 13, 0x4200
@@ -210,6 +213,7 @@ class Process:
     native_signals: set[int] = field(default_factory=set)
     delivery_signal: int = 0
     native_delivered: int = 0
+    newborn_stop: bool = False
     path_context: tuple[str, int, str | None] | None = None
 
     def clone(self):
@@ -232,6 +236,20 @@ class Policy:
         self.config = config
         self.mode = config["mode"]
         self.native_readonly = config.get("native_readonly", False)
+        self.read_trace = None
+        request = config.get("read_epochs")
+        if request is not None:
+            if (
+                not self.native_readonly or not isinstance(request, dict)
+                or set(request) != {"version", "scope", "abi"}
+                or request["version"] != 1 or type(request["version"]) is not int
+                or not isinstance(request["abi"], dict) or request["abi"].get("version") != 1
+                or not isinstance(request["scope"], str) or not request["scope"]
+                or config.get("environment", {}).get("VO_OBSERVE_READS") != "1"
+            ):
+                raise Violation("invalid readonly native read-trace authority")
+        elif "VO_OBSERVE_READS" in config.get("environment", {}):
+            raise Violation("unconfigured native read observation")
         if type(self.native_readonly) is not bool or (
             not self.native_readonly and "VO_OBSERVE_NATIVE_READONLY" in config.get("environment", {})
         ) or self.native_readonly and (
@@ -351,6 +369,8 @@ class Policy:
                 while parent != "/":
                     directories.add(parent)
                     parent = posixpath.dirname(parent)
+        if request is not None:
+            self.read_trace = NativeReadTrace(self, request)
 
     def reserve_observation(self, name, value):
         attempted = self.observation_attempts[name]
@@ -1500,7 +1520,7 @@ class Policy:
         state.observations.clear()
         state.observation_needs_bytes = False
         trusted = self.observer(state, r)
-        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE}:
+        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_SOURCE_IO}:
             if a == VO_QUERY_KIND:
                 if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE, VO_LIVE}:
                     raise Violation("unauthenticated interceptor kind query")
@@ -1541,6 +1561,12 @@ class Policy:
                     if b or c or state.observer_ready:
                         raise Violation("invalid observer bootstrap notification")
                     state.observer_ready = True
+                    if self.read_trace is not None:
+                        self.read_trace.ready(pid)
+                elif a == VO_SOURCE_IO:
+                    if self.read_trace is None or state.role != "make" or not state.observer_ready:
+                        raise Violation("unconfigured original source stream notification")
+                    self.read_trace.source_io(pid, state, b, c)
                 elif b:
                     path = self.path(pid, state, b)
                     if path not in self.executable or path == "/control/interceptor" or c not in {0, 1}:
@@ -1882,6 +1908,8 @@ class Policy:
         if operation in {"open", "dup"}:
             state.fds[result] = value
         elif operation == "close":
+            if self.read_trace is not None:
+                self.read_trace.fd_closed(pid, value)
             state.fds.pop(value, None)
         elif operation == "pipe":
             data = memory(pid, value, 8)
@@ -1961,6 +1989,7 @@ def supervise(config, drop_privileges):
     primary = None
     result = None
     main_status = None
+    finished_trace = None
     if config["process_limit"] < 1 or config["descendant_limit"] < 1:
         raise Violation("no remaining guest-process capacity")
     pid = os.fork()
@@ -2061,6 +2090,11 @@ def supervise(config, drop_privileges):
         state.parked = True
         sig = os.WSTOPSIG(status)
         event = status >> 16
+        tracing_stop = sig == signal.SIGSTOP and state.newborn_stop
+        if tracing_stop:
+            state.newborn_stop = False
+            if policy.read_trace is not None and stopped != policy.read_trace.pid:
+                policy.read_trace.clear(stopped)
         if sig == signal.SIGTRAP and event in {1, 2, 3}:
             child = ctypes.c_ulong()
             ptrace(0x4201, stopped, 0, ctypes.byref(child))
@@ -2071,6 +2105,7 @@ def supervise(config, drop_privileges):
                 record.memory_group = child.value
             record.pidfd = newborn_stops.pop(child.value, -1)
             already_stopped = record.pidfd >= 0
+            record.newborn_stop = not already_stopped
             if not already_stopped:
                 record.pidfd = os.pidfd_open(child.value)
             processes[child.value] = record
@@ -2082,6 +2117,8 @@ def supervise(config, drop_privileges):
                 state.vfork_child = child.value
             policy.account_processes()
             if already_stopped:
+                if policy.read_trace is not None:
+                    policy.read_trace.clear(child.value)
                 resume(child.value)
         elif sig == signal.SIGTRAP and event == 4:
             if state.pending is None or state.pending[0] != "exec":
@@ -2117,6 +2154,8 @@ def supervise(config, drop_privileges):
             state.break_end = 0
             state.kernel_call = None
             policy.finish_exec(stopped, state)
+            if policy.read_trace is not None:
+                policy.read_trace.actual_exec(stopped, state.role == "make")
             release_vfork(stopped)
         elif sig == signal.SIGTRAP and event == 5:
             child = ctypes.c_ulong()
@@ -2148,9 +2187,15 @@ def supervise(config, drop_privileges):
                 state.kernel_call = None
             else:
                 raise Violation("kernel did not identify syscall entry/exit")
+        elif sig == signal.SIGTRAP and event == 0 and policy.read_trace is not None:
+            policy.read_trace.trap(stopped, state)
         elif policy.native_readonly and state.role == "native" and sig == signal.SIGTRAP:
             raise Violation("unauthenticated native shell trap")
-        elif sig not in {signal.SIGSTOP, signal.SIGCHLD, signal.SIGTRAP}:
+        elif policy.native_readonly and state.role == "native" and sig == signal.SIGSTOP and not tracing_stop:
+            raise Violation("unsupported native shell stop")
+        elif sig not in {signal.SIGSTOP, signal.SIGCHLD, signal.SIGTRAP} or (
+            policy.native_readonly and state.role == "native" and sig == signal.SIGCHLD
+        ):
             if not policy.native_readonly or state.role != "native" or sig not in state.native_signals:
                 raise Violation(f"sandbox signal {sig}")
             information = (ctypes.c_ubyte * 128)()
@@ -2349,6 +2394,15 @@ def supervise(config, drop_privileges):
                     for record in processes.values():
                         record.close()
                     processes.clear()
+        def finish_trace():
+            nonlocal error, finished_trace
+            if error is None and main_status == 0 and policy.read_trace is not None:
+                try:
+                    finished_trace = policy.read_trace.finish()
+                except BaseException as failure:
+                    error = str(failure)
+                    raise
+
         def write_report():
             nonlocal result
             result = {
@@ -2369,6 +2423,8 @@ def supervise(config, drop_privileges):
                 "metadata": encode_metadata_transport(policy.metadata),
                 "events": policy.events,
             }
+            if finished_trace is not None:
+                result["read_trace"] = finished_trace
             if config.get("dependency"):
                 result["executed"] = policy.executed
             if channel is not None:
@@ -2394,7 +2450,8 @@ def supervise(config, drop_privileges):
                         error = str(failure)
                     raise
         finish_cleanup([
-            reap_owned, finish_channel, write_report,
+            reap_owned, finish_channel, finish_trace, write_report,
+            *([] if policy.read_trace is None else [policy.read_trace.close]),
             *([] if channel is None else [channel.close]),
         ], primary=primary)
     return 0 if result["ok"] else 125

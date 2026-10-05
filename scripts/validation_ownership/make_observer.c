@@ -79,6 +79,7 @@ static size_t capacity;
 static int finishing;
 static long make_pid;
 static int native_readonly;
+static int observe_reads;
 
 /* The syscall supervisor authorizes control I/O only at this trusted code IP,
  * not at libc IPs reachable from Make's file/include/eval builtins. */
@@ -98,12 +99,63 @@ static _Noreturn void fail(void)
     __builtin_unreachable();
 }
 
+FILE *fopen(const char *path, const char *mode)
+{
+    static FILE *(*original)(const char *, const char *);
+    struct
+    {
+        uintptr_t caller;
+        uintptr_t frame;
+        uintptr_t path;
+        uintptr_t mode;
+        int64_t descriptor;
+        uint32_t phase;
+        uint32_t error;
+    } record;
+    FILE *stream;
+    int incoming = errno;
+    int saved;
+    int observing;
+
+    if (!original)
+        original = dlsym(RTLD_NEXT, "fopen");
+    if (!original)
+        fail();
+    observing = observe_reads && make_pid && getpid() == make_pid;
+    errno = incoming;
+    if (observing)
+    {
+        record.caller = (uintptr_t)__builtin_return_address(0);
+        record.frame = *(uintptr_t *)__builtin_frame_address(0);
+        record.path = (uintptr_t)path;
+        record.mode = (uintptr_t)mode;
+        record.descriptor = -1;
+        record.phase = 0;
+        record.error = 0;
+        saved = errno;
+        raw_call(SYS_getpid, VO_SOURCE_IO, (long)&record, sizeof(record));
+        errno = saved;
+    }
+    stream = original(path, mode);
+    if (observing)
+    {
+        saved = errno;
+        record.descriptor = stream ? fileno(stream) : -1;
+        record.phase = 1;
+        record.error = saved;
+        raw_call(SYS_getpid, VO_SOURCE_IO, (long)&record, sizeof(record));
+        errno = saved;
+    }
+    return stream;
+}
+
 __attribute__((constructor)) static void setup(void)
 {
     const char *goal = getenv("VO_OBSERVE_TARGET");
     const char *variables = getenv("VO_OBSERVE_NAMES");
     const char *limit = getenv("VO_OBSERVE_BYTES");
     const char *native = getenv("VO_OBSERVE_NATIVE_READONLY");
+    const char *reads = getenv("VO_OBSERVE_READS");
     char *end = NULL;
     unsigned long bound;
 
@@ -116,6 +168,9 @@ __attribute__((constructor)) static void setup(void)
     if (native && strcmp(native, "1"))
         fail();
     native_readonly = native != NULL;
+    if (reads && (!native_readonly || strcmp(reads, "1")))
+        fail();
+    observe_reads = reads != NULL;
     target = strdup(goal);
     names = strdup(variables);
     parsed_names = strdup(variables);
@@ -136,6 +191,7 @@ __attribute__((constructor)) static void setup(void)
     unsetenv("VO_OBSERVE_NAMES");
     unsetenv("VO_OBSERVE_BYTES");
     unsetenv("VO_OBSERVE_NATIVE_READONLY");
+    unsetenv("VO_OBSERVE_READS");
     unsetenv("LD_PRELOAD");
     make_pid = raw_call(SYS_getpid, VO_READY, 0, 0);
 }
@@ -154,6 +210,8 @@ int execvp(const char *file, char *const argv[])
         || setenv("VO_OBSERVE_BYTES", limit, 1) || setenv("LD_PRELOAD", "/lib/vo-observer.so", 1))
         fail();
     if (native_readonly && setenv("VO_OBSERVE_NATIVE_READONLY", "1", 1))
+        fail();
+    if (observe_reads && setenv("VO_OBSERVE_READS", "1", 1))
         fail();
     status = raw_call(SYS_execve, (long)file, (long)argv, (long)environ);
     errno = (int)-status;

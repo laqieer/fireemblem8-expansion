@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import base64
 import errno
 import hashlib
 import json
@@ -387,6 +388,135 @@ class FoundationTests(unittest.TestCase):
         ):
             with session:
                 session._native_make_readonly("all")
+        self.assert_clean(session)
+
+    def test_native_readonly_chld_trap_and_unsupported_stop(self):
+        self.add("Makefile", (
+            ".PHONY: all\nall:\n"
+            "\t@trap 'printf caught' CHLD; kill -CHLD $$$$; printf done\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root, env=ENVIRONMENT,
+            capture_output=True, timeout=10, check=True,
+        )
+        self.assertEqual(ordinary.stdout, b"caughtdone")
+        with self.session() as session:
+            completed, _, _ = session._native_make_readonly("all")
+            self.assertEqual(completed.stdout, ordinary.stdout)
+        self.assert_clean(session)
+        self.add("Makefile", ".PHONY: all\nall:\n\t@v=stop; kill -STOP $$$$; printf continued\n")
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "unsupported native shell stop"):
+            with session:
+                session._native_make_readonly("all")
+        self.assert_clean(session)
+
+    def test_native_readonly_actual_nested_source_trace(self):
+        self.add("Makefile", (
+            "include first.mk\n-include absent.mk\n"
+            "VALUE := $(shell v=native; printf '%s' \"$$v\")\n"
+            ".PHONY: all\nall:\n\t@v=recipe; printf '%s\\n' \"$$v\"\n"
+        ))
+        self.add("first.mk", "include nested.mk\nFIRST := first\n")
+        self.add("nested.mk", "NESTED := nested\n")
+        with self.session() as session, patch.object(
+            session, "command", side_effect=AssertionError("read observation invoked replay"),
+        ):
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE", "FIRST", "NESTED"), observe_reads=True,
+            )
+            self.assertEqual(completed.stdout, b"recipe\n")
+            self.assertEqual(
+                [semantics["domains"][name]["value"] for name in ("VALUE", "FIRST", "NESTED")],
+                ["native", "first", "nested"],
+            )
+            trace = observed["read_trace"]
+            self.assertTrue(trace["complete"])
+            self.assertEqual(trace["version"], 1)
+            entries = [row for row in trace["events"] if row["kind"] == "source-entry"]
+            self.assertEqual([row["name"] for row in entries], ["Makefile", "first.mk", "nested.mk", "absent.mk"])
+            self.assertEqual([row["parent"] for row in entries], [None, 1, 2, 1])
+            images = {
+                row["id"]: base64.b64decode(row["data"], validate=True) for row in trace["sources"]
+            }
+            opens = [row for row in trace["events"] if row["kind"] == "source-open"]
+            self.assertEqual(
+                [images[row["source"]] for row in opens if row["source"] is not None],
+                [(self.root / name).read_bytes() for name in ("Makefile", "first.mk", "nested.mk")],
+            )
+            self.assertEqual(opens[-1]["result"], -errno.ENOENT)
+            self.assertIsNone(opens[-1]["source"])
+            self.assertEqual(
+                len([row for row in trace["events"] if row["kind"] == "pass-entry"]), 1,
+            )
+            self.assertTrue(all(row["identity"] is not None for row in opens[:-1]))
+        self.assert_clean(session)
+
+    def test_native_readonly_source_frame_and_pin_mutations_refuse(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n")
+        for body, expected in (
+            (
+                "import read_trace\n"
+                "original=read_trace.NativeReadTrace.source_io\n"
+                "def altered(self,pid,state,address,size):\n"
+                " if self.active:self.active[-1]['frame']+=8\n"
+                " return original(self,pid,state,address,size)\n"
+                "read_trace.NativeReadTrace.source_io=altered\n",
+                "mismatched actual frame",
+            ),
+            (
+                "import read_trace\n"
+                "original=read_trace.NativeReadTrace.source_return\n"
+                "def altered(self,registers):\n"
+                " if self.active and self.active[-1]['pin'] is not None:\n"
+                "  identity=list(self.active[-1]['identity']);identity[1]+=1\n"
+                "  self.active[-1]['identity']=tuple(identity)\n"
+                " return original(self,registers)\n"
+                "read_trace.NativeReadTrace.source_return=altered\n",
+                "source was changed or not closed",
+            ),
+        ):
+            with self.subTest(expected=expected), self.native_supervisor(body):
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    with session:
+                        session._native_make_readonly("all", observe_reads=True)
+                self.assert_clean(session)
+
+    def test_native_readonly_incomplete_trace_writes_failure_envelope(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n")
+        body = (
+            "import read_trace\n"
+            "original=read_trace.NativeReadTrace.finish\n"
+            "def incomplete(self):\n"
+            " self.io=('unfinished',)\n"
+            " return original(self)\n"
+            "read_trace.NativeReadTrace.finish=incomplete\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), self.assertRaisesRegex(
+            MakeProbeError, "original read trace ended with incomplete native state",
+        ):
+            with session:
+                session._native_make_readonly("all", observe_reads=True)
+        self.assert_clean(session)
+
+    def test_native_readonly_source_active_deadline_cleans_owned_trace(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@:\n")
+        body = (
+            "import read_trace,time\n"
+            "original=read_trace.NativeReadTrace.source_io\n"
+            "def blocked(self,pid,state,address,size):\n"
+            " result=original(self,pid,state,address,size)\n"
+            " if self.active and self.active[-1]['pin'] is not None:\n"
+            "  time.sleep(max(0,self.config['deadline']-time.monotonic())+0.1)\n"
+            " return result\n"
+            "read_trace.NativeReadTrace.source_io=blocked\n"
+        )
+        session = self.session(seconds=5)
+        with self.native_supervisor(body), self.assertRaisesRegex(MakeProbeError, "deadline"):
+            with session:
+                session._native_make_readonly("all", observe_reads=True)
         self.assert_clean(session)
 
     def capture_supervisor_report(self, session, operation):

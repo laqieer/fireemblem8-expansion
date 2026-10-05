@@ -136,6 +136,48 @@ implementation; these passing controls do not qualify those missing contracts.
 Ordinary live/mapped Make remains unchanged. No save, localization, ROM/RAM,
 modern/archival build profile or public configuration change is involved.
 
+### Original source-entry observation component
+
+The internal readonly invocation can now request `observe_reads=True`. Only
+the existing version-1 original-read contract is configured: Make/source ELF
+ABI sites decoded from the captured Make bytes, actual private runtime mapping,
+kernel hardware-breakpoint entry/caller frames, trusted paired `fopen`
+notifications, source descriptor pins and bytes through close/return, and
+complete read-pass/goal structure. It reuses the existing original read-trace
+and validator source rather than introducing a second source registry.
+Completion, source-phase and generated-version trace variants are not admitted
+by this internal configuration. Ordinary mapped execution does not request it.
+
+From the same clean host checkout, run these `FoundationTests` controls:
+
+1. `test_native_readonly_actual_nested_source_trace`: require Makefile, nested
+   required includes and a missing optional include to report their actual
+   visit parents, exact opened immutable source bytes/identities and complete
+   pass. The original shell expression and recipe must run without command
+   replay and preserve selected values and stdout.
+2. `test_native_readonly_source_frame_and_pin_mutations_refuse`: altered cached
+   reader-frame and pin-identity bindings at actual source callbacks must refuse.
+   These are binding-mutation controls, not fabricated register samples or
+   proof of physical source replacement.
+3. `test_native_readonly_incomplete_trace_writes_failure_envelope`: incomplete
+   actual trace state must produce a failed supervisor report, not omit the
+   report or manufacture success.
+4. `test_native_readonly_source_active_deadline_cleans_owned_trace`: block the
+   actual source callback after an opened pin until the unchanged report
+   deadline; require terminal refusal and owned session/process cleanup.
+   This does not prove every register-restoration or arbitrary cancellation
+   scenario required by the complete supplier.
+5. `test_native_readonly_chld_trap_and_unsupported_stop`: admitted native
+   self-SIGCHLD must run the shell trap and match ordinary Make stdout.
+   Native SIGSTOP beyond the one actual newborn tracing stop explicitly
+   refuses; it must not silently continue. Unsupported native child-origin
+   signals also refuse rather than acquire unauthenticated forwarding.
+
+All controls have ordinary immutable fixtures and teardown; no ROM or save
+artifact is involved. Full assignment-completion/caller/job observations,
+machine/restoration adversaries, generated-version lifecycle, all eight
+original profiles in one budget and every remote delivery gate remain open.
+
 ## Run the real consumer
 
 From a source checkout:
