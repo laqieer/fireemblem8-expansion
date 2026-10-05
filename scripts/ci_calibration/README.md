@@ -1,5 +1,34 @@
 # Contained original-include retained-state diagnostic
 
+## Consumer-route preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
+
+Contract5994290979 prepares only literal
+`calibration/issue-180-native-completion-consumer-1` and
+`.github/workflows/issue180-native-completion-consumer-1.yml`. Source78fd889,
+BASEec1, original profile/positive selector, six selectors, quotas and five
+artifacts are unchanged. All nine older workflows remain byte-exact, including
+spent lexer-1 at0b992652 and unexecuted typed-1; old and typo refs reject.
+The complete inventory has eighteen paths. Normal repair lineage includes
+f6c->0b9->9f1, then this preparation. The diagnostic 0b9->9f1 stage is exactly
+five paths and 403 changed lines; existing source stages remain unchanged.
+The recorder is frozen at accepted `9f178b69d3fcd37ed3dfe813445aabc87bf0071a`,
+not0b9/f6c. Result v4/schema/consumer_site, cleanup and retirement are untouched.
+
+Run focused literal event/workflow, actual Git inventory/lineage/stage,
+current/neutral source_status, parent and recorder-drift controls before commit.
+Save observations in session `consumer-route-validation`. These focused checks
+are not complete preparation proof. After immediate owner-push, the coordinator
+must run original committed complete prepare/source_status against exact Git
+and inert platform boundaries: current/neutral exit0, 32 applicable predicates,
+zero missing, parent/drift exit1. Fresh independent review is required before
+separate explicit first-use allocation; no helper-only proxy grants readiness.
+Allocation authority is NONE. Eight failed native allocations remain spent,
+last producer observation unavailable and root cause unknown. No retries,
+refunds, source authority or quota changes. Heldde5, four machine holds,
+full report/H1/resources/security/Copilot/candidate/master/merge/closure/remote
+gates remain. No native/root/mount/remote operation, ROM/RAM/save/locale impact
+or new production dependency/conflict is introduced.
+
 ## Consumer-site observation (TC-CI-NATIVE-CONSUMER-SITE-001, #180)
 
 Contract5994096441 adds only report-only `consumer_site` to normal result v4:
