@@ -1106,6 +1106,66 @@ class AssetManifestTests(unittest.TestCase):
                         custom_spell_effects=custom, item_id_cap=cap,
                     )
 
+    def test_generation_pruning_preserves_needed_parent_identities(self):
+        source = os.path.join(REPO_ROOT, "assets/manifests/custom-spell-reference.json")
+        records = manifest.load_and_validate(source, 1, item_id_cap=0xCD)
+        logical_dir = os.path.relpath(os.path.join(TEST_ROOT, "needed-parents"), REPO_ROOT)
+        staging_root = os.path.join(TEST_ROOT, "parent-staging")
+        os.makedirs(staging_root)
+        identities = captured_discovery_identities(source, records)
+        outputs = manifest.render_generation_artifact(
+            source, logical_dir, tracked_sources=frozenset(row[0] for row in identities),
+            source_identities=identities, custom_spell_effects=1, item_id_cap=0xCD,
+        )
+        for staged in (False, True):
+            with self.subTest(staged=staged):
+                root = staging_root if staged else REPO_ROOT
+                destination = os.path.join(root, logical_dir)
+                custom_dir = os.path.join(destination, "custom_spell")
+                for path in outputs:
+                    if path.startswith(logical_dir + "/custom_spell/"):
+                        os.makedirs(os.path.dirname(os.path.join(root, path)), exist_ok=True)
+                parents = {
+                    directory: os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+                    for directory, _dirs, _files in os.walk(custom_dir)
+                }
+                for descriptor in parents.values():
+                    self.addCleanup(os.close, descriptor)
+                obsolete = os.path.join(custom_dir, "obsolete/nested")
+                os.makedirs(obsolete)
+                with open(os.path.join(obsolete, "obsolete.bin"), "wb") as handle:
+                    handle.write(b"obsolete")
+                if staged:
+                    manifest.stage_generation_artifact(outputs, logical_dir, staging_root)
+                else:
+                    manifest.generate(source, destination, 1, item_id_cap=0xCD)
+                for path, descriptor in parents.items():
+                    pinned, current = os.fstat(descriptor), os.stat(path)
+                    self.assertEqual(
+                        (current.st_dev, current.st_ino, current.st_mode),
+                        (pinned.st_dev, pinned.st_ino, pinned.st_mode),
+                        path,
+                    )
+                self.assertFalse(os.path.exists(os.path.join(custom_dir, "obsolete")))
+                for path in outputs:
+                    with open(os.path.join(root, path), "rb") as handle:
+                        self.assertEqual(handle.read(), outputs[path])
+                if staged:
+                    default_source = os.path.join(REPO_ROOT, "assets/manifest.json")
+                    default_records = manifest.load_and_validate(default_source, 0, item_id_cap=0xCD)
+                    default_identities = captured_discovery_identities(default_source, default_records)
+                    default_outputs = manifest.render_generation_artifact(
+                        default_source, logical_dir,
+                        tracked_sources=frozenset(row[0] for row in default_identities),
+                        source_identities=default_identities, custom_spell_effects=0, item_id_cap=0xCD,
+                    )
+                    manifest.stage_generation_artifact(default_outputs, logical_dir, staging_root)
+                else:
+                    manifest.generate(
+                        os.path.join(REPO_ROOT, "assets/manifest.json"), destination, 0, item_id_cap=0xCD,
+                    )
+                self.assertFalse(os.path.exists(custom_dir))
+
     def test_private_staging_preserves_real_generation_pruning_and_unchanged_files(self):
         original_dir = os.path.join(TEST_ROOT, "ordinary")
         logical_dir = os.path.relpath(original_dir, REPO_ROOT)

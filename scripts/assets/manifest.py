@@ -2940,6 +2940,7 @@ def _prune_obsolete_custom_spell_outputs(out_dir, expected_paths):
             (os.path.abspath(path), os.path.abspath(custom_spell_dir))
         ) == os.path.abspath(custom_spell_dir)
     }
+    needed_directories = {str(parent) for path in expected for parent in Path(path).parents}
     for directory, directories, files in os.walk(custom_spell_dir, topdown=False):
         for name in files:
             if name.startswith(ATOMIC_WRITE_TEMP_PREFIX):
@@ -2952,10 +2953,15 @@ def _prune_obsolete_custom_spell_outputs(out_dir, expected_paths):
             except FileNotFoundError:
                 pass
         for name in directories:
+            path = os.path.join(directory, name)
+            if os.path.abspath(path) in needed_directories:
+                continue
             try:
-                os.rmdir(os.path.join(directory, name))
+                os.rmdir(path)
             except OSError:
                 pass
+    if expected:
+        return
     try:
         os.rmdir(custom_spell_dir)
     except OSError:
