@@ -332,7 +332,8 @@ class NativeSelectionControls(unittest.TestCase):
 
     def test_native_lineage_keeps_exact_profile_repair_rebind_and_preparation_chain(self):
         lines = [
-            f"{'a' * 40} {supervisor.NATIVE_TYPED_ROUTE_SHA}",
+            f"{'a' * 40} {supervisor.NATIVE_TYPED_CORRECTION_SHA}",
+            f"{supervisor.NATIVE_TYPED_CORRECTION_SHA} {supervisor.NATIVE_TYPED_ROUTE_SHA}",
             f"{supervisor.NATIVE_TYPED_ROUTE_SHA} {supervisor.NATIVE_CONSUMER_SHA}",
             f"{supervisor.NATIVE_CONSUMER_SHA} {supervisor.NATIVE_CONSUMER_PARENT_SHA}",
             f"{supervisor.NATIVE_CONSUMER_PARENT_SHA} a3c4ec144e7c5acd2d30019e147ae6520cf1bee7",

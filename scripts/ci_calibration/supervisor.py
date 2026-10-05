@@ -197,6 +197,7 @@ NATIVE_NULLABLE_SHA = "2be6ebf39e9c164c406335c12d1abf1d24cec72b"
 NATIVE_CONSUMER_PARENT_SHA = "f1e04f02b9f40bf23791311cddf1c1ff0db08312"
 NATIVE_CONSUMER_SHA = "bb6a9451b44e64b4c9ce68fbef60416e682c710e"
 NATIVE_TYPED_ROUTE_SHA = "f69e4c5bbcf21f1617f02fa5119ebffa6203d068"
+NATIVE_TYPED_CORRECTION_SHA = "3d202487ce1b87cffa727703e1f81b973bc3811c"
 NATIVE_TYPED_PREPARATION_SHA = NATIVE_CONSUMER_PARENT_SHA
 NATIVE_NULLABLE_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
     "policy.py", "root_stage.py", "test_ci_calibration.py", "test_root_stage.py", "README.md",
@@ -313,8 +314,9 @@ def validate_native_nullable_stage(data, sizes):
 
 
 def validate_native_lineage(lines, head):
-    if len(lines) < 16 or lines[:16] != [
-        f"{head} {NATIVE_TYPED_ROUTE_SHA}",
+    if len(lines) < 17 or lines[:17] != [
+        f"{head} {NATIVE_TYPED_CORRECTION_SHA}",
+        f"{NATIVE_TYPED_CORRECTION_SHA} {NATIVE_TYPED_ROUTE_SHA}",
         f"{NATIVE_TYPED_ROUTE_SHA} {NATIVE_CONSUMER_SHA}",
         f"{NATIVE_CONSUMER_SHA} {NATIVE_CONSUMER_PARENT_SHA}",
         f"{NATIVE_CONSUMER_PARENT_SHA} a3c4ec144e7c5acd2d30019e147ae6520cf1bee7",
@@ -332,7 +334,7 @@ def validate_native_lineage(lines, head):
         f"{NATIVE_PREPARATION_SHA} {NATIVE_PARENT}",
     ]:
         raise policy.GuardError("native family differs from its exact normal repair/preparation chain")
-    validate_harness_lineage(lines[16:], NATIVE_PARENT)
+    validate_harness_lineage(lines[17:], NATIVE_PARENT)
 
 
 def validate_preparation_paths(changed):
@@ -1700,7 +1702,7 @@ class Owner:
             raise policy.GuardError("workflow harness has uncommitted source changes")
         if native:
             validate_native_lineage(
-                git(self.harness, "rev-list", "--parents", "--max-count=51", "HEAD").decode().splitlines(),
+                git(self.harness, "rev-list", "--parents", "--max-count=52", "HEAD").decode().splitlines(),
                 self.scope["harness_sha"],
             )
             validate_native_inventory(git(self.harness, "diff", "--name-status", "-z", NATIVE_PARENT, "HEAD"))
@@ -1737,7 +1739,7 @@ class Owner:
                 git(self.harness, "diff", "--name-status", "-z", NATIVE_REFUSAL_ROUTE_SHA, NATIVE_NULLABLE_SHA),
                 git(self.harness, "diff", "--numstat", NATIVE_REFUSAL_ROUTE_SHA, NATIVE_NULLABLE_SHA),
             )
-            if git(self.harness, "diff", "--name-only", NATIVE_NULLABLE_SHA, "HEAD", "--",
+            if git(self.harness, "diff", "--name-only", NATIVE_CONSUMER_SHA, "HEAD", "--",
                    "scripts/ci_calibration/root_stage.py").strip():
                 raise policy.GuardError("native refusal route changed the frozen diagnostic recorder")
         else:

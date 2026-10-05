@@ -29,6 +29,7 @@ to `bb6a9451b44e64b4c9ce68fbef60416e682c710e` is the separate five-path,
 catalog and its method/type signatures remain closed and unchanged.
 
 The normal harness lineage is the bounded successor of
+`3d202487ce1b87cffa727703e1f81b973bc3811c`, then
 `f69e4c5bbcf21f1617f02fa5119ebffa6203d068`, then `bb6a9451b44e64b4c9ce68fbef60416e682c710e`
 and its existing parent chain. Its complete native delta is fifteen paths:
 six preserved workflows, the new typed-2 workflow and eight harness files.
@@ -47,6 +48,16 @@ required before any separate explicit allocation; all delivery gates stay held.
 This is structural preparation evidence only; native execution and the four
 machine holds, full report, H1, resource policy, security, Build, merge,
 closure, and remote-completion gates remain unresolved.
+
+Contract5992929420 freezes the recorder at the separately accepted consumer
+bb6, not the earlier nullable stage2be6; both original stage inventories still
+validate independently. Run the complete original `Owner.prepare` and
+`source_status` methods with captured immutable Git/source facts and inert
+platform/ownership boundaries, never candidate imports or real setup effects.
+Current and semantics-neutral methods must finish; the actual parent recorder
+diff and a targeted nonempty bb6-to-current recorder diff must refuse.
+Record every reached predicate and missing observation; partial path-consumer
+or helper-only tests cannot establish complete preparation. Allocation is NONE.
 
 ## Native refusal route preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
 
