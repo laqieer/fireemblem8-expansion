@@ -694,9 +694,49 @@ class NativeSelectionControls(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(policy.GuardError):
                 policy.validate_event(event, native=True, **{**self.identity(), key: "2"})
 
+    def test_original_prepare_acquires_complete_native_history(self):
+        head = "a" * 40
+        owner = supervisor.Owner.__new__(supervisor.Owner)
+        owner.harness = REPO
+        owner.candidate = SOURCE_REPO
+        owner.scope = {"harness_sha": head, "workload_kind": policy.NATIVE_KIND}
+        history = subprocess.run(
+            ["/usr/bin/git", "-C", str(REPO), "rev-list", "--parents",
+             supervisor.NATIVE_LINEAGE_CORRECTION_SHA],
+            check=True, capture_output=True,
+        ).stdout.decode().splitlines()
+        history.insert(0, f"{head} {supervisor.NATIVE_LINEAGE_CORRECTION_SHA}")
+        observed = []
+
+        def acquire(root, *args):
+            self.assertEqual(root, REPO)
+            if args == ("rev-parse", "HEAD"):
+                return (head + "\n").encode()
+            if args == ("status", "--porcelain=v1", "--untracked-files=all"):
+                return b""
+            if args == ("diff", "--name-status", "-z", supervisor.NATIVE_PARENT, "HEAD"):
+                return b""
+            self.assertEqual((args[0], args[1], args[-1]), ("rev-list", "--parents", "HEAD"))
+            count = int(args[2].removeprefix("--max-count="))
+            observed.append(count)
+            return ("\n".join(history[:count]) + "\n").encode()
+
+        class ReachedInventory(Exception):
+            pass
+
+        with mock.patch.object(supervisor.os, "geteuid", return_value=0), \
+             mock.patch.object(supervisor, "git", side_effect=acquire), \
+             mock.patch.object(supervisor, "validate_native_inventory",
+                               side_effect=ReachedInventory):
+            with self.assertRaises(ReachedInventory):
+                owner.prepare()
+        self.assertEqual(len(observed), 1)
+        self.assertEqual(len(history[:observed[0]]), 61)
+
     def test_native_lineage_keeps_exact_profile_repair_rebind_and_preparation_chain(self):
         lines = [
-            f"{'a' * 40} {supervisor.NATIVE_EMPTY_PREPARATION_SHA}",
+            f"{'a' * 40} {supervisor.NATIVE_LINEAGE_CORRECTION_SHA}",
+            f"{supervisor.NATIVE_LINEAGE_CORRECTION_SHA} {supervisor.NATIVE_EMPTY_PREPARATION_SHA}",
             f"{supervisor.NATIVE_EMPTY_PREPARATION_SHA} {supervisor.NATIVE_ROUTE_PARENT_SHA}",
             f"{supervisor.NATIVE_ROUTE_PARENT_SHA} {supervisor.NATIVE_DEEP_DIAGNOSTIC_SHA}",
             f"{supervisor.NATIVE_DEEP_DIAGNOSTIC_SHA} {supervisor.NATIVE_CONSUMER_PREPARATION_SHA}",
@@ -724,19 +764,19 @@ class NativeSelectionControls(unittest.TestCase):
         ]
         actual = subprocess.run(
             ["/usr/bin/git", "-C", str(REPO), "rev-list", "--parents", "--max-count=58",
-             supervisor.NATIVE_EMPTY_PREPARATION_SHA],
+             supervisor.NATIVE_LINEAGE_CORRECTION_SHA],
             check=True, capture_output=True,
         ).stdout.decode().splitlines()
         with self.assertRaises(policy.GuardError):
             supervisor.validate_native_lineage(
-                [f"{'a' * 40} {supervisor.NATIVE_EMPTY_PREPARATION_SHA}", *actual], "a" * 40,
+                [f"{'a' * 40} {supervisor.NATIVE_LINEAGE_CORRECTION_SHA}", *actual], "a" * 40,
             )
         complete = subprocess.run(
-            ["/usr/bin/git", "-C", str(REPO), "rev-list", "--parents", "--max-count=59",
-             supervisor.NATIVE_EMPTY_PREPARATION_SHA], check=True, capture_output=True,
+            ["/usr/bin/git", "-C", str(REPO), "rev-list", "--parents", "--max-count=60",
+             supervisor.NATIVE_LINEAGE_CORRECTION_SHA], check=True, capture_output=True,
         ).stdout.decode().splitlines()
         supervisor.validate_native_lineage(
-            [f"{'a' * 40} {supervisor.NATIVE_EMPTY_PREPARATION_SHA}", *complete], "a" * 40,
+            [f"{'a' * 40} {supervisor.NATIVE_LINEAGE_CORRECTION_SHA}", *complete], "a" * 40,
         )
         calls = []
         original = supervisor.validate_harness_lineage
