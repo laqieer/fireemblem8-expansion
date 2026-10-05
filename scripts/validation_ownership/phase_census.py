@@ -199,7 +199,7 @@ class SourcePass:
                         self.session.budget.charge(
                             "cache", len(encoded(row)) + sys.getsizeof({None: None}) + sys.getsizeof(key),
                         )
-                        selected[key] = row
+                        selected[key] = tuple(row)
         self.completion_selection = MappingProxyType(selected)
 
     def complete_assignment(self, mode, assignment, effect, active, version, *, private=False, before=()):
@@ -331,7 +331,7 @@ class SourcePass:
         if any(left is not right for left, right in zip(retained, destination_state())):
             raise MakeProbeError("completed destination changed during final custody validation")
         if (
-            mode.original_visit is not visit or mode.site is None or tuple(mode.site)[1:] != key[2:]
+            mode.original_visit is not visit or mode.site is None or tuple(mode.site)[1:] != selected[2:5]
             or mode.version != version or not mode.original_namespace_valid
         ):
             raise MakeProbeError("completion consumer context changed during custody validation")

@@ -405,6 +405,41 @@ class OriginalCompletionDataApiTests(unittest.TestCase):
             [1, 2],
         )
 
+    def test_v4_completed_data_reaches_next_condition_with_exact_receipt(self):
+        source = (
+            "CAP := $(shell printf model-only)\n"
+            "ifeq ($(CAP),0xCD)\nNEXT := selected\nelse\nNEXT := wrong\nendif\n"
+        )
+
+        def model(change=None):
+            phase, sources = self.model(source, {"CAP": "0xCD"})
+            if change is not None:
+                receipt, = phase.part.completions
+                phase.part = phase.part._replace(completions=(change(receipt),))
+            phase.proof.archive = phase.proof.archive._replace(
+                version=read_epochs.COMPLETION_VERSION, selection=("CAP",),
+                passes=(phase.part,),
+            )
+            phase = phase_census.SourcePass(
+                phase.proof, phase.part, phase.image, phase.exports, phase.target,
+                phase.state, phase.commands, phase.primary_source,
+            )
+            return phase, sources
+
+        phase, sources = model()
+        stream = self.parse(phase, sources)
+        self.assertEqual(stream.mode_state.exact_reference("NEXT"), "selected")
+        self.assertEqual(phase.next_completion, 1)
+        for change in (
+            lambda row: row._replace(visit=row.visit + 1),
+            lambda row: row._replace(source=row.source + 1),
+            lambda row: row._replace(seq=phase.part.visits[0].exit_seq),
+            lambda row: row._replace(site=(*row.site[:2], row.site[2] + 1, *row.site[3:])),
+        ):
+            rejected, sources = model(change)
+            with self.assertRaises(MakeProbeError):
+                self.parse(rejected, sources)
+
     def test_original_generated_cap_condition_uses_its_own_completed_data(self):
         document = getattr(type(self), "generated_cap_document", None)
         if document is None:

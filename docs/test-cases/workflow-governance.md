@@ -4919,6 +4919,18 @@ archive, as reproduced by the credential-free original-family execution.
 Correcting this test expectation does not change the fixture Make bytes,
 source authority, any profile, quota, or machine-qualification requirement.
 
+For v4 completed DATA, run
+`OriginalCompletionDataApiTests.test_v4_completed_data_reaches_next_condition_with_exact_receipt`
+from the same test module. Independently parsed original-byte sites must match
+the immutable receipt fields, and final custody must compare physical site
+fields without the v4 visit-key prefix. The positive reaches the next
+condition with `CAP=0xCD` and consumes one receipt; changed visit, source,
+physical site and late sequence each refuse. The pre-fix consumer rejects
+the valid first CAP because its parsed list differs from the receipt tuple;
+correcting only that representation still fails the final v4-prefixed key
+comparison. Both corrections preserve every independent source/epoch check,
+v3 behavior and existing native/profile/resource/delivery holds.
+
 **Exact remaining machine hold:** the current child trace does not return
 DR0..DR3/DR6/DR7, hardware siginfo/PC/purpose/restore samples, modifier/RBX/
 reader-frame observations, inherited registers after child exec, source-active
