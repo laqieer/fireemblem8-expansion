@@ -2,13 +2,19 @@
 
 ## Typed-source rebind preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
 
-The first-created `calibration/issue180-native-completion-typed-1` route
+The first-created `calibration/issue-180-native-completion-typed-2` route
 rebinds the existing native preparation to source `efc5eb6991bc2c1efb02f1f2e7595f27bb9aa24f`,
 without changing the `native-completion-trace4-abi2-v1` profile, the positive
 `PhaseCensusTests.test_native_completion_original_profile_family` selector,
 the single original lifetime, or any quota. It retains all seven containment
-qualifiers and the five existing bounded artifacts. The five previously
-created native workflows remain byte-identical and their refs are denied.
+qualifiers and the five existing bounded artifacts. The five spent native
+workflows and the unexecuted typed-1 workflow remain byte-identical;
+both `calibration/issue-180-native-completion-typed-1` and the erroneous
+`calibration/issue180-native-completion-typed-1` refs are denied.
+Allocation5992784638 is closed unexecuted, not a native attempt: the authorized
+ref was already created without a registered run. Do not redirect, recreate,
+retry or count that trigger failure as a pass. Contract5992811435 authorizes
+only this repair, with no new runtime allocation.
 No runtime allocation, source edit, worker/recorder/telemetry/quota change,
 retry, or qualification is authorized by this preparation.
 
@@ -22,15 +28,22 @@ to `bb6a9451b44e64b4c9ce68fbef60416e682c710e` is the separate five-path,
 `version`, `tag`, `errno`, `module`, and `line`; the existing six-selector
 catalog and its method/type signatures remain closed and unchanged.
 
-The normal harness lineage includes the consumer commit and its parent before
-the existing preparation chain. Its complete native delta is fourteen paths:
-the thirteen existing paths plus the new workflow. The final BASE-to-HEAD
+The normal harness lineage is the bounded successor of
+`f69e4c5bbcf21f1617f02fa5119ebffa6203d068`, then `bb6a9451b44e64b4c9ce68fbef60416e682c710e`
+and its existing parent chain. Its complete native delta is fifteen paths:
+six preserved workflows, the new typed-2 workflow and eight harness files.
+The final BASE-to-HEAD
 validator consumes the complete Git path list, including every preserved
 workflow; the focused control obtains that list from Git and separately rejects
 missing, extra, wrong-status, and unrelated paths. Testers should run the
 focused inert route controls against the exact staged candidate and its parent,
 then verify the exact workflow bindings and both stage inventories. The
 parent/stale-ref controls must reject, while the exact current route passes.
+Feed the frozen literal typed-2 branch directly to `validate_event` and parse
+the actual workflow YAML against that same independent contract literal and
+sourceefc. Deny both typed-1 spellings, the no-hyphen typed-2 spelling,
+created=false, run 2 and attempt 2. Original reviewer bfc7's follow-up remains
+required before any separate explicit allocation; all delivery gates stay held.
 This is structural preparation evidence only; native execution and the four
 machine holds, full report, H1, resource policy, security, Build, merge,
 closure, and remote-completion gates remain unresolved.

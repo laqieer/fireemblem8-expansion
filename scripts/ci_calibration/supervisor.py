@@ -196,6 +196,7 @@ NATIVE_REFUSAL_ROUTE_SHA = "7f21396350ba27007874dc5fe4f7719989bbec4c"
 NATIVE_NULLABLE_SHA = "2be6ebf39e9c164c406335c12d1abf1d24cec72b"
 NATIVE_CONSUMER_PARENT_SHA = "f1e04f02b9f40bf23791311cddf1c1ff0db08312"
 NATIVE_CONSUMER_SHA = "bb6a9451b44e64b4c9ce68fbef60416e682c710e"
+NATIVE_TYPED_ROUTE_SHA = "f69e4c5bbcf21f1617f02fa5119ebffa6203d068"
 NATIVE_TYPED_PREPARATION_SHA = NATIVE_CONSUMER_PARENT_SHA
 NATIVE_NULLABLE_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
     "policy.py", "root_stage.py", "test_ci_calibration.py", "test_root_stage.py", "README.md",
@@ -216,6 +217,7 @@ NATIVE_PATHS = frozenset({
     policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
     policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
     policy.SPENT_NATIVE_TYPED_WORKFLOW,
+    policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW,
     policy.NATIVE_WORKFLOW,
     *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "supervisor.py", "worker.py", "root_stage.py", "observation_failure.py",
@@ -311,8 +313,9 @@ def validate_native_nullable_stage(data, sizes):
 
 
 def validate_native_lineage(lines, head):
-    if len(lines) < 15 or lines[:15] != [
-        f"{head} {NATIVE_CONSUMER_SHA}",
+    if len(lines) < 16 or lines[:16] != [
+        f"{head} {NATIVE_TYPED_ROUTE_SHA}",
+        f"{NATIVE_TYPED_ROUTE_SHA} {NATIVE_CONSUMER_SHA}",
         f"{NATIVE_CONSUMER_SHA} {NATIVE_CONSUMER_PARENT_SHA}",
         f"{NATIVE_CONSUMER_PARENT_SHA} a3c4ec144e7c5acd2d30019e147ae6520cf1bee7",
         f"a3c4ec144e7c5acd2d30019e147ae6520cf1bee7 {NATIVE_NULLABLE_SHA}",
@@ -329,7 +332,7 @@ def validate_native_lineage(lines, head):
         f"{NATIVE_PREPARATION_SHA} {NATIVE_PARENT}",
     ]:
         raise policy.GuardError("native family differs from its exact normal repair/preparation chain")
-    validate_harness_lineage(lines[15:], NATIVE_PARENT)
+    validate_harness_lineage(lines[16:], NATIVE_PARENT)
 
 
 def validate_preparation_paths(changed):
@@ -337,6 +340,7 @@ def validate_preparation_paths(changed):
         name and name.decode() not in {
             policy.WORKFLOW, policy.NATIVE_WORKFLOW, policy.SPENT_NATIVE_WORKFLOW,
             policy.SPENT_NATIVE_TYPED_WORKFLOW,
+            policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW,
             policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
             policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
             policy.TEMPLATE_HEADER_WORKFLOW, policy.FINITE_REPORT_WORKFLOW,
@@ -374,6 +378,7 @@ def validate_native_inventory(data):
             policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
             policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
             policy.SPENT_NATIVE_TYPED_WORKFLOW,
+            policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW,
             policy.NATIVE_WORKFLOW,
         )
     }
@@ -1695,7 +1700,7 @@ class Owner:
             raise policy.GuardError("workflow harness has uncommitted source changes")
         if native:
             validate_native_lineage(
-                git(self.harness, "rev-list", "--parents", "--max-count=50", "HEAD").decode().splitlines(),
+                git(self.harness, "rev-list", "--parents", "--max-count=51", "HEAD").decode().splitlines(),
                 self.scope["harness_sha"],
             )
             validate_native_inventory(git(self.harness, "diff", "--name-status", "-z", NATIVE_PARENT, "HEAD"))
@@ -1723,6 +1728,10 @@ class Owner:
                 git(self.harness, "diff", "--name-status", "-z", NATIVE_CONSUMER_PARENT_SHA, NATIVE_CONSUMER_SHA),
                 git(self.harness, "diff", "--numstat", NATIVE_CONSUMER_PARENT_SHA, NATIVE_CONSUMER_SHA),
                 "consumer",
+            )
+            validate_spent_native_workflow(
+                git(self.harness, "show", "HEAD:" + policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW),
+                git(self.harness, "show", NATIVE_TYPED_ROUTE_SHA + ":" + policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW),
             )
             validate_native_nullable_stage(
                 git(self.harness, "diff", "--name-status", "-z", NATIVE_REFUSAL_ROUTE_SHA, NATIVE_NULLABLE_SHA),

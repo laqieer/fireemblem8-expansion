@@ -58,11 +58,12 @@ SPENT_NATIVE_DIAGNOSTIC_WORKFLOW = ".github/workflows/issue180-native-completion
 SPENT_NATIVE_FAMILY_WORKFLOW = ".github/workflows/issue180-native-completion-family-2.yml"
 SPENT_NATIVE_REFUSAL_WORKFLOW = ".github/workflows/issue180-native-completion-refusal-1.yml"
 SPENT_NATIVE_TYPED_WORKFLOW = ".github/workflows/issue180-native-completion-refusal-2.yml"
-NATIVE_BRANCH = "calibration/issue180-native-completion-typed-1"
-NATIVE_WORKFLOW = ".github/workflows/issue180-native-completion-typed-1.yml"
+UNEXECUTED_NATIVE_TYPED_WORKFLOW = ".github/workflows/issue180-native-completion-typed-1.yml"
+NATIVE_BRANCH = "calibration/issue-180-native-completion-typed-2"
+NATIVE_WORKFLOW = ".github/workflows/issue180-native-completion-typed-2.yml"
 NATIVE_PROFILE = "native-completion-trace4-abi2-v1"
 NATIVE_KIND = "native-completion-qualification"
-NATIVE_OUTPUT_PREFIX = "issue180-native-completion-typed-1-"
+NATIVE_OUTPUT_PREFIX = "issue180-native-completion-typed-2-"
 NATIVE_SELECTORS = (
     "scripts.validation_ownership.tests.test_phase_census.PhaseCensusTests."
     "test_native_completion_original_profile_family",

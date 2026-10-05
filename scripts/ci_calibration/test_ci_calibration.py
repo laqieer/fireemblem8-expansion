@@ -67,6 +67,7 @@ class NativeSelectionControls(unittest.TestCase):
             policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
             policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
             policy.SPENT_NATIVE_TYPED_WORKFLOW, policy.NATIVE_WORKFLOW,
+            policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW,
         } <= {path.decode() for path in actual.split(b"\0") if path})
         supervisor.validate_native_inventory(native)
         def observed_git(root, *args):
@@ -308,9 +309,31 @@ class NativeSelectionControls(unittest.TestCase):
             with self.assertRaises(policy.GuardError):
                 policy.native_event(self.event(policy.NATIVE_BRANCH), profile=policy.NATIVE_PROFILE, selector=policy.NATIVE_SELECTORS[0], **identity)
 
+    def test_frozen_typed2_contract_event_not_policy_derived(self):
+        event = self.event("calibration/issue-180-native-completion-typed-2")
+        policy.validate_event(event, native=True, **self.identity())
+        for branch in (
+            "calibration/issue-180-native-completion-typed-1",
+            "calibration/issue180-native-completion-typed-1",
+            "calibration/issue180-native-completion-typed-2",
+            "calibration/issue-180-native-completion-family-1",
+            "calibration/issue-180-native-completion-diagnostic-1",
+            "calibration/issue-180-native-completion-family-2",
+            "calibration/issue-180-native-completion-refusal-1",
+            "calibration/issue-180-native-completion-refusal-2",
+        ):
+            with self.subTest(branch=branch), self.assertRaises(policy.GuardError):
+                policy.validate_event(self.event(branch), native=True, **self.identity())
+        with self.assertRaises(policy.GuardError):
+            policy.validate_event({**event, "created": False}, native=True, **self.identity())
+        for key in ("attempt", "run_number"):
+            with self.subTest(key=key), self.assertRaises(policy.GuardError):
+                policy.validate_event(event, native=True, **{**self.identity(), key: "2"})
+
     def test_native_lineage_keeps_exact_profile_repair_rebind_and_preparation_chain(self):
         lines = [
-            f"{'a' * 40} {supervisor.NATIVE_CONSUMER_SHA}",
+            f"{'a' * 40} {supervisor.NATIVE_TYPED_ROUTE_SHA}",
+            f"{supervisor.NATIVE_TYPED_ROUTE_SHA} {supervisor.NATIVE_CONSUMER_SHA}",
             f"{supervisor.NATIVE_CONSUMER_SHA} {supervisor.NATIVE_CONSUMER_PARENT_SHA}",
             f"{supervisor.NATIVE_CONSUMER_PARENT_SHA} a3c4ec144e7c5acd2d30019e147ae6520cf1bee7",
             f"a3c4ec144e7c5acd2d30019e147ae6520cf1bee7 {supervisor.NATIVE_NULLABLE_SHA}",
@@ -346,6 +369,7 @@ class NativeSelectionControls(unittest.TestCase):
             policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
             policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
             policy.SPENT_NATIVE_TYPED_WORKFLOW,
+            policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW,
             policy.NATIVE_WORKFLOW,
         }
         data = b"".join(
@@ -364,7 +388,7 @@ class NativeSelectionControls(unittest.TestCase):
     def test_spent_native_workflow_requires_exact_immutable_bytes(self):
         for workflow in (policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
                          policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
-                         policy.SPENT_NATIVE_TYPED_WORKFLOW):
+                         policy.SPENT_NATIVE_TYPED_WORKFLOW, policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW):
             with self.subTest(workflow=workflow):
                 original = ("name: " + workflow + "\non: push\n").encode()
                 supervisor.validate_spent_native_workflow(original, original)
@@ -438,7 +462,7 @@ class NativeSelectionControls(unittest.TestCase):
 
     def test_typed_workflow_selects_exact_source_and_stays_preparation_only(self):
         workflow = yaml.load(NATIVE_WORKFLOW_TEXT, Loader=yaml.BaseLoader)
-        self.assertEqual(workflow["on"], {"push": {"branches": [policy.NATIVE_BRANCH]}})
+        self.assertEqual(workflow["on"], {"push": {"branches": ["calibration/issue-180-native-completion-typed-2"]}})
         self.assertEqual(workflow["permissions"], {"contents": "read"})
         self.assertEqual(workflow["concurrency"]["cancel-in-progress"], "false")
         job, = workflow["jobs"].values()
@@ -454,7 +478,9 @@ class NativeSelectionControls(unittest.TestCase):
             "github.triggering_actor == 'laqieer'",
         })
         checkouts = [step for step in job["steps"] if step.get("uses", "").startswith("actions/checkout@")]
-        self.assertEqual([step["with"]["ref"] for step in checkouts], ["${{ github.sha }}", policy.NATIVE_SOURCE])
+        self.assertEqual([step["with"]["ref"] for step in checkouts], [
+            "${{ github.sha }}", "efc5eb6991bc2c1efb02f1f2e7595f27bb9aa24f",
+        ])
         self.assertEqual(
             [step["uses"] for step in checkouts],
             ["actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"] * 2,
