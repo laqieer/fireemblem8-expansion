@@ -114,6 +114,7 @@ def original_completion_fixture_paths(loader):
             )
             if match and "$" not in match[2]:
                 literals.setdefault(match[1], set()).add(match[2])
+                selected.update(path for path in match[2].split() if path in regular)
             if not statement.lstrip().startswith("#"):
                 for program in re.finditer(r' -c "([^"]+)"', statement):
                     try:
@@ -284,6 +285,37 @@ class OriginalCompletionFixtureApiTests(unittest.TestCase):
             original_completion_fixture_paths(loader)
         values["Makefile"] = b"-include missing.mk\n"
         original_completion_fixture_paths(loader)
+
+    def test_literal_sources_follow_actual_make_namespace(self):
+        loader, values, _ = self.model()
+        source = "src/sub/unselected.c"
+        for declaration in (
+            f"LITERAL_SOURCES := {source}\n",
+            f"# Neutral declaration comment\nLITERAL_SOURCES =  {source}  # input\n",
+        ):
+            with self.subTest(declaration=declaration):
+                values["Makefile"] = declaration.encode()
+                actual = subprocess.run(
+                    ["/usr/bin/make", "-rR", "--no-print-directory", "-f", "-", "all"],
+                    input=declaration + "$(info $(LITERAL_SOURCES))\nall: ;\n",
+                    cwd="/", env=graph_probe.ENVIRONMENT,
+                    text=True, capture_output=True, timeout=10,
+                )
+                self.assertEqual(actual.returncode, 0, actual.stderr)
+                self.assertEqual(actual.stderr, "")
+                declared = actual.stdout.splitlines()[0].split()
+                self.assertEqual(declared, [source])
+                paths, cached = original_completion_fixture_paths(loader)
+                for path in declared:
+                    self.assertIn(path, paths)
+                    self.assertEqual(
+                        cached[path] if path in cached else loader.read_blob(path, "literal input"),
+                        values[path],
+                    )
+                self.assertNotIn("docs/unselected.md", paths)
+        values["Makefile"] = b"all: ;\n"
+        paths, _ = original_completion_fixture_paths(loader)
+        self.assertNotIn(source, paths)
 
     def test_nonregular_source_rejects_and_neutral_comment_keeps_pool(self):
         loader, values, _ = self.model()

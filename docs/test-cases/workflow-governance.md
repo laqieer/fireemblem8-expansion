@@ -4908,6 +4908,17 @@ This local argv interception is not machine qualification: run 37312363120's
 `make_probe5274` refusal after three commands and every native/resource,
 security, review and delivery hold remain until separately qualified.
 
+For the same case, contract6001738137 corrects omitted literal fixture inputs.
+With GNU Make and Python, run
+`python3 -m unittest scripts.validation_ownership.tests.test_phase_census.OriginalCompletionFixtureApiTests.test_literal_sources_follow_actual_make_namespace -v`.
+GNU Make expands a finite literal declaration; every resulting regular source
+must remain in the fixture with its original bytes. Equivalent assignment
+flavor, comments and spacing preserve it; declaration removal removes it and
+unrelated files remain excluded. The pre-fix extractor fails both declaration
+variants. No persistent fixture files or cleanup are required. This does not
+change profiles, ROM, ABI, saves or ownership classification and does not
+qualify source/caller/frame/pin/generated-version or original-root behavior.
+
 The original family also includes `native-one.dat` and then
 `./native-one.dat`. GNU Make reports both visit names as `native-one.dat`;
 the second spelling does not create a different source. Require distinct visit

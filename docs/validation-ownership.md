@@ -477,6 +477,17 @@ deadline and all quotas; actual native closure, total demand and cleanup must
 still be observed. `OriginalCompletionFixtureApiTests` exercises source-pool,
 nonregular/missing-input/schema and neutral-refactor controls, not native proof.
 
+The literal namespace projection also retains regular immutable paths named
+directly in literal Make assignments, not only wildcard matches. The original
+root's `SRC_S_FILES` contains four such assembly inputs; omitting them makes
+actual `scaninc` fail even when Make's print target exits successfully.
+`OriginalCompletionFixtureApiTests.test_literal_sources_follow_actual_make_namespace`
+compares actual GNU Make literal expansion with retained paths and bytes.
+Equivalent assignment flavor, spacing and comments retain the input; removing
+the declaration removes it, and an unrelated regular file stays excluded.
+The pre-fix extractor fails both declarations. This is input projection,
+not filename-based ownership, a Make interpreter or native qualification.
+
 The finite case exercises a native shell-completed cap before its condition,
 ignored conditional RHS, eagerly executed simple RHS without a stronger
 command-line store, nonempty and empty immediate append, unused recursive
