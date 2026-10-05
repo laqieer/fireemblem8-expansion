@@ -32,29 +32,45 @@ historical report allocations remain spent. No limits, budgets, source,
 workflow, lineage, allocations, machine holds or final gates change. No
 ROM/RAM/save/generated-data/profile impact or new dependency/conflict exists.
 
-## Native completion preparation: no execution allocation
+## Corrected native completion family preparation: no execution allocation
 
-Disposition comment5990329748 authorizes preparation of a separately named
-diagnostic successor, not qualification. The spent family1 run37277238489
-remains failed with no retry, refund, reset or outcome substitution. The new
-`calibration/issue-180-native-completion-diagnostic-1` first-created owner push
-uses `issue180-native-completion-diagnostic-1.yml` and the corresponding output
-prefix. Run1/attempt1, exact source890fe, positive selector, original profile,
-Limits, containment and five artifacts are unchanged. No runtime allocation
-exists yet; independent exact-head review and clean/pushed custody remain
-coordinator prerequisites. A diagnostic return grants no report, serializer,
-verifier, H1, terminal or shipping authority.
+Disposition comment5990955637 authorizes bounded preparation of a separately
+named family-2 route, not a run or qualification.
+The failed family-1 and diagnostic-1 allocations remain spent; neither route
+may be retried, refunded, reset or used as substitute evidence. The prepared
+`calibration/issue-180-native-completion-family-2` first-created owner-push
+route uses `issue180-native-completion-family-2.yml`, source
+`2d84af156041593a16081550c5f461c877e7bcd0`, the existing positive selector,
+profile, limits, containment and five artifacts. No runtime allocation is
+granted here. A source-family observation would still be only preparation
+evidence: child debug-register readback, reader-frame exclusions, live
+source-pin retirement and source-active termination remain four explicit
+machine holds; publication-order evidence, complete report, verifier, H1,
+shipping policy, security and all delivery gates remain independent.
 
-The future head has exactly41 normal edges: head->b155->5acd->e3e->34e->dbd
-->e938 followed by the unchanged35 historical edges. The nine-path cumulative
-native inventory requires both workflows added from e938 and the seven named
-harness modifications. Preflight compares spent family1 bytes to immutable
-e3e Git content; changing even whitespace rejects. Credential-free inert
-`NativeSelectionControls` cover the new first-created event, old-ref denial,
-each preparation-edge drift, complete inventory and spent-byte invariance.
-Source APIs and source edges remain unchanged. Source budget fit, original
-cleanup, four machine criteria and the sticky architecture hold remain unknown
-or held. All19 original full-report allocations remain spent.
+The exact native harness lineage is future head->be8ee61019cc6248d848ac9dd72aec9ed4744549
+->0ded2474d3e5a16a330cff9a4afd6181f90383ae->b155ac1abae46a3495f3799061107252ed7c6433
+->5acd99fcd79f938a4d76fb4280a96713cff44f66->e3eac9508412b316f11f5665f3a688e5c9368c84
+->34e494405a246e37b245a66a44de4ba2a6c09d74->dbd0905cb0bbabc8979c0521e39f0a7c64aa0f34
+->e93847725f58a89bca2a94af2d4acaae6a89cebf, followed by the unchanged35
+historical edges. Its exact cumulative e938-to-head inventory contains eleven
+paths: the two spent workflows, the new family-2 workflow, and eight modified
+harness files, including `observation_failure.py`. Both spent workflow blobs
+are checked against their original immutable revisions; the old family-1 and
+diagnostic-1 refs remain denied.
+
+The corrected source has the exact normal parent edge `2d84->890fe`. Existing
+15/4/8-path implementation, authored-test and redesign inventories remain
+unchanged. A separate six-path screening stage checks precisely the two
+workflow-governance/validation docs, `make_probe.py`, `read_epochs.py`, and
+their two corresponding test modules. Exact source HEAD, parent and complete
+changed-path inventory are required; generic ancestor membership and
+filename-based filtering do not qualify. Credential-free inert controls cover
+the new first-created route, both old-ref denials, each new lineage edge,
+complete 11-path harness inventory, both spent-workflow byte checks, and the
+six-path source screening inventory. Source screening does not prove native
+behavior or complete quota fit. All19 original full-report allocations remain
+spent.
 
 The bounded failure-publication correction for #180 / #186 is never-merge
 preparation, not a new allocation. The spent native run's inner cause and

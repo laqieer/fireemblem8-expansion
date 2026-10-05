@@ -33,6 +33,7 @@ from scripts.validation_ownership import budget as budgeting
 
 REPO = Path(__file__).resolve().parents[2]
 WORKFLOW_TEXT = (REPO / policy.WORKFLOW).read_text()
+NATIVE_WORKFLOW_TEXT = (REPO / policy.NATIVE_WORKFLOW).read_text()
 SUPERVISOR_AST = ast.parse((REPO / "scripts/ci_calibration/supervisor.py").read_text())
 QUOTA_MODEL = SOURCE_PROBING = OLD_BUDGET_CHARGE = OLD_CALIBRATION_FACTORY = None
 OLD_TELEMETRY_SNAPSHOT = OLD_TELEMETRY_PROTOCOL = None
@@ -163,6 +164,7 @@ class NativeSelectionControls(unittest.TestCase):
         for event, selector in (
             (old, policy.NATIVE_SELECTORS[0]),
             (self.event("calibration/issue-180-native-completion-family-1"), policy.NATIVE_SELECTORS[0]),
+            (self.event("calibration/issue-180-native-completion-diagnostic-1"), policy.NATIVE_SELECTORS[0]),
             *((native, selector) for selector in policy.NATIVE_SELECTORS[1:]),
         ):
             with self.assertRaises(policy.GuardError):
@@ -184,7 +186,9 @@ class NativeSelectionControls(unittest.TestCase):
 
     def test_native_lineage_keeps_exact_profile_repair_rebind_and_preparation_chain(self):
         lines = [
-            f"{'a' * 40} {supervisor.NATIVE_FAMILY_SHA}",
+            f"{'a' * 40} {supervisor.NATIVE_COUNTER_REPAIR_SHA}",
+            f"{supervisor.NATIVE_COUNTER_REPAIR_SHA} {supervisor.NATIVE_COUNTER_BASE_SHA}",
+            f"{supervisor.NATIVE_COUNTER_BASE_SHA} {supervisor.NATIVE_FAMILY_SHA}",
             f"{supervisor.NATIVE_FAMILY_SHA} {supervisor.NATIVE_DIAGNOSTIC_SHA}",
             f"{supervisor.NATIVE_DIAGNOSTIC_SHA} {supervisor.NATIVE_PROFILE_SHA}",
             f"{supervisor.NATIVE_PROFILE_SHA} {supervisor.NATIVE_REBIND_SHA}",
@@ -207,7 +211,10 @@ class NativeSelectionControls(unittest.TestCase):
                         supervisor.validate_native_lineage(changed + ["old-edge"], "a" * 40)
         finally:
             supervisor.validate_harness_lineage = original
-        workflows = {policy.SPENT_NATIVE_WORKFLOW, policy.NATIVE_WORKFLOW}
+        workflows = {
+            policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
+            policy.NATIVE_WORKFLOW,
+        }
         data = b"".join(
             (b"A" if name in workflows else b"M") + b"\0" + name.encode() + b"\0"
             for name in sorted(supervisor.NATIVE_PATHS)
@@ -222,26 +229,87 @@ class NativeSelectionControls(unittest.TestCase):
                 supervisor.validate_native_inventory(changed)
 
     def test_spent_native_workflow_requires_exact_immutable_bytes(self):
-        original = b"name: spent\non: push\n"
-        supervisor.validate_spent_native_workflow(original, original)
-        for current in (original + b"\n", b"", bytearray(original)):
-            with self.assertRaises(policy.GuardError):
-                supervisor.validate_spent_native_workflow(current, original)
+        for workflow in (policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW):
+            with self.subTest(workflow=workflow):
+                original = ("name: " + workflow + "\non: push\n").encode()
+                supervisor.validate_spent_native_workflow(original, original)
+                for current in (original + b"\n", b"", bytearray(original)):
+                    with self.assertRaises(policy.GuardError):
+                        supervisor.validate_spent_native_workflow(current, original)
 
     def test_native_source_inventory_keeps_each_complete_reviewed_stage(self):
         for stage, paths in (
             ("implementation", supervisor.NATIVE_IMPLEMENTATION_PATHS),
             ("tests", supervisor.NATIVE_TEST_PATHS),
             ("redesign", supervisor.NATIVE_REDESIGN_PATHS),
+            ("screening", supervisor.NATIVE_SCREENING_PATHS),
         ):
             rows = [b"M\0" + path.encode() + b"\0" for path in sorted(paths)]
             data = b"".join(rows)
             supervisor.validate_native_source_inventory(data, stage)
+            supervisor.validate_native_source_inventory(b"".join(reversed(rows)), stage)
             for changed in (b"".join(rows[1:]), data + rows[0], data + b"M\0src/proc.c\0"):
                 with self.subTest(stage=stage), self.assertRaises(policy.GuardError):
                     supervisor.validate_native_source_inventory(changed, stage)
+            with self.subTest(stage=stage), self.assertRaises(policy.GuardError):
+                supervisor.validate_native_source_inventory(data.replace(b"M\0", b"A\0", 1), stage)
         with self.assertRaises(policy.GuardError):
             supervisor.validate_native_source_inventory(data, "unreviewed")
+
+    def test_family2_workflow_selects_exact_source_and_stays_preparation_only(self):
+        workflow = yaml.load(NATIVE_WORKFLOW_TEXT, Loader=yaml.BaseLoader)
+        self.assertEqual(workflow["on"], {"push": {"branches": [policy.NATIVE_BRANCH]}})
+        self.assertEqual(workflow["permissions"], {"contents": "read"})
+        self.assertEqual(workflow["concurrency"]["cancel-in-progress"], "false")
+        job, = workflow["jobs"].values()
+        self.assertEqual(job["name"], "One corrected source-family observation; qualification remains incomplete")
+        self.assertEqual((job["runs-on"], job["timeout-minutes"]), ("ubuntu-latest", "90"))
+        self.assertEqual(len(job["steps"]), 6)
+        predicates = {part.strip() for part in job["if"].split("&&")}
+        self.assertTrue({
+            "github.run_number == 1", "github.run_attempt == 1", "github.event.created == true",
+            "github.event.deleted == false", "github.event.repository.private == false",
+            "github.event.sender.login == 'laqieer'", "github.actor == 'laqieer'",
+            "github.triggering_actor == 'laqieer'",
+        } <= predicates)
+        checkouts = [step for step in job["steps"] if step.get("uses", "").startswith("actions/checkout@")]
+        self.assertEqual([step["with"]["ref"] for step in checkouts], ["${{ github.sha }}", policy.NATIVE_SOURCE])
+        self.assertEqual(
+            [step["uses"] for step in checkouts],
+            ["actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"] * 2,
+        )
+        self.assertEqual([step["timeout-minutes"] for step in checkouts], ["5", "10"])
+        self.assertEqual(checkouts[0]["with"]["path"], "harness")
+        self.assertEqual(checkouts[0]["with"]["fetch-depth"], "0")
+        self.assertEqual(checkouts[1]["with"]["path"], "candidate")
+        self.assertEqual(checkouts[1]["with"]["fetch-depth"], "0")
+        self.assertEqual(checkouts[1]["with"]["submodules"], "recursive")
+        self.assertTrue(all(step["with"]["persist-credentials"] == "false" for step in checkouts))
+        plan, install, run = job["steps"][1], job["steps"][3], job["steps"][4]
+        self.assertEqual(plan["timeout-minutes"], "5")
+        self.assertIn("supervisor.py plan", plan["run"])
+        self.assertEqual(install["timeout-minutes"], "15")
+        self.assertIn("apt-get install", install["run"])
+        self.assertEqual(run["timeout-minutes"], "70")
+        run_steps = [step for step in job["steps"] if 'supervisor.py" run ' in step.get("run", "")]
+        self.assertEqual(len(run_steps), 1)
+        self.assertIn("--profile " + policy.NATIVE_PROFILE, run_steps[0]["run"])
+        self.assertIn("--selector " + policy.NATIVE_SELECTORS[0], run_steps[0]["run"])
+        upload, = [step for step in job["steps"] if step.get("uses", "").startswith("actions/upload-artifact@")]
+        self.assertEqual(
+            upload["uses"],
+            "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+        )
+        self.assertEqual((upload["if"], upload["with"]["retention-days"],
+                          upload["with"]["if-no-files-found"]), ("always()", "7", "error"))
+        expected_prefix = "${{ runner.temp }}/" + policy.NATIVE_OUTPUT_PREFIX + "${{ github.run_id }}/"
+        self.assertEqual(upload["with"]["path"].splitlines(), [
+            expected_prefix + name for name in policy.ARTIFACT_NAMES
+        ])
+        self.assertIn("qualification remains incomplete", job["name"])
+        for step in job["steps"]:
+            self.assertNotIn("continue-on-error", step)
+            self.assertNotIn("secrets.", json.dumps(step))
 
 
 class Inert(unittest.TestCase):
