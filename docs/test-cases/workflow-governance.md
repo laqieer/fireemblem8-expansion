@@ -5180,6 +5180,24 @@ execution or public obsolete-output retirement; all original-family/report/
 resource/architecture/final holds remain. Fixture cleanup is automatic; no
 ROM/save/profile behavior change or manual judgment applies.
 
+Under [contract6003125579](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6003125579),
+run `PrivateInstallMetadataTests` and the real text install/default-denial,
+cloned/foreign/stale command and forged-launch/missing-outcome controls in
+`scripts.validation_ownership.tests.test_private_install`. Expect ordinary
+commands to retain exact pre/post replay metadata while only validated
+non-reusable private writers avoid reading those unused buffers. Actual
+issued writers must return no replay metadata while retaining exact generated
+bytes, source/code consumption and install outcomes. Unissued writers, changed
+ownership and missing outcomes still refuse. Rerun the two original generation
+profile selectors above; require their complete unchanged byte/mode/stamp/lock
+oracles and empty replay metadata, then measure the unchanged original family
+in one original budget/deadline. A budget failure remains failure.
+The finite pre-change control observes a metadata-buffer read in the issued
+writer and fails; it is a machinery-removal control, not a correctness bug
+preimage. This does not qualify natural whole-Make or public lifecycle, alter
+ROM/save/profile behavior, or add a manual requirement. Existing cleanup and
+all unresolved final gates remain.
+
 **Exact remaining machine hold:** version4 now returns the bounded actual
 clear/arm register, kernel trap and successful pin-retirement observations
 described above. The active/deferred cancellation pair additionally observes

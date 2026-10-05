@@ -21,6 +21,39 @@ from scripts.validation_ownership.tests import test_foundation as foundation
 ROOT = Path(__file__).resolve().parents[3]
 
 
+class PrivateInstallMetadataTests(unittest.TestCase):
+    def test_only_validated_nonreusable_writer_avoids_metadata_replay_buffers(self):
+        from scripts.validation_ownership import syscall_guard
+
+        for installed in (False, True):
+            with self.subTest(installed=installed):
+                policy = object.__new__(syscall_guard.Policy)
+                policy.private_install = (
+                    private_install.InstallSpec("owned/launch", (("/work", (1, 2, stat.S_IFDIR | 0o700)),),
+                                                ("/work/out",))
+                    if installed else None
+                )
+                policy.config = {}
+                policy.mode = "command"
+                policy.runtime_metadata = lambda *args, **kwargs: False
+                policy.reserve_observation = Mock()
+                policy.metadata_buffer = Mock(return_value=b"\x00" * 144)
+                state = SimpleNamespace(role="command", metadata_pending=None)
+                registers = SimpleNamespace(orig_rax=262, rdx=1234, r10=0)
+                syscall_guard.Policy.begin_metadata(policy, 17, state, registers, "/repo/source")
+                if installed:
+                    policy.metadata_buffer.assert_not_called()
+                    policy.reserve_observation.assert_not_called()
+                    self.assertIsNone(state.metadata_pending)
+                else:
+                    policy.metadata_buffer.assert_called_once_with(17, 1234, 144)
+                    policy.reserve_observation.assert_called_once()
+                    self.assertEqual(
+                        state.metadata_pending,
+                        ((262, "/repo/source", 0, 0, 144, 0), 1234, b"\x00" * 144),
+                    )
+
+
 class PrivateInstallCleanupTests(unittest.TestCase):
     """Actual install owners and supervisor teardown with inert descriptors."""
 
@@ -553,6 +586,34 @@ class PrivateInstallTests(unittest.TestCase):
         command = python_command(session, body, outputs=outputs)
         return session._private_install_command(command, destinations) if issued else command
 
+    def test_ordinary_reusable_value_keeps_actual_source_metadata(self):
+        self.fixture.add("input.txt", "actual immutable input\n")
+        with self.fixture.session() as session:
+            command = python_command(
+                session, "import os;print(os.stat('/repo/input.txt').st_size)",
+                sources=("input.txt",),
+            )
+            first = session.command(command)
+            self.assertEqual(first.stdout, b"23\n")
+            self.assertTrue(first.metadata)
+            self.assertTrue(any(row[1] == "/repo/input.txt" and row[6] == 0 for row in first.metadata))
+            second = session.command(command)
+            self.assertIs(second, first)
+            self.assertEqual(second.metadata, first.metadata)
+        self.assert_clean(session)
+
+    def test_nonreusable_writer_still_rejects_undeclared_source_metadata(self):
+        self.fixture.add("foreign.txt", "not an admitted command input\n")
+        with self.fixture.session() as session:
+            command = python_command(
+                session, "import os;os.stat('/repo/foreign.txt')", outputs=("out/result",),
+            )
+            session._private_install_command(command, command.outputs)
+            with self.assertRaisesRegex(MakeProbeError, "undeclared source metadata"):
+                session.command(command)
+        self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
     def test_real_text_installs_have_exact_native_outcomes_and_default_denial(self):
         for name in ("scripts/texttools/textprocess.py", "scripts/texttools/huffman.py"):
             self.fixture.add(name, (ROOT / name).read_bytes())
@@ -580,6 +641,7 @@ class PrivateInstallTests(unittest.TestCase):
 
             with patch.object(session, "_sandbox_run", capture):
                 result = session.command(command)
+            self.assertEqual(result.metadata, ())
             generated = {item.path: item for item in result.generated}
             self.assertEqual(set(generated), set(outputs))
             self.assertTrue(generated["out/data.c"].data.startswith(b'#include "global.h"'))

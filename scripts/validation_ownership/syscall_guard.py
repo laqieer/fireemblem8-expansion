@@ -2767,6 +2767,8 @@ class Policy:
         return int(match[1])
 
     def begin_metadata(self, pid, state, r, path):
+        if self.private_install is not None:
+            return
         optional = self.runtime_metadata(
             path, parents=self.mode == "make" or bool(self.config.get("metadata_validation")),
         )

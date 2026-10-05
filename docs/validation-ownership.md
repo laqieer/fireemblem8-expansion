@@ -540,6 +540,16 @@ is not the selected single whole-Make execution redesign. Private pruning does
 not prove retirement of previously published obsolete public files. Complete
 public version/lifecycle and original-family resource qualification remain held.
 
+An identity-issued private-install writer is output-producing and cannot enter
+the reusable command cache. It no longer constructs unused pre/post syscall
+metadata buffers for value replay. Actual syscall/path checks, attempted access
+observations, source/code consumption and identity checks, pinned install
+parents and complete install outcomes remain unchanged and charged. Eligibility
+comes from the existing validated private-install configuration, not a caller
+flag. Ordinary reusable commands and metadata validation retain their lossless
+metadata transport. This removes replay machinery that publication does not
+consume; it does not raise, refund or transfer a resource limit.
+
 Four `ReadEpochTests` selectors are separate complete terminal invocations:
 `test_native_completion_kernel_frame_pin_terminal`,
 `test_native_completion_resource_terminal`,

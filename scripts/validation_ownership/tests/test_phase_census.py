@@ -1429,6 +1429,7 @@ class PhaseCensusTests(unittest.TestCase):
                 self.assertEqual(json.loads(result.stdout), oracle)
             else:
                 self.assertEqual(result.stdout, b"")
+                self.assertEqual(result.metadata, ())
             self.assertEqual(len(oracle), (34 if custom else 19) + (2 if staging else 0))
             if staging:
                 self.assertEqual(
