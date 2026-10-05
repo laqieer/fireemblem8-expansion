@@ -539,6 +539,21 @@ not preparation. Owned handles must be reaped for cancellation/deadline; each
 case requires failed-budget and scratch/cache/child cleanup observations.
 These invocations have independent original budgets, not reset failed budgets.
 
+`test_native_completion_source_active_cancellation_terminal` additionally
+cancels at an actual producer request inside an immediate Make source
+assignment. Its original native origin must identify the live source visit.
+Before signalling, the test traverses only owned descendants and observes
+the exact immutable source inode through live descriptors in at least two
+processes (the reader and its supervisor pin). It retains actual pidfds.
+Cleanup must make each observed pidfd terminal and each observed process
+absent from procfs, reap owned outer handles, and retain the failed original
+budget/deadline. The deferred-assignment companion
+`test_native_completion_after_read_cancellation_has_no_active_source_pins`
+requires an actual after-read origin with no visit and no remaining descriptors
+for that source. Ordinary cancellation alone cannot satisfy the active-source
+control. Neither control proves unobserved processes, clearing after cancellation
+or arbitrary reader-frame resistance.
+
 `NativeReadTrace.debug` reads back every actual DR0..DR3/DR6/DR7 write before
 resuming the child. Address/control values must match exactly; DR6 comparison
 uses only B0..B3/BD/BS/BT status bits, excluding architecture-reserved fixed bits.
@@ -581,7 +596,7 @@ read/remake/reexec/producer observations and mutations of that projection.
 This is operational evidence, not authentication or a hardware certificate.
 
 **Unresolved machine criterion:** modifier/RBX/reader-frame samples,
-source-active cancellation, arbitrary changed-reader-frame adversaries,
+arbitrary changed-reader-frame adversaries, complete cancellation register-state evidence,
 stale live pins, and complete source-close/teardown observations remain
 unqualified. Basic actual register/trap/pin rows do not fill those gaps or prove
 the complete original runtime family. Native changed-CWD likewise remains

@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import posixpath
 import re
+import select
 import shlex
 import signal
 import stat
@@ -31,6 +32,7 @@ from scripts.validation_ownership import make_probe
 from scripts.validation_ownership.authority import encoded
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.make_probe import Command
+from scripts.validation_ownership.producer_channel import ProducerChannel
 from scripts.validation_ownership.tests import test_foundation as foundation
 
 
@@ -1449,6 +1451,105 @@ class ReadEpochTests(unittest.TestCase):
         self.assertTrue(session.budget.failed)
         self.assertEqual(session.budget.deadline, deadline)
         self.fixture.assert_clean(session)
+
+    def test_native_completion_source_active_cancellation_terminal(self):
+        self._native_completion_source_cancellation(source_active=True)
+
+    def test_native_completion_after_read_cancellation_has_no_active_source_pins(self):
+        self._native_completion_source_cancellation(source_active=False)
+
+    def _native_completion_source_cancellation(self, *, source_active):
+        operator = ":=" if source_active else "="
+        self.fixture.add("active-cancel.mk", f"VALUE {operator} $(shell printf %s live)\nall: ;\n")
+        session = self.fixture.session(seconds=20)
+        deadline = session.budget.deadline
+        handles, descriptors, pins, origins = [], [], [], []
+        original = ProducerChannel.receive
+
+        def cancel_at_actual_source_request(channel):
+            payload = original(channel)
+            if payload is None:
+                return None
+            packet = json.loads(payload)
+            origin = packet.get("source_origin")
+            if packet.get("kind") != "request" or origin is None:
+                return payload
+            self.assertEqual(origin["stage"], "source-read" if source_active else "after-read")
+            if source_active:
+                self.assertGreater(origin["visit"], 0)
+            else:
+                self.assertIsNone(origin["visit"])
+            self.assertEqual((origin["exec"], origin["pass"]), (1, 1))
+            origins.append(origin)
+            expected = (session.tree / "active-cancel.mk").stat()
+            handles.extend(session.budget.children)
+            pending = [child.pid for child in handles]
+            observed = set()
+            while pending:
+                pid = pending.pop()
+                if pid in observed:
+                    continue
+                observed.add(pid)
+                descriptors.append((pid, os.pidfd_open(pid)))
+                children = Path(f"/proc/{pid}/task/{pid}/children").read_text()
+                pending.extend(int(value) for value in children.split())
+                for entry in Path(f"/proc/{pid}/fd").iterdir():
+                    try:
+                        info = entry.stat()
+                    except FileNotFoundError:
+                        continue
+                    if (info.st_dev, info.st_ino) == (expected.st_dev, expected.st_ino):
+                        image = Path(f"/proc/{pid}/exe").stat()
+                        pins.append((
+                            pid, int(entry.name), info.st_dev, info.st_ino, image.st_dev, image.st_ino,
+                        ))
+            self.assertTrue(handles)
+            if source_active:
+                self.assertGreaterEqual(len({pin[0] for pin in pins}), 2)
+                images = {pin[4:] for pin in pins}
+                image = Path(sys.executable).stat()
+                self.assertIn((image.st_dev, image.st_ino), images, "supervisor interpreter")
+                readers = []
+                for pin in pins:
+                    image = Path(f"/proc/{pin[0]}/root/usr/bin/make").stat()
+                    if pin[4:] == (image.st_dev, image.st_ino):
+                        source = Path(f"/proc/{pin[0]}/root/repo/active-cancel.mk").stat()
+                        self.assertEqual(
+                            (source.st_dev, source.st_ino), (expected.st_dev, expected.st_ino),
+                        )
+                        readers.append(pin[0])
+                self.assertTrue(readers, "actual guest Make source reader")
+            else:
+                self.assertEqual(pins, [])
+            os.kill(os.getpid(), signal.SIGTERM)
+            self.fail("cancellation did not interrupt the original lifetime")
+
+        def command_registration(command):
+            self.assertEqual(command, "printf %s live")
+            return Command(("/usr/bin/printf", "%s", "live"))
+
+        try:
+            with session:
+                with patch.object(ProducerChannel, "receive", cancel_at_actual_source_request):
+                    with self.assertRaises(KeyboardInterrupt):
+                        session.make(
+                            "all", makefile="active-cancel.mk", variables=("VALUE",),
+                            commands=command_registration,
+                            observe_source_phases=True,
+                        )
+            self.assertEqual(len(origins), 1)
+            self.assertTrue(session.budget.failed)
+            self.assertEqual(session.budget.deadline, deadline)
+            self.assertTrue(all(child.returncode is not None for child in handles))
+            for pid, descriptor in descriptors:
+                poller = select.poll()
+                poller.register(descriptor, select.POLLIN)
+                self.assertTrue(poller.poll(0), pid)
+                self.assertFalse(Path(f"/proc/{pid}").exists(), pid)
+            self.fixture.assert_clean(session)
+        finally:
+            for _, descriptor in descriptors:
+                os.close(descriptor)
 
     def test_native_completion_cancellation_terminal(self):
         """Cancel an observed owned outer child; not source-active register proof."""

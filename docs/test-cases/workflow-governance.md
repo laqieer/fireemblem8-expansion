@@ -4995,6 +4995,24 @@ against the actual source-effect dispatch bindings even if the general trace
 remains structurally valid. These controls retain the real validator inputs;
 they do not manufacture a parallel dispatch registry.
 
+Under [contract6002641064](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6002641064),
+run `ReadEpochTests.test_native_completion_source_active_cancellation_terminal`
+and `ReadEpochTests.test_native_completion_after_read_cancellation_has_no_active_source_pins`
+from `scripts.validation_ownership.tests.test_read_epochs` in that same native
+environment. The immediate-assignment case must reach a real producer request
+with source-read origin and a positive visit; actual owned-process descriptors
+must hold the immutable source inode in the reader and supervisor before
+cancellation. The deferred-assignment control must reach after-read with no
+visit and no descriptor for that source; it must not qualify as source-active.
+After the existing SIGTERM path, require all observed pidfds terminal, all
+observed processes absent from procfs, outer handles reaped, unchanged original
+deadline, failed budget and existing fixture cleanup. The tests traverse only
+owned descendants and close retained pidfds. They strengthen evidence for
+existing behavior and have no bug preimage. No manual criterion or ROM/save/
+profile change applies. Complete cancellation register-state and unobserved
+descendant coverage remain unqualified, alongside the original-family and
+delivery holds.
+
 The original family also includes `native-one.dat` and then
 `./native-one.dat`. GNU Make reports both visit names as `native-one.dat`;
 the second spelling does not create a different source. Require distinct visit
@@ -5139,17 +5157,18 @@ renderer at `/repo` for the namespace-bound linker oracle. This single-command
 control uses its original one-session limits and does not prove public output
 publication/retirement or reset/qualify the original eight-profile family.
 
-**Exact remaining machine hold:** the current child trace does not return
-DR0..DR3/DR6/DR7, hardware siginfo/PC/purpose/restore samples, modifier/RBX/
-reader-frame observations, inherited registers after child exec, source-active
-cancellation location, or source-pin close/release readbacks. The supervisor
-uses them internally, but there is no approved existing child observation
-route for the trusted worker to assert them. Do not copy a parent mock into
-issued proof, guess garbage-register values or add a production hook in this
-test-only assignment. Frame/private/dynamic/copy controls, changed CWD and
-stale live pins therefore remain unknown, rather than five complete native
-qualifications. This machine hold is separate from subjective manual testing;
-it needs a bounded coordinator scope disposition, not a new platform or gate.
+**Exact remaining machine hold:** version4 now returns the bounded actual
+clear/arm register, kernel trap and successful pin-retirement observations
+described above. The active/deferred cancellation pair additionally observes
+the actual source interval and owned source descriptors before interruption,
+then terminal pidfds and retired observed processes. These do not establish
+modifier/RBX/reader-frame samples, arbitrary reader-frame adversaries,
+register-state restoration after cancellation, stale live-pin resistance or
+complete unobserved source/descendant teardown. Changed CWD also remains
+unqualified. Do not copy a parent mock into issued proof or guess register
+values. Complete native qualification remains held independently of subjective
+manual testing and needs the bounded coordinator scope disposition, not a new
+platform or gate.
 
 **Reset and limitations:** inert workspaces and substitutions retire after each
 control; never overwrite the accepted tree or mutate a budget/oracle to pass.
