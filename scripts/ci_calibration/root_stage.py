@@ -241,6 +241,7 @@ class NativeRefusalObservation:
         self.globals = None
         self.reason = "original-code-unavailable"
         self.retired = False
+        self.consumer_site = None
         method = type.__getattribute__(session_type, "__dict__").get("_sandbox_run")
         if type(method) is not FunctionType or (
             method.__globals__.get("__name__") != "scripts.validation_ownership.make_probe"
@@ -256,6 +257,7 @@ class NativeRefusalObservation:
         self.retired = True
 
     def capture(self, error, session):
+        self.consumer_site = None
         try:
             return self._capture(error, session)
         finally:
@@ -276,47 +278,60 @@ class NativeRefusalObservation:
             if id(current) in seen or len(seen) >= 32:
                 return unavailable("exception-chain-bound")
             seen.add(id(current))
-            trace = BaseException.__getattribute__(current, "__traceback__")
+            trace = BaseException.__dict__["__traceback__"].__get__(current, BaseException)
             while trace is not None:
                 if id(trace) in frames or len(frames) >= 256:
                     return unavailable("frame-bound")
                 frames.add(id(trace))
                 frame = trace.tb_frame
-                if frame.f_code is self.code and frame.f_globals is self.globals:
+                if frame.f_code is self.code:
+                    if frame.f_globals is not self.globals:
+                        return unavailable("frame-unobserved")
                     local = frame.f_locals
-                    if type(local) is not dict or len(local) > 256 or local.get("self") is not session:
+                    if type(local) is not dict or len(local) > 256 or (
+                        any(type(key) is not str for key in local) or local.get("self") is not session
+                    ):
                         return unavailable("foreign-session")
-                    observed = local.get("observed")
-                    if type(observed) is not dict or len(observed) > 256 or (
-                        any(type(key) is not str for key in observed)
-                        or not {"ok", "returncode"} <= observed.keys()
-                    ):
-                        return unavailable("malformed-observation")
-                    ok, returncode = observed["ok"], observed["returncode"]
-                    if type(ok) is not bool or not (
-                            returncode is None and ok is False
-                            or type(returncode) is int and -(1 << 31) <= returncode < (1 << 31)
-                    ):
-                        return unavailable("malformed-observation")
-                    if ok is not False:
-                        return unavailable("malformed-observation")
-                    if "failure_diagnostic" not in observed:
-                        return unavailable("diagnostic-unavailable")
-                    diagnostic = observed["failure_diagnostic"]
-                    try:
-                        policy.validate_native_diagnostic(diagnostic)
-                    except policy.GuardError:
-                        return unavailable("malformed-observation")
-                    found.append({
-                        "status": "observed", "reason": None, "ok": ok, "returncode": returncode,
-                        "diagnostic": dict(diagnostic),
-                    })
+                    found.append((trace, local))
                 trace = trace.tb_next
-            cause = BaseException.__getattribute__(current, "__cause__")
-            current = cause if cause is not None else BaseException.__getattribute__(current, "__context__")
+            cause = BaseException.__dict__["__cause__"].__get__(current, BaseException)
+            current = cause if cause is not None else (
+                BaseException.__dict__["__context__"].__get__(current, BaseException)
+            )
         if len(found) != 1:
             return unavailable("frame-ambiguous" if found else "frame-unobserved")
-        return policy.validate_native_refusal(found[0])
+        trace, local = found[0]
+        line = trace.tb_lineno
+        if policy._component_integer(line, 2147483647, 1) and any(
+            start <= trace.tb_lasti < end and source_line == line
+            for start, end, source_line in self.code.co_lines()
+        ):
+            self.consumer_site = {
+                "line": line, "location_kind": "origin" if trace.tb_next is None else "callsite",
+            }
+        observed = local.get("observed")
+        if type(observed) is not dict or len(observed) > 256 or (
+            any(type(key) is not str for key in observed)
+            or not {"ok", "returncode"} <= observed.keys()
+        ):
+            return unavailable("malformed-observation")
+        ok, returncode = observed["ok"], observed["returncode"]
+        if ok is not False or not (
+            returncode is None
+            or type(returncode) is int and -(1 << 31) <= returncode < (1 << 31)
+        ):
+            return unavailable("malformed-observation")
+        if "failure_diagnostic" not in observed:
+            return unavailable("diagnostic-unavailable")
+        diagnostic = observed["failure_diagnostic"]
+        try:
+            policy.validate_native_diagnostic(diagnostic)
+        except policy.GuardError:
+            return unavailable("malformed-observation")
+        return policy.validate_native_refusal({
+            "status": "observed", "reason": None, "ok": ok, "returncode": returncode,
+            "diagnostic": dict(diagnostic),
+        })
 
 
 class NativeRecorder:
@@ -348,6 +363,7 @@ class NativeRecorder:
         self.refusal_observer = None
         self.primary_error = None
         self.refusal = policy.native_refusal_unavailable("not-captured")
+        self.consumer_site = None
 
     def capture_first(self, error):
         if self.primary_error is not None:
@@ -356,6 +372,7 @@ class NativeRecorder:
         if self.refusal_observer is not None:
             try:
                 self.refusal = self.refusal_observer.capture(error, self.session)
+                self.consumer_site = self.refusal_observer.consumer_site
             except BaseException:
                 self.refusal = policy.native_refusal_unavailable("projection-failed")
                 self.refusal_observer.retire()
@@ -688,7 +705,8 @@ class NativeRecorder:
         )
         self.progress_stage = "counter-publication"
         result = {
-            "version": 3, "primary_error": self.primary_error,
+            "version": 4, "primary_error": self.primary_error,
+            "consumer_site": self.consumer_site,
             "refusal": self.refusal if first is not None else {
                 "status": "success", "reason": None, "ok": None, "returncode": None,
                 "diagnostic": None,

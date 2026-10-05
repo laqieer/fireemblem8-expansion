@@ -64,11 +64,13 @@ class NativeRefusalControls(unittest.TestCase):
             self.assertIsNot(result["diagnostic"], observed["failure_diagnostic"])
             self.assertEqual(result["ok"], False)
             self.assertEqual(result["returncode"], code)
+            self.assertEqual(observer.consumer_site, {"line": 3, "location_kind": "origin"})
             self.assertTrue(observer.retired)
             self.assertIsNone(observer.session_type)
             self.assertIsNone(observer.globals)
             self.assertIsNone(observer.code)
             self.assertEqual(observer.capture(error, session)["reason"], "retired")
+            self.assertIsNone(observer.consumer_site)
             self.assertNotIn(b"PRIVATE", policy.encoded(result))
             policy.validate_native_refusal(policy.parse_json(policy.encoded(result)))
 
@@ -91,11 +93,14 @@ class NativeRefusalControls(unittest.TestCase):
             error = self.caught(session, self.observed())
             recorder.capture_first(error)
             original = copy.deepcopy(recorder.refusal)
+            site = copy.deepcopy(recorder.consumer_site)
+            self.assertIsNotNone(site)
             self.assertEqual(original["diagnostic"], self.observed()["failure_diagnostic"])
             self.assertTrue(observer.retired)
             recorder.capture_first(OSError(errno.EIO, "private secondary cleanup"))
             self.assertEqual(recorder.primary_error, policy.component_secondary_error(error))
             self.assertEqual(recorder.refusal, original)
+            self.assertEqual(recorder.consumer_site, site)
 
     def test_status_types_bounds_and_mandatory_observation_keys(self):
         for ok in (False,):
@@ -122,10 +127,12 @@ class NativeRefusalControls(unittest.TestCase):
         other = type(session)()
         result = observer.capture(self.caught(other, {"error": "guard", "ok": False, "returncode": 1}), session)
         self.assertEqual(result["reason"], "foreign-session")
+        self.assertIsNone(observer.consumer_site)
         session, observer = self.model()
         foreign, _ = self.model()
         result = observer.capture(self.caught(foreign, {"error": "guard", "ok": False, "returncode": 1}), session)
         self.assertEqual(result["reason"], "frame-unobserved")
+        self.assertIsNone(observer.consumer_site)
         session, observer = self.model()
         from types import FunctionType
         method = FunctionType(type(session)._sandbox_run.__code__, {"__name__": "foreign"})
@@ -133,12 +140,69 @@ class NativeRefusalControls(unittest.TestCase):
             method(session, {"error": "guard", "ok": False, "returncode": 1}, RuntimeError())
         except RuntimeError as error:
             self.assertEqual(observer.capture(error, session)["reason"], "frame-unobserved")
+            self.assertIsNone(observer.consumer_site)
         class Shadow:
             @property
             def _sandbox_run(self):
                 raise AssertionError("candidate property executed")
         observer = root_stage.NativeRefusalObservation(Shadow)
         self.assertEqual(observer.capture(RuntimeError(), Shadow())["reason"], "original-code-unavailable")
+        self.assertIsNone(observer.consumer_site)
+
+    def test_full_traversal_bounds_and_invalid_line_never_publish_partial_site(self):
+        from types import TracebackType
+        for count in (256, 257):
+            session, observer = self.model()
+            error = self.caught(session, {})
+            outer, owned = error.__traceback__, error.__traceback__.tb_next
+            trace = owned
+            for _ in range(count - 1):
+                trace = TracebackType(trace, outer.tb_frame, outer.tb_lasti, outer.tb_lineno)
+            error.__traceback__ = trace
+            refusal = observer.capture(error, session)
+            self.assertEqual(refusal["reason"], "malformed-observation" if count == 256 else "frame-bound")
+            self.assertEqual(observer.consumer_site is None, count == 257)
+        for count in (32, 33):
+            session, observer = self.model()
+            error = self.caught(session, {})
+            for _ in range(count - 1):
+                following = RuntimeError()
+                following.__cause__ = error
+                error = following
+            refusal = observer.capture(error, session)
+            self.assertEqual(refusal["reason"], "malformed-observation" if count == 32 else "exception-chain-bound")
+            self.assertEqual(observer.consumer_site is None, count == 33)
+        session, observer = self.model()
+        error = self.caught(session, self.observed())
+        owned = error.__traceback__.tb_next
+        error.__traceback__ = TracebackType(None, owned.tb_frame, owned.tb_lasti, 2147483647)
+        self.assertEqual(observer.capture(error, session)["status"], "observed")
+        self.assertIsNone(observer.consumer_site)
+        session, observer = self.model()
+        error = self.caught(session, {})
+        other = type(session)()
+        error.__cause__ = self.caught(other, self.observed())
+        self.assertEqual(observer.capture(error, session)["reason"], "foreign-session")
+        self.assertIsNone(observer.consumer_site)
+
+    def test_exception_properties_are_not_executed(self):
+        class ForeignError(RuntimeError):
+            @property
+            def __traceback__(self):
+                raise AssertionError("candidate traceback property executed")
+            @property
+            def __cause__(self):
+                raise AssertionError("candidate cause property executed")
+            @property
+            def __context__(self):
+                raise AssertionError("candidate context property executed")
+        session, observer = self.model()
+        try:
+            session._sandbox_run({}, ForeignError())
+        except ForeignError as error:
+            self.assertEqual(observer.capture(error, session)["reason"], "malformed-observation")
+            self.assertEqual(observer.consumer_site, {"line": 3, "location_kind": "origin"})
+            self.assertTrue(observer.retired)
 
     def test_builtin_fields_bounds_and_cycles_fail_without_raw_data(self):
         class Mapping(dict):
@@ -164,6 +228,7 @@ class NativeRefusalControls(unittest.TestCase):
         error = self.caught(session, self.observed())
         error.__cause__ = error
         self.assertEqual(observer.capture(error, session)["reason"], "exception-chain-bound")
+        self.assertIsNone(observer.consumer_site)
         session, observer = self.model()
         error = RuntimeError()
         for _ in range(33):
@@ -188,6 +253,7 @@ class NativeRefusalControls(unittest.TestCase):
                 session._sandbox_run(self.observed(), RuntimeError(), depth)
             except RuntimeError as error:
                 self.assertEqual(observer.capture(error, session)["reason"], reason)
+                self.assertIsNone(observer.consumer_site)
         session, observer = self.model()
         self.assertEqual(observer.capture(RuntimeError(), session)["reason"], "frame-unobserved")
         namespace = {"__name__": "scripts.validation_ownership.make_probe"}
@@ -198,6 +264,142 @@ class NativeRefusalControls(unittest.TestCase):
             session._sandbox_run(RuntimeError())
         except RuntimeError as error:
             self.assertEqual(observer.capture(error, session)["reason"], "malformed-observation")
+            self.assertIsNotNone(observer.consumer_site)
+
+    def test_actual_original_consumer_site_independent_of_producer(self):
+        source = Path(__file__).resolve().parents[2].parent / "issue180-original-completion"
+        tree = ast.parse((source / "scripts/validation_ownership/make_probe.py").read_text())
+        owner = next(node for node in tree.body if isinstance(node, ast.ClassDef)
+                     and node.name == "ProbeSession")
+        method = next(node for node in owner.body if isinstance(node, ast.FunctionDef)
+                      and node.name == "_sandbox_run")
+        extracted = ast.fix_missing_locations(ast.Module(body=[
+            ast.ClassDef(name="ProbeSession", bases=[], keywords=[], body=[method], decorator_list=[]),
+        ], type_ignores=[]))
+        class ConsumerError(RuntimeError):
+            pass
+
+        def cleanup(callbacks):
+            stack = ExitStack()
+            for callback in callbacks:
+                stack.callback(callback)
+            return stack
+
+        files = {}
+        class InertPath:
+            def __init__(self, path):
+                self.path = path
+            def __truediv__(self, name):
+                return InertPath(self.path + "/" + name)
+            def __str__(self):
+                return self.path
+            def write_bytes(self, data):
+                files[self.path] = data
+            def unlink(self, *, missing_ok):
+                files.pop(self.path, None)
+            def is_file(self):
+                return self.path in files
+
+        decoded = []
+        def decode(*args, **kwargs):
+            decoded.append(True)
+            if variant == "validation-callsite":
+                raise ConsumerError("PRIVATE consumer validation")
+            return {}
+
+        namespace = {
+            "__name__": "scripts.validation_ownership.make_probe",
+            "source_journal": SimpleNamespace(MODE="journal"),
+            "source_directories": SimpleNamespace(MODE="directories"),
+            "header_protocol": SimpleNamespace(FILTER_PURPOSE="inert"),
+            "MakeProbeError": ConsumerError, "ChannelError": ConsumerError,
+            "os": os, "Path": InertPath, "TRUSTED_ROOT": InertPath("/inert"),
+            "ENVIRONMENT": {}, "cleanup_scope": cleanup,
+            "_remove_owned_tree": lambda path: None, "encoded": policy.encoded,
+            "parse_json": lambda data, label: policy.parse_json(data),
+            "_validate_failure_diagnostic": lambda value: True,
+            "metadata_transport": SimpleNamespace(decode_metadata_transport=decode),
+            "install_protocol": SimpleNamespace(validate_records=lambda *args: []),
+        }
+        exec(compile(extracted, "<original-consumer>", "exec"), namespace)
+        for variant in ("malformed", "validation-origin", "validation-callsite", "producer", "success"):
+            with self.subTest(variant=variant):
+                session = namespace["ProbeSession"]()
+                session.base = InertPath("/inert/base")
+                session.tree = InertPath("/inert/tree")
+                session._mount = lambda source, target: {"target": target}
+                session.runtime_root = None
+                session.serial = 0
+                session.runtime_dispatch = ()
+                session.runtime_inputs = ()
+                session.loader = SimpleNamespace(entries=())
+                session.snapshot = SimpleNamespace(files=(), gitlink_roots=(), absent_paths=())
+                session.python_version = "inert"
+                session.sudo_drop = False
+                session.parked_capsules = ()
+                session.launcher = ()
+                for name in ("processes_used", "syscalls_used", "files_created", "observations_used",
+                             "live_process_peak", "memory_peak"):
+                    setattr(session, name, 0)
+                observed = {
+                    "ok": variant != "producer", "returncode": 0, "error": None,
+                    "consumed": [], "code_consumed": [], "accessed": [], "metadata": {},
+                    "events": [], **dict.fromkeys((
+                        "processes", "syscalls", "written_bytes", "created_files", "memory_peak",
+                        "observation_bytes", "live_process_peak", "observations",
+                    ), 0),
+                }
+                if variant == "malformed":
+                    observed = {"ok": True, "returncode": 0}
+                elif variant == "validation-origin":
+                    observed["observations"] = -1
+                elif variant == "producer":
+                    observed["failure_diagnostic"] = self.observed()["failure_diagnostic"]
+                def run(*args, **kwargs):
+                    (session.base / "report-1.json").write_bytes(b"")
+                    return SimpleNamespace(returncode=0, stderr=b"")
+                session.budget = SimpleNamespace(
+                    remaining=lambda: None, cumulative_limit=lambda name: 1000000,
+                    limits=SimpleNamespace(**dict.fromkeys((
+                        "file_bytes", "address_space_bytes", "processes", "descendants",
+                        "syscalls", "sandbox_bytes", "created_files", "entries", "observation_count",
+                    ), 1000000)), bytes={}, deadline=1000000, run=run,
+                    charge=lambda *args: None, read_bytes=lambda *args: policy.encoded(observed),
+                )
+                observer = root_stage.NativeRefusalObservation(type(session))
+                decoded.clear()
+                try:
+                    result = session._sandbox_run(
+                        session.base, mode="command", argv=["/inert/command"], environment={},
+                        mounts=[session._mount(session.tree, "/repo")],
+                    )
+                except ConsumerError as error:
+                    trace = error.__traceback__
+                    while trace.tb_frame.f_code is not type(session)._sandbox_run.__code__:
+                        trace = trace.tb_next
+                    refusal = observer.capture(error, session)
+                    self.assertEqual(observer.consumer_site, {
+                        "line": trace.tb_lineno,
+                        "location_kind": "callsite" if variant == "validation-callsite" else "origin",
+                    })
+                    self.assertTrue(any(start <= trace.tb_lasti < end and line == trace.tb_lineno
+                                        for start, end, line in trace.tb_frame.f_code.co_lines()))
+                    self.assertEqual(refusal["status"], "observed" if variant == "producer" else "unavailable")
+                    if variant != "producer":
+                        self.assertEqual(refusal["reason"], "malformed-observation")
+                    else:
+                        self.assertEqual(refusal["diagnostic"], observed["failure_diagnostic"])
+                    self.assertEqual(bool(decoded), variant in ("validation-callsite", "producer"))
+                    self.assertTrue(observer.retired)
+                    self.assertNotIn(b"PRIVATE", policy.encoded({
+                        "refusal": refusal, "consumer_site": observer.consumer_site,
+                    }))
+                else:
+                    self.assertEqual(variant, "success")
+                    self.assertEqual(result[1], observed)
+                    observer.retire()
+                    self.assertIsNone(observer.consumer_site)
+                self.assertFalse(files)
 
 
 class NativeAdapterControls(Inert):
@@ -662,14 +864,33 @@ class NativeAdapterControls(Inert):
         self.assertIs(foundation.ProbeSession, Session)
         self.assertIs(foundation.ProbeBudget, original_budget.ProbeBudget)
         self.assertNotIn(str(first), repr(result))
-        self.assertEqual(result["version"], 3)
+        self.assertEqual(result["version"], 4)
+        self.assertIsNone(result["consumer_site"])
+        site_result = {**result, "consumer_site": {"line": 1, "location_kind": "callsite"}}
+        policy.validate_native_result(policy.parse_json(policy.encoded(site_result)), recorder.selection)
+        for site in ({}, {"line": True, "location_kind": "origin"},
+                     {"line": 1, "location_kind": "unknown"}):
+            with self.assertRaises(policy.GuardError):
+                policy.validate_native_result({**result, "consumer_site": site}, recorder.selection)
+        with self.assertRaises(policy.GuardError):
+            policy.validate_native_result({
+                **site_result, "first_stage": None, "primary_error": None,
+                "refusal": {"status": "success", "reason": None, "ok": None,
+                            "returncode": None, "diagnostic": None},
+            }, recorder.selection)
         self.assertEqual(result["primary_error"], policy.component_secondary_error(first))
         self.assertEqual(result["refusal"]["status"], "unavailable")
         self.assertTrue(recorder.refusal_observer.retired)
         historical = {key: value for key, value in result.items()
-                      if key not in {"version", "primary_error", "refusal"}}
+                      if key not in {"version", "primary_error", "refusal", "consumer_site"}}
         policy.validate_native_result(historical, recorder.selection, historical=True)
-        old = {**result, "version": 2, "refusal": {
+        previous = {key: value for key, value in result.items() if key != "consumer_site"}
+        previous["version"] = 3
+        self.assertIs(policy.validate_native_result(previous, recorder.selection, historical=True), previous)
+        self.assertNotIn("consumer_site", previous)
+        with self.assertRaises(policy.GuardError):
+            policy.validate_native_result({**previous, "version": 4}, recorder.selection)
+        old = {**previous, "version": 2, "refusal": {
             "status": "unavailable", "reason": "catalog-unavailable", "ok": None,
             "returncode": None, "match": None, "sites": [],
         }}

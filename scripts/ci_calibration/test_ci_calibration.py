@@ -48,6 +48,30 @@ WORKER_AST = ast.parse((REPO / "scripts/ci_calibration/worker.py").read_text())
 
 
 class NativeSelectionControls(unittest.TestCase):
+    def test_consumer_site_wire_is_nullable_builtin_and_report_only(self):
+        class Mapping(dict):
+            def keys(self):
+                raise AssertionError("candidate mapping executed")
+        class Value:
+            @property
+            def line(self):
+                raise AssertionError("candidate property executed")
+        self.assertIsNone(policy.validate_native_consumer_site(None))
+        for kind in ("origin", "callsite"):
+            for line in (1, 2147483647):
+                site = {"line": line, "location_kind": kind}
+                parsed = policy.parse_json(policy.encoded(site))
+                self.assertEqual(policy.validate_native_consumer_site(parsed), site)
+        for site in (
+            Mapping(line=1, location_kind="origin"), Value(), {},
+            {"line": 1, "location_kind": "unknown"}, {"line": True, "location_kind": "origin"},
+            {"line": 0, "location_kind": "origin"}, {"line": 2147483648, "location_kind": "origin"},
+            {"line": 1, "location_kind": "origin", "authority": True},
+            {object(): 1, "location_kind": "origin"},
+        ):
+            with self.subTest(type=type(site)), self.assertRaises(policy.GuardError):
+                policy.validate_native_consumer_site(site)
+
     def test_callsite_stage_uses_exact_clean_source_git_facts(self):
         def git(root, *args):
             return subprocess.run(

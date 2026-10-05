@@ -1,5 +1,46 @@
 # Contained original-include retained-state diagnostic
 
+## Consumer-site observation (TC-CI-NATIVE-CONSUMER-SITE-001, #180)
+
+Contract5994096441 adds only report-only `consumer_site` to normal result v4:
+null or a builtin `{line, location_kind}` dictionary. The fixed owner is the
+original `ProbeSession._sandbox_run`, bound by exact code, globals and session
+identity. A positive bounded line must match that code's line table at the
+retained instruction. `origin` means terminal in its exception traceback;
+otherwise the kind is `callsite`. The complete 32-exception/256-frame traversal
+must finish with exactly one owned frame before any site is published. Cycles,
+foreign bindings, ambiguity and overbound chains publish no partial site.
+
+Site capture precedes producer-record inspection, so missing/malformed records
+and consumer validation errors after `ok=True` can retain a site independently.
+The existing producer refusal schema/status is unchanged: `ok=True` is never
+reinterpreted as a producer refusal or native success. No raw errors, messages,
+paths, traceback strings or qualification authority are exported. First cause,
+all six selectors, primary/secondary cleanup and reference retirement remain.
+Current v4 requires the nullable field; explicit historical parsing retains
+unversioned v1, v2 and v3 records without fabricating consumer sites.
+
+Use the saved credential-free isolated loader with the exact source78fd889
+AST-extracted budget and cleanup definitions, no production imports and the
+native-effect audit boundary:
+`env -i HOME=/nonexistent PATH=/usr/bin:/bin LANG=C LC_ALL=C python3 -I -S -B
+<session>/files/consumer-site-validation/check.py current`.
+It runs `NativeRefusalControls`, `NativeAdapterControls` and the focused wire
+controls. Direct host imports use a different archival budget and are not this
+scenario. Repeat with `neutral` and `parent`; no native testcase is executed.
+The actual AST-extracted original consumer executes with inert supervision and
+in-memory report files: malformed producer shape, valid `ok=True` followed by
+origin/callsite validation failures, producer diagnostic and successful return.
+Synthetic controls supplement owned/foreign, ambiguity, bounds and retirement.
+Current and semantics-neutral harness forms must pass; the parent must fail the
+site regression. These observations do not diagnose the unknown remote cause.
+Run37306484577 returned three nested commands but not its first Make; all eight
+failed allocations remain spent. Source78fd889, routes, workflows, heldde5,
+four machine holds, full report/H1/resources and final delivery gates remain
+unchanged. The recorder preparation freeze needs a later separately reviewed
+route bound to the accepted recorder, not this stale parent. No execution,
+ROM/RAM/save/locale impact or new production dependency/conflict is introduced.
+
 ## Shared-lexer preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
 
 Frozen comment5993823352 prepares only the literal
@@ -192,9 +233,9 @@ Code/globals/session-type references retire immediately after capture,
 or at finalization on success. Failed projection is explicitly unavailable,
 independent of the original cause and existing cleanup channels.
 
-Current normal results require version3, `primary_error`, and `refusal`;
+Current normal results require version4, `primary_error`, `refusal`, and nullable `consumer_site`;
 success has its own distinct empty diagnostic record. Historical unversioned
-and version2 normal results require an explicit `historical=True` parser call and are not
+and version2/version3 normal results require an explicit `historical=True` parser call and are not
 accepted on the current route. The safe native error fallback is unchanged.
 Use the saved credential-free isolated harness route with inert original-code
 frames: actual diagnostic positive; foreign code/session, shadowed method,

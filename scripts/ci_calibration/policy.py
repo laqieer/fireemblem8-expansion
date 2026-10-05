@@ -364,6 +364,19 @@ def _validate_historical_native_refusal(value):
     return value
 
 
+def validate_native_consumer_site(value):
+    if value is None:
+        return value
+    if type(value) is not dict or len(value) != 2 or any(type(key) is not str for key in value):
+        raise GuardError("native consumer site requires builtin fields")
+    _component_fields(value, "line location_kind")
+    if not _component_integer(value["line"], 2147483647, 1) or (
+        type(value["location_kind"]) is not str or value["location_kind"] not in {"origin", "callsite"}
+    ):
+        raise GuardError("native consumer site is not a bounded location")
+    return value
+
+
 def validate_native_result(value, selection, *, historical=False):
     if selection != native_selection(selection.get("profile"), selection.get("selector")):
         raise GuardError("native result selection changed")
@@ -374,11 +387,17 @@ def validate_native_result(value, selection, *, historical=False):
     if type(historical) is not bool:
         raise GuardError("native historical parsing is not deliberate")
     versioned = not historical or type(value) is dict and "version" in value
-    _component_fields(value, fields + " version primary_error refusal" if versioned else fields)
+    _component_fields(value, fields + " version primary_error refusal" + (
+        "" if historical else " consumer_site"
+    ) if versioned else fields)
     if versioned:
-        if type(value["version"]) is not int or value["version"] != (2 if historical else 3):
+        if type(value["version"]) is not int or value["version"] not in ((2, 3) if historical else (4,)):
             raise GuardError("native result version is not current")
-        (_validate_historical_native_refusal if historical else validate_native_refusal)(value["refusal"])
+        (_validate_historical_native_refusal if value["version"] == 2 else validate_native_refusal)(value["refusal"])
+        if not historical:
+            validate_native_consumer_site(value["consumer_site"])
+            if value["first_stage"] is None and value["consumer_site"] is not None:
+                raise GuardError("native successful result invents a consumer exception site")
         if value["first_stage"] is None:
             if value["primary_error"] is not None or value["refusal"]["status"] != "success":
                 raise GuardError("native successful result invents a first failure")
