@@ -16,6 +16,40 @@ D depends on P, not on the optional view or runtime-input APIs.
 See the [archived delivery allocation](https://github.com/laqieer/fireemblem8-expansion/blob/56e0a206ffae088b0dbc1fe8aa6339a8ee820f33/docs/ownership-probe-allocation.json)
 and [downstream boundary](#contract-allocation-and-downstream-integration).
 
+## Native evaluator runtime-admission component
+
+Issue [#270](https://github.com/laqieer/fireemblem8-expansion/issues/270)
+separates the single-invocation native evaluator from the downstream ownership
+graph. Its first component reuses the existing trusted Make ELF/loader capture
+for an exact trusted system executable. `_make_runtime` delegates to that shared
+mechanism. It still validates root-owned, non-mutable system paths, x86-64 ELF
+and interpreter headers, runs only the captured interpreter's `--list` operation
+with a clean environment from `/`, and charges the complete image/closure bytes.
+It does not invoke `ldd`, load candidate ELF/code or grant native execution.
+The shell control uses `/usr/bin/sh`; the existing trusted-root policy is not
+widened to admit an unchecked `/bin` alias.
+
+From a clean Linux x86-64 source checkout with the existing host toolchain:
+
+1. Run `python3 -m unittest scripts.validation_ownership.tests.test_native_make -v`.
+   Actual Make and shell captures must contain their original ELF bytes,
+   interpreter and complete loader-derived libraries, all charged in one budget
+   per control. The loader call must use the clean environment and `/` cwd.
+2. Require untrusted candidate paths, malformed ELF, failed loader execution,
+   unresolved libraries and libraries outside trusted roots to refuse. Run the
+   existing `FoundationTests` runtime-capture controls for mutable paths and
+   real Make execution with a relocated captured library closure.
+3. Retain failures and close each budget; these controls do not write candidate
+   source or create generated game data. No ROM, ARM toolchain, save reset,
+   optional profile or subjective manual judgment is involved.
+
+The existing `ownership-probe-test` target includes this component. These checks
+prove runtime admission and preserved ordinary Make behavior only. Actual
+natural dispatch, source/caller/job observations, generated-version lifecycle,
+all eight original profiles in one budget, complete resource fitness and every
+candidate/master delivery gate remain required by #270 and #180. Runtime
+capture alone must never be reported as native-evaluator qualification.
+
 ## Run the real consumer
 
 From a source checkout:

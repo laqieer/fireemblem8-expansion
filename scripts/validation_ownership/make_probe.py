@@ -379,14 +379,14 @@ def _capture_runtime_input(path, budget):
     return RuntimeInput(path, data, mode, tuple(parents), str(resolved), tuple(aliases))
 
 
-def _make_interpreter(binary: bytes):
+def _make_interpreter(binary: bytes, *, label="trusted Make"):
     if len(binary) < 64 or binary[:6] != b"\x7fELF\x02\x01" or binary[18:20] != b"\x3e\0":
-        raise MakeProbeError("trusted Make is not a Linux x86-64 ELF")
+        raise MakeProbeError(f"{label} is not a Linux x86-64 ELF")
     start = int.from_bytes(binary[32:40], "little")
     size = int.from_bytes(binary[54:56], "little")
     count = int.from_bytes(binary[56:58], "little")
     if size != 56 or not 1 <= count <= 64 or start + size * count > len(binary):
-        raise MakeProbeError("trusted Make ELF program headers are invalid")
+        raise MakeProbeError(f"{label} ELF program headers are invalid")
     interpreter = None
     for index in range(count):
         header = binary[start + index * size:start + (index + 1) * size]
@@ -395,13 +395,13 @@ def _make_interpreter(binary: bytes):
         offset = int.from_bytes(header[8:16], "little")
         length = int.from_bytes(header[32:40], "little")
         if interpreter is not None or not 2 <= length <= 4096 or offset + length > len(binary):
-            raise MakeProbeError("trusted Make ELF interpreter is invalid")
+            raise MakeProbeError(f"{label} ELF interpreter is invalid")
         value = binary[offset:offset + length]
         if not value.endswith(b"\0") or b"\0" in value[:-1]:
-            raise MakeProbeError("trusted Make ELF interpreter is not one pathname")
-        interpreter = text(value[:-1], "trusted Make ELF interpreter", "ascii")
+            raise MakeProbeError(f"{label} ELF interpreter is not one pathname")
+        interpreter = text(value[:-1], f"{label} ELF interpreter", "ascii")
     if interpreter is None:
-        raise MakeProbeError("trusted Make requires an ELF interpreter")
+        raise MakeProbeError(f"{label} requires an ELF interpreter")
     return interpreter
 
 
@@ -422,23 +422,27 @@ def _runtime_library_paths(raw, existing):
     return tuple(result)
 
 
-def _make_runtime(budget: ProbeBudget):
-    binary = _trusted_runtime_bytes("/usr/bin/make", budget)
-    interpreter = _make_interpreter(binary)
+def _executable_runtime(path: str, budget: ProbeBudget):
+    binary = _trusted_runtime_bytes(path, budget)
+    interpreter = _make_interpreter(binary, label="trusted executable")
     runtime = {
-        "/usr/bin/make": binary,
+        path: binary,
         interpreter: _trusted_runtime_bytes(interpreter, budget),
     }
-    # Only the trusted interpreter sees the trusted system Make, never a
+    # Only the trusted interpreter sees the trusted system executable, never a
     # candidate ELF, preload, library path, ldd script or repository cwd.
-    result = budget.run([interpreter, "--list", "/usr/bin/make"], env=ENVIRONMENT, cwd=Path("/"))
+    result = budget.run([interpreter, "--list", path], env=ENVIRONMENT, cwd=Path("/"))
     if result.returncode:
-        raise MakeProbeError(f"cannot resolve trusted Make runtime: {result.stderr!r}")
+        raise MakeProbeError(f"cannot resolve trusted executable runtime: {result.stderr!r}")
     for path in _runtime_library_paths(result.stdout, runtime):
         runtime[path] = _trusted_runtime_bytes(path, budget)
     if len(runtime) < 3:
-        raise MakeProbeError("trusted Make runtime closure is incomplete")
+        raise MakeProbeError("trusted executable runtime closure is incomplete")
     return tuple(sorted(runtime.items()))
+
+
+def _make_runtime(budget: ProbeBudget):
+    return _executable_runtime("/usr/bin/make", budget)
 
 
 def _scratch_directory(loader, requested):
