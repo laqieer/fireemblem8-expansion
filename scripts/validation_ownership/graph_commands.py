@@ -136,24 +136,8 @@ _python_source_paths = shared_python_commands._python_source_paths
 
 
 def asset_discovery_command(session: ProbeSession, source: str, logical_output: str):
-    relative_path(source)
     relative_path(logical_output)
-    discovery = python_command(
-        session,
-        "import json;from scripts.assets.manifest import load_manifest,discovery_sources;"
-        "print(json.dumps(discovery_sources(load_manifest(sys.argv[1]))))",
-        (source,), sources=(source,),
-        code=("scripts/assets/manifest.py",),
-    )
-    paths = parse_json(session.command(discovery).stdout, "asset discovery sources")
-    if (
-        not isinstance(paths, list) or not paths
-        or any(not isinstance(path, str) for path in paths)
-        or paths != sorted(set(paths))
-    ):
-        raise MakeProbeError("asset discovery returned an invalid concrete source list")
-    sources = session.sources(tuple([source, *paths]))
-    identities = session.source_owners(sources)
+    sources, identities = shared_python_commands.asset_manifest_sources(session, source)
     return python_command(
         session,
         "import json;from pathlib import Path;"
@@ -166,6 +150,37 @@ def asset_discovery_command(session: ProbeSession, source: str, logical_output: 
         (source, logical_output, json.dumps(sources), json.dumps(identities)),
         sources=sources, outputs=(logical_output,), code=("scripts/assets/manifest.py",),
     )
+
+
+def asset_selection_stamp_command(session, command):
+    pattern = (
+        r'tmp="(?P<output>build/[A-Za-z0-9_./-]+\.manifest-selection)\.\$\$\.tmp"; \\\n'
+        r'''trap 'rm -f "\$tmp"' EXIT HUP INT TERM; \\\n'''
+        r"""printf '%s\\n' \\\n"""
+        r"""'manifest=/repo/(?P<source>[A-Za-z0-9_./-]+)' \\\n"""
+        r"""'custom_spell_effects=(?P<custom>[01])' \\\n"""
+        r"""'item_id_cap=(?P<cap>0x[0-9A-F]{2})' > "\$tmp"; \\\n"""
+        r'if test -f "(?P=output)" && cmp -s "\$tmp" "(?P=output)"; then \\\n'
+        r'rm -f "\$tmp"; \\\nelse \\\n'
+        r'mv -f "\$tmp" "(?P=output)"; \\\nfi'
+    )
+    match = re.fullmatch(pattern, command)
+    if match is None:
+        raise MakeProbeError("asset selection stamp differs from its literal recipe")
+    source, output = match["source"], relative_path(match["output"])
+    sources, _ = shared_python_commands.asset_manifest_sources(session, source)
+    content = (
+        f"manifest=/repo/{source}\ncustom_spell_effects={match['custom']}\n"
+        f"item_id_cap={match['cap']}\n"
+    )
+    return session._native_context_command(python_command(
+        session,
+        "from pathlib import Path;"
+        "out=Path('/work')/sys.argv[1];out.parent.mkdir(parents=True,exist_ok=True);"
+        "out.write_text(sys.argv[2])",
+        (output, content), sources=sources, outputs=(output,),
+        publication_policy="if-content-changed",
+    ))
 
 
 def _normalized_shell_commands(command, label):
@@ -645,6 +660,8 @@ class MakeCommands:
         return self.session._header_step_command(self.session._native_context_command(registration), step)
 
     def _register(self, command, contract):
+        if contract["id"] == "asset-selection-stamp-remake":
+            return asset_selection_stamp_command(self.session, command)
         if contract["id"] == toolchain_runtime.CONTRACT:
             recipe = toolchain_runtime.parse_recipe(command)
             compiler = _resolve_modern_compiler(self.session, recipe.compiler)
@@ -691,6 +708,14 @@ class MakeCommands:
         if contract["id"] == "asset-discovery-include-remake":
             if environment or stdin is not None or redirections:
                 raise MakeProbeError("asset discovery has an unsupported shell wrapper")
+            if (
+                len(tokens) != 12 or tokens[:3] != ["python3", "-m", "scripts.assets"]
+                or tokens[3::2] != [
+                    "--custom-spell-effects", "--item-id-cap", "--manifest",
+                    "--discovery-makefile", "discovery-makefile",
+                ]
+            ):
+                raise MakeProbeError("asset discovery differs from its ordered options")
             source = tokens[tokens.index("--manifest") + 1]
             destination = tokens[tokens.index("--discovery-makefile") + 1]
             return asset_discovery_command(self.session, source, destination)
@@ -796,6 +821,21 @@ class MakeCommands:
             path for path in contract["input_files"]
             if not path.endswith((".py", ".mk")) and PurePosixPath(path).name != "Makefile"
         ]
+        if contract["id"] == "asset-manifest-include-remake":
+            if (
+                environment or stdin is not None or redirections or len(tokens) != 14
+                or tokens[:3] != ["python3", "-m", "scripts.assets"]
+                or tokens[3::2] != [
+                    "--custom-spell-effects", "--item-id-cap", "--selection-stamp",
+                    "--manifest", "--out-dir", "generate",
+                ]
+            ):
+                raise MakeProbeError("asset generation differs from its ordered options")
+            source, output, stamp = tokens[10], relative_path(tokens[12]), relative_path(tokens[8])
+            if not output.startswith("build/") or stamp != output + ".manifest-selection":
+                raise MakeProbeError("asset generation selection stamp differs from its output")
+            selected, _ = shared_python_commands.asset_manifest_sources(self.session, source)
+            sources.extend(selected)
         if contract["id"] == "modern-expansion-config-resolution":
             sources.append("config.mk")
         registration = python_command(

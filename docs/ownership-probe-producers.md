@@ -327,6 +327,31 @@ forbidden. No existing-output read error is swallowed by this adapter.
 
 ## One live native execution
 
+### Selected asset manifests (issue #180)
+
+`ASSET_MANIFEST` admission is not limited to `assets/manifest.json`: discovery,
+generation and selection-stamp registrations bind the literal selected
+repository-relative manifest. The existing version-1 schema and kind registry
+derive the source closure in an isolated child. Captured regular immutable
+sources and their owner identities are checked through the existing captured
+discovery API; missing or extra identities, changed content/modes, symlinks,
+gitlinks, generated inputs and noncanonical paths remain errors. The default
+manifest is unchanged. No new feature flag, schema or source ledger is added.
+
+For the selected-manifest member of **TC-WORKFLOW-GATE-OWNERSHIP-001**, use the canonical manifest, the
+documented `assets/manifests/custom-spell-reference.json`, and a third immutable
+version-1 manifest at a different repository-relative path. Select the matching
+custom-spell flag and item cap. Check that discovery and generation registrations
+carry the selected manifest and its schema-derived sources, and that the stamp
+registration carries the same literal manifest, flag, cap and destination.
+Reject duplicate/reordered options, active shell syntax, parent/absolute/build
+manifest paths and stale stamp destinations. The canonical-only parent is the
+negative control; `SelectedManifestAdmissionTests` automates source-only command
+admission. It does not establish native generation, runtime or complete Make
+composition. Those original qualification gates remain required. Dependencies
+are the existing asset schema, immutable snapshot and protected command
+registration; there are no new gameplay, save-format or feature conflicts.
+
 The native observer preserves Make's original target, arguments, variables,
 origins, shell flags and dispatch classification. Ordinary recipes remain
 metadata-only; value-bearing, recursive and remake dispatches require actual

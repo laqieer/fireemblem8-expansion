@@ -47,6 +47,173 @@ from scripts.validation_ownership.graph_probe import run_probe
 ROOT = Path(__file__).resolve().parents[3]
 
 
+class SelectedManifestAdmissionTests(unittest.TestCase):
+    """Source-only admission; child execution/publication is intercepted."""
+
+    def setUp(self):
+        from scripts.validation_ownership import python_commands
+        self.shared = python_commands
+        self.contracts = {
+            row["id"]: row for row in json.loads(
+                (ROOT / ".github/validation-ownership-make-dynamics.json").read_bytes()
+            )["contracts"]
+        }
+        self.source = "assets/manifests/custom-spell-reference.json"
+        self.paths = ["assets/portrait_registry.json", "graphics/custom_spell/reference/spell.json"]
+        self.session = SimpleNamespace(
+            snapshot=SimpleNamespace(
+                files={self.source: b"manifest", **dict.fromkeys(self.paths, b"source")},
+                absent_paths=frozenset(),
+            ),
+            published_sources={}, loader=SimpleNamespace(entries={}),
+            budget=SimpleNamespace(remaining=lambda: None),
+        )
+        self.session.sources = lambda paths: ProbeSession.sources(self.session, paths)
+        self.session.source_owners = lambda paths: [
+            (path, "100644", hashlib.sha256(self.session.snapshot.files[path]).hexdigest())
+            for path in paths
+        ]
+        self.children = []
+        self.session.command = self.child
+        self.context = []
+        self.session._native_context_command = lambda command: self.context.append(command) or command
+        self.session._live_dispatches = []
+        self.factory = mock.patch.object(
+            self.shared, "python_code_closure", side_effect=lambda session, body, code: tuple(code),
+        )
+        self.factory.start()
+        self.addCleanup(self.factory.stop)
+
+    def child(self, command):
+        self.children.append(command)
+        if len(command.argv) == 7:
+            return SimpleNamespace(stdout=json.dumps(self.paths).encode())
+        source, paths, identities = command.argv[-3:]
+        self.assertEqual(source, self.source)
+        self.assertEqual(json.loads(paths), sorted([self.source, *self.paths]))
+        self.assertEqual(
+            json.loads(identities),
+            [list(row) for row in self.session.source_owners(json.loads(paths))],
+        )
+        return SimpleNamespace(stdout=b"")
+
+    def discovery(self, source=None):
+        return (
+            'python3 -m scripts.assets --custom-spell-effects "1" --item-id-cap "0xFF" '
+            f'--manifest "{source or self.source}" --discovery-makefile "build/selected.mk" '
+            'discovery-makefile'
+        )
+
+    def generation(self, source=None):
+        return (
+            'python3 -m scripts.assets --custom-spell-effects "1" --item-id-cap "0xFF" '
+            '--selection-stamp "build/selected.manifest-selection" '
+            f'--manifest "{source or self.source}" --out-dir "build/selected" generate'
+        )
+
+    def register(self, command, contract_id):
+        contract = self.contracts[contract_id]
+        self.assertIsNotNone(re.fullmatch(contract["command_regex"], command, re.DOTALL))
+        adapter = object.__new__(MakeCommands)
+        adapter.session = self.session
+        return adapter._register(command, contract)
+
+    def test_discovery_and_generation_capture_selected_closure(self):
+        for source in ("assets/manifest.json", self.source, "project/third-manifest.data"):
+            with self.subTest(source=source):
+                self.session.snapshot.files[source] = b"manifest"
+                self.source = source
+                discovery = self.register(self.discovery(), "asset-discovery-include-remake")
+                generation = self.register(self.generation(), "asset-manifest-include-remake")
+                expected = tuple(sorted([source, *self.paths]))
+                self.assertEqual(discovery.sources, expected)
+                self.assertEqual(discovery.outputs, ("build/selected.mk",))
+                self.assertEqual(generation.sources, expected)
+                self.assertIn(source, generation.argv[-1])
+                self.assertIs(self.context[-1], generation)
+        self.assertEqual(len(self.children), 12)
+
+    def test_manifest_path_and_source_controls(self):
+        self.session.snapshot.files["build/manifest.json"] = b"manifest"
+        for source in ("/assets/manifest.json", "../manifest.json", "build/manifest.json",
+                       "assets/./manifest.json", "missing.json", "assets/*.json"):
+            with self.subTest(source=source), self.assertRaises(MakeProbeError):
+                self.shared.asset_manifest_sources(self.session, source)
+        for path in ("build/input", "../input", "missing", "graphics/*.json"):
+            self.paths = [path]
+            with self.subTest(path=path), self.assertRaises(MakeProbeError):
+                self.shared.asset_manifest_sources(self.session, self.source)
+        self.paths = ["foreign/input"]
+        self.session.loader.entries["foreign/input"] = object()
+        with self.assertRaises(MakeProbeError):
+            self.shared.asset_manifest_sources(self.session, self.source)
+
+    def test_invalid_discovery_and_captured_validation_fail_closed(self):
+        for paths in (None, [], [self.paths[0], self.paths[0]], list(reversed(self.paths)), [7]):
+            with self.subTest(paths=paths):
+                self.session.command = lambda command: SimpleNamespace(
+                    stdout=json.dumps(paths).encode(),
+                )
+                with self.assertRaises(MakeProbeError):
+                    self.shared.asset_manifest_sources(self.session, self.source)
+
+        def stale_capture(command):
+            if len(command.argv) == 7:
+                return SimpleNamespace(stdout=json.dumps(self.paths).encode())
+            raise MakeProbeError("captured discovery source identity changed")
+
+        self.session.command = stale_capture
+        with self.assertRaisesRegex(MakeProbeError, "source identity changed"):
+            self.shared.asset_manifest_sources(self.session, self.source)
+
+    def test_order_duplicates_shell_and_stale_output_reject(self):
+        for command in (
+            self.discovery().replace('--item-id-cap "0xFF"', '--manifest "other"'),
+            self.discovery().replace('--manifest "', '--manifest "/'),
+            self.discovery() + " 2>/dev/null",
+            self.discovery().replace(self.source, "$(touch bad)"),
+            self.generation().replace("build/selected.manifest-selection", "build/stale.manifest-selection"),
+        ):
+            contract_id = ("asset-manifest-include-remake" if command.endswith("generate")
+                           else "asset-discovery-include-remake")
+            if not re.fullmatch(self.contracts[contract_id]["command_regex"], command, re.DOTALL):
+                continue
+            with self.subTest(command=command), self.assertRaises(MakeProbeError):
+                self.register(command, contract_id)
+
+    def stamp(self, output="build/selected.manifest-selection"):
+        return (
+            f'tmp="{output}.$$.tmp"; \\\n'
+            'trap \'rm -f "$tmp"\' EXIT HUP INT TERM; \\\n'
+            "printf '%s\\n' \\\n"
+            f"'manifest=/repo/{self.source}' \\\n"
+            "'custom_spell_effects=1' \\\n'item_id_cap=0xFF' > \"$tmp\"; \\\n"
+            f'if test -f "{output}" && cmp -s "$tmp" "{output}"; then \\\n'
+            'rm -f "$tmp"; \\\nelse \\\n'
+            f'mv -f "$tmp" "{output}"; \\\nfi'
+        )
+
+    def test_stamp_binds_literal_manifest_profile_destination(self):
+        registration = self.register(self.stamp(), "asset-selection-stamp-remake")
+        self.assertEqual(registration.outputs, ("build/selected.manifest-selection",))
+        self.assertEqual(registration.sources, tuple(sorted([self.source, *self.paths])))
+        self.assertEqual(
+            registration.argv[-1],
+            f"manifest=/repo/{self.source}\ncustom_spell_effects=1\nitem_id_cap=0xFF\n",
+        )
+        self.assertIs(self.context[-1], registration)
+        self.assertEqual(registration.publication_policy, "if-content-changed")
+        for command in (
+            self.stamp().replace("cmp -s", "cmp"),
+            self.stamp().replace("mv -f", "cp"),
+            self.stamp().replace("0xFF", "$(bad)"),
+            self.stamp().replace("manifest=/repo/", "manifest=/other/"),
+            self.stamp().replace('mv -f "$tmp" "build/selected', 'mv -f "$tmp" "build/stale'),
+        ):
+            with self.subTest(command=command), self.assertRaises(MakeProbeError):
+                graph_commands.asset_selection_stamp_command(self.session, command)
+
+
 class _LookupImagePath:
     def __init__(self, path, image):
         self.value = PurePosixPath(path)

@@ -768,9 +768,7 @@
       "id": "asset-selection-stamp-remake",
       "expression": "$(shell <asset-selection-stamp-remake>)",
       "tool": "assets.mk",
-      "input_files": [
-        "assets/manifest.json"
-      ],
+      "input_files": [],
       "input_variables": [
         "ASSET_MANIFEST",
         "ASSET_OUTPUT_DIR",
@@ -792,7 +790,6 @@
       "expression": "$(shell <asset-discovery-include-remake>)",
       "tool": "scripts/assets/__main__.py",
       "input_files": [
-        "assets/manifest.json",
         "scripts/assets/banim.py",
         "scripts/assets/cli.py",
         "scripts/assets/custom_spell.py",
@@ -808,7 +805,7 @@
       ],
       "automatic_inputs": [],
       "resolved_value": null,
-      "command_regex": "^python3 -m scripts\\.assets --custom-spell-effects \"[01]\" --item-id-cap \"0x[0-9A-F]{2}\" --manifest \"assets/manifest\\.json\" --discovery-makefile \"build/[A-Za-z0-9_./-]+\\.mk\" discovery-makefile$",
+      "command_regex": "^python3 -m scripts\\.assets --custom-spell-effects \"[01]\" --item-id-cap \"0x[0-9A-F]{2}\" --manifest \"[A-Za-z0-9_./-]+\" --discovery-makefile \"build/[A-Za-z0-9_./-]+\\.mk\" discovery-makefile$",
       "owning_evidence_ids": [
         "owner.compile-modern",
         "owner.link-modern",
@@ -821,7 +818,6 @@
       "expression": "$(shell <asset-manifest-include-remake>)",
       "tool": "scripts/assets/__main__.py",
       "input_files": [
-        "assets/manifest.json",
         "scripts/assets/banim.py",
         "scripts/assets/cli.py",
         "scripts/assets/custom_spell.py",
@@ -838,7 +834,7 @@
       ],
       "automatic_inputs": [],
       "resolved_value": null,
-      "command_regex": "^python3 -m scripts\\.assets --custom-spell-effects \"[01]\" --item-id-cap \"0x[0-9A-F]{2}\" --selection-stamp \"build/[A-Za-z0-9_./-]+\\.manifest-selection\" --manifest \"assets/manifest\\.json\" --out-dir \"build/[A-Za-z0-9_./-]+\" generate$",
+      "command_regex": "^python3 -m scripts\\.assets --custom-spell-effects \"[01]\" --item-id-cap \"0x[0-9A-F]{2}\" --selection-stamp \"build/[A-Za-z0-9_./-]+\\.manifest-selection\" --manifest \"[A-Za-z0-9_./-]+\" --out-dir \"build/[A-Za-z0-9_./-]+\" generate$",
       "owning_evidence_ids": [
         "owner.compile-modern",
         "owner.link-modern",

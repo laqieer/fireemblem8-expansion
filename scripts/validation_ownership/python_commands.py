@@ -186,6 +186,50 @@ def python_command(session, body, arguments=(), *, sources=(), outputs=(), direc
     return session._native_context_command(command) if stderr_effects else command
 
 
+def asset_manifest_sources(session, source):
+    source = relative_path(source)
+    if (
+        source == "build" or source.startswith("build/")
+        or any(character in source for character in "*?[]")
+        or source not in session.snapshot.files
+    ):
+        raise MakeProbeError("asset manifest must be an immutable regular repository source")
+    session.sources((source,))
+    discovery = python_command(
+        session,
+        "import json;from scripts.assets.manifest import load_manifest,discovery_sources;"
+        "print(json.dumps(discovery_sources(load_manifest(sys.argv[1]))))",
+        (source,), sources=(source,), code=("scripts/assets/manifest.py",),
+    )
+    paths = parse_json(session.command(discovery).stdout, "asset discovery sources")
+    if (
+        not isinstance(paths, list) or not paths
+        or any(not isinstance(path, str) for path in paths)
+        or paths != sorted(set(paths))
+    ):
+        raise MakeProbeError("asset discovery returned an invalid concrete source list")
+    for path in paths:
+        relative_path(path)
+        if (
+            path == "build" or path.startswith("build/")
+            or any(character in path for character in "*?[]")
+            or path not in session.snapshot.files
+        ):
+            raise MakeProbeError("asset dependency must be an immutable regular repository source")
+    sources = session.sources((source, *paths))
+    identities = session.source_owners(sources)
+    validation = python_command(
+        session,
+        "import json;from scripts.assets.manifest import _captured_discovery;"
+        "_captured_discovery(sys.argv[1],frozenset(json.loads(sys.argv[2])),"
+        "json.loads(sys.argv[3]))",
+        (source, json.dumps(sources), json.dumps(identities)),
+        sources=sources, code=("scripts/assets/manifest.py",),
+    )
+    session.command(validation)
+    return sources, identities
+
+
 def _directory_closure(paths):
     result = set()
     for directory in paths:
