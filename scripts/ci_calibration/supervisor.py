@@ -184,6 +184,7 @@ EXACT_COMPOSITION_PATHS = frozenset({
 })
 NATIVE_PARENT = "e93847725f58a89bca2a94af2d4acaae6a89cebf"
 NATIVE_PREPARATION_SHA = "dbd0905cb0bbabc8979c0521e39f0a7c64aa0f34"
+NATIVE_REBIND_SHA = "34e494405a246e37b245a66a44de4ba2a6c09d74"
 NATIVE_PATHS = frozenset({
     policy.NATIVE_WORKFLOW, *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "supervisor.py", "worker.py", "root_stage.py",
@@ -234,11 +235,12 @@ def validate_native_source_inventory(data, stage):
 
 
 def validate_native_lineage(lines, head):
-    if len(lines) < 2 or lines[:2] != [
-        f"{head} {NATIVE_PREPARATION_SHA}", f"{NATIVE_PREPARATION_SHA} {NATIVE_PARENT}",
+    if len(lines) < 3 or lines[:3] != [
+        f"{head} {NATIVE_REBIND_SHA}", f"{NATIVE_REBIND_SHA} {NATIVE_PREPARATION_SHA}",
+        f"{NATIVE_PREPARATION_SHA} {NATIVE_PARENT}",
     ]:
-        raise policy.GuardError("native rebinding is not one normal child of the reviewed preparation")
-    validate_harness_lineage(lines[2:], NATIVE_PARENT)
+        raise policy.GuardError("native profile repair differs from its exact rebind/preparation chain")
+    validate_harness_lineage(lines[3:], NATIVE_PARENT)
 
 
 def validate_native_inventory(data):
@@ -1568,7 +1570,7 @@ class Owner:
             raise policy.GuardError("workflow harness has uncommitted source changes")
         if native:
             validate_native_lineage(
-                git(self.harness, "rev-list", "--parents", "--max-count=37", "HEAD").decode().splitlines(),
+                git(self.harness, "rev-list", "--parents", "--max-count=38", "HEAD").decode().splitlines(),
                 self.scope["harness_sha"],
             )
             validate_native_inventory(git(self.harness, "diff", "--name-status", "-z", NATIVE_PARENT, "HEAD"))

@@ -7,6 +7,10 @@ normal never-merge child of `e93847725f58a89bca2a94af2d4acaae6a89cebf`.
 The first35 historical edges, old workflow bytes and old report source731
 remain unchanged. Edge36 is the reviewed native preparation; edge37 is its
 normal exact-source rebind. The combined native inventory remains eight paths.
+Edge38 corrects the rebind adapter's complete five-field profile vector,
+including the selected manifest. Every standalone/modern profile forwards
+those exact original assignments once; missing, extra, reordered or mismatched
+manifest fields reject before calling Make. Native execution is still unallocated.
 The source prepared for contained qualification is `890fe6768550dbb1f9b48b03560c42fbe19a9d4c`,
 including the complete fifteen-path731->6116 implementation and four-path
 6116->de5 authored-test/documentation delta and the reviewed eight-path

@@ -331,20 +331,23 @@ class NativeRecorder:
                 member = "source-family"
             elif target == "print-ASSET_OUTPUT_DIR" and primary in {"assets.mk", "Makefile"}:
                 inputs = keywords.get("assignments")
-                if type(inputs) is not tuple or len(inputs) != 4:
+                if type(inputs) is not tuple or len(inputs) != 5:
                     raise policy.GuardError("native profile lacks its finite original input vector")
                 profiles = (
-                    ("", "0", "build/expansion-modern", "default"),
-                    ("0xCE", "0", "build/native-completion-alt", "alt"),
-                    ("", "1", "build/native-completion-custom", "custom"),
-                    ("0xCE", "1", "build/native-completion-alt-custom", "alt-custom"),
+                    ("", "0", "build/expansion-modern", "assets/manifest.json", "default"),
+                    ("0xCE", "0", "build/native-completion-alt", "assets/manifest.json", "alt"),
+                    ("", "1", "build/native-completion-custom",
+                     "assets/manifests/custom-spell-reference.json", "custom"),
+                    ("0xCE", "1", "build/native-completion-alt-custom",
+                     "assets/manifests/custom-spell-reference.json", "alt-custom"),
                 )
-                for cap, custom, root, profile in profiles:
+                for cap, custom, root, manifest, profile in profiles:
                     if inputs == (
                         ("command-line", "PYTHON", "python3"),
                         ("command-line", "FE8_ITEM_ID_CAP", cap),
                         ("command-line", "EXPANSION_CUSTOM_SPELL_EFFECTS", custom),
                         ("command-line", "MODERN_BUILD_ROOT", root),
+                        ("command-line", "ASSET_MANIFEST", manifest),
                     ):
                         member = ("standalone" if primary == "assets.mk" else "modern") + "-" + profile
                 if member is None:

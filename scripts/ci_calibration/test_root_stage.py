@@ -106,6 +106,65 @@ class NativeAdapterControls(Inert):
                 {"kind": "command", "ordinal": 2, "returned": False},
             ])
 
+    @mock.patch.object(root_stage.time, "monotonic", return_value=100.0)
+    def test_all_paired_manifest_profiles_forward_once_and_reject_vector_drift(self, _clock):
+        profiles = (
+            ("", "0", "build/expansion-modern", "assets/manifest.json", "default"),
+            ("0xCE", "0", "build/native-completion-alt", "assets/manifest.json", "alt"),
+            ("", "1", "build/native-completion-custom",
+             "assets/manifests/custom-spell-reference.json", "custom"),
+            ("0xCE", "1", "build/native-completion-alt-custom",
+             "assets/manifests/custom-spell-reference.json", "alt-custom"),
+        )
+        for primary in ("assets.mk", "Makefile"):
+            for cap, custom, root, manifest, profile in profiles:
+                assignments = (
+                    ("command-line", "PYTHON", "python3"),
+                    ("command-line", "FE8_ITEM_ID_CAP", cap),
+                    ("command-line", "EXPANSION_CUSTOM_SPELL_EFFECTS", custom),
+                    ("command-line", "MODERN_BUILD_ROOT", root),
+                    ("command-line", "ASSET_MANIFEST", manifest),
+                )
+                callbacks = []
+                observed = object()
+
+                def original(*args, **keywords):
+                    callbacks.append((args, keywords))
+                    return observed
+
+                recorder = self.recorder()
+                result = recorder.operation(
+                    "make", original, "print-ASSET_OUTPUT_DIR",
+                    makefile=primary, assignments=assignments,
+                )
+                self.assertIs(result, observed)
+                self.assertEqual(callbacks, [
+                    (("print-ASSET_OUTPUT_DIR",), {"makefile": primary, "assignments": assignments}),
+                ])
+                member = ("standalone" if primary == "assets.mk" else "modern") + "-" + profile
+                self.assertEqual(recorder.members[id(observed)], member)
+                self.assertEqual(recorder.states["make_returned"], 1)
+                wrong_manifest = (
+                    "assets/manifest.json" if custom == "1"
+                    else "assets/manifests/custom-spell-reference.json"
+                )
+                for changed in (
+                    assignments[:-1],
+                    assignments + (("command-line", "EXTRA", "value"),),
+                    assignments[:-1] + (("command-line", "ASSET_MANIFEST", wrong_manifest),),
+                    assignments[:-1] + (("command-line", "ASSET_MANIFEST", "project/other.json"),),
+                    assignments[:-2] + (assignments[-1], assignments[-2]),
+                ):
+                    callbacks.clear()
+                    recorder = self.recorder()
+                    with self.assertRaises(policy.GuardError):
+                        recorder.operation(
+                            "make", original, "print-ASSET_OUTPUT_DIR",
+                            makefile=primary, assignments=changed,
+                        )
+                    self.assertFalse(callbacks)
+                    self.assertEqual(recorder.states["make_returned"], 0)
+
     def test_native_adapter_denies_uncontained_execution_before_source_imports(self):
         recorder = self.recorder()
         first = policy.GuardError("inert containment denial")

@@ -94,9 +94,10 @@ class NativeSelectionControls(unittest.TestCase):
             with self.assertRaises(policy.GuardError):
                 policy.native_event(self.event(policy.NATIVE_BRANCH), profile=policy.NATIVE_PROFILE, selector=policy.NATIVE_SELECTORS[0], **identity)
 
-    def test_native_lineage_adds_reviewed_preparation_and_rebind_without_reinterpreting_old_chain(self):
+    def test_native_lineage_keeps_exact_profile_repair_rebind_and_preparation_chain(self):
         lines = [
-            f"{'a' * 40} {supervisor.NATIVE_PREPARATION_SHA}",
+            f"{'a' * 40} {supervisor.NATIVE_REBIND_SHA}",
+            f"{supervisor.NATIVE_REBIND_SHA} {supervisor.NATIVE_PREPARATION_SHA}",
             f"{supervisor.NATIVE_PREPARATION_SHA} {supervisor.NATIVE_PARENT}",
         ]
         calls = []
