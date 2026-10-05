@@ -1,5 +1,39 @@
 # Contained original-include retained-state diagnostic
 
+## Shared-lexer preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
+
+Frozen comment5993823352 prepares only the literal
+`calibration/issue-180-native-completion-lexer-1` route and
+`.github/workflows/issue180-native-completion-lexer-1.yml`, selecting
+`78fd889eb00aeeeb44dc35870a6d2fe52c773158` against unchanged BASEec1.
+The original profile, six-selector catalog, positive selector, quotas,
+single lifetime, containment, five artifacts and v2 diagnostic stay unchanged.
+All eight historical workflows, including spent callsite-1 and unexecuted
+typed-1, remain byte-exact; prior refs and typo spellings reject.
+
+The complete harness inventory has seventeen paths and the normal repair
+lineage adds only the child of `f6c2ba89de50a9afcd8ab8a3dd14df4c4391f58d`.
+The callsite stage remains exact efc->a1f, five paths and 127 changed lines.
+A separate a1f->78f lexer stage requires seven paths and 718 changed lines:
+ownership graph JSON, validation docs, ci_verifier, graph_probe, read_epochs,
+its tests, and the added make_lexical module. The existing runtime input
+inventory supplies that module; no source snapshot or hash ledger is added.
+`root_stage.py` is frozen at f6c, with schema, cleanup and recorder unchanged.
+
+Run the focused literal event/workflow and real Git stage/path/lineage controls,
+including historical bytes, source_status current/neutral, parent, endpoint,
+inventory and recorder-drift negatives. These narrow APIs do not establish
+complete original preparation. After immediate owner-push, the coordinator
+must adapt and run the original committed complete prepare/source_status with
+exact Git observations and inert platform boundaries, recording all 32
+predicates with zero missing, current/neutral and parent/drift controls.
+Fresh distinct coupled review remains required before any separate first-use
+runtime allocation. Allocation is NONE: seven native failures remain spent,
+typed-1 unexecuted, heldde5/four machine holds/full report/H1/resources and
+every final gate unchanged. No source, remote, root, mount, ROM/RAM, save,
+locale or supported-build change occurs; dependencies are only the existing
+reviewed harness/source lineage, with no new production conflicts.
+
 ## Callsite-source rebind preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
 
 The first-created `calibration/issue-180-native-completion-callsite-1` route
