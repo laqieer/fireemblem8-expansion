@@ -207,6 +207,9 @@ class Process:
     dependency_image: str | None = None
     dependency_stop: tuple[int, int, int] | None = None
     native_stop: tuple[int, int, int] | None = None
+    native_signals: set[int] = field(default_factory=set)
+    delivery_signal: int = 0
+    native_delivered: int = 0
     path_context: tuple[str, int, str | None] | None = None
 
     def clone(self):
@@ -1844,8 +1847,12 @@ class Policy:
             self.reserve_creation()
         elif n in {62, 129, 200}:  # kill, rt_sigqueueinfo, tkill
             self.signal_target(pid, a)
+            if self.native_readonly and state.role == "native" and 0 < b <= 64:
+                state.native_signals.add(b)
         elif n in {234, 297}:  # tgkill, rt_tgsigqueueinfo
             self.signal_target(pid, a, b)
+            if self.native_readonly and state.role == "native" and 0 < c <= 64:
+                state.native_signals.add(c)
         elif n == 424:
             raise Violation("candidate pidfd signal authority is not admitted")
         elif n in {105, 106, 113, 114, 117, 119}:
@@ -1998,6 +2005,10 @@ def supervise(config, drop_privileges):
             resource.setrlimit(resource.RLIMIT_STACK, (STACK_LIMIT, STACK_LIMIT))
             cpu = max(1, math.ceil(config["deadline"] - time.monotonic()))
             resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
+            if policy.native_readonly:
+                for name in ("SIGPIPE", "SIGXFZ", "SIGXFSZ"):
+                    if hasattr(signal, name):
+                        signal.signal(getattr(signal, name), signal.SIG_DFL)
             trace_me(drop_privileges)
             os.execve(config["argv"][0], config["argv"], config["environment"])
         except BaseException as failure:
@@ -2026,7 +2037,10 @@ def supervise(config, drop_privileges):
             state.kernel_call = registers.orig_rax
             policy.entry(child, state, registers)
         state.parked = False
-        ptrace(SYSCALL, child)
+        delivered, state.delivery_signal = state.delivery_signal, 0
+        if delivered:
+            state.native_delivered = delivered
+        ptrace(SYSCALL, child, 0, delivered)
 
     def release_vfork(child):
         for parent, waited_child in tuple(vfork_waiters.items()):
@@ -2048,6 +2062,12 @@ def supervise(config, drop_privileges):
             raise Violation("unrecorded sandbox descendant")
         if os.WIFEXITED(status) or os.WIFSIGNALED(status):
             code = os.waitstatus_to_exitcode(status)
+            if policy.native_readonly and state.role == "native" and os.WIFSIGNALED(status):
+                terminated = os.WTERMSIG(status)
+                if terminated != state.native_delivered and not (
+                    terminated == signal.SIGKILL and terminated in state.native_signals
+                ):
+                    raise Violation("native shell termination lacks an admitted self-signal")
             unfulfilled = state.producer_requested and (
                 state.producer_slot is None or not state.producer_event_written
             )
@@ -2118,6 +2138,9 @@ def supervise(config, drop_privileges):
             state.fds = {0: "<stdin>", 1: "<stdout>", 2: "<stderr>"}
             state.observer_ranges = ()
             state.observer_ready = False
+            state.native_signals.clear()
+            state.delivery_signal = 0
+            state.native_delivered = 0
             state.memory_reservation = 0
             state.break_end = 0
             state.kernel_call = None
@@ -2153,8 +2176,22 @@ def supervise(config, drop_privileges):
                 state.kernel_call = None
             else:
                 raise Violation("kernel did not identify syscall entry/exit")
+        elif policy.native_readonly and state.role == "native" and sig == signal.SIGTRAP:
+            raise Violation("unauthenticated native shell trap")
         elif sig not in {signal.SIGSTOP, signal.SIGCHLD, signal.SIGTRAP}:
-            raise Violation(f"sandbox signal {sig}")
+            if not policy.native_readonly or state.role != "native" or sig not in state.native_signals:
+                raise Violation(f"sandbox signal {sig}")
+            information = (ctypes.c_ubyte * 128)()
+            policy.charge_metadata(ctypes.sizeof(information))
+            ptrace(0x4202, stopped, 0, ctypes.byref(information))
+            if (
+                int.from_bytes(bytes(information[:4]), "little", signed=True) != sig
+                or int.from_bytes(bytes(information[8:12]), "little", signed=True) not in {0, -1, -6}
+                or int.from_bytes(bytes(information[16:20]), "little", signed=True) != stopped
+            ):
+                raise Violation("native shell signal delivery is not its admitted self-signal")
+            state.native_signals.remove(sig)
+            state.delivery_signal = sig
         resume(stopped)
 
     def unsettled(state):

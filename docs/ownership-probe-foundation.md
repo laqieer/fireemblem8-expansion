@@ -103,6 +103,20 @@ Run the following controls individually from the same clean host checkout:
    `test_native_readonly_conflicting_runtime_capture_refuses`.
    Shared images compare against already charged captured Make bytes; a disk
    reread trap must not fire and a conflicting captured library must refuse.
+8. Run its `test_native_readonly_self_signal_status_reaches_make`,
+   `test_native_readonly_ignored_and_unignored_self_signal_recipe`,
+   `test_native_readonly_foreign_signal_and_trap_remain_refused` and
+   `test_native_readonly_unadmitted_sigkill_termination_refuses`.
+   Admitted shell self-SIGPIPE must produce `.SHELLSTATUS` 141; ignored and
+   unignored recipes must match ordinary Make continuation/failure. Native
+   bootstrap restores Python-ignored signal defaults before execution, as
+   ordinary subprocess execution does. Forwarding requires actual kernel
+   delivery from the same shell bound to its admitted self-signal syscall.
+   Foreign sender, unauthenticated trap and unadmitted SIGKILL termination
+   still refuse, including under an error-ignored recipe. Cleanup and resource
+   signals do not acquire candidate self-signal authority.
+   The externally injected SIGKILL control may reject at the earlier vanished
+   ptrace target or terminal provenance check; it does not prove both paths.
 
 Readonly dispatch admits only the original Make image and captured shell.
 It cannot produce generated files or execute arbitrary native tools.

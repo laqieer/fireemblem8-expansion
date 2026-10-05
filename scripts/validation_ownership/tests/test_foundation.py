@@ -307,6 +307,88 @@ class FoundationTests(unittest.TestCase):
                 session._native_make_readonly("all")
         self.assert_clean(session)
 
+    def test_native_readonly_self_signal_status_reaches_make(self):
+        self.add("Makefile", (
+            "VALUE := $(shell printf observed; kill -PIPE $$$$)\n"
+            "STATUS := $(.SHELLSTATUS)\n"
+            ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n"
+        ))
+        with self.session() as session:
+            completed, semantics, _ = session._native_make_readonly(
+                "all", variables=("VALUE", "STATUS"),
+            )
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "observed")
+            self.assertEqual(semantics["domains"]["STATUS"]["value"], "141")
+            self.assertEqual(completed.stdout, b"done\n")
+        self.assert_clean(session)
+
+    def test_native_readonly_ignored_and_unignored_self_signal_recipe(self):
+        for ignored in (True, False):
+            with self.subTest(ignored=ignored):
+                self.add("Makefile", (
+                    ".PHONY: all\nall:\n\t" + ("-" if ignored else "")
+                    + "@v=ignored; kill -PIPE $$$$\n"
+                    "\t@v=done; printf '%s\\n' \"$$v\"\n"
+                ))
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10,
+                )
+                self.assertEqual(ordinary.returncode, 0 if ignored else 2)
+                session = self.session()
+                if ignored:
+                    with session:
+                        completed, _, _ = session._native_make_readonly("all")
+                        self.assertEqual(completed.stdout, b"done\n")
+                        self.assertEqual(completed.stdout, ordinary.stdout)
+                        self.assertIn(b"(ignored)", completed.stderr)
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "readonly native GNU Make failed: 2"):
+                        with session:
+                            session._native_make_readonly("all")
+                self.assert_clean(session)
+
+    def test_native_readonly_foreign_signal_and_trap_remain_refused(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@v=ignored; kill -PIPE $$$$\n")
+        body = (
+            "original=guard.Policy.signal_target\n"
+            "def foreign(pid,*targets):\n"
+            " original(pid,*targets)\n"
+            " os.kill(pid,13)\n"
+            "guard.Policy.signal_target=staticmethod(foreign)\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), self.assertRaisesRegex(
+            MakeProbeError, "native shell signal delivery is not its admitted self-signal",
+        ):
+            with session:
+                session._native_make_readonly("all")
+        self.assert_clean(session)
+        self.add("Makefile", ".PHONY: all\nall:\n\t-@v=ignored; kill -TRAP $$$$\n")
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "unauthenticated native shell trap"):
+            with session:
+                session._native_make_readonly("all")
+        self.assert_clean(session)
+
+    def test_native_readonly_unadmitted_sigkill_termination_refuses(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t-@v=ignored; kill -PIPE $$$$\n")
+        body = (
+            "original=guard.Policy.signal_target\n"
+            "def foreign(pid,*targets):\n"
+            " original(pid,*targets)\n"
+            " os.kill(pid,9)\n"
+            "guard.Policy.signal_target=staticmethod(foreign)\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), self.assertRaisesRegex(
+            MakeProbeError,
+            "native shell termination lacks an admitted self-signal|ptrace request .*No such process",
+        ):
+            with session:
+                session._native_make_readonly("all")
+        self.assert_clean(session)
+
     def capture_supervisor_report(self, session, operation):
         original = session.budget.read_bytes
         captured = {}
