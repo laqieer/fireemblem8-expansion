@@ -5216,6 +5216,19 @@ these components do not qualify it. Cross-producer changed-stamp replacement,
 public retirement, natural whole-Make, resource/report and final holds remain.
 No ROM/save/profile change, new authority or manual criterion is introduced.
 
+Under [contract6003642048](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6003642048),
+run `FailureDiagnosticApiTests.test_actual_supervisor_catch_cleanup_and_report_wiring`.
+It executes the selected actual supervisor catch/cleanup/report bodies with
+successful and failed charged stderr receipts, including an earlier primary
+failure. Require every configured envelope field, continued cleanup, exact
+attempted observation bytes, explicit null unavailable receipt and retained
+failure/error/diagnostic. The pre-fix charged receipt failure omits its required
+field and the regression fails. Successful receipts remain unchanged. The
+host's closed report and successful receipt contracts remain mandatory; a
+failed report is never authority. Remeasure the unchanged original family to
+observe the actual resource failure, not a malformed-envelope substitute.
+No resource limit or accounting scope changes; all final holds remain.
+
 **Exact remaining machine hold:** version4 now returns the bounded actual
 clear/arm register, kernel trap and successful pin-retirement observations
 described above. The active/deferred cancellation pair additionally observes

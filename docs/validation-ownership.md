@@ -560,6 +560,14 @@ stamp refuse; cross-producer replacement and public retirement remain held.
 The complete generated-file plan is checked before retention, and ordinary
 conflicting-producer refusals are unchanged.
 
+Supervisor report construction populates the configured failure-envelope fields
+before charging a stderr receipt. If receipt construction fails, its field is
+explicitly null, its attempted observation bytes remain reported, and the
+original exception and typed diagnostic remain failures. The host rejects that
+failed report before consuming a receipt; successful execution still requires
+the existing complete receipt. Receipt exhaustion must not mask itself behind
+a missing-field schema error or omit configured execution/rendezvous counters.
+
 Four `ReadEpochTests` selectors are separate complete terminal invocations:
 `test_native_completion_kernel_frame_pin_terminal`,
 `test_native_completion_resource_terminal`,

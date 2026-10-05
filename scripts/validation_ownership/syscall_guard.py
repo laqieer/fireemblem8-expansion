@@ -4809,8 +4809,7 @@ def supervise(config, drop_privileges):
                 "events": policy.events,
             }
             if policy.stderr_setup is not None:
-                result["stderr_setup"] = policy.stderr_setup.receipt()
-                result["observation_bytes"] = policy.observation_bytes
+                result["stderr_setup"] = None
             if config.get("dependency"):
                 result["executed"] = policy.executed
             if channel is not None:
@@ -4819,6 +4818,11 @@ def supervise(config, drop_privileges):
                     "pending_peak": policy.producer_pending_peak,
                     "publication": policy.publication_confirmation,
                 }
+            if policy.stderr_setup is not None:
+                try:
+                    result["stderr_setup"] = policy.stderr_setup.receipt()
+                finally:
+                    result["observation_bytes"] = policy.observation_bytes
             if error is None and main_status == 0 and policy.read_trace is not None:
                 result["read_trace"] = policy.read_trace.finish()
                 if policy.source_effects is not None:

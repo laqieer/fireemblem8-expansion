@@ -232,6 +232,32 @@ class FailureDiagnosticApiTests(unittest.TestCase):
                     })
                     self.assertTrue(helpers["_validate_failure_diagnostic"](record["failure_diagnostic"]))
         self.assertIn(secondary, errors)
+        scope["config"]["dependency"] = {"executables": ["inert"]}
+        policy.executed = ["inert"]
+        policy.close_private_install_parents = fail(None)
+        scope["channel"] = SimpleNamespace(finish=fail(None), close=fail(None))
+        receipt_error = RuntimeError("aggregate metadata observation byte budget exhausted")
+        for supplied, receipt_failure in ((None, None), (None, receipt_error), (primary, receipt_error)):
+            with self.subTest(supplied=supplied, receipt_failure=receipt_failure):
+                receipt = {"complete": True}
+                before_bytes = policy.observation_bytes
+                def charged_receipt():
+                    policy.observation_bytes += 17
+                    if receipt_failure:
+                        raise receipt_failure
+                    return receipt
+                policy.stderr_setup = SimpleNamespace(failed=None, receipt=charged_receipt)
+                record = scope["exercise"](supplied)
+                self.assertIn("stderr_setup", record)
+                self.assertEqual(record["executed"], ["inert"])
+                self.assertIn("rendezvous", record)
+                self.assertEqual(record["ok"], supplied is None and receipt_failure is None)
+                self.assertEqual(record["stderr_setup"], None if receipt_failure else receipt)
+                self.assertEqual(record["observation_bytes"], before_bytes + 17)
+                if receipt_failure:
+                    self.assertEqual(record["error"], str(supplied or receipt_failure))
+                    self.assertIn("failure_diagnostic", record)
+        self.assertIn(receipt_error, errors)
 
 
 class FoundationTests(unittest.TestCase):
