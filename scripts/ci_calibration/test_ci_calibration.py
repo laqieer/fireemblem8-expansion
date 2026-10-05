@@ -72,14 +72,10 @@ class NativeSelectionControls(unittest.TestCase):
         self.assertEqual(calls, [("inert", ("diff", "--name-only", "-z", policy.BASE, "HEAD"))] * 7)
 
     def test_failed_nullable_refusal_wire_preserves_unknown_status(self):
-        for match, sites in (
-            ("unique", [{"module": "read_trace", "line": 1}]),
-            ("ambiguous", [{"module": "read_trace", "line": 1},
-                           {"module": "read_epochs", "line": 1}]),
-            ("unknown", []),
-        ):
+        for module, line in ((None, None), ("read_trace", 1), ("read_epochs", 2147483647)):
             value = {"status": "observed", "reason": None, "ok": False,
-                     "returncode": None, "match": match, "sites": sites}
+                     "returncode": None, "diagnostic": {
+                         "version": 1, "tag": 1, "errno": 13, "module": module, "line": line}}
             self.assertEqual(policy.validate_native_refusal(
                 policy.parse_json(policy.encoded(value))), value)
             with self.assertRaises(policy.GuardError):
@@ -91,7 +87,7 @@ class NativeSelectionControls(unittest.TestCase):
             for code in (True, False, "0", -(1 << 31) - 1, 1 << 31):
                 with self.assertRaises(policy.GuardError):
                     policy.validate_native_refusal({**value, "returncode": code})
-            for ok in (False, True):
+            for ok in (False,):
                 for code in (-(1 << 31), 0, (1 << 31) - 1):
                     integer = {**value, "ok": ok, "returncode": code}
                     self.assertEqual(policy.validate_native_refusal(
@@ -100,15 +96,12 @@ class NativeSelectionControls(unittest.TestCase):
     def test_refusal_wire_is_finite_strict_and_success_is_distinct(self):
         observed = {
             "status": "observed", "reason": None, "ok": False, "returncode": -1,
-            "match": "unique", "sites": [{"module": "read_trace", "line": 1}],
+            "diagnostic": {"version": 1, "tag": 1, "errno": 13, "module": "read_trace", "line": 1},
         }
         policy.validate_native_refusal(policy.parse_json(policy.encoded(observed)))
         for field, wrong in (
             ("status", []), ("reason", "private"), ("ok", 0), ("returncode", True),
-            ("returncode", 1 << 31), ("match", "ambiguous"), ("sites", ()),
-            ("sites", [{"module": "foreign", "line": 1}]),
-            ("sites", [{"module": "read_trace", "line": True}]),
-            ("sites", observed["sites"] * 2),
+            ("returncode", 1 << 31), ("diagnostic", None), ("diagnostic", []),
         ):
             with self.assertRaises(policy.GuardError):
                 policy.validate_native_refusal({**observed, field: wrong})
@@ -116,10 +109,38 @@ class NativeSelectionControls(unittest.TestCase):
             policy.validate_native_refusal({**observed, "raw": "private"})
         for status, reason in (("success", None), ("unavailable", "frame-unobserved")):
             value = {**observed, "status": status, "reason": reason, "ok": None,
-                     "returncode": None, "match": None, "sites": []}
+                     "returncode": None, "diagnostic": None}
             policy.validate_native_refusal(value)
             with self.assertRaises(policy.GuardError):
-                policy.validate_native_refusal({**value, "sites": observed["sites"]})
+                policy.validate_native_refusal({**value, "diagnostic": observed["diagnostic"]})
+        diagnostic = observed["diagnostic"]
+        for tag in range(1, 9):
+            policy.validate_native_diagnostic({**diagnostic, "tag": tag, "errno": None})
+        for field, wrong in (
+            ("version", True), ("version", 2), ("tag", True), ("tag", 0), ("tag", 9),
+            ("errno", True), ("errno", -1), ("errno", 4096), ("module", "foreign"),
+            ("module", []), ("module", None), ("line", None), ("line", True), ("line", 0),
+            ("line", 2147483648),
+        ):
+            with self.assertRaises(policy.GuardError):
+                policy.validate_native_diagnostic({**diagnostic, field: wrong})
+        for missing in diagnostic:
+            with self.assertRaises(policy.GuardError):
+                policy.validate_native_diagnostic({k: v for k, v in diagnostic.items() if k != missing})
+        for wrong in ({**diagnostic, "private": object()}, {**diagnostic, "tag": 2}):
+            with self.assertRaises(policy.GuardError):
+                policy.validate_native_diagnostic(wrong)
+        for match, sites in (("unknown", []), ("unique", [{"module": "read_trace", "line": 1}]),
+                             ("ambiguous", [{"module": "read_trace", "line": 1},
+                                            {"module": "read_epochs", "line": 1}])):
+            old = {"status": "observed", "reason": None, "ok": False,
+                   "returncode": None, "match": match, "sites": sites}
+            self.assertEqual(policy._validate_historical_native_refusal(old), old)
+            with self.assertRaises(policy.GuardError):
+                policy.validate_native_refusal(old)
+            with self.assertRaises(policy.GuardError):
+                policy._validate_historical_native_refusal({**old, "ok": True})
+            policy._validate_historical_native_refusal({**old, "ok": True, "returncode": 0})
 
     def test_native_failure_schema_and_terminal_order_cover_all_selectors(self):
         for selector in policy.NATIVE_SELECTORS:

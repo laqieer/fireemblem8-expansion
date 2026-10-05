@@ -6,7 +6,6 @@ from pathlib import Path
 from types import SimpleNamespace, FunctionType
 from contextlib import ExitStack
 import dataclasses
-import ast
 import importlib
 import subprocess
 import time
@@ -234,55 +233,25 @@ class ReportMeasurement:
 
 
 class NativeRefusalObservation:
-    """Literal diagnostics only; never source execution or qualification authority."""
+    """Copy producer-owned numeric diagnostics, never qualification authority."""
 
-    def __init__(self, session_type, root):
+    def __init__(self, session_type):
         self.session_type = session_type
         self.code = None
         self.globals = None
-        self.catalog = ()
-        self.reason = "catalog-unavailable"
+        self.reason = "original-code-unavailable"
         self.retired = False
-        try:
-            method = type.__getattribute__(session_type, "__dict__").get("_sandbox_run")
-            if type(method) is not FunctionType or (
-                method.__globals__.get("__name__") != "scripts.validation_ownership.make_probe"
-                or type.__getattribute__(session_type, "__module__") != "scripts.validation_ownership.make_probe"
-            ):
-                self.reason = "original-code-unavailable"
-                return
-            self.code = method.__code__
-            self.globals = method.__globals__
-            rows, extent = [], 0
-            for module in policy.NATIVE_REFUSAL_MODULES:
-                with (root / "scripts/validation_ownership" / (module + ".py")).open("rb") as stream:
-                    raw = stream.read(policy.NATIVE_REFUSAL_BYTES - extent + 1)
-                extent += len(raw)
-                if extent > policy.NATIVE_REFUSAL_BYTES:
-                    self.reason = "catalog-bound"
-                    return
-                tree = ast.parse(raw)
-                count = 0
-                for node in ast.walk(tree):
-                    count += 1
-                    if count > 262144:
-                        self.reason = "catalog-bound"
-                        return
-                    if not isinstance(node, ast.Raise) or not isinstance(node.exc, ast.Call):
-                        continue
-                    for argument in node.exc.args:
-                        if isinstance(argument, ast.Constant) and type(argument.value) is str:
-                            if len(argument.value) > policy.ERROR_BYTES or len(rows) >= 4096:
-                                self.reason = "catalog-bound"
-                                return
-                            rows.append((argument.value, module, node.lineno))
-            self.catalog = tuple(rows)
-            self.reason = None
-        except (OSError, SyntaxError, ValueError, RecursionError):
-            self.reason = "catalog-unavailable"
+        method = type.__getattribute__(session_type, "__dict__").get("_sandbox_run")
+        if type(method) is not FunctionType or (
+            method.__globals__.get("__name__") != "scripts.validation_ownership.make_probe"
+            or type.__getattribute__(session_type, "__module__") != "scripts.validation_ownership.make_probe"
+        ):
+            return
+        self.code = method.__code__
+        self.globals = method.__globals__
+        self.reason = None
 
     def retire(self):
-        self.catalog = ()
         self.code = self.globals = self.session_type = None
         self.retired = True
 
@@ -320,26 +289,27 @@ class NativeRefusalObservation:
                     observed = local.get("observed")
                     if type(observed) is not dict or len(observed) > 256 or (
                         any(type(key) is not str for key in observed)
-                        or not {"error", "ok", "returncode"} <= observed.keys()
+                        or not {"ok", "returncode"} <= observed.keys()
                     ):
                         return unavailable("malformed-observation")
-                    text, ok, returncode = (
-                        observed["error"], observed["ok"], observed["returncode"],
-                    )
-                    if type(text) is not str or len(text) > policy.ERROR_BYTES or (
-                        type(ok) is not bool or not (
+                    ok, returncode = observed["ok"], observed["returncode"]
+                    if type(ok) is not bool or not (
                             returncode is None and ok is False
                             or type(returncode) is int and -(1 << 31) <= returncode < (1 << 31)
-                        )
                     ):
                         return unavailable("malformed-observation")
-                    sites = sorted(set(
-                        (module, line) for literal, module, line in self.catalog if literal == text
-                    ))
-                    status = "unique" if len(sites) == 1 else "ambiguous" if sites else "unknown"
+                    if ok is not False:
+                        return unavailable("malformed-observation")
+                    if "failure_diagnostic" not in observed:
+                        return unavailable("diagnostic-unavailable")
+                    diagnostic = observed["failure_diagnostic"]
+                    try:
+                        policy.validate_native_diagnostic(diagnostic)
+                    except policy.GuardError:
+                        return unavailable("malformed-observation")
                     found.append({
                         "status": "observed", "reason": None, "ok": ok, "returncode": returncode,
-                        "match": status, "sites": [{"module": module, "line": line} for module, line in sites],
+                        "diagnostic": dict(diagnostic),
                     })
                 trace = trace.tb_next
             cause = BaseException.__getattribute__(current, "__cause__")
@@ -380,6 +350,8 @@ class NativeRecorder:
         self.refusal = policy.native_refusal_unavailable("not-captured")
 
     def capture_first(self, error):
+        if self.primary_error is not None:
+            return
         self.primary_error = policy.component_secondary_error(error)
         if self.refusal_observer is not None:
             try:
@@ -580,7 +552,7 @@ class NativeRecorder:
             limits=budgeting.Limits, budget=budgeting.ProbeBudget, loader=AuthorityLoader,
             entries=GitTreeEntries, session=ProbeSession, popen=subprocess.Popen,
         )
-        self.refusal_observer = NativeRefusalObservation(ProbeSession, Path("/repo"))
+        self.refusal_observer = NativeRefusalObservation(ProbeSession)
         self.progress_stage = "setup"
         terminal_short = self.selection["selector"] in policy.NATIVE_SELECTORS[-2:]
         limits = self.api.limits(seconds=20) if terminal_short else self.api.limits()
@@ -716,10 +688,10 @@ class NativeRecorder:
         )
         self.progress_stage = "counter-publication"
         result = {
-            "version": 2, "primary_error": self.primary_error,
+            "version": 3, "primary_error": self.primary_error,
             "refusal": self.refusal if first is not None else {
                 "status": "success", "reason": None, "ok": None, "returncode": None,
-                "match": None, "sites": [],
+                "diagnostic": None,
             },
             "selection": self.selection, "states": self.states, "operations": self.operations,
             "clock": {

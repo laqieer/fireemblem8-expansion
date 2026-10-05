@@ -49,53 +49,46 @@ are the existing harness/source bindings, with no new production conflicts.
 
 ## Native refusal observation (TC-CI-NATIVE-REFUSAL-001, #180)
 
-Contract comment5991346968 permits diagnostics only, not another invocation.
-Before the selected method, the recorder freezes literal string arguments of
-Raise calls in exactly source2d84's `read_trace.py`, `read_epochs.py`, and
-`syscall_guard.py` from the existing immutable read-only `/repo` preparation.
-The total read bound is 2 MiB, with 262144 AST nodes per file, 4096 catalog
-entries, and 65536 characters per literal. Dynamic expressions are excluded.
-Exact string equality projects only a closed module enum and numeric source
-line. Multiple distinct matching sites remain ambiguous; empty or unknown
-errors stay unknown. This static literal diagnostic is not behavioral proof
-or a source-attribution authority.
+Contract comment5992375225 replaces the literal catalog with the reviewed
+sourceefc producer-owned `failure_diagnostic`. No source files or error strings
+are read. The current source2d84 binding stays unchanged until a separately
+reviewed route; missing diagnostics are explicitly unavailable, not successful.
 
 The first caught error uses the existing safe component error record, before
 reference withdrawal and fixture teardown. Up to 32 chained exceptions and
 256 retained traceback frames are inspected for the frozen original
 `_sandbox_run` code identity and the very same session `self`. Only builtin
-dictionary/string/bool/integer retained fields are admitted, with explicit
-`error`, `ok`, and `returncode` keys required. Signed 32-bit integer
+dictionary/bool/integer retained fields are admitted, with explicit
+`ok=False`, `returncode`, and `failure_diagnostic` keys required. Signed 32-bit integer
 `returncode` values reject booleans; `None` is admitted only with `ok=False`.
 Source2d84's supervisor initializes its status to `None` and publishes it when
 a refusal does not reach normal exit assignment. Unknown status is not zero
 or successful exit. These fields are observations, not success authority. No candidate
 property, exception argument, raw message, path or traceback is exported.
-The catalog and code/session-type references retire immediately after capture,
+Code/globals/session-type references retire immediately after capture,
 or at finalization on success. Failed projection is explicitly unavailable,
 independent of the original cause and existing cleanup channels.
 
-Current normal results require version2, `primary_error`, and `refusal`;
+Current normal results require version3, `primary_error`, and `refusal`;
 success has its own distinct empty diagnostic record. Historical unversioned
-normal results require an explicit `historical=True` parser call and are not
+and version2 normal results require an explicit `historical=True` parser call and are not
 accepted on the current route. The safe native error fallback is unchanged.
 Use the saved credential-free isolated harness route with inert original-code
-frames: exact literal positive; foreign code/session, shadowed method,
-dynamic/unknown/ambiguous literal, malformed fields, catalog/chain/frame
+frames: actual diagnostic positive; foreign code/session, shadowed method,
+absent diagnostic, malformed fields, chain/frame
 bounds, cycles, retirement/replay and success controls. No source imports,
 native run, new workflow, quota change, ROM/RAM/save impact, or new
 dependency/conflict is authorized. Run37286481824 remains spent; architecture
 heldde5, all machine holds and final gates remain.
 
-For comment5991756406's nullable-status regression, use the same isolated
-inert-frame route: failed null with a known unique literal retains that site;
-unknown and ambiguous literals retain their respective classifications.
-Success with a bounded integer remains valid; success-null, bool/string,
-missing keys and out-of-range statuses reject. Run these focused cases against
-the exact parent (must fail) and a semantics-preserving AST formatting control
-(must pass). This fixes a confirmed producer-consumer contract mismatch, not
-the original refusal: run37289800731 reported malformed observation, but its
-hidden status was not observed. It remains spent; no runtime is authorized.
+The copied diagnostic has exactly version1, tag1..8, errno null or 0..4095
+(numeric errno only for tag1), and module/line both null or a closed
+`read_trace`/`read_epochs`/`syscall_guard` enum with line1..2147483647.
+Booleans, unknown/extra/missing fields and partial locations reject. Failed
+null status retains the diagnostic; successful results contain no failure
+record. Current refusal has `diagnostic`, never `match`/`sites`. Run focused
+tests against exact parentf1e (negative) and a neutral AST layout (positive).
+This is observation only, not proof of the original refusal or qualification.
 
 ## Aggregate-only telemetry correction (TC-CI-AGGREGATE-001, #180)
 

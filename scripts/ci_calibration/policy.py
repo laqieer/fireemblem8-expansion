@@ -258,9 +258,8 @@ def native_event(event, *, profile, selector, **identity):
 
 
 NATIVE_REFUSAL_MODULES = ("read_trace", "read_epochs", "syscall_guard")
-NATIVE_REFUSAL_BYTES = 2 * MIB
 NATIVE_REFUSAL_REASONS = frozenset({
-    "not-captured", "catalog-unavailable", "catalog-bound", "original-code-unavailable",
+    "not-captured", "diagnostic-unavailable", "original-code-unavailable",
     "retired", "session-unavailable", "exception-chain-bound", "frame-bound",
     "foreign-session", "malformed-observation", "frame-ambiguous", "frame-unobserved",
     "projection-failed",
@@ -270,11 +269,52 @@ NATIVE_REFUSAL_REASONS = frozenset({
 def native_refusal_unavailable(reason):
     return {
         "status": "unavailable", "reason": reason, "ok": None, "returncode": None,
-        "match": None, "sites": [],
+        "diagnostic": None,
     }
 
 
+def validate_native_diagnostic(value):
+    if type(value) is not dict or len(value) != 5 or any(type(key) is not str for key in value):
+        raise GuardError("native producer diagnostic requires builtin fields")
+    _component_fields(value, "version tag errno module line")
+    if (
+        type(value["version"]) is not int or value["version"] != 1
+        or not _component_integer(value["tag"], 8, 1)
+        or not (value["errno"] is None or (
+            value["tag"] == 1 and _component_integer(value["errno"], 4095)
+        ))
+        or not (
+            value["module"] is None and value["line"] is None
+            or type(value["module"]) is str and value["module"] in NATIVE_REFUSAL_MODULES
+            and _component_integer(value["line"], 2147483647, 1)
+        )
+    ):
+        raise GuardError("native producer diagnostic is malformed")
+    return value
+
+
 def validate_native_refusal(value):
+    _component_fields(value, "status reason ok returncode diagnostic")
+    if type(value["status"]) is not str or value["status"] not in {"success", "unavailable", "observed"}:
+        raise GuardError("native refusal status is not closed")
+    if value["status"] == "observed":
+        if value["reason"] is not None or value["ok"] is not False or not (
+            value["returncode"] is None
+            or type(value["returncode"]) is int and -(1 << 31) <= value["returncode"] < (1 << 31)
+        ):
+            raise GuardError("native refusal observation is malformed")
+        validate_native_diagnostic(value["diagnostic"])
+    elif any(value[name] is not None for name in ("ok", "returncode", "diagnostic")) or (
+        value["status"] == "success" and value["reason"] is not None
+        or value["status"] == "unavailable" and (
+            type(value["reason"]) is not str or value["reason"] not in NATIVE_REFUSAL_REASONS
+        )
+    ):
+        raise GuardError("native refusal unavailable/success record invents observations")
+    return value
+
+
+def _validate_historical_native_refusal(value):
     _component_fields(value, "status reason ok returncode match sites")
     if type(value["status"]) is not str or value["status"] not in {"success", "unavailable", "observed"}:
         raise GuardError("native refusal status is not closed")
@@ -285,7 +325,7 @@ def validate_native_refusal(value):
     for row in sites:
         _component_fields(row, "module line")
         if type(row["module"]) is not str or row["module"] not in NATIVE_REFUSAL_MODULES or (
-            not _component_integer(row["line"], NATIVE_REFUSAL_BYTES, 1)
+            not _component_integer(row["line"], 2 * MIB, 1)
         ):
             raise GuardError("native refusal site is not a closed numeric location")
         identity = row["module"], row["line"]
@@ -305,7 +345,10 @@ def validate_native_refusal(value):
     elif sites or value["ok"] is not None or value["returncode"] is not None or value["match"] is not None or (
         value["status"] == "success" and value["reason"] is not None
         or value["status"] == "unavailable" and (
-            type(value["reason"]) is not str or value["reason"] not in NATIVE_REFUSAL_REASONS
+            type(value["reason"]) is not str or value["reason"] not in (
+                NATIVE_REFUSAL_REASONS - {"diagnostic-unavailable"}
+                | {"catalog-unavailable", "catalog-bound"}
+            )
         )
     ):
         raise GuardError("native refusal unavailable/success record invents observations")
@@ -321,11 +364,12 @@ def validate_native_result(value, selection, *, historical=False):
     )
     if type(historical) is not bool:
         raise GuardError("native historical parsing is not deliberate")
-    _component_fields(value, fields if historical else fields + " version primary_error refusal")
-    if not historical:
-        if type(value["version"]) is not int or value["version"] != 2:
+    versioned = not historical or type(value) is dict and "version" in value
+    _component_fields(value, fields + " version primary_error refusal" if versioned else fields)
+    if versioned:
+        if type(value["version"]) is not int or value["version"] != (2 if historical else 3):
             raise GuardError("native result version is not current")
-        validate_native_refusal(value["refusal"])
+        (_validate_historical_native_refusal if historical else validate_native_refusal)(value["refusal"])
         if value["first_stage"] is None:
             if value["primary_error"] is not None or value["refusal"]["status"] != "success":
                 raise GuardError("native successful result invents a first failure")

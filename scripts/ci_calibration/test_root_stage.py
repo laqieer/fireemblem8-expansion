@@ -30,7 +30,7 @@ IMPORT_RELEASE_PREIMAGE = None
 
 
 class NativeRefusalControls(unittest.TestCase):
-    def model(self, sources=None):
+    def model(self):
         namespace = {"__name__": "scripts.validation_ownership.make_probe"}
         exec(
             "class Session:\n"
@@ -38,10 +38,13 @@ class NativeRefusalControls(unittest.TestCase):
             "        raise error\n", namespace,
         )
         session = namespace["Session"]()
-        sources = sources or [b'raise RuntimeError("guard")\n', b"", b""]
-        with mock.patch.object(Path, "open", side_effect=[io.BytesIO(raw) for raw in sources]):
-            observer = root_stage.NativeRefusalObservation(type(session), Path("/repo"))
+        observer = root_stage.NativeRefusalObservation(type(session))
         return session, observer
+
+    def observed(self, **changes):
+        return {"ok": False, "returncode": None, "failure_diagnostic": {
+            "version": 1, "tag": 1, "errno": 13, "module": "read_trace", "line": 1,
+        }, **changes}
 
     def caught(self, session, observed):
         error = RuntimeError("PRIVATE outer /path")
@@ -50,69 +53,63 @@ class NativeRefusalControls(unittest.TestCase):
         except RuntimeError as caught:
             return caught
 
-    def test_literal_catalog_matches_only_exact_error_and_retires(self):
-        for text, expected in (("guard", "unique"), ("guard suffix", "unknown"), ("", "unknown")):
+    def test_producer_diagnostic_copies_only_builtin_fields_and_retires(self):
+        for code in (None, 1, -1):
             session, observer = self.model()
-            error = self.caught(session, {"error": text, "ok": False, "returncode": 1})
+            observed = self.observed(returncode=code, error=object())
+            error = self.caught(session, observed)
             result = observer.capture(error, session)
-            self.assertEqual(result["match"], expected)
+            self.assertEqual(result["diagnostic"], observed["failure_diagnostic"])
+            self.assertIsNot(result["diagnostic"], observed["failure_diagnostic"])
             self.assertEqual(result["ok"], False)
-            self.assertEqual(result["returncode"], 1)
-            self.assertEqual(result["sites"], [{"module": "read_trace", "line": 1}] if expected == "unique" else [])
+            self.assertEqual(result["returncode"], code)
             self.assertTrue(observer.retired)
-            self.assertEqual(observer.catalog, ())
+            self.assertIsNone(observer.session_type)
+            self.assertIsNone(observer.globals)
             self.assertIsNone(observer.code)
             self.assertEqual(observer.capture(error, session)["reason"], "retired")
             self.assertNotIn(b"PRIVATE", policy.encoded(result))
             policy.validate_native_refusal(policy.parse_json(policy.encoded(result)))
 
-    def test_ambiguity_and_dynamic_errors_never_become_unique(self):
-        cases = (
-            ([b'raise RuntimeError("guard")\nraise RuntimeError("guard")\n', b"", b""], "guard", "ambiguous"),
-            ([b'raise RuntimeError(f"guard {value}")\n', b"", b""], "guard x", "unknown"),
-            ([b'raise RuntimeError("guard")\n', b'raise RuntimeError("guard")\n', b""], "guard", "ambiguous"),
-        )
-        for sources, text, status in cases:
-            session, observer = self.model(sources)
-            result = observer.capture(self.caught(session, {"error": text, "ok": False, "returncode": -1}), session)
-            self.assertEqual(result["match"], status)
-            self.assertEqual(len(result["sites"]), 2 if status == "ambiguous" else 0)
+    def test_absent_or_malformed_diagnostic_is_explicitly_unavailable(self):
+        for diagnostic in (None, {}, {"version": True}, {"tag": 9}):
+            session, observer = self.model()
+            observed = self.observed(failure_diagnostic=diagnostic)
+            self.assertEqual(observer.capture(self.caught(session, observed), session)["reason"],
+                             "malformed-observation")
+        session, observer = self.model()
+        observed = {"ok": False, "returncode": None}
+        self.assertEqual(observer.capture(self.caught(session, observed), session)["reason"],
+                         "diagnostic-unavailable")
 
-    def test_failed_nullable_status_preserves_literal_matching(self):
-        for sources, text, match, sites in (
-            ([b'raise RuntimeError("guard")\n', b"", b""], "guard", "unique", 1),
-            ([b'raise RuntimeError("guard")\n', b"", b""], "unknown", "unknown", 0),
-            ([b'raise RuntimeError("guard")\n', b'raise RuntimeError("guard")\n', b""],
-             "guard", "ambiguous", 2),
-        ):
-            with self.subTest(match=match):
-                session, observer = self.model(sources)
-                observed = {"error": text, "ok": False, "returncode": None}
-                result = observer.capture(self.caught(session, observed), session)
-                self.assertEqual(result["status"], "observed")
-                self.assertIs(result["ok"], False)
-                self.assertIsNone(result["returncode"])
-                self.assertEqual(result["match"], match)
-                self.assertEqual(len(result["sites"]), sites)
-                if match == "unique":
-                    self.assertEqual(result["sites"], [{"module": "read_trace", "line": 1}])
-                self.assertEqual(policy.validate_native_refusal(
-                    policy.parse_json(policy.encoded(result))), result)
+    def test_first_capture_all_selectors_survives_secondary_cleanup(self):
+        for selector in policy.NATIVE_SELECTORS:
+            session, observer = self.model()
+            recorder = root_stage.NativeRecorder({"profile": policy.NATIVE_PROFILE, "selector": selector})
+            recorder.session, recorder.refusal_observer = session, observer
+            error = self.caught(session, self.observed())
+            recorder.capture_first(error)
+            original = copy.deepcopy(recorder.refusal)
+            self.assertEqual(original["diagnostic"], self.observed()["failure_diagnostic"])
+            self.assertTrue(observer.retired)
+            recorder.capture_first(OSError(errno.EIO, "private secondary cleanup"))
+            self.assertEqual(recorder.primary_error, policy.component_secondary_error(error))
+            self.assertEqual(recorder.refusal, original)
 
     def test_status_types_bounds_and_mandatory_observation_keys(self):
-        for ok in (False, True):
+        for ok in (False,):
             for code in (-(1 << 31), 0, (1 << 31) - 1):
                 session, observer = self.model()
                 result = observer.capture(self.caught(
-                    session, {"error": "guard", "ok": ok, "returncode": code}), session)
+                    session, self.observed(ok=ok, returncode=code)), session)
                 self.assertEqual((result["status"], result["ok"], result["returncode"]),
                                  ("observed", ok, code))
-        valid = {"error": "guard", "ok": False, "returncode": None}
+        valid = self.observed()
         invalid = [{**valid, "ok": True}]
         invalid += [{**valid, "returncode": code}
                     for code in (True, False, "0", -(1 << 31) - 1, 1 << 31)]
         invalid += [{key: value for key, value in valid.items() if key != missing}
-                    for missing in valid]
+                    for missing in ("ok", "returncode")]
         for observed in invalid:
             with self.subTest(observed=observed):
                 session, observer = self.model()
@@ -139,26 +136,31 @@ class NativeRefusalControls(unittest.TestCase):
             @property
             def _sandbox_run(self):
                 raise AssertionError("candidate property executed")
-        observer = root_stage.NativeRefusalObservation(Shadow, Path("/repo"))
+        observer = root_stage.NativeRefusalObservation(Shadow)
         self.assertEqual(observer.capture(RuntimeError(), Shadow())["reason"], "original-code-unavailable")
 
     def test_builtin_fields_bounds_and_cycles_fail_without_raw_data(self):
         class Mapping(dict):
             def get(self, *args):
                 raise AssertionError("candidate mapping executed")
+        for diagnostic in (Mapping(self.observed()["failure_diagnostic"]),
+                           {object(): 1, **self.observed()["failure_diagnostic"]}):
+            session, observer = self.model()
+            self.assertEqual(observer.capture(self.caught(
+                session, self.observed(failure_diagnostic=diagnostic)), session)["reason"],
+                "malformed-observation")
         for observed in (
             Mapping(), {}, {"error": "guard", "ok": 1, "returncode": 0},
             {**{str(index): None for index in range(257)},
              "error": "guard", "ok": False, "returncode": 1},
             {"error": "guard", "ok": False, "returncode": True},
             {"error": "guard", "ok": False, "returncode": 1 << 31},
-            {"error": "x" * (policy.ERROR_BYTES + 1), "ok": False, "returncode": 0},
             {object(): 1, "error": "guard", "ok": False, "returncode": 1},
         ):
             session, observer = self.model()
             self.assertEqual(observer.capture(self.caught(session, observed), session)["reason"], "malformed-observation")
         session, observer = self.model()
-        error = self.caught(session, {"error": "guard", "ok": False, "returncode": 1})
+        error = self.caught(session, self.observed())
         error.__cause__ = error
         self.assertEqual(observer.capture(error, session)["reason"], "exception-chain-bound")
         session, observer = self.model()
@@ -168,8 +170,6 @@ class NativeRefusalControls(unittest.TestCase):
             following.__cause__ = error
             error = following
         self.assertEqual(observer.capture(error, session)["reason"], "exception-chain-bound")
-        session, observer = self.model([b"x" * (policy.NATIVE_REFUSAL_BYTES + 1), b"", b""])
-        self.assertEqual(observer.capture(RuntimeError(), session)["reason"], "catalog-bound")
 
     def test_frame_bound_missing_locals_and_same_code_multiple_frames(self):
         namespace = {"__name__": "scripts.validation_ownership.make_probe"}
@@ -182,10 +182,9 @@ class NativeRefusalControls(unittest.TestCase):
         )
         for depth, reason in ((1, "frame-ambiguous"), (257, "frame-bound")):
             session = namespace["Session"]()
-            with mock.patch.object(Path, "open", side_effect=[io.BytesIO(b"") for _ in range(3)]):
-                observer = root_stage.NativeRefusalObservation(type(session), Path("/repo"))
+            observer = root_stage.NativeRefusalObservation(type(session))
             try:
-                session._sandbox_run({"error": "", "ok": False, "returncode": 1}, RuntimeError(), depth)
+                session._sandbox_run(self.observed(), RuntimeError(), depth)
             except RuntimeError as error:
                 self.assertEqual(observer.capture(error, session)["reason"], reason)
         session, observer = self.model()
@@ -193,8 +192,7 @@ class NativeRefusalControls(unittest.TestCase):
         namespace = {"__name__": "scripts.validation_ownership.make_probe"}
         exec("class Session:\n    def _sandbox_run(self, error):\n        raise error\n", namespace)
         session = namespace["Session"]()
-        with mock.patch.object(Path, "open", side_effect=[io.BytesIO(b"") for _ in range(3)]):
-            observer = root_stage.NativeRefusalObservation(type(session), Path("/repo"))
+        observer = root_stage.NativeRefusalObservation(type(session))
         try:
             session._sandbox_run(RuntimeError())
         except RuntimeError as error:
@@ -663,19 +661,28 @@ class NativeAdapterControls(Inert):
         self.assertIs(foundation.ProbeSession, Session)
         self.assertIs(foundation.ProbeBudget, original_budget.ProbeBudget)
         self.assertNotIn(str(first), repr(result))
-        self.assertEqual(result["version"], 2)
+        self.assertEqual(result["version"], 3)
         self.assertEqual(result["primary_error"], policy.component_secondary_error(first))
         self.assertEqual(result["refusal"]["status"], "unavailable")
         self.assertTrue(recorder.refusal_observer.retired)
         historical = {key: value for key, value in result.items()
                       if key not in {"version", "primary_error", "refusal"}}
         policy.validate_native_result(historical, recorder.selection, historical=True)
+        old = {**result, "version": 2, "refusal": {
+            "status": "unavailable", "reason": "catalog-unavailable", "ok": None,
+            "returncode": None, "match": None, "sites": [],
+        }}
+        policy.validate_native_result(old, recorder.selection, historical=True)
+        with self.assertRaises(policy.GuardError):
+            policy.validate_native_result(result, recorder.selection, historical=True)
+        with self.assertRaises(policy.GuardError):
+            policy.validate_native_result(old, recorder.selection)
         with self.assertRaises(policy.GuardError):
             policy.validate_native_result(historical, recorder.selection)
         for field, value in (
             ("version", True), ("version", 1), ("primary_error", None),
             ("refusal", {"status": "success", "reason": None, "ok": None,
-                         "returncode": None, "match": None, "sites": []}),
+                         "returncode": None, "diagnostic": None}),
         ):
             with self.assertRaises(policy.GuardError):
                 policy.validate_native_result({**result, field: value}, recorder.selection)
