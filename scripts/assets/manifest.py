@@ -557,7 +557,7 @@ def _validate_tracked_paths(paths, diagnostics, *, tracked_sources=None):
             )
 
 
-def _repo_path(path, loc, reference_path, verify_tracked=True):
+def _repo_path(path, loc, reference_path, verify_tracked=True, *, tracked_sources=None):
     if not isinstance(path, str) or not path:
         raise GeneratedDataError("expected a non-empty path", loc, reference_path)
     if path != unicodedata.normalize("NFC", path):
@@ -604,7 +604,9 @@ def _repo_path(path, loc, reference_path, verify_tracked=True):
         raise GeneratedDataError("declared source '{}' does not exist".format(normalized), loc, reference_path)
     if verify_tracked:
         diagnostics = DiagnosticCollector()
-        _validate_tracked_paths([(normalized, loc, reference_path)], diagnostics)
+        _validate_tracked_paths(
+            [(normalized, loc, reference_path)], diagnostics, tracked_sources=tracked_sources
+        )
         diagnostics.raise_if_any()
     return normalized
 
@@ -1569,7 +1571,7 @@ class FormattedPortraitPackageKind:
             ))
         return metadata
 
-    def validate(self, record, diagnostics):
+    def validate(self, record, diagnostics, *, tracked_sources=None):
         options_valid = _validate_exact_values(
             record.options, record.option_locs, self._options, diagnostics, record.loc,
             "{}.options".format(record.id),
@@ -1624,6 +1626,7 @@ class FormattedPortraitPackageKind:
                 record.ownership["registrySource"],
                 record.ownership_locs["registrySource"],
                 "{}.ownership.registrySource".format(record.id),
+                tracked_sources=tracked_sources,
             )
         except GeneratedDataError as exc:
             diagnostics.add(exc)
@@ -2028,7 +2031,8 @@ KIND_REGISTRY.register(BattleAnimationPackageKind())
 KIND_REGISTRY.register(CustomSpellEffectKind())
 
 
-def validate(records, item_id_cap=None):
+def validate(records, item_id_cap=None, *, tracked_sources=None):
+    _validate_captured_tracked_sources(tracked_sources)
     diagnostics = DiagnosticCollector()
     by_id = {}
     ownership = {}
@@ -2060,7 +2064,9 @@ def validate(records, item_id_cap=None):
         normalized_sources = []
         for path, loc in zip(record.sources, record.source_locs):
             try:
-                normalized = _repo_path(path, loc, "{}.sources".format(record.id))
+                normalized = _repo_path(
+                    path, loc, "{}.sources".format(record.id), tracked_sources=tracked_sources
+                )
                 normalized_sources.append(normalized)
                 canonical = _canonical_source_key(normalized)
                 if canonical in sources:
@@ -2084,6 +2090,8 @@ def validate(records, item_id_cap=None):
             metadata = kind.validate(
                 record, diagnostics, item_id_cap=item_id_cap
             )
+        elif isinstance(kind, FormattedPortraitPackageKind):
+            metadata = kind.validate(record, diagnostics, tracked_sources=tracked_sources)
         else:
             metadata = kind.validate(record, diagnostics)
         if record.kind == FormattedPortraitPackageKind.name:
@@ -2251,6 +2259,18 @@ def validate_custom_spell_selection(records, enabled):
 
 def load_and_validate(path, custom_spell_effects=None, item_id_cap=None):
     records = validate(load_manifest(path), item_id_cap=item_id_cap)
+    if custom_spell_effects is not None:
+        validate_custom_spell_selection(records, custom_spell_effects)
+    return records
+
+
+def load_captured_and_validate(
+    path, *, tracked_sources, source_identities, custom_spell_effects=None, item_id_cap=None
+):
+    if tracked_sources is None:
+        raise GeneratedDataError("captured semantic validation requires tracked-source identities")
+    records, _digest = _captured_discovery(path, tracked_sources, source_identities)
+    records = validate(records, item_id_cap=item_id_cap, tracked_sources=tracked_sources)
     if custom_spell_effects is not None:
         validate_custom_spell_selection(records, custom_spell_effects)
     return records

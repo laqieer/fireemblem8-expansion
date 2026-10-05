@@ -4990,6 +4990,17 @@ dependencies; the default profile must not acquire these custom-only inputs.
 This source-closure check does not establish full generator output/lifecycle
 custody or aggregate runtime fitness.
 
+The source-only `load_captured_and_validate` API composes verified captured
+manifest/source identities with the real full semantic validator and profile
+checks. Explicit captured membership replaces only Git provenance lookup;
+ordinary CLI validation remains unchanged. Run
+`AssetManifestTests.test_captured_semantics_preserve_complete_profile_output_maps`
+for exact rendered filename/byte-map equivalence across both caps and custom
+profiles, and `test_captured_semantics_reject_identity_and_profile_drift` for
+missing/foreign/corrupt identities, missing admission and profile/cap refusals.
+This does not wire or prove generation output publication, locking, pruning or
+interruption cleanup.
+
 **Exact remaining machine hold:** the current child trace does not return
 DR0..DR3/DR6/DR7, hardware siginfo/PC/purpose/restore samples, modifier/RBX/
 reader-frame observations, inherited registers after child exec, source-active

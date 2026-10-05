@@ -991,6 +991,54 @@ class AssetManifestTests(unittest.TestCase):
         default = manifest.load_discovery(os.path.join(REPO_ROOT, "assets", "manifest.json"))
         self.assertFalse(reads & set(manifest.discovery_sources(default)))
 
+    def test_captured_semantics_preserve_complete_profile_output_maps(self):
+        for cap in (0xCD, 0xCE):
+            for custom in (0, 1):
+                with self.subTest(cap=cap, custom=custom):
+                    source = os.path.join(
+                        REPO_ROOT, "assets",
+                        "manifests/custom-spell-reference.json" if custom else "manifest.json",
+                    )
+                    ordinary = manifest.load_and_validate(source, custom, item_id_cap=cap)
+                    identities = captured_discovery_identities(source, ordinary)
+                    tracked = frozenset(row[0] for row in identities)
+                    output = os.path.join(REPO_ROOT, "build", "generated", "assets")
+                    expected = manifest.expected_outputs(ordinary, output)
+                    with mock.patch.object(
+                        manifest.subprocess, "run", side_effect=AssertionError("unexpected Git subprocess"),
+                    ):
+                        captured = manifest.load_captured_and_validate(
+                            source, tracked_sources=tracked, source_identities=identities,
+                            custom_spell_effects=custom, item_id_cap=cap,
+                        )
+                        self.assertEqual(manifest.expected_outputs(captured, output), expected)
+                    self.assertEqual(len(expected), 34 if custom else 19)
+
+    def test_captured_semantics_reject_identity_and_profile_drift(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifests", "custom-spell-reference.json")
+        ordinary = manifest.load_and_validate(source, 1, item_id_cap=0xCD)
+        identities = captured_discovery_identities(source, ordinary)
+        tracked = frozenset(row[0] for row in identities)
+        cases = (
+            (None, identities, 1, 0xCD),
+            (tracked - {"assets/portrait_registry.json"}, identities, 1, 0xCD),
+            (tracked, identities[:-1], 1, 0xCD),
+            (tracked, [*identities, ("src/foreign.c", "100644", "0" * 64)], 1, 0xCD),
+            (tracked, [(p, m, "0" * 64) for p, m, _digest in identities], 1, 0xCD),
+            (tracked, identities, 0, 0xCD),
+            (tracked, identities, 1, 0x100),
+        )
+        with mock.patch.object(
+            manifest.subprocess, "run", side_effect=AssertionError("unexpected Git subprocess"),
+        ):
+            for index, (members, owners, custom, cap) in enumerate(cases):
+                with self.subTest(case=index, custom=custom, cap=cap):
+                    with self.assertRaises((GeneratedDataError, GeneratedDataValidationError)):
+                        manifest.load_captured_and_validate(
+                            source, tracked_sources=members, source_identities=owners,
+                            custom_spell_effects=custom, item_id_cap=cap,
+                        )
+
     def test_captured_discovery_rejects_missing_source_membership(self):
         source = os.path.join(REPO_ROOT, "assets", "manifest.json")
         records = manifest.load_discovery(source)
