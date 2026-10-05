@@ -1,6 +1,33 @@
 # Contained original-include retained-state diagnostic
 
-## Deep-route preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
+## Empty-argv fixture route preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
+
+Contract5996924005 prepares only
+`calibration/issue-180-native-completion-empty-1` and
+`.github/workflows/issue180-native-completion-empty-1.yml` at parent
+`1b24ac2aed8cde1f2d7ea3e2605a87ff18b14ef2`. It rebinds the existing route to
+source `76d7e05082368a72cdec25685fb7b0bbe886f65f`, with unchanged BASEec1,
+profile, positive selector, quotas, lifetime, containment and five artifacts.
+This is a finite empty-argument fixture correction, not production Make
+authority or qualification. The earlier `a1f->78fd` lexer stage stays frozen;
+the new `78fd->76d` fixture stage is independently pinned to two paths and 85
+changed lines. The accepted recorder remains `9c9edd61013652ad8e0e799c2589dc07a6d825e9`;
+its schema and `root_stage.py` are unchanged.
+
+All eleven historical workflow files remain byte-pinned, including the spent
+deep-1 workflow at the exact parent. The cumulative FINAL inventory contains
+twenty paths and preserves the complete original normal repair lineage.
+Focused literal event/workflow, source stage/endpoints, actual inventory,
+current/neutral `source_status`, parent-negative and recorder-drift controls
+must pass before commit. Save the evidence as `empty-route-validation`.
+Coordinator-owned complete committed `prepare`/`source_status` evidence and a
+fresh coupled review are still required after owner publication, before any
+separately published allocation. No allocation or native execution is
+authorized here; all ten failed native allocations and every final hold remain
+unchanged. No source, remote, push, root, native, quota, profile, authority or
+production behavior change is included.
+
+## Historical deep-route preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
 
 Contract5994678733 prepares only literal
 `calibration/issue-180-native-completion-deep-1` and

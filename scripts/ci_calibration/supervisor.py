@@ -207,6 +207,8 @@ NATIVE_LEXER_PREPARATION_SHA = "0b992652410fce38497f3bf3b5c525810188531e"
 NATIVE_CONSUMER_SITE_SHA = "9f178b69d3fcd37ed3dfe813445aabc87bf0071a"
 NATIVE_CONSUMER_PREPARATION_SHA = "0b86ba6bc38fa54f21efadfb88f93ea95a5f6a95"
 NATIVE_DEEP_DIAGNOSTIC_SHA = "9c9edd61013652ad8e0e799c2589dc07a6d825e9"
+NATIVE_ROUTE_PARENT_SHA = "1b24ac2aed8cde1f2d7ea3e2605a87ff18b14ef2"
+NATIVE_LEXER_SOURCE_SHA = "78fd889eb00aeeeb44dc35870a6d2fe52c773158"
 NATIVE_LEXER_PATHS = frozenset({
     ".github/validation-ownership-graph.json", "docs/validation-ownership.md",
     "scripts/validation_ownership/ci_verifier.py",
@@ -220,6 +222,10 @@ NATIVE_CALLSITE_PATHS = frozenset({
     "scripts/validation_ownership/lifecycle.py",
     "scripts/validation_ownership/tests/test_foundation.py",
     "scripts/validation_ownership/tests/test_make_probe.py",
+})
+NATIVE_FIXTURE_PATHS = frozenset({
+    "docs/test-cases/workflow-governance.md",
+    "scripts/validation_ownership/tests/test_phase_census.py",
 })
 NATIVE_NULLABLE_PATHS = frozenset(f"scripts/ci_calibration/{name}" for name in (
     "policy.py", "root_stage.py", "test_ci_calibration.py", "test_root_stage.py", "README.md",
@@ -245,6 +251,7 @@ NATIVE_PATHS = frozenset({
     policy.SPENT_NATIVE_CALLSITE_WORKFLOW,
     policy.SPENT_NATIVE_LEXER_WORKFLOW,
     policy.SPENT_NATIVE_CONSUMER_WORKFLOW,
+    policy.SPENT_NATIVE_DEEP_WORKFLOW,
     policy.NATIVE_WORKFLOW,
     *(f"scripts/ci_calibration/{name}" for name in (
         "policy.py", "supervisor.py", "worker.py", "root_stage.py", "observation_failure.py",
@@ -297,6 +304,7 @@ def validate_native_source_inventory(data, stage):
         "deep-consumer": NATIVE_CONSUMER_PATHS,
         "callsite": NATIVE_CALLSITE_PATHS,
         "lexer": NATIVE_LEXER_PATHS,
+        "fixture": NATIVE_FIXTURE_PATHS,
     }
     if stage not in expected or type(data) is not bytes:
         raise policy.GuardError("native source inventory has an unknown stage or representation")
@@ -315,7 +323,9 @@ def validate_native_source_inventory(data, stage):
 
 def validate_native_source_stage(data, sizes, stage):
     validate_native_source_inventory(data, stage)
-    if type(sizes) is not bytes or stage not in {"diagnostic", "consumer", "consumer-site", "deep-consumer", "callsite", "lexer"}:
+    if type(sizes) is not bytes or stage not in {
+        "diagnostic", "consumer", "consumer-site", "deep-consumer", "callsite", "lexer", "fixture",
+    }:
         raise policy.GuardError("native source stage sizes are not immutable Git data")
     expected_paths, expected_lines = {
         "diagnostic": (NATIVE_DIAGNOSTIC_SOURCE_PATHS, 347),
@@ -324,6 +334,7 @@ def validate_native_source_stage(data, sizes, stage):
         "deep-consumer": (NATIVE_CONSUMER_PATHS, 206),
         "callsite": (NATIVE_CALLSITE_PATHS, 127),
         "lexer": (NATIVE_LEXER_PATHS, 718),
+        "fixture": (NATIVE_FIXTURE_PATHS, 85),
     }[stage]
     expected_path_bytes = {path.encode("ascii") for path in expected_paths}
     rows = [row.split(b"\t") for row in sizes.splitlines()]
@@ -351,8 +362,9 @@ def validate_native_nullable_stage(data, sizes):
 
 
 def validate_native_lineage(lines, head):
-    if len(lines) < 23 or lines[:23] != [
-        f"{head} {NATIVE_DEEP_DIAGNOSTIC_SHA}",
+    if len(lines) < 24 or lines[:24] != [
+        f"{head} {NATIVE_ROUTE_PARENT_SHA}",
+        f"{NATIVE_ROUTE_PARENT_SHA} {NATIVE_DEEP_DIAGNOSTIC_SHA}",
         f"{NATIVE_DEEP_DIAGNOSTIC_SHA} {NATIVE_CONSUMER_PREPARATION_SHA}",
         f"{NATIVE_CONSUMER_PREPARATION_SHA} {NATIVE_CONSUMER_SITE_SHA}",
         f"{NATIVE_CONSUMER_SITE_SHA} {NATIVE_LEXER_PREPARATION_SHA}",
@@ -377,13 +389,14 @@ def validate_native_lineage(lines, head):
         f"{NATIVE_PREPARATION_SHA} {NATIVE_PARENT}",
     ]:
         raise policy.GuardError("native family differs from its exact normal repair/preparation chain")
-    validate_harness_lineage(lines[23:], NATIVE_PARENT)
+    validate_harness_lineage(lines[24:], NATIVE_PARENT)
 
 
 def validate_preparation_paths(changed):
     if any(
         name and name.decode() not in {
-            policy.WORKFLOW, policy.NATIVE_WORKFLOW, policy.SPENT_NATIVE_WORKFLOW,
+            policy.WORKFLOW, policy.NATIVE_WORKFLOW, policy.SPENT_NATIVE_DEEP_WORKFLOW,
+            policy.SPENT_NATIVE_WORKFLOW,
             policy.SPENT_NATIVE_TYPED_WORKFLOW,
             policy.UNEXECUTED_NATIVE_TYPED_WORKFLOW,
             policy.SPENT_NATIVE_TYPED_ROUTE_WORKFLOW,
@@ -432,6 +445,7 @@ def validate_native_inventory(data):
             policy.SPENT_NATIVE_CALLSITE_WORKFLOW,
             policy.SPENT_NATIVE_LEXER_WORKFLOW,
             policy.SPENT_NATIVE_CONSUMER_WORKFLOW,
+            policy.SPENT_NATIVE_DEEP_WORKFLOW,
             policy.NATIVE_WORKFLOW,
         )
     }
@@ -1808,6 +1822,10 @@ class Owner:
                 git(self.harness, "show", "HEAD:" + policy.SPENT_NATIVE_CONSUMER_WORKFLOW),
                 git(self.harness, "show", NATIVE_CONSUMER_PREPARATION_SHA + ":" + policy.SPENT_NATIVE_CONSUMER_WORKFLOW),
             )
+            validate_spent_native_workflow(
+                git(self.harness, "show", "HEAD:" + policy.SPENT_NATIVE_DEEP_WORKFLOW),
+                git(self.harness, "show", NATIVE_ROUTE_PARENT_SHA + ":" + policy.SPENT_NATIVE_DEEP_WORKFLOW),
+            )
             validate_native_source_stage(
                 git(self.harness, "diff", "--name-status", "-z", NATIVE_CONSUMER_PREPARATION_SHA, NATIVE_DEEP_DIAGNOSTIC_SHA),
                 git(self.harness, "diff", "--numstat", NATIVE_CONSUMER_PREPARATION_SHA, NATIVE_DEEP_DIAGNOSTIC_SHA),
@@ -2036,7 +2054,8 @@ class Owner:
                 (policy.NATIVE_PREVIOUS_SOURCE, policy.NATIVE_MANIFEST_SOURCE),
                 (policy.NATIVE_SCREENING_SOURCE, policy.NATIVE_PREVIOUS_SOURCE),
                 (NATIVE_CALLSITE_SOURCE_SHA, NATIVE_CALLSITE_PARENT_SHA),
-                (policy.NATIVE_SOURCE, NATIVE_CALLSITE_SOURCE_SHA),
+                (NATIVE_LEXER_SOURCE_SHA, NATIVE_CALLSITE_SOURCE_SHA),
+                (policy.NATIVE_SOURCE, NATIVE_LEXER_SOURCE_SHA),
             ):
                 if git(self.candidate, "rev-list", "--parents", "--max-count=1", child).decode().strip() != (
                     child + " " + parent
@@ -2050,13 +2069,14 @@ class Owner:
                 (policy.NATIVE_PREVIOUS_SOURCE, policy.NATIVE_SCREENING_SOURCE, "screening"),
                 (policy.NATIVE_SCREENING_SOURCE, NATIVE_CALLSITE_PARENT_SHA, "diagnostic"),
                 (NATIVE_CALLSITE_PARENT_SHA, NATIVE_CALLSITE_SOURCE_SHA, "callsite"),
-                (NATIVE_CALLSITE_SOURCE_SHA, source, "lexer"),
+                (NATIVE_CALLSITE_SOURCE_SHA, NATIVE_LEXER_SOURCE_SHA, "lexer"),
+                (NATIVE_LEXER_SOURCE_SHA, source, "fixture"),
             ):
                 paths = git(
                     self.candidate, "diff", "--no-ext-diff", "--no-textconv", "--no-renames",
                     "--name-status", "-z", before, after,
                 )
-                if stage in {"diagnostic", "callsite", "lexer"}:
+                if stage in {"diagnostic", "callsite", "lexer", "fixture"}:
                     validate_native_source_stage(paths, git(
                         self.candidate, "diff", "--no-ext-diff", "--no-textconv", "--numstat", before, after,
                     ), stage)
