@@ -4919,6 +4919,19 @@ variants. No persistent fixture files or cleanup are required. This does not
 change profiles, ROM, ABI, saves or ownership classification and does not
 qualify source/caller/frame/pin/generated-version or original-root behavior.
 
+For the retained observer boundary, contract6001870035 adds actual kernel
+register readback. On the supported Linux x86-64 ptrace environment, run
+`python3 -m unittest scripts.validation_ownership.tests.test_read_epochs.NativeDebugRegisterTests scripts.validation_ownership.tests.test_read_epochs.ReadEpochTests.test_parse_time_producer_cannot_inherit_parent_read_breakpoints -v`.
+The real stopped child must show all four issued addresses, cleared status and
+enabled DR7, then cleared address/control/status state. Omitting an issued
+address, status or control write leaves the actual old value and must reject
+before resumption. The pre-fix write API accepts these omitted writes. Cleanup
+reaps the exact child; no persistent files or manual steps are needed.
+The existing native Make producer path must remain successful with readback
+enabled. No profile/save/ROM/ABI behavior changes; each read remains charged.
+This is neither full source/frame/pin/active-termination qualification nor an
+exported transcript; all original machine and delivery holds remain.
+
 The original family also includes `native-one.dat` and then
 `./native-one.dat`. GNU Make reports both visit names as `native-one.dat`;
 the second spelling does not create a different source. Require distinct visit

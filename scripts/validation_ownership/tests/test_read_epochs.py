@@ -857,6 +857,79 @@ class CompletionTraceDataApiTests(unittest.TestCase):
                 self.assertEqual(seen, [])
 
 
+class NativeDebugRegisterTests(unittest.TestCase):
+    """Real kernel slot state; not Make frame, source or lifetime qualification."""
+
+    def setUp(self):
+        from scripts.validation_ownership import syscall_guard
+
+        self.guard = syscall_guard
+        self.pid = os.fork()
+        if self.pid == 0:
+            try:
+                syscall_guard.ptrace(0, 0)
+                os.kill(os.getpid(), signal.SIGSTOP)
+                os._exit(0)
+            except BaseException:
+                os._exit(125)
+        self.addCleanup(self.reap)
+        waited, status = os.waitpid(self.pid, 0)
+        self.assertEqual(waited, self.pid)
+        self.assertTrue(os.WIFSTOPPED(status), status)
+        self.assertEqual(os.WSTOPSIG(status), signal.SIGSTOP)
+        self.trace = object.__new__(read_trace.NativeReadTrace)
+        self.trace.native = syscall_guard
+        self.trace.config = {"deadline": time.monotonic() + 10}
+        self.charges = []
+        self.trace.policy = SimpleNamespace(charge_metadata=self.charges.append)
+        self.trace.pid, self.trace.bias, self.trace.version = self.pid, 0, 3
+        self.trace.abi = {
+            "read_all": [0x10000, 0x10010], "source": [0x20000, 0x20010],
+            "completion": {"pc": 0x30000},
+        }
+        self.trace.active = [{"return": 0x40000}]
+        self.trace.pass_frame = {"return": 0x50000}
+
+    def reap(self):
+        try:
+            os.kill(self.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        waited, status = os.waitpid(self.pid, 0)
+        self.assertEqual(waited, self.pid)
+        self.assertTrue(os.WIFSIGNALED(status) or os.WIFEXITED(status), status)
+
+    def test_actual_kernel_slots_and_control_are_read_back_and_cleared(self):
+        self.trace.arm()
+        for index in range(4):
+            self.assertEqual(self.trace.debug(self.pid, index), self.trace.slots[index])
+        self.assertEqual(self.trace.debug(self.pid, 6) & 0xE00F, 0)
+        self.assertEqual(self.trace.debug(self.pid, 7), 0x55)
+        self.trace.clear(self.pid)
+        for index in (*range(4), 7):
+            self.assertEqual(self.trace.debug(self.pid, index), 0)
+        self.assertEqual(self.trace.debug(self.pid, 6) & 0xE00F, 0)
+        self.assertEqual(len(self.charges), 25)
+        self.assertTrue(all(size == 8 for size in self.charges))
+
+    def test_actual_kernel_stale_slot_and_control_writes_reject(self):
+        for index, previous, requested in ((0, 0x10000, 0x20000), (6, 1, 0), (7, 0, 1)):
+            with self.subTest(index=index):
+                self.trace.debug(self.pid, index, previous)
+                real = self.guard.ptrace
+
+                def omit(request, pid, address=0, data=0):
+                    if request == 6 and address == read_trace.DEBUG_REGISTER_OFFSET + 8 * index:
+                        return 0
+                    return real(request, pid, address, data)
+
+                with patch.object(self.guard, "ptrace", omit):
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "readback"):
+                        self.trace.debug(self.pid, index, requested)
+                self.assertEqual(self.trace.debug(self.pid, index), previous)
+        self.trace.clear(self.pid)
+
+
 class SourcePinLifetimeTests(unittest.TestCase):
     """Actual source-return proofs and pin retirement with only inert effects."""
 

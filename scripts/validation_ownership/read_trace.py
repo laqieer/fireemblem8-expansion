@@ -142,6 +142,10 @@ class NativeReadTrace:
             self.policy.charge_metadata(8)
             return self.native.ptrace(3, pid, DEBUG_REGISTER_OFFSET + 8 * index) & ((1 << 64) - 1)
         self.native.ptrace(6, pid, DEBUG_REGISTER_OFFSET + 8 * index, value)
+        observed = self.debug(pid, index)
+        mask = 0xE00F if index == 6 else (1 << 64) - 1
+        if observed & mask != value & mask:
+            raise read_epochs.ReadEpochError("original read debug-register write failed kernel readback")
 
     def clear(self, pid):
         self.debug(pid, 7, 0)

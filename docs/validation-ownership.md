@@ -529,6 +529,17 @@ not preparation. Owned handles must be reaped for cancellation/deadline; each
 case requires failed-budget and scratch/cache/child cleanup observations.
 These invocations have independent original budgets, not reset failed budgets.
 
+`NativeReadTrace.debug` reads back every actual DR0..DR3/DR6/DR7 write before
+resuming the child. Address/control values must match exactly; DR6 comparison
+uses only B0..B3/BD/BS/BT status bits, excluding architecture-reserved fixed bits.
+The existing metadata budget charges every read. `NativeDebugRegisterTests`
+uses a real stopped ptrace child to check all four armed addresses, status and
+control, then clearing; omitted address/status/control writes must refuse on
+the real old kernel value. Exact owned children are reaped. The original
+parse-time producer test separately covers ordinary native dispatch with these
+checks enabled. These are actual write/readback controls, not an exported
+complete hardware transcript or proof of every Make frame/pin/termination.
+
 **Unresolved machine criterion:** the closed returned trace has source,
 completion and pass events, but no child DR0..DR3/DR6/DR7 readback, siginfo/PC/
 issued-purpose transcript, modifier/RBX/reader-frame samples, inherited-slot
