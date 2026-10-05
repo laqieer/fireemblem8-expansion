@@ -1,5 +1,40 @@
 # Contained original-include retained-state diagnostic
 
+## Typed-source rebind preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
+
+The first-created `calibration/issue180-native-completion-typed-1` route
+rebinds the existing native preparation to source `efc5eb6991bc2c1efb02f1f2e7595f27bb9aa24f`,
+without changing the `native-completion-trace4-abi2-v1` profile, the positive
+`PhaseCensusTests.test_native_completion_original_profile_family` selector,
+the single original lifetime, or any quota. It retains all seven containment
+qualifiers and the five existing bounded artifacts. The five previously
+created native workflows remain byte-identical and their refs are denied.
+No runtime allocation, source edit, worker/recorder/telemetry/quota change,
+retry, or qualification is authorized by this preparation.
+
+The source chain is unchanged through the existing 15-path implementation,
+4-path tests, 8-path redesign, 6-path screening, and 5-path nullable stages.
+Two additional stages are validated separately: `2d84af156041593a16081550c5f461c877e7bcd0`
+to `efc5eb6991bc2c1efb02f1f2e7595f27bb9aa24f` is the exact seven-path,
+347-line diagnostic producer stage; `f1e04f02b9f40bf23791311cddf1c1ff0db08312`
+to `bb6a9451b44e64b4c9ce68fbef60416e682c710e` is the separate five-path,
+371-line consumer stage. The producer's typed `failure_diagnostic` has exactly
+`version`, `tag`, `errno`, `module`, and `line`; the existing six-selector
+catalog and its method/type signatures remain closed and unchanged.
+
+The normal harness lineage includes the consumer commit and its parent before
+the existing preparation chain. Its complete native delta is fourteen paths:
+the thirteen existing paths plus the new workflow. The final BASE-to-HEAD
+validator consumes the complete Git path list, including every preserved
+workflow; the focused control obtains that list from Git and separately rejects
+missing, extra, wrong-status, and unrelated paths. Testers should run the
+focused inert route controls against the exact staged candidate and its parent,
+then verify the exact workflow bindings and both stage inventories. The
+parent/stale-ref controls must reject, while the exact current route passes.
+This is structural preparation evidence only; native execution and the four
+machine holds, full report, H1, resource policy, security, Build, merge,
+closure, and remote-completion gates remain unresolved.
+
 ## Native refusal route preparation (TC-CI-NATIVE-REFUSAL-ROUTE-001, #180)
 
 Contract comment5991854506 authorizes preparation only of the first-created

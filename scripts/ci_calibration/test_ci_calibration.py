@@ -54,22 +54,34 @@ class NativeSelectionControls(unittest.TestCase):
                   and any(isinstance(t, ast.Name) and t.id == "changed" for t in n.targets)]
         body = prepare.body[start:start + 2]
         calls = []
+        actual = subprocess.run(
+            ["/usr/bin/git", "-C", str(REPO), "diff", "--cached", "--name-only", "-z", policy.BASE],
+            check=True, capture_output=True,
+        ).stdout
+        native = subprocess.run(
+            ["/usr/bin/git", "-C", str(REPO), "diff", "--cached", "--name-status", "-z",
+             supervisor.NATIVE_PARENT],
+            check=True, capture_output=True,
+        ).stdout
+        self.assertTrue({
+            policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
+            policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
+            policy.SPENT_NATIVE_TYPED_WORKFLOW, policy.NATIVE_WORKFLOW,
+        } <= {path.decode() for path in actual.split(b"\0") if path})
+        supervisor.validate_native_inventory(native)
         def observed_git(root, *args):
             calls.append((root, args))
             return raw
         namespace = dict(vars(supervisor), git=observed_git, self=SimpleNamespace(harness="inert"))
         code = compile(ast.Module(body=body, type_ignores=[]), "<actual-prepare-paths>", "exec")
-        # Derive the family from policy, not a second hand-maintained allowlist.
-        workflows = {value for name, value in vars(policy).items() if name.endswith("WORKFLOW")}
-        for paths in (workflows, workflows | {"scripts/ci_calibration/new.py"}, {""}):
-            raw = b"\0".join(path.encode() for path in sorted(paths)) + b"\0"
-            exec(code, namespace)
+        raw = actual
+        exec(code, namespace)
         for path in ("src/proc.c", ".github/workflows/unknown.yml", "scripts/ci_calibration.py",
                      "scripts/validation_ownership/budget.py"):
-            raw = b"\0".join(path.encode() for path in sorted(workflows)) + b"\0" + path.encode() + b"\0"
+            raw = actual + path.encode() + b"\0"
             with self.assertRaises(policy.GuardError):
                 exec(code, namespace)
-        self.assertEqual(calls, [("inert", ("diff", "--name-only", "-z", policy.BASE, "HEAD"))] * 7)
+        self.assertEqual(calls, [("inert", ("diff", "--name-only", "-z", policy.BASE, "HEAD"))] * 5)
 
     def test_failed_nullable_refusal_wire_preserves_unknown_status(self):
         for module, line in ((None, None), ("read_trace", 1), ("read_epochs", 2147483647)):
@@ -243,6 +255,20 @@ class NativeSelectionControls(unittest.TestCase):
         }
 
     def test_native_selection_is_finite_and_report_events_are_disjoint(self):
+        self.assertEqual(policy.NATIVE_SELECTORS, (
+            "scripts.validation_ownership.tests.test_phase_census.PhaseCensusTests."
+            "test_native_completion_original_profile_family",
+            "scripts.validation_ownership.tests.test_read_epochs.ReadEpochTests."
+            "test_native_completion_kernel_frame_pin_terminal",
+            "scripts.validation_ownership.tests.test_read_epochs.ReadEpochTests."
+            "test_native_completion_resource_terminal",
+            "scripts.validation_ownership.tests.test_phase_census.PhaseCensusTests."
+            "test_native_completion_archive_retirement_terminal",
+            "scripts.validation_ownership.tests.test_read_epochs.ReadEpochTests."
+            "test_native_completion_cancellation_terminal",
+            "scripts.validation_ownership.tests.test_read_epochs.ReadEpochTests."
+            "test_native_completion_deadline_terminal",
+        ))
         for selector in policy.NATIVE_SELECTORS:
             self.assertEqual(policy.native_selection(policy.NATIVE_PROFILE, selector)["source_revision"], policy.NATIVE_SOURCE)
         for profile, selector in (
@@ -262,6 +288,7 @@ class NativeSelectionControls(unittest.TestCase):
             (self.event("calibration/issue-180-native-completion-diagnostic-1"), policy.NATIVE_SELECTORS[0]),
             (self.event("calibration/issue-180-native-completion-family-2"), policy.NATIVE_SELECTORS[0]),
             (self.event("calibration/issue-180-native-completion-refusal-1"), policy.NATIVE_SELECTORS[0]),
+            (self.event("calibration/issue-180-native-completion-refusal-2"), policy.NATIVE_SELECTORS[0]),
             *((native, selector) for selector in policy.NATIVE_SELECTORS[1:]),
         ):
             with self.assertRaises(policy.GuardError):
@@ -283,7 +310,9 @@ class NativeSelectionControls(unittest.TestCase):
 
     def test_native_lineage_keeps_exact_profile_repair_rebind_and_preparation_chain(self):
         lines = [
-            f"{'a' * 40} a3c4ec144e7c5acd2d30019e147ae6520cf1bee7",
+            f"{'a' * 40} {supervisor.NATIVE_CONSUMER_SHA}",
+            f"{supervisor.NATIVE_CONSUMER_SHA} {supervisor.NATIVE_CONSUMER_PARENT_SHA}",
+            f"{supervisor.NATIVE_CONSUMER_PARENT_SHA} a3c4ec144e7c5acd2d30019e147ae6520cf1bee7",
             f"a3c4ec144e7c5acd2d30019e147ae6520cf1bee7 {supervisor.NATIVE_NULLABLE_SHA}",
             f"{supervisor.NATIVE_NULLABLE_SHA} {supervisor.NATIVE_REFUSAL_ROUTE_SHA}",
             f"{supervisor.NATIVE_REFUSAL_ROUTE_SHA} {supervisor.NATIVE_REFUSAL_SHA}",
@@ -316,6 +345,7 @@ class NativeSelectionControls(unittest.TestCase):
         workflows = {
             policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
             policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
+            policy.SPENT_NATIVE_TYPED_WORKFLOW,
             policy.NATIVE_WORKFLOW,
         }
         data = b"".join(
@@ -333,7 +363,8 @@ class NativeSelectionControls(unittest.TestCase):
 
     def test_spent_native_workflow_requires_exact_immutable_bytes(self):
         for workflow in (policy.SPENT_NATIVE_WORKFLOW, policy.SPENT_NATIVE_DIAGNOSTIC_WORKFLOW,
-                         policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW):
+                         policy.SPENT_NATIVE_FAMILY_WORKFLOW, policy.SPENT_NATIVE_REFUSAL_WORKFLOW,
+                         policy.SPENT_NATIVE_TYPED_WORKFLOW):
             with self.subTest(workflow=workflow):
                 original = ("name: " + workflow + "\non: push\n").encode()
                 supervisor.validate_spent_native_workflow(original, original)
@@ -348,6 +379,8 @@ class NativeSelectionControls(unittest.TestCase):
             ("redesign", supervisor.NATIVE_REDESIGN_PATHS),
             ("screening", supervisor.NATIVE_SCREENING_PATHS),
             ("nullable", supervisor.NATIVE_NULLABLE_PATHS),
+            ("diagnostic", supervisor.NATIVE_DIAGNOSTIC_SOURCE_PATHS),
+            ("consumer", supervisor.NATIVE_CONSUMER_PATHS),
         ):
             rows = [b"M\0" + path.encode() + b"\0" for path in sorted(paths)]
             data = b"".join(rows)
@@ -360,6 +393,33 @@ class NativeSelectionControls(unittest.TestCase):
                 supervisor.validate_native_source_inventory(data.replace(b"M\0", b"A\0", 1), stage)
         with self.assertRaises(policy.GuardError):
             supervisor.validate_native_source_inventory(data, "unreviewed")
+
+    def test_source_diagnostic_and_consumer_stages_keep_exact_line_extents(self):
+        for stage, paths, changed_lines in (
+            ("diagnostic", supervisor.NATIVE_DIAGNOSTIC_SOURCE_PATHS, 347),
+            ("consumer", supervisor.NATIVE_CONSUMER_PATHS, 371),
+        ):
+            inventory = b"".join(b"M\0" + path.encode() + b"\0" for path in sorted(paths))
+            counts = [(changed_lines, 0), *((0, 0) for _ in range(len(paths) - 1))]
+            sizes = b"".join(
+                str(additions).encode() + b"\t" + str(deletions).encode() + b"\t"
+                + path.encode() + b"\n"
+                for path, (additions, deletions) in zip(sorted(paths), counts)
+            )
+            supervisor.validate_native_source_stage(inventory, sizes, stage)
+            for changed in (
+                inventory + b"M\0scripts/ci_calibration/worker.py\0",
+                inventory.replace(b"M\0", b"A\0", 1),
+                sizes.replace(str(changed_lines).encode(), str(changed_lines - 1).encode(), 1),
+                sizes + sizes.splitlines()[:1][0] + b"\n",
+            ):
+                with self.subTest(stage=stage, changed=changed), self.assertRaises(policy.GuardError):
+                    supervisor.validate_native_source_stage(
+                        changed if b"\0" in changed else inventory, changed if b"\0" not in changed else sizes,
+                        stage,
+                    )
+        with self.assertRaises(policy.GuardError):
+            supervisor.validate_native_source_stage(b"", b"", "nullable")
 
     def test_nullable_stage_preserves_complete_bounded_correction(self):
         paths = sorted(supervisor.NATIVE_NULLABLE_PATHS)
@@ -376,22 +436,23 @@ class NativeSelectionControls(unittest.TestCase):
             with self.assertRaises(policy.GuardError):
                 supervisor.validate_native_nullable_stage(data, changed)
 
-    def test_refusal_workflow_selects_exact_source_and_stays_preparation_only(self):
+    def test_typed_workflow_selects_exact_source_and_stays_preparation_only(self):
         workflow = yaml.load(NATIVE_WORKFLOW_TEXT, Loader=yaml.BaseLoader)
         self.assertEqual(workflow["on"], {"push": {"branches": [policy.NATIVE_BRANCH]}})
         self.assertEqual(workflow["permissions"], {"contents": "read"})
         self.assertEqual(workflow["concurrency"]["cancel-in-progress"], "false")
         job, = workflow["jobs"].values()
-        self.assertEqual(job["name"], "One native refusal observation; qualification remains incomplete")
+        self.assertEqual(job["name"], "One typed-source observation; qualification remains incomplete")
         self.assertEqual((job["runs-on"], job["timeout-minutes"]), ("ubuntu-latest", "90"))
         self.assertEqual(len(job["steps"]), 6)
         predicates = {part.strip() for part in job["if"].split("&&")}
-        self.assertTrue({
+        self.assertEqual(predicates, {
+            "github.repository == 'laqieer/fireemblem8-expansion'",
             "github.run_number == 1", "github.run_attempt == 1", "github.event.created == true",
             "github.event.deleted == false", "github.event.repository.private == false",
             "github.event.sender.login == 'laqieer'", "github.actor == 'laqieer'",
             "github.triggering_actor == 'laqieer'",
-        } <= predicates)
+        })
         checkouts = [step for step in job["steps"] if step.get("uses", "").startswith("actions/checkout@")]
         self.assertEqual([step["with"]["ref"] for step in checkouts], ["${{ github.sha }}", policy.NATIVE_SOURCE])
         self.assertEqual(
