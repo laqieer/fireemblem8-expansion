@@ -5001,6 +5001,16 @@ missing/foreign/corrupt identities, missing admission and profile/cap refusals.
 This does not wire or prove generation output publication, locking, pruning or
 interruption cleanup.
 
+`render_generation_artifact` renders the complete captured semantic output map
+and exact optional selection stamp under a canonical logical generated/assets
+root without probing mutable destinations. Ordinary generation retains its
+filesystem path checks, locking and pruning. Run
+`AssetManifestTests.test_captured_generation_matches_real_complete_outputs_without_destination_probes`
+for real file-byte equivalence across both caps, custom profiles and logical
+roots, and `test_captured_generation_rejects_invalid_logical_outputs_before_sources`
+for output/stamp admission refusals. This rendering API alone does not establish
+native publication, stale-output retirement or lifecycle equivalence.
+
 **Exact remaining machine hold:** the current child trace does not return
 DR0..DR3/DR6/DR7, hardware siginfo/PC/purpose/restore samples, modifier/RBX/
 reader-frame observations, inherited registers after child exec, source-active

@@ -17,6 +17,7 @@ import unicodedata
 import zlib
 
 from scripts.assets import tmx
+from scripts.generated_data import idspace
 from scripts.generated_data.diagnostics import (
     DiagnosticCollector,
     GeneratedDataError,
@@ -615,7 +616,7 @@ def _canonical_source_key(path):
     return unicodedata.normalize("NFC", path).casefold()
 
 
-def safe_output_dir(path):
+def _logical_output_dir(path):
     requested = os.path.abspath(path)
     if os.path.commonpath((ASSET_BUILD_ROOT, requested)) != ASSET_BUILD_ROOT:
         raise GeneratedDataError(
@@ -632,6 +633,12 @@ def safe_output_dir(path):
                 path
             )
         )
+    return requested
+
+
+def safe_output_dir(path):
+    requested = _logical_output_dir(path)
+    relative = os.path.relpath(requested, REPO_ROOT)
     current = REPO_ROOT
     for component in relative.split(os.sep):
         current = os.path.join(current, component)
@@ -2820,6 +2827,10 @@ def _banim_table_count():
 
 def expected_outputs(records, out_dir):
     out_dir = safe_output_dir(out_dir)
+    return _expected_outputs(records, out_dir)
+
+
+def _expected_outputs(records, out_dir):
     outputs = {
         os.path.join(out_dir, OUTPUT_MAKEFILE): render_makefile(records).encode("utf-8"),
         os.path.join(out_dir, OUTPUT_INVENTORY): render_inventory(records).encode("utf-8"),
@@ -2834,6 +2845,39 @@ def expected_outputs(records, out_dir):
     for path, content in banim_expected_outputs(records, out_dir).items():
         outputs[path] = content.encode("utf-8") if isinstance(content, str) else content
     outputs.update(custom_spell.expected_outputs(records, out_dir))
+    return outputs
+
+
+def render_generation_artifact(
+    manifest_path, logical_dir, *, tracked_sources, source_identities,
+    custom_spell_effects, item_id_cap, selection_stamp=None
+):
+    if not isinstance(logical_dir, str) or not logical_dir:
+        raise GeneratedDataError("captured generation requires a canonical logical output directory")
+    if type(custom_spell_effects) is not int or custom_spell_effects not in (0, 1):
+        raise GeneratedDataError("captured generation custom spell selection must be 0 or 1")
+    if type(item_id_cap) is not int:
+        raise GeneratedDataError("captured generation requires an explicit integer item cap")
+    try:
+        idspace.validate_domain_cap(idspace.domain_by_key("item"), item_id_cap)
+    except idspace.CapError as error:
+        raise GeneratedDataError(str(error)) from error
+    _output_path(logical_dir + "/asset_manifest.mk", ASSET_BUILD_ROOT, repository_relative=True)
+    out_dir = _logical_output_dir(os.path.join(REPO_ROOT, logical_dir))
+    if selection_stamp is not None and selection_stamp != logical_dir + ".manifest-selection":
+        raise GeneratedDataError("captured generation selection stamp differs from its output root")
+    records = load_captured_and_validate(
+        manifest_path, tracked_sources=tracked_sources, source_identities=source_identities,
+        custom_spell_effects=custom_spell_effects, item_id_cap=item_id_cap,
+    )
+    outputs = {
+        os.path.relpath(path, REPO_ROOT): content
+        for path, content in _expected_outputs(records, out_dir).items()
+    }
+    if selection_stamp is not None:
+        outputs[selection_stamp] = _selection_stamp_content(
+            manifest_path, custom_spell_effects, item_id_cap
+        ).encode("utf-8")
     return outputs
 
 
@@ -2893,11 +2937,13 @@ def _write_selection_stamp(
         )
     _write_if_changed(
         expected,
-        "manifest={}\ncustom_spell_effects={}\nitem_id_cap=0x{:02X}\n".format(
-            os.path.abspath(manifest_path),
-            custom_spell_effects,
-            item_id_cap,
-        ),
+        _selection_stamp_content(manifest_path, custom_spell_effects, item_id_cap),
+    )
+
+
+def _selection_stamp_content(manifest_path, custom_spell_effects, item_id_cap):
+    return "manifest={}\ncustom_spell_effects={}\nitem_id_cap=0x{:02X}\n".format(
+        os.path.abspath(manifest_path), custom_spell_effects, item_id_cap,
     )
 
 

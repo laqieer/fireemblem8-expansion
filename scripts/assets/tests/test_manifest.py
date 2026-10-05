@@ -1039,6 +1039,73 @@ class AssetManifestTests(unittest.TestCase):
                             custom_spell_effects=custom, item_id_cap=cap,
                         )
 
+    def test_captured_generation_matches_real_complete_outputs_without_destination_probes(self):
+        original_islink, original_realpath = os.path.islink, os.path.realpath
+
+        def immutable_query(original, path, *args, **kwargs):
+            if os.path.abspath(path).startswith(manifest.ASSET_BUILD_ROOT + os.sep):
+                raise AssertionError("renderer queried mutable build destination")
+            return original(path, *args, **kwargs)
+
+        for cap in (0xCD, 0xCE):
+            for custom in (0, 1):
+                for suffix in ("primary", "alternate/generated/assets"):
+                    with self.subTest(cap=cap, custom=custom, suffix=suffix):
+                        source = os.path.join(
+                            REPO_ROOT, "assets",
+                            "manifests/custom-spell-reference.json" if custom else "manifest.json",
+                        )
+                        out_dir = os.path.join(TEST_ROOT, str(cap), str(custom), suffix)
+                        stamp = out_dir + ".manifest-selection"
+                        records = manifest.generate(
+                            source, out_dir, custom, item_id_cap=cap, selection_stamp=stamp,
+                        )
+                        expected = manifest.expected_outputs(records, out_dir)
+                        with open(stamp, "rb") as handle:
+                            expected[stamp] = handle.read()
+                        identities = captured_discovery_identities(source, records)
+                        with mock.patch.object(os.path, "islink", side_effect=lambda p: immutable_query(original_islink, p)), \
+                             mock.patch.object(os.path, "realpath", side_effect=lambda p, **kw: immutable_query(original_realpath, p, **kw)), \
+                             mock.patch.object(manifest.subprocess, "run", side_effect=AssertionError("unexpected Git subprocess")):
+                            actual = manifest.render_generation_artifact(
+                                source, os.path.relpath(out_dir, REPO_ROOT),
+                                tracked_sources=frozenset(row[0] for row in identities),
+                                source_identities=identities, custom_spell_effects=custom,
+                                item_id_cap=cap, selection_stamp=os.path.relpath(stamp, REPO_ROOT),
+                            )
+                        self.assertEqual(
+                            actual, {os.path.relpath(p, REPO_ROOT): content for p, content in expected.items()},
+                        )
+                        for path, content in actual.items():
+                            with open(os.path.join(REPO_ROOT, path), "rb") as handle:
+                                self.assertEqual(handle.read(), content)
+
+    def test_captured_generation_rejects_invalid_logical_outputs_before_sources(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        for logical in (None, "", "../generated/assets", "/build/generated/assets",
+                        "build/generated/assets/../escape", "build//generated/assets", "build/other"):
+            with self.subTest(logical=logical), mock.patch.object(
+                manifest, "load_captured_and_validate", side_effect=AssertionError("source read before output admission"),
+            ):
+                with self.assertRaises(GeneratedDataError):
+                    manifest.render_generation_artifact(
+                        source, logical, tracked_sources=frozenset(), source_identities=[],
+                        custom_spell_effects=0, item_id_cap=0xCD,
+                    )
+        with self.assertRaises(GeneratedDataError):
+            manifest.render_generation_artifact(
+                source, "build/generated/assets", tracked_sources=frozenset(), source_identities=[],
+                custom_spell_effects=0, item_id_cap=0xCD, selection_stamp="build/foreign.manifest-selection",
+            )
+        for custom, cap in ((None, 0xCD), (True, 0xCD), (2, 0xCD),
+                            (0, None), (0, True), (0, 0x100)):
+            with self.subTest(custom=custom, cap=cap):
+                with self.assertRaises(GeneratedDataError):
+                    manifest.render_generation_artifact(
+                        source, "build/generated/assets", tracked_sources=frozenset(), source_identities=[],
+                        custom_spell_effects=custom, item_id_cap=cap,
+                    )
+
     def test_captured_discovery_rejects_missing_source_membership(self):
         source = os.path.join(REPO_ROOT, "assets", "manifest.json")
         records = manifest.load_discovery(source)
