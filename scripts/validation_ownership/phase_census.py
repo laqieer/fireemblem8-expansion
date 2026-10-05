@@ -14,6 +14,7 @@ from .graph_commands import _shell_tokens
 from .make_probe import _NamespaceUnavailable
 from . import graph_probe as graph
 from . import read_epochs
+from .producer_channel import publication_file_versions
 
 
 ORIGINS = {
@@ -765,13 +766,10 @@ class OriginalSourceProof:
         self.versions = {}
         for event in self.publications.values():
             confirmation = event["confirmation"]
-            if confirmation.get("kind") == "filesystem":
-                after = confirmation["after"]
-                values = [] if after is None else [{
-                    "path": after[0], "mode": after[2], "size": after[3], "sha256": after[4], "identity": after[5],
-                }]
-            else:
-                values = confirmation["outputs"]
+            values = publication_file_versions(
+                confirmation, count_limit=session.budget.limits.observation_count,
+                file_limit=session.budget.limits.file_bytes,
+            )
             for value in values:
                 key = value["path"], tuple(value["identity"])
                 self.versions.setdefault(key, []).append((event["trace_seq"], value))

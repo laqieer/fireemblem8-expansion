@@ -1,9 +1,11 @@
 """Actual native effect origins, not complete source-phase authority."""
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 import shlex
+import tempfile
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
@@ -14,6 +16,8 @@ from scripts.validation_ownership.budget import MakeProbeError
 from scripts.validation_ownership.make_probe import Command
 from scripts.validation_ownership.producer_channel import ProducerChannel
 from scripts.validation_ownership.producer_channel import ChannelError
+from scripts.validation_ownership.producer_channel import publication_identity
+from scripts.validation_ownership.producer_channel import publication_file_versions
 from scripts.validation_ownership.tests.test_read_epochs import CompletionTraceDataApiTests
 from scripts.validation_ownership.tests import test_foundation as foundation
 from scripts.validation_ownership.tests import test_source_phases as phases
@@ -64,6 +68,131 @@ class CompletionEffectDataApiTests(unittest.TestCase):
                     bad, changed, dispatches=dispatches, requests=[], publications=publications,
                     count_limit=32, file_limit=1024,
                 )
+
+
+class PublicationVersionTests(unittest.TestCase):
+    def test_actual_transferred_file_and_retired_versions_have_exact_custody(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = b"HEADERS := include/global.h\n"
+            temporary = root / "target.headers.d.tmp2"
+            temporary.write_bytes(data)
+            digest = hashlib.sha256(data).hexdigest()
+            owner = "a" * 64
+            target = "build/target.headers.d"
+            before = [
+                target + ".tmp2", owner, temporary.stat().st_mode & 0o777, len(data), digest,
+                list(publication_identity(temporary.stat())),
+            ]
+            final = temporary.rename(root / "target.headers.d")
+            after = [target, *before[1:5], list(publication_identity(final.stat()))]
+            transfer = {
+                "kind": "filesystem", "slot": 0, "owner": owner, "operation": "transfer",
+                "path": target, "source": target + ".tmp2", "before": before, "after": after,
+                "directories": [],
+            }
+            generic = {
+                "slot": 0, "owner": owner, "policy": "replace",
+                "outputs": [{
+                    "path": before[0], "mode": before[2], "size": before[3], "sha256": before[4],
+                    "effect": "created", "identity": before[5],
+                }],
+            }
+            directory_effect = {
+                "kind": "filesystem", "slot": 0, "owner": owner, "operation": "directory",
+                "path": "build", "source": None, "before": None, "after": None, "directories": [],
+            }
+            self.assertEqual(
+                publication_file_versions(generic, count_limit=32, file_limit=1024), generic["outputs"],
+            )
+            self.assertEqual(publication_file_versions(transfer, count_limit=32, file_limit=1024), [{
+                "path": target, "mode": after[2], "size": after[3], "sha256": after[4],
+                "identity": after[5],
+            }])
+            self.assertEqual(publication_file_versions(directory_effect, count_limit=32, file_limit=1024), [])
+            for kind, original in (("generic", generic), ("transfer", transfer)):
+                for defect in ("unknown", "owner", "identity", "size", "count", "path"):
+                    with self.subTest(kind=kind, defect=defect):
+                        bad = copy.deepcopy(original)
+                        count_limit, file_limit = 32, 1024
+                        if defect == "unknown":
+                            bad["unknown"] = True
+                        elif defect == "owner":
+                            bad["owner"] = "b" * 64 if kind == "transfer" else "invalid"
+                        elif defect == "identity":
+                            identity = bad["after"][5] if kind == "transfer" else bad["outputs"][0]["identity"]
+                            identity[3] += 1
+                        elif defect == "size":
+                            file_limit = len(data) - 1
+                        elif defect == "count":
+                            count_limit = 0
+                        elif kind == "transfer":
+                            bad["after"][0] = "build/foreign.headers.d"
+                        else:
+                            bad["outputs"][0]["path"] = ""
+                        with self.assertRaises(ChannelError):
+                            publication_file_versions(bad, count_limit=count_limit, file_limit=file_limit)
+            observer = object.__new__(source_effects.NativeSourceEffects)
+            observer.policy = SimpleNamespace(config={"observation_count": 32, "file_limit": 1024})
+            observer.trace = SimpleNamespace(events=[{}] * 10)
+            observer.events = [
+                {"kind": "publication", "seq": seq, "trace_seq": seq, "producer": seq,
+                 "confirmation": confirmation}
+                for seq, confirmation in enumerate((generic, directory_effect, transfer), 1)
+            ]
+            self.assertEqual(
+                observer.publication_entry(target, after[5]),
+                {"kind": "publication", "event": 3, "producer": 3, "slot": 0, "owner": owner},
+            )
+            self.assertIsNone(observer.publication_entry(before[0], before[5]))
+            self.assertIsNone(observer.publication_entry("build/foreign.mk", after[5]))
+            changed = list(after[5])
+            changed[1] += 1
+            self.assertIsNone(observer.publication_entry(target, changed))
+            retired = root / "target.headers.d.tmp"
+            retired.write_bytes(data)
+            retired_record = [
+                target + ".tmp", owner, retired.stat().st_mode & 0o777, len(data), digest,
+                list(publication_identity(retired.stat())),
+            ]
+            retired.unlink()
+            retire = {
+                "kind": "filesystem", "slot": 0, "owner": owner, "operation": "retire",
+                "path": retired_record[0], "source": None, "before": retired_record, "after": None,
+                "directories": [],
+            }
+            self.assertEqual(publication_file_versions(retire, count_limit=32, file_limit=1024), [])
+            old = copy.deepcopy(generic)
+            old["outputs"][0].update(path=retired_record[0], identity=retired_record[5])
+            for confirmation in (old, retire):
+                seq = len(observer.events) + 1
+                observer.events.append({
+                    "kind": "publication", "seq": seq, "trace_seq": seq, "producer": seq,
+                    "confirmation": confirmation,
+                })
+            self.assertIsNone(observer.publication_entry(retired_record[0], retired_record[5]))
+            self.assertIsNotNone(observer.publication_entry(target, after[5]))
+            replacement = root / "replacement"
+            replacement.write_bytes(b"HEADERS := include/bmunit.h\n")
+            replacement.rename(final)
+            newer = copy.deepcopy(generic)
+            newer["owner"] = "b" * 64
+            newer["outputs"] = [{
+                "path": target, "mode": final.stat().st_mode & 0o777, "size": final.stat().st_size,
+                "sha256": hashlib.sha256(final.read_bytes()).hexdigest(), "effect": "replaced",
+                "identity": list(publication_identity(final.stat())),
+            }]
+            seq = len(observer.events) + 1
+            observer.events.append({
+                "kind": "publication", "seq": seq, "trace_seq": seq, "producer": seq,
+                "confirmation": newer,
+            })
+            self.assertIsNone(observer.publication_entry(target, after[5]))
+            self.assertEqual(observer.publication_entry(target, newer["outputs"][0]["identity"])["owner"], newer["owner"])
+            earlier = source_effects._publication_version_at(
+                observer.events, target, before_seq=seq, count_limit=32, file_limit=1024,
+            )
+            self.assertEqual(earlier[1]["identity"], after[5])
 
 
 class SourceEffectTests(unittest.TestCase):
@@ -202,6 +331,17 @@ class SourceEffectTests(unittest.TestCase):
             self.assertGreater(publications[0]["outputs"][0]["size"], 3_000_000)
             self.assertEqual(publications[-1]["path"], case.target)
             self.assertEqual([row["pass"] for row in result.source_phases["entries"]], [1, 2])
+            self.assertEqual(result.read_trace["version"], 4)
+            opened = [
+                row for row in result.read_trace["events"]
+                if row["kind"] == "source-open" and row["path"] == case.target and row["result"] >= 0
+            ]
+            self.assertEqual(len(opened), 1)
+            self.assertEqual(opened[0]["identity"], publications[-1]["after"][5])
+            self.assertEqual(
+                (opened[0]["custody"]["kind"], opened[0]["custody"]["slot"], opened[0]["custody"]["owner"]),
+                ("publication", publications[-1]["slot"], publications[-1]["owner"]),
+            )
         finally:
             case.tearDown()
 

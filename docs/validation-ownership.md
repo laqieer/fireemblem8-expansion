@@ -239,6 +239,16 @@ successful signing precedes its release, and unconditional cleanup remains.
 The existing native worker installs the ARM compiler and C SDK headers for
 these controls without adding a job or owned command.
 
+Source custody projects both admitted publication forms through the same closed
+confirmation validator and caller count/file limits. Ordinary publications
+retain their exact output entries; a header transfer exposes only its validated
+post-rename file identity. Directory creation and temporary retirement expose
+no readable file version. Live lookup and archived source-open verification
+select the latest preceding version of the requested path, invalidating a moved
+or retired temporary and refusing an older identity after replacement. Historical
+phase evidence still retains earlier versions for reads that actually preceded
+those changes. This projection grants no additional filesystem authority.
+
 This is still **not** complete live-message graph support. The genuine default
 text/SDK/sed component comparison keeps C initially absent, preserves the
 tracked header and uses the original header rule/include guard. It does not

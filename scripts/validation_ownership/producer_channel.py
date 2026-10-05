@@ -329,6 +329,21 @@ def validate_publication_confirmation(value, *, count_limit, file_limit):
     return value
 
 
+def publication_file_versions(value, *, count_limit, file_limit):
+    validate_publication_confirmation(value, count_limit=count_limit, file_limit=file_limit)
+    if value.get("kind") != "filesystem":
+        return value["outputs"]
+    after = value["after"]
+    if after is None:
+        return []
+    if count_limit < 1:
+        raise ChannelError("effective publication file versions exceed the observation count")
+    return [{
+        "path": after[0], "mode": after[2], "size": after[3], "sha256": after[4],
+        "identity": after[5],
+    }]
+
+
 def validate_dispatch_context(value, arguments=None):
     if (
         not isinstance(value, dict)

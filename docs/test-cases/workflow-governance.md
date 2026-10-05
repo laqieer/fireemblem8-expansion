@@ -3880,6 +3880,37 @@ rather than interpreter substitution. Change only the owned captured-image
 mode for its negative; never modify host runtime files. Source/inert lookup
 controls do not establish these native results or the failed run's exact PATH.
 
+### Typed header publication and readable-version custody
+
+This extends **TC-WORKFLOW-GATE-OWNERSHIP-001** for #180 / PR #186 under
+[contract6002379137](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6002379137).
+Use the existing Linux native-probe prerequisites and a clean source checkout;
+the actual header scenario also requires the existing ARM compiler/SDK.
+No feature, locale, ROM, RAM or save-format choice changes.
+
+1. Run
+   `scripts.validation_ownership.tests.test_source_effects.PublicationVersionTests`
+   with the existing isolated unittest runner. It creates real temporary files,
+   renames a header intermediate, unlinks a retired intermediate, and replaces
+   the final file. Expect exact post-rename custody, no readable directory or
+   retired/moved temporary, and no reuse of an older identity after replacement.
+   A read preceding replacement must still select the actual earlier version.
+2. Keep ordinary output entries unchanged. Reject unknown confirmation fields,
+   malformed or foreign owners, mismatched file identities, foreign transfer
+   paths, and exceeded file/count bounds. Directory and retirement confirmations
+   must expose no readable version; transfer exposes only its validated `after`.
+3. Run
+   `SourceEffectTests.test_real_message_arm_filter_and_each_owned_effect_keep_native_origins`
+   in that same module. Expect the actual default-message/ARM/sed/header pipeline,
+   all six original publications, and both source passes to succeed without
+   changing their originating Make intervals.
+
+The deterministic pre-fix controls fail with `KeyError: 'outputs'` when a typed
+directory/transfer confirmation reaches the generic-only consumer. Temporary
+fixtures clean themselves up through the existing test lifecycle. This covers
+the admitted header publication family, not natural whole-Make execution or
+the unchanged full ownership/report/resource and remote completion gates.
+
 ### Original-source runtime-wildcard correction
 
 This extends **TC-WORKFLOW-GATE-OWNERSHIP-001** for #180 / PR #186 and the

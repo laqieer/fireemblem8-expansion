@@ -9,6 +9,7 @@ if __package__:
     from .source_phases import digest
     from .producer_channel import (
         ChannelError, validate_dispatch_context, validate_job_context, validate_publication_confirmation,
+        publication_file_versions,
     )
 else:
     from authority import encoded
@@ -16,6 +17,7 @@ else:
     from source_phases import digest
     from producer_channel import (
         ChannelError, validate_dispatch_context, validate_job_context, validate_publication_confirmation,
+        publication_file_versions,
     )
 
 
@@ -97,6 +99,24 @@ def _read_contexts(trace):
             current = {**current, "visit": visits[-1] if visits else None}
         contexts[event["seq"]] = None if kind in {"pass-entry", "complete"} else current
     return contexts
+
+
+def _publication_version_at(events, path, *, before_seq, count_limit, file_limit):
+    selected = None
+    for event in events:
+        if event["kind"] != "publication" or event["trace_seq"] >= before_seq:
+            continue
+        confirmation = event["confirmation"]
+        versions = publication_file_versions(confirmation, count_limit=count_limit, file_limit=file_limit)
+        if confirmation.get("kind") == "filesystem" and (
+            confirmation["operation"] == "retire" and confirmation["path"] == path
+            or confirmation["operation"] == "transfer" and confirmation["source"] == path
+        ):
+            selected = None
+        for output in versions:
+            if output["path"] == path:
+                selected = event, output
+    return selected
 
 
 def validate_journal(value, trace, *, dispatches, requests, publications, count_limit, file_limit):
@@ -234,11 +254,16 @@ def validate_journal(value, trace, *, dispatches, requests, publications, count_
             if publication is None or publication["producer"] != custody["producer"]:
                 raise ChannelError("original source custody names a foreign publication event")
             confirmation = publication["confirmation"]
-            output = next((row for row in confirmation["outputs"] if row["path"] == opened["path"]), None)
+            effective = _publication_version_at(
+                value["events"], opened["path"], before_seq=opened["seq"],
+                count_limit=count_limit, file_limit=file_limit,
+            )
+            output = None if effective is None else effective[1]
             source = trace["sources"][opened["source"] - 1]
             if (
                 custody["slot"] != confirmation["slot"] or custody["owner"] != confirmation["owner"]
                 or publication["trace_seq"] >= opened["seq"] or output is None
+                or effective[0]["seq"] != publication["seq"]
                 or output["identity"] != opened["identity"]
                 or output["mode"] != source["mode"] or output["size"] != source["bytes"]
                 or output["sha256"] != source["sha256"]
@@ -340,20 +365,18 @@ class NativeSourceEffects:
         self.publications.append(confirmation)
 
     def publication_entry(self, path, identity):
-        matches = []
-        for event in self.events:
-            if event["kind"] != "publication" or event["trace_seq"] > len(self.trace.events):
-                continue
-            confirmation = event["confirmation"]
-            for output in confirmation["outputs"]:
-                if output["path"] == path and tuple(output["identity"]) == tuple(identity):
-                    matches.append({
-                        "kind": "publication", "event": event["seq"], "producer": event["producer"],
-                        "slot": confirmation["slot"], "owner": confirmation["owner"],
-                    })
-        if not matches:
+        selected = _publication_version_at(
+            self.events, path, before_seq=len(self.trace.events) + 1,
+            count_limit=self.policy.config["observation_count"], file_limit=self.policy.config["file_limit"],
+        )
+        if selected is None or tuple(selected[1]["identity"]) != tuple(identity):
             return None
-        return max(matches, key=lambda row: row["event"])
+        event, _ = selected
+        confirmation = event["confirmation"]
+        return {
+            "kind": "publication", "event": event["seq"], "producer": event["producer"],
+            "slot": confirmation["slot"], "owner": confirmation["owner"],
+        }
 
     def finish(self, trace):
         value = {"version": 1, "scope": self.scope, "events": self.events, "closed": True}
