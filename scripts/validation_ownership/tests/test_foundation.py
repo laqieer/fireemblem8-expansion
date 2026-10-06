@@ -170,6 +170,180 @@ class FoundationTests(unittest.TestCase):
                 self.assertTrue(session.budget.failed)
                 self.assert_clean(session)
 
+    def test_native_readonly_exact_kernel_fips_input_matches_actual_capture(self):
+        from scripts.validation_ownership import make_probe
+        path = "/proc/sys/crypto/fips_enabled"
+        actual = Path(path).read_bytes() if Path(path).exists() else None
+        captured = make_probe._capture_runtime_input(path, ProbeBudget())
+        self.assertEqual(captured.data, actual)
+        self.assertEqual(captured.canonical, path)
+        script = (
+            f"if test -e {path}; then read -r mode < {path}; "
+            "printf '%s' \"$mode\"; else printf absent; fi"
+        )
+        self.add("Makefile", "VALUE := $(shell " + script + ")\nall: ; @:\n")
+        session = self.session(runtime_files=(path,))
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",),
+            )
+            self.assertEqual((completed.returncode, completed.stderr), (0, b""))
+            self.assertEqual(
+                semantics["domains"]["VALUE"]["value"],
+                actual.decode("ascii").strip() if actual is not None else "absent",
+            )
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_readonly_kernel_fips_input_has_no_neighbor_write_or_executable_authority(self):
+        from scripts.validation_ownership import make_probe
+        path = "/proc/sys/crypto/fips_enabled"
+        for neighbor in (
+            "/proc/sys/kernel/osrelease", path + "/child", path + ".other", "/proc/self/status",
+        ):
+            with self.subTest(neighbor=neighbor), self.assertRaisesRegex(
+                MakeProbeError, "outside the trusted system tool/library roots",
+            ):
+                make_probe._trusted_runtime_path(neighbor, optional=True)
+        with self.assertRaisesRegex(MakeProbeError, "outside the trusted system tool/library roots"):
+            make_probe._trusted_runtime_path(path)
+        original_resolve = Path.resolve
+        def redirected(source, *args, **kwargs):
+            if str(source) == path:
+                return Path("/proc/sys/kernel/osrelease")
+            return original_resolve(source, *args, **kwargs)
+        with patch.object(Path, "resolve", redirected), self.assertRaisesRegex(
+            MakeProbeError, "kernel FIPS runtime input must be canonical",
+        ):
+            make_probe._capture_runtime_input(path, ProbeBudget())
+        cases = (
+            (f"VALUE := $(shell test -e {path})\nall: ; @:\n", (), "uncaptured Make runtime access"),
+            (f"all: ; @printf changed > {path}\n", (path,), "filesystem write denied"),
+            ("all: ; @:\n", (path,), "outside the trusted system tool/library roots"),
+            ("all: ; @read -r value < /proc/self/status\n", (path,), "uncaptured Make runtime access"),
+        )
+        for index, (makefile, resources, message) in enumerate(cases):
+            self.add("Makefile", makefile)
+            session = self.session(runtime_files=resources)
+            with self.subTest(index=index), self.assertRaisesRegex(MakeProbeError, message):
+                with session:
+                    session._native_make_readonly(
+                        "all", native_executables=(path,) if index == 2 else (),
+                    )
+            self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_kernel_fips_reader_captures_actual_linux_int_sysctl(self):
+        from scripts.validation_ownership import make_probe
+        source = Path("/proc/sys/kernel/pid_max")
+        before = source.stat()
+        self.assertEqual(before.st_size, 0)
+        actual = source.read_bytes()
+        self.assertGreater(len(actual), 0)
+        with self.assertRaisesRegex(MakeProbeError, "control file changed during bounded read"):
+            ProbeBudget().read_bytes(source, "control")
+        budget = ProbeBudget()
+        captured = make_probe._kernel_fips_bytes(
+            source, budget, make_probe._runtime_input_identity(before),
+        )
+        self.assertEqual(captured, actual)
+        self.assertEqual(source.read_bytes(), actual)
+        self.assertGreaterEqual(budget.bytes["control"], len(captured))
+        self.assertLessEqual(budget.bytes["control"], 64)
+        self.assertFalse(budget.failed)
+        with self.assertRaisesRegex(MakeProbeError, "outside the trusted system tool/library roots"):
+            make_probe._trusted_runtime_path(str(source), optional=True)
+
+    def test_kernel_fips_zero_size_bounded_bytes_and_identity_controls(self):
+        from scripts.validation_ownership import make_probe
+        source = self.directory / "kernel-data"
+        source.write_bytes(b"0\n")
+        inode = source.stat().st_ino
+        real_fstat = os.fstat
+
+        def zero_size(info):
+            return SimpleNamespace(
+                st_dev=info.st_dev, st_ino=info.st_ino, st_mode=info.st_mode,
+                st_uid=info.st_uid, st_gid=info.st_gid, st_size=0,
+                st_mtime_ns=info.st_mtime_ns, st_ctime_ns=info.st_ctime_ns,
+            )
+
+        def kernel_stat(descriptor):
+            info = real_fstat(descriptor)
+            return zero_size(info) if info.st_ino == inode else info
+
+        with patch.object(os, "fstat", kernel_stat):
+            with self.assertRaisesRegex(MakeProbeError, "control file changed during bounded read"):
+                ProbeBudget().read_bytes(source, "control")
+            for data in (b"0\n", b"1\n", b"-2147483648\n", b"2147483647\n"):
+                source.write_bytes(data)
+                expected = make_probe._runtime_input_identity(zero_size(source.stat()))
+                budget = ProbeBudget()
+                self.assertEqual(make_probe._kernel_fips_bytes(source, budget, expected), data)
+                self.assertGreaterEqual(budget.bytes["control"], len(data))
+                self.assertLessEqual(budget.bytes["control"], 64)
+                self.assertFalse(budget.failed)
+            for data, limits, message in (
+                (b"x" * 13, {}, "exceeds bounded kernel-data admission"),
+                (b"0\n", {"file_bytes": 1}, "exceeds bounded kernel-data admission"),
+                (b"0\n", {"control_bytes": 1}, "aggregate control byte budget exhausted"),
+            ):
+                source.write_bytes(data)
+                expected = make_probe._runtime_input_identity(zero_size(source.stat()))
+                budget = ProbeBudget(Limits(**limits))
+                with self.subTest(limits=limits, size=len(data)), self.assertRaisesRegex(MakeProbeError, message):
+                    make_probe._kernel_fips_bytes(source, budget, expected)
+                self.assertTrue(budget.failed)
+                self.assertEqual(source.read_bytes(), data)
+            expected = make_probe._runtime_input_identity(zero_size(source.stat()))
+            wrong = (*expected[:1], expected[1] + 1, *expected[2:])
+            budget = ProbeBudget()
+            with self.assertRaisesRegex(MakeProbeError, "changed before its bounded read"):
+                make_probe._kernel_fips_bytes(source, budget, wrong)
+            self.assertTrue(budget.failed)
+            source.write_bytes(b"0\n")
+            expected = make_probe._runtime_input_identity(zero_size(source.stat()))
+            original_fdopen = os.fdopen
+            class ChangingReader:
+                def __init__(self, stream):
+                    self.stream = stream
+                    self.changed = False
+                def __enter__(self):
+                    self.stream.__enter__()
+                    return self
+                def __exit__(self, *args):
+                    return self.stream.__exit__(*args)
+                def fileno(self):
+                    return self.stream.fileno()
+                def read(self, size):
+                    data = self.stream.read(size)
+                    if not self.changed:
+                        source.write_bytes(b"1\n")
+                        self.changed = True
+                    return data
+            def changing_reader(*args, **kwargs):
+                return ChangingReader(original_fdopen(*args, **kwargs))
+            budget = ProbeBudget()
+            with patch.object(os, "fdopen", changing_reader), self.assertRaisesRegex(
+                MakeProbeError, "changed during its bounded read",
+            ):
+                make_probe._kernel_fips_bytes(source, budget, expected)
+            self.assertTrue(budget.failed)
+            self.assertEqual(source.read_bytes(), b"1\n")
+            class BlockingReader(ChangingReader):
+                def read(self, size):
+                    return None
+            def blocking_reader(*args, **kwargs):
+                return BlockingReader(original_fdopen(*args, **kwargs))
+            expected = make_probe._runtime_input_identity(zero_size(source.stat()))
+            budget = ProbeBudget()
+            with patch.object(os, "fdopen", blocking_reader), self.assertRaisesRegex(
+                MakeProbeError, "blocked during its bounded read",
+            ):
+                make_probe._kernel_fips_bytes(source, budget, expected)
+            self.assertTrue(budget.failed)
+            self.assertEqual(source.read_bytes(), b"1\n")
+
     def test_native_readonly_managed_python_directory_preserves_real_namespace(self):
         runtime = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}"
         source = Path(runtime) / "json/__init__.py"

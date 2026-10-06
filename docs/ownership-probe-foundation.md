@@ -295,6 +295,35 @@ remain unqualified by these member results.
 
 ### Original source-entry observation component
 
+The existing explicit `runtime_files` declarations may capture the one
+canonical kernel-data input `/proc/sys/crypto/fips_enabled`. Actual bytes or
+actual absence are captured under the same trust, identity and ancestor
+checks, then materialized in the sealed private root. No live `/proc` tree is
+mounted into the guest and no generic proc, write or executable authority is
+added. Nonoptional tool/library use and redirects remain forbidden. Present
+Linux int-sysctl data has nonrepresentative zero `st_size`: its exact capture
+uses a bounded 13-byte lookahead with reserved probe/result buffers and live
+descriptor identity checks, not the ordinary size-based file reader. The
+generic reader and every original limit remain unchanged.
+For #270 `TC-WORKFLOW-NATIVE-MAKE-001`, run
+`test_native_readonly_exact_kernel_fips_input_matches_actual_capture` to compare
+actual host capture with original Make shell visibility (including the actual
+absent input on the development host); do not relabel a fabricated fixture as
+a present-kernel observation. Run
+`test_native_readonly_kernel_fips_input_has_no_neighbor_write_or_executable_authority`
+for uncaptured, neighbor, canonical-redirect, write and executable refusals.
+Run `test_kernel_fips_zero_size_bounded_bytes_and_identity_controls` for actual
+owned-file reads with explicitly shaped zero-size metadata, full signed-int
+data, byte/control bounds, wrong identity and physical mid-read content change.
+This finite pseudo-file control is not an actual present-kernel observation.
+Run `test_kernel_fips_reader_captures_actual_linux_int_sysctl` for the same
+bounded reader on a real present zero-size Linux int-sysctl inode
+(`/proc/sys/kernel/pid_max`), with ordinary-reader preimage and byte equality.
+That read-only kernel control does not grant its pathname any runtime-file
+authority and is not an actual present FIPS-file observation.
+Other runtime dependencies and the complete original eight-query outcome
+remain independently required.
+
 Native readonly inventory and source admission use the original fixed
 per-file bound, not the declining remaining channel allowance. Actual
 metadata/source capture still reserves aggregate observation bytes before

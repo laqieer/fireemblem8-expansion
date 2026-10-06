@@ -293,17 +293,20 @@ def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
     if not requested.is_absolute() or str(requested) != path or ".." in requested.parts:
         raise MakeProbeError("noncanonical trusted runtime path")
     sitecustomize = optional and re.fullmatch(r"/etc/python[0-9]+\.[0-9]+/sitecustomize\.py", path)
+    kernel_fips = optional and path == "/proc/sys/crypto/fips_enabled"
     roots = (
         "/usr/bin/", "/usr/lib/", "/usr/lib64/", "/lib/", "/lib64/",
         *(("/usr/libexec/",) if compiler else ()),
         *(("/usr/", "/bin/", ENVIRONMENT["HOME"] + "/") if optional else ()),
-        *((path,) if sitecustomize else ()),
+        *((path,) if sitecustomize or kernel_fips else ()),
     )
     if not path.startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
     resolved = Path(path).resolve(strict=not optional)
     if sitecustomize and resolved.as_posix() != path:
         raise MakeProbeError("sitecustomize runtime input must be canonical")
+    if kernel_fips and resolved.as_posix() != path:
+        raise MakeProbeError("kernel FIPS runtime input must be canonical")
     if not resolved.as_posix().startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
     for entry in {Path(path), *Path(path).parents, resolved, *resolved.parents}:
@@ -322,6 +325,40 @@ def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
 
 def _trusted_runtime_bytes(path: str, budget: ProbeBudget):
     return budget.read_bytes(_trusted_runtime_path(path), "control")
+
+
+def _runtime_input_identity(info):
+    return None if info is None else (
+        info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+        info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+    )
+
+
+def _kernel_fips_bytes(path, budget, expected):
+    # A Linux int sysctl needs at most 12 bytes but reports a zero file size.
+    maximum = min(13, budget.limits.file_bytes + 1)
+    budget.remaining()
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, "rb", buffering=0) as stream:
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode) or _runtime_input_identity(before) != expected:
+            budget.reject("kernel FIPS input changed before its bounded read")
+        # Reserve lookahead, assembled bytes and the returned immutable image.
+        budget.charge("control", 3 * maximum)
+        data = bytearray()
+        while len(data) < maximum:
+            budget.remaining()
+            block = stream.read(maximum - len(data))
+            if block is None:
+                budget.reject("kernel FIPS input blocked during its bounded read")
+            if not block:
+                break
+            data.extend(block)
+        if len(data) >= maximum or len(data) > budget.limits.file_bytes:
+            budget.reject("kernel FIPS input exceeds bounded kernel-data admission")
+        if _runtime_input_identity(os.fstat(stream.fileno())) != expected:
+            budget.reject("kernel FIPS input changed during its bounded read")
+        return bytes(data)
 
 
 def _capture_runtime_input(path, budget):
@@ -375,23 +412,21 @@ def _capture_runtime_input(path, budget):
             aliases.append((path, target))
         if not stat.S_ISREG(resource_before.st_mode) or resource_before.st_mode & 0o7000:
             raise MakeProbeError("runtime input is not an ordinary regular file")
-        data = budget.read_bytes(resolved, "control")
+        data = _kernel_fips_bytes(
+            resolved, budget, _runtime_input_identity(resource_before),
+        ) if path == "/proc/sys/crypto/fips_enabled" else budget.read_bytes(resolved, "control")
         mode = stat.S_IMODE(resource_before.st_mode)
     try:
         after = Path(path).lstat()
     except FileNotFoundError:
         after = None
-    def identity(info):
-        return None if info is None else (
-            info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
-            info.st_size, info.st_mtime_ns, info.st_ctime_ns,
-        )
     try:
         resource_after = None if resource_before is None else resolved.lstat()
     except FileNotFoundError as error:
         raise MakeProbeError("runtime input changed during capture") from error
     if (
-        identity(before) != identity(after) or identity(resource_before) != identity(resource_after)
+        _runtime_input_identity(before) != _runtime_input_identity(after)
+        or _runtime_input_identity(resource_before) != _runtime_input_identity(resource_after)
         or _trusted_runtime_path(path, optional=True) != resolved
     ):
         raise MakeProbeError("runtime input changed during capture")
