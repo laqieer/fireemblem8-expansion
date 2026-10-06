@@ -178,6 +178,34 @@ artifact is involved. Full assignment-completion/caller/job observations,
 machine/restoration adversaries, generated-version lifecycle, all eight
 original profiles in one budget and every remote delivery gate remain open.
 
+`TC-OWNERSHIP-NATIVE-TRACE-COUNT-001` (#270) covers shared count custody.
+Trace events, actual hardware-breakpoint traps and configured machine records
+reserve the same aggregate count as filesystem attempts. Each trace reservation
+uses the existing 128-byte bookkeeping allowance, in addition to actual
+metadata bytes. Successful and failed reports settle this total into the one
+session; subsequent queries receive only its remainder. Filesystem records
+retain their existing deduplication, while distinct trace records and traps
+are not deduplicated.
+
+From a clean host checkout, run
+`test_native_trace_count_shares_filesystem_event_machine_and_trap_limit`:
+four filesystem records plus four event records fill an eight-record allowance.
+The next event, machine record, trap or filesystem attempt must refuse without
+incrementing past eight. Run
+`test_native_readonly_trace_count_settles_across_queries`: a real readonly
+Make source trace in a 1024-entry fixture must report filesystem attempts plus
+every event and trap, measured from actual supervisor state at trace finish.
+Successful filesystem result lists alone omit unsuccessful attempts and cannot
+substitute for that count. Spend all but one remaining
+entry through the ordinary command seam; the next native query must consume
+that remainder, fail, settle exactly 1024 observations and clean owned state.
+The initial 64-entry fixture cannot hold Make's original variable table and is
+not a count-accounting control. Pre-fix reports omit the trace count.
+Dependencies are the existing readonly source trace and supervisor settlement;
+conflicts are none. Production limits, ordinary mapped behavior, ROM/RAM,
+save compatibility, generated data and localization are unchanged. These
+controls do not qualify the full supplier or the original eight-profile family.
+
 ## Run the real consumer
 
 From a source checkout:

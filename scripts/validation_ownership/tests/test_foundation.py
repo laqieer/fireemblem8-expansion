@@ -452,6 +452,69 @@ class FoundationTests(unittest.TestCase):
             self.assertTrue(all(row["identity"] is not None for row in opens[:-1]))
         self.assert_clean(session)
 
+    def test_native_readonly_trace_count_settles_across_queries(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@:\n")
+        names = tuple(f"reservoir/{index}" for index in range(1022))
+        for name in names:
+            self.add(name, "x")
+        session = self.session(entries=1024)
+        with session:
+            counts_path = self.directory / "actual-trace-counts.json"
+            body = (
+                "import read_trace\n"
+                "original=read_trace.NativeReadTrace.finish\n"
+                "def observed(self):\n"
+                " result=original(self)\n"
+                f" Path({str(counts_path)!r}).write_text(json.dumps({{\n"
+                "  'filesystem':sum(map(len,self.policy.observation_attempts.values())),\n"
+                "  'events':len(self.events),'traps':self.traps}))\n"
+                " return result\n"
+                "read_trace.NativeReadTrace.finish=observed\n"
+            )
+            with self.native_supervisor(body):
+                result, report, _, _ = self.capture_supervisor_report(
+                    session, lambda: session._native_make_readonly("all", observe_reads=True),
+                )
+            counts = json.loads(counts_path.read_bytes())
+            self.assertEqual(counts["events"], len(result[2]["read_trace"]["events"]))
+            self.assertGreater(counts["traps"], 0)
+            self.assertEqual(report["observations"], sum(counts.values()))
+            self.assertEqual(session.observations_used, report["observations"])
+            self.spend_observation_remainder(session, names, keep=1)
+            with self.assertRaisesRegex(MakeProbeError, "observation.*budget exhausted"):
+                session._native_make_readonly("all", observe_reads=True)
+            self.assertEqual(session.observations_used, 1024)
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_trace_count_shares_filesystem_event_machine_and_trap_limit(self):
+        from scripts.validation_ownership.read_trace import NativeReadTrace
+        from scripts.validation_ownership.syscall_guard import Process, Violation
+        for next_record in ("event", "machine", "trap", "filesystem"):
+            with self.subTest(next_record=next_record):
+                policy = self.observation_policy(count=8)
+                trace = NativeReadTrace.__new__(NativeReadTrace)
+                trace.policy, trace.config = policy, policy.config
+                trace.events, trace.machine, trace.traps = [], [], 0
+                trace.execs, trace.passes, trace.pid, trace.bias = 1, 1, 1, 0
+                trace.deadline = lambda: None
+                for index in range(4):
+                    policy.observe("accessed", f"/repo/{index}")
+                    trace.event("source-entry", visit=index + 1)
+                self.assertEqual(policy.counters()["observations"], 8)
+                with self.assertRaisesRegex(Violation, "aggregate.*observation.*budget exhausted"):
+                    if next_record == "event":
+                        trace.event("complete")
+                    elif next_record == "machine":
+                        trace.machine_event("trap", 1)
+                    elif next_record == "trap":
+                        trace.trap(2, Process("make"))
+                    else:
+                        policy.observe("accessed", "/repo/extra")
+                self.assertEqual(policy.counters()["observations"], 8)
+                self.assertEqual(len(trace.events), 4)
+                self.assertEqual(trace.machine, [])
+
     def test_native_readonly_source_frame_and_pin_mutations_refuse(self):
         self.add("Makefile", ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n")
         for body, expected in (

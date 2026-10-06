@@ -270,6 +270,7 @@ class Policy:
         self.observation_attempts = {
             name: set() for name in ("consumed", "code_consumed", "accessed")
         }
+        self.trace_observations = 0
         self.written = 0
         self.calls = 0
         self.created = 0
@@ -372,13 +373,22 @@ class Policy:
         if request is not None:
             self.read_trace = NativeReadTrace(self, request)
 
+    def observation_count(self):
+        return sum(map(len, self.observation_attempts.values())) + self.trace_observations
+
+    def reserve_trace_observation(self):
+        self.charge_metadata(128)
+        if self.observation_count() >= self.config["observation_count"]:
+            raise Violation("aggregate native trace observation budget exhausted")
+        self.trace_observations += 1
+
     def reserve_observation(self, name, value):
         attempted = self.observation_attempts[name]
         if value not in attempted:
             self.observation_bytes += len(value.encode("utf-8")) + 128
             if (
                 self.observation_bytes > self.config["observation_limit"]
-                or sum(map(len, self.observation_attempts.values())) >= self.config["observation_count"]
+                or self.observation_count() >= self.config["observation_count"]
             ):
                 raise Violation("aggregate filesystem-observation budget exhausted")
             attempted.add(value)
@@ -803,7 +813,7 @@ class Policy:
             "processes": self.total_processes, "syscalls": self.calls,
             "written_bytes": self.written, "created_files": self.created,
             "observation_bytes": self.observation_bytes,
-            "observations": sum(map(len, self.observation_attempts.values())),
+            "observations": self.observation_count(),
             "live_process_peak": self.live_process_peak, "memory_peak": self.memory_peak,
         }
 
@@ -819,7 +829,7 @@ class Policy:
         spent = {
             "descendant_limit": self.total_processes, "syscall_limit": self.calls,
             "write_limit": self.written, "creation_limit": self.created,
-            "observation_count": sum(map(len, self.observation_attempts.values())),
+            "observation_count": self.observation_count(),
             "observation_limit": self.observation_bytes,
             "process_limit": self.reservations()["processes"],
             "memory_limit": self.reservations()["memory"],
@@ -2419,7 +2429,7 @@ def supervise(config, drop_privileges):
                 "created_files": policy.created,
                 "memory_peak": policy.memory_peak,
                 "observation_bytes": policy.observation_bytes,
-                "observations": sum(map(len, policy.observation_attempts.values())),
+                "observations": policy.observation_count(),
                 "metadata": encode_metadata_transport(policy.metadata),
                 "events": policy.events,
             }

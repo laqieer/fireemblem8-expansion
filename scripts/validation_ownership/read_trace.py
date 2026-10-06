@@ -104,8 +104,7 @@ class NativeReadTrace:
         rows = getattr(self, "machine", None)
         if rows is None:
             return
-        if len(rows) + len(self.events) + self.traps >= self.config["observation_count"]:
-            raise read_epochs.ReadEpochError("native machine observations exceed the existing bound")
+        self.policy.reserve_trace_observation()
         row = {
             "seq": len(rows) + 1, "kind": kind, "trace_seq": len(self.events), "pid": pid,
             "exec": self.execs, "pass": self.passes,
@@ -115,8 +114,7 @@ class NativeReadTrace:
         rows.append(row)
 
     def event(self, kind, **fields):
-        if len(self.events) + getattr(self, "traps", 0) >= self.config["observation_count"]:
-            raise read_epochs.ReadEpochError("original read event count exceeds its existing bound")
+        self.policy.reserve_trace_observation()
         row = {"seq": len(self.events) + 1, "kind": kind, **fields}
         self.policy.charge_metadata(len(encoded(row)))
         self.events.append(row)
@@ -273,10 +271,9 @@ class NativeReadTrace:
 
     def trap(self, pid, state):
         self.deadline()
+        self.policy.reserve_trace_observation()
         self.traps += 1
         self.policy.charge_metadata(64)
-        if self.traps + len(self.events) >= self.config["observation_count"]:
-            raise read_epochs.ReadEpochError("original read traps exceed existing observation bound")
         if pid != self.pid or state.role != "make" or self.bias is None:
             raise read_epochs.ReadEpochError("foreign process claimed an original read breakpoint")
         info = (ctypes.c_ubyte * 128)()
