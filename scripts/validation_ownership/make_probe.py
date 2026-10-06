@@ -2154,7 +2154,7 @@ class ProbeSession:
             completions=observe_completions or observe_runtime_completions,
         ) if observe_reads else None
         read_selection = self._native_completion_selection(
-            runtime=observe_runtime_completions,
+            **({"runtime": True} if observe_runtime_completions else {}),
         ) if observe_completions or observe_runtime_completions else None
         if observe_reads:
             environment["VO_OBSERVE_READS"] = "1"

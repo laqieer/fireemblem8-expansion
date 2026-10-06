@@ -23,6 +23,7 @@ import unittest
 import venv
 from contextlib import contextmanager
 from dataclasses import FrozenInstanceError, asdict, dataclass, fields, replace
+from functools import wraps
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -54,6 +55,14 @@ from scripts.validation_ownership.python_commands import (
 
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+def owned_timezone(method):
+    @wraps(method)
+    def run(self):
+        with self.owned_timezone_fixture():
+            return method(self)
+    return run
 
 
 class FoundationTests(unittest.TestCase):
@@ -253,6 +262,38 @@ class FoundationTests(unittest.TestCase):
             "/usr/bin/lib/python" + version + "/lib-dynload",
         )
 
+    @contextmanager
+    def owned_timezone_fixture(self):
+        from scripts.validation_ownership import make_probe
+        root = self.directory / "timezone"
+        target = root / "usr/share/zoneinfo/Etc/UTC"
+        target.parent.mkdir(parents=True)
+        target.write_bytes(Path("/usr/share/zoneinfo/Etc/UTC").read_bytes())
+        target.chmod(0o644)
+        (target.parent.parent / "UTC").symlink_to("Etc/UTC")
+        capture = make_probe._capture_runtime_input
+
+        def guest(path):
+            return "/" + str(Path(path).relative_to(root))
+
+        def captured(path, budget):
+            if path not in {"/usr/share/zoneinfo/UTC", "/usr/share/zoneinfo/Etc/UTC"}:
+                return capture(path, budget)
+            owned = root / path.lstrip("/")
+            with patch.object(make_probe, "_trusted_runtime_path", return_value=owned.resolve()):
+                item = capture(str(owned), budget)
+            return replace(
+                item, path=path, canonical=guest(item.canonical),
+                parents=tuple(
+                    (guest(parent), present) for parent, present in item.parents
+                    if root in Path(parent).parents
+                ) + (("/", True),),
+                aliases=tuple((guest(alias), link) for alias, link in item.aliases),
+            )
+
+        with patch.object(make_probe, "_capture_runtime_input", side_effect=captured):
+            yield
+
     def test_native_readonly_python_declared_startup_still_refuses_uncaptured_timezone(self):
         runtime, resources = self.native_python_startup_fixture()
         session = self.session(runtime_files=resources)
@@ -266,6 +307,7 @@ class FoundationTests(unittest.TestCase):
                 )
         self.assert_clean(session)
 
+    @owned_timezone
     def test_native_optional_usr_data_capture_preserves_bytes_and_real_absence(self):
         from scripts.validation_ownership import make_probe
         budget = ProbeBudget()
@@ -286,6 +328,31 @@ class FoundationTests(unittest.TestCase):
         self.assertEqual(alias.canonical, captured.canonical)
         self.assertIn(("/usr/share/zoneinfo/UTC", "Etc/UTC"), alias.aliases)
 
+    def test_native_runtime_system_owner_and_write_permissions_refuse_before_capture(self):
+        from scripts.validation_ownership import make_probe
+        resource = "/usr/share/zoneinfo/Etc/UTC"
+        lstat = Path.lstat
+        for mutation in ("foreign-owner", "group-write", "other-write"):
+            def shaped(path):
+                row = list(lstat(path))
+                row[4] = 0
+                row[0] &= ~(stat.S_IWGRP | stat.S_IWOTH)
+                if str(path) == resource:
+                    if mutation == "foreign-owner":
+                        row[4] = os.getuid() or 1001
+                    else:
+                        row[0] |= stat.S_IWGRP if mutation == "group-write" else stat.S_IWOTH
+                return os.stat_result(row)
+            budget = ProbeBudget()
+            with self.subTest(mutation=mutation), patch.object(Path, "lstat", shaped), patch.object(
+                budget, "read_bytes", side_effect=AssertionError("untrusted system bytes captured"),
+            ) as read:
+                with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted runtime input"):
+                    make_probe._capture_runtime_input(resource, budget)
+                read.assert_not_called()
+                self.assertEqual(budget.bytes, {})
+
+    @owned_timezone
     def test_native_readonly_python_captured_alias_and_dynamic_import(self):
         runtime, resources = self.native_python_startup_fixture()
         session = self.session(runtime_files=(*resources, "/usr/share/zoneinfo/UTC"))
@@ -300,6 +367,7 @@ class FoundationTests(unittest.TestCase):
             self.assertIn("/usr/share/zoneinfo/Etc/UTC", observed["accessed"])
         self.assert_clean(session)
 
+    @owned_timezone
     def test_native_readonly_default_python_home_absence_does_not_hide_installed_site(self):
         runtime, resources = self.native_python_startup_fixture()
         home_site = (
@@ -443,6 +511,7 @@ class FoundationTests(unittest.TestCase):
         self.assertFalse((self.root / "forbidden").exists())
         self.assert_clean(session)
 
+    @owned_timezone
     def test_native_readonly_default_python_declared_site_startup(self):
         runtime, resources = self.native_python_startup_fixture()
         home_site = ENVIRONMENT["HOME"] + f"/.local/lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages"
@@ -558,8 +627,11 @@ class FoundationTests(unittest.TestCase):
         with patch.object(make_probe, "_trusted_runtime_path", return_value=self.root / "missing"):
             with self.assertRaisesRegex(MakeProbeError, "runtime file alias has a missing target"):
                 make_probe._capture_runtime_input(str(alias), ProbeBudget())
-        with self.assertRaisesRegex(MakeProbeError, "single canonical target"):
-            make_probe._capture_runtime_input("/usr/share/zoneinfo/localtime", ProbeBudget())
+        alias.unlink()
+        alias.symlink_to("../repo/target")
+        with patch.object(make_probe, "_trusted_runtime_path", return_value=target):
+            with self.assertRaisesRegex(MakeProbeError, "single canonical target"):
+                make_probe._capture_runtime_input(str(alias), ProbeBudget())
 
     def test_captured_file_alias_traversal_refuses_and_direct_spellings_roundtrip(self):
         from scripts.validation_ownership import make_probe
@@ -596,6 +668,7 @@ class FoundationTests(unittest.TestCase):
                 self.assertEqual(destination.read_bytes(), resolved.read_bytes())
                 alias.unlink()
 
+    @owned_timezone
     def test_native_readonly_captured_alias_metadata_and_overlap(self):
         self.add("Makefile", ".PHONY: all\nall: ; @/usr/bin/readlink /usr/share/zoneinfo/UTC\n")
         session = self.session(runtime_files=("/usr/share/zoneinfo/UTC",))
@@ -1488,6 +1561,7 @@ class FoundationTests(unittest.TestCase):
             self.assertIn(b"(ignored)", completed.stderr)
         self.assert_clean(session)
 
+    @owned_timezone
     def test_native_readonly_failed_signal_preserves_prior_success_authorization(self):
         runtime, resources = self.native_python_startup_fixture()
         script = (
@@ -2034,7 +2108,7 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(completed.stdout, ordinary.stdout)
         self.assert_clean(session)
         session = self.session()
-        with self.assertRaisesRegex(MakeProbeError, "unsupported completion evaluated source"), session:
+        with self.assertRaisesRegex(MakeProbeError, "unsupported completion expansion-generated declaration"), session:
             session._native_make_readonly("all", observe_reads=True, observe_completions=True)
         self.assertTrue(session.budget.failed)
         self.assert_clean(session)
@@ -2050,7 +2124,7 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(completed.stdout, b"original")
         self.assert_clean(session)
         session = self.session()
-        with self.assertRaisesRegex(MakeProbeError, "unsupported completion evaluated source"), session:
+        with self.assertRaisesRegex(MakeProbeError, "unsupported completion expansion-generated declaration"), session:
             session._native_make_readonly("all", observe_reads=True, observe_completions=True)
         self.assert_clean(session)
 
@@ -4419,7 +4493,9 @@ class FoundationTests(unittest.TestCase):
                 else:
                     os.mkfifo(owned)
                 with self.subTest(kind=kind):
-                    with self.assertRaisesRegex(MakeProbeError, "ordinary regular file"):
+                    with self.assertRaisesRegex(
+                        MakeProbeError, "single canonical target" if kind == "symlink" else "ordinary regular file",
+                    ):
                         _capture_runtime_input(str(owned), ProbeBudget())
                 if kind == "directory":
                     owned.rmdir()

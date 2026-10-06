@@ -756,8 +756,16 @@ interaction applies. Start with a clean fixture and run:
    chained, dangling, untrusted or escaping targets refuse. Native executable
    image and managed-directory overlap still refuse.
    `test_native_optional_usr_data_capture_preserves_bytes_and_real_absence`
-   verifies actual timezone data bytes/mode, startup-file absence, unchanged
-   executable trust roots and the actual UTC alias target.
+   verifies captured timezone data bytes/mode, startup-file absence, unchanged
+   executable trust roots and the UTC alias target. Positive timezone cases
+   use owned physical `UTC -> Etc/UTC` and regular-file fixtures with only
+   path admission substituted, then exercise the real capture and guest
+   materialization at the declared system paths. Installed timezone data can
+   be runner-owned or mutable and must not be treated as trusted automatically.
+   `test_native_runtime_system_owner_and_write_permissions_refuse_before_capture`
+   exercises the real admission predicate with foreign-owner, group-write and
+   other-write metadata controls; each refuses before byte acquisition.
+   These controls do not change host ownership or production trust policy.
    `test_native_readonly_python_declared_startup_still_refuses_uncaptured_timezone`
    declares startup paths actually observed in the native fixture. Real Python
    then reaches and explicitly refuses `/usr/share/zoneinfo/UTC`; that final
@@ -805,8 +813,8 @@ interaction applies. Start with a clean fixture and run:
    `test_native_captured_file_alias_shape_and_identity_refuse` uses private
    physical link/file fixtures with only root-path admission substituted to
    mutate the real target or link during capture, and tests chained/missing
-   target refusal. It separately rejects the installed chained localtime
-   alias. These private fixtures prove capture consistency, not root ownership.
+   target refusal. It separately rejects an owned traversal alias.
+   These private fixtures prove capture consistency, not root ownership.
 4. `test_native_readonly_managed_python_make_enumeration_is_complete`: original
    ready Make wildcard enumeration must match the actual declared stdlib
    directory's complete `.py` names; the adjacent parent root remains denied.
