@@ -1928,6 +1928,75 @@ class FoundationTests(unittest.TestCase):
                     self.assertEqual(completed.stdout, ordinary.stdout)
                 self.assert_clean(session)
 
+    def test_native_completion_constructed_rules_and_exports(self):
+        from scripts.validation_ownership import read_epochs
+        suffix = (
+            "\nNAME := VALUE\nVALUE := file-shell\n"
+            "all: $$($$(NAME)) ; @v=selected; printf '%s' \"$$v\"\nfile-shell: ;\n"
+        )
+        cases = [
+            (declaration + suffix, b"selected")
+            for declaration in (
+                "other\\:target .SECONDEXPANSION:",
+                "RULE := .SECONDEXPANSION:\n$(RULE)",
+                "RULE := .SECONDEXPANSION:\n${RULE}",
+            )
+        ]
+        cases.extend((
+            ("NAME := SUPPLIER\nSUPPLIER := original\n" + directive +
+             "\nall: ; @v=$$SUPPLIER; printf '%s' \"$$v\"\n", b"original")
+            for directive in ("export $(NAME)", "export ${NAME}", "export", ".EXPORT_ALL_VARIABLES:")
+        ))
+        for source, expected in cases:
+            self.add("Makefile", source)
+            with self.subTest(source=source):
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, expected)
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion"):
+                    read_epochs.completion_source_facts("Makefile", source.encode())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion"), session:
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assert_clean(session)
+                session = self.session()
+                with session:
+                    completed, _, _ = session._native_make_readonly("all", observe_reads=True)
+                    self.assertEqual(completed.stdout, ordinary.stdout)
+                self.assert_clean(session)
+        for declaration in (
+            "SUPPLIER := original\nexport SUPPLIER",
+            "SUPPLIER := original\nOTHER := other\nexport SUPPLIER OTHER",
+            "export SUPPLIER := original",
+        ):
+            source = declaration + "\nall: ; @v=$$SUPPLIER; printf '%s' \"$$v\"\n"
+            self.add("Makefile", source)
+            with self.subTest(declaration=declaration):
+                _, roots, _ = read_epochs.completion_source_facts("Makefile", source.encode())
+                self.assertIn("SUPPLIER", roots)
+                session = self.session()
+                with session:
+                    completed, _, observed = session._native_make_readonly(
+                        "all", observe_reads=True, observe_completions=True,
+                    )
+                    self.assertEqual(completed.stdout, b"original")
+                    trace = observed["read_trace"]
+                    self.assertTrue(any(
+                        row["kind"] == "assignment-completion" and row["name"] == "SUPPLIER"
+                        for row in trace["events"]
+                    ))
+                    mutated = json.loads(json.dumps(trace))
+                    mutated["selection"]["names"].remove("SUPPLIER")
+                    with self.assertRaises(MakeProbeError):
+                        read_epochs.validate_trace(
+                            mutated, mutated["scope"],
+                            count_limit=session.budget.limits.observation_count,
+                            file_limit=session.budget.limits.file_bytes,
+                        )
+                self.assert_clean(session)
+
     def test_native_completion_recipe_hash_preserves_suppliers(self):
         from scripts.validation_ownership import read_epochs
         for prefix in ("all: ; ", "all:\n\t"):
@@ -2046,6 +2115,13 @@ class FoundationTests(unittest.TestCase):
                 "define RULE\n.SECONDEXPANSION:\nendef\n$(eval $(RULE))\nOUTPUT := original\n" + recipe,
                 "NAME := VALUE\nVALUE := original\nall: ; @printf '#%s' '$($(NAME))'\n",
                 "NAME := VALUE\nVALUE := original\nall:\n\t@printf '#%s' '$($(NAME))'\n",
+                "other\\:target .SECONDEXPANSION:\nOUTPUT := original\n" + recipe,
+                "RULE := .SECONDEXPANSION:\n$(RULE)\nOUTPUT := original\n" + recipe,
+                "RULE := .SECONDEXPANSION:\n${RULE}\nOUTPUT := original\n" + recipe,
+                "NAME := VALUE\nVALUE := original\nexport $(NAME)\nOUTPUT := original\n" + recipe,
+                "NAME := VALUE\nVALUE := original\nexport ${NAME}\nOUTPUT := original\n" + recipe,
+                "VALUE := original\nexport\nOUTPUT := original\n" + recipe,
+                ".EXPORT_ALL_VARIABLES:\nOUTPUT := original\n" + recipe,
                 *("NAME := VALUE\nVALUE := original\nOUTPUT := $(call " + target + ",$(NAME))\n" + recipe
                   for target in ("value", "origin", "flavor", "call")),
             ):

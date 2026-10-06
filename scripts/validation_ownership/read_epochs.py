@@ -651,6 +651,10 @@ def completion_reference_names(data, *, names=None, checkpoint=lambda: None, cou
     ):
         checkpoint()
         retain(match[1])
+    for match in re.finditer(r"(?m)^[ \t]*(?:(?:override|private)[ \t]+)*export[ \t]+([^\r\n]*)", collapsed):
+        checkpoint()
+        for name in match[1].split():
+            retain(name)
     checkpoint()
     return names
 
@@ -700,6 +704,8 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
         charge(len(encoded((name, sorted(names)))))
         dependencies.setdefault(name, set()).update(names)
         prefix = statement[:assignment.start("name")].split()
+        if "export" in prefix:
+            roots.add(name)
         if "private" not in prefix:
             row = [
                 path, digest, logical, first, last, name, assignment["operator"],

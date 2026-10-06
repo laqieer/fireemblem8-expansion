@@ -317,15 +317,23 @@ def completion_declaration(statement):
                          if statement.startswith(token, index)), None)
         if operator is not None:
             raise MakeProbeError("unsupported completion assignment name")
-        if statement[index] in ":;":
+        if statement[index] in ":;" and not (
+            (len(statement[:index]) - len(statement[:index].rstrip("\\"))) % 2
+        ):
             if statement[index] == ":":
                 targets = statement[:index]
                 if any(character in targets for character in "$*?["):
                     raise MakeProbeError("unsupported completion constructed target")
                 if ".SECONDEXPANSION" in targets.split():
                     raise MakeProbeError("unsupported completion secondary expansion")
+                if ".EXPORT_ALL_VARIABLES" in targets.split():
+                    raise MakeProbeError("unsupported completion blanket export")
             return None, None
         index += 1
+    if "$" in header:
+        function = _make_function(header)
+        if function is None or function[0] not in {"info", "warning", "error"}:
+            raise MakeProbeError("unsupported completion expansion-generated declaration")
     return None, None
 
 
@@ -371,4 +379,10 @@ def references(line, *, reference_base=_make_reference_base):
         if not re.fullmatch(LITERAL_NAME, name):
             raise MakeProbeError("unsupported Make supplier is not bound to native completion")
         names.add(name)
+    export = re.match(r"^[ \t]*(?:(?:override|private)[ \t]+)*export(?:[ \t]+(.*))?$", line)
+    if export is not None:
+        consumers = (export[1] or "").split()
+        if not consumers or any(not re.fullmatch(LITERAL_NAME, name) for name in consumers):
+            raise MakeProbeError("unsupported completion export consumer")
+        names.update(consumers)
     return names

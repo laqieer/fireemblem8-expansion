@@ -800,6 +800,20 @@ the existing namespace launcher, run these `FoundationTests` controls:
    A target-specific assignment's semicolon enters GNU rule context: hashes
    after that delimiter remain in its value. Only global assignments retain
    Make-comment semantics across semicolons.
+   `test_native_completion_constructed_rules_and_exports` exercises escaped
+   colons before a secondary-expansion target, both delimiters of an
+   expansion-only rule, computed export lists, bare export and
+   `.EXPORT_ALL_VARIABLES`. Each real GNU-positive form must refuse completion
+   evidence explicitly while native no-completion execution retains its output.
+   Expansion-only declarations are unsupported except direct `info`, `warning`
+   and `error` expressions, which do not return parser source. This also
+   refuses variable-only declarations that happen to expand to empty text;
+   no evaluated value is inferred from immutable source spelling.
+   Literal export lists and exported assignments instead retain their supplying
+   assignment as a consumer in screening and exact source closure. Native
+   completion events must bind that supplier even when the recipe uses only a
+   shell environment variable. Returned archives reject removed literal-export
+   suppliers and coherent payloads for every unsupported enabling form.
    Repeat the no-completion execution control with computed assignment and short
    lookup sources: genuine native output must remain `original` without an
    invented completion trace. No native evaluator, source rewrite, new budget,
