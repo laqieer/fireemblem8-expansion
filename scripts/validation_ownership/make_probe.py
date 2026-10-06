@@ -1357,6 +1357,15 @@ class ProbeSession:
                     count_limit=config["observation_count"], file_limit=config["file_limit"],
                     reserve=lambda size: self.budget.charge("control", size),
                 )
+                for event in trace["events"]:
+                    self.budget.remaining()
+                    if (
+                        event["kind"] == "entry-image"
+                        and event["image_sha256"] != self.snapshot.digest
+                        or read_selection is not None and event["kind"] == "source-open"
+                        and event["result"] >= 0 and event["custody"] != {"kind": "snapshot"}
+                    ):
+                        raise MakeProbeError("native readonly trace differs from its snapshot")
             if dependency is not None and observed["executed"] != dependency["executables"]:
                 raise MakeProbeError("dependency result lacks its actual driver/cc1 execution")
             if native_runtime:

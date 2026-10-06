@@ -448,6 +448,15 @@ namespace launcher, extend `TC-OWNERSHIP-NATIVE-COMPLETION-001` (#270):
    each must now explicitly refuse and clean owned state. These are real
    return/observation projection mutations, not physical execution replacement
    or hostile same-UID report authentication.
+6. Run `test_native_readonly_returned_snapshot_custody_and_image_mutations_refuse`
+   (#270, `TC-OWNERSHIP-NATIVE-EXECUTABLE-001`): after genuine completion,
+   change a successful source-open to well-formed publication custody, or change
+   an entry-image digest without changing selection or machine evidence.
+   The pre-fix host accepts both archives. The readonly host must reject both,
+   requiring snapshot custody and its requested immutable snapshot digest for
+   every corresponding event, and clean owned state. The shared validator
+   remains publication-capable; these are request-specific return mutations,
+   not proof of protection against a hostile same-UID process.
 
 Dependencies are the existing captured ELF closure, readonly loader-origin
 proof and original job/machine lifecycle; conflicts are none. No ROM/RAM/save,

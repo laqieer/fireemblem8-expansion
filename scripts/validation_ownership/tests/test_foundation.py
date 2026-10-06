@@ -1409,6 +1409,32 @@ class FoundationTests(unittest.TestCase):
             self.assertTrue(session.budget.failed)
         self.assert_clean(session)
 
+    def test_native_readonly_returned_snapshot_custody_and_image_mutations_refuse(self):
+        self.native_completion_fixture()
+        mutations = (
+            ("source-open", "row['custody']={'kind':'publication','event':1,'producer':1,"
+             "'slot':0,'owner':'0'*64}"),
+            ("entry-image", "row['image_sha256']='0'*64"),
+        )
+        for kind, mutation in mutations:
+            body = (
+                "import read_trace\n"
+                "original=read_trace.NativeReadTrace.finish\n"
+                "def mutate(self):\n"
+                " result=original(self)\n"
+                f" row=next(row for row in result['events'] if row['kind']=={kind!r}"
+                + (" and row['result']>=0" if kind == "source-open" else "") + ")\n"
+                f" {mutation}\n"
+                " return result\n"
+                "read_trace.NativeReadTrace.finish=mutate\n"
+            )
+            session = self.session()
+            with self.subTest(kind=kind), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "native readonly trace differs from its snapshot"):
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
     def test_general_completion_trace_consumer_keeps_optional_machine(self):
         from scripts.validation_ownership import read_epochs
         self.native_completion_fixture()
@@ -1422,6 +1448,23 @@ class FoundationTests(unittest.TestCase):
                 trace, trace["scope"], count_limit=session.budget.limits.observation_count,
                 file_limit=session.budget.limits.file_bytes,
             )
+            for kind in ("source-open", "entry-image"):
+                broader = json.loads(json.dumps(trace))
+                row = next(
+                    row for row in broader["events"] if row["kind"] == kind
+                    and (kind != "source-open" or row["result"] >= 0)
+                )
+                if kind == "source-open":
+                    row["custody"] = {
+                        "kind": "publication", "event": 1, "producer": 1,
+                        "slot": 0, "owner": "0" * 64,
+                    }
+                else:
+                    row["image_sha256"] = "0" * 64
+                read_epochs.validate_trace(
+                    broader, broader["scope"], count_limit=session.budget.limits.observation_count,
+                    file_limit=session.budget.limits.file_bytes,
+                )
         self.assert_clean(session)
 
     def test_native_readonly_returned_job_lifecycle_and_machine_binding_mutations_refuse(self):
