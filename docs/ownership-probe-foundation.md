@@ -401,6 +401,32 @@ cumulative deadline and budgets. Nested `select_view` isolates captures,
 restores the outer objects and clears selected caches; session failure/exit
 clears all runtime captures. ABI decoding remains per invocation.
 
+Completion source analysis enforces the existing 512-level expression limit
+even without a budget object. Pruning, function classification and statement
+syntax retain positional spans rather than copied bodies for every nested
+expression; reference and metadata body analysis streams its results.
+The host and archive source consumers pass their existing charge/checkpoint
+callbacks through comment, declaration, define, recipe and assignment analysis.
+Charges precede scanner stack/body allocation, and exhausted quotas/deadlines
+propagate without falling back to an unaccounted scan.
+
+For `TC-OWNERSHIP-NATIVE-COMPLETION-001`, run
+`test_completion_expression_depth_rejects_before_nested_body_allocation`:
+6,400 nested references in 19,201 bytes must reject at the existing depth
+limit with less than 1 MiB traced temporary allocation; before correction
+the scanner retains 61,436,800 body bytes. Require rejection both for dollar
+references and ordinary nested grouping past 512, while 512 positional spans
+remain representable without body copies. Run
+`test_completion_analysis_propagates_charge_and_checkpoint_to_all_contexts`:
+a 64-byte source-analysis quota must fail in assignment, define, inline recipe,
+tab recipe and expansion-only contexts. A failing callback must propagate
+from reference, comment and declaration analysis. The normal nested builtin,
+short-reference, escaped-dollar and dead computed branch control must retain
+exact names and charge/checkpoint activity; parsed source facts must retain
+their actual assignment/dependency/root semantics. Retain the real native
+completion and optional-machine archive controls. This bounded source fix
+does not qualify generated versions or the original eight-query budget.
+
 Completion screening retains one validated encoded selection per immutable
 view. First acquisition charges the source scan and both the returned selection
 and retained bytes; reuse charges a fresh decoded selection instead of scanning

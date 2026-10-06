@@ -951,6 +951,7 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
     if b"\0" in data:
         raise ReadEpochError("completion source has unsupported bytes")
     rows, dependencies, roots = [], {}, set()
+    limits = {"checkpoint": checkpoint, "charge": charge}
     definition, depth, recipe_allowed = None, 0, False
     conditional_depth = 0
     digest = hashlib.sha256(data).hexdigest()
@@ -959,7 +960,7 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
     ):
         statement = make_lexical._collapse_make_continuations(raw)
         if not depth:
-            statement = make_lexical.strip_comment(statement, recipe_context=True)
+            statement = make_lexical.strip_comment(statement, recipe_context=True, **limits)
         header = statement.strip(make_lexical.MAKE_SPACE)
         if depth:
             if not raw.startswith("\t"):
@@ -970,7 +971,7 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
                     if not depth:
                         definition = None
                         continue
-            names = make_lexical.references(statement, directives=False)
+            names = make_lexical.references(statement, directives=False, **limits)
             charge(len(encoded(sorted(names))))
             dependencies[definition].update(names)
             continue
@@ -991,13 +992,13 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
                 raise ReadEpochError("unsupported completion tab statement before admitted rule")
             assignment, macro, rule = None, None, False
         else:
-            assignment, macro, rule = make_lexical.completion_declaration(statement)
+            assignment, macro, rule = make_lexical.completion_declaration(statement, **limits)
         if assignment is not None or macro is not None or make_lexical.MODE_TARGET_ASSIGNMENT.fullmatch(statement):
             recipe_allowed = False
         else:
             recipe_allowed |= rule and not conditional_depth
         if assignment is None:
-            names = make_lexical.references(statement, directives=not raw.startswith("\t"))
+            names = make_lexical.references(statement, directives=not raw.startswith("\t"), **limits)
             charge(len(encoded(sorted(names))))
             if macro is not None:
                 definition, depth = macro[1], 1
@@ -1006,7 +1007,7 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
                 roots.update(names)
             continue
         name = assignment["name"]
-        names = make_lexical.references(assignment["value"], directives=False)
+        names = make_lexical.references(assignment["value"], directives=False, **limits)
         charge(len(encoded((name, sorted(names)))))
         dependencies.setdefault(name, set()).update(names)
         prefix = statement[:assignment.start("name")].split()

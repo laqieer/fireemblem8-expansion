@@ -742,6 +742,71 @@ class FoundationTests(unittest.TestCase):
             replay.assert_not_called()
         self.assert_clean(session)
 
+    def test_completion_expression_depth_rejects_before_nested_body_allocation(self):
+        import tracemalloc
+        from scripts.validation_ownership import make_lexical, read_epochs
+        nested = "$(" * 6400 + "A" + ")" * 6400
+        tracemalloc.start()
+        try:
+            with self.assertRaisesRegex(MakeProbeError, "reference depth bound"):
+                list(make_lexical._make_expression_spans(nested))
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertLess(peak, 1024 * 1024)
+        for expression in ("$(" * 513 + "A" + ")" * 513, "$(" + "(" * 512 + "A" + ")" * 513):
+            with self.subTest(expression=expression):
+                with self.assertRaisesRegex(MakeProbeError, "reference depth bound"):
+                    read_epochs.completion_source_facts("Makefile", ("VALUE := " + expression).encode())
+        spans = list(make_lexical._make_expression_spans("$(" * 512 + "A" + ")" * 512, bodies=False))
+        self.assertEqual(len(spans), 512)
+        self.assertTrue(all(body is None for _, _, body in spans))
+        self.assertEqual((spans[0][:2], spans[-1][:2]), ((1022, 1026), (0, 1537)))
+
+    def test_completion_analysis_propagates_charge_and_checkpoint_to_all_contexts(self):
+        from scripts.validation_ownership import make_lexical, read_epochs
+        contexts = (
+            "VALUE := $(strip $(A))\n",
+            "define VALUE\n$(strip $(A))\nendef\n",
+            "all: ; @printf '%s' '$(strip $(A))'\n",
+            "all:\n\t@printf '%s' '$(strip $(A))'\n",
+            "$(info $(strip $(A)))\n",
+        )
+        for source in contexts:
+            budget = ProbeBudget(Limits(control_bytes=64))
+            with self.subTest(source=source), self.assertRaisesRegex(MakeProbeError, "control byte budget"):
+                read_epochs.completion_source_facts(
+                    "Makefile", source.encode(), checkpoint=budget.remaining,
+                    charge=lambda size: budget.charge("control", size),
+                )
+            self.assertTrue(budget.failed)
+        calls = []
+        for analyze in (
+            lambda checkpoint: make_lexical.references("$(strip $(A))", checkpoint=checkpoint),
+            lambda checkpoint: make_lexical.strip_comment("VALUE := $(A) # comment", checkpoint=checkpoint),
+            lambda checkpoint: make_lexical.completion_declaration("all: $(A)", checkpoint=checkpoint),
+        ):
+            def stop():
+                calls.append(True)
+                raise MakeProbeError("actual lexical checkpoint expired")
+            with self.assertRaisesRegex(MakeProbeError, "actual lexical checkpoint expired"):
+                analyze(stop)
+        self.assertEqual(len(calls), 3)
+        charges, checkpoints = [], []
+        self.assertEqual(make_lexical.references(
+            "$(strip $(A)) $(and ,$($(DEAD))) $_ $$escaped",
+            charge=charges.append, checkpoint=lambda: checkpoints.append(True),
+        ), {"A", "_"})
+        self.assertGreater(sum(charges), 0)
+        self.assertGreater(len(checkpoints), 1)
+        rows, roots, dependencies = read_epochs.completion_source_facts(
+            "Makefile", b"VALUE := $(strip $(A))\nall: ; @printf '%s' '$(VALUE)'\n",
+            charge=charges.append, checkpoint=lambda: checkpoints.append(True),
+        )
+        self.assertEqual([(row[5], row[6]) for row in rows], [("VALUE", ":=")])
+        self.assertEqual(roots, {"VALUE"})
+        self.assertEqual(dependencies, {"VALUE": {"A"}})
+
     def test_completion_long_statement_preserves_source_with_bounded_scan(self):
         from scripts.validation_ownership import make_lexical, read_epochs
         target = "t" * (512 * 1024)

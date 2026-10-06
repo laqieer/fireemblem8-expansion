@@ -96,69 +96,88 @@ class _UnresolvedName(ValueError):
     pass
 
 
+def _reserve(size, budget, charge):
+    if budget is not None:
+        budget.charge("cache", size)
+    charge(size)
+
+
 def _make_expression_spans(
     line, *, staged=False, require_complete=False, strict_dollars=False, short=False, budget=None,
+    bodies=True, checkpoint=lambda: None, charge=lambda size: None,
 ):
     stack = []
-    index = 0
+    index, next_checkpoint = 0, 0
     while index < len(line):
+        if index >= next_checkpoint:
+            checkpoint()
+            next_checkpoint = index + 4096
         if budget is not None:
             budget.remaining()
         if line[index:index + 2] == "$$":
             index += 1 if staged else 2
             continue
         if line[index:index + 2] in {"$(", "${"}:
-            if budget is not None:
-                if len(stack) >= 512:
+            if len(stack) >= 512:
+                if budget is not None:
                     budget.reject("Make expression exceeds the existing reference depth bound")
-                budget.charge("cache", 64)
+                raise MakeProbeError("Make expression exceeds the existing reference depth bound")
+            _reserve(64, budget, charge)
             stack.append((index + 2, ")" if line[index + 1] == "(" else "}"))
             index += 2
             continue
         if stack and line[index] == stack[-1][1]:
             start, _ = stack.pop()
             if start is not None:
-                if budget is not None:
-                    budget.charge("cache", 64 + 12 * (index - start))
-                yield start - 2, index + 1, line[start:index]
+                _reserve(64 + (12 * (index - start) if bodies else 0), budget, charge)
+                yield start - 2, index + 1, line[start:index] if bodies else None
         elif stack and line[index] == ("(" if stack[-1][1] == ")" else "{"):
-            if budget is not None:
-                if len(stack) >= 512:
+            if len(stack) >= 512:
+                if budget is not None:
                     budget.reject("Make expression exceeds the existing reference depth bound")
-                budget.charge("cache", 64)
+                raise MakeProbeError("Make expression exceeds the existing reference depth bound")
+            _reserve(64, budget, charge)
             stack.append((None, stack[-1][1]))
         elif line[index] == "$":
             token = line[index:index + 2]
             if REFERENCE.fullmatch(token) or SCOPED.fullmatch(token):
                 if short:
-                    yield index, index + 2, token[1:]
+                    _reserve(76 if bodies else 64, budget, charge)
+                    yield index, index + 2, token[1:] if bodies else None
                 index += 1
             elif staged or strict_dollars and len(token) == 2:
                 raise _UnresolvedName("incomplete or unsupported dollar token")
         index += 1
     if (staged or require_complete) and stack:
         raise _UnresolvedName("incomplete dollar-bearing Make expression")
+    checkpoint()
 
 
-def _literal_metadata(expression):
-    for start, stop, body in _make_expression_spans(expression):
+def _literal_metadata(expression, **limits):
+    for start, stop, body in _make_expression_spans(expression, **limits):
         match = re.fullmatch(r"(?:origin|flavor|value)[ \t\r\n\v\f]+(" + LITERAL_NAME + ")", body)
         if match:
             yield start, stop, match[1]
 
 
-def _make_function(expression):
+def _make_function(expression, **limits):
     text = expression.strip(MAKE_SPACE)
-    outer = [body for start, stop, body in _make_expression_spans(text) if start == 0 and stop == len(text)]
+    outer = [
+        (start, stop) for start, stop, _ in _make_expression_spans(text, bodies=False, **limits)
+        if start == 0 and stop == len(text)
+    ]
     if len(outer) != 1:
         return None
-    match = re.fullmatch(r"([A-Za-z_-]+)[ \t]+(.*)", outer[0], re.S)
+    _reserve(64 + 12 * len(text), limits.get("budget"), limits.get("charge", lambda size: None))
+    match = re.fullmatch(r"([A-Za-z_-]+)[ \t]+(.*)", text[2:-1], re.S)
     if match is None:
         return None
     value = match[2]
     opening, closing = text[1], text[-1]
     arguments, start, depth = [], 0, 0
     for index, character in enumerate(value):
+        if index % 4096 == 0:
+            limits.get("checkpoint", lambda: None)()
         if character == opening:
             depth += 1
         elif depth and character == closing:
@@ -172,23 +191,33 @@ def _make_function(expression):
     return match[1], arguments
 
 
-def _prune_and(expression, resolve=None, budget=None, *, lazy=False):
+def _prune_and(
+    expression, resolve=None, budget=None, *, lazy=False,
+    checkpoint=lambda: None, charge=lambda size: None,
+):
     """Reference-analysis form only; immutable source text is retained separately."""
-    spans = sorted(_make_expression_spans(expression), key=lambda item: (item[0], -item[1]))
+    limits = {"budget": budget, "checkpoint": checkpoint, "charge": charge}
+    spans = sorted(
+        _make_expression_spans(expression, bodies=False, **limits), key=lambda item: (item[0], -item[1]),
+    )
     result, previous = [], 0
     changed = False
-    for start, stop, body in spans:
+    for start, stop, _ in spans:
+        checkpoint()
         if start < previous:
             continue
+        _reserve(64 + 12 * (stop - start), budget, charge)
         part = expression[start:stop]
-        function = _make_function(part)
+        function = _make_function(part, **limits)
         replacement = part
         if function is not None and function[0] in ({"and", "or"} if lazy else {"and"}):
             kept = []
             known = True
             for argument in function[1]:
                 argument = argument.strip(MAKE_SPACE)
-                kept.append(_prune_and(argument, resolve if known else None, budget, lazy=lazy))
+                kept.append(_prune_and(
+                    argument, resolve if known else None, lazy=lazy, **limits,
+                ))
                 value = (
                     resolve(argument) if resolve is not None and known
                     else argument if "$" not in argument else None
@@ -203,18 +232,18 @@ def _prune_and(expression, resolve=None, budget=None, *, lazy=False):
             condition = arguments[0].strip(MAKE_SPACE)
             value = resolve(condition) if resolve is not None else condition if "$" not in condition else None
             if value is not None:
-                kept = [_prune_and(condition, resolve, budget, lazy=True), "", ""]
+                kept = [_prune_and(condition, resolve, lazy=True, **limits), "", ""]
                 selected = 1 if value else 2
                 if selected < len(arguments):
-                    kept[selected] = _prune_and(arguments[selected], resolve, budget, lazy=True)
+                    kept[selected] = _prune_and(arguments[selected], resolve, lazy=True, **limits)
                 replacement = part[:2] + "if " + ",".join(kept) + part[-1]
         elif function is not None and function[0] not in {"origin", "flavor", "value"}:
             if lazy and function[0] not in {"foreach", "call", "eval", "guile"}:
                 interior = function[0] + " " + ",".join(
-                    _prune_and(argument, resolve, budget, lazy=True) for argument in function[1]
+                    _prune_and(argument, resolve, lazy=True, **limits) for argument in function[1]
                 )
             else:
-                interior = _prune_and(body, None, budget, lazy=lazy)
+                interior = _prune_and(part[2:-1], None, lazy=lazy, **limits)
             replacement = part[:2] + interior + part[-1]
         result.extend((expression[previous:start], replacement))
         changed |= replacement != part
@@ -222,16 +251,16 @@ def _prune_and(expression, resolve=None, budget=None, *, lazy=False):
     if not changed:
         return expression
     result.append(expression[previous:])
-    return _join_make_text(result, budget)
+    return _join_make_text(result, budget, checkpoint=checkpoint, charge=charge)
 
 
-def _join_make_text(parts, budget):
+def _join_make_text(parts, budget, *, checkpoint=lambda: None, charge=lambda size: None):
     result = []
     for part in parts:
+        checkpoint()
         if part is None:
             return None
-        if budget is not None:
-            budget.charge("cache", len(encoded(part)) + 1)
+        _reserve(len(encoded(part)) + 1, budget, charge)
         result.append(part)
     return "".join(result)
 
@@ -249,12 +278,14 @@ def _make_reference_base(body, *, call=False):
     return body[:end]
 
 
-def _statement_syntax(line):
+def _statement_syntax(line, **limits):
     spans = {}
-    for start, stop, _ in _make_expression_spans(line, short=True):
+    for start, stop, _ in _make_expression_spans(line, short=True, bodies=False, **limits):
         spans[start] = max(spans.get(start, stop), stop)
     index = 0
     while index < len(line):
+        if index % 4096 == 0:
+            limits.get("checkpoint", lambda: None)()
         if index in spans:
             index = spans[index]
             continue
@@ -262,8 +293,8 @@ def _statement_syntax(line):
         index += 1
 
 
-def _statement_boundary(line):
-    for index in _statement_syntax(line):
+def _statement_boundary(line, **limits):
+    for index in _statement_syntax(line, **limits):
         if line[index] not in "#:=?+!;":
             continue
         first = index
@@ -280,22 +311,28 @@ def _statement_boundary(line):
     return None, None
 
 
-def strip_comment(line, *, recipe_context=False):
+def strip_comment(line, *, recipe_context=False, **limits):
     if recipe_context and line.startswith("\t"):
         return line
-    kind, boundary = _statement_boundary(line)
-    syntax = set(_statement_syntax(line))
+    kind, boundary = _statement_boundary(line, **limits)
+    syntax = iter(_statement_syntax(line, **limits))
+    position = next(syntax, None)
     result, index, backslashes = [], 0, 0
     while index < len(line):
+        if index % 4096 == 0:
+            limits.get("checkpoint", lambda: None)()
+        in_syntax = position == index
+        if in_syntax:
+            position = next(syntax, None)
         character = line[index]
-        if character == "#" and index in syntax:
+        if character == "#" and in_syntax:
             count = backslashes
             if count:
                 del result[-count:]
                 result.extend("\\" * (count // 2))
             if not count % 2:
                 break
-        if recipe_context and kind == "rule" and index > boundary and index in syntax:
+        if recipe_context and kind == "rule" and index > boundary and in_syntax:
             escaped = backslashes % 2
             if not escaped:
                 if character == ";":
@@ -306,7 +343,7 @@ def strip_comment(line, *, recipe_context=False):
     return "".join(result)
 
 
-def completion_declaration(statement):
+def completion_declaration(statement, **limits):
     """Classify literal global sites before admitting non-site source context."""
     assignment = MODE_ASSIGNMENT.fullmatch(statement)
     if assignment is not None:
@@ -330,7 +367,7 @@ def completion_declaration(statement):
         header,
     ):
         return None, None, False
-    kind, index = _statement_boundary(statement)
+    kind, index = _statement_boundary(statement, **limits)
     if kind == "assignment":
         raise MakeProbeError("unsupported completion assignment name")
     if kind == "rule":
@@ -346,25 +383,34 @@ def completion_declaration(statement):
     if kind == "semicolon":
         return None, None, False
     if "$" in header:
-        function = _make_function(header)
+        function = _make_function(header, **limits)
         if function is None or function[0] not in {"info", "warning", "error"}:
             raise MakeProbeError("unsupported completion expansion-generated declaration")
     return None, None, False
 
 
-def references(line, *, reference_base=_make_reference_base, directives=True):
-    line = _prune_and(line)
+def references(
+    line, *, reference_base=_make_reference_base, directives=True,
+    checkpoint=lambda: None, charge=lambda size: None,
+):
+    limits = {"checkpoint": checkpoint, "charge": charge}
+    line = _prune_and(line, **limits)
     names = set()
-    try:
-        spans = list(_make_expression_spans(line, short=True, strict_dollars=True, require_complete=True))
-    except _UnresolvedName as error:
-        raise MakeProbeError("unsupported completion dollar reference") from error
-    for start, stop, body in spans:
+
+    def spans():
+        try:
+            yield from _make_expression_spans(
+                line, short=True, strict_dollars=True, require_complete=True, **limits,
+            )
+        except _UnresolvedName as error:
+            raise MakeProbeError("unsupported completion dollar reference") from error
+
+    for start, stop, body in spans():
         name = reference_base(body)
         if re.fullmatch(LITERAL_NAME, name) or SCOPED.fullmatch("$(" + name + ")"):
             names.add(name)
         else:
-            function = _make_function(line[start:stop])
+            function = _make_function(line[start:stop], **limits)
             if function is None and "$" in name:
                 raise MakeProbeError("computed Make supplier is not bound to native completion")
             if function is None and body:
@@ -385,7 +431,7 @@ def references(line, *, reference_base=_make_reference_base, directives=True):
                     raise MakeProbeError("unsupported completion forwarded name-taking builtin")
                 if name:
                     names.add(name)
-    names.update(name for _, _, name in _literal_metadata(line))
+    names.update(name for _, _, name in _literal_metadata(line, **limits))
     conditional = CONDITIONAL.match(line) if directives else None
     if conditional:
         name = conditional[1].strip(MAKE_SPACE)
