@@ -357,6 +357,57 @@ class FoundationTests(unittest.TestCase):
             self.assertTrue(job["waited"])
         self.assert_clean(session)
 
+    def test_native_readonly_declared_cpp_library_resources(self):
+        libraries = tuple("/lib/x86_64-linux-gnu/" + name for name in (
+            "libstdc++.so.6", "libgcc_s.so.1", "libm.so.6",
+        ))
+        self.add("native.cpp", (
+            "#include <iostream>\nint main() { std::cout << \"compiled-cpp\"; return 0; }\n"
+        ))
+        self.add("Makefile", "VALUE := $(shell /native/tool)\nall: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n")
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.cpp",), cxx=True)
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), native_tool=tool, native_libraries=libraries,
+                observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"compiled-cpp")
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "compiled-cpp")
+            jobs = [json.loads(row.removeprefix("native-job:")) for row in observed["accessed"]
+                    if row.startswith("native-job:")]
+            self.assertTrue(any(
+                job["executable"] == "/native/tool" and job["returncode"] == 0 and job["waited"]
+                for job in jobs
+            ))
+        self.assert_clean(session)
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "uncaptured Make runtime access"), session:
+            tool = session.compile_native(("native.cpp",), cxx=True)
+            session._native_make_readonly("all", native_tool=tool, native_libraries=libraries[1:])
+        self.assert_clean(session)
+        self.add("Makefile", f"all: ; @{libraries[0]}\n")
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "untrusted executable dispatch"), session:
+            session._native_make_readonly("all", native_libraries=libraries)
+        self.assert_clean(session)
+        self.add("Makefile", f"all: ; @printf changed > {libraries[0]}\n")
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "filesystem write denied"), session:
+            session._native_make_readonly("all", native_libraries=libraries)
+        self.assert_clean(session)
+        for declaration in (
+            [libraries[0]], (libraries[0], libraries[0]), ("/usr/bin/make",),
+            ("/repo/untrusted.so",), ("/lib/x86_64-linux-gnu/../libstdc++.so.6",),
+            (libraries[0], "/usr" + libraries[0]),
+        ):
+            session = self.session()
+            with self.subTest(declaration=declaration), self.assertRaisesRegex(
+                MakeProbeError, "invalid native library resource declaration",
+            ), session:
+                session._native_make_readonly("all", native_libraries=declaration)
+            self.assert_clean(session)
+
     def test_native_readonly_session_issued_tool_boundaries(self):
         self.add("native.c", "#include <stdio.h>\nint main(void) { puts(\"compiled\"); return 0; }\n")
         self.add("Makefile", "VALUE := $(shell /native/tool)\nall: ; @:\n")

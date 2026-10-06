@@ -2050,6 +2050,7 @@ class ProbeSession:
     def _native_make_readonly(
         self, target, *, makefile="Makefile", variables=(), assignments=(), observe_reads=False,
         observe_completions=False, native_executables=(), native_runtime_directories=(), native_tool=None,
+        native_libraries=(),
     ):
         variables, cli, environment = self._make_request(target, makefile, variables, assignments, ())
         if self.published_sources or self.make_depth:
@@ -2073,6 +2074,17 @@ class ProbeSession:
         for path in native_executables:
             relative_path(path[1:])
         if (
+            not isinstance(native_libraries, tuple) or len(native_libraries) > 64
+            or any(
+                not isinstance(path, str)
+                or not re.fullmatch(r"/(?:lib|lib64|usr/lib|usr/lib64)/[^ \t\r\n\0\\]+\.so(?:\.[0-9]+)*", path)
+                or any(part in {"", ".", ".."} for part in path[1:].split("/"))
+                for path in native_libraries
+            )
+            or len(set(native_libraries)) != len(native_libraries)
+        ):
+            raise MakeProbeError("invalid native library resource declaration")
+        if (
             not isinstance(native_runtime_directories, tuple) or len(native_runtime_directories) > 4
             or any(not isinstance(path, str) for path in native_runtime_directories)
             or len(set(native_runtime_directories)) != len(native_runtime_directories)
@@ -2087,6 +2099,19 @@ class ProbeSession:
         )
         runtime = dict(native_runtime)
         interpreter = _make_interpreter(runtime["/bin/sh"])
+        library_identities = set()
+        for path in native_libraries:
+            canonical = str(_trusted_runtime_path(path))
+            if canonical in library_identities or not canonical.startswith(
+                ("/usr/lib/", "/usr/lib64/", "/lib/", "/lib64/"),
+            ):
+                raise MakeProbeError("invalid native library resource declaration")
+            library_identities.add(canonical)
+            binary = _trusted_runtime_bytes(path, self.budget)
+            self._validate_native(binary)
+            if path in runtime and runtime[path] != binary:
+                raise MakeProbeError("native library runtime conflicts with captured bytes")
+            runtime[path] = binary
         for path in native_executables:
             captured = self._captured_native_runtime(path)
             if _make_interpreter(dict(captured)[path]) != interpreter:

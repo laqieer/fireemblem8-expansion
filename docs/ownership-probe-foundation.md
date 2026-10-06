@@ -168,6 +168,17 @@ status and waited native-job evidence. Then run
 but unissued tool object, changed sealed bytes, undeclared image metadata and
 actual candidate source writes must refuse and leave owned cleanup complete.
 Repeat the existing C++ direct-native test to preserve that execution lane.
+Readonly native Make accepts `native_libraries=(absolute_shared_library_paths,)`
+as explicit resource declarations, separate from `native_executables`.
+Only exact root-verified ELF shared-library files under trusted system library
+roots enter the existing sealed runtime closure; aliases to the same canonical
+file, malformed paths and non-library declarations refuse. No library declaration
+grants execution or write authority, and dependencies are never inferred from a
+candidate ELF or resolved by executing its loader in the trusted collector.
+Run `test_native_readonly_declared_cpp_library_resources`: a real compiled C++
+iostream tool requires declared stdc/gcc/m resources, actual output/semantics and
+waited native-job evidence. Missing dependencies, direct library execution,
+library writes and malformed/duplicate/canonical-alias declarations must refuse.
 The internal `/native/tool` case does not qualify original `tools/scaninc`
 paths, arbitrary external-library dependencies, generated publications or the
 original eight-query family. No ROM/save/profile/localization interaction applies.
