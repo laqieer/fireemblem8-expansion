@@ -1340,7 +1340,7 @@ class Policy:
                 raise Violation(f"malformed {label} mapping identity") from error
             if start <= ip - 2 < ip < end:
                 if fields[1] != b"r-xp" or inode <= 0 or found is not None:
-                    raise Violation(f"{label} lacks one readonly executable mapping")
+                    raise Violation(f"{label} lacks one readonly executable image mapping")
                 found = (os.makedev(major, minor), inode), (start, end, fields[2])
         if found is None:
             raise Violation(f"{label} syscall has no mapped origin")

@@ -460,11 +460,51 @@ static void string(const char *value)
         bytes(value, count);
 }
 
-static void expanded(struct FileView *file, const char *expression)
+static void name_expression(char *expression, size_t size, const char *form, const char *name)
 {
-    char *value = allocated_variable_expand_for_file(expression, file);
+    int length = snprintf(expression, size, "$(%s%s)", form, name);
+    if (length < 0 || (size_t)length >= size)
+        fail();
+}
+
+static char *domain_value(struct FileView *file, const char *name)
+{
+    char expression[512];
+    char *value;
+    if (native_readonly)
+    {
+        char *flavor;
+        name_expression(expression, sizeof(expression), "flavor ", name);
+        flavor = file ? allocated_variable_expand_for_file(expression, file) : gmk_expand(expression);
+        if (!flavor)
+            fail();
+        if (!strcmp(flavor, "recursive"))
+        {
+            char *raw;
+            name_expression(expression, sizeof(expression), "value ", name);
+            raw = file ? allocated_variable_expand_for_file(expression, file) : gmk_expand(expression);
+            if (!raw)
+                fail();
+            if (strchr(raw, '$'))
+            {
+                static const char message[] = "unsupported readonly native recursive observation\n";
+                raw_call(SYS_write, STDERR_FILENO, (long)message, sizeof(message) - 1);
+                fail();
+            }
+            free(raw);
+        }
+        free(flavor);
+    }
+    name_expression(expression, sizeof(expression), "", name);
+    value = file ? allocated_variable_expand_for_file(expression, file) : gmk_expand(expression);
     if (!value)
         fail();
+    return value;
+}
+
+static void expanded(struct FileView *file, const char *name)
+{
+    char *value = domain_value(file, name);
     string(value);
     free(value);
 }
@@ -478,11 +518,9 @@ static void variable(struct FileView *file, const char *name)
     for (form = 0; form < 3; ++form)
     {
         char *value;
-        strcpy(expression, "$(");
-        strcat(expression, forms[form]);
-        strcat(expression, name);
-        strcat(expression, ")");
-        value = file ? allocated_variable_expand_for_file(expression, file) : gmk_expand(expression);
+        name_expression(expression, sizeof(expression), forms[form], name);
+        value = form == 0 ? domain_value(file, name)
+                         : file ? allocated_variable_expand_for_file(expression, file) : gmk_expand(expression);
         if (!value)
             fail();
         string(value);
@@ -546,8 +584,8 @@ static void observe(void)
         string(file->name);
         string(file->commands ? file->commands->filename : "");
         string(file->commands ? file->commands->text : "");
-        expanded(file, "$(SHELL)");
-        expanded(file, "$(.SHELLFLAGS)");
+        expanded(file, "SHELL");
+        expanded(file, ".SHELLFLAGS");
         for (dependency = file->dependencies; dependency; dependency = dependency->next)
             if (++links > MAX_NODES)
                 fail();

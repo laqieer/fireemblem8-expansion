@@ -279,6 +279,36 @@ execution and existing Make request admission; conflicts are none. No ROM/RAM,
 save, localization, game-data or archival impact. This input smoke is not
 assignment-completion ancestry or the original eight-profile qualification.
 
+`TC-OWNERSHIP-NATIVE-OBSERVE-001` (#270) covers output-independent exit
+observation. Native requested domains and target `SHELL`/`.SHELLFLAGS` values
+are checked through nonexpanding flavor/raw-value metadata before expansion.
+Simple and undefined bindings and literal recursive bindings remain supported.
+A recursive raw value containing `$` explicitly refuses before its contents
+are executed. This includes otherwise pure references and escaped dollar
+expressions: general recursive-expression observation remains unsupported.
+There is no builtin blacklist or alternative expression interpreter, and
+ordinary mapped observation retains its existing behavior.
+
+Run `test_native_readonly_recursive_builtin_observation_has_no_extra_effects`
+on a clean host checkout. Unused info/warning/error/eval/shell bodies and a
+nested reference, plus recursive shell/flags bindings, must refuse. Captured
+native stdout must exactly match the ordinary invocation, including legitimate
+shell/flags output emitted by Make before exit; observer-only output must not
+appear. The pre-fix observer adds output, alters Make state, or executes the
+requested error. Run
+`test_native_readonly_simple_dollar_and_literal_recursive_values_are_safe`:
+a simple dollar-bearing value, literal recursive value and undefined value
+must preserve their original value/flavor and successful recipe output.
+Retain the existing native shell-spawn refusal and original input/job/source/
+count controls. The mapped inode-identity control also retains its existing
+`readonly executable image` diagnostic and still rejects a zero inode.
+
+Dependencies are the existing observer metadata API and shared origin helper;
+conflicts are none. No new execution authority, input profile, generated data,
+ROM/RAM/save/localization or archival change. Full recursive value support,
+readonly completion integration, generated custody and original eight-query
+qualification remain incomplete.
+
 ## Run the real consumer
 
 From a source checkout:

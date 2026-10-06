@@ -245,6 +245,63 @@ class FoundationTests(unittest.TestCase):
                 session._native_make_readonly("all", variables=("VALUE",))
         self.assert_clean(session)
 
+    def test_native_readonly_recursive_builtin_observation_has_no_extra_effects(self):
+        cases = (
+            "VALUE = $(info observer-only)result\n",
+            "VALUE = $(warning observer-only)result\n",
+            "VALUE = $(error observer-only)result\n",
+            "VALUE = $(eval OBSERVER_EDIT := changed)result\n",
+            "VALUE = $(shell printf observer-only)result\n",
+            "HIDDEN = $(info observer-only)\nVALUE = $(HIDDEN)result\n",
+            "VALUE := valid\nSHELL = $(info original-shell)/bin/sh\n",
+            "VALUE := valid\n.SHELLFLAGS = -c$(info original-flags)\n",
+        )
+        for source in cases:
+            with self.subTest(source=source):
+                self.add("Makefile", source + ".PHONY: all\nall:\n\t@v=recipe; printf '%s\\n' \"$$v\"\n")
+                ordinary = subprocess.run(
+                    ("/usr/bin/make", "-rR", "--no-print-directory", "-f", "Makefile", "all"),
+                    cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+                )
+                session = self.session()
+                completed = {}
+                with session:
+                    original = session._sandbox_run
+                    def capture(*args, **kwargs):
+                        result, observed = original(*args, **kwargs)
+                        completed["result"] = result
+                        return result, observed
+                    failure = None
+                    with patch.object(session, "_sandbox_run", side_effect=capture):
+                        try:
+                            session._native_make_readonly("all", variables=("VALUE",))
+                        except MakeProbeError as error:
+                            failure = error
+                    self.assertIn("result", completed)
+                    self.assertEqual(completed["result"].stdout, ordinary.stdout)
+                    self.assertNotIn(b"observer-only", completed["result"].stderr)
+                    self.assertIsNotNone(failure)
+                    self.assertRegex(str(failure), "unsupported readonly native recursive observation")
+                self.assert_clean(session)
+
+    def test_native_readonly_simple_dollar_and_literal_recursive_values_are_safe(self):
+        self.add("Makefile", (
+            "SIMPLE := $$literal\nLITERAL = literal\n"
+            ".PHONY: all\nall:\n\t@v=recipe; printf '%s\\n' \"$$v\"\n"
+        ))
+        with self.session() as session:
+            completed, semantics, _ = session._native_make_readonly(
+                "all", variables=("SIMPLE", "LITERAL", "UNDEFINED"),
+            )
+            self.assertEqual(completed.stdout, b"recipe\n")
+            self.assertEqual(semantics["domains"]["SIMPLE"]["value"], "$literal")
+            self.assertEqual(semantics["domains"]["SIMPLE"]["flavor"], "simple")
+            self.assertEqual(semantics["domains"]["LITERAL"]["value"], "literal")
+            self.assertEqual(semantics["domains"]["LITERAL"]["flavor"], "recursive")
+            self.assertEqual(semantics["domains"]["UNDEFINED"]["value"], "")
+            self.assertEqual(semantics["domains"]["UNDEFINED"]["flavor"], "undefined")
+        self.assert_clean(session)
+
     def test_native_readonly_shell_loader_probes_cannot_select_false_absence(self):
         for path in ("/etc/ld.so.cache", "/etc/ld.so.preload"):
             with self.subTest(path=path):
