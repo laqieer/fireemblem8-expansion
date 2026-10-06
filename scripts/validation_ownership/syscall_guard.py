@@ -221,6 +221,7 @@ class Process:
     newborn_stop: bool = False
     native_dispatch: int | None = None
     native_parent: int | None = None
+    native_execs: int = 0
     path_context: tuple[str, int, str | None] | None = None
 
     def clone(self):
@@ -508,15 +509,24 @@ class Policy:
 
     def bind_native_job(self, pid, state):
         row = self.native_jobs.get(state.native_dispatch)
+        tree = self.read_trace is not None and self.read_trace.version == 5
+        descendant = tree and row is not None and row["pid"] is not None
         if (
-            row is None or row["pid"] is not None or row["executable"] != state.exec_path
-            or state.native_parent != self.make_pid
-            or state.pidfd < 0 or any(job["pid"] == pid for job in self.native_jobs.values())
+            row is None or not descendant and (
+                row["pid"] is not None or row["executable"] != state.exec_path
+                or state.native_parent != self.make_pid
+                or any(job["pid"] == pid for job in self.native_jobs.values())
+            )
+            or descendant and not any(
+                event.get("child", event["pid"]) == pid for event in row["tree"]
+            )
+            or state.pidfd < 0
         ):
             raise Violation("native job exec has a foreign or reused dispatch child")
         self.native_job_event({"sequence": state.native_dispatch, "pid": pid})
-        row["pid"] = pid
-        if self.read_trace is not None and self.read_trace.version == 5:
+        if not descendant:
+            row["pid"] = pid
+        if tree:
             with open(f"/proc/{pid}/cmdline", "rb") as stream:
                 data = stream.read(65537)
             self.charge_metadata(len(data))
@@ -528,7 +538,54 @@ class Policy:
                 raise Violation("native job command line is not strict UTF-8") from error
             inputs = read_epochs.native_execution_input(argv, state.cwd)
             self.native_job_event({"sequence": state.native_dispatch, **inputs})
-            row.update(inputs)
+            if not descendant:
+                row.update(inputs)
+                row["tree"] = []
+            state.native_execs += 1
+            return {
+                "kind": "exec", "pid": pid, "parent": state.native_parent,
+                "generation": state.native_execs, "path": state.exec_path, **inputs,
+            }
+
+    def native_tree_event(self, state, event):
+        if self.read_trace is None or self.read_trace.version != 5:
+            return
+        row = self.native_jobs.get(state.native_dispatch)
+        if row is None or row["pid"] is None or row["terminal_status"] is not None:
+            raise Violation("native tree event lacks its original dispatched root")
+        event = {"seq": len(row["tree"]) + 1, **event}
+        self.native_job_event(event)
+        row["tree"].append(event)
+        self.read_trace.machine_event(
+            "native-tree", event["pid"], dispatch=state.native_dispatch,
+            event={**event}, sha256=hashlib.sha256(encoded(event)).hexdigest(),
+        )
+
+    def native_child_signal(self, pid, state):
+        if self.read_trace is None or self.read_trace.version != 5:
+            return False
+        information = (ctypes.c_ubyte * 128)()
+        self.charge_metadata(ctypes.sizeof(information))
+        ptrace(0x4202, pid, 0, ctypes.byref(information))
+        code = int.from_bytes(bytes(information[8:12]), "little", signed=True)
+        if code not in {1, 2, 3}:
+            return False
+        child = int.from_bytes(bytes(information[16:20]), "little", signed=True)
+        row = self.native_jobs.get(state.native_dispatch)
+        if (
+            int.from_bytes(bytes(information[:4]), "little", signed=True) != signal.SIGCHLD
+            or row is None or not any(
+                event["kind"] == "fork" and event["pid"] == pid and event["child"] == child
+                for event in row["tree"]
+            )
+        ):
+            raise Violation("native SIGCHLD lacks its actual owned child")
+        self.native_tree_event(state, {
+            "kind": "signal", "pid": pid, "child": child, "code": code,
+            "status": int.from_bytes(bytes(information[24:28]), "little", signed=True),
+        })
+        state.delivery_signal = signal.SIGCHLD
+        return True
 
     def native_job_frame(self, pid, state, pointer, size):
         if (
@@ -574,12 +631,21 @@ class Policy:
             or status != row["terminal_status"] or os.waitstatus_to_exitcode(status) != row["returncode"]
         ):
             raise Violation("native job wait result differs from its actual terminal lifecycle")
+        if self.read_trace is not None and self.read_trace.version == 5:
+            read_epochs.native_job_tree(
+                row["tree"], row, self.make_pid, self.native_executables,
+                count_limit=self.config["observation_count"],
+            )
         self.native_job_event({"sequence": row["sequence"], "wait_status": status, "flags": flags})
         row["waited"], row["ignored"] = True, bool(flags & 1)
         self.observe("accessed", "native-job:" + encoded(row).decode("ascii"))
 
     def retire_native_job(self, pid, state, status):
         row = self.native_jobs.get(state.native_dispatch)
+        if self.read_trace is not None and self.read_trace.version == 5:
+            self.native_tree_event(state, {"kind": "exit", "pid": pid, "status": status})
+            if row is not None and pid != row["pid"]:
+                return
         if row is None or row["pid"] != pid or row["terminal_status"] is not None:
             raise Violation("native job terminal event lost its actual dispatched child")
         code = os.waitstatus_to_exitcode(status)
@@ -1980,6 +2046,13 @@ class Policy:
                     state.exec_path = path
                     self.reserve_observation("accessed", "native-shell:" + str(pid) + ":" + path)
                     state.dispatch = None
+                elif (
+                    self.native_readonly and self.read_trace is not None and self.read_trace.version == 5
+                    and state.role == "native" and state.native_dispatch in self.native_jobs
+                    and path in self.native_executables
+                ):
+                    role = "native"
+                    state.exec_path = path
                 elif not self.native_readonly and path == "/control/interceptor" and state.dispatch:
                     role = "helper"
                     source, required = state.dispatch
@@ -2154,6 +2227,15 @@ class Policy:
             state.break_end = result
         operation, value = pending if pending is not None else (None, None)
         if result < 0:
+            if (
+                self.native_readonly and self.read_trace is not None and self.read_trace.version == 5
+                and state.role == "native" and result == -errno.EPIPE
+                and r.orig_rax in {1, 18, 20} and state.kernel_io == "<pipe>"
+            ):
+                state.native_signals.add(signal.SIGPIPE)
+                self.native_tree_event(state, {
+                    "kind": "pipe-error", "pid": pid, "syscall": r.orig_rax, "error": errno.EPIPE,
+                })
             if operation == "native-signal" and value[1]:
                 state.native_signals.discard(value[0])
             if operation == "make-source-exec" and result == -errno.EACCES and self.source_execute_allowed(pid, *value):
@@ -2351,6 +2433,8 @@ def supervise(config, drop_privileges):
             state.newborn_stop = False
             if policy.read_trace is not None and stopped != policy.read_trace.pid:
                 policy.read_trace.clear(stopped)
+                if state.role == "native" and policy.read_trace.version == 5:
+                    policy.native_tree_event(state, {"kind": "start", "pid": stopped})
         if sig == signal.SIGTRAP and event in {1, 2, 3}:
             child = ctypes.c_ulong()
             ptrace(0x4201, stopped, 0, ctypes.byref(child))
@@ -2366,6 +2450,10 @@ def supervise(config, drop_privileges):
             if not already_stopped:
                 record.pidfd = os.pidfd_open(child.value)
             processes[child.value] = record
+            if state.role == "native" and policy.read_trace is not None and policy.read_trace.version == 5:
+                policy.native_tree_event(
+                    state, {"kind": "fork", "pid": stopped, "child": child.value},
+                )
             if not state.process_reservation:
                 raise Violation("unreserved process creation")
             state.process_reservation = False
@@ -2376,19 +2464,23 @@ def supervise(config, drop_privileges):
             if already_stopped:
                 if policy.read_trace is not None:
                     policy.read_trace.clear(child.value)
+                    if record.role == "native" and policy.read_trace.version == 5:
+                        policy.native_tree_event(record, {"kind": "start", "pid": child.value})
                 resume(child.value)
         elif sig == signal.SIGTRAP and event == 4:
+            tree_exec = None
             if state.pending is None or state.pending[0] != "exec":
                 raise Violation("unapproved executable transition")
             if policy.native_readonly and state.pending[1] == "native":
                 if state.exec_path not in policy.native_executables:
                     raise Violation("native exec has no admitted image")
-                policy.bind_native_job(stopped, state)
-                policy.observe(
-                    "accessed",
-                    ("native-shell:" if state.exec_path == config.get("native_shell", "/bin/sh") else "native-exec:")
-                    + str(stopped) + ":" + state.exec_path,
-                )
+                tree_exec = policy.bind_native_job(stopped, state)
+                if tree_exec is None or state.native_execs == 1 and stopped == policy.native_jobs[state.native_dispatch]["pid"]:
+                    policy.observe(
+                        "accessed",
+                        ("native-shell:" if state.exec_path == config.get("native_shell", "/bin/sh") else "native-exec:")
+                        + str(stopped) + ":" + state.exec_path,
+                    )
                 state.exec_path = None
             if config.get("dependency"):
                 if state.exec_path is None:
@@ -2406,7 +2498,11 @@ def supervise(config, drop_privileges):
                     raise Violation("initial guest exec inherited a nonstandard descriptor")
             state.role = state.pending[1]
             state.bootstrap = False
-            state.fds = {0: "<stdin>", 1: "<stdout>", 2: "<stderr>"}
+            state.fds = (
+                {fd: state.fds[fd] for fd in (0, 1, 2) if fd in state.fds}
+                if state.role == "native" and policy.read_trace is not None and policy.read_trace.version == 5
+                else {0: "<stdin>", 1: "<stdout>", 2: "<stderr>"}
+            )
             state.observer_ranges = ()
             state.observer_ready = False
             state.native_signals.clear()
@@ -2417,13 +2513,20 @@ def supervise(config, drop_privileges):
             state.kernel_call = None
             policy.finish_exec(stopped, state)
             if policy.read_trace is not None:
-                policy.read_trace.actual_exec(
-                    stopped, state.role == "make",
-                    None if state.role == "make" else state.native_dispatch,
-                    **({"inputs": None if state.role == "make" else {
-                        key: policy.native_jobs[state.native_dispatch][key] for key in ("argv", "cwd")
-                    }} if policy.read_trace.version == 5 else {}),
-                )
+                if tree_exec is not None and (
+                    state.native_execs > 1 or stopped != policy.native_jobs[state.native_dispatch]["pid"]
+                ):
+                    policy.read_trace.clear(stopped)
+                else:
+                    policy.read_trace.actual_exec(
+                        stopped, state.role == "make",
+                        None if state.role == "make" else state.native_dispatch,
+                        **({"inputs": None if state.role == "make" else {
+                            key: policy.native_jobs[state.native_dispatch][key] for key in ("argv", "cwd")
+                        }} if policy.read_trace.version == 5 else {}),
+                    )
+                if tree_exec is not None:
+                    policy.native_tree_event(state, tree_exec)
             release_vfork(stopped)
         elif sig == signal.SIGTRAP and event == 5:
             child = ctypes.c_ulong()
@@ -2462,6 +2565,8 @@ def supervise(config, drop_privileges):
             raise Violation("unauthenticated native shell trap")
         elif policy.native_readonly and state.role == "native" and sig == signal.SIGSTOP and not tracing_stop:
             raise Violation("unsupported native shell stop")
+        elif policy.native_readonly and state.role == "native" and sig == signal.SIGCHLD and policy.native_child_signal(stopped, state):
+            pass
         elif sig not in {signal.SIGSTOP, signal.SIGCHLD, signal.SIGTRAP} or (
             policy.native_readonly and state.role == "native" and sig == signal.SIGCHLD
         ):

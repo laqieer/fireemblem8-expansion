@@ -1460,7 +1460,7 @@ class ProbeSession:
                             or set(job) != {
                                 "sequence", "executable", "pid", "context", "returncode",
                                 "terminal_status", "waited", "ignored",
-                            } | ({"argv", "cwd"} if runtime_completions else set())
+                            } | ({"argv", "cwd", "tree"} if runtime_completions else set())
                             or not 0 < job["pid"] < 1 << 31
                             or type(job["sequence"]) is not int or job["sequence"] <= 0
                             or type(job["returncode"]) is not int
@@ -1496,9 +1496,29 @@ class ProbeSession:
                         ):
                             raise MakeProbeError("native job differs from its admitted executable")
                         if runtime_completions:
-                            from .read_epochs import native_execution_input
+                            from .read_epochs import native_execution_input, native_job_tree
                             inputs = native_execution_input(job["argv"], job["cwd"])
                             job_inputs[(job["sequence"], job["pid"])] = hashlib.sha256(encoded(inputs)).hexdigest()
+                            parent = None
+                            if observed["returncode"] == 0:
+                                make_parents = {
+                                    row["pid"] for row in observed["read_trace"]["machine"]["events"]
+                                    if row["kind"] == "execute" and row["make"] is True
+                                }
+                                if len(make_parents) != 1:
+                                    raise MakeProbeError("native job tree lacks its original Make parent")
+                                parent = next(iter(make_parents))
+                            native_job_tree(
+                                job["tree"], job, parent, config["native_executables"],
+                                count_limit=config["observation_count"],
+                            )
+                            if observed["returncode"] == 0:
+                                machine_tree = [
+                                    row["event"] for row in observed["read_trace"]["machine"]["events"]
+                                    if row["kind"] == "native-tree" and row["dispatch"] == job["sequence"]
+                                ]
+                                if machine_tree != job["tree"]:
+                                    raise MakeProbeError("native job tree differs from returned machine observations")
                         jobs[job["pid"]] = job["executable"]
                         dispatches.append((job["sequence"], job["pid"]))
                     elif value.startswith(("native-shell:", "native-exec:")):

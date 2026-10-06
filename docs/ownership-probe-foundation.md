@@ -501,7 +501,7 @@ structural validation admits explicit, paired expansion intervals and validates
 every post-read source event, rather than discarding those visits. Machine
 expansion-input digests bind the captured root payload, and every root return
 requires the actual post-read guard to be rearmed. Generated-source admission,
-descendant/reexec qualification and the original aggregate-budget holds remain.
+nested Make/restart qualification and the original aggregate-budget holds remain.
 Run `test_native_runtime_expansion_abi_binds_original_callers_anchors_and_layout`
 on the admitted host: captured Make must yield both verified loop callers and
 the actual recipe/secondary expansion callers. Independent machine mutations
@@ -548,7 +548,7 @@ losing local value in the third. Target post-modifier custody is the same
 runtime contract, not an additional source restriction.
 
 This checkpoint does not complete graph-consumer integration, generated
-creates/replacements/remakes, descendant/reexec qualification or the unchanged
+creates/replacements/remakes, nested Make/restarts or the unchanged
 original preliminary-plus-eight-query budget case. The sticky architecture
 hold remains a delivery hold. Limits, accounting categories and the original
 fixtures are unchanged. No ROM/RAM/save/localization, modern/archival profile or
@@ -618,6 +618,81 @@ with owned cleanup. Capture substitutions are decoder controls, not actual
 malformed Linux exec claims. Retain version-4 source/job/machine controls and
 direct version-5 hardware parity. Generated command-to-resource matching,
 descriptor/version custody and original budget qualification remain open.
+
+Version-5 readonly native jobs retain a finite `tree` under their original Make
+dispatch. Each actual fork records its parent and child. Each stopped newborn
+records `start` only after its inherited hardware registers are cleared and
+before its first resume; a child that never execs still needs this lifetime.
+Each original exec or same-PID replacement records its generation, admitted
+image, actual argv and supervised CWD after an actual register clear. Every
+member must terminate before the original root's terminal event. The root's
+original Make wait/context/ignore handling remains unchanged; nonzero or
+signalled leaves do not fabricate a failing root shell result.
+
+Real native SIGCHLD delivery requires kernel siginfo naming an actual forked
+child of that parent, with its code/status matched to the child's observed
+terminal wait status. Native SIGPIPE is admitted only after an actual
+write-family syscall returns EPIPE on an owned pipe; the pipe error and actual
+signal termination remain observable. Surviving/orphaned descendants refuse
+publication and are removed by existing owned-process cleanup. No foreign
+image, arbitrary signal, writable mount, generated-source authority, replay or
+new accounting exclusion is admitted.
+
+Returned tree events have strict shapes, order, ownership, start/exec
+generations and complete terminal lifetimes. Every event is bound to the
+machine packet for the same original dispatch/PID, with the complete returned
+tree equal to the observed machine tree. Child start and every exec independently
+require their immediately preceding actual register clear. These are captured
+runtime/integrity observations, not signatures or hostile same-UID isolation.
+Version 4 retains its original descendant/reexec refusal and wire format.
+Failed Make runs retain structural job/tree validation and their original
+status/diagnostic, but do not publish a successful trace. Only successful runs
+bind the root parent and complete returned tree to that trace's machine
+observations; failed-run structural parent values are not archive authority.
+Nested Make/read forests, Make restart, generated producers and the original
+aggregate-budget qualification are separate unresolved contracts.
+
+On the admitted GNU Make 4.3 x86-64 host, run
+`test_native_runtime_readonly_descendant_pipelines_and_exec_lifetimes`:
+the unchanged eager and recipe printf pipelines must produce `second`, matching
+ordinary Make; a same-PID exec
+replacement must produce `replaced` with generations 1 and 2; nonzero,
+SIGUSR1-terminated and nested shell leaves must preserve the successful original
+root output while retaining all actual child statuses. The pre-checkpoint
+pipeline refusal is the negative control. Run
+`test_native_runtime_undeclared_descendant_images_refuse_before_exec`: an
+undeclared false image must refuse before actual exec, both as a same-PID
+replacement and under a real owned child; cleanup must retain no owned process.
+Run
+`test_native_runtime_fork_without_exec_retains_start_and_terminal_custody`:
+compile the small owned C fixture, fork a child that exits 7 without exec and
+wait for it; require a successful root, a started generation-zero child and its
+actual terminal status. Run
+`test_native_runtime_descendant_tree_returned_shapes_and_clear_omissions_refuse`:
+foreign parent/PID/image, generation, argv/CWD, signal/status and missing
+start/terminal mutations must refuse. Independently omit inherited-start clear,
+replacement-exec clear or all tree machine packets; each must also refuse.
+These are returned-evidence/decoder controls, not physical register-corruption
+claims. Run `test_native_runtime_owned_broken_pipe_and_orphan_cleanup`:
+the compiled fixture writes to its own closed-reader pipe and must actually
+terminate with SIGPIPE under Make's ignored-recipe policy, recording EPIPE and
+then continuing to `done`; a shell leaving a live busy-loop child must refuse.
+Use each test's temporary view and require session exit to remove all owned
+resources. Run
+`test_native_runtime_failed_roots_and_completed_descendants_preserve_make_error`:
+unignored exit 7, an actual SIGUSR1-terminated root and exit 9 after a completed
+nonzero child must preserve ordinary Make's status 2 and actual diagnostic,
+without accessing an absent success archive. Malformed parent/start/terminal
+trees on that failed path must still refuse with typed errors. None of these
+cases substitutes for original eight-query resource
+qualification or generated/nested-Make integration.
+Run `test_native_runtime_descendant_deadline_cleans_live_owned_tree`: start a
+root shell waiting on an actual busy-loop child, capture its actual fork,
+register-cleared start and exec, then shorten the supervisor deadline after
+that exec. Require explicit deadline refusal, no successful terminal/archive
+and owned cleanup. The earlier supervisor deadline allows its failure report
+to be decoded within the unchanged host budget; this is a cancellation control,
+not aggregate-budget qualification.
 
 Run `test_native_readonly_reuses_captured_runtime_without_second_host_read`:
 execute two original shell/direct-printf Make queries in one session, deny a

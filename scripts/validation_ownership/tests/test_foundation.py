@@ -3831,6 +3831,303 @@ class FoundationTests(unittest.TestCase):
             self.assertTrue(session.budget.failed)
         self.assert_clean(session)
 
+    def test_native_runtime_readonly_descendant_pipelines_and_exec_lifetimes(self):
+        from scripts.validation_ownership import read_epochs
+        from signal import SIGUSR1
+        cases = (
+            ("pipeline", "VALUE := $(shell /usr/bin/printf first | /usr/bin/printf second)\n"
+             "all: ; @printf '%s' '$(VALUE)'\n", b"second"),
+            ("recipe-pipeline", "all: ; @/usr/bin/printf first | /usr/bin/printf second\n", b"second"),
+            ("replacement", "all: ; @exec /usr/bin/printf '%s' replaced\n", b"replaced"),
+            ("nonzero", "all: ; @/bin/sh -c 'exit 7'; printf done\n", b"done"),
+            ("signalled", "all: ; @/bin/sh -c 'kill -USR1 $$$$'; printf done\n", b"done"),
+            ("nested", "all: ; @/bin/sh -c '/bin/sh -c \"exit 0\"; printf nested'; printf done\n", b"nesteddone"),
+        )
+        for label, body, expected in cases:
+            self.add("Makefile", body)
+            ordinary = subprocess.run(
+                ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                env=ENVIRONMENT, capture_output=True, timeout=10,
+            )
+            self.assertEqual(ordinary.returncode, 0)
+            self.assertEqual(ordinary.stdout, expected)
+            session = self.session()
+            with self.subTest(label=label), session:
+                completed, _, observed = session._native_make_readonly(
+                    "all", native_executables=("/usr/bin/printf",),
+                    observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual(completed.stdout, expected)
+                jobs = [
+                    parse_json(row.removeprefix("native-job:").encode(), "native tree job")
+                    for row in observed["accessed"] if row.startswith("native-job:")
+                ]
+                packets = [event for job in jobs for event in job["tree"]]
+                if label == "replacement":
+                    self.assertEqual(
+                        [event["generation"] for event in packets if event["kind"] == "exec"],
+                        [1, 2],
+                    )
+                    self.assertEqual({event["pid"] for event in packets}, {jobs[0]["pid"]})
+                else:
+                    self.assertTrue(any(event["kind"] == "fork" for event in packets))
+                    if label == "nonzero":
+                        self.assertTrue(any(event["kind"] == "exit" and os.WIFEXITED(event["status"]) and os.WEXITSTATUS(event["status"]) == 7 for event in packets))
+                    if label == "signalled":
+                        self.assertTrue(any(event["kind"] == "exit" and os.WIFSIGNALED(event["status"]) and os.WTERMSIG(event["status"]) == SIGUSR1 for event in packets))
+                    if label == "nested":
+                        self.assertGreaterEqual(sum(event["kind"] == "fork" for event in packets), 2)
+                make_pid = next(row["pid"] for row in observed["read_trace"]["machine"]["events"] if row["kind"] == "execute" and row["make"])
+                for job in jobs:
+                    read_epochs.native_job_tree(
+                        job["tree"], job, make_pid, {"/bin/sh", "/usr/bin/printf"},
+                        count_limit=session.budget.limits.observation_count,
+                    )
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_undeclared_descendant_images_refuse_before_exec(self):
+        for command in (
+            "exec /usr/bin/false",
+            "/bin/sh -c 'exec /usr/bin/false'; printf unreachable",
+        ):
+            self.add("Makefile", "all: ; @" + command + "\n")
+            session = self.session()
+            with self.subTest(command=command), session:
+                with self.assertRaisesRegex(MakeProbeError, "untrusted executable dispatch"):
+                    session._native_make_readonly(
+                        "all", native_executables=("/usr/bin/printf",),
+                        observe_reads=True, observe_runtime_completions=True,
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_descendant_tree_returned_shapes_and_clear_omissions_refuse(self):
+        self.add("Makefile", "all: ; @/bin/sh -c 'exit 7'; printf done\n")
+        mutations = (
+            "row['tree'][0]['parent']=row['pid']",
+            "row['tree'][0]['generation']=2",
+            "next(e for e in row['tree'] if e['kind']=='fork')['child']=row['pid']",
+            "next(e for e in row['tree'] if e['kind']=='exec' and e['pid']!=row['pid'])['parent']=row['pid']+999",
+            "next(e for e in row['tree'] if e['kind']=='exec' and e['pid']!=row['pid'])['path']='/usr/bin/false'",
+            "next(e for e in row['tree'] if e['kind']=='exec' and e['pid']!=row['pid'])['argv']=['other']",
+            "next(e for e in row['tree'] if e['kind']=='exec' and e['pid']!=row['pid'])['argv']=[chr(0xD800)]",
+            "next(e for e in row['tree'] if e['kind']=='exec' and e['pid']!=row['pid'])['cwd']='/'+chr(0xD800)",
+            "next(e for e in row['tree'] if e['kind']=='exit' and e['pid']!=row['pid'])['status']=0",
+            "next(e for e in row['tree'] if e['kind']=='signal')['child']=row['pid']",
+            "row['tree']=[e for e in row['tree'] if e['kind']!='start']",
+            "row['tree']=[e for e in row['tree'] if not(e['kind']=='exit' and e['pid']!=row['pid'])]",
+            "row['tree'][-1]['status']=256",
+        )
+        for mutation in mutations:
+            body = (
+                "import syscall_guard as guard\noriginal=guard.Policy.observe\n"
+                "def changed(self,name,value):\n"
+                " if name=='accessed' and value.startswith('native-job:'):\n"
+                "  row=json.loads(value[len('native-job:'):])\n"
+                f"  {mutation}\n"
+                "  value='native-job:'+guard.encoded(row).decode('ascii')\n"
+                " return original(self,name,value)\nguard.Policy.observe=changed\n"
+            )
+            session = self.session()
+            with self.subTest(mutation=mutation), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "native (job|child)"):
+                    session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        for omission in ("exec-clear", "start-clear", "all-tree"):
+            body = (
+                "import read_trace\noriginal=read_trace.NativeReadTrace.finish\n"
+                "def changed(self):\n"
+                " result=original(self)\n rows=result['machine']['events']\n"
+                f" if {omission!r}=='all-tree':\n"
+                "  rows[:]=[row for row in rows if row['kind']!='native-tree']\n"
+                f" elif {omission!r}=='exec-clear':\n"
+                "  execution=next(row for row in rows if row['kind']=='native-tree' and row['event']['kind']=='exec' and row['event']['generation']==2)\n"
+                "  clear=next(row for row in reversed(rows[:rows.index(execution)]) if row['pid']==execution['pid'])\n"
+                "  if clear['kind']!='clear':raise RuntimeError('missing actual exec clear')\n"
+                "  rows.remove(clear)\n"
+                " else:\n"
+                "  start=next(row for row in rows if row['kind']=='native-tree' and row['event']['kind']=='start')\n"
+                "  clear=next(row for row in reversed(rows[:rows.index(start)]) if row['pid']==start['pid'])\n"
+                "  if clear['kind']!='clear':raise RuntimeError('missing actual inherited clear')\n"
+                "  rows.remove(clear)\n"
+                " for sequence,row in enumerate(rows,1):row['seq']=sequence\n"
+                " return result\nread_trace.NativeReadTrace.finish=changed\n"
+            )
+            self.add("Makefile", (
+                "all: ; @/bin/sh -c 'exit 7'; printf done\n" if omission == "start-clear"
+                else "all: ; @exec /usr/bin/printf done\n"
+            ))
+            session = self.session()
+            with self.subTest(omission=omission), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "native"):
+                    session._native_make_readonly(
+                        "all", native_executables=("/usr/bin/printf",),
+                        observe_reads=True, observe_runtime_completions=True,
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_fork_without_exec_retains_start_and_terminal_custody(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("fork.c", (
+            "#include <unistd.h>\n#include <sys/wait.h>\n"
+            "int main(void){int status=0;pid_t child=fork();"
+            "if(child<0)return 2;if(!child)_exit(7);"
+            "if(waitpid(child,&status,0)!=child)return 3;"
+            "return WIFEXITED(status)&&WEXITSTATUS(status)==7?0:4;}\n"
+        ))
+        self.add("Makefile", "all: ; @/native/tool\n")
+        session = self.session()
+        with session:
+            tool = session.compile_native(("fork.c",))
+            completed, _, observed = session._native_make_readonly(
+                "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.returncode, 0)
+            jobs = [
+                parse_json(row.removeprefix("native-job:").encode(), "fork job")
+                for row in observed["accessed"] if row.startswith("native-job:")
+            ]
+            self.assertEqual(len(jobs), 1)
+            machine = observed["read_trace"]["machine"]["events"]
+            parent = next(row["pid"] for row in machine if row["kind"] == "execute" and row["make"])
+            nodes = read_epochs.native_job_tree(
+                jobs[0]["tree"], jobs[0], parent, {"/native/tool", "/bin/sh"},
+                count_limit=session.budget.limits.observation_count,
+            )
+            children = [node for pid, node in nodes.items() if pid != jobs[0]["pid"]]
+            self.assertEqual(len(children), 1)
+            self.assertEqual(children[0]["generation"], 0)
+            self.assertTrue(children[0]["started"])
+            self.assertEqual(os.WEXITSTATUS(children[0]["status"]), 7)
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_runtime_failed_roots_and_completed_descendants_preserve_make_error(self):
+        cases = (
+            ("exit", "all: ; @exit 7\n", b"Error 7"),
+            ("signal", "all: ; @v=failed; kill -USR1 $$$$\n", b"User defined signal"),
+            ("descendant", "all: ; @/bin/sh -c 'exit 7'; exit 9\n", b"Error 9"),
+        )
+        for label, body, diagnostic in cases:
+            self.add("Makefile", body)
+            ordinary = subprocess.run(
+                ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                env=ENVIRONMENT, capture_output=True, timeout=10,
+            )
+            self.assertEqual(ordinary.returncode, 2)
+            self.assertIn(diagnostic, ordinary.stderr)
+            session = self.session()
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(MakeProbeError, "readonly native GNU Make failed: 2") as error:
+                    with session:
+                        session._native_make_readonly(
+                            "all", observe_reads=True, observe_runtime_completions=True,
+                        )
+                self.assertIn(diagnostic.decode(), str(error.exception))
+                self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+        self.add("Makefile", cases[-1][1])
+        for mutation in (
+            "row['tree'][0]['parent']=True",
+            "row['tree'][0]['parent']=row['pid']",
+            "row['tree']=[e for e in row['tree'] if e['kind']!='start']",
+            "row['tree']=[e for e in row['tree'] if not(e['kind']=='exit' and e['pid']!=row['pid'])]",
+        ):
+            body = (
+                "import syscall_guard as guard\noriginal=guard.Policy.observe\n"
+                "def changed(self,name,value):\n"
+                " if name=='accessed' and value.startswith('native-job:'):\n"
+                "  row=json.loads(value[len('native-job:'):])\n"
+                f"  {mutation}\n"
+                "  value='native-job:'+guard.encoded(row).decode('ascii')\n"
+                " return original(self,name,value)\nguard.Policy.observe=changed\n"
+            )
+            session = self.session()
+            with self.subTest(failed_tree=mutation), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "native job tree"):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_descendant_deadline_cleans_live_owned_tree(self):
+        self.add("Makefile", "all: ; @/bin/sh -c 'while :; do :; done'; printf unreachable\n")
+        body = (
+            "import syscall_guard as guard,time\noriginal=guard.Policy.native_tree_event\n"
+            "def observed(self,state,event):\n"
+            " result=original(self,state,event)\n"
+            " self.observe('accessed','actual-tree:'+guard.encoded(event).decode('ascii'))\n"
+            " if event['kind']=='exec' and event['pid']!=self.native_jobs[state.native_dispatch]['pid']:\n"
+            "  self.config['deadline']=min(self.config['deadline'],time.monotonic()+0.1)\n"
+            " return result\nguard.Policy.native_tree_event=observed\n"
+        )
+        session = self.session(seconds=5)
+        original = session.budget.read_bytes
+        reports = []
+
+        def capture(path, category):
+            data = original(path, category)
+            if category == "control" and Path(path).name.startswith("report-"):
+                reports.append(parse_json(data, "deadline report"))
+            return data
+
+        with self.native_supervisor(body), patch.object(session.budget, "read_bytes", side_effect=capture):
+            with self.assertRaisesRegex(MakeProbeError, "deadline"):
+                with session:
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                    )
+        self.assertEqual(len(reports), 1)
+        self.assertIs(reports[0]["ok"], False)
+        events = [
+            parse_json(row.removeprefix("actual-tree:").encode(), "actual deadline tree")
+            for row in reports[0]["accessed"] if row.startswith("actual-tree:")
+        ]
+        child = next(event["child"] for event in events if event["kind"] == "fork")
+        self.assertTrue(any(event["kind"] == "start" and event["pid"] == child for event in events))
+        self.assertTrue(any(event["kind"] == "exec" and event["pid"] == child for event in events))
+        self.assertFalse(any(event["kind"] == "exit" for event in events))
+        self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_runtime_owned_broken_pipe_and_orphan_cleanup(self):
+        from signal import SIGPIPE
+        self.add("pipe.c", (
+            "#include <unistd.h>\nint main(void){int p[2];"
+            "if(pipe(p)||close(p[0])||dup2(p[1],1)<0||close(p[1]))return 2;"
+            "return write(1,\"x\",1)==1?3:4;}\n"
+        ))
+        self.add("Makefile", "all:\n\t-@/native/tool\n\t@v=done; printf '%s' \"$$v\"\n")
+        session = self.session()
+        with session:
+            tool = session.compile_native(("pipe.c",))
+            completed, _, observed = session._native_make_readonly(
+                "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"done")
+            jobs = [
+                parse_json(row.removeprefix("native-job:").encode(), "pipe job")
+                for row in observed["accessed"] if row.startswith("native-job:")
+            ]
+            failed = next(job for job in jobs if job["executable"] == "/native/tool")
+            self.assertTrue(failed["ignored"])
+            self.assertTrue(os.WIFSIGNALED(failed["terminal_status"]))
+            self.assertEqual(os.WTERMSIG(failed["terminal_status"]), SIGPIPE)
+            self.assertTrue(any(event["kind"] == "pipe-error" for event in failed["tree"]))
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+        self.add("Makefile", "all: ; @/bin/sh -c 'while :; do :; done' &\n")
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "native (job|tree)"):
+                session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
     def test_native_runtime_post_read_recipe_and_secondary_eval_capture(self):
         from scripts.validation_ownership import read_epochs
         for family, target, body in (

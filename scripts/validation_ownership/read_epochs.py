@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import base64
+import errno
 from collections import Counter
 import hashlib
+import os
 import posixpath
 import re
 import struct
@@ -1397,6 +1399,99 @@ def native_execution_input(argv, cwd):
     return {"argv": argv, "cwd": cwd}
 
 
+def native_job_tree(events, job, parent, executables, *, count_limit):
+    if not isinstance(events, list) or not 2 <= len(events) <= count_limit:
+        raise ReadEpochError("native job tree has an incomplete event extent")
+    nodes, signals = {}, []
+    root = job["pid"]
+    if type(root) is not int or not 0 < root < 1 << 31 or root == parent:
+        raise ReadEpochError("native job tree has a foreign root process")
+    for number, event in enumerate(events, 1):
+        if not isinstance(event, dict) or not isinstance(event.get("kind"), str):
+            raise ReadEpochError("native job tree has an invalid event")
+        kind = event["kind"]
+        fields = {
+            "exec": {"parent", "generation", "path", "argv", "cwd"},
+            "fork": {"child"}, "start": set(), "exit": {"status"},
+            "signal": {"child", "code", "status"},
+            "pipe-error": {"syscall", "error"},
+        }
+        if (
+            kind not in fields or set(event) != {"seq", "kind", "pid"} | fields[kind]
+            or type(event["seq"]) is not int or event["seq"] != number
+            or type(event["pid"]) is not int or not 0 < event["pid"] < 1 << 31
+        ):
+            raise ReadEpochError("native job tree has a foreign event shape/sequence")
+        pid = event["pid"]
+        if number == 1:
+            if kind != "exec" or pid != root:
+                raise ReadEpochError("native job tree lost its original root dispatch")
+            if parent is None:
+                parent = event["parent"]
+            if (
+                type(parent) is not int or not 0 < parent < 1 << 31 or parent == root
+                or event["parent"] != parent
+            ):
+                raise ReadEpochError("native job tree has a foreign original parent")
+            nodes[pid] = {"parent": parent, "generation": 0, "status": None, "started": True}
+        node = nodes.get(pid)
+        if node is None or node["status"] is not None:
+            raise ReadEpochError("native job tree event belongs to an unknown or retired process")
+        if kind == "start":
+            if node["started"]:
+                raise ReadEpochError("native job tree reused its child start")
+            node["started"] = True
+        elif not node["started"]:
+            raise ReadEpochError("native job tree omitted its stopped child start")
+        elif kind == "fork":
+            child = event["child"]
+            if type(child) is not int or not 0 < child < 1 << 31 or child in nodes or child == parent:
+                raise ReadEpochError("native job tree reused a child or its original Make parent")
+            nodes[child] = {"parent": pid, "generation": 0, "status": None, "started": False}
+        elif kind == "signal":
+            child = event["child"]
+            if (
+                type(child) is not int or child not in nodes or nodes[child]["parent"] != pid
+                or type(event["code"]) is not int or event["code"] not in {1, 2, 3}
+                or type(event["status"]) is not int or not 0 <= event["status"] <= 255
+            ):
+                raise ReadEpochError("native job tree has a foreign child signal")
+            signals.append(event)
+        elif kind == "pipe-error":
+            if (
+                type(event["syscall"]) is not int or event["syscall"] not in {1, 18, 20}
+                or type(event["error"]) is not int or event["error"] != errno.EPIPE
+            ):
+                raise ReadEpochError("native job tree has an invalid owned pipe error")
+        elif kind == "exec":
+            native_execution_input(event["argv"], event["cwd"])
+            if (
+                type(event["parent"]) is not int or event["parent"] != node["parent"]
+                or type(event["generation"]) is not int or event["generation"] != node["generation"] + 1
+                or not isinstance(event["path"], str) or event["path"] not in executables
+                or number == 1 and any(event[key] != job[key] for key in ("argv", "cwd"))
+                or number == 1 and event["path"] != job["executable"]
+            ):
+                raise ReadEpochError("native job tree substituted an original exec/input binding")
+            node["generation"] += 1
+        else:
+            status = event["status"]
+            if type(status) is not int or not 0 <= status < 1 << 32 or not (os.WIFEXITED(status) or os.WIFSIGNALED(status)):
+                raise ReadEpochError("native job tree has an invalid terminal wait status")
+            if pid == root and (number != len(events) or status != job["terminal_status"]):
+                raise ReadEpochError("native job root returned before its descendants or with a foreign status")
+            node["status"] = status
+    if any(node["status"] is None for node in nodes.values()):
+        raise ReadEpochError("native job tree omitted a terminal descendant")
+    for event in signals:
+        status = nodes[event["child"]]["status"]
+        expected = os.WEXITSTATUS(status) if os.WIFEXITED(status) else os.WTERMSIG(status)
+        code = 1 if os.WIFEXITED(status) else 3 if os.WCOREDUMP(status) else 2
+        if event["status"] != expected or event["code"] != code:
+            raise ReadEpochError("native child signal differs from its actual terminal status")
+    return nodes
+
+
 def validate_machine_observations(value, trace, *, count_limit):
     if (
         not isinstance(value, dict) or set(value) != {"version", "events", "closed"}
@@ -1420,6 +1515,7 @@ def validate_machine_observations(value, trace, *, count_limit):
             "effect-input": {"effect", "sha256"}, "effect-result": {"effect", "sha256"},
             "eval-buffer": {"evaluation", "source", "sha256"},
             "expansion-input": {"expansion", "sha256"},
+            "native-tree": {"dispatch", "event", "sha256"},
         })
     runtime_bindings = {kind: set() for kind in ("effect-input", "effect-result", "eval-buffer", "expansion-input")}
     postread_guards = set()
@@ -1427,6 +1523,8 @@ def validate_machine_observations(value, trace, *, count_limit):
     previous = 0
     make_pid = None
     make_execs, child_dispatches = set(), set()
+    native_roots, native_trees = {}, {}
+    native_owners, native_cleared, previous_pid_events = {}, set(), {}
     for number, row in enumerate(value["events"], 1):
         if (
             not isinstance(row, dict) or not isinstance(row.get("kind"), str)
@@ -1448,6 +1546,8 @@ def validate_machine_observations(value, trace, *, count_limit):
         ):
             raise ReadEpochError("native machine observation has a foreign trace context")
         kind, pid = row["kind"], row["pid"]
+        prior_pid = previous_pid_events.get(pid)
+        previous_pid_events[pid] = row
         if kind in {"clear", "arm"}:
             registers = row["registers"]
             if (
@@ -1460,6 +1560,7 @@ def validate_machine_observations(value, trace, *, count_limit):
                 if any(registers[:4]) or registers[5]:
                     raise ReadEpochError("native clear retained an enabled or stale slot")
                 armed.pop(pid, None)
+                native_cleared.add(pid)
                 continue
             slots = row["slots"]
             if not isinstance(slots, list) or not 2 <= len(slots) <= 4:
@@ -1551,6 +1652,37 @@ def validate_machine_observations(value, trace, *, count_limit):
                 make_execs.add((previous + 1, row["exec"] + 1, pid))
             else:
                 child_dispatches.add(row["dispatch"])
+                native_roots[row["dispatch"]] = row
+                native_trees[row["dispatch"]] = []
+                if runtime and pid in native_owners:
+                    raise ReadEpochError("native root execution reused an owned process")
+                native_owners[pid] = row["dispatch"]
+        elif kind == "native-tree":
+            dispatch, event = row["dispatch"], row["event"]
+            if (
+                type(dispatch) is not int or dispatch not in native_roots
+                or not isinstance(event, dict) or event.get("pid") != pid
+                or not isinstance(row["sha256"], str)
+                or row["sha256"] != hashlib.sha256(encoded(event)).hexdigest()
+                or native_owners.get(pid) != dispatch or pid not in native_cleared
+            ):
+                raise ReadEpochError("native machine tree lost its actual root/event payload")
+            if event.get("kind") == "fork":
+                child = event.get("child")
+                if type(child) is not int or child <= 0 or child in native_owners:
+                    raise ReadEpochError("native machine tree reused its owned child")
+                native_owners[child] = dispatch
+                native_cleared.discard(child)
+            elif event.get("kind") == "exec":
+                if prior_pid is None or not (
+                    prior_pid["kind"] == "clear"
+                    or prior_pid["kind"] == "execute" and prior_pid["make"] is False
+                    and event.get("generation") == 1 and native_roots[dispatch]["pid"] == pid
+                ):
+                    raise ReadEpochError("native tree exec omitted its actual register clear")
+            elif event.get("kind") == "start" and (prior_pid is None or prior_pid["kind"] != "clear"):
+                raise ReadEpochError("native tree start omitted its inherited register clear")
+            native_trees[dispatch].append(event)
         elif kind in runtime_bindings:
             event_kind = {
                 "effect-input": "effect-entry", "effect-result": "effect-completion",
@@ -1643,6 +1775,23 @@ def validate_machine_observations(value, trace, *, count_limit):
         event["seq"] for event in trace["events"] if event["kind"] in {"pass-exit", "expansion-exit"}
     }:
         raise ReadEpochError("runtime machine observations omit the actual post-read guard")
+    if runtime:
+        for dispatch, events in native_trees.items():
+            if not events:
+                raise ReadEpochError("native machine observations omit the original job tree")
+            first, last = events[0], events[-1]
+            if not isinstance(first, dict) or not isinstance(last, dict) or not {"argv", "cwd", "path"} <= first.keys() or "status" not in last:
+                raise ReadEpochError("native machine tree has incomplete root execution/return")
+            inputs = native_execution_input(first["argv"], first["cwd"])
+            if hashlib.sha256(encoded(inputs)).hexdigest() != native_roots[dispatch]["input_sha256"]:
+                raise ReadEpochError("native machine tree differs from its original job inputs")
+            native_job_tree(
+                events, {
+                    "pid": native_roots[dispatch]["pid"], "argv": first["argv"], "cwd": first["cwd"],
+                    "executable": first["path"], "terminal_status": last["status"],
+                }, make_pid, {event["path"] for event in events if isinstance(event, dict) and event.get("kind") == "exec" and isinstance(event.get("path"), str)},
+                count_limit=count_limit,
+            )
     return value
 
 
