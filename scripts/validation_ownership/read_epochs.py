@@ -681,11 +681,12 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
             charge(len(encoded(sorted(names))))
             dependencies[definition].update(names)
             continue
-        assignment = None if raw.startswith("\t") else make_lexical.MODE_ASSIGNMENT.fullmatch(statement)
+        assignment, macro = (
+            (None, None) if raw.startswith("\t") else make_lexical.completion_declaration(statement)
+        )
         if assignment is None:
             names = make_lexical.references(statement)
             charge(len(encoded(sorted(names))))
-            macro = None if raw.startswith("\t") else make_lexical.DEFINE.match(header)
             if macro is not None:
                 definition, depth = macro[1], 1
                 dependencies.setdefault(definition, set()).update(names)

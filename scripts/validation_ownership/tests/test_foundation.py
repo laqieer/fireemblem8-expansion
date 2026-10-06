@@ -1725,6 +1725,40 @@ class FoundationTests(unittest.TestCase):
                         self.assertEqual(completed.stdout, ordinary.stdout)
                 self.assert_clean(session)
 
+    def test_native_completion_finite_declaration_and_short_reference_admission(self):
+        from scripts.validation_ownership import read_epochs
+        cases = [
+            (f"{name} := original\nOUTPUT := ${name}\n", "original")
+            for name in (".", "-", "!")
+        ]
+        for operator in ("=", ":=", "::=", "?=", "+=", "!="):
+            value = "printf original" if operator == "!=" else "original"
+            for name in ("$(NAME)", "${NAME}", "VA$(SUFFIX)"):
+                for modifier in ("", "export ", "override ", "private "):
+                    cases.append((f"{modifier}{name} {operator} {value}\nOUTPUT := $(VALUE)\n", "original"))
+        cases.extend((
+            ("define $(NAME)\noriginal\nendef\nOUTPUT := $(VALUE)\n", "original"),
+            ("define ${NAME}\noriginal\nendef\nOUTPUT := $(VALUE)\n", "original"),
+        ))
+        for declaration, expected in cases:
+            self.add("Makefile", (
+                f"NAME := VALUE\nSUFFIX := LUE\n{declaration}"
+                "all: ; @printf '%s' '$(OUTPUT)'\n"
+            ))
+            with self.subTest(declaration=declaration):
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, expected.encode())
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion"):
+                    read_epochs.completion_source_facts("Makefile", (self.root / "Makefile").read_bytes())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion"):
+                    with session:
+                        session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assert_clean(session)
+
     def test_native_computed_supplier_execution_without_completion_still_works(self):
         for expression in ("$($(NAME))", "$(call $(NAME))"):
             self.add("Makefile", (
@@ -1739,6 +1773,83 @@ class FoundationTests(unittest.TestCase):
                     row["kind"] == "assignment-completion" for row in observed["read_trace"]["events"]
                 ))
             self.assert_clean(session)
+        for declaration in (
+            "NAME := VALUE\n$(NAME) := original\nOUTPUT := $(VALUE)\n",
+            ". := original\nOUTPUT := $.\n",
+        ):
+            self.add("Makefile", declaration + "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n")
+            session = self.session()
+            with self.subTest(declaration=declaration), session:
+                completed, _, observed = session._native_make_readonly("all", observe_reads=True)
+                self.assertEqual(completed.stdout, b"original")
+                self.assertFalse(any(event["kind"] == "assignment-completion"
+                                     for event in observed["read_trace"]["events"]))
+            self.assert_clean(session)
+
+    def test_native_returned_archive_uses_finite_source_admission(self):
+        from scripts.validation_ownership import read_epochs
+        recipe = "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+        source = "NAME := VALUE\nVALUE := original\nOUTPUT := $(VALUE)\n" + recipe + "# reserved padding................\n"
+        self.add("Makefile", source)
+        session = self.session()
+        with session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"original")
+            trace = observed["read_trace"]
+            read_epochs.validate_trace(
+                trace, trace["scope"], count_limit=session.budget.limits.observation_count,
+                file_limit=session.budget.limits.file_bytes,
+            )
+            for replacement in (
+                "NAME := VALUE\nVALUE := original\nOUTPUT := $.\n" + recipe,
+                "NAME := VALUE\n$(NAME) := original\nOUTPUT := $(VALUE)\n" + recipe,
+                "NAME := VALUE\ndefine $(NAME)\noriginal\nendef\nOUTPUT := $(VALUE)\n" + recipe,
+            ):
+                mutated = json.loads(json.dumps(trace))
+                opened = next(event for event in mutated["events"]
+                              if event["kind"] == "source-open" and event["result"] >= 0)
+                row = mutated["sources"][opened["source"] - 1]
+                self.assertLessEqual(len(replacement.encode()), row["bytes"])
+                data = replacement.encode().ljust(row["bytes"], b" ")
+                row["data"] = base64.b64encode(data).decode()
+                row["sha256"] = hashlib.sha256(data).hexdigest()
+                inventory = next(item for item in mutated["selection"]["inventory"]
+                                 if item["path"] == opened["path"])
+                inventory["sha256"] = row["sha256"]
+                with self.subTest(replacement=replacement):
+                    with self.assertRaisesRegex(MakeProbeError, "unsupported completion"):
+                        read_epochs.validate_trace(
+                            mutated, mutated["scope"],
+                            count_limit=session.budget.limits.observation_count,
+                            file_limit=session.budget.limits.file_bytes,
+                        )
+        self.assert_clean(session)
+
+    def test_native_completion_declaration_classifies_sites_and_non_site_context(self):
+        from scripts.validation_ownership import read_epochs
+        source = (
+            "VALUE := original\n"
+            "define MACRO\n"
+            "$(VALUE)\n"
+            "define NESTED\n"
+            "$(VALUE)\n"
+            "endef\n"
+            "endef\n"
+            "ifeq ($(VALUE),original)\n"
+            "NEXT := $(VALUE)\n"
+            "endif\n"
+            "all: LOCAL := $(NEXT)\n"
+            "all: ; @v='$(NEXT)'; printf '%s' \"$$v\"\n"
+            "\t@echo '$$not_a_make_reference'\n"
+            "$(info literal name=value)\n"
+        )
+        rows, roots, dependencies = read_epochs.completion_source_facts("Makefile", source.encode())
+        self.assertEqual({row[5] for row in rows}, {"VALUE", "NEXT"})
+        self.assertEqual(dependencies["MACRO"], {"VALUE"})
+        self.assertEqual(dependencies["NEXT"], {"VALUE"})
+        self.assertEqual(roots, {"VALUE", "NEXT"})
 
     def test_native_unsupported_direct_suppliers_refuse_incomplete_completion(self):
         from scripts.validation_ownership import read_epochs
@@ -1762,10 +1873,10 @@ class FoundationTests(unittest.TestCase):
                     env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
                 )
                 self.assertEqual(ordinary.stdout, expected.encode())
-                with self.assertRaisesRegex(MakeProbeError, "unsupported Make supplier"):
+                with self.assertRaisesRegex(MakeProbeError, "unsupported (?:Make supplier|completion)"):
                     read_epochs.completion_source_facts("Makefile", (self.root / "Makefile").read_bytes())
                 session = self.session()
-                with self.assertRaisesRegex(MakeProbeError, "unsupported Make supplier"):
+                with self.assertRaisesRegex(MakeProbeError, "unsupported (?:Make supplier|completion)"):
                     with session:
                         session._native_make_readonly("all", observe_reads=True, observe_completions=True)
                 self.assert_clean(session)
@@ -1783,10 +1894,10 @@ class FoundationTests(unittest.TestCase):
                     env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
                 )
                 self.assertEqual(ordinary.stdout, expected.encode())
-                with self.assertRaisesRegex(MakeProbeError, "unsupported Make supplier"):
+                with self.assertRaisesRegex(MakeProbeError, "unsupported (?:Make supplier|completion)"):
                     read_epochs.completion_source_facts("Makefile", (self.root / "Makefile").read_bytes())
                 session = self.session()
-                with self.assertRaisesRegex(MakeProbeError, "unsupported Make supplier"):
+                with self.assertRaisesRegex(MakeProbeError, "unsupported (?:Make supplier|completion)"):
                     with session:
                         session._native_make_readonly("all", observe_reads=True, observe_completions=True)
                 self.assert_clean(session)
@@ -1801,6 +1912,11 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(make_lexical.references(f"else {directive} NAME\nVALUE := $(OTHER)"),
                              {"NAME", "OTHER"})
         self.assertEqual(make_lexical.references("$() ${} $(1) ${@D} $(VALUE:x=y)"), {"1", "@D", "VALUE"})
+        self.assertEqual(make_lexical.references("escaped $$! and trailing $"), set())
+        for token in ("$.", "$-", "$!", "$ ", '$"'):
+            with self.subTest(token=token):
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion dollar reference"):
+                    make_lexical.references("OUTPUT := " + token)
         self.add("Makefile", (
             "NAME := VALUE\nVALUE := original\nOUTPUT := $(and ,$($(NAME)))\n"
             "REFERENCES = $(OUTPUT)\nall: ; @v='$(OUTPUT)'; printf '[%s]' \"$$v\"\n"

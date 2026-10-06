@@ -59,7 +59,10 @@ MODE_ASSIGNMENT, MODE_TARGET_ASSIGNMENT = (
 )
 
 
-DEFINE = re.compile(rf"^\s*(?:(?:export|override|private)\s+)*define\s+({LITERAL_NAME})")
+DEFINE = re.compile(
+    rf"^\s*(?:(?:export|override|private)\s+)*define\s+({LITERAL_NAME})"
+    r"(?:[ \t]+(?:::?=|\?=|\+=|!=|=))?[ \t]*$"
+)
 
 
 MAKE_SPACE = " \t\r\n\v\f"
@@ -130,7 +133,7 @@ def _make_expression_spans(
                 if short:
                     yield index, index + 2, token[1:]
                 index += 1
-            elif staged or strict_dollars:
+            elif staged or strict_dollars and len(token) == 2:
                 raise _UnresolvedName("incomplete or unsupported dollar token")
         index += 1
     if (staged or require_complete) and stack:
@@ -275,10 +278,48 @@ def strip_comment(line):
     return result
 
 
+def completion_declaration(statement):
+    """Classify literal global sites before admitting non-site source context."""
+    assignment = MODE_ASSIGNMENT.fullmatch(statement)
+    if assignment is not None:
+        return assignment, None
+    header = statement.strip(MAKE_SPACE)
+    if re.match(r"^(?:(?:export|override|private)[ \t]+)*define(?:[ \t]|$)", header):
+        macro = DEFINE.fullmatch(header)
+        if macro is None:
+            raise MakeProbeError("unsupported completion define name")
+        return None, macro
+    if re.match(
+        r"^(?:ifeq|ifneq|ifdef|ifndef|else|endif|include|-include|sinclude|undefine|unexport)(?:[ \t]|$)",
+        header,
+    ):
+        return None, None
+    spans = {}
+    for start, stop, _ in _make_expression_spans(statement, short=True):
+        spans[start] = max(spans.get(start, stop), stop)
+    index = 0
+    while index < len(statement):
+        if index in spans:
+            index = spans[index]
+            continue
+        operator = next((token for token in ("::=", ":=", "?=", "+=", "!=", "=")
+                         if statement.startswith(token, index)), None)
+        if operator is not None:
+            raise MakeProbeError("unsupported completion assignment name")
+        if statement[index] in ":;":
+            return None, None
+        index += 1
+    return None, None
+
+
 def references(line, *, reference_base=_make_reference_base):
     line = _prune_and(line)
     names = set()
-    for start, stop, body in _make_expression_spans(line, short=True):
+    try:
+        spans = list(_make_expression_spans(line, short=True, strict_dollars=True, require_complete=True))
+    except _UnresolvedName as error:
+        raise MakeProbeError("unsupported completion dollar reference") from error
+    for start, stop, body in spans:
         name = reference_base(body)
         if re.fullmatch(LITERAL_NAME, name) or SCOPED.fullmatch("$(" + name + ")"):
             names.add(name)

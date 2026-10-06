@@ -710,6 +710,31 @@ the existing namespace launcher, run these `FoundationTests` controls:
    Literal chained conditional tests also require actual supplier completions and reject a returned selection
    with that supplier removed. Parser-only negatives are not whole-archive
    mutation evidence.
+   The third-round disposition binds `TC-OWNERSHIP-NATIVE-COMPLETION-001`
+   to finite shared source admission, not permissive assignment-regex
+   fallthrough. `test_native_completion_finite_declaration_and_short_reference_admission`
+   compares 77 ordinary GNU positives against shared-source and real native
+   completion refusals: unsupported short names, computed names in both
+   delimiters and concatenations, six assignment operators, all ordinary
+   modifiers and computed define headers. Every unsupported declaration must
+   refuse before publishing sites. The existing balanced scanner now classifies
+   every short dollar token; escaped `$$`, trailing literal `$`, builtin/scoped
+   arguments and already-pruned dead branches remain supported.
+   `test_native_returned_archive_uses_finite_source_admission` validates one real
+   native archive, then changes its source payload and matching inventory digest
+   coherently while preserving byte length. Short-reference, computed-assignment
+   and computed-define payloads must reach and fail the named admission boundary.
+   These are actual returned-archive consumer mutations, not native source
+   custody mutations or claims that the pre-fix entire modified archive succeeded.
+   `test_native_completion_declaration_classifies_sites_and_non_site_context`
+   checks parsed ordinary-site/dependency facts and deliberate recipe, target,
+   directive and nested literal-define contexts. Literal define bodies retain
+   dependencies but are not ordinary assignment sites; arbitrary macro/eval
+   execution still needs broader supplier qualification.
+   Repeat the no-completion execution control with computed assignment and short
+   lookup sources: genuine native output must remain `original` without an
+   invented completion trace. No native evaluator, source rewrite, new budget,
+   or separate parser backend is introduced.
 4. `test_native_readonly_completion_failed_make_has_no_successful_archive`:
    a real source error must retain Make's status and diagnostic, fail the
    invocation and clean active pins without a successful trace.
