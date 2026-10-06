@@ -146,7 +146,11 @@ class FoundationTests(unittest.TestCase):
 
     def test_native_readonly_managed_python_directory_boundaries_refuse(self):
         runtime = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}"
-        for declaration in (["/usr/lib"], ("/usr",), (runtime, runtime), (runtime + "/json",)):
+        for declaration in (
+            ["/usr/lib"], ("/usr",), (runtime, runtime), (runtime + "/json",),
+            ("/usr/local/lib",), ("/usr/lib/python3",),
+            ("/usr/lib/python3/dist-packages",) * 5,
+        ):
             self.add("Makefile", ".PHONY: all\nall: ; @:\n")
             session = self.session()
             with self.subTest(declaration=declaration), session:
@@ -330,6 +334,63 @@ class FoundationTests(unittest.TestCase):
                     native_runtime_directories=(runtime,),
                 )
         self.assert_clean(session)
+
+    def test_native_readonly_default_python_declared_site_startup(self):
+        runtime, resources = self.native_python_startup_fixture()
+        home_site = ENVIRONMENT["HOME"] + f"/.local/lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages"
+        script = 'import importlib; print(importlib.import_module("json").dumps([1,2]))'
+        self.add("Makefile", (
+            f"VALUE := $(shell /usr/bin/python3 -c {shlex.quote(script)})\n"
+            ".PHONY: all\nall: ; @v='$(VALUE)'; printf '%s\\n' \"$$v\"\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/python3", "-c", script], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+        )
+        session = self.session(runtime_files=(
+            *resources, "/usr/share/zoneinfo/UTC", home_site,
+            f"/etc/python{sys.version_info.major}.{sys.version_info.minor}/sitecustomize.py",
+        ))
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), native_executables=("/usr/bin/python3",),
+                native_runtime_directories=(
+                    runtime, f"/usr/local/lib/python{sys.version_info.major}.{sys.version_info.minor}/dist-packages",
+                    "/usr/lib/python3/dist-packages",
+                ),
+            )
+            self.assertEqual(ordinary.stdout, b"[1, 2]\n")
+            self.assertEqual(completed.stdout, ordinary.stdout)
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "[1, 2]")
+            self.assertTrue(any(path.startswith(runtime + "/json/") for path in observed["accessed"]))
+        self.assert_clean(session)
+
+    def test_native_readonly_python_site_resource_boundaries(self):
+        from scripts.validation_ownership import make_probe
+        site = f"/usr/local/lib/python{sys.version_info.major}.{sys.version_info.minor}/dist-packages"
+        for command, message in (
+            (f"printf changed > {site}/forbidden-new.py", "filesystem write denied"),
+            (f"read -r v < {site}/../../../../../etc/passwd", "uncaptured Make runtime access"),
+            ("/usr/bin/python3", "uncaptured Make runtime access: metadata /usr/bin/python3"),
+        ):
+            self.add("Makefile", f".PHONY: all\nall: ; @{command}\n")
+            session = self.session()
+            with self.subTest(command=command), session:
+                with self.assertRaisesRegex(MakeProbeError, message):
+                    session._native_make_readonly("all", native_runtime_directories=(site,))
+            self.assert_clean(session)
+        exact = f"/etc/python{sys.version_info.major}.{sys.version_info.minor}/sitecustomize.py"
+        captured = make_probe._capture_runtime_input(exact, ProbeBudget())
+        self.assertEqual(captured.data, Path(exact).read_bytes())
+        self.assertEqual(captured.mode, stat.S_IMODE(Path(exact).stat().st_mode))
+        for path in (exact, "/etc/passwd", exact + "extra"):
+            with self.subTest(path=path):
+                with self.assertRaisesRegex(MakeProbeError, "outside the trusted system tool/library roots"):
+                    make_probe._trusted_runtime_path(path)
+        for path in ("/etc/passwd", exact + "extra"):
+            with self.subTest(path=path):
+                with self.assertRaisesRegex(MakeProbeError, "outside the trusted system tool/library roots"):
+                    make_probe._capture_runtime_input(path, ProbeBudget())
 
     def test_native_default_home_runtime_capture_requires_actual_absence(self):
         from scripts.validation_ownership import make_probe

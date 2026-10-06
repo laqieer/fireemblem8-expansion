@@ -26,7 +26,7 @@ from pathlib import Path, PurePosixPath
 from threading import get_ident, main_thread
 
 from .authority import (
-    AuthorityLoader, ENVIRONMENT, Frames, Snapshot, _command_hash, _event_command,
+    AuthorityLoader, ENVIRONMENT, Frames, PYTHON_RUNTIME_DIRECTORY, Snapshot, _command_hash, _event_command,
     _read_event_frames, _read_events, encoded, parse_json, relative_path,
 )
 from .budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget, text
@@ -291,14 +291,18 @@ def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
     requested = PurePosixPath(path)
     if not requested.is_absolute() or str(requested) != path or ".." in requested.parts:
         raise MakeProbeError("noncanonical trusted runtime path")
+    sitecustomize = optional and re.fullmatch(r"/etc/python[0-9]+\.[0-9]+/sitecustomize\.py", path)
     roots = (
         "/usr/bin/", "/usr/lib/", "/usr/lib64/", "/lib/", "/lib64/",
         *(("/usr/libexec/",) if compiler else ()),
         *(("/usr/", "/bin/", ENVIRONMENT["HOME"] + "/") if optional else ()),
+        *((path,) if sitecustomize else ()),
     )
     if not path.startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
     resolved = Path(path).resolve(strict=not optional)
+    if sitecustomize and resolved.as_posix() != path:
+        raise MakeProbeError("sitecustomize runtime input must be canonical")
     if not resolved.as_posix().startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
     for entry in {Path(path), *Path(path).parents, resolved, *resolved.parents}:
@@ -403,9 +407,9 @@ def _capture_runtime_input(path, budget):
 
 
 def _trusted_python_directory(path, budget):
-    if not isinstance(path, str) or re.fullmatch(r"/usr/lib/python[0-9]+\.[0-9]+", path) is None:
-        raise MakeProbeError("native runtime directory must be an exact versioned Python stdlib")
-    root = _trusted_runtime_path(path)
+    if not isinstance(path, str) or PYTHON_RUNTIME_DIRECTORY.fullmatch(path) is None:
+        raise MakeProbeError("native runtime directory must be an exact Python stdlib or site root")
+    root = _trusted_runtime_path(path, optional=True)
     if root.as_posix() != path or not root.is_dir():
         raise MakeProbeError("native Python directory must be a canonical trusted directory")
     pending, count = [root], 0
@@ -2064,7 +2068,9 @@ class ProbeSession:
         for path in native_executables:
             relative_path(path[1:])
         if (
-            not isinstance(native_runtime_directories, tuple) or len(native_runtime_directories) > 1
+            not isinstance(native_runtime_directories, tuple) or len(native_runtime_directories) > 4
+            or any(not isinstance(path, str) for path in native_runtime_directories)
+            or len(set(native_runtime_directories)) != len(native_runtime_directories)
         ):
             raise MakeProbeError("invalid native runtime directory declaration")
         runtime_directories = tuple(

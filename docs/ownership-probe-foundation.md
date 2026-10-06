@@ -481,8 +481,10 @@ namespace launcher, extend `TC-OWNERSHIP-NATIVE-COMPLETION-001` (#270):
 
 `TC-OWNERSHIP-NATIVE-MANAGED-RUNTIME-001` (#270) covers the internal
 `native_runtime_directories=()` resource declaration. Its empty default retains
-the captured-only native runtime. One exact `/usr/lib/pythonM.N` directory may
-be explicitly declared through the existing readonly bind-mount seam. Before
+the captured-only native runtime. Up to four distinct exact Python resource
+roots may be declared: `/usr/lib/pythonM.N`,
+`/usr/local/lib/pythonM.N/dist-packages`, `/usr/lib/python3/dist-packages`,
+and `/usr/lib/pythonM.N/dist-packages`. These use the existing readonly bind-mount seam. Before
 mounting, every namespace entry is checked for root ownership and nonmutable
 group/other permissions, regular-file/directory/symlink type, entry bounds and
 the existing deadline; metadata admission charges the existing control budget.
@@ -516,8 +518,8 @@ interaction applies. Start with a clean fixture and run:
 3. `test_native_readonly_managed_python_startup_does_not_invent_absence`:
    dispatch real explicitly admitted Python with the fixture's actual `-I -S`
    argv. Its unadmitted `/usr/pyvenv.cfg` startup read must refuse, not become a
-   false-absence branch. **Original nonisolated startup, site/zip/package
-   resources and full extension dependency closure are still unqualified.** This
+   false-absence branch. **Original generator invocations and full extension
+   dependency closure are still unqualified.** This
    negative is not a successful Python execution or original-eight-query proof.
    Explicit optional `runtime_files` may now name ordinary trusted files or
    genuine absence beneath `/usr/`, retaining the existing captured data/mode,
@@ -549,8 +551,24 @@ interaction applies. Start with a clean fixture and run:
    confinement must refuse that real metadata probe. Declaring its actual
    absence reaches the existing `/usr/local/lib/pythonM.N/dist-packages`
    namespace, which still refuses rather than being reported missing.
-   Default site startup remains unqualified; this is an explicit negative,
-   not successful nonisolated execution.
+   This undeclared-site boundary is an explicit negative, not successful
+   nonisolated execution.
+   `test_native_readonly_default_python_declared_site_startup` additionally
+   declares the actual installed local/system site roots and the exact
+   canonical root-owned `/etc/pythonM.N/sitecustomize.py` optional file.
+   Require unchanged `python3 -c` JSON import and recipe output to match
+   ordinary Python `[1, 2]`, actual JSON reads and owned cleanup. The existing
+   captured startup/zip/HOME/timezone resources remain explicit. A genuinely
+   absent versioned `dist-packages` beneath the declared stdlib uses the live
+   readonly namespace, not a conflicting captured absence.
+   `test_native_readonly_python_site_resource_boundaries` requires actual
+   site write and parent-escape refusal, unissued Python metadata refusal
+   before dispatch,
+   sitecustomize bytes/mode capture and denial of other `/etc` paths, spelling
+   extensions and nonoptional executable admission. This is not an `/etc`
+   mount or a new executable root. Default startup is qualified only for this
+   concrete system Python JSON invocation, not arbitrary installed package
+   dependencies, original generators or the complete eight-query family.
    `test_native_readonly_python_captured_alias_and_dynamic_import` additionally
    declares that exact UTC resource, runs the fixture's genuine Python command,
    and requires `[1, 2]` from actual JSON dynamic import and recipe output plus

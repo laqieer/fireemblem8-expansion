@@ -27,7 +27,7 @@ from pathlib import Path
 
 if __package__:
     from .read_trace import NativeReadTrace
-    from .authority import _event_command, _read_events, encoded, parse_json
+    from .authority import PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, parse_json
     from .lifecycle import finish_cleanup
     from .metadata_transport import encode_metadata_transport
     from .producer_channel import (
@@ -36,7 +36,7 @@ if __package__:
     )
 else:
     from read_trace import NativeReadTrace
-    from authority import _event_command, _read_events, encoded, parse_json
+    from authority import PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, parse_json
     from lifecycle import finish_cleanup
     from metadata_transport import encode_metadata_transport
     from producer_channel import (
@@ -256,12 +256,13 @@ class Policy:
         self.native_runtime_directories = config.get("native_runtime_directories", [])
         if (
             not isinstance(self.native_runtime_directories, list)
-            or len(self.native_runtime_directories) > 1
+            or len(self.native_runtime_directories) > 4
             or any(
                 not isinstance(path, str)
-                or re.fullmatch(r"/usr/lib/python[0-9]+\.[0-9]+", path) is None
+                or PYTHON_RUNTIME_DIRECTORY.fullmatch(path) is None
                 for path in self.native_runtime_directories
             )
+            or len(set(self.native_runtime_directories)) != len(self.native_runtime_directories)
             or self.native_runtime_directories and not self.native_readonly
         ):
             raise Violation("invalid native managed runtime directory authority")
