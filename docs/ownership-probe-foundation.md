@@ -248,6 +248,51 @@ It does not qualify generated-source versions/read pins, original Make
 producer ownership, nested Make/reexec or the supervised eight-query family.
 Those dependent #270 contracts and all final delivery gates remain open.
 
+### Original compiled-tool placement
+
+The original compiler additionally binds its declared output path into the
+session-issued `NativeTool`. The key includes that path as well as sealed
+bytes and immutable input owners. Default compilation/direct-native execution
+and default readonly native-Make `/native/tool` placement remain unchanged.
+An explicit `_native_make_readonly(..., native_tool=tool, original_tool=True)`
+uses only that issued original binding; there is no caller-selected pathname
+or second tool registry. Generic tools without a binding refuse. C++ shared
+libraries and recipe executables still need their existing explicit resource
+declarations; original placement does not infer them.
+
+Reuse the snapshot-derived source scaffold, but mount its root readonly for
+this lane. Every immutable source island and the separately materialized
+verified tool image is a readonly child mount. Original source-entry barriers
+verify actual source/guest device and inode pairs and readonly/nosuid/nodev
+flags for every composed repository mount while the original Make is stopped.
+The host admits that composed layout only for the exact session-issued tool
+and captured runtime bytes, rejecting caller-supplied root/child mounts.
+No binary is added to the snapshot inventory or immutable tree. Existing
+native dispatch, original exec inputs, source pin/bytes, runtime and archive
+validation remain active; every native/Make filesystem write still refuses.
+This is not a writable producer namespace or generated-source custody.
+
+For the #270 `TC-WORKFLOW-NATIVE-MAKE-001` original-tool member, run
+`test_original_scaninc_executes_original_path_through_unchanged_make` from the
+same clean compiler/namespace environment. Compile the original scanner,
+declare its existing C++ libraries and the actual recipe `printf`, then run
+unchanged `tools/scaninc/scaninc -I include unit.c` through original Make.
+Require `include/sample.h` semantics/output, exactly one actual scanner exec
+with unchanged argv and `/repo` CWD, waited/zero terminal native jobs and
+snapshot input owners. No original output may persist in the immutable tree.
+
+Run the original-native-tool binding and mount-custody controls. Copied or
+changed tools, missing/generic bindings, invalid flags and foreign-session
+objects must refuse. Real source/tool/ancestor writes and a genuine neighboring
+executable must refuse; the ordinary neighboring executable control must
+actually run. A modified composed-mount source identity must reject at the
+stopped source-entry barrier. Explicit root/child mounts must reject before
+launch. The same original-issued tool must still work through default
+`/native/tool` placement and direct native execution. All controls retain
+source bytes and owned cleanup. Generated producers/version pins, nested
+Make/reexec, original supervised eight queries and every final delivery gate
+remain unqualified by these member results.
+
 ### Original source-entry observation component
 
 The internal readonly invocation can now request `observe_reads=True`. Only

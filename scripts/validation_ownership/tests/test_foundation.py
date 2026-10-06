@@ -979,7 +979,7 @@ class FoundationTests(unittest.TestCase):
             policy.check(Process("compiler"), "/repo/tool/program", "directory")
         self.assertEqual(policy.config["repository_outputs"], ["/repo/tool/program"])
 
-    def test_original_scaninc_compiles_original_sources_flags_cwd_and_output(self):
+    def original_scaninc_command(self):
         names = (
             "scaninc.cpp", "c_file.cpp", "asm_file.cpp", "source_file.cpp",
             "scaninc.h", "c_file.h", "asm_file.h", "source_file.h",
@@ -989,11 +989,14 @@ class FoundationTests(unittest.TestCase):
             self.add(path, (ROOT / path).read_bytes())
         self.add("unit.c", '#include "sample.h"\n')
         self.add("include/sample.h", "#define SAMPLE 1\n")
-        command = Command(
+        return Command(
             ("g++", "-Wall", "-Werror", "-std=c++11", "-O2", *names[:4], "-o", "scaninc"),
             code=tuple("tools/scaninc/" + name for name in names),
             outputs=("tools/scaninc/scaninc",),
         )
+
+    def test_original_scaninc_compiles_original_sources_flags_cwd_and_output(self):
+        command = self.original_scaninc_command()
         ordinary = subprocess.run(
             command.argv, cwd=self.root / "tools/scaninc", env=ENVIRONMENT,
             capture_output=True, timeout=30,
@@ -1013,6 +1016,169 @@ class FoundationTests(unittest.TestCase):
             )
             self.assertEqual((result.stdout, result.stderr), (expected.stdout, b""))
             self.assertFalse((session.tree / "tools/scaninc/scaninc").exists())
+        self.assert_clean(session)
+
+    def test_original_scaninc_executes_original_path_through_unchanged_make(self):
+        command = self.original_scaninc_command()
+        self.add("Makefile", (
+            "VALUE := $(shell tools/scaninc/scaninc -I include unit.c)\n"
+            "REFERENCES = $(VALUE)\n"
+            ".PHONY: all\nall: ; @printf '%s' '$(VALUE)'\n"
+        ))
+        session = self.session()
+        with session:
+            tool = session.compile_native_command(command, cwd="tools/scaninc")
+            result, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), native_tool=tool, original_tool=True,
+                observe_reads=True, observe_runtime_completions=True,
+                native_executables=("/usr/bin/printf",),
+                native_libraries=tuple("/lib/x86_64-linux-gnu/" + name for name in (
+                    "libstdc++.so.6", "libgcc_s.so.1", "libm.so.6",
+                )),
+            )
+            self.assertEqual((result.stdout, result.stderr), (b"include/sample.h", b""))
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "include/sample.h")
+            jobs = [
+                json.loads(value.removeprefix("native-job:"))
+                for value in observed["accessed"] if value.startswith("native-job:")
+            ]
+            executable = "/repo/tools/scaninc/scaninc"
+            execs = [
+                row for job in jobs for row in job["tree"]
+                if row["kind"] == "exec" and row["path"] == executable
+            ]
+            self.assertEqual(len(execs), 1)
+            self.assertEqual(execs[0]["argv"], ["tools/scaninc/scaninc", "-I", "include", "unit.c"])
+            self.assertEqual(execs[0]["cwd"], "/repo")
+            self.assertTrue(all(job["waited"] and job["terminal_status"] == 0 for job in jobs))
+            self.assertEqual(tool.inputs, tuple(session.snapshot.owners(command.code)))
+            self.assertFalse((session.tree / "tools/scaninc/scaninc").exists())
+        self.assert_clean(session)
+
+    def test_original_native_tool_binding_and_readonly_boundaries(self):
+        self.add("tool/source.c", '#include <stdio.h>\nint main(void) { printf("bound"); return 0; }\n')
+        self.add("Makefile", "VALUE := $(shell tool/program)\nall: ; @:\n")
+        command = Command(
+            ("gcc", "source.c", "-o", "program"),
+            code=("tool/source.c",), outputs=("tool/program",),
+        )
+        for label, expected in (
+            ("copy", "not issued by this exact probe session"),
+            ("bytes", "sealed native tool changed after validation"),
+            ("generic", "no issued original output binding"),
+            ("flag", "invalid native read observation request"),
+            ("missing", "invalid native read observation request"),
+        ):
+            session = self.session()
+            with self.subTest(label=label), session:
+                tool = session.compile_native_command(command, cwd="tool")
+                original = True
+                if label == "copy":
+                    tool = replace(tool, original_output="tool/neighbor")
+                elif label == "bytes":
+                    tool.path.chmod(0o700)
+                    tool.path.write_bytes(b"changed")
+                elif label == "generic":
+                    tool = session.compile_native(("tool/source.c",))
+                elif label == "flag":
+                    original = "1"
+                else:
+                    tool = None
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    session._native_make_readonly("all", native_tool=tool, original_tool=original)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        for body, error in (
+            ("printf change > tool/program", "filesystem write denied"),
+            ("printf change > tool/source.c", "filesystem write denied"),
+            ("printf change > tool", "filesystem write denied"),
+        ):
+            self.add("Makefile", "all: ; @" + body + "\n")
+            session = self.session()
+            with self.subTest(body=body), session:
+                tool = session.compile_native_command(command, cwd="tool")
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    session._native_make_readonly("all", native_tool=tool, original_tool=True)
+                self.assertEqual((session.tree / "tool/source.c").read_bytes(),
+                                 (self.root / "tool/source.c").read_bytes())
+            self.assert_clean(session)
+        self.add("Makefile", "VALUE := $(shell /native/tool)\nall: ; @:\n")
+        session = self.session()
+        with session:
+            tool = session.compile_native_command(command, cwd="tool")
+            result, semantics, _ = session._native_make_readonly(
+                "all", native_tool=tool, variables=("VALUE",),
+            )
+            self.assertEqual((result.stdout, result.stderr), (b"", b""))
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "bound")
+            self.assertEqual(session.native(tool).stdout, b"bound")
+            self.assertFalse((session.tree / "tool/program").exists())
+            binary = tool.path.read_bytes()
+        self.assert_clean(session)
+        self.add("tool/neighbor", binary, mode="100755")
+        (self.root / "tool/neighbor").chmod(0o755)
+        ordinary = subprocess.run(
+            [str(self.root / "tool/neighbor")], cwd=self.root, env=ENVIRONMENT,
+            capture_output=True, timeout=10,
+        )
+        self.assertEqual((ordinary.returncode, ordinary.stdout), (0, b"bound"))
+        self.add("Makefile", "all: ; @tool/neighbor\n")
+        session = self.session()
+        with session:
+            tool = session.compile_native_command(command, cwd="tool")
+            with self.assertRaisesRegex(MakeProbeError, "Make source executable lookup denied by noexec view"):
+                session._native_make_readonly("all", native_tool=tool, original_tool=True)
+        self.assert_clean(session)
+
+    def test_original_native_tool_mount_admission_and_actual_readonly_custody(self):
+        self.add("tool/source.c", "int main(void) { return 0; }\n")
+        self.add("Makefile", "VALUE := $(shell tool/program)\nall: ; @:\n")
+        command = Command(
+            ("gcc", "source.c", "-o", "program"),
+            code=("tool/source.c",), outputs=("tool/program",),
+        )
+        session = self.session()
+        with session:
+            tool = session.compile_native_command(command, cwd="tool")
+            run = session._sandbox_run
+            for target in ("/repo/tool", "/repo/tool/program", "/"):
+                root = session.base / "not-launched"
+                with self.subTest(target=target), self.assertRaisesRegex(
+                    MakeProbeError, "exact readonly native runtime",
+                ):
+                    run(
+                        root, mode="make", argv=["/usr/bin/make"], environment=ENVIRONMENT,
+                        native_runtime=(("/repo/tool/program", tool.path.read_bytes()),),
+                        original_tool=tool,
+                        mounts=[session._mount(session.tree, "/repo"), session._mount(self.root, target)],
+                    )
+        self.assert_clean(session)
+        owner, foreign = self.session(), self.session()
+        with owner, foreign:
+            tool = owner.compile_native_command(command, cwd="tool")
+            with self.assertRaisesRegex(MakeProbeError, "not issued by this exact probe session"):
+                foreign._native_make_readonly("all", native_tool=tool, original_tool=True)
+            self.assertTrue(foreign.budget.failed)
+            self.assertFalse(owner.budget.failed)
+        self.assert_clean(owner)
+        self.assert_clean(foreign)
+        body = (
+            "original=guard.Policy.confirm_readonly_entry\n"
+            "def changed(self,pid,state):\n"
+            " if self.read_trace is not None and self.read_trace.pending_barrier is not None:\n"
+            "  self.config['mounts'][next(i for i,row in enumerate(self.config['mounts'])"
+            " if row['target']=='/repo/tool/program')]['source']=self.config['root']+'/repo/Makefile'\n"
+            " return original(self,pid,state)\n"
+            "guard.Policy.confirm_readonly_entry=changed\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            tool = session.compile_native_command(command, cwd="tool")
+            with self.assertRaisesRegex(MakeProbeError, "composite source backing differs"):
+                session._native_make_readonly(
+                    "all", native_tool=tool, original_tool=True,
+                    observe_reads=True, observe_runtime_completions=True,
+                )
         self.assert_clean(session)
 
     def test_completion_expression_depth_rejects_before_nested_body_allocation(self):

@@ -132,6 +132,7 @@ class NativeTool:
     path: Path
     digest: str
     inputs: tuple[tuple[str, str, str], ...] = ()
+    original_output: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1059,6 +1060,7 @@ class ProbeSession:
         dependency=None, native_runtime=(), read_abi=None, read_selection=None,
         native_executables=(), native_runtime_directories=(), runtime_completions=False,
         repository_outputs=(), cwd="/repo", initial_executable=None,
+        original_tool=None,
     ):
         self.budget.remaining()
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
@@ -1087,6 +1089,35 @@ class ProbeSession:
             ] + self._compiler_source_mounts(root, repository_outputs)
         elif cwd != "/repo" or initial_executable is not None:
             raise MakeProbeError("original compiler execution options require declared repository output")
+        if original_tool is not None:
+            binary = self._sealed_native_tool_bytes(original_tool)
+            if (
+                mode != "make" or not native_runtime or repository_outputs
+                or original_tool.original_output is None
+                or dict(native_runtime).get("/repo/" + original_tool.original_output) != binary
+                or any(
+                    item["target"] == "/" or item["target"].startswith("/repo/")
+                    for item in mounts
+                )
+            ):
+                raise MakeProbeError("original tool placement requires its exact readonly native runtime")
+            tool_path = self._output_paths((original_tool.original_output,))[0]
+            mounts = [item for item in mounts if item["target"] != "/repo"]
+            source_mounts = self._compiler_source_mounts(root, (tool_path,))
+            source_mounts[0] = self._mount(
+                root.parent / (root.name + "-sources"), "/repo",
+            )
+            mounts.extend(source_mounts)
+            backing = root.parent / (root.name + "-sources")
+            destination = backing / tool_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.touch()
+            image = root.parent / (root.name + "-image")
+            image.write_bytes(binary)
+            image.chmod(0o555)
+            mounts.append(self._mount(
+                image, "/repo/" + tool_path, executable=True,
+            ))
         if self.runtime_root is not None and not native_runtime and (mode == "make" or metadata_validation):
             mounts = [
                 self._mount(self.runtime_root, "/", executable=True),
@@ -1106,7 +1137,11 @@ class ProbeSession:
                 mode != "make"
                 or self.published_sources or producer_handler is not None
                 or mapping_entries or metadata_validation or dependency is not None
-                or any(item["target"] == "/" or item["target"].startswith("/repo/") for item in mounts)
+                or any(
+                    item["target"] == "/" or (
+                        item["target"].startswith("/repo/") and original_tool is None
+                    ) for item in mounts
+                )
             ):
                 raise MakeProbeError("native readonly invocation conflicts with mapped/runtime/publication authority")
             executable = ["/usr/bin/make", native_shell, *native_executables]
@@ -1123,6 +1158,7 @@ class ProbeSession:
             "argv": argv, "root": str(root), "mode": mode,
             "cwd": cwd, "initial_executable": initial_executable or argv[0],
             "repository_outputs": ["/repo/" + name for name in repository_outputs],
+            "readonly_source_composite": original_tool is not None,
             "environment": environment, "mounts": mounts, "code": list(code),
             "sources": list(sources), "enumerations": list(directories),
             "executables": executable, "report": str(report),
@@ -2109,18 +2145,20 @@ class ProbeSession:
         result = self._command(
             command, compiler=executables, original_cwd=cwd, original_executable=compiler,
         )
-        return self._seal_native_tool(result.artifact, result.input_identities)
+        return self._seal_native_tool(
+            result.artifact, result.input_identities, original_output=outputs[0],
+        )
 
-    def _seal_native_tool(self, binary, inputs):
+    def _seal_native_tool(self, binary, inputs, *, original_output=None):
         self._validate_native(binary)
         digest = hashlib.sha256(binary).hexdigest()
-        key = hashlib.sha256(encoded([digest, inputs])).hexdigest()
+        key = hashlib.sha256(encoded([digest, inputs, original_output])).hexdigest()
         if key not in self.native_tools:
             self.budget.charge("cache", len(encoded([digest, inputs])))
             path = self.tree.parent / ("native-" + key)
             path.write_bytes(binary)
             path.chmod(0o500)
-            self.native_tools[key] = NativeTool(path, digest, inputs)
+            self.native_tools[key] = NativeTool(path, digest, inputs, original_output)
         return self.native_tools[key]
 
     @staticmethod
@@ -2208,6 +2246,7 @@ class ProbeSession:
         self, target, *, makefile="Makefile", variables=(), assignments=(), observe_reads=False,
         observe_completions=False, native_executables=(), native_runtime_directories=(), native_tool=None,
         native_libraries=(), observe_runtime_completions=False,
+        original_tool=False,
     ):
         variables, cli, environment = self._make_request(target, makefile, variables, assignments, ())
         if self.published_sources or self.make_depth:
@@ -2215,6 +2254,7 @@ class ProbeSession:
         if (
             type(observe_reads) is not bool or type(observe_completions) is not bool
             or type(observe_runtime_completions) is not bool
+            or type(original_tool) is not bool or original_tool and native_tool is None
             or (observe_completions or observe_runtime_completions) and not observe_reads
             or observe_completions and observe_runtime_completions
         ):
@@ -2284,8 +2324,15 @@ class ProbeSession:
             self._validate_native(binary)
             if _make_interpreter(binary, label="session-issued native tool") != interpreter:
                 raise MakeProbeError("native tool requires an unadmitted interpreter")
-            runtime["/native/tool"] = binary
-            native_executables = (*native_executables, "/native/tool")
+            if original_tool:
+                if native_tool.original_output is None:
+                    raise MakeProbeError("native tool has no issued original output binding")
+                self._output_paths((native_tool.original_output,))
+            tool_path = "/repo/" + native_tool.original_output if original_tool else "/native/tool"
+            if tool_path in runtime:
+                raise MakeProbeError("issued original tool conflicts with captured runtime")
+            runtime[tool_path] = binary
+            native_executables = (*native_executables, tool_path)
         native_runtime = tuple(sorted(runtime.items()))
         environment["VO_OBSERVE_NATIVE_READONLY"] = "1"
         read_abi = self._native_read_abi(
@@ -2301,6 +2348,8 @@ class ProbeSession:
         control = self.base / f"control-{self.serial + 1}"
         with cleanup_scope([
             lambda: _remove_owned_tree(control), lambda: _remove_owned_tree(root),
+            lambda: _remove_owned_tree(root.parent / (root.name + "-sources")),
+            lambda: (root.parent / (root.name + "-image")).unlink(missing_ok=True),
         ]):
             self._new_root(root_name, make=True, native_runtime=native_runtime)
             for path in runtime_directories:
@@ -2324,6 +2373,7 @@ class ProbeSession:
                 native_executables=native_executables,
                 native_runtime_directories=runtime_directories,
                 runtime_completions=observe_runtime_completions,
+                original_tool=native_tool if original_tool else None,
                 mounts=[
                     *(self._mount(Path(path), path, executable=True) for path in runtime_directories),
                     self._mount(self.tree, "/repo"),

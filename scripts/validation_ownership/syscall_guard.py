@@ -454,18 +454,36 @@ class Policy:
             return
         mounts = self.config.get("mounts", ())
         repository = [row for row in mounts if row["target"] == "/repo"]
+        composite = self.config.get("readonly_source_composite", False)
+        source_mounts = [row for row in mounts if row["target"].startswith("/repo/")]
         if (
             not self.native_readonly or trace.version not in {4, 5} or pid != self.make_pid or pid != trace.pid
             or self.processes.get(pid) is not state or state.role != "make"
             or not state.observer_ready or not state.parked or state.pidfd < 0
             or len(repository) != 1 or repository[0]["writable"] is not False
-            or any(row["target"] == "/" or row["target"].startswith("/repo/") for row in mounts)
+            or type(composite) is not bool
+            or any(row["target"] == "/" for row in mounts)
+            or source_mounts and not composite
+            or composite and any(row["writable"] is not False for row in source_mounts)
         ):
             raise Violation("readonly source entry lacks its actual stopped immutable backing")
         backing = os.statvfs(f"/proc/{pid}/root/repo")
         self.charge_metadata(sys.getsizeof(backing))
         if not backing.f_flag & os.ST_RDONLY:
             raise Violation("actual native source mount is not readonly")
+        if composite:
+            for row in (*repository, *source_mounts):
+                source = os.stat(row["source"])
+                guest_path = f"/proc/{pid}/root" + row["target"]
+                guest = os.stat(guest_path)
+                flags = os.statvfs(guest_path)
+                self.charge_metadata(len(encoded([list(source), list(guest), list(flags)])))
+                if (
+                    (source.st_dev, source.st_ino) != (guest.st_dev, guest.st_ino)
+                    or flags.f_flag & (os.ST_RDONLY | os.ST_NOSUID | os.ST_NODEV)
+                    != os.ST_RDONLY | os.ST_NOSUID | os.ST_NODEV
+                ):
+                    raise Violation("actual readonly composite source backing differs")
         trace.confirm_barrier(dict(trace.pending_barrier), trace.selection["snapshot_sha256"])
 
     def reserve_trace_observation(self):
