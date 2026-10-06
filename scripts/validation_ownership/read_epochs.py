@@ -666,7 +666,9 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
     for logical, first, last, raw in physical_statements(
         data, checkpoint=checkpoint, count_limit=count_limit,
     ):
-        statement = make_lexical.strip_comment(make_lexical._collapse_make_continuations(raw))
+        statement = make_lexical.strip_comment(
+            make_lexical._collapse_make_continuations(raw), recipe_context=not depth,
+        )
         header = statement.strip(make_lexical.MAKE_SPACE)
         if depth:
             if not raw.startswith("\t"):

@@ -1928,6 +1928,93 @@ class FoundationTests(unittest.TestCase):
                     self.assertEqual(completed.stdout, ordinary.stdout)
                 self.assert_clean(session)
 
+    def test_native_completion_recipe_hash_preserves_suppliers(self):
+        from scripts.validation_ownership import read_epochs
+        for prefix in ("all: ; ", "all:\n\t"):
+            for recipe, expected in (
+                ("@v=unused; printf '#%s' '$(SUPPLIER)'", b"#original"),
+                ('@v=unused; printf "#%s" "$(SUPPLIER)"', b"#original"),
+                ("@v=ok; printf '%s' \"$$v\" # $(SUPPLIER)", b"ok"),
+            ):
+                literal = "SUPPLIER := original\n" + prefix + recipe + "\n"
+                self.add("Makefile", literal)
+                with self.subTest(source=literal):
+                    ordinary = subprocess.run(
+                        ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                        env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                    )
+                    self.assertEqual(ordinary.stdout, expected)
+                    _, roots, _ = read_epochs.completion_source_facts("Makefile", literal.encode())
+                    self.assertIn("SUPPLIER", roots)
+                    session = self.session()
+                    with session:
+                        completed, _, observed = session._native_make_readonly(
+                            "all", observe_reads=True, observe_completions=True,
+                        )
+                        self.assertEqual(completed.stdout, ordinary.stdout)
+                        trace = observed["read_trace"]
+                        self.assertIn("SUPPLIER", trace["selection"]["names"])
+                        self.assertTrue(any(
+                            event["kind"] == "assignment-completion" and event["name"] == "SUPPLIER"
+                            for event in trace["events"]
+                        ))
+                        mutated = json.loads(json.dumps(trace))
+                        mutated["selection"]["names"].remove("SUPPLIER")
+                        with self.assertRaises(MakeProbeError):
+                            read_epochs.validate_trace(
+                                mutated, mutated["scope"],
+                                count_limit=session.budget.limits.observation_count,
+                                file_limit=session.budget.limits.file_bytes,
+                            )
+                    self.assert_clean(session)
+                computed = "NAME := SUPPLIER\n" + literal.replace("$(SUPPLIER)", "$($(NAME))")
+                self.add("Makefile", computed)
+                with self.subTest(source=computed):
+                    ordinary = subprocess.run(
+                        ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                        env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                    )
+                    self.assertEqual(ordinary.stdout, expected)
+                    with self.assertRaisesRegex(MakeProbeError, "computed Make supplier"):
+                        read_epochs.completion_source_facts("Makefile", computed.encode())
+                    session = self.session()
+                    with self.assertRaisesRegex(MakeProbeError, "computed Make supplier"), session:
+                        session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                    self.assert_clean(session)
+
+    def test_native_completion_make_comments_keep_non_recipe_context(self):
+        from scripts.validation_ownership import read_epochs
+        source = (
+            "NAME := SUPPLIER\n"
+            "VALUE := first; # $($(NAME))\n"
+            "NESTED := $(subst ;,:,a;b) # $($(NAME))\n"
+            "HASH := \\#literal # $($(NAME))\n"
+            "define MACRO\n"
+            "rule: ; ignored # $($(NAME))\n"
+            "endef\n"
+            "all: LOCAL := target # $($(NAME))\n"
+            "all: SEMI := target; # literal\n"
+            "all:\n"
+            "\t@v='$(VALUE)|$(NESTED)|$(HASH)|$(LOCAL)|$(SEMI)'; printf '%s' \"$$v\"\n"
+        )
+        self.add("Makefile", source)
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+        )
+        self.assertEqual(ordinary.stdout, b"first; |a:b |#literal |target |target; # literal")
+        _, roots, dependencies = read_epochs.completion_source_facts("Makefile", source.encode())
+        self.assertNotIn("SUPPLIER", roots)
+        self.assertNotIn("NAME", roots)
+        self.assertTrue(all("NAME" not in names for names in dependencies.values()))
+        session = self.session()
+        with session:
+            completed, _, _ = session._native_make_readonly(
+                "all", observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, ordinary.stdout)
+        self.assert_clean(session)
+
     def test_native_returned_archive_uses_finite_source_admission(self):
         from scripts.validation_ownership import read_epochs
         recipe = "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
@@ -1957,6 +2044,8 @@ class FoundationTests(unittest.TestCase):
                 "$(eval .SECONDEXPANSION:)\nOUTPUT := original\n" + recipe,
                 "$(call eval,.SECONDEXPANSION:)\nOUTPUT := original\n" + recipe,
                 "define RULE\n.SECONDEXPANSION:\nendef\n$(eval $(RULE))\nOUTPUT := original\n" + recipe,
+                "NAME := VALUE\nVALUE := original\nall: ; @printf '#%s' '$($(NAME))'\n",
+                "NAME := VALUE\nVALUE := original\nall:\n\t@printf '#%s' '$($(NAME))'\n",
                 *("NAME := VALUE\nVALUE := original\nOUTPUT := $(call " + target + ",$(NAME))\n" + recipe
                   for target in ("value", "origin", "flavor", "call")),
             ):
@@ -1972,7 +2061,7 @@ class FoundationTests(unittest.TestCase):
                                  if item["path"] == opened["path"])
                 inventory["sha256"] = row["sha256"]
                 with self.subTest(replacement=replacement):
-                    with self.assertRaisesRegex(MakeProbeError, "unsupported completion"):
+                    with self.assertRaisesRegex(MakeProbeError, "unsupported completion|computed Make supplier"):
                         read_epochs.validate_trace(
                             mutated, mutated["scope"],
                             count_limit=session.budget.limits.observation_count,

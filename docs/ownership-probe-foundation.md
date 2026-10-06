@@ -785,6 +785,21 @@ the existing namespace launcher, run these `FoundationTests` controls:
    forwarded name-taking targets; each must fail
    its named admission boundary. This bounded limitation does not qualify
    arbitrary deferred prerequisite expansion or builtin forwarding.
+   The source-context disposition bound to the third correction round uses
+   shared Make-versus-recipe comment handling, not hash-specific supplier
+   exceptions. `test_native_completion_recipe_hash_preserves_suppliers`
+   exercises tab and inline recipes with single/double quoted hashes and
+   actual shell comments: Make expands references in all three contexts.
+   Literal suppliers must have real native completion events; computed
+   suppliers must refuse instead of disappearing behind a hash. Returned
+   archives reject removed literal suppliers and coherent tab/inline computed
+   recipe payloads. `test_native_completion_make_comments_keep_non_recipe_context`
+   preserves Make comments in ordinary/target assignments, literal define
+   bodies; nested expression delimiters and
+   escaped literal hashes retain ordinary GNU output.
+   A target-specific assignment's semicolon enters GNU rule context: hashes
+   after that delimiter remain in its value. Only global assignments retain
+   Make-comment semantics across semicolons.
    Repeat the no-completion execution control with computed assignment and short
    lookup sources: genuine native output must remain `original` without an
    invented completion trace. No native evaluator, source rewrite, new budget,

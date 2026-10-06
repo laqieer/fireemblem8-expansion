@@ -249,7 +249,11 @@ def _make_reference_base(body, *, call=False):
     return body[:end]
 
 
-def strip_comment(line):
+def strip_comment(line, *, recipe_context=False):
+    if recipe_context and line.startswith("\t"):
+        return line
+    rule = False
+    assignment = MODE_ASSIGNMENT.fullmatch(line)
     result, index = "", 0
     while index < len(line):
         character = line[index]
@@ -273,6 +277,13 @@ def strip_comment(line):
                 result = result[:-count] + "\\" * (count // 2)
             if not count % 2:
                 break
+        if recipe_context and not assignment:
+            escaped = (len(result) - len(result.rstrip("\\"))) % 2
+            if not escaped:
+                if character == ":" and line[index:index + 2] != ":=":
+                    rule = True
+                elif character == ";" and rule:
+                    return result + line[index:]
         result += character
         index += 1
     return result
