@@ -127,7 +127,7 @@ class ProcessOutput:
 
 @dataclass(frozen=True)
 class NativeTool:
-    """A session-issued, validated ELF; never a Make-capsule executable."""
+    """A session-issued, validated ELF with explicit execution admission."""
 
     path: Path
     digest: str
@@ -1687,6 +1687,16 @@ class ProbeSession:
         return tuple(dict.fromkeys(includes))
 
 
+    def _sealed_native_tool_bytes(self, tool):
+        if not isinstance(tool, NativeTool) or not any(
+            tool is issued for issued in self.native_tools.values()
+        ):
+            raise MakeProbeError("native tool is not issued by this exact probe session")
+        binary = self.budget.read_bytes(tool.path, "control")
+        if hashlib.sha256(binary).hexdigest() != tool.digest:
+            raise MakeProbeError("sealed native tool changed after validation")
+        return binary
+
     def _command(self, command: Command, *, compiler=None, native=None):
         self.budget.remaining()
         if not isinstance(command, Command):
@@ -1704,12 +1714,7 @@ class ProbeSession:
             native = command.native_tool
         programs = {"/usr/bin/python3", "/usr/bin/uname", "/usr/bin/printf"}
         if native is not None:
-            if not isinstance(native, NativeTool) or not any(
-                native is issued for issued in self.native_tools.values()
-            ):
-                raise MakeProbeError("native tool is not issued by this exact probe session")
-            if hashlib.sha256(self.budget.read_bytes(native.path, "control")).hexdigest() != native.digest:
-                raise MakeProbeError("sealed native tool changed after validation")
+            native_binary = self._sealed_native_tool_bytes(native)
             if not command.argv or command.argv[0] != "/native/tool":
                 raise MakeProbeError("native execution requires exact /native/tool argv")
             programs.add("/native/tool")
@@ -1761,7 +1766,7 @@ class ProbeSession:
             output.mkdir()
             self._new_root(root_name)
             if native is not None:
-                shutil.copyfile(native.path, _mkdir_target(root, "/native/tool"))
+                _mkdir_target(root, "/native/tool").write_bytes(native_binary)
                 (root / "native/tool").chmod(0o555)
             argv = list(command.argv)
             dependency = None
@@ -2044,7 +2049,7 @@ class ProbeSession:
     @terminal_failure
     def _native_make_readonly(
         self, target, *, makefile="Makefile", variables=(), assignments=(), observe_reads=False,
-        observe_completions=False, native_executables=(), native_runtime_directories=(),
+        observe_completions=False, native_executables=(), native_runtime_directories=(), native_tool=None,
     ):
         variables, cli, environment = self._make_request(target, makefile, variables, assignments, ())
         if self.published_sources or self.make_depth:
@@ -2090,6 +2095,13 @@ class ProbeSession:
                 if name in runtime and runtime[name] != data:
                     raise MakeProbeError("native executable runtime conflicts with captured bytes")
                 runtime[name] = data
+        if native_tool is not None:
+            binary = self._sealed_native_tool_bytes(native_tool)
+            self._validate_native(binary)
+            if _make_interpreter(binary, label="session-issued native tool") != interpreter:
+                raise MakeProbeError("native tool requires an unadmitted interpreter")
+            runtime["/native/tool"] = binary
+            native_executables = (*native_executables, "/native/tool")
         native_runtime = tuple(sorted(runtime.items()))
         environment["VO_OBSERVE_NATIVE_READONLY"] = "1"
         read_abi = self._native_read_abi(completions=observe_completions) if observe_reads else None

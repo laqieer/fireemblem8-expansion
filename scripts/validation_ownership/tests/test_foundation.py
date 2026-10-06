@@ -335,6 +335,61 @@ class FoundationTests(unittest.TestCase):
                 )
         self.assert_clean(session)
 
+    def test_native_readonly_session_issued_tool_executes_in_original_make(self):
+        self.add("native.c", "#include <stdio.h>\nint main(void) { puts(\"compiled\"); return 0; }\n")
+        self.add("Makefile", (
+            "VALUE := $(shell /native/tool)\n"
+            "all: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.c",))
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), native_tool=tool, observe_reads=True,
+                observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"compiled")
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "compiled")
+            jobs = [json.loads(row.removeprefix("native-job:")) for row in observed["accessed"]
+                    if row.startswith("native-job:")]
+            job = next(job for job in jobs if job["executable"] == "/native/tool")
+            self.assertEqual(job["returncode"], 0)
+            self.assertTrue(job["waited"])
+        self.assert_clean(session)
+
+    def test_native_readonly_session_issued_tool_boundaries(self):
+        self.add("native.c", "#include <stdio.h>\nint main(void) { puts(\"compiled\"); return 0; }\n")
+        self.add("Makefile", "VALUE := $(shell /native/tool)\nall: ; @:\n")
+        for mutation, message in (
+            ("foreign", "not issued by this exact probe session"),
+            ("bytes", "sealed native tool changed after validation"),
+            ("undeclared", "uncaptured Make runtime access: metadata /native/tool"),
+        ):
+            session = self.session()
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(MakeProbeError, message), session:
+                tool = session.compile_native(("native.c",))
+                if mutation == "foreign":
+                    tool = replace(tool)
+                elif mutation == "bytes":
+                    tool.path.chmod(0o700)
+                    with tool.path.open("ab") as stream:
+                        stream.write(b"changed")
+                session._native_make_readonly(
+                    "all", native_tool=None if mutation == "undeclared" else tool,
+                )
+            self.assert_clean(session)
+        self.add("native.c", (
+            "#include <stdio.h>\nint main(void) { "
+            'FILE *file = fopen("/repo/forbidden", "w"); '
+            "if (file) fclose(file); return 0; }\n"
+        ))
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "filesystem write denied"), session:
+            tool = session.compile_native(("native.c",))
+            session._native_make_readonly("all", native_tool=tool)
+        self.assertFalse((self.root / "forbidden").exists())
+        self.assert_clean(session)
+
     def test_native_readonly_default_python_declared_site_startup(self):
         runtime, resources = self.native_python_startup_fixture()
         home_site = ENVIRONMENT["HOME"] + f"/.local/lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages"

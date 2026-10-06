@@ -148,7 +148,29 @@ acceptable replacement. This simplification does not release the original
 graph's held architecture disposition or qualify the complete native supplier.
 
 Readonly dispatch admits only the original Make image and captured shell.
-It cannot produce generated files or execute arbitrary native tools.
+It cannot produce generated files or execute undeclared native tools.
+
+`TC-OWNERSHIP-NATIVE-EXECUTABLE-001` (#270) additionally covers the explicit
+`native_tool` declaration for one exact session-issued `NativeTool`. The default
+is absent. Reuse the existing compiler capsule, issued-object identity, sealed
+bytes and `/native/tool` placement; both direct-native and native-Make execution
+materialize the bytes actually verified, not a later reread. The readonly native
+Make lane admits the image only with its captured interpreter and existing
+runtime resources; missing external dependencies still refuse, never resolve
+implicitly. Source paths and argv are not rewritten.
+
+With a clean fixture, run
+`test_native_readonly_session_issued_tool_executes_in_original_make`: compile
+the candidate C fixture, invoke its actual `/native/tool` through unchanged GNU
+Make, and require `compiled` semantics/output plus actual executable, terminal
+status and waited native-job evidence. Then run
+`test_native_readonly_session_issued_tool_boundaries`: a structurally identical
+but unissued tool object, changed sealed bytes, undeclared image metadata and
+actual candidate source writes must refuse and leave owned cleanup complete.
+Repeat the existing C++ direct-native test to preserve that execution lane.
+The internal `/native/tool` case does not qualify original `tools/scaninc`
+paths, arbitrary external-library dependencies, generated publications or the
+original eight-query family. No ROM/save/profile/localization interaction applies.
 Source/caller/job provenance, generated mutation/version custody and complete
 unchanged-budget eight-profile fitness still require the complete #270
 implementation; these passing controls do not qualify those missing contracts.
@@ -1162,7 +1184,9 @@ capsule. Its resolved host compiler/toolchain is trusted; no candidate compiler
 flags/plugins are accepted. The output must be a bounded x86-64 ELF with valid
 program headers, no writable executable load segment and only the admitted
 dynamic loader. A session-issued `NativeTool` is sealed before `native` runs it
-in another channel-free capsule. It never becomes a Make-capsule executable.
+in another channel-free capsule. It never becomes a mapped Make-capsule
+executable. Explicit readonly native-Make admission at `/native/tool` uses the
+same issued object and seal; generated/source-path placement remains unqualified.
 Changed or foreign-session ELF handles reject. Native Make registration and
 declared generated-file results belong to #225, not this direct native API.
 
