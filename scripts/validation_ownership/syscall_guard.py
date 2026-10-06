@@ -1410,7 +1410,7 @@ class Policy:
         flags = mask = size = address = offset = 0
         if number in {4, 5, 6}:
             size, address = 144, r.rsi
-        elif number == 138:
+        elif number in {137, 138}:
             size, address = 120, r.rsi
         elif number == 262:
             size, address, flags = 144, r.rdx, r.r10 & 0xFFFFFFFF
@@ -2016,7 +2016,7 @@ class Policy:
             if creating:
                 self.reserve_creation()
             state.pending = ("open", path)
-        elif n in {4, 6, 21, 89, 262, 267, 269, 332, 439}:  # metadata, access, readlink
+        elif n in {4, 6, 21, 89, 137, 262, 267, 269, 332, 439}:  # metadata, access, readlink
             at = n in {262, 267, 269, 332, 439}
             follow = n not in {6, 89, 267} and not (
                 n in {262, 439} and d & 0x100 or n == 332 and c & 0x100

@@ -14,7 +14,7 @@ else:
     from budget import MakeProbeError
 
 
-METADATA_CALLS = {4, 5, 6, 21, 78, 89, 138, 217, 262, 267, 269, 332, 439}
+METADATA_CALLS = {4, 5, 6, 21, 78, 89, 137, 138, 217, 262, 267, 269, 332, 439}
 METADATA_HEADER = struct.Struct("<IIIQQqIII")
 TRANSPORT_FORMAT = "vo-metadata-frame"
 TRANSPORT_VERSION = 1
@@ -52,8 +52,11 @@ def validate_legacy_metadata_records(value, limit, *, runtime_paths=(), runtime_
                 or size > 65536 or _HEX_RE.fullmatch(data) is None
             ):
                 raise MakeProbeError("malformed guest metadata buffer")
-        fixed = {4: 144, 5: 144, 6: 144, 21: 0, 138: 120, 262: 144, 269: 0, 332: 256, 439: 0}
-        if number in fixed and size != fixed[number] or number not in {78, 217} and offset:
+        fixed = {4: 144, 5: 144, 6: 144, 21: 0, 137: 120, 138: 120, 262: 144, 269: 0, 332: 256, 439: 0}
+        if (
+            number in fixed and size != fixed[number] or number not in {78, 217} and offset
+            or number in {137, 138} and (flags or mask or result > 0)
+        ):
             raise MakeProbeError("guest metadata disagrees with its syscall ABI")
         canonical = tuple(record)
         if canonical in seen:

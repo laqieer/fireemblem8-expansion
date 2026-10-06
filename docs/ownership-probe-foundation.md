@@ -488,7 +488,8 @@ The original 2148-file first-query diagnostic remains a separate criterion.
 With unchanged source, argv, original compiler and budgets, duplicate capture
 removal progresses beyond aggregate exhaustion at 25,648,667 control bytes
 to an undeclared original `find` executable. Explicitly capturing that
-tool progresses to unsupported syscall 137 at 26,678,061 control bytes; both
+tool progresses, before path-statfs support, to unsupported syscall 137 at
+26,678,061 control bytes; both
 are failed queries, not original eight-query qualification. Managed-Python
 directory-wide trust admission and original producer/nested/reexec custody are
 unchanged by this byte-cache correction.
@@ -2246,10 +2247,53 @@ contents. The guard uses the mounted read-only view, never a writable alias.
 already-permitted observations of explicitly captured runtime files:
 syscall number, canonical guest path, flags, mask, buffer size, directory
 offset, actual signed kernel result, and complete input/output buffer bytes.
-Stat/lstat/fstat/newfstatat, supported statx/fstatfs, access/readlink variants
+Stat/lstat/fstat/newfstatat, supported statx/statfs/fstatfs, access/readlink variants
 and directory results retain their actual supported ABI data. Failed operations
 keep their status without becoming successful source consumption. Unreadable
 buffers and unsupported requests are explicit, not empty successful records.
+
+Path `statfs` (x86-64 syscall 137) uses the same guarded ownership and metadata
+transport as descriptor `fstatfs` (138), not an unrestricted syscall grant.
+Both have a 120-byte frame, zero flags/mask/offset, and a zero success or
+negative kernel result. The native helper reissues pathname operations against
+that pathname and descriptor operations against a freshly opened owned
+descriptor. Neither permits an outside pathname, an unknown descriptor, a
+write, or execution of a declared metadata resource.
+
+For #270 `TC-WORKFLOW-NATIVE-MAKE-001`, start from the documented native host
+setup and run `test_native_readonly_issued_statfs_preserves_source_and_kernel_outcomes`.
+The session compiles a real C tool and runs it through original GNU Make.
+Compare its result with ordinary execution: source pathname/descriptor
+filesystem properties agree, an absent source returns `ENOENT`, and an
+invalid buffer returns `EFAULT`. The pre-fix invocation refuses syscall 137.
+Run `test_native_readonly_statfs_keeps_path_and_descriptor_authority` to
+require terminal refusal of outside/escaping paths and an unknown descriptor.
+Run `test_statfs_actual_buffers_transport_and_negative_revalidation` for
+real 137/138 kernel buffers and statuses, legacy/packed round trips, native
+revalidation of the authorized missing import probe, and rejected changed
+status/buffer, size, flags, mask, offset and positive-result controls. Invalid
+pointer results stay observable but cannot become reusable helper results.
+For successful 137/138 frames, change one returned filesystem-type byte while
+keeping the valid ABI and zero result: the helper must issue the real operation
+successfully and still reject the changed buffer. Removing successful-137
+buffer comparison must fail this control. Run the existing complete-metadata
+case for both pathname-137 and descriptor-138: allocating a real file changes
+their observed capacity, refuses old buffers and prevents cached reuse. This
+also retains other syscall compatibility without assuming shared-host capacity
+is stable enough to guarantee byte-identical successful replay. These cases
+use new temporary source trees and retire
+all session state; dependencies are the existing path/fd authority, compiler
+and metadata seams, with no new resource grant, conflict, ROM/RAM/save,
+locale/profile or archival impact.
+
+This operation correction does not qualify original `find` or the eight
+queries. The preserved original-find reproduction now refuses undeclared
+`/sys/fs/selinux` rather than syscall 137. On the measured host this is a
+present sysfs directory, not an absence; libselinux also has separate mount,
+filesystem-list and configuration startup probes. Those runtime resources
+remain unadmitted pending their complete capture contract. Do not fabricate
+absence, replace original `find`, or grant a broad live `/sys` or `/proc` tree
+to turn the diagnostic into success.
 
 The supervisor-to-parent transport for those records is now a strict metadata
 envelope:
@@ -2296,7 +2340,7 @@ simulation.
 An unchanged compatible result can be reused. Changed metadata causes genuine
 execution; a result that cannot be reproduced in the native Make context
 rejects rather than supplying stale matched output. In particular, filesystem
-capacity from `fstatfs` may change even without a source edit. Its complete
+capacity from `statfs`/`fstatfs` may change even without a source edit. Its complete
 returned buffer remains part of validation; no universal stable mount-ID or
 free-block assumption is made. Invalid-pointer metadata can report its real
 error through a fresh execution; it is not admitted as an unsupported cached

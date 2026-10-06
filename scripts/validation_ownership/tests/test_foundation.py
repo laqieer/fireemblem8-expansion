@@ -1765,6 +1765,69 @@ class FoundationTests(unittest.TestCase):
             self.assertIs(session.budget.limits, limits)
         self.assert_clean(session)
 
+    def test_native_readonly_issued_statfs_preserves_source_and_kernel_outcomes(self):
+        self.add("input", "original")
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n"
+            "#include <errno.h>\n#include <fcntl.h>\n#include <stdio.h>\n"
+            "#include <sys/syscall.h>\n#include <sys/vfs.h>\n#include <unistd.h>\n"
+            "int main(void) {\n"
+            " struct statfs a, b; int fd = open(\"input\", O_RDONLY);\n"
+            " if (fd < 0 || sizeof(a) != 120 || statfs(\"input\", &a) || fstatfs(fd, &b)) return 7;\n"
+            " if (a.f_type != b.f_type || a.f_bsize != b.f_bsize || a.f_namelen != b.f_namelen) return 8;\n"
+            " errno = 0;\n"
+            " if (statfs(\"absent\", &a) != -1 || errno != ENOENT) return 9;\n"
+            " errno = 0;\n"
+            " if (syscall(SYS_statfs, \"input\", (void *)1) != -1 || errno != EFAULT) return 10;\n"
+            " close(fd); puts(\"source-fs:equal;absent:ENOENT;buffer:EFAULT\"); return 0;\n"
+            "}\n"
+        ))
+        self.add("Makefile", "all: ; @/native/tool\n")
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.c",))
+            ordinary = subprocess.run(
+                (str(tool.path),), cwd=self.root, env=ENVIRONMENT,
+                capture_output=True, timeout=10, check=True,
+            )
+            completed, _, observed = session._native_make_readonly(
+                "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, ordinary.stdout)
+            self.assertEqual(completed.stdout, b"source-fs:equal;absent:ENOENT;buffer:EFAULT\n")
+            job, = [
+                json.loads(row.removeprefix("native-job:")) for row in observed["accessed"]
+                if row.startswith("native-job:")
+            ]
+            self.assertEqual(job["returncode"], 0)
+            self.assertTrue(job["waited"])
+        self.assert_clean(session)
+
+    def test_native_readonly_statfs_keeps_path_and_descriptor_authority(self):
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <string.h>\n#include <sys/vfs.h>\n"
+            "int main(int argc, char **argv) {\n"
+            " struct statfs info;\n"
+            " if (argc != 2) return 7;\n"
+            " if (!strcmp(argv[1], \"unknown-fd\")) fstatfs(123456, &info);\n"
+            " else statfs(argv[1], &info);\n"
+            " return 0;\n}\n"
+        ))
+        for path, error in (
+            ("/etc/passwd", "uncaptured Make runtime access"),
+            ("/repo/../../etc/passwd", "uncaptured Make runtime access"),
+            ("unknown-fd", "unavailable inherited/unknown descriptor"),
+        ):
+            self.add("Makefile", "all: ; @/native/tool " + path + "\n")
+            session = self.session()
+            with self.subTest(path=path), self.assertRaisesRegex(MakeProbeError, error), session:
+                tool = session.compile_native(("native.c",))
+                session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+            self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
     def test_native_shared_runtime_bodies_are_captured_and_retained_once(self):
         from collections import Counter
         from scripts.validation_ownership import make_probe
@@ -9600,11 +9663,11 @@ raise AssertionError("default termination was lost")
             "path=ctypes.c_char_p(b'data/module.py')\n"
             "for number,flags,mask,size in "
             "((4,0,0,144),(6,0,0,144),(5,0,0,144),(262,256,0,144),"
-            "(332,256,2047,256),(332,0,8191,256),(138,0,0,120),"
+            "(332,256,2047,256),(332,0,8191,256),(137,0,0,120),(138,0,0,120),"
             "(21,0,0,0),(269,0,4,0),(439,512,2,0),(89,0,0,32),(267,0,0,32)):\n"
             " buffer=ctypes.create_string_buffer(bytes([165])*size,size) if size else None\n"
             " target=ctypes.byref(buffer) if size else None\n"
-            " if number in (4,6): args=(path,target)\n"
+            " if number in (4,6,137): args=(path,target)\n"
             " elif number in (5,138): args=(ctypes.c_long(fd),target)\n"
             " elif number==262: args=(ctypes.c_long(-100),path,target,ctypes.c_ulong(flags))\n"
             " elif number==332: args=(ctypes.c_long(-100),path,ctypes.c_ulong(flags),ctypes.c_ulong(mask),target)\n"
@@ -9632,9 +9695,9 @@ raise AssertionError("default termination was lost")
                         and record[6] == status and record[8] == data
                         for record in output.metadata
                     ))
-            self.assertEqual([row[3] for row in returned[:9]], [0]*9)
-            self.assertIn(returned[9][3], (-errno.EACCES, -errno.EROFS))
-            self.assertEqual([row[3] for row in returned[10:]], [-errno.EINVAL]*2)
+            self.assertEqual([row[3] for row in returned[:10]], [0]*10)
+            self.assertIn(returned[10][3], (-errno.EACCES, -errno.EROFS))
+            self.assertEqual([row[3] for row in returned[11:]], [-errno.EINVAL]*2)
             run, diagnostics = session._sandbox_run, []
             def capture(root, **kwargs):
                 result = run(root, **kwargs)
@@ -9642,7 +9705,7 @@ raise AssertionError("default termination was lost")
                     diagnostics.append(result[0].stderr)
                 return result
             with patch.object(session, "_sandbox_run", capture):
-                stable = tuple(record for record in output.metadata if record[0] not in {138, 332})
+                stable = tuple(record for record in output.metadata if record[0] not in {137, 138, 332})
                 self.assertTrue(session._metadata_matches(stable), diagnostics)
                 # statx mount IDs belong to each guest namespace, not the
                 # persistent source inode. Full returned buffers stay checked.
@@ -9655,20 +9718,129 @@ raise AssertionError("default termination was lost")
                         data[144:152] = b"\xff"*8
                         changed = record[:8] + (data.hex(),) + record[9:]
                         self.assertFalse(session._metadata_matches((changed,)))
-                # fstatfs includes shared filesystem capacity, not immutable
+                # statfs/fstatfs include shared filesystem capacity, not immutable
                 # source-only state. Production cache validation keeps this row.
-                filesystem = tuple(record for record in output.metadata if record[0] == 138)
-                self.assertEqual(len(filesystem), 1)
+                filesystem = tuple(record for record in output.metadata if record[0] in {137, 138})
+                self.assertEqual({record[0] for record in filesystem}, {137, 138})
                 with (self.directory / "filesystem-change").open("wb") as allocation:
                     os.posix_fallocate(allocation.fileno(), 0, 1024*1024)
                     os.fsync(allocation.fileno())
-                    self.assertFalse(session._metadata_matches(filesystem))
+                    for record in filesystem:
+                        self.assertFalse(session._metadata_matches((record,)))
                     fresh = session.command(command)
                     self.assertIsNot(fresh, output)
-                    self.assertNotEqual(
-                        next(row[4] for row in json.loads(fresh.stdout) if row[0] == 138),
-                        next(row[4] for row in returned if row[0] == 138),
-                    )
+                    for number in (137, 138):
+                        self.assertNotEqual(
+                            next(row[4] for row in json.loads(fresh.stdout) if row[0] == number),
+                            next(row[4] for row in returned if row[0] == number),
+                        )
+        self.assert_clean(session)
+
+    def test_statfs_actual_buffers_transport_and_negative_revalidation(self):
+        from scripts.validation_ownership.metadata_transport import validate_legacy_metadata_records
+        self.add("input", "original")
+        self.add("reader.py", (
+            "import ctypes,json,os\n"
+            "libc=ctypes.CDLL(None,use_errno=True); libc.syscall.restype=ctypes.c_long\n"
+            "fd=os.open('input',os.O_RDONLY); rows=[]\n"
+            "for number,path,fault in ((137,'input',False),(138,'input',False),"
+            "(137,'__init__.py',False),(137,'input',True)):\n"
+            " buffer=ctypes.create_string_buffer(bytes([165])*120,120)\n"
+            " target=ctypes.c_void_p(1) if fault else ctypes.byref(buffer)\n"
+            " name=ctypes.c_long(fd) if number==138 else ctypes.c_char_p(path.encode())\n"
+            " ctypes.set_errno(0); result=libc.syscall(ctypes.c_long(number),name,target)\n"
+            " rows.append([number,path,result if result>=0 else -ctypes.get_errno(),"
+            " None if fault else buffer.raw.hex()])\n"
+            "os.close(fd); print(json.dumps(rows))\n"
+        ))
+        command = Command(("/usr/bin/python3", "/repo/reader.py"), code=("reader.py", "input"))
+        session = self.session()
+        with session:
+            output, report, _, _ = self.capture_supervisor_report(
+                session, lambda: session.command(command),
+            )
+            rows = json.loads(output.stdout)
+            self.assertEqual([row[2] for row in rows], [0, 0, -errno.ENOENT, -errno.EFAULT])
+            selected = []
+            for number, path, status, data in rows:
+                record, = [
+                    record for record in output.metadata
+                    if record[:6] == (number, "/repo/" + path, 0, 0, 120, 0)
+                    and record[6] == status
+                ]
+                self.assertEqual(record[7], None if data is None else "a5" * 120)
+                self.assertEqual(record[8], data)
+                selected.append(record)
+            frame = _metadata_frame(output.metadata)
+            self.assertEqual(
+                decode_metadata_transport(
+                    report["metadata"], report["observations"], decoded_limit=len(frame),
+                ),
+                output.metadata,
+            )
+            self.assertEqual(
+                validate_legacy_metadata_records([list(row) for row in selected], len(selected)),
+                tuple(selected),
+            )
+            missing = selected[2]
+            self.assertTrue(session._metadata_matches((missing,)))
+            self.assertFalse(session._metadata_matches((selected[3],)))
+            changed_after = missing[:8] + ("00" * 120,)
+            self.assertFalse(session._metadata_matches((changed_after,)))
+            wrong_result = missing[:6] + (-errno.EACCES,) + missing[7:]
+            self.assertFalse(session._metadata_matches((wrong_result,)))
+            for number in (137, 138):
+                original = next(row for row in selected if row[0] == number and row[6] == 0)
+                changed = list(original)
+                after = bytearray.fromhex(changed[8])
+                after[0] ^= 0xff
+                changed[8] = after.hex()
+                diagnostics = []
+                sandbox = session._sandbox_run
+                def observe_replay(root, **kwargs):
+                    result = sandbox(root, **kwargs)
+                    diagnostics.append(result[0].stderr)
+                    return result
+                with patch.object(session, "_sandbox_run", observe_replay):
+                    self.assertFalse(session._metadata_matches((tuple(changed),)))
+                results = re.findall(
+                    rb"syscall (\d+) expected (-?\d+) actual (-?\d+)",
+                    b"".join(diagnostics),
+                )
+                self.assertEqual(results, [(str(number).encode(), b"0", b"0")])
+                mutants = []
+                for index, value in ((0, 1), (2, 1), (3, 1), (5, 1), (6, 1), (1, "/outside/input")):
+                    changed = list(original)
+                    changed[index] = value
+                    mutants.append(changed)
+                for size in (119, 121):
+                    changed = list(original)
+                    changed[4], changed[7], changed[8] = size, "a5" * size, "00" * size
+                    mutants.append(changed)
+                for index in (7, 8):
+                    changed = list(original)
+                    changed[index] = changed[index][:-2]
+                    mutants.append(changed)
+                for index, value in ((2, 1), (3, 1), (5, 1), (6, 1)):
+                    changed = list(original)
+                    changed[index] = value
+                    with self.assertRaisesRegex(MakeProbeError, "sandbox process exited unsuccessfully: 125"):
+                        session._metadata_matches((tuple(changed),))
+                for size in (119, 121):
+                    changed = list(original)
+                    changed[4], changed[7], changed[8] = size, "a5" * size, "00" * size
+                    with self.assertRaisesRegex(MakeProbeError, "sandbox process exited unsuccessfully: 125"):
+                        session._metadata_matches((tuple(changed),))
+                for changed in mutants:
+                    with self.subTest(number=number, changed=changed[:7]):
+                        with self.assertRaises(MakeProbeError):
+                            validate_legacy_metadata_records([changed], 1)
+                        envelope = encode_metadata_transport([changed])
+                        with self.assertRaises(MakeProbeError):
+                            decode_metadata_transport(
+                                envelope, 1, decoded_limit=len(_metadata_frame([changed])),
+                            )
+            self.assertFalse(session.budget.failed)
         self.assert_clean(session)
 
     def test_metadata_transport_preserves_mixed_syscalls_cache_and_replay(self):
