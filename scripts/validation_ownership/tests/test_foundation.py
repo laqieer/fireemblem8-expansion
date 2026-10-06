@@ -132,6 +132,44 @@ class FoundationTests(unittest.TestCase):
             replay.assert_not_called()
         self.assert_clean(session)
 
+    def test_native_readonly_inventory_keeps_fixed_file_admission_with_remaining_control(self):
+        self.add("unused.bin", b"\0" * (6 * 1024 * 1024))
+        self.add("Makefile", "VALUE := original\nall: ; @:\n")
+        session = self.session(control_bytes=8 * 1024 * 1024)
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), observe_reads=True,
+                observe_runtime_completions=True,
+            )
+            self.assertEqual((completed.returncode, completed.stderr), (0, b""))
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "original")
+            self.assertLess(
+                session.budget.limits.control_bytes - session.budget.bytes["control"],
+                len(session.snapshot.files["unused.bin"]),
+            )
+            self.assertFalse(session.budget.failed)
+            self.assertEqual(
+                [row["bytes"] for row in observed["read_trace"]["sources"]],
+                [len(session.snapshot.files["Makefile"])],
+            )
+        self.assert_clean(session)
+
+    def test_native_readonly_actual_source_keeps_aggregate_control_and_file_limits(self):
+        self.add("Makefile", "# " + "x" * (6 * 1024 * 1024) + "\nall: ; @:\n")
+        for limits, message in (
+            ({"control_bytes": 8 * 1024 * 1024}, "aggregate .*byte budget exhausted"),
+            ({"file_bytes": 5 * 1024 * 1024}, "authority blob exceeds byte bound"),
+        ):
+            session = self.session(**limits)
+            with self.subTest(limits=limits):
+                with self.assertRaisesRegex(MakeProbeError, message):
+                    with session:
+                        session._native_make_readonly(
+                            "all", observe_reads=True, observe_runtime_completions=True,
+                        )
+                self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+
     def test_native_readonly_managed_python_directory_preserves_real_namespace(self):
         runtime = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}"
         source = Path(runtime) / "json/__init__.py"

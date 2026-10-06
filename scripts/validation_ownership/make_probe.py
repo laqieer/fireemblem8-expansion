@@ -1188,7 +1188,7 @@ class ProbeSession:
             "mapping_entries": mapping_entries,
             "metadata_validation": metadata_validation,
             "deadline": self.budget.deadline,
-            "file_limit": file_remaining,
+            "file_limit": self.budget.limits.file_bytes if native_runtime else file_remaining,
             "memory_limit": self.budget.limits.address_space_bytes - sum(item["memory"] for item in self.parked_capsules),
             "process_limit": self.budget.limits.processes - sum(item["processes"] for item in self.parked_capsules),
             "descendant_limit": self.budget.limits.descendants - self.processes_used,

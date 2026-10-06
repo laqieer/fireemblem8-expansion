@@ -295,6 +295,21 @@ remain unqualified by these member results.
 
 ### Original source-entry observation component
 
+Native readonly inventory and source admission use the original fixed
+per-file bound, not the declining remaining channel allowance. Actual
+metadata/source capture still reserves aggregate observation bytes before
+allocation; control, event and all other limits and charges are unchanged.
+For #270 `TC-WORKFLOW-NATIVE-MAKE-001`, run
+`test_native_readonly_inventory_keeps_fixed_file_admission_with_remaining_control`:
+an unused valid binary inventory entry larger than remaining control capacity
+must not prevent observing the small original Makefile. Run
+`test_native_readonly_actual_source_keeps_aggregate_control_and_file_limits`:
+actually reading the large Makefile exhausts aggregate capacity, and exceeding
+the fixed per-file bound still refuses source admission; both clean up and fail
+terminally. The pre-fix negative control rejects the unused inventory as
+malformed. Generic command/compiler/mapped limits are unchanged. These
+member cases do not qualify generated producers or the original eight queries.
+
 The existing exact `/dev/null` mount is a nonexecuting writable exception,
 not a generic device namespace. The trusted launcher verifies the actual null
 character device (major 1, minor 3) and clears inherited NODEV only on that
