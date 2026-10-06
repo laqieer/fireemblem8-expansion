@@ -257,6 +257,28 @@ behavior changes. Arbitrary descendants, source assignment/caller completion,
 generated-version write/transfer/retirement custody, machine restoration,
 the original eight-query resource family and final delivery remain unqualified.
 
+`TC-OWNERSHIP-NATIVE-INPUT-001` (#270) covers original input parameter parity.
+The internal readonly call accepts the same
+`assignments=(("environment", name, value), ("command-line", name, value), ...)`
+request as ordinary mapped Make, through the existing shared admission helper.
+It does not rewrite immutable source, modify host global environment, or grant
+execution authority. With no assignments, existing defaults are unchanged.
+
+From a clean host checkout, run
+`test_native_readonly_original_assignment_inputs_and_default_restore`: supply
+one environment input and one command-line cap to the immutable shell/recipe
+fixture. Require ordinary Make stdout and original domain value/origin/flavor.
+In the same session, run again without assignments and require file defaults
+with no input leakage, increasing aggregate observations, and unchanged budget
+object/deadline. Run
+`test_native_readonly_assignment_authority_refuses_before_launch`: loader/shell/
+Make-option authority names, invalid origins, duplicate names and nonstring
+values must refuse before sandbox execution and clean owned state. The
+pre-component API rejects the assignment keyword. Dependencies are readonly
+execution and existing Make request admission; conflicts are none. No ROM/RAM,
+save, localization, game-data or archival impact. This input smoke is not
+assignment-completion ancestry or the original eight-profile qualification.
+
 ## Run the real consumer
 
 From a source checkout:

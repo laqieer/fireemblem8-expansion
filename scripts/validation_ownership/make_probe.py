@@ -1855,8 +1855,10 @@ class ProbeSession:
         return variables, cli, environment
 
     @terminal_failure
-    def _native_make_readonly(self, target, *, makefile="Makefile", variables=(), observe_reads=False):
-        variables, cli, environment = self._make_request(target, makefile, variables, (), ())
+    def _native_make_readonly(
+        self, target, *, makefile="Makefile", variables=(), assignments=(), observe_reads=False,
+    ):
+        variables, cli, environment = self._make_request(target, makefile, variables, assignments, ())
         if self.runtime_root is not None or self.runtime_inputs or self.published_sources or self.make_depth:
             raise MakeProbeError("readonly native Make requires an unmapped immutable source session")
         captured = _executable_runtime("/usr/bin/sh", self.budget)

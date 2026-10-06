@@ -120,6 +120,61 @@ class FoundationTests(unittest.TestCase):
             replay.assert_not_called()
         self.assert_clean(session)
 
+    def test_native_readonly_original_assignment_inputs_and_default_restore(self):
+        self.add("Makefile", (
+            "ENV_INPUT ?= file-env\nCAP ?= 0xCD\n"
+            "VALUE := $(shell v='$(ENV_INPUT):$(CAP)'; printf '%s' \"$$v\")\n"
+            ".PHONY: all\nall:\n\t@v='$(VALUE)'; printf '%s\\n' \"$$v\"\n"
+        ))
+        assignments = (("environment", "ENV_INPUT", "native-env"), ("command-line", "CAP", "0xCE"))
+        ordinary = subprocess.run(
+            ("/usr/bin/make", "-rR", "--no-print-directory", "-f", "Makefile", "CAP=0xCE", "all"),
+            cwd=self.root, env={**ENVIRONMENT, "ENV_INPUT": "native-env"},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        )
+        with self.session() as session, patch.object(
+            session, "command", side_effect=AssertionError("native input invoked command replay"),
+        ):
+            deadline, limits = session.budget.deadline, session.budget.limits
+            completed, semantics, _ = session._native_make_readonly(
+                "all", variables=("ENV_INPUT", "CAP", "VALUE"),
+                assignments=assignments, observe_reads=True,
+            )
+            self.assertEqual(completed.stdout, ordinary.stdout)
+            self.assertEqual(completed.stdout, b"native-env:0xCE\n")
+            self.assertEqual(semantics["domains"]["ENV_INPUT"]["origin"], "environment")
+            self.assertEqual(semantics["domains"]["CAP"]["origin"], "command line")
+            self.assertEqual(semantics["domains"]["CAP"]["flavor"], "recursive")
+            first_count = session.observations_used
+            completed, semantics, _ = session._native_make_readonly(
+                "all", variables=("ENV_INPUT", "CAP", "VALUE"), observe_reads=True,
+            )
+            self.assertEqual(completed.stdout, b"file-env:0xCD\n")
+            self.assertEqual(semantics["domains"]["ENV_INPUT"]["origin"], "file")
+            self.assertEqual(semantics["domains"]["CAP"]["origin"], "file")
+            self.assertGreater(session.observations_used, first_count)
+            self.assertEqual(session.budget.deadline, deadline)
+            self.assertIs(session.budget.limits, limits)
+        self.assert_clean(session)
+
+    def test_native_readonly_assignment_authority_refuses_before_launch(self):
+        self.add("Makefile", "all: ;\n")
+        for assignments in (
+            (("environment", "LD_PRELOAD", "/repo/plugin.so"),),
+            (("command-line", "SHELL", "/repo/shell"),),
+            (("command-line", "MAKEFLAGS", "-j99"),),
+            (("file", "CAP", "0xCE"),),
+            (("environment", "CAP", "first"), ("command-line", "CAP", "second")),
+            (("command-line", "CAP", None),),
+        ):
+            with self.subTest(assignments=assignments):
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "execution-authority Make assignment"):
+                    with session, patch.object(session, "_sandbox_run") as launch:
+                        session._native_make_readonly("all", assignments=assignments)
+                launch.assert_not_called()
+                self.assert_clean(session)
+
     def test_native_readonly_actual_write_and_foreign_execution_refuse(self):
         for recipe, diagnostic in (
             ("v=x; printf '%s' \"$$v\" > changed.txt", "readonly native Make filesystem write"),
