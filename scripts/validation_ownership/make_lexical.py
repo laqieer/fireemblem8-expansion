@@ -307,8 +307,12 @@ def completion_declaration(statement):
         if operator is not None:
             raise MakeProbeError("unsupported completion assignment name")
         if statement[index] in ":;":
-            if statement[index] == ":" and ".SECONDEXPANSION" in statement[:index].split():
-                raise MakeProbeError("unsupported completion secondary expansion")
+            if statement[index] == ":":
+                targets = statement[:index]
+                if any(character in targets for character in "$*?["):
+                    raise MakeProbeError("unsupported completion constructed target")
+                if ".SECONDEXPANSION" in targets.split():
+                    raise MakeProbeError("unsupported completion secondary expansion")
             return None, None
         index += 1
     return None, None
@@ -333,12 +337,16 @@ def references(line, *, reference_base=_make_reference_base):
                 raise MakeProbeError("unsupported Make supplier is not bound to native completion")
             if function is not None and function[0] not in BUILTIN_FUNCTIONS:
                 raise MakeProbeError("unsupported Make supplier is not bound to native completion")
+            if function is not None and function[0] == "eval":
+                raise MakeProbeError("unsupported completion evaluated source")
             if function is not None and function[0] in {"call", "origin", "flavor", "value"}:
                 name = (function[1][0] if function[0] == "call" else ",".join(function[1])).strip(MAKE_SPACE)
                 if "$" in name:
                     raise MakeProbeError("computed Make supplier is not bound to native completion")
                 if name and not re.fullmatch(LITERAL_NAME, name):
                     raise MakeProbeError("unsupported Make supplier is not bound to native completion")
+                if function[0] == "call" and name == "eval":
+                    raise MakeProbeError("unsupported completion evaluated source")
                 if function[0] == "call" and name in {"value", "origin", "flavor", "call"}:
                     raise MakeProbeError("unsupported completion forwarded name-taking builtin")
                 if name:

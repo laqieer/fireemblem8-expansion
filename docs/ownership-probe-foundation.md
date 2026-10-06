@@ -759,11 +759,14 @@ the existing namespace launcher, run these `FoundationTests` controls:
    without manufacturing its completion. Evaluating the macro must return
    `original` under ordinary GNU and native execution without completion
    evidence. Completion-enabled execution must instead explicitly refuse the
-   actual evaluated assignment lacking admitted source provenance and clean
+   evaluated-source invocation lacking admitted provenance and clean
    owned pins/processes; it must not publish a success-shaped archive omitting
-   the supplier. A macro emitting only a literal rule remains executable with
-   completion observation. The existing verified eval ancestry check remains
-   mandatory before this refusal. Version-3 legacy readers are unchanged;
+   the supplier. Rule-only eval is also unsupported with completion observation:
+   it can enable secondary expansion without hitting an assignment callback.
+   Native execution without completion observation remains unchanged. Direct
+   `eval` and `call eval` both refuse at shared source admission. The existing
+   verified eval ancestry and runtime refusal remain defense in depth.
+   Version-3 legacy readers are unchanged;
    version-4 evaluated assignment provenance is unqualified, not silently
    ignored. Runtime buffer bytes modified by GNU are not original authored
    source and cannot borrow immutable-source authority.
@@ -772,12 +775,14 @@ the existing namespace launcher, run these `FoundationTests` controls:
    prerequisites and `call` forwarding to `value`, `origin`, `flavor` and
    `call`. Completion-enabled source admission must explicitly refuse
    `.SECONDEXPANSION` (including either ordering in literal multi-target
-   declarations) and these forwarded name-taking builtin targets rather
+   declarations), constructed target lists, evaluated-source invocations and
+   these forwarded name-taking builtin targets rather
    than omit suppliers. Secondary expansion is a source-level unsupported
    completion context, not a recipe-dollar heuristic. Ordinary escaped dollars
    in values/recipes and custom literal calls remain supported.
    The returned-archive admission test also supplies coherent payload mutations
-   for the secondary declaration and all four forwarded targets; each must fail
+   for literal/computed/wildcard/evaluated secondary declarations and all four
+   forwarded name-taking targets; each must fail
    its named admission boundary. This bounded limitation does not qualify
    arbitrary deferred prerequisite expansion or builtin forwarding.
    Repeat the no-completion execution control with computed assignment and short

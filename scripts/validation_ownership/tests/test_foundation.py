@@ -1867,7 +1867,7 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(completed.stdout, ordinary.stdout)
         self.assert_clean(session)
         session = self.session()
-        with self.assertRaisesRegex(MakeProbeError, "evaluated assignment lacks admitted source provenance"), session:
+        with self.assertRaisesRegex(MakeProbeError, "unsupported completion evaluated source"), session:
             session._native_make_readonly("all", observe_reads=True, observe_completions=True)
         self.assertTrue(session.budget.failed)
         self.assert_clean(session)
@@ -1878,18 +1878,28 @@ class FoundationTests(unittest.TestCase):
         session = self.session()
         with session:
             completed, _, _ = session._native_make_readonly(
-                "all", observe_reads=True, observe_completions=True,
+                "all", observe_reads=True,
             )
             self.assertEqual(completed.stdout, b"original")
+        self.assert_clean(session)
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "unsupported completion evaluated source"), session:
+            session._native_make_readonly("all", observe_reads=True, observe_completions=True)
         self.assert_clean(session)
 
     def test_native_completion_secondary_and_forwarded_suppliers_refuse(self):
         from scripts.validation_ownership import read_epochs
+        self.add(".SECONDEXPANSION", "")
         cases = [
             (declaration + "\nNAME := VALUE\nVALUE := file-shell\n"
              "all: $$($$(NAME)) ; @v=selected; printf '%s' \"$$v\"\nfile-shell: ;\n", "selected")
-            for declaration in (".SECONDEXPANSION:", ".SECONDEXPANSION other:",
-                                "other .SECONDEXPANSION:")
+            for declaration in (
+                ".SECONDEXPANSION:", ".SECONDEXPANSION other:", "other .SECONDEXPANSION:",
+                "SPECIAL := .SECONDEXPANSION\n$(SPECIAL):",
+                ".SECONDEXPANSION*:",
+                "$(eval .SECONDEXPANSION:)", "$(call eval,.SECONDEXPANSION:)",
+                "define RULE\n.SECONDEXPANSION:\nendef\n$(eval $(RULE))",
+            )
         ]
         for target, expected in (("value", "original"), ("origin", "file"), ("flavor", "simple"),
                                  ("call", "original")):
@@ -1942,6 +1952,11 @@ class FoundationTests(unittest.TestCase):
                 ".SECONDEXPANSION:\nNAME := VALUE\nVALUE := original\nOUTPUT := $(VALUE)\n" + recipe,
                 ".SECONDEXPANSION other:\nNAME := VALUE\nVALUE := original\nOUTPUT := $(VALUE)\n" + recipe,
                 "other .SECONDEXPANSION:\nNAME := VALUE\nVALUE := original\nOUTPUT := $(VALUE)\n" + recipe,
+                "SPECIAL := .SECONDEXPANSION\n$(SPECIAL):\nOUTPUT := original\n" + recipe,
+                ".SECONDEXPANSION*:\nOUTPUT := original\n" + recipe,
+                "$(eval .SECONDEXPANSION:)\nOUTPUT := original\n" + recipe,
+                "$(call eval,.SECONDEXPANSION:)\nOUTPUT := original\n" + recipe,
+                "define RULE\n.SECONDEXPANSION:\nendef\n$(eval $(RULE))\nOUTPUT := original\n" + recipe,
                 *("NAME := VALUE\nVALUE := original\nOUTPUT := $(call " + target + ",$(NAME))\n" + recipe
                   for target in ("value", "origin", "flavor", "call")),
             ):
