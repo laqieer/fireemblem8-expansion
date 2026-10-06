@@ -13,11 +13,12 @@ else:
 
 
 IDENTIFIER = r"[A-Za-z_][A-Za-z0-9_]*"
+SHORT_REFERENCE_CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_"
 
 
 REFERENCE = re.compile(
     rf"(?<!\$)\$(?:\((?P<paren>{IDENTIFIER})(?=[:)])"
-    rf"|\{{(?P<brace>{IDENTIFIER})(?=[:}}])|(?P<short>[A-Za-z]))"
+    rf"|\{{(?P<brace>{IDENTIFIER})(?=[:}}])|(?P<short>[{SHORT_REFERENCE_CHARACTERS}]))"
 )
 
 

@@ -608,7 +608,7 @@ def completion_reference_names(data, *, names=None, checkpoint=lambda: None, cou
             if (index - start) % 4096 == 0:
                 checkpoint()
             character = text[index] if index < stop else ""
-            letter = bool(character) and character in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_"
+            letter = bool(character) and character in make_lexical.SHORT_REFERENCE_CHARACTERS
             if letter or length and character and character in "0123456789":
                 length += 1
                 if length <= 128:
@@ -631,9 +631,7 @@ def completion_reference_names(data, *, names=None, checkpoint=lambda: None, cou
             stack.append(")" if pair == "$(" else "}")
             index += 2
             continue
-        if text[index] == "$" and len(pair) == 2 and pair[1] in (
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-        ):
+        if text[index] == "$" and len(pair) == 2 and pair[1] in make_lexical.SHORT_REFERENCE_CHARACTERS:
             retain(pair[1])
         if stack:
             if text[index] == stack[-1]:

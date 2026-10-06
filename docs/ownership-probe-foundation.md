@@ -363,8 +363,8 @@ notification bytes are not rewritten. Thus a recorded `/bin` alias can place
 the original `/bin/sh` at `/usr/bin/sh` without granting arbitrary aliases.
 
 Run `test_native_readonly_optional_runtime_data_absence_and_stock_alias_jobs`
-on the clean Linux x86-64 host with newlib headers and admitted stock printf:
-capture `/usr/include/newlib/stdlib.h`, absent `/usr/include/.dep` and
+on the clean Linux x86-64 host with the existing build-essential libc headers
+and admitted stock printf: capture `/usr/include/stdlib.h`, absent `/usr/include/.dep` and
 `/bin/printf`, explicitly declare `/usr/bin/printf`, read the first header line
 and probe absence in original shell expansions, then invoke printf through
 both spellings. Require exact values/output, four real canonical shell/direct
@@ -382,6 +382,19 @@ invocations, mutable publications and root/repository submount overrides remain
 forbidden. Default profiles without optional resources retain their behavior.
 No Python runtime, candidate NativeTool, descendant or generated authority is
 granted by these optional data/alias resources.
+The generic case does not require Newlib provisioning; the exact original
+eight-query fixture retains its own original Newlib resource declaration.
+
+Run `test_native_readonly_short_underscore_matches_long_reference_completion`:
+use `_ := original`, then `VALUE := $_` or `VALUE := $(_)` in separate real
+source fixtures. Both scanners must select `_`; actual native output/value and
+selected `_`/`VALUE` assignment completions must agree. The short-form pre-fix
+case expands correctly but omits the supplying `_` completion. Both scanners
+share the same admitted single-character identifier alphabet.
+Retain `test_native_readonly_completion_failed_make_has_no_successful_archive`:
+a real failed query keeps Make's status/diagnostic without a successful trace.
+Successful-query machine/job cross-checks must not dereference the deliberately
+absent archive for that failed query; the pre-fix host instead raises KeyError.
 
 The internal readonly invocation accepts `native_executables=()`; the empty
 default still admits only the original shell. Explicit ordinary trusted host

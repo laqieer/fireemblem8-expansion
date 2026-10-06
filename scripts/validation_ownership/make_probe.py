@@ -1429,7 +1429,7 @@ class ProbeSession:
                     raise MakeProbeError("native job differs from its actual executable")
                 if sorted(sequence for sequence, _ in dispatches) != list(range(1, len(dispatches) + 1)):
                     raise MakeProbeError("native job dispatch sequences are incomplete or reused")
-                if read_selection is not None:
+                if read_selection is not None and observed["returncode"] == 0:
                     children = [
                         (row["dispatch"], row["pid"]) for row in observed["read_trace"]["machine"]["events"]
                         if row["kind"] == "execute" and row["make"] is False

@@ -316,13 +316,13 @@ class FoundationTests(unittest.TestCase):
         self.assert_clean(session)
 
     def test_native_readonly_optional_runtime_data_absence_and_stock_alias_jobs(self):
-        runtime = "/usr/include/newlib/stdlib.h"
+        runtime = "/usr/include/stdlib.h"
         absent = "/usr/include/.dep"
         self.assertTrue(Path(runtime).is_file())
         self.assertFalse(Path(absent).exists())
         expected = Path(runtime).read_bytes().splitlines()[0]
         self.add("Makefile", (
-            "VALUE := $(shell read -r line < /usr/include/newlib/stdlib.h; printf '%s' \"$$line\")\n"
+            "VALUE := $(shell read -r line < /usr/include/stdlib.h; printf '%s' \"$$line\")\n"
             "ABSENT := $(shell if test -e /usr/include/.dep; then printf present; else printf absent; fi)\n"
             "REFERENCES = $(VALUE) $(ABSENT)\n"
             "all:\n\t@/bin/printf 'alias\\n'\n\t@/usr/bin/printf 'canonical\\n'\n"
@@ -350,12 +350,12 @@ class FoundationTests(unittest.TestCase):
         self.assert_clean(session)
 
     def test_native_readonly_optional_runtime_resource_and_alias_boundaries_refuse(self):
-        resources = ("/usr/include/newlib/stdlib.h", "/usr/include/.dep", "/bin/printf")
+        resources = ("/usr/include/stdlib.h", "/usr/include/.dep", "/bin/printf")
         cases = (
-            ("all: ; @read line < /usr/include/newlib/stdio.h\n", "uncaptured Make runtime access"),
+            ("all: ; @read line < /usr/include/stdio.h\n", "uncaptured Make runtime access"),
             ("all: ; @if test -e /usr/include/.unissued; then :; fi\n", "uncaptured Make runtime access"),
             ("all: ; @/bin/true\n", "unrequested stock runtime alias spelling"),
-            ("all: ; @read line < /usr/include/newlib/../newlib/stdlib.h\n", "optional Make runtime parent spelling denied"),
+            ("all: ; @read line < /usr/include/../include/stdlib.h\n", "optional Make runtime parent spelling denied"),
             ("all: ; @/bin/printf unissued\n", "untrusted executable dispatch"),
         )
         for source, expected in cases:
@@ -1140,6 +1140,36 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(session.observations_used, observed["observations"])
             self.assertEqual(session.budget.deadline, deadline)
         self.assert_clean(session)
+
+    def test_native_readonly_short_underscore_matches_long_reference_completion(self):
+        from scripts.validation_ownership import make_lexical, read_epochs
+        with self.subTest(scanner="lexical"):
+            self.assertEqual(make_lexical.references("$_"), make_lexical.references("$(_)"))
+        with self.subTest(scanner="completion"):
+            self.assertEqual(
+                read_epochs.completion_reference_names(b"$_"),
+                read_epochs.completion_reference_names(b"$(_)"),
+            )
+        for expression in ("$_", "$(_)"):
+            self.add("Makefile", (
+                f"_ := original\nVALUE := {expression}\n"
+                "REFERENCES = $(VALUE)\n"
+                "all: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n"
+            ))
+            session = self.session()
+            with self.subTest(expression=expression), session:
+                completed, semantics, observed = session._native_make_readonly(
+                    "all", variables=("VALUE",), observe_reads=True, observe_completions=True,
+                )
+                self.assertEqual(completed.stdout, b"original")
+                self.assertEqual(semantics["domains"]["VALUE"]["value"], "original")
+                events = [row for row in observed["read_trace"]["events"] if row["kind"] == "assignment-completion"]
+                bindings = {row["name"]: row["variable"][1] for row in events}
+                self.assertIn("_", bindings)
+                self.assertEqual({name: bindings[name] for name in ("_", "VALUE")}, {
+                    "_": "original", "VALUE": "original",
+                })
+            self.assert_clean(session)
 
     def test_native_trace_count_shares_filesystem_event_machine_and_trap_limit(self):
         from scripts.validation_ownership.read_trace import NativeReadTrace
