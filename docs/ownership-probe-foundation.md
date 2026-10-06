@@ -475,9 +475,11 @@ device/inode and readonly/nosuid/nodev flags before candidate execution.
 This is an explicit amendment to the early captured-runtime-only design, not a
 claim of captured resource bytes. The managed system runtime must remain stable
 through the session; privileged host updates are outside this trust model.
-Resource reads, metadata and enumeration do not grant additional command
-execution, writes, candidate-source or generated-output authority. Executable
-ELF admission remains separately captured and explicit; argv is not rewritten.
+Resource reads, metadata, enumeration and executable library mappings within
+the declared root do not grant additional command execution, writes,
+candidate-source or generated-output authority. This namespace contains
+trusted Python source and extension code. Command executable ELF and external
+library admission remain separately captured and explicit; argv is not rewritten.
 No broad `/usr` or library-directory mount is introduced.
 
 Tester prerequisites are the installed system versioned Python stdlib and the
@@ -495,22 +497,39 @@ interaction applies. Start with a clean fixture and run:
 3. `test_native_readonly_managed_python_startup_does_not_invent_absence`:
    dispatch real explicitly admitted Python with the fixture's actual `-I -S`
    argv. Its unadmitted `/usr/pyvenv.cfg` startup read must refuse, not become a
-   false-absence branch. **Python startup, dynamic imports, site/zip/package
-   resources and extension dependency closure are still unqualified.** This
+   false-absence branch. **Original nonisolated startup, site/zip/package
+   resources and full extension dependency closure are still unqualified.** This
    negative is not a successful Python execution or original-eight-query proof.
    Explicit optional `runtime_files` may now name ordinary trusted files or
    genuine absence beneath `/usr/`, retaining the existing captured data/mode,
    root-owned ancestry and before/after identity checks. This file-only capture
    does not mount `/usr`, grant directory enumeration or extend executable
-   trust roots. Final file symlinks remain unsupported, not flattened.
+   trust roots. A single root-owned final file symlink directly naming its
+   canonical ordinary trusted target is preserved, not flattened. Capture
+   verifies both link and target identities around the target byte/mode read;
+   chained, dangling, untrusted or escaping targets refuse. Native executable
+   image and managed-directory overlap still refuse.
    `test_native_optional_usr_data_capture_preserves_bytes_and_real_absence`
    verifies actual timezone data bytes/mode, startup-file absence, unchanged
-   executable trust roots and final-alias refusal.
+   executable trust roots and the actual UTC alias target.
    `test_native_readonly_python_declared_startup_still_refuses_uncaptured_timezone`
    declares startup paths actually observed in the native fixture. Real Python
    then reaches and explicitly refuses `/usr/share/zoneinfo/UTC`; that final
-   symlink is not admitted. This is startup progress, not successful dynamic
+   symlink has not been declared. This is startup progress, not successful dynamic
    import or qualification of the original nonisolated invocations.
+   `test_native_readonly_python_captured_alias_and_dynamic_import` additionally
+   declares that exact UTC resource, runs the fixture's genuine Python command,
+   and requires `[1, 2]` from actual JSON dynamic import and recipe output plus
+   JSON and canonical timezone access evidence. It does not qualify unmodified
+   original generator argv or the eight-query family.
+   `test_native_readonly_captured_alias_metadata_and_overlap` requires genuine
+   `readlink` output `Etc/UTC`, capsule symlink/data preservation and duplicate
+   canonical-resource refusal.
+   `test_native_captured_file_alias_shape_and_identity_refuse` uses private
+   physical link/file fixtures with only root-path admission substituted to
+   mutate the real target or link during capture, and tests chained/missing
+   target refusal. It separately rejects the installed chained localtime
+   alias. These private fixtures prove capture consistency, not root ownership.
 4. `test_native_readonly_managed_python_make_enumeration_is_complete`: original
    ready Make wildcard enumeration must match the actual declared stdlib
    directory's complete `.py` names; the adjacent parent root remains denied.

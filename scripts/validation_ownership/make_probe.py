@@ -350,11 +350,25 @@ def _capture_runtime_input(path, budget):
     except FileNotFoundError:
         data, mode = None, None
         before = None
+        resource_before = None
     else:
-        if not stat.S_ISREG(before.st_mode) or before.st_mode & 0o7000:
+        resource_before = before
+        if stat.S_ISLNK(before.st_mode):
+            target = os.readlink(path)
+            if (
+                len(os.fsencode(target)) > 4096
+                or Path(os.path.normpath(os.path.join(str(Path(path).parent), target))) != resolved
+            ):
+                raise MakeProbeError("runtime file alias is not a single canonical target")
+            try:
+                resource_before = resolved.lstat()
+            except FileNotFoundError as error:
+                raise MakeProbeError("runtime file alias has a missing target") from error
+            aliases.append((path, target))
+        if not stat.S_ISREG(resource_before.st_mode) or resource_before.st_mode & 0o7000:
             raise MakeProbeError("runtime input is not an ordinary regular file")
         data = budget.read_bytes(resolved, "control")
-        mode = stat.S_IMODE(before.st_mode)
+        mode = stat.S_IMODE(resource_before.st_mode)
     try:
         after = Path(path).lstat()
     except FileNotFoundError:
@@ -364,7 +378,14 @@ def _capture_runtime_input(path, budget):
             info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
             info.st_size, info.st_mtime_ns, info.st_ctime_ns,
         )
-    if identity(before) != identity(after) or _trusted_runtime_path(path, optional=True) != resolved:
+    try:
+        resource_after = None if resource_before is None else resolved.lstat()
+    except FileNotFoundError as error:
+        raise MakeProbeError("runtime input changed during capture") from error
+    if (
+        identity(before) != identity(after) or identity(resource_before) != identity(resource_after)
+        or _trusted_runtime_path(path, optional=True) != resolved
+    ):
         raise MakeProbeError("runtime input changed during capture")
     for parent, expected in states.items():
         try:
@@ -967,8 +988,15 @@ class ProbeSession:
                 return root
             for alias, target in sorted({pair for item in self.runtime_inputs for pair in item.aliases}):
                 destination = root / alias.lstrip("/")
-                _mkdir_target(root, "/" + target, directory=True)
-                destination.rmdir()
+                if alias in STOCK_RUNTIME_ALIASES:
+                    _mkdir_target(root, "/" + target, directory=True)
+                    destination.rmdir()
+                else:
+                    if alias in dict(self.make_runtime) or alias in dict(native_runtime):
+                        raise MakeProbeError("native runtime image overlaps a captured file alias")
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    canonical = os.path.normpath(os.path.join(str(Path(alias).parent), target))
+                    _mkdir_target(root, canonical)
                 destination.symlink_to(target)
             for target, data in self.make_runtime:
                 _mkdir_target(root, target).write_bytes(data)
@@ -2072,8 +2100,9 @@ class ProbeSession:
                     name == path or name.startswith(path + "/")
                     for name in runtime.keys() | dict(self.make_runtime).keys()
                 ) or any(
-                    item.canonical == path or item.canonical.startswith(path + "/")
+                    name == path or name.startswith(path + "/")
                     for item in self.runtime_inputs
+                    for name in (item.path, item.canonical)
                 ):
                     raise MakeProbeError("native runtime directory overlaps captured runtime resources")
                 _mkdir_target(root, path, directory=True)

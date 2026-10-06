@@ -227,7 +227,7 @@ class FoundationTests(unittest.TestCase):
                 session._native_make_readonly("all", native_runtime_directories=(runtime,))
         self.assert_clean(session)
 
-    def test_native_readonly_python_declared_startup_still_refuses_uncaptured_timezone(self):
+    def native_python_startup_fixture(self):
         version = f"{sys.version_info.major}.{sys.version_info.minor}"
         runtime = "/usr/lib/python" + version
         self.add("Makefile", (
@@ -235,7 +235,7 @@ class FoundationTests(unittest.TestCase):
             "'import importlib; print(importlib.import_module(\"json\").dumps([1,2]))')\n"
             ".PHONY: all\nall: ; @v='$(VALUE)'; printf '%s\\n' \"$$v\"\n"
         ))
-        session = self.session(runtime_files=(
+        return runtime, (
             "/usr/pyvenv.cfg", "/usr/bin/pyvenv.cfg",
             "/usr/bin/python3._pth",
             "/usr/bin/pybuilddir.txt",
@@ -245,7 +245,11 @@ class FoundationTests(unittest.TestCase):
             "/usr/bin/lib/python" + version + "/os.py",
             "/usr/bin/lib/python" + version + "/os.pyc",
             "/usr/bin/lib/python" + version + "/lib-dynload",
-        ))
+        )
+
+    def test_native_readonly_python_declared_startup_still_refuses_uncaptured_timezone(self):
+        runtime, resources = self.native_python_startup_fixture()
+        session = self.session(runtime_files=resources)
         with session:
             with self.assertRaisesRegex(
                 MakeProbeError, "uncaptured Make runtime access: read /usr/share/zoneinfo/UTC",
@@ -270,8 +274,92 @@ class FoundationTests(unittest.TestCase):
         self.assertIsNone(absent.mode)
         with self.assertRaisesRegex(MakeProbeError, "outside the trusted system tool/library roots"):
             make_probe._trusted_runtime_path("/usr/pyvenv.cfg")
-        with self.assertRaisesRegex(MakeProbeError, "not an ordinary regular file"):
-            make_probe._capture_runtime_input("/usr/share/zoneinfo/UTC", budget)
+        alias = make_probe._capture_runtime_input("/usr/share/zoneinfo/UTC", budget)
+        self.assertEqual(alias.data, captured.data)
+        self.assertEqual(alias.mode, captured.mode)
+        self.assertEqual(alias.canonical, captured.canonical)
+        self.assertIn(("/usr/share/zoneinfo/UTC", "Etc/UTC"), alias.aliases)
+
+    def test_native_readonly_python_captured_alias_and_dynamic_import(self):
+        runtime, resources = self.native_python_startup_fixture()
+        session = self.session(runtime_files=(*resources, "/usr/share/zoneinfo/UTC"))
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), native_executables=("/usr/bin/python3",),
+                native_runtime_directories=(runtime,),
+            )
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "[1, 2]")
+            self.assertEqual(completed.stdout, b"[1, 2]\n")
+            self.assertTrue(any(path.startswith(runtime + "/json/") for path in observed["accessed"]))
+            self.assertIn("/usr/share/zoneinfo/Etc/UTC", observed["accessed"])
+        self.assert_clean(session)
+
+    def test_native_captured_file_alias_shape_and_identity_refuse(self):
+        from scripts.validation_ownership import make_probe
+        target = self.root / "target"
+        target.write_bytes(b"original")
+        alias = self.root / "alias"
+        alias.symlink_to("target")
+        with patch.object(make_probe, "_trusted_runtime_path", return_value=target):
+            captured = make_probe._capture_runtime_input(str(alias), ProbeBudget())
+            self.assertEqual(captured.data, b"original")
+            budget = ProbeBudget()
+            original_read = budget.read_bytes
+            def replacing(path, domain):
+                data = original_read(path, domain)
+                target.write_bytes(b"changed target")
+                return data
+            with patch.object(budget, "read_bytes", side_effect=replacing):
+                with self.assertRaisesRegex(MakeProbeError, "runtime input changed during capture"):
+                    make_probe._capture_runtime_input(str(alias), budget)
+            budget = ProbeBudget()
+            original_read = budget.read_bytes
+            def relinking(path, domain):
+                data = original_read(path, domain)
+                alias.unlink()
+                alias.symlink_to("./target")
+                return data
+            with patch.object(budget, "read_bytes", side_effect=relinking):
+                with self.assertRaisesRegex(MakeProbeError, "runtime input changed during capture"):
+                    make_probe._capture_runtime_input(str(alias), budget)
+            alias.unlink()
+            alias.symlink_to("middle")
+            (self.root / "middle").symlink_to("target")
+            with self.assertRaisesRegex(MakeProbeError, "single canonical target"):
+                make_probe._capture_runtime_input(str(alias), ProbeBudget())
+            alias.unlink()
+            alias.symlink_to("missing")
+        with patch.object(make_probe, "_trusted_runtime_path", return_value=self.root / "missing"):
+            with self.assertRaisesRegex(MakeProbeError, "runtime file alias has a missing target"):
+                make_probe._capture_runtime_input(str(alias), ProbeBudget())
+        with self.assertRaisesRegex(MakeProbeError, "single canonical target"):
+            make_probe._capture_runtime_input("/usr/share/zoneinfo/localtime", ProbeBudget())
+
+    def test_native_readonly_captured_alias_metadata_and_overlap(self):
+        self.add("Makefile", ".PHONY: all\nall: ; @/usr/bin/readlink /usr/share/zoneinfo/UTC\n")
+        session = self.session(runtime_files=("/usr/share/zoneinfo/UTC",))
+        with session:
+            completed, _, _ = session._native_make_readonly(
+                "all", native_executables=("/usr/bin/readlink",),
+            )
+            self.assertEqual(completed.stdout, b"Etc/UTC\n")
+            alias = session.runtime_root / "usr/share/zoneinfo/UTC"
+            self.assertTrue(stat.S_ISLNK(alias.lstat().st_mode))
+            self.assertEqual(os.readlink(alias), "Etc/UTC")
+            self.assertEqual(alias.read_bytes(), Path("/usr/share/zoneinfo/UTC").read_bytes())
+        self.assert_clean(session)
+        session = self.session(runtime_files=(
+            "/usr/share/zoneinfo/UTC", "/usr/share/zoneinfo/Etc/UTC",
+        ))
+        with self.assertRaisesRegex(MakeProbeError, "duplicate/overlapping optional runtime inputs"):
+            with session:
+                pass
+        self.assert_clean(session)
+        session = self.session(runtime_files=("/usr/bin/ld.gold",))
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "native runtime image overlaps a captured file alias"):
+                session._native_make_readonly("all", native_executables=("/usr/bin/ld.gold",))
+        self.assert_clean(session)
 
     def test_native_readonly_declared_direct_executable_preserves_original_jobs(self):
         self.add("Makefile", (

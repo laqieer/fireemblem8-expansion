@@ -1913,6 +1913,7 @@ class Policy:
                 if (
                     self.mode == "make" and c & PROT_EXEC
                     and path not in self.executable | self.runtime_closure | {"/lib/vo-observer.so"}
+                    and not self.native_managed_runtime(path)
                 ):
                     raise Violation("optional runtime image execution denied")
                 if c & PROT_EXEC and path not in self.executable and not path.startswith(("/usr/", "/lib/", "/lib64/", "/bin/")):
