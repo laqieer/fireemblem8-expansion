@@ -295,6 +295,24 @@ remain unqualified by these member results.
 
 ### Original source-entry observation component
 
+The existing exact `/dev/null` mount is a nonexecuting writable exception,
+not a generic device namespace. The trusted launcher verifies the actual null
+character device (major 1, minor 3) and clears inherited NODEV only on that
+exact leaf, retaining NOSUID/NOEXEC. Repository/runtime roots and inherited
+submounts retain their recursive restrictions; other devices and directories
+cannot request that clear. Syscall device-path admission is unchanged.
+The #270 `TC-WORKFLOW-NATIVE-MAKE-001` null-device regression reproduces the
+pre-fix original item-cap resolver redirection failure. Run
+`test_exact_null_device_preserves_command_and_native_make_redirection`:
+actual Python command, compiled native tool and original native-Make shell
+redirection must produce usable results with zero stderr and owned cleanup.
+Run `test_null_device_mount_exception_is_exact_leaf_only`: actual mount flags,
+device identity, null writes/reads, unchanged root/source flags and other-device/
+directory/executable/readonly/unsupported-clear refusals are required.
+Repeat the existing recursive submount and unsupported-mount-setattr cases.
+This fixes the admitted null resource, not missing Python runtime probes,
+native producers or original eight-query qualification.
+
 The internal readonly invocation can now request `observe_reads=True`. Only
 the existing version-1 original-read contract is configured: Make/source ELF
 ABI sites decoded from the captured Make bytes, actual private runtime mapping,

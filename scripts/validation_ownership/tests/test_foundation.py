@@ -1181,6 +1181,40 @@ class FoundationTests(unittest.TestCase):
                 )
         self.assert_clean(session)
 
+    def test_exact_null_device_preserves_command_and_native_make_redirection(self):
+        self.add("reader.py", (
+            "with open('/dev/null','wb') as output: output.write(b'discarded')\n"
+            "print('usable')\n"
+        ))
+        self.add("null.c", (
+            '#include <stdio.h>\nint main(void) {\n'
+            'FILE *f = fopen("/dev/null", "w"); if (!f) { perror("null"); return 1; }\n'
+            'if (fputs("discarded", f) < 0 || fclose(f)) return 2;\n'
+            'puts("usable"); return 0; }\n'
+        ))
+        self.add("Makefile", "VALUE := $(shell printf discarded > /dev/null; printf usable)\nall: ; @:\n")
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, timeout=10,
+        )
+        self.assertEqual((ordinary.returncode, ordinary.stderr), (0, b""))
+        for lane in ("command", "native", "make"):
+            session = self.session()
+            with self.subTest(lane=lane), session:
+                if lane == "command":
+                    result = session.command(Command(("/usr/bin/python3", "reader.py"), code=("reader.py",)))
+                    self.assertEqual((result.stdout, result.stderr), (b"usable\n", b""))
+                elif lane == "native":
+                    tool = session.compile_native(("null.c",))
+                    result = session.native(tool)
+                    self.assertEqual((result.stdout, result.stderr), (b"usable\n", b""))
+                else:
+                    result, semantics, _ = session._native_make_readonly("all", variables=("VALUE",))
+                    self.assertEqual((result.stdout, result.stderr), (b"", b""))
+                    self.assertEqual(semantics["domains"]["VALUE"]["value"], "usable")
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
     def test_completion_expression_depth_rejects_before_nested_body_allocation(self):
         import tracemalloc
         from scripts.validation_ownership import make_lexical, read_epochs
@@ -11815,6 +11849,76 @@ print(json.dumps({"submount_levels":3,"source_flags_unchanged":True,
         self.assert_clean(session)
         self.assertFalse((fixture / "source/nested/value").exists())
         self.assertFalse((fixture / "root/inherited/value").exists())
+
+    def test_null_device_mount_exception_is_exact_leaf_only(self):
+        self.add("Makefile", "all: ;\n")
+        fixture = self.directory / "null-mount-fixture"
+        (fixture / "root/dev").mkdir(parents=True)
+        for name in ("null", "generic", "zero"):
+            (fixture / "root/dev" / name).touch()
+        program = r'''
+import errno,json,os,sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from sandbox_exec import bind,recursive_attributes,MS_NOSUID,MS_NOEXEC,MS_NODEV,MS_RDONLY
+root=Path(sys.argv[2])/"root"
+original=os.statvfs("/dev/null").f_flag
+bind(root,root,executable=True)
+bind("/dev/null",root/"dev/generic",writable=True)
+try: open(root/"dev/generic","wb")
+except OSError as error: assert error.errno==errno.EACCES,error
+else: raise AssertionError("generic NODEV leaf accepted a device open")
+bind("/dev/null",root/"dev/null",writable=True,null_device=True)
+flags=os.statvfs(root/"dev/null").f_flag
+assert flags & (MS_RDONLY|MS_NOSUID|MS_NODEV|MS_NOEXEC)==MS_NOSUID|MS_NOEXEC,flags
+info=(root/"dev/null").stat()
+assert info.st_rdev==os.makedev(1,3)
+with open(root/"dev/null","wb") as output: assert output.write(b"discard")==7
+with open(root/"dev/null","rb") as source: assert source.read()==b""
+assert os.statvfs(root).f_flag & 7==7
+for source,target,options in (
+    ("/dev/zero",root/"dev/null",{"writable":True}),
+    ("/dev/null",root/"dev/zero",{"writable":True}),
+    (str(root),root/"dev/null",{"writable":True}),
+    ("/dev/null",root/"dev/null",{"writable":True,"executable":True}),
+    ("/dev/null",root/"dev/null",{}),
+):
+    try: bind(source,target,null_device=True,**options)
+    except ValueError: pass
+    else: raise AssertionError("foreign null-device exception accepted")
+for target in (root,root/"dev/generic"):
+    try: recursive_attributes(target,MS_NOSUID|MS_NOEXEC,clear=MS_NODEV)
+    except ValueError: pass
+    else: raise AssertionError("non-null leaf cleared NODEV")
+for flags,clear in (
+    (MS_NOSUID,MS_NODEV),(MS_NOSUID|MS_NOEXEC|MS_RDONLY,MS_NODEV),
+    (MS_NOSUID|MS_NOEXEC|MS_NODEV,MS_NODEV),(MS_NOSUID|MS_NOEXEC,MS_NOEXEC),
+):
+    try: recursive_attributes(root/"dev/null",flags,clear=clear)
+    except ValueError: pass
+    else: raise AssertionError("unsupported mount restriction clear accepted")
+bind("/dev/zero",root/"dev/zero",writable=True)
+try: recursive_attributes(root/"dev/zero",MS_NOSUID|MS_NOEXEC,clear=MS_NODEV)
+except ValueError: pass
+else: raise AssertionError("foreign device cleared NODEV")
+assert os.statvfs("/dev/null").f_flag==original
+print(json.dumps({"device":[os.major(info.st_rdev),os.minor(info.st_rdev)],
+                  "readonly_root":True,"null_rw":True,"nonexec_nosuid":True,
+                  "source_flags_unchanged":True}))
+'''
+        session = self.session()
+        with session:
+            result = session.budget.run(
+                [*session.launcher, "/usr/bin/python3", "-I", "-S", "-c", program,
+                 str(TRUSTED_ROOT), str(fixture)],
+                env=ENVIRONMENT, privileged=session.sudo_drop,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout), {
+                "device": [1, 3], "readonly_root": True, "null_rw": True,
+                "nonexec_nosuid": True, "source_flags_unchanged": True,
+            })
+        self.assert_clean(session)
 
     def test_recursive_mount_attribute_failure_has_no_top_only_fallback(self):
         from scripts.validation_ownership import sandbox_exec

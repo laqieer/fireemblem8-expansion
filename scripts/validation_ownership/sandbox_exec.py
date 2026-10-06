@@ -7,6 +7,7 @@ import ctypes
 import errno
 import json
 import os
+import stat
 import sys
 from pathlib import Path
 
@@ -35,22 +36,40 @@ def mount(source, target, flags, kind=None):
         raise OSError(error, os.strerror(error), str(target))
 
 
-def bind(source, target, *, writable=False, executable=False):
+def bind(source, target, *, writable=False, executable=False, null_device=False):
+    if null_device:
+        if str(source) != "/dev/null" or Path(target).name != "null" or not writable or executable:
+            raise ValueError("null device exception requires its exact nonexecutable writable leaf")
+        source_mode = os.stat(source, follow_symlinks=False)
+        if not stat.S_ISCHR(source_mode.st_mode) or source_mode.st_rdev != os.makedev(1, 3):
+            raise ValueError("null device exception requires the actual null character device")
     mount(source, target, MS_BIND | MS_REC)
-    flags = MS_NOSUID | MS_NODEV
+    flags = MS_NOSUID | (0 if null_device else MS_NODEV)
     if not writable:
         flags |= MS_RDONLY
     if not executable:
         flags |= MS_NOEXEC
-    recursive_attributes(target, flags)
+    if null_device:
+        recursive_attributes(target, flags, clear=MS_NODEV)
+    else:
+        recursive_attributes(target, flags)
 
 
-def recursive_attributes(target, flags):
+def recursive_attributes(target, flags, *, clear=0):
     # A top-level MS_REMOUNT does not restrict copied submounts. Pin this
     # namespace's bind and add restrictions atomically to the entire subtree.
     descriptor = os.open(target, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC)
     try:
-        attributes = MountAttributes(attr_set=flags)
+        if clear:
+            info = os.fstat(descriptor)
+            if (
+                clear != MS_NODEV or Path(target).name != "null" or not stat.S_ISCHR(info.st_mode)
+                or info.st_rdev != os.makedev(1, 3)
+                or flags & (MS_NOSUID | MS_NOEXEC) != MS_NOSUID | MS_NOEXEC
+                or flags & (MS_NODEV | MS_RDONLY)
+            ):
+                raise ValueError("only the admitted null leaf may clear NODEV")
+        attributes = MountAttributes(attr_set=flags, attr_clr=clear)
         libc = ctypes.CDLL(None, use_errno=True)
         libc.syscall.restype = ctypes.c_long
         if libc.syscall(
@@ -105,7 +124,8 @@ def main():
     mount("proc", "/proc", MS_NOSUID | MS_NODEV | MS_NOEXEC, "proc")
     for item in config["mounts"]:
         bind(item["source"], root / item["target"].lstrip("/"),
-             writable=item["writable"], executable=item["executable"])
+             writable=item["writable"], executable=item["executable"],
+             null_device=item["source"] == "/dev/null" and item["target"] == "/dev/null")
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from syscall_guard import supervise
     return supervise(config, lambda: drop_privileges(config))
