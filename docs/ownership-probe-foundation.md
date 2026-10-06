@@ -449,6 +449,39 @@ actual work, never a command registry, replay instruction or permission to
 write. Dispatch, exec, context, exit and wait bookkeeping share the aggregate
 observation/byte bounds; no retired process retains executable or signal
 authority. A failed spawn without a complete observed child refuses rather
+
+The original Python/hashlib runtime may also read OpenSSL configuration.
+Declare only `/usr/lib/ssl/openssl.cnf` or its exact canonical
+`/etc/ssl/openssl.cnf` through existing optional runtime files. The alias must
+directly name that canonical regular file. The exact standard relative leaf
+`../../../etc/ssl/openssl.cnf` is supported in addition to the direct absolute
+leaf; other traversal or multi-hop aliases remain rejected. Existing root
+ownership, nonmutable parents/file, before/after identity, control-byte/deadline
+checks and sealed readonly materialization still apply. This is not an
+`/etc/ssl` directory grant, an executable/library grant, or a live host mount.
+
+For #270 `TC-WORKFLOW-NATIVE-MAKE-001`, from a clean Linux checkout with that
+standard configuration, run
+`test_native_readonly_openssl_configuration_preserves_actual_alias_and_bytes`
+and `test_native_readonly_openssl_relative_leaf_is_sealed_and_readable`.
+Compare captured bytes/mode against the actual canonical file without
+publishing its contents; original Make must read the sealed guest alias in
+both representations. The relative spelling uses an isolated declaration
+fixture, not a modification of the host symlink. Run
+`test_native_openssl_capture_has_no_neighbor_write_or_executable_authority`
+and `test_native_openssl_capture_trust_and_identity_controls`: neighboring
+`/etc/ssl` files, redirected canonical target, uncaptured reads and captured
+writes refuse. The readonly data file cannot execute: original Make shell
+expansion status 127 and its permission diagnostic match ordinary Make rather than being
+converted into a successful shell result. Foreign ownership, mutable mode,
+postread identity changes and an alias with missing canonical target refuse;
+direct canonical absence remains optional. Use the existing physical alias
+replacement/multi-hop/missing-target and generic traversal tests as shared
+capture controls. No ROM/RAM/save/locale/profile or archival impact, and no
+new dependency or service beyond the existing optional-file seam. This resource
+member does not qualify the original eight queries: the measured original
+first query with configuration capture still exhausts its unchanged aggregate
+control budget. A failed spawn without a complete observed child refuses rather
 than manufacturing a completed record.
 
 On the same clean host checkout, run
@@ -470,6 +503,43 @@ Keep the native PIPE/CHLD controls and the
 ordinary mapped static-metadata/cache test as compatibility controls.
 `test_mapped_make_has_no_native_job_observations` requires the original mapped
 metadata-only behavior, selected domain value and absence of native job records.
+
+For the #270 `TC-WORKFLOW-NATIVE-MAKE-001` returned-job regression, run
+`test_native_returned_job_context_and_policy_mutations_refuse` from a clean
+Linux source checkout. The original Make performs one shell expansion, two
+commands on `all`, and an ignored exit 7. In both completion v4 and runtime v5,
+changing only a returned recipe target, command index, context kind, or ignored
+flag must reject and poison the session; the pre-fix native execution accepted
+all eight well-typed changes. Run
+`test_native_job_policy_machine_and_archive_bindings` for actual stdout
+`onetwo`, original `all` command indices 1 and 2, expansion context, and
+unignored/ignored statuses 0 and 7. Its archive controls omit or duplicate the
+policy binding, change parent/child/dispatch, corrupt typed context/policy/wait
+members, or move the v5 binding ahead of its actual root terminal event.
+
+The existing machine channel records `native-policy` at the authenticated
+original Make wait notification, with its child, dispatch, exact context,
+ignored policy and raw wait status. Each executed child must have one policy
+in the same execution/read pass. Runtime v5 additionally requires its actual
+root terminal tree before that notification. The live decoder cross-checks
+the complete returned-job policy against this separately captured observation;
+the shared archive validator enforces the same typed lifecycle. These are
+operational observations, not signatures against coherent rewriting of every
+evidence channel. The existing control-byte, observation and deadline accounting
+also applies to policy records. Default/no-reader and mapped paths do not gain
+a new service or machine-evidence requirement. Failed Make omits completed
+read/machine evidence; the readonly API rejects before publishing semantics or
+job/context observations. Run
+`test_native_failed_make_cannot_publish_mutated_job_context_or_policy` for actual
+v4/v5 Make exit 2 after recipe exit 7 with well-typed returned diagnostic
+target/policy changes. Instrumentation confirms the internal decoder reaches
+that original nonzero outcome but the API poisons the session and returns no
+accepted report. These failed diagnostic fields are not independently bound to
+a completed machine trace, and no completion is fabricated for them. Run the
+existing actual lifecycle, unignored recipe failure and mapped absence tests as
+compatibility controls. Original producer/eight-query and final delivery holds
+remain separate. Dependencies are the existing native dispatch/observer/machine
+seams; conflicts are none, with no ROM/RAM/save/locale/archival impact.
 
 Dependencies are authenticated readonly dispatch, the existing observer ABI
 and shared accounting; conflicts are none. Ordinary mapped invocation emits

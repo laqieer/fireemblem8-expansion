@@ -294,11 +294,13 @@ def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
         raise MakeProbeError("noncanonical trusted runtime path")
     sitecustomize = optional and re.fullmatch(r"/etc/python[0-9]+\.[0-9]+/sitecustomize\.py", path)
     kernel_fips = optional and path == "/proc/sys/crypto/fips_enabled"
+    openssl_config = optional and path in {"/usr/lib/ssl/openssl.cnf", "/etc/ssl/openssl.cnf"}
     roots = (
         "/usr/bin/", "/usr/lib/", "/usr/lib64/", "/lib/", "/lib64/",
         *(("/usr/libexec/",) if compiler else ()),
         *(("/usr/", "/bin/", ENVIRONMENT["HOME"] + "/") if optional else ()),
         *((path,) if sitecustomize or kernel_fips else ()),
+        *(("/etc/ssl/openssl.cnf",) if openssl_config else ()),
     )
     if not path.startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
@@ -307,6 +309,8 @@ def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
         raise MakeProbeError("sitecustomize runtime input must be canonical")
     if kernel_fips and resolved.as_posix() != path:
         raise MakeProbeError("kernel FIPS runtime input must be canonical")
+    if openssl_config and resolved.as_posix() != "/etc/ssl/openssl.cnf":
+        raise MakeProbeError("OpenSSL configuration must name its exact canonical input")
     if not resolved.as_posix().startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
     for entry in {Path(path), *Path(path).parents, resolved, *resolved.parents}:
@@ -401,7 +405,11 @@ def _capture_runtime_input(path, budget):
             target = os.readlink(path)
             if (
                 len(os.fsencode(target)) > 4096
-                or ".." in target.split("/")
+                or ".." in target.split("/") and not (
+                    path == "/usr/lib/ssl/openssl.cnf"
+                    and target == "../../../etc/ssl/openssl.cnf"
+                    and resolved == Path("/etc/ssl/openssl.cnf")
+                )
                 or Path(os.path.normpath(os.path.join(str(Path(path).parent), target))) != resolved
             ):
                 raise MakeProbeError("runtime file alias is not a single canonical target")
@@ -1547,7 +1555,7 @@ class ProbeSession:
                         for absent in config["runtime_absent"]
                     ):
                         raise MakeProbeError("native optional absence differs from its kernel metadata")
-                jobs, executions, dispatches, job_inputs = {}, {}, [], {}
+                jobs, executions, dispatches, job_inputs, job_policies = {}, {}, [], {}, {}
                 for value in observed["accessed"]:
                     if value.startswith("native-job:"):
                         raw = value.removeprefix("native-job:").encode("utf-8")
@@ -1568,23 +1576,13 @@ class ProbeSession:
                         ):
                             raise MakeProbeError("native job has incomplete or invalid lifecycle evidence")
                         context = job["context"]
+                        from .read_epochs import ReadEpochError, native_job_context
+                        try:
+                            native_job_context(context)
+                        except ReadEpochError as error:
+                            raise MakeProbeError(str(error)) from error
                         if (
-                            not isinstance(context, dict)
-                            or set(context) != {"kind", "target", "command_line"}
-                            or not isinstance(context["kind"], str)
-                            or context["kind"] not in {"expansion", "recipe"}
-                            or context["kind"] == "expansion" and (
-                                context["target"] is not None or context["command_line"] is not None
-                            )
-                            or context["kind"] == "recipe" and (
-                                not isinstance(context["target"], str) or not context["target"]
-                                or "\0" in context["target"]
-                                or any(0xD800 <= ord(char) <= 0xDFFF for char in context["target"])
-                                or len(context["target"].encode("utf-8")) > 4096
-                                or type(context["command_line"]) is not int
-                                or not 0 <= context["command_line"] < 1 << 32
-                            )
-                            or not (os.WIFEXITED(job["terminal_status"]) or os.WIFSIGNALED(job["terminal_status"]))
+                            not (os.WIFEXITED(job["terminal_status"]) or os.WIFSIGNALED(job["terminal_status"]))
                             or os.waitstatus_to_exitcode(job["terminal_status"]) != job["returncode"]
                         ):
                             raise MakeProbeError("native job has inconsistent context or terminal wait evidence")
@@ -1619,6 +1617,9 @@ class ProbeSession:
                                     raise MakeProbeError("native job tree differs from returned machine observations")
                         jobs[job["pid"]] = job["executable"]
                         dispatches.append((job["sequence"], job["pid"]))
+                        job_policies[(job["sequence"], job["pid"])] = (
+                            context, job["ignored"], job["terminal_status"],
+                        )
                     elif value.startswith(("native-shell:", "native-exec:")):
                         parts = value.split(":", 2)
                         if len(parts) != 3:
@@ -1641,6 +1642,13 @@ class ProbeSession:
                     ]
                     if sorted(dispatches) != sorted(children):
                         raise MakeProbeError("native job dispatch differs from its returned machine execution")
+                    policies = {
+                        (row["dispatch"], row["child"]): (row["context"], row["ignored"], row["status"])
+                        for row in observed["read_trace"]["machine"]["events"]
+                        if row["kind"] == "native-policy"
+                    }
+                    if job_policies != policies:
+                        raise MakeProbeError("native job context or policy differs from its machine observation")
                     if runtime_completions and job_inputs != {
                         (row["dispatch"], row["pid"]): row["input_sha256"]
                         for row in observed["read_trace"]["machine"]["events"]

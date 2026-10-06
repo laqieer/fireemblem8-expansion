@@ -727,6 +727,11 @@ class Policy:
             )
         self.native_job_event({"sequence": row["sequence"], "wait_status": status, "flags": flags})
         row["waited"], row["ignored"] = True, bool(flags & 1)
+        if self.read_trace is not None and self.read_trace.version in {4, 5}:
+            self.read_trace.machine_event(
+                "native-policy", pid, dispatch=row["sequence"], child=row["pid"],
+                context=dict(row["context"]), ignored=row["ignored"], status=status,
+            )
         self.observe("accessed", "native-job:" + encoded(row).decode("ascii"))
 
     def retire_native_job(self, pid, state, status):

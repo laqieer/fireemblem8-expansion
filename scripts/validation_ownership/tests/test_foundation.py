@@ -254,6 +254,160 @@ class FoundationTests(unittest.TestCase):
         with self.assertRaisesRegex(MakeProbeError, "outside the trusted system tool/library roots"):
             make_probe._trusted_runtime_path(str(source), optional=True)
 
+    def test_native_readonly_openssl_configuration_preserves_actual_alias_and_bytes(self):
+        from scripts.validation_ownership import make_probe
+        alias = "/usr/lib/ssl/openssl.cnf"
+        canonical = "/etc/ssl/openssl.cnf"
+        actual = Path(canonical).read_bytes()
+        captured = make_probe._capture_runtime_input(alias, ProbeBudget())
+        direct = make_probe._capture_runtime_input(canonical, ProbeBudget())
+        self.assertEqual((captured.data, direct.data), (actual, actual))
+        self.assertEqual((captured.canonical, direct.canonical), (canonical, canonical))
+        self.assertEqual(captured.mode, stat.S_IMODE(Path(canonical).stat().st_mode))
+        self.assertEqual(captured.mode, direct.mode)
+        self.assertIn((alias, os.readlink(alias)), captured.aliases)
+        first = actual.splitlines()[0].decode("ascii")
+        self.add("Makefile", (
+            f"VALUE := $(shell read -r first < {alias}; printf '%s' \"$$first\")\n"
+            "all: ; @:\n"
+        ))
+        session = self.session(runtime_files=(alias,))
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",),
+            )
+            self.assertEqual((completed.returncode, completed.stderr), (0, b""))
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], first)
+            self.assertIn(canonical, observed["accessed"])
+        self.assert_clean(session)
+
+    def test_native_readonly_openssl_relative_leaf_is_sealed_and_readable(self):
+        from scripts.validation_ownership import make_probe
+        alias, canonical = "/usr/lib/ssl/openssl.cnf", "/etc/ssl/openssl.cnf"
+        target = "../../../etc/ssl/openssl.cnf"
+        actual = Path(canonical).read_bytes()
+        first = actual.splitlines()[0].decode("ascii")
+        readlink = os.readlink
+        def relative(path, *args, **kwargs):
+            return target if str(path) == alias else readlink(path, *args, **kwargs)
+        self.add("Makefile", (
+            f"VALUE := $(shell read -r first < {alias}; printf '%s' \"$$first\")\n"
+            "all: ; @:\n"
+        ))
+        with patch.object(os, "readlink", relative):
+            captured = make_probe._capture_runtime_input(alias, ProbeBudget())
+            self.assertIn((alias, target), captured.aliases)
+            self.assertEqual(captured.data, actual)
+            session = self.session(runtime_files=(alias,))
+            with session:
+                completed, semantics, observed = session._native_make_readonly("all", variables=("VALUE",))
+                self.assertEqual((completed.returncode, completed.stderr), (0, b""))
+                self.assertEqual(semantics["domains"]["VALUE"]["value"], first)
+                self.assertIn(canonical, observed["accessed"])
+        self.assert_clean(session)
+
+    def test_native_openssl_capture_has_no_neighbor_write_or_executable_authority(self):
+        from scripts.validation_ownership import make_probe
+        alias, canonical = "/usr/lib/ssl/openssl.cnf", "/etc/ssl/openssl.cnf"
+        for neighbor in (canonical + ".other", canonical + "/child", "/etc/ssl", "/etc/ssl/other.cnf"):
+            with self.subTest(neighbor=neighbor), self.assertRaises(MakeProbeError):
+                make_probe._capture_runtime_input(neighbor, ProbeBudget())
+        for path in (alias, canonical):
+            with self.subTest(executable=path), self.assertRaises(MakeProbeError):
+                make_probe._trusted_runtime_path(path)
+        resolve = Path.resolve
+        def redirected(path, *args, **kwargs):
+            return Path("/etc/ssl/other.cnf") if str(path) in {alias, canonical} else resolve(path, *args, **kwargs)
+        with patch.object(Path, "resolve", redirected), self.assertRaisesRegex(
+            MakeProbeError, "exact canonical input",
+        ):
+            make_probe._capture_runtime_input(alias, ProbeBudget())
+        for command, resources in (
+            (f"read -r first < {alias}", ()),
+            (f"printf changed > {alias}", (alias,)),
+        ):
+            self.add("Makefile", f"VALUE := $(shell {command})\nall: ; @:\n")
+            session = self.session(runtime_files=resources)
+            with self.subTest(command=command), session:
+                with self.assertRaises(MakeProbeError):
+                    session._native_make_readonly("all", variables=("VALUE",))
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        self.add("Makefile", (
+            f"VALUE := $(shell {canonical})\nSTATUS := $(.SHELLSTATUS)\n"
+            "all: ; @v='$(STATUS)'; printf '%s' \"$$v\"\n"
+        ))
+        ordinary = subprocess.run(
+            ("/usr/bin/make", "-rR", "--no-print-directory", "-f", "Makefile", "all"),
+            cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        )
+        session = self.session(runtime_files=(canonical,))
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE", "STATUS"),
+            )
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "")
+            self.assertEqual(completed.stdout, ordinary.stdout)
+            self.assertEqual(semantics["domains"]["STATUS"]["value"], ordinary.stdout.decode("ascii"))
+            self.assertEqual(ordinary.stdout, b"127")
+            self.assertIn(b"Permission denied", completed.stderr)
+            jobs = [json.loads(row.removeprefix("native-job:")) for row in observed["accessed"]
+                    if row.startswith("native-job:")]
+            self.assertTrue(jobs)
+            self.assertNotIn(canonical, {row["executable"] for row in jobs})
+        self.assert_clean(session)
+
+    def test_native_openssl_capture_trust_and_identity_controls(self):
+        from scripts.validation_ownership import make_probe
+        alias, canonical = "/usr/lib/ssl/openssl.cnf", "/etc/ssl/openssl.cnf"
+        lstat = Path.lstat
+        for mutation in ("foreign-owner", "group-write", "world-write"):
+            def untrusted(path):
+                info = lstat(path)
+                if str(path) != canonical:
+                    return info
+                row = list(info)
+                if mutation == "foreign-owner":
+                    row[4] = os.getuid() or 1001
+                else:
+                    row[0] |= stat.S_IWGRP if mutation == "group-write" else stat.S_IWOTH
+                return os.stat_result(row)
+            budget = ProbeBudget()
+            with self.subTest(mutation=mutation), patch.object(Path, "lstat", untrusted), patch.object(
+                budget, "read_bytes", side_effect=AssertionError("untrusted OpenSSL data read"),
+            ) as read:
+                with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted runtime input"):
+                    make_probe._capture_runtime_input(alias, budget)
+                read.assert_not_called()
+        budget = ProbeBudget()
+        original_read, captured = budget.read_bytes, False
+        def reading(path, domain):
+            nonlocal captured
+            data = original_read(path, domain)
+            captured = True
+            return data
+        def changed_identity(path):
+            info = lstat(path)
+            if str(path) != canonical or not captured:
+                return info
+            return SimpleNamespace(
+                st_dev=info.st_dev, st_ino=info.st_ino + 1, st_mode=info.st_mode,
+                st_uid=info.st_uid, st_gid=info.st_gid, st_size=info.st_size,
+                st_mtime_ns=info.st_mtime_ns, st_ctime_ns=info.st_ctime_ns,
+            )
+        with patch.object(budget, "read_bytes", reading), patch.object(Path, "lstat", changed_identity):
+            with self.assertRaisesRegex(MakeProbeError, "runtime input changed during capture"):
+                make_probe._capture_runtime_input(alias, budget)
+        def missing(path):
+            if str(path) == canonical:
+                raise FileNotFoundError(path)
+            return lstat(path)
+        with patch.object(Path, "lstat", missing):
+            with self.assertRaisesRegex(MakeProbeError, "alias has a missing target"):
+                make_probe._capture_runtime_input(alias, ProbeBudget())
+            absent = make_probe._capture_runtime_input(canonical, ProbeBudget())
+            self.assertIsNone(absent.data)
+
     def test_kernel_fips_zero_size_bounded_bytes_and_identity_controls(self):
         from scripts.validation_ownership import make_probe
         source = self.directory / "kernel-data"
@@ -4444,6 +4598,200 @@ class FoundationTests(unittest.TestCase):
                 session._native_make_readonly("all", observe_reads=True, observe_completions=True)
             self.assertTrue(session.budget.failed)
         self.assert_clean(session)
+
+    def test_native_returned_job_context_and_policy_mutations_refuse(self):
+        self.add("Makefile", (
+            "VALUE := $(shell v=original; printf '%s' \"$$v\")\n"
+            "all:\n\t@v=one; printf '%s' \"$$v\"\n"
+            "\t-@v=two; printf '%s' \"$$v\"; exit 7\n"
+        ))
+        mutations = (
+            "if row['context']['kind']=='recipe':row['context']['target']='foreign'",
+            "if row['context']['kind']=='recipe':row['context']['command_line']+=1",
+            "row['context']={'kind':'expansion','target':None,'command_line':None}",
+            "if row['context']['kind']=='expansion':row['context']={'kind':'recipe','target':'all','command_line':1}",
+            "row['ignored']=not row['ignored']",
+        )
+        for runtime in (False, True):
+            for mutation in mutations:
+                body = (
+                    "original=guard.Policy.observe\n"
+                    "def changed(self,name,value):\n"
+                    " if name=='accessed' and value.startswith('native-job:'):\n"
+                    "  row=json.loads(value[len('native-job:'):])\n"
+                    f"  {mutation}\n"
+                    "  value='native-job:'+guard.encoded(row).decode('ascii')\n"
+                    " return original(self,name,value)\n"
+                    "guard.Policy.observe=changed\n"
+                )
+                session = self.session()
+                with self.subTest(runtime=runtime, mutation=mutation), self.native_supervisor(body), session:
+                    with self.assertRaisesRegex(MakeProbeError, "native job"):
+                        session._native_make_readonly(
+                            "all", observe_reads=True, observe_completions=not runtime,
+                            observe_runtime_completions=runtime,
+                        )
+                    self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_job_policy_live_machine_mutations_refuse(self):
+        self.add("Makefile", "all: ; @v=original; printf '%s' \"$$v\"\n")
+        for runtime in (False, True):
+            for mutation in (
+                "return",
+                "original(self,kind,pid,**fields)",
+                "fields['context']['target']='foreign'",
+                "fields['context']['command_line']+=1",
+                "fields['context']={'kind':'expansion','target':None,'command_line':None}",
+                "fields['ignored']=not fields['ignored']",
+                "fields['status']=256",
+                "fields['dispatch']+=1",
+                "fields['child']+=1000000",
+                "pid=fields['child']",
+            ):
+                body = (
+                    "import read_trace\n"
+                    "original=read_trace.NativeReadTrace.machine_event\n"
+                    "def changed(self,kind,pid,**fields):\n"
+                    " if kind=='native-policy':\n"
+                    "  fields['context']=dict(fields['context'])\n"
+                    f"  {mutation}\n"
+                    " return original(self,kind,pid,**fields)\n"
+                    "read_trace.NativeReadTrace.machine_event=changed\n"
+                )
+                session = self.session()
+                with self.subTest(runtime=runtime, mutation=mutation), self.native_supervisor(body), session:
+                    with self.assertRaises(MakeProbeError):
+                        session._native_make_readonly(
+                            "all", observe_reads=True, observe_completions=not runtime,
+                            observe_runtime_completions=runtime,
+                        )
+                    self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_failed_make_cannot_publish_mutated_job_context_or_policy(self):
+        self.add("Makefile", "all: ; @v=failed; printf '%s' \"$$v\"; exit 7\n")
+        for runtime in (False, True):
+            for mutation in ("row['ignored']=True", "row['context']['target']='foreign'"):
+                body = (
+                    "original=guard.Policy.observe\n"
+                    "def changed(self,name,value):\n"
+                    " if name=='accessed' and value.startswith('native-job:'):\n"
+                    "  row=json.loads(value[len('native-job:'):])\n"
+                    f"  {mutation}\n"
+                    "  value='native-job:'+guard.encoded(row).decode('ascii')\n"
+                    " return original(self,name,value)\n"
+                    "guard.Policy.observe=changed\n"
+                )
+                session, decoded = self.session(), []
+                sandbox = session._sandbox_run
+                def observed_failure(*args, **kwargs):
+                    result = sandbox(*args, **kwargs)
+                    decoded.append(result)
+                    return result
+                with self.subTest(runtime=runtime, mutation=mutation), self.native_supervisor(body), session:
+                    with patch.object(session, "_sandbox_run", observed_failure), self.assertRaises(MakeProbeError):
+                        session._native_make_readonly(
+                            "all", observe_reads=True, observe_completions=not runtime,
+                            observe_runtime_completions=runtime,
+                        )
+                    self.assertEqual(len(decoded), 1)
+                    completed, observed = decoded[0]
+                    self.assertEqual((completed.returncode, observed["returncode"]), (2, 2))
+                    self.assertNotIn("read_trace", observed)
+                    self.assertIn(b"Error 7", completed.stderr)
+                    jobs = [json.loads(row.removeprefix("native-job:")) for row in observed["accessed"]
+                            if row.startswith("native-job:")]
+                    self.assertEqual(len(jobs), 1)
+                    if "ignored" in mutation:
+                        self.assertIs(jobs[0]["ignored"], True)
+                    else:
+                        self.assertEqual(jobs[0]["context"]["target"], "foreign")
+                    self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_job_policy_machine_and_archive_bindings(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", (
+            "VALUE := $(shell v=original; printf '%s' \"$$v\")\n"
+            "all:\n\t@v=one; printf '%s' \"$$v\"\n"
+            "\t-@v=two; printf '%s' \"$$v\"; exit 7\n"
+        ))
+        for runtime in (False, True):
+            session = self.session()
+            with self.subTest(runtime=runtime), session:
+                completed, _, observed = session._native_make_readonly(
+                    "all", observe_reads=True, observe_completions=not runtime,
+                    observe_runtime_completions=runtime,
+                )
+                self.assertEqual(completed.stdout, b"onetwo")
+                self.assertIn(b"Error 7 (ignored)", completed.stderr)
+                jobs = sorted(
+                    (json.loads(row.removeprefix("native-job:")) for row in observed["accessed"]
+                     if row.startswith("native-job:")), key=lambda row: row["sequence"],
+                )
+                self.assertEqual(
+                    [(row["context"], row["ignored"], row["terminal_status"]) for row in jobs],
+                    [
+                        ({"kind": "expansion", "target": None, "command_line": None}, False, 0),
+                        ({"kind": "recipe", "target": "all", "command_line": 1}, False, 0),
+                        ({"kind": "recipe", "target": "all", "command_line": 2}, True, 7 << 8),
+                    ],
+                )
+                trace = observed["read_trace"]
+                policies = [row for row in trace["machine"]["events"] if row["kind"] == "native-policy"]
+                self.assertEqual(
+                    {(row["dispatch"], row["child"]): (row["context"], row["ignored"], row["status"])
+                     for row in policies},
+                    {(row["sequence"], row["pid"]): (row["context"], row["ignored"], row["terminal_status"])
+                     for row in jobs},
+                )
+                for mutation in (
+                    "omit", "duplicate", "parent", "child", "dispatch", "ignored", "status",
+                    "kind", "target", "command_line", "extra",
+                    *(("terminal", "early") if runtime else ()),
+                ):
+                    changed = parse_json(encoded(trace), "native policy archive mutation")
+                    events = changed["machine"]["events"]
+                    row = next(row for row in events
+                               if row["kind"] == "native-policy" and row["context"]["kind"] == "recipe")
+                    index = events.index(row)
+                    if mutation == "omit":
+                        events.remove(row)
+                    elif mutation == "duplicate":
+                        events.insert(index, parse_json(encoded(row), "duplicate policy"))
+                    elif mutation == "parent":
+                        row["pid"] = row["child"]
+                    elif mutation == "child":
+                        row["child"] += 1000000
+                    elif mutation == "dispatch":
+                        row["dispatch"] = 1000000
+                    elif mutation == "ignored":
+                        row["ignored"] = 1
+                    elif mutation == "status":
+                        row["status"] = 127
+                    elif mutation in {"kind", "target", "command_line"}:
+                        row["context"][mutation] = None
+                    elif mutation == "extra":
+                        row["extra"] = True
+                    elif mutation == "terminal":
+                        row["status"] = 7 << 8
+                    elif mutation == "early":
+                        terminal = next(event for event in events if event["kind"] == "native-tree"
+                                        and event["dispatch"] == row["dispatch"]
+                                        and event["event"]["kind"] == "exit"
+                                        and event["pid"] == row["child"])
+                        events.remove(row)
+                        events.insert(events.index(terminal), row)
+                    for number, event in enumerate(events, 1):
+                        event["seq"] = number
+                    with self.subTest(runtime=runtime, mutation=mutation):
+                        with self.assertRaises(read_epochs.ReadEpochError):
+                            read_epochs.validate_trace(
+                                changed, trace["scope"], count_limit=session.budget.limits.observation_count,
+                                file_limit=session.budget.limits.file_bytes,
+                            )
+            self.assert_clean(session)
 
     def test_native_readonly_actual_trap_registers_preserve_original_state(self):
         self.native_completion_fixture()

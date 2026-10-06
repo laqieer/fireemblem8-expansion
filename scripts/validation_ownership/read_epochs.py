@@ -1493,6 +1493,24 @@ def native_job_tree(events, job, parent, executables, *, count_limit):
     return nodes
 
 
+def native_job_context(value):
+    if (
+        not isinstance(value, dict) or set(value) != {"kind", "target", "command_line"}
+        or not isinstance(value["kind"], str) or value["kind"] not in {"expansion", "recipe"}
+        or value["kind"] == "expansion" and (
+            value["target"] is not None or value["command_line"] is not None
+        )
+        or value["kind"] == "recipe" and (
+            not isinstance(value["target"], str) or not value["target"] or "\0" in value["target"]
+            or any(0xD800 <= ord(char) <= 0xDFFF for char in value["target"])
+            or len(value["target"].encode("utf-8")) > 4096
+            or type(value["command_line"]) is not int or not 0 <= value["command_line"] < 1 << 32
+        )
+    ):
+        raise ReadEpochError("native job has inconsistent context evidence")
+    return value
+
+
 def validate_machine_observations(value, trace, *, count_limit):
     if (
         not isinstance(value, dict) or set(value) != {"version", "events", "closed"}
@@ -1506,6 +1524,7 @@ def validate_machine_observations(value, trace, *, count_limit):
         "trap": {"index", "purpose", "pc", "status", "sigcode"},
         "pin-retired": {"visit", "source", "identity"},
         "execute": {"make", "dispatch"},
+        "native-policy": {"dispatch", "child", "context", "ignored", "status"},
     }
     purposes = {"pass-entry", "source-entry", "source-return", "pass-return", "assignment-completion"}
     runtime = trace["version"] == RUNTIME_VERSION
@@ -1525,6 +1544,7 @@ def validate_machine_observations(value, trace, *, count_limit):
     make_pid = None
     make_execs, child_dispatches = set(), set()
     native_roots, native_trees = {}, {}
+    native_policies = set()
     native_owners, native_cleared, previous_pid_events = {}, set(), {}
     for number, row in enumerate(value["events"], 1):
         if (
@@ -1658,6 +1678,26 @@ def validate_machine_observations(value, trace, *, count_limit):
                 if runtime and pid in native_owners:
                     raise ReadEpochError("native root execution reused an owned process")
                 native_owners[pid] = row["dispatch"]
+        elif kind == "native-policy":
+            dispatch = row["dispatch"]
+            if (
+                pid != make_pid or type(dispatch) is not int or dispatch not in native_roots
+                or dispatch in native_policies or type(row["child"]) is not int
+                or row["child"] != native_roots[dispatch]["pid"]
+                or any(row[key] != native_roots[dispatch][key] for key in ("exec", "pass"))
+                or type(row["ignored"]) is not bool or type(row["status"]) is not int
+                or not 0 <= row["status"] < 1 << 32
+                or not (os.WIFEXITED(row["status"]) or os.WIFSIGNALED(row["status"]))
+            ):
+                raise ReadEpochError("native job policy lacks its actual Make/child dispatch")
+            native_job_context(row["context"])
+            if runtime and (
+                not native_trees[dispatch] or native_trees[dispatch][-1].get("kind") != "exit"
+                or native_trees[dispatch][-1].get("pid") != row["child"]
+                or native_trees[dispatch][-1].get("status") != row["status"]
+            ):
+                raise ReadEpochError("native job policy precedes or differs from its actual terminal tree")
+            native_policies.add(dispatch)
         elif kind == "native-tree":
             dispatch, event = row["dispatch"], row["event"]
             if (
@@ -1760,6 +1800,8 @@ def validate_machine_observations(value, trace, *, count_limit):
         }
     ):
         raise ReadEpochError("native machine observations omit traps or live pin retirement")
+    if native_policies != child_dispatches:
+        raise ReadEpochError("native job machine observations omit completed policy bindings")
     if runtime and any(
         runtime_bindings[kind] != {
             event[key] for event in trace["events"] if event["kind"] == event_kind
