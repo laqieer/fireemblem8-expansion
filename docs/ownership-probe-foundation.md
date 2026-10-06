@@ -836,6 +836,16 @@ the existing namespace launcher, run these `FoundationTests` controls:
    retain non-tab recipes and tab-indented assignments after a prefix change.
    Coherent archive payloads and removed literal-define supplier selections
    must reject at their corresponding consumer boundaries.
+   The third-round shared-context redesign uses one balanced, escape-aware
+   statement boundary for declaration admission and inline comment handling.
+   `test_native_completion_rule_context_and_special_aliases` refuses unqualified
+   tab statements before an admitted local rule, including assignments after a
+   global assignment resets rule context and leading tabs in included sources.
+   Actual recipes after admitted rules remain supported. Special target names
+   remove GNU-supported repeated `./` prefixes before secondary-expansion and
+   blanket-export refusal; other filesystem normalization is not inferred.
+   Real GNU/native controls and coherent returned-archive mutations cover
+   literal/computed leading-tab assignments and both aliased special targets.
    Repeat the no-completion execution control with computed assignment and short
    lookup sources: genuine native output must remain `original` without an
    invented completion trace. No native evaluator, source rewrite, new budget,

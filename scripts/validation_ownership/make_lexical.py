@@ -249,40 +249,50 @@ def _make_reference_base(body, *, call=False):
     return body[:end]
 
 
+def _statement_syntax(line):
+    spans = {}
+    for start, stop, _ in _make_expression_spans(line, short=True):
+        spans[start] = max(spans.get(start, stop), stop)
+    index = 0
+    while index < len(line):
+        if index in spans:
+            index = spans[index]
+            continue
+        yield index
+        index += 1
+
+
+def _statement_boundary(line):
+    for index in _statement_syntax(line):
+        if (len(line[:index]) - len(line[:index].rstrip("\\"))) % 2:
+            continue
+        if line[index] == "#":
+            break
+        if any(line.startswith(token, index) for token in ("::=", ":=", "?=", "+=", "!=", "=")):
+            return "assignment", index
+        if line[index] in ":;":
+            return ("rule" if line[index] == ":" else "semicolon"), index
+    return None, None
+
+
 def strip_comment(line, *, recipe_context=False):
     if recipe_context and line.startswith("\t"):
         return line
-    rule = False
-    assignment = MODE_ASSIGNMENT.fullmatch(line)
+    kind, boundary = _statement_boundary(line)
+    syntax = set(_statement_syntax(line))
     result, index = "", 0
     while index < len(line):
         character = line[index]
-        if character == "$" and index + 1 < len(line):
-            end = index + 2
-            opening = line[index + 1]
-            if opening in "({":
-                closing, depth = (")" if opening == "(" else "}"), 1
-                while end < len(line) and depth:
-                    if line[end] == opening:
-                        depth += 1
-                    elif line[end] == closing:
-                        depth -= 1
-                    end += 1
-            result += line[index:end]
-            index = end
-            continue
-        if character == "#":
+        if character == "#" and index in syntax:
             count = len(result) - len(result.rstrip("\\"))
             if count:
                 result = result[:-count] + "\\" * (count // 2)
             if not count % 2:
                 break
-        if recipe_context and not assignment:
+        if recipe_context and kind == "rule" and index > boundary and index in syntax:
             escaped = (len(result) - len(result.rstrip("\\"))) % 2
             if not escaped:
-                if character == ":" and line[index:index + 2] != ":=":
-                    rule = True
-                elif character == ";" and rule:
+                if character == ";":
                     return result + line[index:]
         result += character
         index += 1
@@ -295,7 +305,7 @@ def completion_declaration(statement):
     if assignment is not None:
         if assignment["name"] == ".RECIPEPREFIX":
             raise MakeProbeError("unsupported completion recipe prefix")
-        return assignment, None
+        return assignment, None, False
     header = statement.strip(MAKE_SPACE)
     if re.match(r"^(?:(?:export|override|private)[ \t]+)*define(?:[ \t]|$)", header):
         macro = DEFINE.fullmatch(header)
@@ -303,42 +313,32 @@ def completion_declaration(statement):
             raise MakeProbeError("unsupported completion define name")
         if macro[1] == ".RECIPEPREFIX":
             raise MakeProbeError("unsupported completion recipe prefix")
-        return None, macro
+        return None, macro, False
     if re.match(
         r"^(?:ifeq|ifneq|ifdef|ifndef|else|endif|include|-include|sinclude|undefine|unexport)(?:[ \t]|$)",
         header,
     ):
-        return None, None
-    spans = {}
-    for start, stop, _ in _make_expression_spans(statement, short=True):
-        spans[start] = max(spans.get(start, stop), stop)
-    index = 0
-    while index < len(statement):
-        if index in spans:
-            index = spans[index]
-            continue
-        operator = next((token for token in ("::=", ":=", "?=", "+=", "!=", "=")
-                         if statement.startswith(token, index)), None)
-        if operator is not None:
-            raise MakeProbeError("unsupported completion assignment name")
-        if statement[index] in ":;" and not (
-            (len(statement[:index]) - len(statement[:index].rstrip("\\"))) % 2
-        ):
-            if statement[index] == ":":
-                targets = statement[:index]
-                if any(character in targets for character in "$*?["):
-                    raise MakeProbeError("unsupported completion constructed target")
-                if ".SECONDEXPANSION" in targets.split():
-                    raise MakeProbeError("unsupported completion secondary expansion")
-                if ".EXPORT_ALL_VARIABLES" in targets.split():
-                    raise MakeProbeError("unsupported completion blanket export")
-            return None, None
-        index += 1
+        return None, None, False
+    kind, index = _statement_boundary(statement)
+    if kind == "assignment":
+        raise MakeProbeError("unsupported completion assignment name")
+    if kind == "rule":
+        targets = statement[:index]
+        if any(character in targets for character in "$*?["):
+            raise MakeProbeError("unsupported completion constructed target")
+        names = {re.sub(r"^(?:\./)+", "", name) for name in targets.split()}
+        if ".SECONDEXPANSION" in names:
+            raise MakeProbeError("unsupported completion secondary expansion")
+        if ".EXPORT_ALL_VARIABLES" in names:
+            raise MakeProbeError("unsupported completion blanket export")
+        return None, None, True
+    if kind == "semicolon":
+        return None, None, False
     if "$" in header:
         function = _make_function(header)
         if function is None or function[0] not in {"info", "warning", "error"}:
             raise MakeProbeError("unsupported completion expansion-generated declaration")
-    return None, None
+    return None, None, False
 
 
 def references(line, *, reference_base=_make_reference_base):

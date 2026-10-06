@@ -1984,11 +1984,13 @@ class FoundationTests(unittest.TestCase):
         for expression, recipe in (
             ("$(call MACRO)", "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"),
             ("unused", "all: ; @v='$(MACRO)'; printf '%s' \"$$v\"\n"),
+            ("command", "all: ; @$(MACRO)\n"),
         ):
             for reference in ("$(SUPPLIER)", "$($(NAME))"):
+                body = f"v=unused; printf '#%s' '{reference}'" if expression == "command" else f"# {reference}"
                 source = (
                     "NAME := SUPPLIER\nSUPPLIER := original\n"
-                    f"define MACRO\n# {reference}\nendef\nOUTPUT := {expression}\n" + recipe
+                    f"define MACRO\n{body}\nendef\nOUTPUT := {expression}\n" + recipe
                 )
                 self.add("Makefile", source)
                 with self.subTest(expression=expression, reference=reference):
@@ -1996,7 +1998,7 @@ class FoundationTests(unittest.TestCase):
                         ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
                         env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
                     )
-                    self.assertEqual(ordinary.stdout, b"# original")
+                    self.assertEqual(ordinary.stdout, b"#original" if expression == "command" else b"# original")
                     session = self.session()
                     if reference == "$(SUPPLIER)":
                         _, _, dependencies = read_epochs.completion_source_facts("Makefile", source.encode())
@@ -2051,6 +2053,61 @@ class FoundationTests(unittest.TestCase):
                     completed, _, _ = session._native_make_readonly("all", observe_reads=True)
                     self.assertEqual(completed.stdout, ordinary.stdout)
                 self.assert_clean(session)
+
+    def test_native_completion_rule_context_and_special_aliases(self):
+        from scripts.validation_ownership import read_epochs
+        cases = [
+            "\tSUPPLIER := original\nOUTPUT := $(SUPPLIER)\n"
+            "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n",
+            "NAME := SUPPLIER\n\t$(NAME) := original\nOUTPUT := $(SUPPLIER)\n"
+            "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n",
+            "early:\nRESET := value\n\tSUPPLIER := original\n"
+            "all: ; @v='$(SUPPLIER)'; printf '%s' \"$$v\"\n",
+        ]
+        for prefix in ("./", "././"):
+            cases.extend((
+                prefix + ".EXPORT_ALL_VARIABLES:\nSUPPLIER := original\n"
+                "all: ; @v=$$SUPPLIER; printf '%s' \"$$v\"\n",
+                prefix + ".SECONDEXPANSION:\nNAME := SUPPLIER\nSUPPLIER := chosen\n"
+                "all: $$($$(NAME)) ; @v=original; printf '%s' \"$$v\"\nchosen: ;\n",
+            ))
+        for source in cases:
+            self.add("Makefile", source)
+            with self.subTest(source=source):
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, b"original")
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion"):
+                    read_epochs.completion_source_facts("Makefile", source.encode())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion"), session:
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assert_clean(session)
+                session = self.session()
+                with session:
+                    completed, _, _ = session._native_make_readonly("all", observe_reads=True)
+                    self.assertEqual(completed.stdout, ordinary.stdout)
+                self.assert_clean(session)
+        self.add("included.mk", "\tSUPPLIER := original\n")
+        self.add("Makefile", "include included.mk\nall: ; @v='$(SUPPLIER)'; printf '%s' \"$$v\"\n")
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "unsupported completion tab statement"), session:
+            session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+        self.assert_clean(session)
+        self.add("Makefile", (
+            "all:\nSUPPLIER := original\n"
+            "all:\n"
+            "\t@v='$(SUPPLIER)'; printf '%s' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            completed, _, _ = session._native_make_readonly(
+                "all", observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"original")
+        self.assert_clean(session)
 
     def test_native_completion_constructed_rules_and_exports(self):
         from scripts.validation_ownership import read_epochs
@@ -2253,6 +2310,13 @@ class FoundationTests(unittest.TestCase):
                 ".RECIPEPREFIX := >\n\tOUTPUT := original\nall:\n>@:\n",
                 "define .RECIPEPREFIX\n>\nendef\nall:\n>@:\n",
                 ".RECIPEPREFIX :=\nOUTPUT := original\n" + recipe,
+                "\tOUTPUT := original\n" + recipe,
+                "early:\nRESET := value\n\tOUTPUT := original\n" + recipe,
+                "NAME := OUTPUT\n\t$(NAME) := original\n" + recipe,
+                "./.EXPORT_ALL_VARIABLES:\nOUTPUT := original\n" + recipe,
+                "././.EXPORT_ALL_VARIABLES:\nOUTPUT := original\n" + recipe,
+                "./.SECONDEXPANSION:\nOUTPUT := original\n" + recipe,
+                "././.SECONDEXPANSION:\nOUTPUT := original\n" + recipe,
                 *("NAME := VALUE\nVALUE := original\nOUTPUT := $(call " + target + ",$(NAME))\n" + recipe
                   for target in ("value", "origin", "flavor", "call")),
             ):

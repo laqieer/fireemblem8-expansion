@@ -665,7 +665,7 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
     if b"\0" in data:
         raise ReadEpochError("completion source has unsupported bytes")
     rows, dependencies, roots = [], {}, set()
-    definition, depth = None, 0
+    definition, depth, recipe_allowed = None, 0, False
     digest = hashlib.sha256(data).hexdigest()
     for logical, first, last, raw in physical_statements(
         data, checkpoint=checkpoint, count_limit=count_limit,
@@ -687,9 +687,16 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
             charge(len(encoded(sorted(names))))
             dependencies[definition].update(names)
             continue
-        assignment, macro = (
-            (None, None) if raw.startswith("\t") else make_lexical.completion_declaration(statement)
-        )
+        if raw.startswith("\t"):
+            if not recipe_allowed:
+                raise ReadEpochError("unsupported completion tab statement before admitted rule")
+            assignment, macro, rule = None, None, False
+        else:
+            assignment, macro, rule = make_lexical.completion_declaration(statement)
+        if assignment is not None or macro is not None or make_lexical.MODE_TARGET_ASSIGNMENT.fullmatch(statement):
+            recipe_allowed = False
+        else:
+            recipe_allowed |= rule
         if assignment is None:
             names = make_lexical.references(statement)
             charge(len(encoded(sorted(names))))
