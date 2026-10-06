@@ -27,7 +27,16 @@ REFERENCE = re.compile(
 SCOPED = re.compile(r"(?<!\$)\$(?:\(([@%*+<?^|](?:D|F)?|[0-9])\)|\{([@%*+<?^|](?:D|F)?|[0-9])\}|([@%*+<?^|0-9]))")
 
 
-CONDITIONAL = re.compile(rf"^\s*(?:ifdef|ifndef)\s+({LITERAL_NAME})")
+CONDITIONAL = re.compile(r"^[ \t]*(?:else[ \t]+)?(?:ifdef|ifndef)[ \t]+([^\r\n]*)")
+
+
+BUILTIN_FUNCTIONS = frozenset((
+    "subst", "patsubst", "strip", "findstring", "filter", "filter-out", "sort",
+    "word", "wordlist", "words", "firstword", "lastword", "dir", "notdir", "suffix",
+    "basename", "addsuffix", "addprefix", "join", "wildcard", "realpath", "abspath",
+    "if", "or", "and", "foreach", "file", "call", "value", "eval",
+    "origin", "flavor", "shell", "error", "warning", "info", "guile",
+))
 
 
 ASSIGNMENT = re.compile(
@@ -277,17 +286,25 @@ def references(line, *, reference_base=_make_reference_base):
             function = _make_function(line[start:stop])
             if function is None and "$" in name:
                 raise MakeProbeError("computed Make supplier is not bound to native completion")
+            if function is None and body:
+                raise MakeProbeError("unsupported Make supplier is not bound to native completion")
+            if function is not None and function[0] not in BUILTIN_FUNCTIONS:
+                raise MakeProbeError("unsupported Make supplier is not bound to native completion")
             if function is not None and function[0] in {"call", "origin", "flavor", "value"}:
-                name = reference_base(function[1][0].lstrip(MAKE_SPACE), call=True)
+                name = (function[1][0] if function[0] == "call" else ",".join(function[1])).strip(MAKE_SPACE)
                 if "$" in name:
                     raise MakeProbeError("computed Make supplier is not bound to native completion")
-                if function[0] == "call" and re.fullmatch(LITERAL_NAME, name):
+                if name and not re.fullmatch(LITERAL_NAME, name):
+                    raise MakeProbeError("unsupported Make supplier is not bound to native completion")
+                if name:
                     names.add(name)
     names.update(name for _, _, name in _literal_metadata(line))
     conditional = CONDITIONAL.match(line)
-    conditional_name = re.match(r"^\s*(?:ifdef|ifndef)[ \t]+([^\r\n]*)", line)
-    if conditional_name and "$" in conditional_name[1]:
-        raise MakeProbeError("computed Make supplier is not bound to native completion")
     if conditional:
-        names.add(conditional.group(1))
+        name = conditional[1].strip(MAKE_SPACE)
+        if "$" in name:
+            raise MakeProbeError("computed Make supplier is not bound to native completion")
+        if not re.fullmatch(LITERAL_NAME, name):
+            raise MakeProbeError("unsupported Make supplier is not bound to native completion")
+        names.add(name)
     return names

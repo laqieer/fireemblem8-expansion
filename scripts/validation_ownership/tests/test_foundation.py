@@ -1639,6 +1639,8 @@ class FoundationTests(unittest.TestCase):
             ("ifdef $(NAME)\nOUTPUT := selected\nelse\nOUTPUT := wrong\nendif", "selected"),
             ("ifndef ${NAME}\nOUTPUT := wrong\nelse\nOUTPUT := selected\nendif", "selected"),
             ("ifdef VA$(SUFFIX)\nOUTPUT := selected\nelse\nOUTPUT := wrong\nendif", "selected"),
+            ("ifdef ABSENT\nOUTPUT := wrong\nelse ifdef $(NAME)\nOUTPUT := selected\nendif", "selected"),
+            ("ifdef ABSENT\nOUTPUT := wrong\nelse ifndef ${NAME}\nOUTPUT := wrong\nelse\nOUTPUT := selected\nendif", "selected"),
         )
         for assignment, expected in cases:
             with self.subTest(assignment=assignment):
@@ -1677,12 +1679,67 @@ class FoundationTests(unittest.TestCase):
                 ))
             self.assert_clean(session)
 
+    def test_native_unsupported_direct_suppliers_refuse_incomplete_completion(self):
+        from scripts.validation_ownership import read_epochs
+        for expression, expected in (
+            ("$(1NAME)", "original"), ("${1NAME}", "original"),
+            ("$(1NAME:original=replaced)", "replaced"),
+            ("${1NAME:original=replaced}", "replaced"),
+            ("$(odd name)", "original"), ("${odd name}", "original"),
+            ("$(call 1NAME)", "original"), ("$(value 1NAME)", "original"),
+            ("$(origin 1NAME)", "file"), ("$(flavor 1NAME)", "simple"),
+            ("$(intcmp name)", "original"),
+        ):
+            with self.subTest(expression=expression):
+                self.add("Makefile", (
+                    f"1NAME := original\ndefine odd name\noriginal\nendef\n"
+                    f"define intcmp name\noriginal\nendef\nOUTPUT := {expression}\n"
+                    "REFERENCES = $(OUTPUT)\nall: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+                ))
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, expected.encode())
+                with self.assertRaisesRegex(MakeProbeError, "unsupported Make supplier"):
+                    read_epochs.completion_source_facts("Makefile", (self.root / "Makefile").read_bytes())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "unsupported Make supplier"):
+                    with session:
+                        session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assert_clean(session)
+
+        for directive in ("ifdef", "ifndef", "else ifdef", "else ifndef"):
+            prefix = "ifdef ABSENT\nOUTPUT := wrong\n" if directive.startswith("else") else ""
+            expected = "wrong" if directive.endswith("ifndef") else "selected"
+            self.add("Makefile", (
+                f"1NAME := original\n{prefix}{directive} 1NAME\nOUTPUT := selected\n"
+                "else\nOUTPUT := wrong\nendif\nall: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+            ))
+            with self.subTest(directive=directive):
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, expected.encode())
+                with self.assertRaisesRegex(MakeProbeError, "unsupported Make supplier"):
+                    read_epochs.completion_source_facts("Makefile", (self.root / "Makefile").read_bytes())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "unsupported Make supplier"):
+                    with session:
+                        session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assert_clean(session)
+
     def test_native_reference_analysis_preserves_builtin_scoped_and_dead_computed_forms(self):
         from scripts.validation_ownership import make_lexical
         self.assertEqual(make_lexical.references(
             "$(call VALUE,$(NAME)) $@ $(subst original,replaced,$(VALUE))",
         ), {"VALUE", "NAME", "@"})
         self.assertEqual(make_lexical.references("ifdef NAME\nVALUE := $(OTHER)"), {"NAME", "OTHER"})
+        for directive in ("ifdef", "ifndef"):
+            self.assertEqual(make_lexical.references(f"else {directive} NAME\nVALUE := $(OTHER)"),
+                             {"NAME", "OTHER"})
+        self.assertEqual(make_lexical.references("$() ${} $(1) ${@D} $(VALUE:x=y)"), {"1", "@D", "VALUE"})
         self.add("Makefile", (
             "NAME := VALUE\nVALUE := original\nOUTPUT := $(and ,$($(NAME)))\n"
             "REFERENCES = $(OUTPUT)\nall: ; @v='$(OUTPUT)'; printf '[%s]' \"$$v\"\n"
@@ -1703,6 +1760,8 @@ class FoundationTests(unittest.TestCase):
             ("$(flavor .FLAGS)", "simple"),
             ("$(call .FLAGS)", "original"),
             ("ifdef .FLAGS\nVALUE := selected\nelse\nVALUE := wrong\nendif", "selected"),
+            ("ifdef ABSENT\nVALUE := wrong\nelse ifdef .FLAGS\nVALUE := selected\nendif", "selected"),
+            ("ifdef ABSENT\nVALUE := wrong\nelse ifndef .FLAGS\nVALUE := wrong\nelse\nVALUE := selected\nendif", "selected"),
         )
         for expression, expected in cases:
             assignment = expression if expression.startswith("ifdef") else f"VALUE := {expression}"

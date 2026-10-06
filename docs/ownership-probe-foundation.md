@@ -660,10 +660,10 @@ the existing namespace launcher, run these `FoundationTests` controls:
    uses one enclosing-delimiter depth counter instead of a mixed-delimiter
    stack; no second Make parser or source transformation is introduced.
    `test_native_readonly_computed_suppliers_refuse_incomplete_completion`
-   compares twelve real ordinary Make lookup/call/metadata/conditional forms
+   compares fourteen real ordinary Make lookup/call/metadata/conditional forms
    with the shared source-facts parser and completion-enabled native reader.
    Before correction nine original forms returned correct values with
-   incomplete supplier selection; all twelve now explicitly refuse computed
+   incomplete supplier selection; all fourteen now explicitly refuse computed
    supplier binding. Concatenation and substitution names are included.
    `test_native_computed_supplier_execution_without_completion_still_works`
    requires original computed lookup/call output when completion evidence is
@@ -674,6 +674,24 @@ the existing namespace launcher, run these `FoundationTests` controls:
    constant-empty `and` fixture must retain empty output and semantics without
    rejecting its already-pruned computed branch. This is a bounded
    completion limitation, not qualification of arbitrary computed Make source.
+   Chained `else ifdef` and `else ifndef` use the same full-name extraction
+   and refusal as top-level directives. Run
+   `test_native_unsupported_direct_suppliers_refuse_incomplete_completion`:
+   ordinary GNU Make must return the declared value for both `1NAME` lookup
+   delimiters and substitution forms, space-containing names, all four
+   name-taking functions, and literal top-level/chained conditionals. The shared
+   source-facts parser and completion-enabled native reader must instead
+   explicitly reject the unsupported supplier; they must not return an archive
+   that silently omits it. The pre-fix parser accepts the direct forms and the
+   chained computed directives. Known GNU builtin function arguments, empty
+   references, scoped tokens and supported literal substitution names remain
+   accepted. Unknown function-like expressions are variable lookups, not
+   evidence that a supplier can be ignored. The function set matches the
+   admitted Make 4.3: `intcmp name` is a variable
+   lookup, not the builtin added in Make 4.4, and must explicitly refuse.
+   Literal chained conditional tests also require actual supplier completions and reject a returned selection
+   with that supplier removed. Parser-only negatives are not whole-archive
+   mutation evidence.
 4. `test_native_readonly_completion_failed_make_has_no_successful_archive`:
    a real source error must retain Make's status and diagnostic, fail the
    invocation and clean active pins without a successful trace.
