@@ -3831,16 +3831,164 @@ class FoundationTests(unittest.TestCase):
             self.assertTrue(session.budget.failed)
         self.assert_clean(session)
 
-    def test_native_runtime_post_read_recipe_and_secondary_eval_refuse(self):
-        for body in (
-            "VALUE := early\nall: ; @$(eval VALUE := late)v='$(VALUE)'; printf '%s' \"$$v\"\n",
-            "VALUE := early\nEFFECT = $(eval VALUE := late)\n.SECONDEXPANSION:\n"
-            "all: $$(EFFECT)\n\t@v='$(VALUE)'; printf '%s' \"$$v\"\n",
+    def test_native_runtime_post_read_recipe_and_secondary_eval_capture(self):
+        from scripts.validation_ownership import read_epochs
+        for family, target, body in (
+            ("recipe", "all", "VALUE := early\nall: ; @$(eval VALUE := late)v='$(VALUE)'; printf '%s' \"$$v\"\n"),
+            ("secondary", "all", "VALUE := early\nEFFECT = $(eval VALUE := late)\n.SECONDEXPANSION:\n"
+             "all: $$(EFFECT)\n\t@v='$(VALUE)'; printf '%s' \"$$v\"\n"),
+            ("secondary", ".SUFFIXES", "VALUE := early\nEFFECT = $(eval VALUE := late)\n.SECONDEXPANSION:\n"
+             ".SUFFIXES: $$(EFFECT)\n\t@:\nall: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n"),
         ):
             self.add("Makefile", body)
             session = self.session()
             with self.subTest(body=body), session:
-                with self.assertRaisesRegex(MakeProbeError, "runtime post-read effect/eval is not qualified"):
+                completed, _, observed = session._native_make_readonly(
+                    "all", observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual(completed.stdout, b"late")
+                archive = read_epochs.reconstruct_archive(observed["read_trace"], budget=session.budget)
+                phase, = archive.passes
+                expansion = next(row for row in phase.expansions if row.family == family and row.target == target)
+                late = next(row for row in phase.effects if row.name == "VALUE" and row.value == "late")
+                evaluation = next(row for row in phase.evaluations if row.parent == ("expansion", expansion.number))
+                self.assertEqual(evaluation.location, read_epochs.ExpansionLocation(expansion.number))
+                self.assertEqual(late.location.evaluation, evaluation.number)
+                self.assertIsNone(late.location.visit)
+                self.assertLess(phase.exit_seq, expansion.entry_seq)
+                self.assertLess(expansion.entry_seq, evaluation.entry_seq)
+                self.assertLess(late.completion_seq, evaluation.exit_seq)
+                self.assertLess(evaluation.exit_seq, expansion.exit_seq)
+                self.assertEqual(evaluation.source.data, b"VALUE := late")
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_post_read_nested_skipped_eval_and_include_lifetimes(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", (
+            "define OUTER\nONE := alpha\n"
+            "TWO := $$(eval NESTED := $$(ONE))$$(NESTED)\n"
+            "include post.mk\n-include absent.mk\nendef\n"
+            "EFFECT = $(eval $(OUTER))$(if ,$(eval SKIPPED := bad))\n"
+            ".SECONDEXPANSION:\nall: first second\nfirst: $$(EFFECT)\n"
+            "\t@v='$(TWO)|$(POST)|$(DEEP)'; printf '%s' \"$$v\"\n"
+            "second: ; @$(eval RECIPE := late)v='$(RECIPE)'; printf '|%s' \"$$v\"\n"
+        ))
+        self.add("post.mk", "POST := $(TWO)\ninclude deep.mk\n")
+        self.add("deep.mk", "DEEP := $(POST)\n")
+        session = self.session()
+        with session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"alpha|alpha|alpha|late")
+            archive = read_epochs.reconstruct_archive(observed["read_trace"], budget=session.budget)
+            phase, = archive.passes
+            self.assertEqual(
+                {row.name: row.variable.value for row in phase.effects if row.name in {"NESTED", "TWO", "POST", "DEEP", "RECIPE"}},
+                {"NESTED": "alpha", "TWO": "alpha", "POST": "alpha", "DEEP": "alpha", "RECIPE": "late"},
+            )
+            self.assertNotIn("SKIPPED", {row.name for row in phase.effects})
+            self.assertEqual(len(phase.evaluations), 3)
+            nested = next(row for row in phase.evaluations if row.source.data == b"NESTED := alpha")
+            self.assertEqual(nested.parent[0], "effect")
+            self.assertIsNone(nested.location.visit)
+            self.assertEqual(len(phase.visits), 4)
+            self.assertEqual(phase.goal_visits, (1,))
+            post = next(row for row in phase.visits if row.name == "post.mk")
+            deep = next(row for row in phase.visits if row.name == "deep.mk")
+            missing = next(row for row in phase.visits if row.name == "absent.mk")
+            self.assertIsNone(post.parent)
+            self.assertIsNone(post.location.visit)
+            self.assertGreater(post.entry_seq, phase.exit_seq)
+            self.assertEqual(deep.parent, post.number)
+            self.assertEqual(deep.location.visit, post.number)
+            self.assertIsNone(missing.source)
+            self.assertNotEqual(missing.error, 0)
+            saved = encoded(observed["read_trace"])
+            mutations = (
+                ("expansion-entry", "family", []),
+                ("expansion-entry", "target", ""),
+                ("expansion-entry", "cwd", "relative"),
+                ("expansion-entry", "text", 0),
+                ("expansion-entry", "target", "other"),
+                ("expansion-entry", "target", chr(0xD800)),
+                ("expansion-entry", "text", chr(0xD800)),
+                ("expansion-entry", "cwd", "/" + chr(0xD800)),
+                ("expansion-exit", "expansion", 999),
+                ("eval-entry", "location", {"expansion": 999}),
+                ("complete", "expansions", 0),
+            )
+            for kind, key, replacement in mutations:
+                changed = parse_json(saved, "postread lifecycle mutation")
+                next(row for row in changed["events"] if row["kind"] == kind)[key] = replacement
+                with self.subTest(kind=kind, key=key), self.assertRaises(read_epochs.ReadEpochError):
+                    read_epochs.validate_trace(
+                        changed, changed["scope"], count_limit=session.budget.limits.observation_count,
+                        file_limit=session.budget.limits.file_bytes,
+                    )
+            for mutation in ("payload", "guard", "source-location", "source-return"):
+                changed = parse_json(saved, "postread coupled mutation")
+                if mutation == "payload":
+                    next(row for row in changed["machine"]["events"] if row["kind"] == "expansion-input")["sha256"] = "0" * 64
+                elif mutation == "guard":
+                    guard = next(
+                        row for row in changed["machine"]["events"] if row["kind"] == "arm"
+                        and changed["events"][row["trace_seq"] - 1]["kind"] == "expansion-exit"
+                    )
+                    changed["machine"]["events"].remove(guard)
+                    for sequence, row in enumerate(changed["machine"]["events"], 1):
+                        row["seq"] = sequence
+                elif mutation == "source-location":
+                    next(row for row in changed["events"] if row["kind"] == "source-entry" and row["visit"] == post.number)["location"] = None
+                else:
+                    next(row for row in changed["events"] if row["kind"] == "source-exit" and row["visit"] == post.number)["source"] = None
+                with self.subTest(mutation=mutation), self.assertRaises(read_epochs.ReadEpochError):
+                    read_epochs.validate_trace(
+                        changed, changed["scope"], count_limit=session.budget.limits.observation_count,
+                        file_limit=session.budget.limits.file_bytes,
+                    )
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_runtime_post_read_actual_target_and_caller_mutations_refuse(self):
+        self.add("Makefile", (
+            "EFFECT = $(eval VALUE := secondary)\n.SECONDEXPANSION:\n"
+            "all: $$(EFFECT)\n\t@$(eval VALUE := recipe)printf '%s' '$(VALUE)'\n"
+        ))
+        for family, mutation, reason in (
+            ("secondary", "registers.rsi=0", "crossed an active original invocation"),
+            ("secondary", "registers.r14^=1", "lost its original file/target loop"),
+            ("secondary", "saved=self.number;self.number=lambda address:saved(address)^1 if address==registers.rbp+8 else saved(address)", "lost its original file/target loop"),
+            ("recipe", "saved=self.number;self.number=lambda address:saved(address)^1 if address==registers.rbp+self.expansion_abi['recipe_file'] else saved(address)", "substituted its original file"),
+        ):
+            body = (
+                "import read_trace\noriginal=read_trace.NativeReadTrace.runtime_expansion_entry\n"
+                "def changed(self,registers,state):\n"
+                " returned=self.number(registers.rsp)-self.bias\n"
+                f" if returned==self.expansion_abi[{('recipe_return' if family=='recipe' else 'secondary_return')!r}]:\n"
+                f"  {mutation}\n"
+                " return original(self,registers,state)\n"
+                "read_trace.NativeReadTrace.runtime_expansion_entry=changed\n"
+            )
+            session = self.session()
+            with self.subTest(family=family, mutation=mutation), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, reason):
+                    session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        for key in ("function", "recipe", "secondary", "snap"):
+            body = (
+                "import read_trace\noriginal=read_trace.NativeReadTrace.memory\n"
+                "def changed(self,address,count):\n"
+                " result=original(self,address,count)\n"
+                f" if self.bias is not None and address==self.bias+self.expansion_abi[{key!r}][0] and count>5:\n"
+                "  return bytes([result[0]^1])+result[1:]\n"
+                " return result\nread_trace.NativeReadTrace.memory=changed\n"
+            )
+            session = self.session()
+            with self.subTest(live_code=key), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "instruction image differs from captured Make"):
                     session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
                 self.assertTrue(session.budget.failed)
             self.assert_clean(session)
@@ -3880,7 +4028,8 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(
                 {row["purpose"] for row in traps},
                 {"pass-entry", "pass-return", "source-entry", "source-return",
-                 "effect-entry", "effect-return", "effect-completion", "eval-entry", "eval-return"},
+                 "effect-entry", "effect-return", "effect-completion", "eval-entry", "eval-return",
+                 "expansion-entry", "expansion-return"},
             )
             from scripts.validation_ownership.syscall_guard import Registers
             fields = {name for name, *_ in Registers._fields_}
@@ -3898,6 +4047,7 @@ class FoundationTests(unittest.TestCase):
         callbacks = (
             "runtime_effect_entry", "runtime_effect_return", "runtime_effect_completion",
             "runtime_eval_entry", "runtime_eval_return",
+            "runtime_expansion_entry", "runtime_expansion_return",
         )
         for callback in callbacks:
             body = (
@@ -3914,7 +4064,10 @@ class FoundationTests(unittest.TestCase):
                     session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
                 self.assertTrue(session.budget.failed)
             self.assert_clean(session)
-        for purpose in ("effect-entry", "effect-return", "effect-completion", "eval-entry", "eval-return"):
+        for purpose in (
+            "effect-entry", "effect-return", "effect-completion", "eval-entry", "eval-return",
+            "expansion-entry", "expansion-return",
+        ):
             body = (
                 "import ctypes,read_trace\noriginal=read_trace.NativeReadTrace.trap\n"
                 "def changed(self,pid,state):\n"

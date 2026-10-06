@@ -476,25 +476,38 @@ bind the observer's exact captured event; eval-buffer digests bind its pristine
 bytes. These are reconstruction/integrity observations, not signatures or
 protection against hostile same-UID processes. Malformed read rows use the
 shared versioned wire schema before runtime lifecycle interpretation.
-After the read pass returns, version 5 keeps actual eval/definition entry
-traps armed and explicitly refuses those unqualified post-read operations.
-It must not publish a successful archive that omits a recipe-expansion or
-secondary-expansion eval. This is a temporary fail-closed boundary, not complete
-post-read lifecycle support; full native qualification still requires it.
-The separate `runtime_expansion_abi` discovery prerequisite identifies original
+After the read pass returns, version 5 observes original target-aware expansion
+entry for recipes and both secondary prerequisite loops. An expansion binds its
+actual file, verified caller, pristine unexpanded input and supervised CWD,
+then uses the same source/eval/definition/innermost-return four-slot scheduler.
+Unrooted post-read eval/definition still explicitly refuses. Actual Make
+readiness checks these additional machine spans against readonly executable
+mappings and captured bytes; each expansion validates its direct original caller
+and file association without replay or a second code scan.
+The `runtime_expansion_abi` discovery prerequisite identifies original
 target-aware expansion and both actual secondary prerequisite loops from the
 captured executable. It binds the restored variable/reader anchors, file layout,
 recipe entry's saved original file, secondary entry's actual target/dependency
 chain, and expansion/set-variables/split/enter callees. Neither an exported
 symbol alone nor copied recipe floc authorizes secondary source attribution.
-This helper is not wired into runtime admission yet: existing post-read refusal,
-wire/archive semantics and generated-source restrictions are unchanged.
+The typed archive retains `OriginalExpansion` occurrences on their originating
+exec/pass, including occurrences after that pass's return. A first eval's
+`ExpansionLocation` names its actual root without inventing a file visit.
+Nested eval/effect locations retain their pristine eval source and consumed
+interval; `visit` is null when no file reader is active. Post-read includes retain
+real readonly snapshot descriptor/pin custody and may start a new source tree;
+they are not members of the already-returned pass goal chain. Shared source-read
+structural validation admits explicit, paired expansion intervals and validates
+every post-read source event, rather than discarding those visits. Machine
+expansion-input digests bind the captured root payload, and every root return
+requires the actual post-read guard to be rearmed. Generated-source admission,
+descendant/reexec qualification and the original aggregate-budget holds remain.
 Run `test_native_runtime_expansion_abi_binds_original_callers_anchors_and_layout`
 on the admitted host: captured Make must yield both verified loop callers and
 the actual recipe/secondary expansion callers. Independent machine mutations
 of each loop call, entry, target/dependency association, original file save,
 anchor, layout and relied-on callee must refuse rather than selecting a surviving
-sibling as complete evidence. This is ELF/ABI evidence, not post-read archive,
+sibling as complete evidence. This case alone is ELF/ABI evidence, not
 generated-resource or eight-query resource qualification.
 Version-4 staged suppliers forwarded through call-if/and/or/foreach remain
 unqualified under the runtime redesign hold; compatibility results do not
@@ -549,28 +562,36 @@ for direct version-5 evidence: computed assignments, nested eval, includes and
 a private target binding must return `original|target|original`. Read actual
 kernel registers before/after every hardware trap and require all fields
 unchanged except the required resume flag. The observed purpose set must
-contain pass/source entry/return, effect entry/return/completion and eval
+contain pass/source entry/return, expansion entry/return, effect entry/return/completion and eval
 entry/return. Run
 `test_native_runtime_callback_and_restoration_mutations_refuse_each_new_purpose`:
-each of the five new runtime callbacks must reject a changed register object;
+each of the seven runtime callbacks must reject a changed register object;
 each matching trap purpose must reject a corrupted restoration readback.
 Readback projections are decoder controls, not claims of physical kernel
 register corruption. Both cases require owned cleanup. These are the existing
 restoration criterion on actual version-5 paths, not generated/descendant or
 aggregate-budget qualification.
 
-Run `test_native_runtime_post_read_recipe_and_secondary_eval_refuse`: recipe
-expansion and a valid deferred secondary-expansion reference each evaluate a
-VALUE assignment after source reading. Both must explicitly refuse with failed
-budget state and owned cleanup, rather than return a successful incomplete
-archive. The pre-fix controls accept both original invocations. Preserve the
-private/custom-prefix/ordinary-secondary positive and actual nested read-pass
-eval observations and kernel restoration case.
+Run `test_native_runtime_post_read_recipe_and_secondary_eval_capture`: recipe,
+ordinary secondary and `.SUFFIXES` secondary expansion each evaluate a VALUE
+assignment after source reading. Require `late`, a paired typed expansion/eval,
+the actual effective VALUE binding with a null file visit, and complete ordered
+returns. The earlier honest refusal is the pre-fix negative control.
+Run `test_native_runtime_post_read_nested_skipped_eval_and_include_lifetimes`:
+require `alpha|alpha|alpha|late`, three real eval occurrences, no skipped
+assignment, actual post-read `post.mk`/nested `deep.mk` and optional missing
+include visits, and unchanged initial pass goals. Its fifteen returned
+lifecycle/payload/source/guard mutations must refuse, including independent
+surrogate-string controls for target, pristine input and CWD with typed errors.
+Run `test_native_runtime_post_read_actual_target_and_caller_mutations_refuse`:
+null/wrong file, wrong secondary target register/loop caller and each of four
+live machine-image substitutions must refuse and clean owned state. Preserve
+the private/custom-prefix/ordinary-secondary and nested read-pass observations.
 The returned-machine mutation case also removes the post-read guard arm or
 coherently substitutes startup-only/either-missing-slot shapes, updating slot
 readbacks, control bits and sequence numbers; substituting the active-reader
 four-slot shape must also refuse. Each completed
-pass requires exactly one actual four-slot guard arm; the two-slot startup
+pass and expansion return requires exactly one actual four-slot guard arm; the two-slot startup
 shape is admitted only in its original exec context.
 
 Version-5 native jobs additionally retain actual `argv` and supervised `cwd`.
