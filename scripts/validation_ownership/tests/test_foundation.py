@@ -239,6 +239,74 @@ class FoundationTests(unittest.TestCase):
                 session._native_make_readonly("all", native_executables=("/usr/bin/printf",))
         self.assert_clean(session)
 
+    def test_native_readonly_optional_runtime_data_absence_and_stock_alias_jobs(self):
+        runtime = "/usr/include/newlib/stdlib.h"
+        absent = "/usr/include/.dep"
+        self.assertTrue(Path(runtime).is_file())
+        self.assertFalse(Path(absent).exists())
+        expected = Path(runtime).read_bytes().splitlines()[0]
+        self.add("Makefile", (
+            "VALUE := $(shell read -r line < /usr/include/newlib/stdlib.h; printf '%s' \"$$line\")\n"
+            "ABSENT := $(shell if test -e /usr/include/.dep; then printf present; else printf absent; fi)\n"
+            "REFERENCES = $(VALUE) $(ABSENT)\n"
+            "all:\n\t@/bin/printf 'alias\\n'\n\t@/usr/bin/printf 'canonical\\n'\n"
+        ))
+        session = self.session(runtime_files=(runtime, absent, "/bin/printf"))
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE", "ABSENT"),
+                native_executables=("/usr/bin/printf",),
+                observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"alias\ncanonical\n")
+            self.assertEqual(semantics["domains"]["VALUE"]["value"].encode(), expected)
+            self.assertEqual(semantics["domains"]["ABSENT"]["value"], "absent")
+            jobs = [
+                json.loads(value.removeprefix("native-job:")) for value in observed["accessed"]
+                if value.startswith("native-job:")
+            ]
+            self.assertEqual(len(jobs), 4)
+            self.assertEqual({row["executable"] for row in jobs}, {"/usr/bin/sh", "/usr/bin/printf"})
+            metadata = [row for row in observed["metadata"] if row[1] == absent]
+            self.assertTrue(metadata)
+            self.assertTrue(all(row[6] == -errno.ENOENT for row in metadata))
+            self.assertIn(runtime, observed["accessed"])
+        self.assert_clean(session)
+
+    def test_native_readonly_optional_runtime_resource_and_alias_boundaries_refuse(self):
+        resources = ("/usr/include/newlib/stdlib.h", "/usr/include/.dep", "/bin/printf")
+        cases = (
+            ("all: ; @read line < /usr/include/newlib/stdio.h\n", "uncaptured Make runtime access"),
+            ("all: ; @if test -e /usr/include/.unissued; then :; fi\n", "uncaptured Make runtime access"),
+            ("all: ; @/bin/true\n", "unrequested stock runtime alias spelling"),
+            ("all: ; @read line < /usr/include/newlib/../newlib/stdlib.h\n", "optional Make runtime parent spelling denied"),
+            ("all: ; @/bin/printf unissued\n", "untrusted executable dispatch"),
+        )
+        for source, expected in cases:
+            self.add("Makefile", source)
+            session = self.session(runtime_files=resources)
+            with self.subTest(source=source), session:
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    session._native_make_readonly("all")
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_readonly_optional_absence_rejects_wrong_kernel_result_projection(self):
+        self.add("Makefile", "all: ; @if test -e /usr/include/.dep; then :; fi\n")
+        body = (
+            "original=guard.Policy.finish_metadata\n"
+            "def wrong(self,pid,state,result):\n"
+            " if state.metadata_pending and state.metadata_pending[0][1]=='/usr/include/.dep':result=0\n"
+            " return original(self,pid,state,result)\n"
+            "guard.Policy.finish_metadata=wrong\n"
+        )
+        session = self.session(runtime_files=("/usr/include/.dep",))
+        with self.native_supervisor(body), session:
+            with self.assertRaisesRegex(MakeProbeError, "native optional absence differs from its kernel metadata"):
+                session._native_make_readonly("all")
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
     def test_native_readonly_original_assignment_inputs_and_default_restore(self):
         self.add("Makefile", (
             "ENV_INPUT ?= file-env\nCAP ?= 0xCD\n"
@@ -313,6 +381,7 @@ class FoundationTests(unittest.TestCase):
         session = self.session(runtime_files=("/usr/include/stdio.h",))
         with self.assertRaisesRegex(MakeProbeError, "unmapped immutable source session"):
             with session, patch.object(session, "_sandbox_run") as launch:
+                session.make_depth = 1
                 session._native_make_readonly("all")
         launch.assert_not_called()
         self.assert_clean(session)
@@ -330,7 +399,7 @@ class FoundationTests(unittest.TestCase):
             {"mode": "command"}, {"executables": ["/usr/bin/make", "/usr/bin/python3"]},
             {"producer_endpoint": "/control/producer"}, {"published": [["foreign"]]},
             {"mapping_entries": ["foreign"]}, {"metadata_validation": True},
-            {"runtime_files": ["/usr/bin/sh"]}, {"dependency": {"foreign": True}},
+            {"dependency": {"foreign": True}},
             {"environment": {}},
         ):
             with self.subTest(changes=changes), self.assertRaisesRegex(

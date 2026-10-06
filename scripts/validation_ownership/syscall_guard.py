@@ -242,12 +242,14 @@ class Policy:
         self.config = config
         self.mode = config["mode"]
         self.native_readonly = config.get("native_readonly", False)
+        native_shell = config.get("native_shell", "/bin/sh")
         native_executables = config.get("native_executables", ["/bin/sh"])
         if (
             not isinstance(native_executables, list) or not native_executables
             or any(not isinstance(path, str) or not path.startswith("/") for path in native_executables)
             or len(set(native_executables)) != len(native_executables)
-            or native_executables[0] != "/bin/sh" or "/usr/bin/make" in native_executables
+            or native_shell not in {"/bin/sh", "/usr/bin/sh"}
+            or native_executables[0] != native_shell or "/usr/bin/make" in native_executables
         ):
             raise Violation("invalid native executable resource declaration")
         self.native_executables = set(native_executables)
@@ -281,7 +283,7 @@ class Policy:
             or config["executables"] != ["/usr/bin/make", *native_executables]
             or config.get("producer_endpoint") or config.get("published")
             or config.get("mapping_entries") or config.get("metadata_validation")
-            or config.get("runtime_files") or config.get("dependency")
+            or config.get("dependency")
             or config.get("environment", {}).get("VO_OBSERVE_NATIVE_READONLY") != "1"
         ):
             raise Violation("invalid readonly native Make authority")
@@ -319,6 +321,11 @@ class Policy:
         self.make_restarts = 0
         self.executable = set(config["executables"])
         self.executable.update(self.resolve(path) for path in config["executables"])
+        if self.native_readonly and (
+            self.resolve("/bin/sh") != native_shell
+            or any(self.resolve(path) != path for path in native_executables)
+        ):
+            raise Violation("native executable declaration differs from its actual runtime alias")
         self.runtime_closure = set(config.get("runtime_closure", ()))
         if self.native_readonly and not self.native_executables <= self.runtime_closure:
             raise Violation("native executable is outside captured runtime closure")
@@ -1021,6 +1028,7 @@ class Policy:
                     spelling = posixpath.normpath(name)
                     if ".." in name.split("/") or (
                         spelling not in self.config["executables"] and not self.runtime_metadata(spelling)
+                        and not (self.native_readonly and spelling == "/bin/sh")
                     ):
                         raise Violation(f"unrequested stock runtime alias spelling: {name}")
                 try:
@@ -1187,7 +1195,9 @@ class Policy:
         )
         if (
             not (path == "/repo" or path.startswith("/repo/") or optional)
-            or self.mode == "make" and state.role != "helper" and not (optional and state.observer_ready)
+            or self.mode == "make" and state.role != "helper" and not (
+                optional and (state.observer_ready or self.native_readonly and state.role == "native")
+            )
         ):
             return
         number = r.orig_rax
@@ -1265,7 +1275,10 @@ class Policy:
         )
 
     def check_optional_make_spelling(self, state, path, operation):
-        if self.mode != "make" or state.role != "make" or state.path_context is None:
+        if (
+            self.mode != "make" or state.path_context is None
+            or state.role != "make" and not (self.native_readonly and state.role == "native")
+        ):
             return
         # Shared mandatory directory metadata does not need the optional grant.
         if operation == "metadata" and path in self.runtime_directories:
@@ -1288,6 +1301,10 @@ class Policy:
             raise Violation(f"nonregular namespace in source enumeration: {path}")
 
     def make_runtime_access(self, state, path, operation):
+        if self.native_readonly and operation in {"read", "metadata"} and self.runtime_metadata(path):
+            self.check_optional_make_spelling(state, path, operation)
+            self.defer_observation(state, "accessed", path)
+            return
         if operation in {"read", "metadata"} and path in self.runtime_closure | self.executable | {"/lib/vo-observer.so"}:
             return
         if operation == "metadata" and path in self.runtime_directories:
@@ -2305,7 +2322,7 @@ def supervise(config, drop_privileges):
                 policy.bind_native_job(stopped, state)
                 policy.observe(
                     "accessed",
-                    ("native-shell:" if state.exec_path == "/bin/sh" else "native-exec:")
+                    ("native-shell:" if state.exec_path == config.get("native_shell", "/bin/sh") else "native-exec:")
                     + str(stopped) + ":" + state.exec_path,
                 )
                 state.exec_path = None

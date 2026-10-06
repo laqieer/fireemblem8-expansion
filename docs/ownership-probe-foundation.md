@@ -329,6 +329,37 @@ qualification remain incomplete.
 
 ### Declared original direct executables
 
+Captured session `runtime_files` are also supported as readonly optional data,
+including real absent paths and recorded stock ancestor aliases. The native
+invocation builds fresh captured backing; it does not mount the session's
+cached mapped interceptor runtime. Optional program bytes remain data unless
+explicitly declared executable. Shared optional/native images must have
+identical bytes and preserve the optional input mode. Actual dispatch, exec
+and returned jobs use the installed canonical pathname; original argv and
+notification bytes are not rewritten. Thus a recorded `/bin` alias can place
+the original `/bin/sh` at `/usr/bin/sh` without granting arbitrary aliases.
+
+Run `test_native_readonly_optional_runtime_data_absence_and_stock_alias_jobs`
+on the clean Linux x86-64 host with newlib headers and admitted stock printf:
+capture `/usr/include/newlib/stdlib.h`, absent `/usr/include/.dep` and
+`/bin/printf`, explicitly declare `/usr/bin/printf`, read the first header line
+and probe absence in original shell expansions, then invoke printf through
+both spellings. Require exact values/output, four real canonical shell/direct
+jobs, successful data access and actual absent kernel metadata results.
+The pre-fix readonly invocation rejects these captured runtime inputs.
+Run `test_native_readonly_optional_runtime_resource_and_alias_boundaries_refuse`:
+adjacent uncaptured data/absence, unrequested `/bin/true`, parent traversal and
+an undeclared optional program must refuse and clean owned state.
+Run `test_native_readonly_optional_absence_rejects_wrong_kernel_result_projection`:
+alter a real absent metadata result projection to success; the host must reject
+it against the declared absent resource. This is not physical kernel mutation.
+Actual optional-resource metadata requests/results/buffers and successful
+accesses use existing observation settlement and shared budgets. Mapped-parent
+invocations, mutable publications and root/repository submount overrides remain
+forbidden. Default profiles without optional resources retain their behavior.
+No Python runtime, candidate NativeTool, descendant or generated authority is
+granted by these optional data/alias resources.
+
 The internal readonly invocation accepts `native_executables=()`; the empty
 default still admits only the original shell. Explicit ordinary trusted host
 ELF paths are captured with their interpreter/library closure and installed as

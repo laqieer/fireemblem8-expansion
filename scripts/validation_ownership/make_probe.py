@@ -927,7 +927,7 @@ class ProbeSession:
             (root / directory).mkdir()
         (root / "dev/null").touch()
         if make:
-            if self.runtime_root is not None:
+            if self.runtime_root is not None and not native_runtime:
                 return root
             for alias, target in sorted({pair for item in self.runtime_inputs for pair in item.aliases}):
                 destination = root / alias.lstrip("/")
@@ -956,7 +956,13 @@ class ProbeSession:
                 for parent, present in reversed(item.parents):
                     if present and parent != "/":
                         _mkdir_target(root, parent, directory=True)
-                if item.data is not None and item.path not in self.runtime_dispatch:
+                if item.data is not None and (native_runtime or item.path not in self.runtime_dispatch):
+                    native_data = dict(native_runtime).get(item.canonical)
+                    if native_data is not None and native_data != item.data:
+                        raise MakeProbeError("optional runtime conflicts with captured native bytes")
+                    if native_data is not None:
+                        (root / item.canonical.lstrip("/")).chmod(item.mode)
+                        continue
                     self.budget.charge("control", len(item.data))
                     target = _mkdir_target(root, item.canonical)
                     target.write_bytes(item.data)
@@ -977,7 +983,7 @@ class ProbeSession:
         self.budget.remaining()
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
             raise MakeProbeError("incomplete/non-readonly source backing is not admitted")
-        if self.runtime_root is not None and (mode == "make" or metadata_validation):
+        if self.runtime_root is not None and not native_runtime and (mode == "make" or metadata_validation):
             mounts = [
                 self._mount(self.runtime_root, "/", executable=True),
                 *mounts,
@@ -988,15 +994,18 @@ class ProbeSession:
         executable = ["/usr/bin/make", "/control/interceptor", *ALIASES, *self.runtime_dispatch] if mode == "make" else (
             [argv[0]] if executables is None else list(executables)
         )
+        native_shell = "/usr/bin/sh" if any(
+            alias == "/bin" for item in self.runtime_inputs for alias, _ in item.aliases
+        ) else "/bin/sh"
         if native_runtime:
             if (
-                mode != "make" or self.runtime_root is not None or self.runtime_inputs
+                mode != "make"
                 or self.published_sources or producer_handler is not None
                 or mapping_entries or metadata_validation or dependency is not None
                 or any(item["target"] == "/" or item["target"].startswith("/repo/") for item in mounts)
             ):
                 raise MakeProbeError("native readonly invocation conflicts with mapped/runtime/publication authority")
-            executable = ["/usr/bin/make", "/bin/sh", *native_executables]
+            executable = ["/usr/bin/make", native_shell, *native_executables]
         elif native_executables:
             raise MakeProbeError("native executable admission requires its readonly runtime")
         file_remaining = min(
@@ -1056,7 +1065,9 @@ class ProbeSession:
         if native_runtime:
             config["native_readonly"] = True
             config["native_interpreter"] = _make_interpreter(dict(native_runtime)["/bin/sh"])
-            config["native_executables"] = ["/bin/sh", *native_executables]
+            config["native_shell"] = native_shell
+            config["native_executables"] = [native_shell, *native_executables]
+            config["runtime_closure"] = sorted(set(config["runtime_closure"]) | {native_shell})
         if read_abi is not None:
             from .read_epochs import COMPLETION_VERSION
             if not native_runtime:
@@ -1343,6 +1354,12 @@ class ProbeSession:
             if dependency is not None and observed["executed"] != dependency["executables"]:
                 raise MakeProbeError("dependency result lacks its actual driver/cc1 execution")
             if native_runtime:
+                for record in observed["metadata"]:
+                    if record[6] >= 0 and any(
+                        record[1] == absent or record[1].startswith(absent + "/")
+                        for absent in config["runtime_absent"]
+                    ):
+                        raise MakeProbeError("native optional absence differs from its kernel metadata")
                 jobs, executions, dispatches = {}, {}, []
                 for value in observed["accessed"]:
                     if value.startswith("native-job:"):
@@ -1950,7 +1967,7 @@ class ProbeSession:
         observe_completions=False, native_executables=(),
     ):
         variables, cli, environment = self._make_request(target, makefile, variables, assignments, ())
-        if self.runtime_root is not None or self.runtime_inputs or self.published_sources or self.make_depth:
+        if self.published_sources or self.make_depth:
             raise MakeProbeError("readonly native Make requires an unmapped immutable source session")
         if (
             type(observe_reads) is not bool or type(observe_completions) is not bool
