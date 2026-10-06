@@ -972,6 +972,7 @@ class ProbeSession:
         directories=(), executables=None, mapping_entries=(), metadata_validation=False,
         producer_handler=None, publication_observer=None, publication_allowed=True,
         dependency=None, native_runtime=(), read_abi=None, read_selection=None,
+        native_executables=(),
     ):
         self.budget.remaining()
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
@@ -995,7 +996,9 @@ class ProbeSession:
                 or any(item["target"] == "/" or item["target"].startswith("/repo/") for item in mounts)
             ):
                 raise MakeProbeError("native readonly invocation conflicts with mapped/runtime/publication authority")
-            executable = ["/usr/bin/make", "/bin/sh"]
+            executable = ["/usr/bin/make", "/bin/sh", *native_executables]
+        elif native_executables:
+            raise MakeProbeError("native executable admission requires its readonly runtime")
         file_remaining = min(
             self.budget.limits.file_bytes,
             self.budget.limits.event_bytes - self.budget.bytes.get("event", 0),
@@ -1053,6 +1056,7 @@ class ProbeSession:
         if native_runtime:
             config["native_readonly"] = True
             config["native_interpreter"] = _make_interpreter(dict(native_runtime)["/bin/sh"])
+            config["native_executables"] = ["/bin/sh", *native_executables]
         if read_abi is not None:
             from .read_epochs import COMPLETION_VERSION
             if not native_runtime:
@@ -1336,6 +1340,33 @@ class ProbeSession:
                 )
             if dependency is not None and observed["executed"] != dependency["executables"]:
                 raise MakeProbeError("dependency result lacks its actual driver/cc1 execution")
+            if native_runtime:
+                jobs, executions = {}, {}
+                for value in observed["accessed"]:
+                    if value.startswith("native-job:"):
+                        raw = value.removeprefix("native-job:").encode("utf-8")
+                        self.budget.charge("control", len(raw))
+                        job = parse_json(raw, "native job result")
+                        if (
+                            not isinstance(job, dict) or type(job.get("pid")) is not int
+                            or job.get("executable") not in config["native_executables"]
+                            or job["pid"] in jobs
+                        ):
+                            raise MakeProbeError("native job differs from its admitted executable")
+                        jobs[job["pid"]] = job["executable"]
+                    elif value.startswith(("native-shell:", "native-exec:")):
+                        parts = value.split(":", 2)
+                        if len(parts) != 3:
+                            raise MakeProbeError("invalid native execution result")
+                        _, pid, path = parts
+                        if (
+                            not pid.isascii() or not pid.isdecimal() or int(pid) in executions
+                            or path not in config["native_executables"]
+                        ):
+                            raise MakeProbeError("native execution differs from its admitted executable")
+                        executions[int(pid)] = path
+                if jobs != executions:
+                    raise MakeProbeError("native job differs from its actual executable")
             if channel is not None:
                 final = observed["rendezvous"]
                 if (
@@ -1870,7 +1901,7 @@ class ProbeSession:
     @terminal_failure
     def _native_make_readonly(
         self, target, *, makefile="Makefile", variables=(), assignments=(), observe_reads=False,
-        observe_completions=False,
+        observe_completions=False, native_executables=(),
     ):
         variables, cli, environment = self._make_request(target, makefile, variables, assignments, ())
         if self.runtime_root is not None or self.runtime_inputs or self.published_sources or self.make_depth:
@@ -1880,10 +1911,34 @@ class ProbeSession:
             or observe_completions and not observe_reads
         ):
             raise MakeProbeError("invalid native read observation request or completion dependency")
+        if (
+            not isinstance(native_executables, tuple)
+            or len(native_executables) > self.budget.limits.entries
+            or any(
+                not isinstance(path, str) or not path.startswith("/") or len(path) > 4096
+                or path in {"/usr/bin/make", "/bin/sh", "/lib/vo-observer.so"}
+                for path in native_executables
+            )
+            or len(set(native_executables)) != len(native_executables)
+        ):
+            raise MakeProbeError("invalid native executable resource declaration")
+        for path in native_executables:
+            relative_path(path[1:])
         captured = _executable_runtime("/usr/bin/sh", self.budget)
         native_runtime = tuple(
             ("/bin/sh" if name == "/usr/bin/sh" else name, data) for name, data in captured
         )
+        runtime = dict(native_runtime)
+        interpreter = _make_interpreter(runtime["/bin/sh"])
+        for path in native_executables:
+            captured = _executable_runtime(path, self.budget)
+            if _make_interpreter(dict(captured)[path]) != interpreter:
+                raise MakeProbeError("native executable requires an unadmitted interpreter")
+            for name, data in captured:
+                if name in runtime and runtime[name] != data:
+                    raise MakeProbeError("native executable runtime conflicts with captured bytes")
+                runtime[name] = data
+        native_runtime = tuple(sorted(runtime.items()))
         environment["VO_OBSERVE_NATIVE_READONLY"] = "1"
         read_abi = self._native_read_abi(completions=observe_completions) if observe_reads else None
         read_selection = self._native_completion_selection() if observe_completions else None
@@ -1903,6 +1958,7 @@ class ProbeSession:
                 root, mode="make", argv=["/usr/bin/make", "-f", makefile, *cli, target],
                 environment=environment, native_runtime=native_runtime, read_abi=read_abi,
                 read_selection=read_selection,
+                native_executables=native_executables,
                 mounts=[
                     self._mount(self.tree, "/repo"),
                     self._mount(control, "/control", writable=True),

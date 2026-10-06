@@ -120,6 +120,125 @@ class FoundationTests(unittest.TestCase):
             replay.assert_not_called()
         self.assert_clean(session)
 
+    def test_native_readonly_declared_direct_executable_preserves_original_jobs(self):
+        self.add("Makefile", (
+            "VALUE := $(shell /usr/bin/printf %s original)\n"
+            "REFERENCES = $(VALUE)\n"
+            ".PHONY: all\nall:\n\t@/usr/bin/printf 'recipe\\n'\n"
+        ))
+        session = self.session()
+        with session, patch.object(
+            session, "command", side_effect=AssertionError("per-command replay invoked"),
+        ) as replay:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), observe_reads=True, observe_completions=True,
+                native_executables=("/usr/bin/printf",),
+            )
+            self.assertEqual(completed.stdout, b"recipe\n")
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "original")
+            jobs = [
+                json.loads(value.removeprefix("native-job:")) for value in observed["accessed"]
+                if value.startswith("native-job:")
+            ]
+            self.assertEqual(len(jobs), 2)
+            self.assertEqual({row["executable"] for row in jobs}, {"/usr/bin/printf"})
+            self.assertEqual({row["context"]["kind"] for row in jobs}, {"expansion", "recipe"})
+            self.assertTrue(all(row["waited"] and row["terminal_status"] == 0 for row in jobs))
+            executed = [
+                (row["dispatch"], row["pid"]) for row in observed["read_trace"]["machine"]["events"]
+                if row["kind"] == "execute" and not row["make"]
+            ]
+            self.assertEqual(sorted(executed), sorted((row["sequence"], row["pid"]) for row in jobs))
+            replay.assert_not_called()
+        self.assert_clean(session)
+
+    def test_native_readonly_direct_executable_default_invalid_and_conflicting_admission_refuse(self):
+        from scripts.validation_ownership import make_probe
+        self.add("Makefile", "all: ; @/usr/bin/printf original\n")
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "uncaptured Make runtime access: metadata /usr/bin/printf"):
+                session._native_make_readonly("all")
+        self.assert_clean(session)
+        for request in (None, [], (False,), ("/usr/bin/make",), ("/bin/sh",),
+                        ("usr/bin/printf",), ("/usr/bin/printf", "/usr/bin/printf")):
+            session = self.session()
+            with self.subTest(request=request), session:
+                with self.assertRaisesRegex(MakeProbeError, "invalid native executable resource declaration"):
+                    session._native_make_readonly("all", native_executables=request)
+            self.assert_clean(session)
+        original = make_probe._executable_runtime
+        def conflict(path, budget):
+            captured = original(path, budget)
+            if path == "/usr/bin/printf":
+                return tuple(
+                    (name, data + b"changed" if "libc.so" in name else data)
+                    for name, data in captured
+                )
+            return captured
+        session = self.session()
+        with session, patch.object(make_probe, "_executable_runtime", conflict):
+            with self.assertRaisesRegex(MakeProbeError, "native executable runtime conflicts"):
+                session._native_make_readonly("all", native_executables=("/usr/bin/printf",))
+        self.assert_clean(session)
+
+    def test_native_readonly_direct_executable_dispatch_and_returned_bindings_refuse(self):
+        self.add("Makefile", "all: ; @/usr/bin/printf original\n")
+        cases = (
+            (
+                "original=guard.Policy.begin_native_job\n"
+                "def foreign(self,pid,state,path):return original(self,pid,state,'/usr/bin/uname')\n"
+                "guard.Policy.begin_native_job=foreign\n",
+                "native job lacks its actual original Make dispatch",
+            ),
+            (
+                "original=guard.Policy.begin_native_job\n"
+                "def wrong(self,pid,state,path):\n"
+                " result=original(self,pid,state,path)\n"
+                " self.native_jobs[state.native_dispatch]['executable']='/usr/bin/true'\n"
+                " return result\n"
+                "guard.Policy.begin_native_job=wrong\n",
+                "native job exec has a foreign or reused dispatch child",
+            ),
+            (
+                "original=guard.Policy.observe\n"
+                "def wrong(self,name,value):\n"
+                " if name=='accessed' and value.startswith('native-job:'):\n"
+                "  row=json.loads(value[len('native-job:'):]);row['executable']='/usr/bin/true'\n"
+                "  value='native-job:'+guard.encoded(row).decode('ascii')\n"
+                " return original(self,name,value)\n"
+                "guard.Policy.observe=wrong\n",
+                "native job differs from its actual executable",
+            ),
+            (
+                "original=guard.Policy.observe\n"
+                "def foreign(self,name,value):\n"
+                " if name=='accessed' and value.startswith('native-exec:'):\n"
+                "  value=value.rsplit(':',1)[0]+':/usr/bin/uname'\n"
+                " return original(self,name,value)\n"
+                "guard.Policy.observe=foreign\n",
+                "native execution differs from its admitted executable",
+            ),
+        )
+        for body, error in cases:
+            session = self.session()
+            with self.subTest(error=error), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_completions=True,
+                        native_executables=("/usr/bin/printf", "/usr/bin/true"),
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_readonly_declared_executable_does_not_admit_shell_reexec(self):
+        self.add("Makefile", "all: ; @/bin/sh -c 'exec /usr/bin/printf unissued'\n")
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "Make execution escaped authenticated native dispatch"):
+                session._native_make_readonly("all", native_executables=("/usr/bin/printf",))
+        self.assert_clean(session)
+
     def test_native_readonly_original_assignment_inputs_and_default_restore(self):
         self.add("Makefile", (
             "ENV_INPUT ?= file-env\nCAP ?= 0xCD\n"

@@ -242,6 +242,15 @@ class Policy:
         self.config = config
         self.mode = config["mode"]
         self.native_readonly = config.get("native_readonly", False)
+        native_executables = config.get("native_executables", ["/bin/sh"])
+        if (
+            not isinstance(native_executables, list) or not native_executables
+            or any(not isinstance(path, str) or not path.startswith("/") for path in native_executables)
+            or len(set(native_executables)) != len(native_executables)
+            or native_executables[0] != "/bin/sh" or "/usr/bin/make" in native_executables
+        ):
+            raise Violation("invalid native executable resource declaration")
+        self.native_executables = set(native_executables)
         self.read_trace = None
         request = config.get("read_epochs")
         if request is not None:
@@ -269,7 +278,7 @@ class Policy:
             not self.native_readonly and "VO_OBSERVE_NATIVE_READONLY" in config.get("environment", {})
         ) or self.native_readonly and (
             self.mode != "make"
-            or config["executables"] != ["/usr/bin/make", "/bin/sh"]
+            or config["executables"] != ["/usr/bin/make", *native_executables]
             or config.get("producer_endpoint") or config.get("published")
             or config.get("mapping_entries") or config.get("metadata_validation")
             or config.get("runtime_files") or config.get("dependency")
@@ -311,6 +320,8 @@ class Policy:
         self.executable = set(config["executables"])
         self.executable.update(self.resolve(path) for path in config["executables"])
         self.runtime_closure = set(config.get("runtime_closure", ()))
+        if self.native_readonly and not self.native_executables <= self.runtime_closure:
+            raise Violation("native executable is outside captured runtime closure")
         dependency = config.get("dependency")
         if dependency:
             self.runtime_closure.update(dependency["runtime_files"])
@@ -440,7 +451,7 @@ class Policy:
     def begin_native_job(self, pid, state, path):
         if (
             pid != self.make_pid or state.role != "make" or not state.observer_ready
-            or state.native_dispatch is not None or path != "/bin/sh"
+            or state.native_dispatch is not None or path not in self.native_executables
         ):
             raise Violation("native job lacks its actual original Make dispatch")
         sequence = len(self.native_jobs) + 1
@@ -458,7 +469,8 @@ class Policy:
     def bind_native_job(self, pid, state):
         row = self.native_jobs.get(state.native_dispatch)
         if (
-            row is None or row["pid"] is not None or state.native_parent != self.make_pid
+            row is None or row["pid"] is not None or row["executable"] != state.exec_path
+            or state.native_parent != self.make_pid
             or state.pidfd < 0 or any(job["pid"] == pid for job in self.native_jobs.values())
         ):
             raise Violation("native job exec has a foreign or reused dispatch child")
@@ -1884,7 +1896,7 @@ class Policy:
                     if self.make_restarts > 64:
                         raise Violation("Make restart exceeded the existing pass bound")
                     role = "make"
-                elif self.native_readonly and path == "/bin/sh" and state.dispatch:
+                elif self.native_readonly and path in self.native_executables and state.dispatch:
                     if state.dispatch[0] != path:
                         raise Violation("native shell differs from authenticated Make dispatch")
                     role = "native"
@@ -2288,10 +2300,14 @@ def supervise(config, drop_privileges):
             if state.pending is None or state.pending[0] != "exec":
                 raise Violation("unapproved executable transition")
             if policy.native_readonly and state.pending[1] == "native":
-                if state.exec_path != "/bin/sh":
-                    raise Violation("native shell exec has no admitted image")
+                if state.exec_path not in policy.native_executables:
+                    raise Violation("native exec has no admitted image")
                 policy.bind_native_job(stopped, state)
-                policy.observe("accessed", "native-shell:" + str(stopped) + ":" + state.exec_path)
+                policy.observe(
+                    "accessed",
+                    ("native-shell:" if state.exec_path == "/bin/sh" else "native-exec:")
+                    + str(stopped) + ":" + state.exec_path,
+                )
                 state.exec_path = None
             if config.get("dependency"):
                 if state.exec_path is None:

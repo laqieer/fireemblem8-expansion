@@ -327,6 +327,51 @@ ROM/RAM/save/localization or archival change. Full recursive value support,
 readonly completion integration, generated custody and original eight-query
 qualification remain incomplete.
 
+### Declared original direct executables
+
+The internal readonly invocation accepts `native_executables=()`; the empty
+default still admits only the original shell. Explicit ordinary trusted host
+ELF paths are captured with their interpreter/library closure and installed as
+readonly resources, never substituted with command handlers. Their interpreter
+must be the already admitted native interpreter. Conflicting bytes, duplicate
+paths or reserved execution-authority paths reject before launch. Actual GNU
+Make dispatch, exec, job PID/context/raw wait and returned executable bindings
+must agree. A declaration does not authorize a later shell re-exec or arbitrary
+descendant. Capture and observation costs retain the same aggregate budget and
+deadline.
+
+From the clean Linux x86-64 checkout with admitted GNU Make 4.3 and the existing
+namespace launcher, extend `TC-OWNERSHIP-NATIVE-COMPLETION-001` (#270):
+
+1. Run `test_native_readonly_declared_direct_executable_preserves_original_jobs`:
+   define `VALUE := $(shell /usr/bin/printf %s original)` and an original direct
+   `/usr/bin/printf` recipe. Explicitly declare `/usr/bin/printf`; require
+   `original`, `recipe` plus newline, two actual expansion/recipe jobs with zero
+   raw wait status, and exact dispatch/PID machine binding without command
+   replay. Complete source/completion custody and owned-state cleanup must hold.
+2. Run `test_native_readonly_direct_executable_default_invalid_and_conflicting_admission_refuse`:
+   the same recipe without declaration must refuse at GNU's earlier uncaptured
+   executable metadata lookup, before original dispatch;
+   invalid, duplicate and reserved declarations and conflicting captured
+   library bytes must reject. The empty-profile refusal is the pre-fix control.
+3. Run `test_native_readonly_direct_executable_dispatch_and_returned_bindings_refuse`:
+   change an actual dispatch or its job executable, or alter returned job/exec
+   projections. Unissued resources and an otherwise admitted but different
+   program must both reject. These are controlled binding mutations, not
+   physical executable replacement.
+4. Run `test_native_readonly_declared_executable_does_not_admit_shell_reexec`:
+   declaring the program must not let an already dispatched shell re-exec it
+   without an original authenticated Make dispatch.
+
+Dependencies are the existing captured ELF closure, readonly loader-origin
+proof and original job/machine lifecycle; conflicts are none. No ROM/RAM/save,
+localization, generated or archival change. Python runtime resources, compiled
+candidate `NativeTool` admission, optional runtime metadata profiles, arbitrary
+descendants, generated versions/remakes, general recursive final observation
+and original eight-query qualification remain unsupported or unqualified.
+`NativeTool` is still outside the Make capsule. This component does not waive
+any complete-supplier or final delivery criterion.
+
 ### Original readonly completion component
 
 `TC-OWNERSHIP-NATIVE-COMPLETION-001` (#270) is the closed immutable-source
