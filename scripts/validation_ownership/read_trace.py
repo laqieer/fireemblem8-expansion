@@ -314,7 +314,7 @@ class NativeReadTrace:
                     "trace_seq": entry["seq"], "input_sha256": source_phases.digest(inputs),
                 }
         elif purpose == "source-entry":
-            if self.pass_frame is None or self.io is not None:
+            if self.pass_frame is None or self.io is not None or self.pending_barrier is not None:
                 raise read_epochs.ReadEpochError("source entry has no original pass")
             frame = self.caller(registers, registers.rip)
             name = self.string(registers.rdi, 4096)
@@ -523,25 +523,14 @@ class NativeReadTrace:
                         raise read_epochs.ReadEpochError("opened source has no exact repository-relative path")
                     content_digest = hashlib.sha256(data).hexdigest()
                     entry = self.selection_inventory.get(relative)
-                    publication = self.policy.source_effects.publication_entry(relative, identity) \
-                        if self.policy.source_effects is not None else None
-                    if publication is not None:
-                        custody = publication
-                    elif entry is not None and (
+                    if entry is not None and entry["kind"] == "snapshot" and (
                         entry["mode"] == mode_bits and entry["size"] == len(data)
                         and entry["sha256"] == content_digest
-                        and (
-                            entry["kind"] != "prior-publication"
-                            or tuple(entry["identity"]) == identity
-                        )
                     ):
-                        custody = (
-                            {"kind": "snapshot"} if entry["kind"] == "snapshot"
-                            else {"kind": "prior-publication", "owner": entry["owner"], "serial": entry["serial"]}
-                        )
+                        custody = {"kind": "snapshot"}
                     else:
                         raise read_epochs.ReadEpochError(
-                            "opened source is outside the frozen inventory and has no exact publication entry"
+                            "opened source is outside the exact readonly snapshot inventory"
                         )
                     rows, references, _ = read_epochs.completion_source_facts(
                         relative, bytes(data),

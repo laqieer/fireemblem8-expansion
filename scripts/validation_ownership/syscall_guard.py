@@ -19,6 +19,7 @@ import re
 import resource
 import signal
 import stat
+import sys
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -246,9 +247,18 @@ class Policy:
         if request is not None:
             if (
                 not self.native_readonly or not isinstance(request, dict)
-                or set(request) != {"version", "scope", "abi"}
-                or request["version"] != 1 or type(request["version"]) is not int
-                or not isinstance(request["abi"], dict) or request["abi"].get("version") != 1
+                or set(request) != {"version", "scope", "abi"} | (
+                    {"selection"} if request.get("version") == 4 else set()
+                )
+                or type(request["version"]) is not int or request["version"] not in {1, 4}
+                or not isinstance(request["abi"], dict)
+                or request["abi"].get("version") != (2 if request["version"] == 4 else 1)
+                or request["version"] == 4 and (
+                    not isinstance(request["selection"], dict)
+                    or not isinstance(request["selection"].get("inventory"), list)
+                    or any(not isinstance(row, dict) or row.get("kind") != "snapshot"
+                           for row in request["selection"]["inventory"])
+                )
                 or not isinstance(request["scope"], str) or not request["scope"]
                 or config.get("environment", {}).get("VO_OBSERVE_READS") != "1"
             ):
@@ -382,6 +392,26 @@ class Policy:
     def observation_count(self):
         return sum(map(len, self.observation_attempts.values())) + self.trace_observations
 
+    def confirm_readonly_entry(self, pid, state):
+        trace = self.read_trace
+        if trace is None or trace.pending_barrier is None:
+            return
+        mounts = self.config.get("mounts", ())
+        repository = [row for row in mounts if row["target"] == "/repo"]
+        if (
+            not self.native_readonly or trace.version != 4 or pid != self.make_pid or pid != trace.pid
+            or self.processes.get(pid) is not state or state.role != "make"
+            or not state.observer_ready or not state.parked or state.pidfd < 0
+            or len(repository) != 1 or repository[0]["writable"] is not False
+            or any(row["target"] == "/" or row["target"].startswith("/repo/") for row in mounts)
+        ):
+            raise Violation("readonly source entry lacks its actual stopped immutable backing")
+        backing = os.statvfs(f"/proc/{pid}/root/repo")
+        self.charge_metadata(sys.getsizeof(backing))
+        if not backing.f_flag & os.ST_RDONLY:
+            raise Violation("actual native source mount is not readonly")
+        trace.confirm_barrier(dict(trace.pending_barrier), trace.selection["snapshot_sha256"])
+
     def reserve_trace_observation(self):
         self.charge_metadata(128)
         if self.observation_count() >= self.config["observation_count"]:
@@ -497,6 +527,16 @@ class Policy:
             for row in self.native_jobs.values()
         ):
             raise Violation("native job observation ended with incomplete actual lifecycle")
+        if self.read_trace is not None and self.read_trace.version == 4:
+            executed = [
+                (row["dispatch"], row["pid"]) for row in self.read_trace.machine
+                if row["kind"] == "execute" and row["make"] is False
+            ]
+            if (
+                any(type(dispatch) is not int or type(pid) is not int for dispatch, pid in executed)
+                or sorted(executed) != sorted((key, row["pid"]) for key, row in self.native_jobs.items())
+            ):
+                raise Violation("native machine execution differs from actual readonly job dispatch")
 
     def defer_observation(self, state, collection, value):
         # Failed attempts still spend bounded bookkeeping, not evidence credit.
@@ -2280,7 +2320,10 @@ def supervise(config, drop_privileges):
             state.kernel_call = None
             policy.finish_exec(stopped, state)
             if policy.read_trace is not None:
-                policy.read_trace.actual_exec(stopped, state.role == "make")
+                policy.read_trace.actual_exec(
+                    stopped, state.role == "make",
+                    None if state.role == "make" else state.native_dispatch,
+                )
             release_vfork(stopped)
         elif sig == signal.SIGTRAP and event == 5:
             child = ctypes.c_ulong()
@@ -2314,6 +2357,7 @@ def supervise(config, drop_privileges):
                 raise Violation("kernel did not identify syscall entry/exit")
         elif sig == signal.SIGTRAP and event == 0 and policy.read_trace is not None:
             policy.read_trace.trap(stopped, state)
+            policy.confirm_readonly_entry(stopped, state)
         elif policy.native_readonly and state.role == "native" and sig == signal.SIGTRAP:
             raise Violation("unauthenticated native shell trap")
         elif policy.native_readonly and state.role == "native" and sig == signal.SIGSTOP and not tracing_stop:

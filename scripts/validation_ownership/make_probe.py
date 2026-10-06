@@ -971,7 +971,7 @@ class ProbeSession:
         self, root, *, mode, argv, environment, mounts, code=(), sources=(),
         directories=(), executables=None, mapping_entries=(), metadata_validation=False,
         producer_handler=None, publication_observer=None, publication_allowed=True,
-        dependency=None, native_runtime=(), read_abi=None,
+        dependency=None, native_runtime=(), read_abi=None, read_selection=None,
     ):
         self.budget.remaining()
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
@@ -992,6 +992,7 @@ class ProbeSession:
                 mode != "make" or self.runtime_root is not None or self.runtime_inputs
                 or self.published_sources or producer_handler is not None
                 or mapping_entries or metadata_validation or dependency is not None
+                or any(item["target"] == "/" or item["target"].startswith("/repo/") for item in mounts)
             ):
                 raise MakeProbeError("native readonly invocation conflicts with mapped/runtime/publication authority")
             executable = ["/usr/bin/make", "/bin/sh"]
@@ -1053,11 +1054,17 @@ class ProbeSession:
             config["native_readonly"] = True
             config["native_interpreter"] = _make_interpreter(dict(native_runtime)["/bin/sh"])
         if read_abi is not None:
+            from .read_epochs import COMPLETION_VERSION
             if not native_runtime:
                 raise MakeProbeError("source read observation requires original readonly native execution")
             config["read_epochs"] = {
-                "version": 1, "scope": self.base.name + "/" + root.name, "abi": read_abi,
+                "version": COMPLETION_VERSION if read_selection is not None else 1,
+                "scope": self.base.name + "/" + root.name, "abi": read_abi,
             }
+            if read_selection is not None:
+                config["read_epochs"]["selection"] = read_selection
+        elif read_selection is not None:
+            raise MakeProbeError("completion observation requires its original read ABI")
         if dependency is not None:
             if mode != "compile":
                 raise MakeProbeError("dependency profile requires compiler confinement")
@@ -1316,6 +1323,12 @@ class ProbeSession:
                 raise MakeProbeError(f"confined {mode} probe rejected: {observed['error']}; {result.stderr!r}")
             if read_abi is not None and observed["returncode"] == 0:
                 from .read_epochs import validate_trace
+                trace, request = observed["read_trace"], config["read_epochs"]
+                if (
+                    not isinstance(trace, dict) or trace.get("version") != request["version"]
+                    or read_selection is not None and trace.get("selection") != read_selection
+                ):
+                    raise MakeProbeError("native read observation differs from its requested version/selection")
                 validate_trace(
                     observed["read_trace"], config["read_epochs"]["scope"],
                     count_limit=config["observation_count"], file_limit=config["file_limit"],
@@ -1857,18 +1870,23 @@ class ProbeSession:
     @terminal_failure
     def _native_make_readonly(
         self, target, *, makefile="Makefile", variables=(), assignments=(), observe_reads=False,
+        observe_completions=False,
     ):
         variables, cli, environment = self._make_request(target, makefile, variables, assignments, ())
         if self.runtime_root is not None or self.runtime_inputs or self.published_sources or self.make_depth:
             raise MakeProbeError("readonly native Make requires an unmapped immutable source session")
+        if (
+            type(observe_reads) is not bool or type(observe_completions) is not bool
+            or observe_completions and not observe_reads
+        ):
+            raise MakeProbeError("invalid native read observation request or completion dependency")
         captured = _executable_runtime("/usr/bin/sh", self.budget)
         native_runtime = tuple(
             ("/bin/sh" if name == "/usr/bin/sh" else name, data) for name, data in captured
         )
         environment["VO_OBSERVE_NATIVE_READONLY"] = "1"
-        if type(observe_reads) is not bool:
-            raise MakeProbeError("invalid native read observation request")
-        read_abi = self._native_read_abi() if observe_reads else None
+        read_abi = self._native_read_abi(completions=observe_completions) if observe_reads else None
+        read_selection = self._native_completion_selection() if observe_completions else None
         if observe_reads:
             environment["VO_OBSERVE_READS"] = "1"
         root_name = f"native-readonly-root-{self.serial + 1}"
@@ -1884,6 +1902,7 @@ class ProbeSession:
             completed, observed = self._sandbox_run(
                 root, mode="make", argv=["/usr/bin/make", "-f", makefile, *cli, target],
                 environment=environment, native_runtime=native_runtime, read_abi=read_abi,
+                read_selection=read_selection,
                 mounts=[
                     self._mount(self.tree, "/repo"),
                     self._mount(control, "/control", writable=True),
@@ -1899,7 +1918,72 @@ class ProbeSession:
             )
             return completed, semantics, observed
 
-    def _native_read_abi(self):
+    def _native_completion_selection(self):
+        from . import read_epochs
+        ordered = sorted(self.snapshot.files.items())
+        if len(ordered) > self.budget.limits.observation_count:
+            self.budget.reject("completion source inventory exceeds observation count")
+        self.budget.charge("total", sum(
+            len(data) if len(data) <= self.budget.limits.file_bytes else min(4096, len(data))
+            for _, data in ordered
+        ))
+        selected, inventory = set(), []
+        scanned = {
+            "entries": len(ordered),
+            "bytes": sum(len(data) for _, data in ordered if len(data) <= self.budget.limits.file_bytes),
+            "text": 0, "binary": 0, "invalid_utf8": 0, "oversize": 0,
+        }
+        for path, data in ordered:
+            self.budget.remaining()
+            if len(data) > self.budget.limits.file_bytes:
+                prefix = data[:min(4096, len(data))]
+                if b"\0" not in prefix:
+                    try:
+                        prefix.decode("utf-8", "strict")
+                    except UnicodeDecodeError:
+                        pass
+                    else:
+                        self.budget.reject("oversized text source cannot be screened within file admission")
+                screen, digest = "oversize-binary", None
+                scanned["oversize"] += 1
+            else:
+                digest = hashlib.sha256(data).hexdigest()
+                if b"\0" in data:
+                    screen = "binary"
+                    scanned["binary"] += 1
+                else:
+                    try:
+                        data.decode("utf-8", "strict")
+                    except UnicodeDecodeError:
+                        screen = "invalid-utf8"
+                        scanned["invalid_utf8"] += 1
+                    else:
+                        screen = "text"
+                        scanned["text"] += 1
+            entry = {
+                "path": path, "kind": "snapshot", "mode": int(self.snapshot.modes[path], 8) & 0o777,
+                "size": len(data), "sha256": digest, "screen": screen,
+            }
+            self.budget.charge("cache", len(encoded(entry)))
+            inventory.append(entry)
+            if screen == "text":
+                read_epochs.completion_reference_names(
+                    data, names=selected, checkpoint=self.budget.remaining,
+                    count_limit=self.budget.limits.observation_count,
+                    charge=lambda size: self.budget.charge("cache", size),
+                )
+        selection = {
+            "version": 1, "snapshot_sha256": self.snapshot.digest,
+            "names": sorted(selected), "inventory": inventory, "scan": scanned,
+        }
+        self.budget.charge("cache", len(encoded(selection)))
+        read_epochs.validate_completion_selection(
+            selection, count_limit=self.budget.limits.observation_count,
+            file_limit=self.budget.limits.file_bytes,
+        )
+        return selection
+
+    def _native_read_abi(self, *, completions=False):
         from . import read_epochs
         data = dict(self.make_runtime)["/usr/bin/make"]
         path = self.base / "read-abi-make"
@@ -1923,7 +2007,18 @@ class ProbeSession:
         )
         if second.returncode:
             raise MakeProbeError("cannot decode captured Make source reader")
-        return read_epochs.make_abi(data, first.stdout, second.stdout)
+        if not completions:
+            return read_epochs.make_abi(data, first.stdout, second.stdout)
+        source, _ = read_epochs.source_graph(image, target, read_epochs.instructions(second.stdout, image))
+        evaluator = read_epochs.evaluator_target(image, source)
+        third = self.budget.run(
+            ["/usr/bin/objdump", "-d", "-w", "--start-address=" + hex(evaluator),
+             "--stop-address=" + hex(source[0]), str(path)],
+            env=ENVIRONMENT,
+        )
+        if third.returncode:
+            raise MakeProbeError("cannot decode captured Make completion evaluator")
+        return read_epochs.make_abi(data, first.stdout, second.stdout, third.stdout)
 
     @terminal_failure
     def make(

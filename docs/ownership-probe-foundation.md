@@ -145,8 +145,10 @@ kernel hardware-breakpoint entry/caller frames, trusted paired `fopen`
 notifications, source descriptor pins and bytes through close/return, and
 complete read-pass/goal structure. It reuses the existing original read-trace
 and validator source rather than introducing a second source registry.
-Completion, source-phase and generated-version trace variants are not admitted
-by this internal configuration. Ordinary mapped execution does not request it.
+Version 1 remains the default; the explicit readonly completion component below
+admits version 4 only with its complete frozen selection and entry proof.
+Generated-version mutation is not admitted. Ordinary mapped execution does not
+request these internal variants.
 
 From the same clean host checkout, run these `FoundationTests` controls:
 
@@ -324,6 +326,72 @@ conflicts are none. No new execution authority, input profile, generated data,
 ROM/RAM/save/localization or archival change. Full recursive value support,
 readonly completion integration, generated custody and original eight-query
 qualification remain incomplete.
+
+### Original readonly completion component
+
+`TC-OWNERSHIP-NATIVE-COMPLETION-001` (#270) is the closed immutable-source
+component, not full generated-source qualification. The internal invocation
+requires both `observe_reads=True` and `observe_completions=True`. It decodes
+the existing version-2 completion ABI from captured private Make bytes and
+returns the existing version-4 trace. The complete Snapshot inventory is
+screened with the original bounded text/binary/UTF-8 rules; conservative
+reference names select ordinary assignment sites. Opened source bytes, mode
+and extent must match that frozen snapshot inventory, and references must be
+covered. Publication origins are forbidden rather than serviced by a null
+publication fallback.
+
+At the actual owned, parked Make read-entry hardware stop, the supervisor
+checks the original process/read context, the single complete repository mount
+without root/submount overrides, and kernel `statvfs` readback through the
+actual process root. It confirms the existing entry-image barrier before the
+first source entry. The Snapshot digest is only this binding; it cannot replace
+entry/caller/stream/floc/modifier/effective-variable and descriptor-pin proof.
+Actual shell machine executions carry the original native dispatch sequence
+and must match every completed readonly job's sequence/PID. Machine shape
+alone cannot substitute for that cross-binding.
+
+From the same clean Linux x86-64 host checkout with admitted GNU Make 4.3 and
+the existing namespace launcher, run these `FoundationTests` controls:
+
+1. `test_native_readonly_actual_completion_inventory_barrier_and_jobs`: use
+   immediate, deferred, conditional/ignored and continued definitions; repeated
+   nested, empty, optional-missing and skipped includes; original environment/
+   command-line inputs; one eager shell and one recipe. Require original
+   output/values, selected raw deferred and ignored bindings, exact continued
+   physical spans, four successful pin retirements, complete inventory and
+   actual entry confirmation, and both actual job/machine execution pairs.
+   The deferred names are referenced in an unused binding so the conservative
+   selection covers them without expanding that binding. No command replay,
+   deadline reset or observation reset is permitted.
+2. `test_native_readonly_completion_callback_and_machine_mutations_refuse`:
+   alter captured bindings at actual frame/floc/modifier/returned-variable
+   callbacks; omit entry confirmation, clear/pin records or a child, change a
+   child PID or duplicate its execution, and alter actual readonly flag
+   readback. Every case must refuse and clean owned state. These are controlled
+   binding/projection mutations, not physical remount, variable replacement or
+   independently proven kernel register-restoration attacks.
+3. `test_native_readonly_completion_inventory_misbind_and_invalid_options_refuse`:
+   a valid-shaped but wrong source digest must fail against the actual pin;
+   completion without reads and nonboolean requests must fail before launch.
+4. `test_native_readonly_completion_failed_make_has_no_successful_archive`:
+   a real source error must retain Make's status and diagnostic, fail the
+   invocation and clean active pins without a successful trace.
+5. `test_native_readonly_completion_foreign_abi_and_returned_selection_refuse`:
+   alter the decoded ABI's image binding, or the supervisor's copied selection
+   while retaining an internally valid archive. The image admission or exact
+   host request binding must reject it. These are binding mutations, not
+   physical executable replacement.
+
+Existing version-1, mapped, input, job, signal, count and observer controls
+remain required. Tests use ordinary immutable fixtures and automatic teardown;
+there is no ROM, save or manual visual artifact. Dependencies are the existing
+read/completion decoder, scanner, source validator, readonly dispatch/job
+observations and shared budget. Mutable/generated/publication mode conflicts
+and explicitly refuses; no new execution or write authority is granted.
+ROM/RAM/save/localization/archival behavior is unchanged. General recursive
+value observation, complete arbitrary descendants/register restoration,
+natural generated-version lifecycle, the original unchanged-budget eight-query
+family and every remote delivery gate remain unqualified.
 
 ## Run the real consumer
 
