@@ -5983,6 +5983,166 @@ class FoundationTests(unittest.TestCase):
                 self.assertTrue(session.budget.failed)
             self.assert_clean(session)
 
+    def test_native_runtime_consumed_self_signal_rejects_forged_foreign_queue(self):
+        self.add("consume.c", (
+            ROOT / "scripts/validation_ownership/tests/fixtures/native_signal_consume.c"
+        ).read_bytes())
+        receipt = self.directory / "foreign-signal.json"
+        body = (
+            "original=guard.Policy.leave\n"
+            "def returned(self,pid,state,r):\n"
+            " result=original(self,pid,state,r)\n"
+            " if state.role=='native' and r.orig_rax==128 and guard.signed(r.rax)==10:\n"
+            "  data=(guard.ctypes.c_ubyte*128)()\n"
+            "  for offset,value in ((0,10),(8,-1),(16,pid),(20,os.getuid()),(24,37)):\n"
+            "   data[offset:offset+4]=list((value&0xffffffff).to_bytes(4,'little'))\n"
+            "  for index in range(32,48):data[index]=index\n"
+            "  sent=guard.LIBC.syscall(129,pid,10,guard.ctypes.byref(data))\n"
+            f"  Path({str(receipt)!r}).write_text(json.dumps({{'sent':sent,'grants':sorted(state.native_signals.items())}}))\n"
+            "  if sent:raise RuntimeError('real foreign queued-signal injection failed')\n"
+            " return result\nguard.Policy.leave=returned\n"
+        )
+        for mode in ("foreign", "positive", "null"):
+            for thread in (0, 1):
+                self.add("Makefile", f"all: ; @/native/tool {mode} {thread}\n")
+                session = self.session()
+                with self.subTest(mode=mode, thread=thread), self.native_supervisor(body), session:
+                    tool = session.compile_native(("consume.c",))
+                    with self.assertRaisesRegex(MakeProbeError, "sandbox signal|unissued queued signal"):
+                        session._native_make_readonly(
+                            "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                        )
+                    self.assertEqual(json.loads(receipt.read_bytes()), {"sent": 0, "grants": []})
+                    self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_runtime_signal_consumption_preserves_real_payload_and_padding(self):
+        self.add("consume.c", (
+            ROOT / "scripts/validation_ownership/tests/fixtures/native_signal_consume.c"
+        ).read_bytes())
+        for mode in ("positive", "null", "timeout", "fault", "output-fault"):
+            for thread in (0, 1):
+                self.add("Makefile", f"all: ; @/native/tool {mode} {thread}\n")
+                session = self.session()
+                with self.subTest(mode=mode, thread=thread), session:
+                    tool = session.compile_native(("consume.c",))
+                    ordinary = subprocess.run(
+                        [str(tool.path), mode, str(thread)], env=ENVIRONMENT,
+                        capture_output=True, timeout=10, check=True,
+                    )
+                    completed, _, _ = session._native_make_readonly(
+                        "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                    )
+                    self.assertEqual(completed.stdout, ordinary.stdout)
+                    self.assertEqual(completed.stdout, b"received:1 invalid:0\n")
+                    self.assertFalse(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_runtime_output_copy_fault_retires_dequeued_origin(self):
+        self.add("consume.c", (
+            ROOT / "scripts/validation_ownership/tests/fixtures/native_signal_consume.c"
+        ).read_bytes())
+        for realtime in (False, True):
+            number = int(signal.SIGRTMIN) if realtime else int(signal.SIGUSR1)
+            body = (
+                "original=guard.Policy.leave\n"
+                "def returned(self,pid,state,r):\n"
+                " result=original(self,pid,state,r)\n"
+                " if state.role=='native' and r.orig_rax==128 and r.rsi==1 and guard.signed(r.rax)==-14:\n"
+                "  data=(guard.ctypes.c_ubyte*128)()\n"
+                f"  for offset,value in ((0,{number}),(8,-1),(16,pid),(20,os.getuid()),(24,37)):\n"
+                "   data[offset:offset+4]=list((value&0xffffffff).to_bytes(4,'little'))\n"
+                f"  if guard.LIBC.syscall(129,pid,{number},guard.ctypes.byref(data)):\n"
+                "   raise RuntimeError('real foreign queued-signal injection failed')\n"
+                " return result\nguard.Policy.leave=returned\n"
+            )
+            for thread in (0, 1):
+                for mode in ("foreign-wait", "foreign-wait-info"):
+                    self.add("Makefile", f"all: ; @/native/tool {mode} {thread}"
+                             + (" realtime" if realtime else "") + "\n")
+                    session = self.session()
+                    with self.subTest(realtime=realtime, thread=thread, mode=mode), \
+                            self.native_supervisor(body), session:
+                        tool = session.compile_native(("consume.c",))
+                        with self.assertRaisesRegex(
+                            MakeProbeError, "unissued queued signal|successful self-send|exact pending origin",
+                        ):
+                            session._native_make_readonly(
+                                "all", native_tool=tool, observe_reads=True,
+                                observe_runtime_completions=True,
+                            )
+                        self.assertTrue(session.budget.failed)
+                    self.assert_clean(session)
+
+    def test_native_runtime_nonqueued_and_realtime_wait_origin_lifetimes(self):
+        self.add("consume.c", (
+            ROOT / "scripts/validation_ownership/tests/fixtures/native_signal_consume.c"
+        ).read_bytes())
+        members = [
+            (mode, thread, False) for mode in ("null", "output-fault") for thread in (2, 3, 4)
+        ] + [("output-fault", thread, True) for thread in (0, 1)]
+        for mode, thread, realtime in members:
+            self.add("Makefile", f"all: ; @/native/tool {mode} {thread}"
+                     + (" realtime" if realtime else "") + "\n")
+            session = self.session()
+            with self.subTest(mode=mode, thread=thread, realtime=realtime), session:
+                tool = session.compile_native(("consume.c",))
+                ordinary = subprocess.run(
+                    [str(tool.path), mode, str(thread), *(["realtime"] if realtime else [])],
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                completed, _, _ = session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual(completed.stdout, ordinary.stdout)
+                self.assertEqual(completed.stdout, b"received:1 invalid:0\n")
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_standard_signals_coalesce_per_kernel_pending_queue(self):
+        self.add("consume.c", (
+            ROOT / "scripts/validation_ownership/tests/fixtures/native_signal_consume.c"
+        ).read_bytes())
+        for thread in (0, 1):
+            self.add("Makefile", f"all: ; @/native/tool mixed {thread}\n")
+            session = self.session()
+            with self.subTest(thread=thread), session:
+                tool = session.compile_native(("consume.c",))
+                ordinary = subprocess.run(
+                    [str(tool.path), "mixed", str(thread)], env=ENVIRONMENT,
+                    capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, b"received:2 invalid:0\n")
+                completed, _, _ = session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual(completed.stdout, ordinary.stdout)
+            self.assert_clean(session)
+
+    def test_native_runtime_partially_accessible_siginfo_fault_refuses_before_resume(self):
+        self.add("consume.c", (
+            ROOT / "scripts/validation_ownership/tests/fixtures/native_signal_consume.c"
+        ).read_bytes())
+        for realtime in (False, True):
+            for thread in (0, 1):
+                self.add("Makefile", f"all: ; @/native/tool partial {thread}"
+                         + (" realtime" if realtime else "") + "\n")
+                session = self.session()
+                with self.subTest(realtime=realtime, thread=thread), session:
+                    tool = session.compile_native(("consume.c",))
+                    ordinary = subprocess.run(
+                        [str(tool.path), "partial", str(thread),
+                         *(["realtime"] if realtime else [])],
+                        env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                    )
+                    self.assertEqual(ordinary.stdout, b"received:1 invalid:0\n")
+                    with self.assertRaisesRegex(MakeProbeError, "unsupported partially accessible siginfo output"):
+                        session._native_make_readonly(
+                            "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                        )
+                    self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+
     def test_native_runtime_realtime_counts_standard_coalescing_and_failed_send(self):
         for mode in ("queued", "kill", "standard", "direct", "failed"):
             self.add("queue.c", (

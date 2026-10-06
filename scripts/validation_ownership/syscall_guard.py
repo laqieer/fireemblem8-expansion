@@ -108,6 +108,19 @@ def memory(pid, address, count):
     return bytes(result[leading:leading + count])
 
 
+def replace_memory(pid, address, data):
+    offset = 0
+    while offset < len(data):
+        cursor = address + offset
+        start = cursor & ~7
+        leading = cursor - start
+        amount = min(8 - leading, len(data) - offset)
+        word = bytearray(memory(pid, start, 8))
+        word[leading:leading + amount] = data[offset:offset + amount]
+        ptrace(5, pid, start, int.from_bytes(word, "little"))
+        offset += amount
+
+
 def cstring(pid, address):
     if not address:
         raise Violation("null pathname")
@@ -216,6 +229,8 @@ class Process:
     dependency_stop: tuple[int, int, int] | None = None
     native_stop: tuple[int, int, int] | None = None
     native_signals: dict[int, int] = field(default_factory=dict)
+    native_signal_origins: dict[int, list] = field(default_factory=dict)
+    native_signal_buffer: tuple | None = None
     native_sigkill_outcome: bool = False
     native_exit_status: int | None = None
     delivery_signal: int = 0
@@ -640,6 +655,7 @@ class Policy:
     def native_exec_signals(self, pid, state):
         if self.read_trace is None or self.read_trace.version != 5 or not state.native_signals:
             state.native_signals.clear()
+            state.native_signal_origins.clear()
             return
         with open(f"/proc/{pid}/status", "rb") as stream:
             data = stream.read(4097)
@@ -648,13 +664,135 @@ class Policy:
         for number in tuple(state.native_signals):
             if not pending & (1 << (number - 1)):
                 del state.native_signals[number]
+                state.native_signal_origins.pop(number, None)
 
-    def native_signal_grant(self, state, number):
+    def native_signal_grant(self, state, number, origin=None, *, thread=False):
         if sum(state.native_signals.values()) >= self.config["observation_count"]:
             raise Violation("native pending-signal grants exceed the observation bound")
         self.reserve_trace_observation()
         self.charge_metadata(16)
-        state.native_signals[number] = state.native_signals.get(number, 0) + 1 if number >= 32 else 1
+        origins = state.native_signal_origins.setdefault(number, [])
+        if number >= 32 or not any(row[2] == thread for row in origins):
+            origins.append((*(origin or (None, None)), thread))
+        state.native_signals[number] = len(origins)
+
+    def native_queue_entry(self, pid, state, number, address):
+        if not address:
+            return
+        self.charge_metadata(48)
+        try:
+            information = memory(pid, address, 48)
+        except OSError as error:
+            if error.errno not in {errno.EIO, errno.EFAULT}:
+                raise
+            return
+        if int.from_bytes(information[8:12], "little", signed=True) != -1:
+            return
+        marker = os.urandom(16)
+        replace_memory(pid, address + 32, marker)
+        state.native_signal_buffer = (address + 32, information[32:48], marker, number)
+
+    def native_pending_signals(self, pid):
+        rows = []
+        for flags in (0, 1):
+            offset = 0
+            while True:
+                self.reserve_trace_observation()
+                arguments = ctypes.create_string_buffer(
+                    offset.to_bytes(8, "little") + flags.to_bytes(4, "little")
+                    + (16).to_bytes(4, "little"), 16,
+                )
+                information = (ctypes.c_ubyte * (128 * 16))()
+                count = ptrace(0x4209, pid, ctypes.addressof(arguments), ctypes.byref(information))
+                if not 0 <= count <= 16:
+                    raise Violation("invalid kernel pending-signal queue extent")
+                self.charge_metadata(128 * count)
+                for index in range(count):
+                    row = bytes(information[index * 128:(index + 1) * 128])
+                    rows.append((flags == 0, row[:48]))
+                if count < 16:
+                    break
+                offset += count
+        return rows
+
+    def native_reconcile_signal_origins(self, pid, state):
+        pending = {}
+        available = {number: list(origins)
+                     for number, origins in state.native_signal_origins.items()}
+        for thread, information in self.native_pending_signals(pid):
+            number = int.from_bytes(information[:4], "little", signed=True)
+            code = int.from_bytes(information[8:12], "little", signed=True)
+            if number == signal.SIGCHLD and code > 0:
+                continue
+            origins = available.get(number, [])
+            origin = next(
+                (row for row in origins if row[2] == thread and (
+                    row[0] == information[32:48] if code == -1 else row[0] is None
+                )),
+                None,
+            )
+            if code == -1 and origin is None:
+                raise Violation("unissued queued signal origin")
+            if (
+                code not in {0, -1, -6}
+                or int.from_bytes(information[16:20], "little", signed=True) != pid
+                or origin not in origins
+            ):
+                raise Violation("pending signal lacks its successful self-send")
+            origins.remove(origin)
+            pending.setdefault(number, []).append(origin)
+        state.native_signal_origins = pending
+        state.native_signals = {number: len(origins) for number, origins in pending.items()}
+
+    def native_signal_consumed(self, pid, state, number, information=None):
+        origins = state.native_signal_origins.get(number, [])
+        if number not in state.native_signals or not origins:
+            raise Violation("native signal consumption lacks its successful self-send")
+        if information is None:
+            rows = self.native_pending_signals(pid)
+            pending = {row[32:48] for _, row in rows
+                       if int.from_bytes(row[8:12], "little", signed=True) == -1}
+            retired = [origin for origin in origins if origin[0] is not None and origin[0] not in pending]
+            for thread in (False, True):
+                unqueued = sum(
+                    bucket == thread
+                    and int.from_bytes(row[:4], "little", signed=True) == number
+                    and int.from_bytes(row[8:12], "little", signed=True) in {0, -6}
+                    and int.from_bytes(row[16:20], "little", signed=True) == pid
+                    for bucket, row in rows
+                )
+                count = sum(row[0] is None and row[2] == thread for row in origins) - unqueued
+                if count not in {0, 1}:
+                    raise Violation("native signal consumption has ambiguous retired queue origins")
+                if count:
+                    retired.append((None, None, thread))
+            if len(retired) != 1:
+                raise Violation("native signal consumption has ambiguous retired queue origins")
+            origin = retired[0]
+        else:
+            code = int.from_bytes(information[8:12], "little", signed=True)
+            if (
+                int.from_bytes(information[:4], "little", signed=True) != number
+                or code not in {0, -1, -6}
+                or int.from_bytes(information[16:20], "little", signed=True) != pid
+            ):
+                raise Violation("native shell signal delivery is not its admitted self-signal")
+            origin = next(
+                (row for row in origins if row[0] == information[32:48]),
+                None,
+            ) if code == -1 else None
+            if code == -1 and origin is None:
+                raise Violation("unissued queued signal origin")
+            if code != -1:
+                return self.native_signal_consumed(pid, state, number)
+        if origin not in origins:
+            raise Violation("native signal consumption lacks its exact pending origin")
+        origins.remove(origin)
+        state.native_signals[number] -= 1
+        if not state.native_signals[number]:
+            del state.native_signals[number]
+            del state.native_signal_origins[number]
+        return origin[1]
 
     def native_sigkill_exit(self, pid, state, status):
         if not self.native_readonly or state.role != "native" or status != signal.SIGKILL:
@@ -2339,6 +2477,11 @@ class Policy:
             number = self.signal_request(pid, n, a, b, c)
             if self.native_readonly and state.role == "native" and 0 < number <= 64:
                 state.pending = ("native-signal", number)
+                if n in {129, 297}:
+                    self.native_queue_entry(pid, state, number, c if n == 129 else d)
+        elif n == 128 and self.native_readonly and state.role == "native":
+            self.native_reconcile_signal_origins(pid, state)
+            state.pending = ("native-signal-wait", b)
         elif n == 424:
             raise Violation("candidate pidfd signal authority is not admitted")
         elif n in {105, 106, 113, 114, 117, 119}:
@@ -2386,16 +2529,38 @@ class Policy:
         observations = state.observations
         state.observations = []
         pending, state.pending = state.pending, None
+        queued, state.native_signal_buffer = state.native_signal_buffer, None
+        if queued is not None:
+            replace_memory(pid, queued[0], queued[1])
         if r.orig_rax == 12 and result > 0:
             state.break_end = result
         operation, value = pending if pending is not None else (None, None)
         if result < 0:
+            if operation == "native-signal-wait" and result == -errno.EFAULT:
+                queued_origins = {
+                    origin for origins in state.native_signal_origins.values()
+                    for origin in origins if origin[0] is not None
+                }
+                self.native_reconcile_signal_origins(pid, state)
+                retained = {
+                    origin for origins in state.native_signal_origins.values()
+                    for origin in origins if origin[0] is not None
+                }
+                if value and queued_origins - retained:
+                    self.charge_metadata(1)
+                    try:
+                        memory(pid, value + 32, 1)
+                    except OSError as error:
+                        if error.errno not in {errno.EIO, errno.EFAULT}:
+                            raise
+                    else:
+                        raise Violation("unsupported partially accessible siginfo output")
             if (
                 self.native_readonly and self.read_trace is not None and self.read_trace.version == 5
                 and state.role == "native" and result == -errno.EPIPE
                 and r.orig_rax in {1, 18, 20} and state.kernel_io == "<pipe>"
             ):
-                self.native_signal_grant(state, signal.SIGPIPE)
+                self.native_signal_grant(state, signal.SIGPIPE, thread=True)
                 self.native_tree_event(state, {
                     "kind": "pipe-error", "pid": pid, "syscall": r.orig_rax, "error": errno.EPIPE,
                 })
@@ -2403,7 +2568,17 @@ class Policy:
                 raise Violation(f"Make source executable lookup denied by noexec view: {value[0]}")
             return
         if operation == "native-signal":
-            self.native_signal_grant(state, value)
+            self.native_signal_grant(
+                state, value, None if queued is None else (queued[2], queued[1]),
+                thread=r.orig_rax in {200, 234, 297},
+            )
+        elif operation == "native-signal-wait":
+            self.charge_metadata(48 if value else 0)
+            padding = self.native_signal_consumed(
+                pid, state, result, memory(pid, value, 48) if value else None,
+            )
+            if padding is not None and value:
+                replace_memory(pid, value + 32, padding)
         if operation in {"open", "dup"}:
             state.fds[result] = value
         elif operation == "close":
@@ -2777,15 +2952,10 @@ def supervise(config, drop_privileges):
             information = (ctypes.c_ubyte * 128)()
             policy.charge_metadata(ctypes.sizeof(information))
             ptrace(0x4202, stopped, 0, ctypes.byref(information))
-            if (
-                int.from_bytes(bytes(information[:4]), "little", signed=True) != sig
-                or int.from_bytes(bytes(information[8:12]), "little", signed=True) not in {0, -1, -6}
-                or int.from_bytes(bytes(information[16:20]), "little", signed=True) != stopped
-            ):
-                raise Violation("native shell signal delivery is not its admitted self-signal")
-            state.native_signals[sig] -= 1
-            if not state.native_signals[sig]:
-                del state.native_signals[sig]
+            padding = policy.native_signal_consumed(stopped, state, sig, bytes(information))
+            if padding is not None:
+                information[32:48] = padding
+                ptrace(0x4203, stopped, 0, ctypes.byref(information))
             state.delivery_signal = sig
         resume(stopped)
 

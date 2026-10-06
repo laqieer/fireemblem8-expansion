@@ -1065,12 +1065,67 @@ eight-query budget.
 Self-signal admission records the attempted syscall separately and issues grants
 only after its actual successful kernel return. Failed sends neither introduce
 a grant nor discard an earlier successful one. Standard signals coalesce to
-one grant; kernel realtime signals (32 through 64 on the admitted Linux
+one origin per kernel thread/shared pending queue; kernel realtime signals (32 through 64 on the admitted Linux
 x86-64 host) retain a count per successful send and consume one on each
 authenticated delivery. Existing observation-count and byte budgets charge
 every successful grant and bound outstanding counts. Exec pending-mask
 reconciliation retains those counts only for already-authorized pending
 signals, without interpreting a mask bit as a new or repeated grant.
+
+Successful `rt_sigtimedwait` also consumes exactly one existing signal grant;
+timeouts and pre-dequeue failures consume none. An output-copy `EFAULT`
+can occur after the signal is dequeued. Before a wait and after `EFAULT`,
+the supervisor reconciles issued origins with the actual thread and shared
+kernel queues, retiring absent origins before another wait or resend.
+An origin already missing at a later wait is not evidence of that wait's
+consumption. `SI_QUEUE` sender fields are
+caller-supplied and are not origin authentication. At the owned queued-send
+entry, the supervisor temporarily replaces unused x86-64 siginfo union bytes
+32 through 47 with a private 16-byte marker. It restores the caller's bytes
+at the actual syscall return, retaining the marker only for a successful
+send and preserving the first standard-coalesced origin. An actual queued
+delivery or synchronous consumption must match that issued marker before
+the supervisor restores the original union padding for the candidate.
+Sender, signal, errno and application payload fields are not changed.
+For successful waits with no siginfo output, bounded kernel `PTRACE_PEEKSIGINFO`
+observations of both thread and shared pending queues identify the retired
+marker; unknown or ambiguous custody refuses. No caller-supplied sender
+field, pending-mask bit, stale count or foreign queued signal is a substitute.
+Kernel-generated `SI_USER`/`SI_TKILL` and owned EPIPE/SIGPIPE keep their
+existing self-origin checks. This is a local signal-lifecycle boundary,
+not hostile same-UID OS isolation.
+
+Partially accessible siginfo output is deliberately unsupported. After an
+output-copy `EFAULT` retires a queued origin, an accessible padding byte causes
+explicit terminal refusal before the candidate resumes; the supervisor does
+not emulate partial usercopy, overwrite unrelated or read-only output, or
+claim ordinary-host parity for that buffer shape. Fully inaccessible output
+still returns its actual kernel `EFAULT`. Run
+`test_native_runtime_partially_accessible_siginfo_fault_refuses_before_resume`:
+ordinary execution covers each accessible padding prefix from zero to 16 bytes
+and a 64-byte prefix against an unmapped tail; native execution must refuse
+the first potentially observable partial padding for both queued-send syscalls
+and standard/realtime signals, with owned cleanup. Also run
+`test_native_runtime_standard_signals_coalesce_per_kernel_pending_queue`:
+one shared and one thread-directed SIGUSR1 must both reach their handlers,
+matching the two deliveries observed outside the supervisor.
+
+Run `test_native_runtime_consumed_self_signal_rejects_forged_foreign_queue`
+and `test_native_runtime_signal_consumption_preserves_real_payload_and_padding`.
+The owned `native_signal_consume.c` fixture blocks SIGUSR1, sends an actual
+self-queue through either queued-send syscall and consumes it with a real
+wait. A controlled foreign process then queues SIGUSR1 with a forged recipient
+PID and `SI_QUEUE`. Require terminal refusal both with no grant and when a
+later genuine self-send coalesces behind that foreign signal. The pre-fix
+program instead accepts the foreign handler and succeeds. Include null-output
+waits, timeout/input-EFAULT controls, and ordinary-host parity for actual payload,
+sender, caller siginfo memory and delivered union padding. Require owned
+cleanup. Also run `test_native_runtime_output_copy_fault_retires_dequeued_origin`
+for valid-mask/invalid-output `EFAULT`, genuine resend and subsequent foreign
+waits with and without output, through both queued-send syscalls and standard
+and realtime signals. Retain the realtime/count/coalescing, failed-send, exec/fork
+and broken-pipe controls above. These cases do not qualify the original
+producer, generated-version or eight-query contracts.
 
 Self-SIGKILL does not reach an ordinary syscall return. The supervisor uses the
 actual ptrace exit stop instead: it requires the exact outstanding self-send
