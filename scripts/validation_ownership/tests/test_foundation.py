@@ -1218,6 +1218,95 @@ class FoundationTests(unittest.TestCase):
                 session._native_make_readonly("all", observe_reads=True, observe_completions=True)
         self.assert_clean(session)
 
+    def test_native_readonly_returned_completion_requires_entire_machine_section(self):
+        self.native_completion_fixture()
+        body = (
+            "import read_trace\n"
+            "original=read_trace.NativeReadTrace.finish\n"
+            "def omit(self):\n"
+            " result=original(self);result.pop('machine');return result\n"
+            "read_trace.NativeReadTrace.finish=omit\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            with self.assertRaisesRegex(MakeProbeError, "native completion requires its machine evidence"):
+                session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_general_completion_trace_consumer_keeps_optional_machine(self):
+        from scripts.validation_ownership import read_epochs
+        self.native_completion_fixture()
+        session = self.session()
+        with session:
+            _, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_completions=True,
+            )
+            trace = {name: value for name, value in observed["read_trace"].items() if name != "machine"}
+            read_epochs.validate_trace(
+                trace, trace["scope"], count_limit=session.budget.limits.observation_count,
+                file_limit=session.budget.limits.file_bytes,
+            )
+        self.assert_clean(session)
+
+    def test_native_readonly_returned_job_lifecycle_and_machine_binding_mutations_refuse(self):
+        self.native_completion_fixture()
+        mutations = [
+            "row={name:row[name] for name in ('pid','executable')}",
+            *(f"row.pop({name!r})" for name in (
+                "sequence", "context", "returncode", "terminal_status", "waited", "ignored",
+            )),
+            "row['waited']=False",
+            "row['waited']=1",
+            "row['terminal_status']=None",
+            "row['terminal_status']=256",
+            "row['terminal_status']=True",
+            "row['terminal_status']=127",
+            "row['returncode']=False",
+            "row['returncode']=1",
+            "row['sequence']=True",
+            "row['sequence']=1",
+            "row['context']['kind']='foreign'",
+            "row['context']['kind']=[]",
+            "row['context']['command_line']=None",
+            "row['context']['command_line']=False",
+            "if row['context']['kind']=='recipe':row['context']['target']='\\ud800'",
+            "row['ignored']=None",
+            "row['ignored']=1",
+            "row['extra']=True",
+            "row['sequence']=3-row['sequence']",
+        ]
+        for mutation in mutations:
+            body = (
+                "original=guard.Policy.observe\n"
+                "def changed(self,name,value):\n"
+                " if name=='accessed' and value.startswith('native-job:'):\n"
+                "  row=json.loads(value[len('native-job:'):])\n"
+                f"  {mutation}\n"
+                "  value='native-job:'+guard.encoded(row).decode('ascii')\n"
+                " return original(self,name,value)\n"
+                "guard.Policy.observe=changed\n"
+            )
+            session = self.session()
+            with self.subTest(mutation=mutation), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "native job"):
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        body = (
+            "original=guard.Policy.observe\n"
+            "def omitted(self,name,value):\n"
+            " if name=='accessed' and value.startswith(('native-job:','native-shell:','native-exec:')):return\n"
+            " return original(self,name,value)\n"
+            "guard.Policy.observe=omitted\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            with self.assertRaisesRegex(MakeProbeError, "native job"):
+                session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
     def test_native_readonly_actual_trap_registers_preserve_original_state(self):
         self.native_completion_fixture()
         output = self.directory / "actual-register-restoration.json"

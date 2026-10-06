@@ -340,6 +340,15 @@ must agree. A declaration does not authorize a later shell re-exec or arbitrary
 descendant. Capture and observation costs retain the same aggregate budget and
 deadline.
 
+Returned `native-job` records require exactly `sequence`, `executable`, `pid`,
+`context`, `returncode`, `terminal_status`, `waited` and `ignored`. Context
+distinguishes expansion from recipe target/command index; typed terminal status
+must be final and agree with the return code, waiting must be complete, and
+sequences/PIDs must be unique and complete. Executable/PID records must match
+actual execution observations. Completion requests additionally require the
+existing complete machine section and exact child dispatch/PID agreement with
+these jobs. General trace consumers retain optional machine archives.
+
 From the clean Linux x86-64 checkout with admitted GNU Make 4.3 and the existing
 namespace launcher, extend `TC-OWNERSHIP-NATIVE-COMPLETION-001` (#270):
 
@@ -362,6 +371,16 @@ namespace launcher, extend `TC-OWNERSHIP-NATIVE-COMPLETION-001` (#270):
 4. Run `test_native_readonly_declared_executable_does_not_admit_shell_reexec`:
    declaring the program must not let an already dispatched shell re-exec it
    without an original authenticated Make dispatch.
+5. Run `test_native_readonly_returned_completion_requires_entire_machine_section`
+   and `test_native_readonly_returned_job_lifecycle_and_machine_binding_mutations_refuse`:
+   delete the whole machine section after actual trace finalization, reduce
+   actual returned jobs to PID/path, delete lifecycle fields, mutate typed
+   wait/status/context/sequence evidence, swap otherwise complete dispatch
+   bindings, and omit jobs plus execution markers while retaining real machine
+   children. Before the host correction all twenty controls return successfully;
+   each must now explicitly refuse and clean owned state. These are real
+   return/observation projection mutations, not physical execution replacement
+   or hostile same-UID report authentication.
 
 Dependencies are the existing captured ELF closure, readonly loader-origin
 proof and original job/machine lifecycle; conflicts are none. No ROM/RAM/save,

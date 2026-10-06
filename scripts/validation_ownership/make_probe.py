@@ -1333,6 +1333,8 @@ class ProbeSession:
                     or read_selection is not None and trace.get("selection") != read_selection
                 ):
                     raise MakeProbeError("native read observation differs from its requested version/selection")
+                if read_selection is not None and not isinstance(trace.get("machine"), dict):
+                    raise MakeProbeError("native completion requires its machine evidence")
                 validate_trace(
                     observed["read_trace"], config["read_epochs"]["scope"],
                     count_limit=config["observation_count"], file_limit=config["file_limit"],
@@ -1341,7 +1343,7 @@ class ProbeSession:
             if dependency is not None and observed["executed"] != dependency["executables"]:
                 raise MakeProbeError("dependency result lacks its actual driver/cc1 execution")
             if native_runtime:
-                jobs, executions = {}, {}
+                jobs, executions, dispatches = {}, {}, []
                 for value in observed["accessed"]:
                     if value.startswith("native-job:"):
                         raw = value.removeprefix("native-job:").encode("utf-8")
@@ -1349,11 +1351,46 @@ class ProbeSession:
                         job = parse_json(raw, "native job result")
                         if (
                             not isinstance(job, dict) or type(job.get("pid")) is not int
-                            or job.get("executable") not in config["native_executables"]
+                            or set(job) != {
+                                "sequence", "executable", "pid", "context", "returncode",
+                                "terminal_status", "waited", "ignored",
+                            }
+                            or not 0 < job["pid"] < 1 << 31
+                            or type(job["sequence"]) is not int or job["sequence"] <= 0
+                            or type(job["returncode"]) is not int
+                            or type(job["terminal_status"]) is not int
+                            or not 0 <= job["terminal_status"] < 1 << 32
+                            or job["waited"] is not True or type(job["ignored"]) is not bool
+                        ):
+                            raise MakeProbeError("native job has incomplete or invalid lifecycle evidence")
+                        context = job["context"]
+                        if (
+                            not isinstance(context, dict)
+                            or set(context) != {"kind", "target", "command_line"}
+                            or not isinstance(context["kind"], str)
+                            or context["kind"] not in {"expansion", "recipe"}
+                            or context["kind"] == "expansion" and (
+                                context["target"] is not None or context["command_line"] is not None
+                            )
+                            or context["kind"] == "recipe" and (
+                                not isinstance(context["target"], str) or not context["target"]
+                                or "\0" in context["target"]
+                                or any(0xD800 <= ord(char) <= 0xDFFF for char in context["target"])
+                                or len(context["target"].encode("utf-8")) > 4096
+                                or type(context["command_line"]) is not int
+                                or not 0 <= context["command_line"] < 1 << 32
+                            )
+                            or not (os.WIFEXITED(job["terminal_status"]) or os.WIFSIGNALED(job["terminal_status"]))
+                            or os.waitstatus_to_exitcode(job["terminal_status"]) != job["returncode"]
+                        ):
+                            raise MakeProbeError("native job has inconsistent context or terminal wait evidence")
+                        if (
+                            job["executable"] not in config["native_executables"]
                             or job["pid"] in jobs
                         ):
                             raise MakeProbeError("native job differs from its admitted executable")
                         jobs[job["pid"]] = job["executable"]
+                        dispatches.append((job["sequence"], job["pid"]))
                     elif value.startswith(("native-shell:", "native-exec:")):
                         parts = value.split(":", 2)
                         if len(parts) != 3:
@@ -1367,6 +1404,15 @@ class ProbeSession:
                         executions[int(pid)] = path
                 if jobs != executions:
                     raise MakeProbeError("native job differs from its actual executable")
+                if sorted(sequence for sequence, _ in dispatches) != list(range(1, len(dispatches) + 1)):
+                    raise MakeProbeError("native job dispatch sequences are incomplete or reused")
+                if read_selection is not None:
+                    children = [
+                        (row["dispatch"], row["pid"]) for row in observed["read_trace"]["machine"]["events"]
+                        if row["kind"] == "execute" and row["make"] is False
+                    ]
+                    if sorted(dispatches) != sorted(children):
+                        raise MakeProbeError("native job dispatch differs from its returned machine execution")
             if channel is not None:
                 final = observed["rendezvous"]
                 if (
