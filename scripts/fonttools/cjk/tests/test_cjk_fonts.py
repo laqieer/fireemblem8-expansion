@@ -261,13 +261,26 @@ class CjkFontTests(unittest.TestCase):
                 self.assertTrue({"售", "周"} <= talk)
 
     def test_inventory_regeneration_is_byte_identical(self):
-        generated = build_generated_files(ROOT)
-        for relative_path, expected in generated.items():
-            self.assertEqual(
-                (ROOT / relative_path).read_bytes(),
-                expected,
-                relative_path,
-            )
+        original = Path.glob
+        forward = None
+        for reverse in (False, True):
+            def enumerate_paths(path, pattern):
+                values = original(path, pattern)
+                if path == ROOT / "src" and pattern == "*.c":
+                    return iter(sorted(values, reverse=reverse))
+                return values
+            with patch.object(Path, "glob", enumerate_paths):
+                generated = build_generated_files(ROOT)
+            with self.subTest(reverse=reverse):
+                if forward is None:
+                    forward = generated
+                self.assertEqual(generated, forward)
+                for relative_path, expected in generated.items():
+                    self.assertEqual(
+                        (ROOT / relative_path).read_bytes(),
+                        expected,
+                        relative_path,
+                    )
 
     def test_font_identity_license_and_hash_pins(self):
         sources = json.loads((ROOT / "fonts/cjk/font-sources.json").read_text())

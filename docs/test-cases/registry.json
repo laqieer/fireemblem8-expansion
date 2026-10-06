@@ -798,6 +798,10 @@
           "evidence": "scripts/fonttools/cjk/tests/test_cjk_fonts.py"
         },
         {
+          "command": "python3 -m unittest scripts.fonttools.cjk.tests.test_cjk_fonts.CjkFontTests.test_inventory_regeneration_is_byte_identical",
+          "evidence": "scripts/fonttools/cjk/tests/test_cjk_fonts.py"
+        },
+        {
           "command": "make -f cjk_fonts.mk cjk-fonts-check",
           "evidence": "scripts/fonttools/cjk/inventory.py"
         }

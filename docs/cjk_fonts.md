@@ -45,8 +45,11 @@ Python 3. No optional profile, emulator, ROM or manual judgment is required.
    message consumers, reverses their enumeration, and requires identical
    classification/reasons with every unique target retained. Removing the
    canonical traversal produces two different explanations for message 15.
-2. Run `make -f cjk_fonts.mk cjk-fonts-check`. The generated inventory must
-   match committed metadata independently of source-directory order.
+2. Run `python3 -m unittest scripts.fonttools.cjk.tests.test_cjk_fonts.CjkFontTests.test_inventory_regeneration_is_byte_identical`.
+   This generates every inventory output under both forward and reverse
+   source enumeration, compares the output bytes between orders, and checks
+   both against committed metadata. Run `make -f cjk_fonts.mk cjk-fonts-check`
+   for the existing combined inventory/provenance boundary.
 3. When intentionally refreshing consumer metadata, use
    `make -f cjk_fonts.mk cjk-fonts-refresh-provenance` and inspect the diff.
    Explanations and their dependent inventory checksums may change, but
