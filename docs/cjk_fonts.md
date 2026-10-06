@@ -28,6 +28,36 @@ This command first verifies the current manifest, corpora, and immutable
 generation report. It does not permit changed glyph rows or raster payloads
 to inherit stale FEBuilder evidence.
 
+Direct talk-consumer files are traversed in canonical path order. If multiple
+files name the same message, the existing last-consumer explanation therefore
+has a stable owner regardless of filesystem enumeration order; all unique
+message IDs remain covered.
+
+### TC-CJK-INVENTORY-ORDER-001: deterministic consumer inventory
+
+Issue [#272](https://github.com/laqieer/fireemblem8-expansion/issues/272) fixes
+host inventory reproducibility, with no font, glyph, locale text, ROM/RAM,
+save, configuration or archival change. Start from a clean checkout with
+Python 3. No optional profile, emulator, ROM or manual judgment is required.
+
+1. Run `python3 -m unittest scripts.fonttools.cjk.tests.test_cjk_fonts.CjkFontTests.test_direct_talk_inventory_is_independent_of_directory_order`.
+   The fixture creates real C source files with overlapping and unique
+   message consumers, reverses their enumeration, and requires identical
+   classification/reasons with every unique target retained. Removing the
+   canonical traversal produces two different explanations for message 15.
+2. Run `make -f cjk_fonts.mk cjk-fonts-check`. The generated inventory must
+   match committed metadata independently of source-directory order.
+3. When intentionally refreshing consumer metadata, use
+   `make -f cjk_fonts.mk cjk-fonts-refresh-provenance` and inspect the diff.
+   Explanations and their dependent inventory checksums may change, but
+   corpora, glyph counts, raster payloads and widths must not. The existing
+   provenance-refresh regression rejects a changed font oracle.
+
+The temporary fixture cleans its own files; generation only writes the
+existing named inventory outputs. Dependencies are the existing CJK
+inventory/provenance interfaces; no new dependency or feature conflict is
+introduced. This procedure does not claim native Make evaluator qualification.
+
 The inventory reads the committed normalized sources:
 
 - `texts/locales/ja/indexed.txt`;
