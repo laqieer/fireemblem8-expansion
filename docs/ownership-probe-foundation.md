@@ -206,6 +206,57 @@ conflicts are none. Production limits, ordinary mapped behavior, ROM/RAM,
 save compatibility, generated data and localization are unchanged. These
 controls do not qualify the full supplier or the original eight-profile family.
 
+### Original readonly job observations
+
+`TC-OWNERSHIP-NATIVE-JOB-001` (#270) binds readonly shell work to original
+Make jobs. It reuses the original GNU Make 4.3 `children`/`shell_function_pid`
+ABI and trusted observer read/wait notifications. Each actual original spawn
+gets one sequence, which must bind a direct, traced `/bin/sh` exec child.
+Original Make supplies expansion ownership or the recipe target and command
+index before waiting, then its ignored-error flags and wait status at return.
+The supervisor retains the actual kernel terminal result across process exit
+and requires the wait result to match it before retirement. Repeated identical
+context notifications deduplicate; changed, foreign, reused or incomplete
+bindings refuse.
+
+Completed records use the existing `accessed` transport with `native-job:`
+followed by a JSON object containing `sequence`, `executable`, `pid`, `context`,
+`returncode`, raw `terminal_status`, `waited` and `ignored`. `context` contains `kind`, `target` and
+`command_line`; expansion target/index are null. The index is Make's original
+next-command index, not a source line number. Records are an observation of
+actual work, never a command registry, replay instruction or permission to
+write. Dispatch, exec, context, exit and wait bookkeeping share the aggregate
+observation/byte bounds; no retired process retains executable or signal
+authority. A failed spawn without a complete observed child refuses rather
+than manufacturing a completed record.
+
+On the same clean host checkout, run
+`test_native_readonly_actual_expansion_and_recipe_job_lifecycle`. Its immutable
+Make fixture evaluates one immediate shell value and two recipe commands,
+the first returning ignored status 7. Require ordinary Make stdout, the actual
+value and shell status, three distinct child/dispatch identities, expansion
+versus target/index ownership, ignored-policy values and matching terminal
+statuses. Run `test_native_readonly_job_binding_and_retirement_mutations_refuse`:
+at actual callbacks, alter the PID, sender, parent, stable context or terminal
+status; repeat exec/exit binding or omit wait/exit completion. Each must refuse
+and clean its owned session. These are mutations of real cached bindings, not
+fabricated register observations.
+`test_native_readonly_job_raw_status_mismatch_with_same_exit_code_refuses`
+changes the retained core-dump bit at the real SIGPIPE child's wait callback.
+The normalized exit code remains identical, but the differing raw status must
+refuse; a normalized-code comparison alone cannot meet this contract.
+Keep the native PIPE/CHLD controls and the
+ordinary mapped static-metadata/cache test as compatibility controls.
+`test_mapped_make_has_no_native_job_observations` requires the original mapped
+metadata-only behavior, selected domain value and absence of native job records.
+
+Dependencies are authenticated readonly dispatch, the existing observer ABI
+and shared accounting; conflicts are none. Ordinary mapped invocation emits
+no native job callbacks. No ROM/RAM/save/localization/game-data or archival
+behavior changes. Arbitrary descendants, source assignment/caller completion,
+generated-version write/transfer/retirement custody, machine restoration,
+the original eight-query resource family and final delivery remain unqualified.
+
 ## Run the real consumer
 
 From a source checkout:

@@ -452,6 +452,155 @@ class FoundationTests(unittest.TestCase):
             self.assertTrue(all(row["identity"] is not None for row in opens[:-1]))
         self.assert_clean(session)
 
+    def test_native_readonly_actual_expansion_and_recipe_job_lifecycle(self):
+        self.add("Makefile", (
+            "VALUE := $(shell v=expansion; printf '%s' \"$$v\")\n"
+            "STATUS := $(.SHELLSTATUS)\n.PHONY: all\nall:\n"
+            "\t-@v=ignored; printf '%s\\n' \"$$v\"; exit 7\n"
+            "\t@v=done; printf '%s\\n' \"$$v\"\n"
+        ))
+        ordinary = subprocess.run(
+            ("/usr/bin/make", "-rR", "--no-print-directory", "-f", "Makefile", "all"),
+            cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        )
+        with self.session() as session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE", "STATUS"), observe_reads=True,
+            )
+            self.assertEqual(completed.stdout, ordinary.stdout)
+            self.assertEqual(completed.stdout, b"ignored\ndone\n")
+            self.assertIn(b"Error 7 (ignored)", completed.stderr)
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "expansion")
+            self.assertEqual(semantics["domains"]["STATUS"]["value"], "0")
+            jobs = [
+                json.loads(value.removeprefix("native-job:"))
+                for value in observed["accessed"] if value.startswith("native-job:")
+            ]
+            jobs.sort(key=lambda row: row["sequence"])
+            self.assertEqual([row["sequence"] for row in jobs], [1, 2, 3])
+            self.assertEqual(len({row["pid"] for row in jobs}), 3)
+            self.assertEqual(
+                [(row["context"]["kind"], row["context"]["target"], row["context"]["command_line"])
+                 for row in jobs],
+                [("expansion", None, None), ("recipe", "all", 1), ("recipe", "all", 2)],
+            )
+            self.assertEqual([row["returncode"] for row in jobs], [0, 7, 0])
+            self.assertEqual([row["terminal_status"] for row in jobs], [0, 7 << 8, 0])
+            self.assertEqual([row["ignored"] for row in jobs], [False, True, False])
+            self.assertTrue(all(row["waited"] and row["executable"] == "/bin/sh" for row in jobs))
+        self.assert_clean(session)
+
+    def test_native_readonly_job_raw_status_mismatch_with_same_exit_code_refuses(self):
+        self.add("Makefile", "VALUE := $(shell kill -PIPE $$$$)\n.PHONY: all\nall:\n\t@:\n")
+        body = (
+            "original=guard.Policy.observe_native_job_policy\n"
+            "def changed_raw(self,pid,state,pointer,size):\n"
+            " for row in self.native_jobs.values():\n"
+            "  if row['returncode'] is not None and row['returncode']<0:\n"
+            "   row['terminal_status']^=128\n"
+            "   assert os.waitstatus_to_exitcode(row['terminal_status'])==row['returncode']\n"
+            " return original(self,pid,state,pointer,size)\n"
+            "guard.Policy.observe_native_job_policy=changed_raw\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), self.assertRaisesRegex(MakeProbeError, "wait result differs"):
+            with session:
+                session._native_make_readonly("all", observe_reads=True)
+        self.assert_clean(session)
+
+    def test_native_readonly_job_binding_and_retirement_mutations_refuse(self):
+        self.add("Makefile", (
+            "VALUE := $(shell v=expansion; printf '%s' \"$$v\")\n"
+            ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n"
+        ))
+        cases = (
+            (
+                "original=guard.Policy.native_job_frame\n"
+                "def foreign(self,pid,state,pointer,size):\n"
+                " for row in self.native_jobs.values():\n"
+                "  if row['pid'] is not None:row['pid']+=1000000\n"
+                " return original(self,pid,state,pointer,size)\n"
+                "guard.Policy.native_job_frame=foreign\n",
+                "refers to a foreign child",
+            ),
+            (
+                "original=guard.Policy.observe_native_job_context\n"
+                "def changed(self,pid,state,pointer,size):\n"
+                " original(self,pid,state,pointer,size)\n"
+                " for row in self.native_jobs.values():\n"
+                "  if row['context'] is not None:row['context']['target']='foreign'\n"
+                " return original(self,pid,state,pointer,size)\n"
+                "guard.Policy.observe_native_job_context=changed\n",
+                "context changed",
+            ),
+            (
+                "original=guard.Policy.bind_native_job\n"
+                "def reused(self,pid,state):\n"
+                " original(self,pid,state)\n"
+                " return original(self,pid,state)\n"
+                "guard.Policy.bind_native_job=reused\n",
+                "foreign or reused dispatch child",
+            ),
+            (
+                "original=guard.Policy.bind_native_job\n"
+                "def foreign_parent(self,pid,state):\n"
+                " state.native_parent=pid\n"
+                " return original(self,pid,state)\n"
+                "guard.Policy.bind_native_job=foreign_parent\n",
+                "foreign or reused dispatch child",
+            ),
+            (
+                "original=guard.Policy.observe_native_job_policy\n"
+                "def changed_status(self,pid,state,pointer,size):\n"
+                " for row in self.native_jobs.values():\n"
+                "  if row['returncode'] is not None:row['returncode']+=1\n"
+                " return original(self,pid,state,pointer,size)\n"
+                "guard.Policy.observe_native_job_policy=changed_status\n",
+                "wait result differs",
+            ),
+            (
+                "guard.Policy.observe_native_job_policy=lambda *args:None\n",
+                "incomplete actual lifecycle",
+            ),
+            (
+                "guard.Policy.retire_native_job=lambda *args:None\n",
+                "wait result differs",
+            ),
+            (
+                "original=guard.Policy.retire_native_job\n"
+                "def repeated(self,pid,state,code):\n"
+                " original(self,pid,state,code)\n"
+                " return original(self,pid,state,code)\n"
+                "guard.Policy.retire_native_job=repeated\n",
+                "terminal event lost",
+            ),
+            (
+                "original=guard.Policy.native_job_frame\n"
+                "def foreign_sender(self,pid,state,pointer,size):\n"
+                " return original(self,pid+1,state,pointer,size)\n"
+                "guard.Policy.native_job_frame=foreign_sender\n",
+                "notification sender or frame",
+            ),
+        )
+        for body, expected in cases:
+            with self.subTest(expected=expected), self.native_supervisor(body):
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    with session:
+                        session._native_make_readonly("all", observe_reads=True)
+                self.assert_clean(session)
+
+    def test_mapped_make_has_no_native_job_observations(self):
+        self.add("Makefile", "VALUE := original\n.PHONY: all\nall:\n\t@printf 'metadata only\\n'\n")
+        with self.session() as session:
+            result, report, _, _ = self.capture_supervisor_report(
+                session, lambda: session.make("all", variables=("VALUE",)),
+            )
+            self.assertFalse(any(value.startswith("native-job:") for value in report["accessed"]))
+            self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "original")
+            self.assertEqual(result.stdout, b"")
+        self.assert_clean(session)
+
     def test_native_readonly_trace_count_settles_across_queries(self):
         self.add("Makefile", ".PHONY: all\nall:\n\t@:\n")
         names = tuple(f"reservoir/{index}" for index in range(1022))

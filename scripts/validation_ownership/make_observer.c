@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "dispatch.h"
@@ -55,6 +56,26 @@ struct FileView
     struct FileView *previous;
 };
 
+struct ChildView
+{
+    char *command_name;
+    char **environment;
+    struct
+    {
+        int out;
+        int error;
+        unsigned int syncout;
+    } output;
+    struct ChildView *next;
+    struct FileView *file;
+    char *batch_file;
+    char **command_lines;
+    char *command_pointer;
+    unsigned int command_line;
+    pid_t pid;
+    unsigned int flags;
+};
+
 extern struct FileView *lookup_file(const char *);
 extern char *gmk_expand(const char *);
 extern char *allocated_variable_expand_for_file(const char *, struct FileView *);
@@ -62,6 +83,9 @@ extern void initialize_file_variables(struct FileView *, int);
 extern void set_file_variables(struct FileView *);
 extern void chop_commands(struct CommandsView *);
 extern int rebuilding_makefiles;
+extern int ignore_errors_flag;
+extern struct ChildView *children;
+extern pid_t shell_function_pid;
 extern char **environ;
 
 #define MAX_NODES 4096
@@ -266,6 +290,120 @@ static int recursive_graph(void)
         }
     }
     return 0;
+}
+
+static void observe_job_contexts(void)
+{
+    struct ChildView *child;
+    uint64_t record[3];
+    size_t count = 0;
+    if (!native_readonly || !make_pid || raw_call(SYS_getpid, 0, 0, 0) != make_pid)
+        return;
+    for (child = children; child; child = child->next)
+    {
+        if (++count > MAX_NODES)
+            fail();
+        if (child->pid <= 0)
+            continue;
+        if (!child->file || !child->file->name)
+            fail();
+        record[0] = child->pid;
+        record[1] = (uintptr_t)child->file->name;
+        record[2] = child->command_line;
+        raw_call(SYS_getpid, VO_JOB_CONTEXT, (long)record, sizeof(record));
+    }
+    if (shell_function_pid > 0)
+    {
+        record[0] = shell_function_pid;
+        record[1] = 0;
+        record[2] = 0;
+        raw_call(SYS_getpid, VO_JOB_CONTEXT, (long)record, sizeof(record));
+    }
+}
+
+static void observe_job_policy(pid_t pid, const int *status)
+{
+    struct ChildView *child;
+    uint64_t record[3];
+    size_t count = 0;
+    unsigned int flags = ignore_errors_flag ? 1 : 0;
+    if (!native_readonly || pid <= 0 || !status
+        || !(WIFEXITED(*status) || WIFSIGNALED(*status)))
+        return;
+    for (child = children; child; child = child->next)
+    {
+        if (++count > MAX_NODES)
+            fail();
+        if (child->pid == pid)
+        {
+            flags |= 2 | ((child->flags & 2) ? 1 : 0);
+            break;
+        }
+    }
+    record[0] = pid;
+    record[1] = (unsigned int)*status;
+    record[2] = flags;
+    raw_call(SYS_getpid, VO_JOB_POLICY, (long)record, sizeof(record));
+}
+
+ssize_t read(int descriptor, void *buffer, size_t size)
+{
+    static ssize_t (*original)(int, void *, size_t);
+    int saved = errno;
+    if (!original)
+        original = dlsym(RTLD_NEXT, "read");
+    if (!original)
+        fail();
+    observe_job_contexts();
+    errno = saved;
+    return original(descriptor, buffer, size);
+}
+
+ssize_t __read_chk(int descriptor, void *buffer, size_t size, size_t buffer_size)
+{
+    static ssize_t (*original)(int, void *, size_t, size_t);
+    int saved = errno;
+    if (!original)
+        original = dlsym(RTLD_NEXT, "__read_chk");
+    if (!original)
+        fail();
+    observe_job_contexts();
+    errno = saved;
+    return original(descriptor, buffer, size, buffer_size);
+}
+
+pid_t wait(int *status)
+{
+    static pid_t (*original)(int *);
+    pid_t pid;
+    int saved;
+    if (!original)
+        original = dlsym(RTLD_NEXT, "wait");
+    if (!original)
+        fail();
+    observe_job_contexts();
+    pid = original(status);
+    saved = errno;
+    observe_job_policy(pid, status);
+    errno = saved;
+    return pid;
+}
+
+pid_t waitpid(pid_t selected, int *status, int options)
+{
+    static pid_t (*original)(pid_t, int *, int);
+    pid_t pid;
+    int saved;
+    if (!original)
+        original = dlsym(RTLD_NEXT, "waitpid");
+    if (!original)
+        fail();
+    observe_job_contexts();
+    pid = original(selected, status, options);
+    saved = errno;
+    observe_job_policy(pid, status);
+    errno = saved;
+    return pid;
 }
 
 int posix_spawn(pid_t *pid, const char *path, const posix_spawn_file_actions_t *actions,

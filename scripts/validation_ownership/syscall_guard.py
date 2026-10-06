@@ -46,6 +46,8 @@ else:
 
 LIBC = ctypes.CDLL(None, use_errno=True)
 VO_SOURCE_IO = 0x564F4D4B00000008
+VO_JOB_CONTEXT = 0x564F4D4B00000006
+VO_JOB_POLICY = 0x564F4D4B00000007
 LIBC.ptrace.restype = ctypes.c_long
 WALL = 0x40000000
 TRACEME, PEEKDATA, SYSCALL, GETREGS, SETREGS, SETOPTIONS = 0, 2, 24, 12, 13, 0x4200
@@ -214,6 +216,8 @@ class Process:
     delivery_signal: int = 0
     native_delivered: int = 0
     newborn_stop: bool = False
+    native_dispatch: int | None = None
+    native_parent: int | None = None
     path_context: tuple[str, int, str | None] | None = None
 
     def clone(self):
@@ -223,6 +227,7 @@ class Process:
             break_end=self.break_end, dispatch=self.dispatch, observer_ready=self.observer_ready,
             memory_group=self.memory_group, memory_limit=self.memory_limit,
             dependency_image=self.dependency_image,
+            native_dispatch=self.native_dispatch,
         )
 
     def close(self):
@@ -271,6 +276,7 @@ class Policy:
             name: set() for name in ("consumed", "code_consumed", "accessed")
         }
         self.trace_observations = 0
+        self.native_jobs = {}
         self.written = 0
         self.calls = 0
         self.created = 0
@@ -396,6 +402,101 @@ class Policy:
     def observe(self, name, value):
         self.reserve_observation(name, value)
         getattr(self, name).add(value)
+
+    def native_job_event(self, row):
+        self.reserve_trace_observation()
+        self.charge_metadata(len(encoded(row)))
+
+    def begin_native_job(self, pid, state, path):
+        if (
+            pid != self.make_pid or state.role != "make" or not state.observer_ready
+            or state.native_dispatch is not None or path != "/bin/sh"
+        ):
+            raise Violation("native job lacks its actual original Make dispatch")
+        sequence = len(self.native_jobs) + 1
+        if sequence > self.config["descendant_limit"]:
+            raise Violation("native job dispatch count exceeds its process bound")
+        row = {
+            "sequence": sequence, "executable": path, "pid": None,
+            "context": None, "returncode": None, "terminal_status": None,
+            "waited": False, "ignored": None,
+        }
+        self.native_job_event(row)
+        self.native_jobs[sequence] = row
+        state.native_dispatch = sequence
+
+    def bind_native_job(self, pid, state):
+        row = self.native_jobs.get(state.native_dispatch)
+        if (
+            row is None or row["pid"] is not None or state.native_parent != self.make_pid
+            or state.pidfd < 0 or any(job["pid"] == pid for job in self.native_jobs.values())
+        ):
+            raise Violation("native job exec has a foreign or reused dispatch child")
+        self.native_job_event({"sequence": state.native_dispatch, "pid": pid})
+        row["pid"] = pid
+
+    def native_job_frame(self, pid, state, pointer, size):
+        if (
+            not self.native_readonly or pid != self.make_pid or state.role != "make"
+            or not state.observer_ready or size != 24
+        ):
+            raise Violation("invalid native job notification sender or frame")
+        self.charge_metadata(size)
+        frame = memory(pid, pointer, size)
+        values = tuple(int.from_bytes(frame[offset:offset + 8], "little") for offset in (0, 8, 16))
+        child = values[0]
+        jobs = [row for row in self.native_jobs.values() if row["pid"] == child]
+        if not 0 < child < 1 << 31 or child == self.make_pid or len(jobs) != 1:
+            raise Violation("native job notification refers to a foreign child")
+        return jobs[0], values
+
+    def observe_native_job_context(self, pid, state, pointer, size):
+        row, (_, target_pointer, command_line) = self.native_job_frame(pid, state, pointer, size)
+        target = cstring(pid, target_pointer) if target_pointer else None
+        if command_line >= 1 << 32 or target_pointer and not target or not target_pointer and command_line:
+            raise Violation("invalid native job target or command index")
+        if target is not None:
+            self.charge_metadata(len(target.encode("utf-8")) + 1)
+        context = {
+            "kind": "recipe" if target is not None else "expansion",
+            "target": target, "command_line": command_line if target is not None else None,
+        }
+        if row["context"] is not None:
+            if row["context"] != context:
+                raise Violation("native job context changed for its actual child")
+            return
+        if row["waited"]:
+            raise Violation("native job context arrived after retirement")
+        self.native_job_event({"sequence": row["sequence"], "context": context})
+        row["context"] = context
+
+    def observe_native_job_policy(self, pid, state, pointer, size):
+        row, (_, status, flags) = self.native_job_frame(pid, state, pointer, size)
+        if (
+            status >= 1 << 32 or flags & ~3 or row["context"] is None or row["waited"]
+            or row["terminal_status"] is None or not (os.WIFEXITED(status) or os.WIFSIGNALED(status))
+            or bool(flags & 2) != (row["context"]["kind"] == "recipe")
+            or status != row["terminal_status"] or os.waitstatus_to_exitcode(status) != row["returncode"]
+        ):
+            raise Violation("native job wait result differs from its actual terminal lifecycle")
+        self.native_job_event({"sequence": row["sequence"], "wait_status": status, "flags": flags})
+        row["waited"], row["ignored"] = True, bool(flags & 1)
+        self.observe("accessed", "native-job:" + encoded(row).decode("ascii"))
+
+    def retire_native_job(self, pid, state, status):
+        row = self.native_jobs.get(state.native_dispatch)
+        if row is None or row["pid"] != pid or row["terminal_status"] is not None:
+            raise Violation("native job terminal event lost its actual dispatched child")
+        code = os.waitstatus_to_exitcode(status)
+        self.native_job_event({"sequence": row["sequence"], "returncode": code, "terminal_status": status})
+        row["returncode"], row["terminal_status"] = code, status
+
+    def finish_native_jobs(self):
+        if self.native_readonly and any(
+            row["pid"] is None or row["context"] is None or row["terminal_status"] is None or not row["waited"]
+            for row in self.native_jobs.values()
+        ):
+            raise Violation("native job observation ended with incomplete actual lifecycle")
 
     def defer_observation(self, state, collection, value):
         # Failed attempts still spend bounded bookkeeping, not evidence credit.
@@ -1530,7 +1631,10 @@ class Policy:
         state.observations.clear()
         state.observation_needs_bytes = False
         trusted = self.observer(state, r)
-        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE, VO_SOURCE_IO}:
+        if n == 39 and a in {
+            VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE,
+            VO_SOURCE_IO, VO_JOB_CONTEXT, VO_JOB_POLICY,
+        }:
             if a == VO_QUERY_KIND:
                 if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE, VO_LIVE}:
                     raise Violation("unauthenticated interceptor kind query")
@@ -1577,17 +1681,24 @@ class Policy:
                     if self.read_trace is None or state.role != "make" or not state.observer_ready:
                         raise Violation("unconfigured original source stream notification")
                     self.read_trace.source_io(pid, state, b, c)
+                elif a == VO_JOB_CONTEXT:
+                    self.observe_native_job_context(pid, state, b, c)
+                elif a == VO_JOB_POLICY:
+                    self.observe_native_job_policy(pid, state, b, c)
                 elif b:
                     path = self.path(pid, state, b)
                     if path not in self.executable or path == "/control/interceptor" or c not in {0, 1}:
                         raise Violation(f"untrusted executable dispatch: {path}")
                     if self.runtime_metadata(path, parents=False):
                         self.check_optional_make_spelling(state, path, "execute")
+                    if self.native_readonly:
+                        self.begin_native_job(pid, state, path)
                     state.dispatch = (path, c)
                 else:
                     if c:
                         raise Violation("invalid Make dispatch completion")
                     state.dispatch = None
+                    state.native_dispatch = None
         elif n in {2, 85, 257}:  # open, creat, openat
             flags = c if n == 257 else b
             follow = n == 85 or not (
@@ -2079,6 +2190,8 @@ def supervise(config, drop_privileges):
                     terminated == signal.SIGKILL and terminated in state.native_signals
                 ):
                     raise Violation("native shell termination lacks an admitted self-signal")
+            if policy.native_readonly and state.role == "native":
+                policy.retire_native_job(stopped, state, status)
             unfulfilled = state.producer_requested and (
                 state.producer_slot is None or not state.producer_event_written
             )
@@ -2111,6 +2224,7 @@ def supervise(config, drop_privileges):
             if child.value not in newborn_stops:
                 policy.total_processes += 1
             record = state.clone()
+            record.native_parent = stopped
             if not state.clone_shares_vm:
                 record.memory_group = child.value
             record.pidfd = newborn_stops.pop(child.value, -1)
@@ -2136,6 +2250,7 @@ def supervise(config, drop_privileges):
             if policy.native_readonly and state.pending[1] == "native":
                 if state.exec_path != "/bin/sh":
                     raise Violation("native shell exec has no admitted image")
+                policy.bind_native_job(stopped, state)
                 policy.observe("accessed", "native-shell:" + str(stopped) + ":" + state.exec_path)
                 state.exec_path = None
             if config.get("dependency"):
@@ -2406,6 +2521,12 @@ def supervise(config, drop_privileges):
                     processes.clear()
         def finish_trace():
             nonlocal error, finished_trace
+            if error is None:
+                try:
+                    policy.finish_native_jobs()
+                except BaseException as failure:
+                    error = str(failure)
+                    raise
             if error is None and main_status == 0 and policy.read_trace is not None:
                 try:
                     finished_trace = policy.read_trace.finish()
