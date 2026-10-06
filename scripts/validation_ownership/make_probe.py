@@ -294,7 +294,7 @@ def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
     roots = (
         "/usr/bin/", "/usr/lib/", "/usr/lib64/", "/lib/", "/lib64/",
         *(("/usr/libexec/",) if compiler else ()),
-        *(("/usr/include/", "/bin/") if optional else ()),
+        *(("/usr/", "/bin/") if optional else ()),
     )
     if not path.startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")

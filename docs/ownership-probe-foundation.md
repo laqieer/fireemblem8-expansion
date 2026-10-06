@@ -498,6 +498,19 @@ interaction applies. Start with a clean fixture and run:
    false-absence branch. **Python startup, dynamic imports, site/zip/package
    resources and extension dependency closure are still unqualified.** This
    negative is not a successful Python execution or original-eight-query proof.
+   Explicit optional `runtime_files` may now name ordinary trusted files or
+   genuine absence beneath `/usr/`, retaining the existing captured data/mode,
+   root-owned ancestry and before/after identity checks. This file-only capture
+   does not mount `/usr`, grant directory enumeration or extend executable
+   trust roots. Final file symlinks remain unsupported, not flattened.
+   `test_native_optional_usr_data_capture_preserves_bytes_and_real_absence`
+   verifies actual timezone data bytes/mode, startup-file absence, unchanged
+   executable trust roots and final-alias refusal.
+   `test_native_readonly_python_declared_startup_still_refuses_uncaptured_timezone`
+   declares startup paths actually observed in the native fixture. Real Python
+   then reaches and explicitly refuses `/usr/share/zoneinfo/UTC`; that final
+   symlink is not admitted. This is startup progress, not successful dynamic
+   import or qualification of the original nonisolated invocations.
 4. `test_native_readonly_managed_python_make_enumeration_is_complete`: original
    ready Make wildcard enumeration must match the actual declared stdlib
    directory's complete `.py` names; the adjacent parent root remains denied.

@@ -227,6 +227,52 @@ class FoundationTests(unittest.TestCase):
                 session._native_make_readonly("all", native_runtime_directories=(runtime,))
         self.assert_clean(session)
 
+    def test_native_readonly_python_declared_startup_still_refuses_uncaptured_timezone(self):
+        version = f"{sys.version_info.major}.{sys.version_info.minor}"
+        runtime = "/usr/lib/python" + version
+        self.add("Makefile", (
+            "VALUE := $(shell /usr/bin/python3 -I -S -c "
+            "'import importlib; print(importlib.import_module(\"json\").dumps([1,2]))')\n"
+            ".PHONY: all\nall: ; @v='$(VALUE)'; printf '%s\\n' \"$$v\"\n"
+        ))
+        session = self.session(runtime_files=(
+            "/usr/pyvenv.cfg", "/usr/bin/pyvenv.cfg",
+            "/usr/bin/python3._pth",
+            "/usr/bin/pybuilddir.txt",
+            "/usr/bin/Modules/Setup.local",
+            "/usr/lib/python" + version.replace(".", "") + ".zip",
+            "/usr/bin/lib/python" + version.replace(".", "") + ".zip",
+            "/usr/bin/lib/python" + version + "/os.py",
+            "/usr/bin/lib/python" + version + "/os.pyc",
+            "/usr/bin/lib/python" + version + "/lib-dynload",
+        ))
+        with session:
+            with self.assertRaisesRegex(
+                MakeProbeError, "uncaptured Make runtime access: read /usr/share/zoneinfo/UTC",
+            ):
+                session._native_make_readonly(
+                    "all", variables=("VALUE",), native_executables=("/usr/bin/python3",),
+                    native_runtime_directories=(runtime,),
+                )
+        self.assert_clean(session)
+
+    def test_native_optional_usr_data_capture_preserves_bytes_and_real_absence(self):
+        from scripts.validation_ownership import make_probe
+        budget = ProbeBudget()
+        resource = "/usr/share/zoneinfo/Etc/UTC"
+        captured = make_probe._capture_runtime_input(resource, budget)
+        self.assertEqual(captured.data, Path(resource).read_bytes())
+        self.assertEqual(captured.mode, stat.S_IMODE(Path(resource).stat().st_mode))
+        self.assertEqual(captured.canonical, resource)
+        self.assertGreater(budget.bytes["control"], len(captured.data))
+        absent = make_probe._capture_runtime_input("/usr/pyvenv.cfg", budget)
+        self.assertIsNone(absent.data)
+        self.assertIsNone(absent.mode)
+        with self.assertRaisesRegex(MakeProbeError, "outside the trusted system tool/library roots"):
+            make_probe._trusted_runtime_path("/usr/pyvenv.cfg")
+        with self.assertRaisesRegex(MakeProbeError, "not an ordinary regular file"):
+            make_probe._capture_runtime_input("/usr/share/zoneinfo/UTC", budget)
+
     def test_native_readonly_declared_direct_executable_preserves_original_jobs(self):
         self.add("Makefile", (
             "VALUE := $(shell /usr/bin/printf %s original)\n"
