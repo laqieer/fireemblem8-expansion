@@ -428,8 +428,8 @@ validated completion ABI also derives original `do_variable_definition`,
 direct multiline-define, reader-internal and target-specific machine callers;
 and the copied eval ebuffer/floc member offsets. Derivation verifies frame
 entries, parsed-name/flavor/result instructions, unique direct calls, null
-file/size fields and the original `reading_file` anchor. It does not yet grant
-runtime completion authority or admit previously unsupported source forms.
+file/size fields and the original `reading_file` anchor. This ABI alone does
+not grant runtime completion authority.
 
 Run `test_native_runtime_effect_abi_binds_complete_machine_call_families`
 against the actually captured Make ELF. Verify each derived call targets its
@@ -438,10 +438,76 @@ each caller opcode or function entry must refuse; mutating each supplied ABI
 coordinate must fail independent machine-operand validation. Existing real
 completion/barrier/job and foreign-ABI controls remain required. These are
 machine ABI predicates, not source spelling evidence, and are necessary to
-bind original parser effects without a second evaluator. Full nested
-entry/exit/post-modifier observations, archive and graph consumers, generated
-custody, descendants and unchanged original eight-query qualification remain
-incomplete; this ABI checkpoint is not independently deliverable.
+bind original parser effects without a second evaluator.
+
+The internal readonly request `observe_runtime_completions=True` selects
+version-5 observations, requires `observe_reads=True`, and conflicts with the
+version-4 `observe_completions=True` request. Version 4 remains a compatibility
+lane, not a substitute for runtime source authority. Version 5 inventories the
+immutable view without selecting inferred supplier names. It observes original
+definition arguments, actual returns, effective post-modifier bindings and
+pristine nested `eval_buffer` inputs. Four hardware slots follow one real
+pass/source/eval/effect invocation stack; existing kernel register restoration
+and readback applies to every slot purpose. Target-specific completion follows
+its independently derived private/export and command-origin merge, not the
+earlier definition return; ordinary assignments/defines use their common
+post-modifier continuation. Definitions inside evaluated text
+use its actual consumed buffer interval. A multiline define's executed
+position can be its endef, while its separate copied declaration floc names the
+header. Neither is silently relabeled as the other.
+
+The typed archive appends effects and evaluations to each `OriginalPass`;
+existing constructors retain empty defaults. Runtime file visits retain pinned
+immutable sources, and eval occurrences retain their pristine byte captures.
+Standalone validation checks source/parent/return lifetimes, effective names,
+counts and actual machine payload associations. Effect-input/result digests
+bind the observer's exact captured event; eval-buffer digests bind its pristine
+bytes. These are reconstruction/integrity observations, not signatures or
+protection against hostile same-UID processes. Malformed read rows use the
+shared versioned wire schema before runtime lifecycle interpretation.
+
+To exercise this WIP checkpoint on the admitted GNU Make 4.3 x86-64 host,
+start each `FoundationTests` case with its temporary immutable view and let
+session exit remove owned resources. Run
+`test_native_runtime_effects_capture_computed_staged_define_and_eval` and
+`test_native_runtime_nested_eval_include_and_effect_lifetimes`: require original
+Make output, actual computed/staged/define/target bindings, distinct pristine
+nested eval occurrences and properly paired returns. Run
+`test_native_runtime_deferred_builtins_and_context_reset_capture_all_effects`:
+forwarded if/and/or/foreach and conditional/include/target context resets must
+still return and record the executed supplier. These are the pre-version-5
+omission controls, not a new static supplier grammar.
+
+Run `test_native_runtime_returned_effect_eval_and_machine_mutations_refuse`:
+foreign/reordered effect/eval parameters, missing/wrong-type read fields,
+coherently renumbered missing machine bindings and coherently changed pristine
+eval bytes must raise `ReadEpochError`. Run
+`test_native_runtime_live_effect_and_buffer_custody_mutations_refuse`: injected
+live definition/effective-binding and eval-buffer custody errors must refuse
+with owned cleanup. Run
+`test_native_runtime_actual_private_prefix_secondary_and_failed_lifetimes`:
+verify GNU private scope, a custom recipe prefix and secondary expansion, then
+require a real Make error to retain its diagnostic without a successful
+archive. Existing actual hardware register, job and immutable-view controls
+remain required.
+
+Run `test_native_runtime_target_modifiers_and_ignored_origin_capture_effective_bindings`:
+two targets receive private exported VALUE, once with no command-line input,
+once with override plus a command-line value, and once with a command-line value
+that wins. Require original recipe and environment values, both captured
+bindings, private/export flags and the effective winning value. The early-return
+negative control omits private flags in the first two cases and records the
+losing local value in the third. Target post-modifier custody is the same
+runtime contract, not an additional source restriction.
+
+This checkpoint does not complete graph-consumer integration, generated
+creates/replacements/remakes, descendant/reexec qualification or the unchanged
+original preliminary-plus-eight-query budget case. The sticky architecture
+hold remains a delivery hold. Limits, accounting categories and the original
+fixtures are unchanged. No ROM/RAM/save/localization, modern/archival profile or
+generated-data change; no new execution authority or service. The new request
+remains incompatible with generated/published resources until their real
+producer custody is implemented and qualified.
 
 Run `test_native_readonly_reuses_captured_runtime_without_second_host_read`:
 execute two original shell/direct-printf Make queries in one session, deny a

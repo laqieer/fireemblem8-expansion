@@ -28,6 +28,7 @@ GLOBALS = ("current_variable_set_list", "reading_file", "hash_deleted_item")
 NORETURN = frozenset({"fatal", "die", "out_of_memory", "__stack_chk_fail", "__assert_fail", "abort"})
 MAX_INSTRUCTIONS = 4096
 COMPLETION_VERSION = 4
+RUNTIME_VERSION = 5
 
 
 class ReadEpochError(MakeProbeError):
@@ -267,9 +268,9 @@ def runtime_effect_abi(image, source, evaluator, ordinary_return):
     )
     evaluator_code = image.bytes(evaluator, source[0] - evaluator, executable=True)
     define_definition = returned(evaluator, evaluator_code, definition, "multiline define")
-    _unique(
+    define_arguments = _unique(
         rb"\x44\x0f\xb7\x45.\x45\x31\xc9\x44\x89\xf9\x4c\x89\xea"
-        rb"\x48\x8d\xbd....\x44\x88\x95....\x66\x41\xc1\xe8\x07"
+        rb"\x48\x8d\xbd(....)\x44\x88\x95....\x66\x41\xc1\xe8\x07"
         rb"\x41\x83\xe0\x07\xe8....\x4c\x89\xef\x48\x89\xc3",
         evaluator_code, "direct define name/flavor and effective result",
     )
@@ -280,6 +281,35 @@ def runtime_effect_abi(image, source, evaluator, ordinary_return):
     ]
     if len(target_returns) != 1:
         raise ReadEpochError("runtime effect lacks one target-specific definition caller")
+    target_modifiers = _unique(
+        rb"\x8b\x85....\x83\xe0\x03\xc1\xe0\x1d\x89\xc2"
+        rb"\x0f\xb6\x85....\xc0\xe8\x05\x83\xe0\x01\xc1\xe0\x07"
+        rb"\x83\xc8\x08\x09\xd0\x41\x8b\x55\x2c\x81\xe2\x77\xff\xff\x9f"
+        rb"\x09\xd0\x89\xc2\x41\x89\x45\x2c\xc1\xea\x18\x89\xd0"
+        rb"\x83\xe0\x1c\x3c\x14\x74.\x4d\x8b\x75\x00\x4c\x89\xf7"
+        rb"\xe8....\x4c\x89\xf7\x48\x89\xc6(?P<lookup>\xe8....)"
+        rb"\x49\x89\xc6\x48\x85\xc0\x74.\x49\x39\xc5\x74."
+        rb"\x0f\xb6\x40\x2f\x83\xe0\x1c\x83\xe8\x0c\xa8\xf8\x0f\x84...."
+        rb"(?=\x4d\x85\xe4)",
+        evaluator_code, "target private/export flags and effective-origin merge",
+    )
+    if direct_call(
+        evaluator + target_modifiers.start("lookup"), target_modifiers["lookup"],
+    ) != image.symbol("lookup_variable", 2)[0]:
+        raise ReadEpochError("target origin merge has a foreign actual lookup")
+    target_return_setup = _unique(
+        rb"\x49\x89\xc5\x48\x85\xc0\x0f\x84....\x48\x8d\x05...."
+        rb"\x48\x8b\x95....\x48\x89\x10\xe9(....)",
+        evaluator_code[target_returns[0] - evaluator:target_returns[0] - evaluator + 64],
+        "target effective result and restored variable-set continuation",
+    )
+    if (
+        target_return_setup.start() != 0
+        or target_returns[0] + target_return_setup.end()
+        + int.from_bytes(target_return_setup[1], "little", signed=True)
+        != evaluator + target_modifiers.start()
+    ):
+        raise ReadEpochError("target definition bypasses its actual post-modifier continuation")
     reader_code = image.bytes(source[0], source[1] - source[0], executable=True)
     reader_definition = returned(source[0], reader_code, definition, "reader internal definition")
     buffer, buffer_size, buffer_code = function("eval_buffer")
@@ -312,9 +342,12 @@ def runtime_effect_abi(image, source, evaluator, ordinary_return):
         "try_definition": [trial, trial + trial_size],
         "eval_buffer": [buffer, buffer + buffer_size],
         "ordinary_definition_return": ordinary_definition,
+        "ordinary_assignment_return": ordinary_return,
         "define_definition_return": define_definition,
+        "define_floc": int.from_bytes(define_arguments[1], "little", signed=True),
         "reader_definition_return": reader_definition,
         "target_assignment_return": target_returns[0],
+        "target_completion": evaluator + target_modifiers.end(),
         "eval_ebuffer": ebuffer, "eval_floc": floc,
     }
 
@@ -622,6 +655,8 @@ class OriginalPass(NamedTuple):
     goal_visits: tuple[int, ...]
     entry_image: tuple | None
     completions: tuple = ()
+    effects: tuple = ()
+    evaluations: tuple = ()
 
 
 class OriginalArchive(NamedTuple):
@@ -642,6 +677,50 @@ class OriginalCompletion(NamedTuple):
     operator: str
     cwd: str
     variable: OriginalVariable
+
+
+class RuntimeLocation(NamedTuple):
+    visit: int
+    source: int
+    evaluation: int | None
+    span: tuple[int, int, int]
+    offsets: tuple[int, int] | None
+
+
+class OriginalEffect(NamedTuple):
+    number: int
+    entry_seq: int
+    return_seq: int
+    completion_seq: int
+    parent: tuple[str, int]
+    caller: str
+    name: str
+    value: str
+    flavor: int
+    origin: int
+    target: bool
+    declaration: tuple[str, int, int]
+    location: RuntimeLocation | None
+    cwd: str
+    variable: OriginalVariable
+
+
+class OriginalEvaluation(NamedTuple):
+    number: int
+    entry_seq: int
+    exit_seq: int
+    parent: tuple[str, int]
+    location: RuntimeLocation
+    source: OriginalSource
+
+
+def runtime_location_value(value):
+    if value is None:
+        return None
+    return RuntimeLocation(
+        value["visit"], value["source"], value["evaluation"], tuple(value["span"]),
+        None if value["offsets"] is None else tuple(value["offsets"]),
+    )
 
 
 def physical_statements(data, *, checkpoint=lambda: None, count_limit=None):
@@ -1038,12 +1117,15 @@ def reconstruct_archive(trace, *, budget):
         row["id"]: OriginalSource(row["id"], row["mode"], row["sha256"], base64.b64decode(row["data"], validate=True))
         for row in trace["sources"]
     }
-    executions, visits = {}, {}
+    executions, visits, effects, evaluations = {}, {}, {}, {}
     for event in trace["events"]:
         budget.remaining()
         kind = event["kind"]
         if kind == "exec":
-            executions[event["exec"]] = {"visits": [], "other": [], "image": None, "completions": []}
+            executions[event["exec"]] = {
+                "visits": [], "other": [], "image": None, "completions": [],
+                "effects": [], "evaluations": [],
+            }
         elif kind == "pass-entry":
             executions[event["exec"]]["entry"] = event
         elif kind == "entry-image":
@@ -1067,6 +1149,28 @@ def reconstruct_archive(trace, *, budget):
                 event["seq"], event["visit"], event["source"], tuple(event["site"]),
                 event["name"], event["operator"], event["cwd"], OriginalVariable(*event["variable"]),
             ))
+        elif kind == "effect-entry":
+            effects[event["effect"]] = {"entry": event}
+        elif kind == "effect-return":
+            effects[event["effect"]]["return"] = event["seq"]
+        elif kind == "effect-completion":
+            effect = effects[event["effect"]]
+            entry = effect["entry"]
+            executions[event["exec"]]["effects"].append(OriginalEffect(
+                event["effect"], entry["seq"], effect["return"], event["seq"],
+                tuple(entry["parent"]), entry["caller"], entry["name"], entry["value"],
+                entry["flavor"], entry["origin"], entry["target"], tuple(entry["declaration"]),
+                runtime_location_value(entry["location"]), event["cwd"],
+                OriginalVariable(*event["variable"]),
+            ))
+        elif kind == "eval-entry":
+            evaluations[event["evaluation"]] = event
+        elif kind == "eval-exit":
+            entry = evaluations[event["evaluation"]]
+            executions[event["exec"]]["evaluations"].append(OriginalEvaluation(
+                event["evaluation"], entry["seq"], event["seq"], tuple(entry["parent"]),
+                runtime_location_value(entry["location"]), sources[event["source"]],
+            ))
         elif kind == "other-open":
             executions[event["exec"]]["other"].append(OriginalOtherOpen(
                 event["seq"], event["pass"], event["visit"], event["name"], event["mode"], event["result"],
@@ -1085,7 +1189,8 @@ def reconstruct_archive(trace, *, budget):
                 number, started["parent"], started["name"], started["flags"], ended["flags"],
                 started["seq"], ended["seq"], ended["resolved"], ended["error"],
                 None if ended["source"] is None else sources[ended["source"]], tuple(visit["opens"]),
-                None if started.get("location") is None else tuple(started["location"]),
+                runtime_location_value(started.get("location")) if trace["version"] == RUNTIME_VERSION
+                else None if started.get("location") is None else tuple(started["location"]),
             ))
         passes.append(OriginalPass(
             execution, entry["pass"], entry["seq"], returned["seq"],
@@ -1093,12 +1198,14 @@ def reconstruct_archive(trace, *, budget):
                   for scope in entry["inputs"]),
             tuple(ordered), tuple(value["other"]), tuple(returned["goals"]), value["image"],
             tuple(value["completions"]),
+            tuple(sorted(value["effects"], key=lambda effect: effect.number)),
+            tuple(sorted(value["evaluations"], key=lambda evaluation: evaluation.number)),
         ))
     return OriginalArchive(
         trace["scope"], tuple(passes), tuple(sources.values()), trace["version"],
-        tuple(trace["selection"]["names"]) if trace["version"] == COMPLETION_VERSION
+        tuple(trace["selection"]["names"]) if trace["version"] in {COMPLETION_VERSION, RUNTIME_VERSION}
         else tuple(tuple(row) for row in trace.get("selection", ())),
-        tuple(trace["selection"]["inventory"]) if trace["version"] == COMPLETION_VERSION else (),
+        tuple(trace["selection"]["inventory"]) if trace["version"] in {COMPLETION_VERSION, RUNTIME_VERSION} else (),
     )
 
 
@@ -1155,6 +1262,14 @@ def validate_machine_observations(value, trace, *, count_limit):
         "execute": {"make", "dispatch"},
     }
     purposes = {"pass-entry", "source-entry", "source-return", "pass-return", "assignment-completion"}
+    runtime = trace["version"] == RUNTIME_VERSION
+    if runtime:
+        purposes |= {"effect-entry", "effect-return", "effect-completion", "eval-entry", "eval-return"}
+        fields.update({
+            "effect-input": {"effect", "sha256"}, "effect-result": {"effect", "sha256"},
+            "eval-buffer": {"evaluation", "source", "sha256"},
+        })
+    runtime_bindings = {kind: set() for kind in ("effect-input", "effect-result", "eval-buffer")}
     armed, retired = {}, set()
     previous = 0
     make_pid = None
@@ -1208,10 +1323,27 @@ def validate_machine_observations(value, trace, *, count_limit):
                 issued[slot[0]] = slot[1:]
             if (
                 len({slot[0] for slot in issued.values()}) != len(issued)
-                or issued.get(0, [None, None])[1] != "pass-entry"
-                or issued.get(1, [None, None])[1] != "source-entry"
-                or 2 in issued and issued[2][1] != "source-return"
-                or 3 in issued and issued[3][1] not in {"assignment-completion", "pass-return"}
+                or not runtime and (
+                    issued.get(0, [None, None])[1] != "pass-entry"
+                    or issued.get(1, [None, None])[1] != "source-entry"
+                    or 2 in issued and issued[2][1] != "source-return"
+                    or 3 in issued and issued[3][1] not in {"assignment-completion", "pass-return"}
+                )
+                or runtime and (
+                    not (
+                        len(issued) == 2
+                        and issued.get(0, [None, None])[1] == "pass-entry"
+                        and issued.get(1, [None, None])[1] == "source-entry"
+                    ) and not (
+                        len(issued) == 4
+                        and issued.get(0, [None, None])[1] == "source-entry"
+                        and issued.get(1, [None, None])[1] == "eval-entry"
+                        and issued.get(2, [None, None])[1] == "effect-entry"
+                        and issued.get(3, [None, None])[1] in {
+                            "pass-return", "source-return", "eval-return", "effect-return", "effect-completion",
+                        }
+                    )
+                )
                 or registers[:4] != [issued.get(index, [0])[0] for index in range(4)]
                 or registers[5] != sum(1 << (2 * index) for index in issued)
             ):
@@ -1246,6 +1378,28 @@ def validate_machine_observations(value, trace, *, count_limit):
                 make_execs.add((previous + 1, row["exec"] + 1, pid))
             else:
                 child_dispatches.add(row["dispatch"])
+        elif kind in runtime_bindings:
+            event_kind = {
+                "effect-input": "effect-entry", "effect-result": "effect-completion",
+                "eval-buffer": "eval-entry",
+            }[kind]
+            key = "evaluation" if kind == "eval-buffer" else "effect"
+            if (
+                context is None or context["kind"] != event_kind or pid != make_pid
+                or type(row[key]) is not int or row[key] <= 0
+                or row[key] != context[key] or row[key] in runtime_bindings[kind]
+                or not isinstance(row["sha256"], str) or re.fullmatch("[0-9a-f]{64}", row["sha256"]) is None
+            ):
+                raise ReadEpochError("runtime machine payload lacks its actual event association")
+            if kind == "eval-buffer":
+                if (
+                    type(row["source"]) is not int or row["source"] != context["source"]
+                    or row["sha256"] != trace["sources"][row["source"] - 1]["sha256"]
+                ):
+                    raise ReadEpochError("runtime machine eval bytes differ from pristine capture")
+            elif row["sha256"] != hashlib.sha256(encoded(context)).hexdigest():
+                raise ReadEpochError("runtime machine effect payload differs from its observed event")
+            runtime_bindings[kind].add(row[key])
         else:
             if (
                 context is None or context["kind"] != "source-exit"
@@ -1272,15 +1426,26 @@ def validate_machine_observations(value, trace, *, count_limit):
         "source-exit": "source-return", "assignment-completion": "assignment-completion",
         "pass-exit": "pass-return",
     }
+    if runtime:
+        trap_kinds.update({
+            "effect-entry": "effect-entry", "effect-return": "effect-return",
+            "effect-completion": "effect-completion", "eval-entry": "eval-entry",
+            "eval-exit": "eval-return",
+        })
+    immediate_effects = {
+        event["effect"] for event in trace["events"]
+        if event["kind"] == "effect-entry" and event["caller"] == "reader"
+    } if runtime else set()
     required = {
         (event["seq"] - 1, trap_kinds[event["kind"]])
         for event in trace["events"] if event["kind"] in trap_kinds
+        and not (runtime and event["kind"] == "effect-completion" and event["effect"] in immediate_effects)
     }
     observed = {
         (row["trace_seq"], row["purpose"]) for row in value["events"] if row["kind"] == "trap"
     }
     if (
-        retired != expected or not required <= observed
+        retired != expected or (required != observed if runtime else not required <= observed)
         or len(value["events"]) + len(trace["events"]) > count_limit
         or make_execs != {
             (event["seq"], event["exec"], make_pid)
@@ -1288,10 +1453,291 @@ def validate_machine_observations(value, trace, *, count_limit):
         }
     ):
         raise ReadEpochError("native machine observations omit traps or live pin retirement")
+    if runtime and any(
+        runtime_bindings[kind] != {
+            event[key] for event in trace["events"] if event["kind"] == event_kind
+        }
+        for kind, key, event_kind in (
+            ("effect-input", "effect", "effect-entry"),
+            ("effect-result", "effect", "effect-completion"),
+            ("eval-buffer", "evaluation", "eval-entry"),
+        )
+    ):
+        raise ReadEpochError("runtime machine observations omit effect/eval payload bindings")
+    return value
+
+
+def _read_event_keys(version):
+    keys = {
+        "exec": {"exec"}, "pass-entry": {"exec", "pass", "inputs"},
+        "source-entry": {"exec", "pass", "visit", "parent", "name", "flags"},
+        "source-open": {"exec", "pass", "visit", "name", "mode", "result", "source", "identity"},
+        "other-open": {"exec", "pass", "visit", "name", "mode", "result"},
+        "source-exit": {"exec", "pass", "visit", "resolved", "flags", "error", "source"},
+        "pass-exit": {"exec", "pass", "goals"}, "complete": {"execs", "passes", "visits"},
+        "entry-image": {"exec", "pass", "barrier", "input_sha256", "image_sha256"},
+    }
+    if version in {3, COMPLETION_VERSION, RUNTIME_VERSION}:
+        keys["source-entry"] |= {"location"}
+    if version in {3, COMPLETION_VERSION}:
+        keys["assignment-completion"] = {
+            "exec", "pass", "visit", "source", "site", "name", "operator", "cwd", "variable",
+        }
+    if version in {COMPLETION_VERSION, RUNTIME_VERSION}:
+        keys["source-open"] |= {"path", "custody"}
+    if version == RUNTIME_VERSION:
+        keys["complete"] |= {"effects", "evaluations"}
+    return keys
+
+
+def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
+    if (
+        set(value) != {"version", "scope", "events", "sources", "complete", "selection", "machine"}
+        or value["scope"] != scope or value["complete"] is not True
+        or not isinstance(value["events"], list) or not 1 <= len(value["events"]) <= count_limit
+        or not isinstance(value["sources"], list) or len(value["sources"]) > count_limit
+    ):
+        raise ReadEpochError("incomplete runtime source/effect trace")
+    selection = validate_completion_selection(
+        value["selection"], count_limit=count_limit, file_limit=file_limit,
+    )
+    if selection["names"]:
+        raise ReadEpochError("runtime effects must not borrow inferred supplier selection")
+    inventory = {row["path"]: row for row in selection["inventory"]}
+    snapshots, indexes = {}, {}
+    for row in value["sources"]:
+        if not isinstance(row, dict) or set(row) != {"id", "mode", "bytes", "sha256", "data"}:
+            raise ReadEpochError("malformed runtime source snapshot")
+        if (
+            type(row["id"]) is not int or row["id"] != len(snapshots) + 1
+            or type(row["mode"]) is not int or not 0 <= row["mode"] <= 0o777
+            or type(row["bytes"]) is not int or not 0 <= row["bytes"] <= file_limit
+            or not isinstance(row["data"], str) or len(row["data"]) != 4 * ((row["bytes"] + 2) // 3)
+        ):
+            raise ReadEpochError("unbounded runtime source snapshot")
+        reserve(row["bytes"])
+        try:
+            data = base64.b64decode(row["data"], validate=True)
+        except ValueError as error:
+            raise ReadEpochError("invalid runtime source encoding") from error
+        if len(data) != row["bytes"] or hashlib.sha256(data).hexdigest() != row["sha256"] or base64.b64encode(data).decode() != row["data"]:
+            raise ReadEpochError("runtime source differs from captured pristine bytes")
+        snapshots[row["id"]] = (row, data)
+
+    stack, opens, opened_paths, evaluations, effects = [], {}, {}, {}, {}
+    source_kinds, basic = {}, []
+    common = {"seq", "kind", "exec", "pass"}
+    fields = {
+        "effect-entry": {"effect", "parent", "visit", "caller", "location", "name", "value", "flavor", "origin", "target", "declaration"},
+        "effect-return": {"effect"},
+        "effect-completion": {"effect", "cwd", "variable"},
+        "eval-entry": {"evaluation", "parent", "location", "source"},
+        "eval-exit": {"evaluation", "source"},
+    }
+    basic_fields = _read_event_keys(RUNTIME_VERSION)
+
+    def location(row):
+        if (
+            not isinstance(row, dict) or set(row) != {"visit", "source", "evaluation", "span", "offsets"}
+            or type(row["visit"]) is not int or row["visit"] not in opens
+            or type(row["source"]) is not int or row["source"] not in snapshots
+            or not isinstance(row["span"], list) or len(row["span"]) != 3
+            or any(type(number) is not int or number < 1 for number in row["span"])
+        ):
+            raise ReadEpochError("runtime location lacks its actual source occurrence")
+        sources = [frame for frame in stack if frame[0] == "source"]
+        if not sources or sources[-1][1] != row["visit"]:
+            raise ReadEpochError("runtime location belongs to another active reader")
+        data = snapshots[row["source"]][1]
+        if row["source"] not in indexes:
+            indexes[row["source"]] = _statement_index(data, count_limit=count_limit, reserve=reserve)
+        span = indexes[row["source"]].get(row["span"][1])
+        if span is None or list(span[:3]) != row["span"]:
+            raise ReadEpochError("runtime location differs from pristine physical source")
+        if row["evaluation"] is None:
+            if row["source"] != opens[row["visit"]] or row["offsets"] is not None:
+                raise ReadEpochError("runtime file location substituted an evaluated source")
+        else:
+            number = row["evaluation"]
+            offsets = row["offsets"]
+            if (
+                type(number) is not int or ("eval", number) not in stack
+                or evaluations[number]["source"] != row["source"]
+                or not isinstance(offsets, list) or len(offsets) != 2
+                or any(type(offset) is not int for offset in offsets)
+                or not 0 <= offsets[0] < offsets[1] <= len(data) + 1
+                or offsets[0] and data[offsets[0] - 1:offsets[0]] != b"\n"
+                or data[:offsets[0]].count(b"\n") + 1 != row["span"][1]
+                or data[:min(offsets[1], len(data))].count(b"\n") + (0 if data[:min(offsets[1], len(data))].endswith(b"\n") else 1) != row["span"][2]
+            ):
+                raise ReadEpochError("runtime eval location lacks its exact consumed interval")
+
+    context = None
+    for sequence, event in enumerate(value["events"], 1):
+        if not isinstance(event, dict) or event.get("seq") != sequence or type(event["seq"]) is not int or not isinstance(event.get("kind"), str):
+            raise ReadEpochError("unordered runtime event")
+        kind = event["kind"]
+        if kind in fields:
+            if (
+                set(event) != common | fields[kind]
+                or any(type(event[key]) is not int for key in ("exec", "pass"))
+                or context != (event["exec"], event["pass"]) or not stack
+            ):
+                raise ReadEpochError("runtime event has a foreign pass or wire shape")
+            if kind == "effect-entry":
+                number = event["effect"]
+                if (
+                    type(number) is not int or number != len(effects) + 1
+                    or event["parent"] != list(stack[-1])
+                    or not isinstance(event["caller"], str)
+                    or event["caller"] not in {"assignment", "define", "target", "reader"}
+                    or not isinstance(event["name"], str) or not 1 <= len(event["name"].encode()) <= 128 or "\0" in event["name"]
+                    or not isinstance(event["value"], str) or len(event["value"].encode()) > 65536 or "\0" in event["value"]
+                    or type(event["flavor"]) is not int or not 1 <= event["flavor"] <= 6
+                    or type(event["origin"]) is not int or not 0 <= event["origin"] <= 6
+                    or type(event["target"]) is not bool
+                    or event["target"] != (event["caller"] == "target")
+                ):
+                    raise ReadEpochError("runtime effect has invalid actual parameters/parent")
+                declaration = event["declaration"]
+                if (
+                    not isinstance(declaration, list) or len(declaration) != 3
+                    or not isinstance(declaration[0], str) or not declaration[0]
+                    or len(declaration[0].encode()) > 4096 or "\0" in declaration[0]
+                    or any(type(number) is not int or number < 0 for number in declaration[1:])
+                    or declaration[1] < 1
+                ):
+                    raise ReadEpochError("runtime effect has invalid original declaration floc")
+                if event["caller"] == "reader":
+                    if event["location"] is not None or event["name"] != "MAKEFILE_LIST" or (event["flavor"], event["origin"]) != (6, 2) or stack[-1] != ("source", event["visit"]):
+                        raise ReadEpochError("runtime internal reader effect borrowed authored authority")
+                else:
+                    location(event["location"])
+                    if event["visit"] != event["location"]["visit"]:
+                        raise ReadEpochError("runtime effect substituted its reader occurrence")
+                effects[number] = {"entry": event, "returned": False, "complete": False}
+                stack.append(("effect", number))
+            elif kind in {"effect-return", "effect-completion"}:
+                number = event["effect"]
+                if type(number) is not int or stack[-1] != ("effect", number) or number not in effects:
+                    raise ReadEpochError("runtime effect retired out of order")
+                effect = effects[number]
+                if kind == "effect-return":
+                    if effect["returned"]:
+                        raise ReadEpochError("runtime effect returned twice")
+                    effect["returned"] = True
+                else:
+                    variable = variable_row(event["variable"])
+                    if (
+                        not effect["returned"] or effect["complete"] or variable[0] != effect["entry"]["name"]
+                        or not isinstance(event["cwd"], str) or not event["cwd"].startswith("/")
+                        or len(event["cwd"].encode()) > 4096 or "\0" in event["cwd"]
+                    ):
+                        raise ReadEpochError("runtime effect lacks its effective returned binding")
+                    effect["complete"] = True
+                    stack.pop()
+            elif kind == "eval-entry":
+                number, source = event["evaluation"], event["source"]
+                if type(number) is not int or number != len(evaluations) + 1 or event["parent"] != list(stack[-1]) or type(source) is not int or source not in snapshots or source in source_kinds:
+                    raise ReadEpochError("runtime eval reused a foreign occurrence/source")
+                location(event["location"])
+                if snapshots[source][0]["mode"] != 0o600:
+                    raise ReadEpochError("runtime eval has a file-backed mode")
+                evaluations[number] = event
+                source_kinds[source] = "eval"
+                stack.append(("eval", number))
+            else:
+                number = event["evaluation"]
+                if type(number) is not int or stack[-1] != ("eval", number) or evaluations[number]["source"] != event["source"]:
+                    raise ReadEpochError("runtime eval retired across an active occurrence")
+                stack.pop()
+            continue
+        if (
+            kind not in basic_fields or set(event) != basic_fields[kind] | {"seq", "kind"}
+            or any(
+                type(event[key]) is not int
+                for key in ("exec", "pass", "visit", "result") if key in event
+            )
+            or "source" in event and event["source"] is not None and type(event["source"]) is not int
+        ):
+            raise ReadEpochError("malformed runtime read event")
+        row = dict(event)
+        if kind == "pass-entry":
+            if stack:
+                raise ReadEpochError("runtime pass entered across an active invocation")
+            context = event["exec"], event["pass"]
+            stack.append(("pass", event["pass"]))
+        elif kind == "source-entry":
+            parent_location = row.pop("location", None)
+            if any(frame[0] == "source" for frame in stack):
+                location(parent_location)
+            elif parent_location is not None:
+                raise ReadEpochError("runtime root reader borrowed an include location")
+            opens[event["visit"]] = None
+            opened_paths[event["visit"]] = None
+            stack.append(("source", event["visit"]))
+        elif kind == "source-open":
+            path, custody = row.pop("path"), row.pop("custody")
+            if event["result"] >= 0:
+                source = event["source"]
+                if type(source) is not int or source not in snapshots or source_kinds.get(source) == "eval" or custody != {"kind": "snapshot"}:
+                    raise ReadEpochError("runtime file open substituted evaluated/publication bytes")
+                captured = snapshots[source][0]
+                if not isinstance(path, str):
+                    raise ReadEpochError("runtime file has no exact inventory path")
+                entry = inventory.get(path)
+                if entry is None or entry["mode"] != captured["mode"] or entry["size"] != captured["bytes"] or entry["sha256"] != captured["sha256"]:
+                    raise ReadEpochError("runtime file differs from frozen immutable inventory")
+                opens[event["visit"]] = source
+                opened_paths[event["visit"]] = path
+                source_kinds[source] = "file"
+            elif path is not None or custody is not None:
+                raise ReadEpochError("failed runtime open claims source custody")
+        elif kind in {"source-exit", "pass-exit"}:
+            expected = ("source", event["visit"]) if kind == "source-exit" else ("pass", event["pass"])
+            if not stack or stack[-1] != expected:
+                raise ReadEpochError("runtime reader/pass retired across an active invocation")
+            if kind == "source-exit" and event["source"] is not None and (
+                not isinstance(event["resolved"], str)
+                or _resolved_source_path(event["resolved"]) != "/repo/" + opened_paths[event["visit"]]
+            ):
+                raise ReadEpochError("runtime file return names a different actual source")
+            stack.pop()
+        elif kind == "complete":
+            if stack or any(not effect["complete"] for effect in effects.values()):
+                raise ReadEpochError("runtime terminal event omitted an active invocation/effect")
+            if (
+                any(type(event.get(key)) is not int for key in ("effects", "evaluations"))
+                or event["effects"] != len(effects) or event["evaluations"] != len(evaluations)
+            ):
+                raise ReadEpochError("runtime terminal counters omit actual effect/eval occurrences")
+            row.pop("effects")
+            row.pop("evaluations")
+        row["seq"] = len(basic) + 1
+        basic.append(row)
+    if set(source_kinds) != set(snapshots):
+        raise ReadEpochError("runtime trace has unused or unbound captured sources")
+    mapping = {old: new for new, old in enumerate(sorted(number for number, kind in source_kinds.items() if kind == "file"), 1)}
+    basic_sources = []
+    for old, new in mapping.items():
+        row = dict(snapshots[old][0])
+        row["id"] = new
+        basic_sources.append(row)
+    for row in basic:
+        if row["kind"] in {"source-open", "source-exit"} and row["source"] is not None:
+            row["source"] = mapping[row["source"]]
+    validate_trace(
+        {"version": 2, "scope": scope, "events": basic, "sources": basic_sources, "complete": True},
+        scope, count_limit=count_limit, file_limit=file_limit, reserve=reserve,
+    )
+    reserve(len(encoded(value["machine"])))
+    validate_machine_observations(value["machine"], value, count_limit=count_limit)
     return value
 
 
 def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size: None):
+    if isinstance(value, dict) and type(value.get("version")) is int and value["version"] == RUNTIME_VERSION:
+        return validate_runtime_trace(value, scope, count_limit=count_limit, file_limit=file_limit, reserve=reserve)
     if (
         not isinstance(value, dict) or type(value.get("version")) is not int or value["version"] not in {1, 2, 3, 4}
         or set(value) != {"version", "scope", "events", "sources", "complete"} | (
@@ -1358,22 +1804,7 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
     pending_image = None
     completed = set()
     previous_sites = {}
-    keys = {
-        "exec": {"exec"}, "pass-entry": {"exec", "pass", "inputs"},
-        "source-entry": {"exec", "pass", "visit", "parent", "name", "flags"},
-        "source-open": {"exec", "pass", "visit", "name", "mode", "result", "source", "identity"},
-        "other-open": {"exec", "pass", "visit", "name", "mode", "result"},
-        "source-exit": {"exec", "pass", "visit", "resolved", "flags", "error", "source"},
-        "pass-exit": {"exec", "pass", "goals"}, "complete": {"execs", "passes", "visits"},
-        "entry-image": {"exec", "pass", "barrier", "input_sha256", "image_sha256"},
-    }
-    if value["version"] in {3, COMPLETION_VERSION}:
-        keys["source-entry"] |= {"location"}
-        keys["assignment-completion"] = {
-            "exec", "pass", "visit", "source", "site", "name", "operator", "cwd", "variable",
-        }
-    if value["version"] == COMPLETION_VERSION:
-        keys["source-open"] |= {"path", "custody"}
+    keys = _read_event_keys(value["version"])
     for sequence, event in enumerate(value["events"], 1):
         if (
             terminal or not isinstance(event, dict) or not isinstance(event.get("kind"), str)

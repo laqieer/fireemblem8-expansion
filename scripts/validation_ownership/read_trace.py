@@ -70,7 +70,7 @@ class NativeReadTrace:
                 self.policy.charge_metadata(sys.getsizeof({None: None}) + sys.getsizeof(key))
                 index[key] = row
             self.selection_index = MappingProxyType(index)
-        elif self.version == read_epochs.COMPLETION_VERSION:
+        elif self.version in {read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION}:
             if self.abi["version"] != 2:
                 raise read_epochs.ReadEpochError("completion trace lacks its machine-derived completion ABI")
             read_epochs.validate_completion_selection(
@@ -98,7 +98,9 @@ class NativeReadTrace:
         self.pass_frame = None
         self.goals = {}
         self.io = None
-        self.machine = [] if self.version == read_epochs.COMPLETION_VERSION else None
+        self.machine = [] if self.version in {read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION} else None
+        self.invocations = []
+        self.effects = self.evaluations = 0
 
     def machine_event(self, kind, pid, **fields):
         rows = getattr(self, "machine", None)
@@ -215,14 +217,16 @@ class NativeReadTrace:
             raise read_epochs.ReadEpochError("Make read trace has an unsupported ELF load origin")
         self.bias = bases[0] - load[0]
         spans = [self.abi[name] for name in ("read_all", "source")]
-        if self.version in {3, read_epochs.COMPLETION_VERSION}:
+        if self.version in {3, read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION}:
             spans += [self.abi["completion"]["evaluator"], *self.abi["completion"]["relied_code"]]
+            if self.version == read_epochs.RUNTIME_VERSION:
+                spans += [self.abi["completion"]["runtime"]["definition"]]
         for start, end in spans:
             if not any(left <= self.bias + start < self.bias + end <= right for left, right in code):
                 raise read_epochs.ReadEpochError("read trace site is not readonly executable Make code")
             if self.memory(self.bias + start, end - start) != image.bytes(start, end - start, executable=True):
                 raise read_epochs.ReadEpochError("read trace instruction image differs from captured Make")
-        if self.version in {3, read_epochs.COMPLETION_VERSION}:
+        if self.version in {3, read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION}:
             start, end = self.abi["completion"]["flavor_table"]
             if (
                 not any(left <= self.bias + start < self.bias + end <= right for left, right in readonly)
@@ -234,13 +238,25 @@ class NativeReadTrace:
     def arm(self):
         slots = {0: self.bias + self.abi["read_all"][0], 1: self.bias + self.abi["source"][0]}
         purposes = {0: "pass-entry", 1: "source-entry"}
-        if self.active:
+        if self.version == read_epochs.RUNTIME_VERSION and self.pass_frame is not None:
+            runtime = self.abi["completion"]["runtime"]
+            slots = {
+                0: self.bias + self.abi["source"][0],
+                1: self.bias + runtime["eval_buffer"][0],
+                2: self.bias + runtime["definition"][0],
+                3: self.invocations[-1]["return"],
+            }
+            purposes = {
+                0: "source-entry", 1: "eval-entry", 2: "effect-entry",
+                3: self.invocations[-1]["purpose"],
+            }
+        elif self.active:
             slots[2] = self.active[-1]["return"]
             purposes[2] = "source-return"
             if self.version in {3, read_epochs.COMPLETION_VERSION}:
                 slots[3] = self.bias + self.abi["completion"]["pc"]
                 purposes[3] = "assignment-completion"
-        if self.pass_frame is not None and not (
+        if self.version != read_epochs.RUNTIME_VERSION and self.pass_frame is not None and not (
             self.active and self.version in {3, read_epochs.COMPLETION_VERSION}
         ):
             slots[3] = self.pass_frame["return"]
@@ -301,6 +317,8 @@ class NativeReadTrace:
             if self.pass_frame is not None or self.active or self.passes + 1 != self.execs:
                 raise read_epochs.ReadEpochError("repeated original read entry in one exec")
             self.pass_frame = self.caller(registers, registers.rip)
+            if self.version == read_epochs.RUNTIME_VERSION:
+                self.invocations.append({**self.pass_frame, "kind": "pass", "purpose": "pass-return"})
             self.passes += 1
             self.goals = {}
             globals_ = self.abi["globals"]
@@ -310,7 +328,7 @@ class NativeReadTrace:
                 count_limit=self.config["observation_count"], string=self.string,
             )
             entry = self.event("pass-entry", **self.context(), inputs=inputs)
-            if self.version in {2, 3, read_epochs.COMPLETION_VERSION}:
+            if self.version in {2, 3, read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION}:
                 self.pending_barrier = {
                     "barrier": self.barriers + 1, "exec": self.execs, "pass": self.passes,
                     "trace_seq": entry["seq"], "input_sha256": source_phases.digest(inputs),
@@ -326,20 +344,36 @@ class NativeReadTrace:
             self.visits += 1
             parent = self.active[-1]["visit"] if self.active else None
             location = None
-            if self.version in {3, read_epochs.COMPLETION_VERSION} and self.active:
+            if self.version in {3, read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION} and self.active:
                 if frame["return"] != self.bias + self.abi["completion"]["include_return"]:
                     raise read_epochs.ReadEpochError("source include entry has a foreign evaluator caller")
-                location = self.source_location(registers, self.active[-1], allow_eval=False)
+                location = (
+                    self.runtime_location(registers.rbp)
+                    if self.version == read_epochs.RUNTIME_VERSION else
+                    self.source_location(registers, self.active[-1], allow_eval=False)
+                )
             frame.update({"visit": self.visits, "name": name, "flags": flags, "source": None, "pin": None, "closed": False})
             self.event(
                 "source-entry", **self.context(), visit=self.visits, parent=parent, name=name, flags=flags,
-                **({"location": location} if self.version in {3, read_epochs.COMPLETION_VERSION} else {}),
+                **({"location": location} if self.version in {3, read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION} else {}),
             )
             self.active.append(frame)
+            if self.version == read_epochs.RUNTIME_VERSION:
+                self.invocations.append({**frame, "kind": "source", "purpose": "source-return"})
         elif purpose == "source-return":
             self.source_return(registers)
         elif purpose == "assignment-completion":
             self.assignment_completion(registers, state)
+        elif purpose == "eval-entry":
+            self.runtime_eval_entry(registers)
+        elif purpose == "eval-return":
+            self.runtime_eval_return(registers)
+        elif purpose == "effect-entry":
+            self.runtime_effect_entry(registers)
+        elif purpose == "effect-return":
+            self.runtime_effect_return(registers)
+        elif purpose == "effect-completion":
+            self.runtime_effect_completion(registers, state)
         elif purpose == "pass-return":
             if self.active or self.io is not None or self.pass_frame is None or registers.rsp != self.pass_frame["stack"] + 8:
                 raise read_epochs.ReadEpochError("original read return has an incomplete source stack")
@@ -354,6 +388,10 @@ class NativeReadTrace:
                 raise read_epochs.ReadEpochError("original read goal chain omitted a source visit")
             self.event("pass-exit", **self.context(), goals=goals)
             self.pass_frame = None
+            if self.version == read_epochs.RUNTIME_VERSION:
+                frame = self.invocations.pop()
+                if frame["kind"] != "pass" or self.invocations:
+                    raise read_epochs.ReadEpochError("runtime pass returned across an active invocation")
         else:
             raise read_epochs.ReadEpochError("original read trap has no issued slot purpose")
         registers.eflags |= 1 << 16
@@ -410,6 +448,208 @@ class NativeReadTrace:
         logical, first, last, _ = span
         # offset is intentionally not treated as a character column.
         return [current["visit"], current["source"], logical, first, last]
+
+    def runtime_parent(self):
+        frame = self.invocations[-1]
+        return [frame["kind"], frame.get("number", frame.get("visit", self.passes))]
+
+    def runtime_location(self, evaluator):
+        if not self.active:
+            raise read_epochs.ReadEpochError("runtime effect has no active reader")
+        current, abi = self.active[-1], self.abi["completion"]
+        saved, returned = struct.unpack("<QQ", self.memory(evaluator, 16))
+        buffer = self.number(evaluator + abi["eval_ebuffer"])
+        floc = self.number(evaluator + abi["eval_floc"])
+        if (
+            floc != buffer + 40
+            or self.number(self.bias + self.abi["globals"]["reading_file"]) != floc
+        ):
+            raise read_epochs.ReadEpochError("runtime effect lost original evaluator/floc custody")
+        if saved == current["frame"] and returned == self.bias + abi["reader_return"]:
+            if (
+                buffer != current["frame"] + abi["reader_ebuffer"]
+                or not self.number(buffer + 32) or current["source"] is None
+                or current["pin"] is None or current["closed"]
+                or self.native.publication_identity(os.fstat(current["pin"])) != current["identity"]
+                or self.string(self.number(floc), 4096) != current["name"]
+            ):
+                raise read_epochs.ReadEpochError("runtime effect lost its live source descriptor/pin")
+            start = self.number(floc + 8)
+            nlines = self.number(evaluator + abi["nlines"])
+            span = self.statement_indexes[current["source"]].get(start)
+            if span is None or nlines < 1 or span[2] != start + nlines - 1:
+                raise read_epochs.ReadEpochError("runtime effect has an invalid original physical span")
+            return {
+                "visit": current["visit"], "source": current["source"], "evaluation": None,
+                "span": list(span[:3]), "offsets": None,
+            }
+        evaluations = [
+            frame for frame in self.invocations
+            if frame["kind"] == "eval" and frame["frame"] == saved
+        ]
+        if len(evaluations) != 1 or returned != self.bias + abi["eval_return"]:
+            raise read_epochs.ReadEpochError("runtime effect lacks an issued eval occurrence")
+        evaluation, = evaluations
+        runtime = abi["runtime"]
+        if (
+            buffer != saved + runtime["eval_ebuffer"] or self.number(buffer + 32)
+            or self.number(buffer + 16) != evaluation["buffer"]
+            or self.number(buffer + 24) != len(evaluation["data"])
+        ):
+            raise read_epochs.ReadEpochError("runtime effect substituted its pristine eval buffer")
+        first, next_ = (self.number(buffer + offset) - evaluation["buffer"] for offset in (0, 8))
+        if not 0 <= first < next_ <= len(evaluation["data"]) + 1:
+            raise read_epochs.ReadEpochError("runtime eval consumed an invalid buffer interval")
+        line = evaluation["data"][:first].count(b"\n") + 1
+        span = self.statement_indexes[evaluation["source"]].get(line)
+        if span is None:
+            raise read_epochs.ReadEpochError("runtime eval interval has no pristine physical statement")
+        return {
+            "visit": current["visit"], "source": evaluation["source"],
+            "evaluation": evaluation["number"], "span": list(span[:3]),
+            "offsets": [first, next_],
+        }
+
+    def runtime_evaluator(self, frame):
+        abi = self.abi["completion"]
+        upper = self.active[-1]["frame"] if self.active else 0
+        for _ in range(512):
+            if not 0 < frame < upper:
+                break
+            saved, returned = struct.unpack("<QQ", self.memory(frame, 16))
+            if returned in {self.bias + abi["reader_return"], self.bias + abi["eval_return"]}:
+                return frame
+            if not frame < saved <= upper:
+                break
+            frame = saved
+        raise read_epochs.ReadEpochError("runtime invocation lacks its actual evaluator ancestor")
+
+    def runtime_effect_entry(self, registers):
+        abi = self.abi["completion"]
+        runtime = abi["runtime"]
+        frame = self.caller(registers, registers.rip)
+        returned = frame["return"] - self.bias
+        if returned == runtime["ordinary_definition_return"]:
+            evaluator = self.number(registers.rbp)
+            trial_return = self.number(registers.rbp + 8) - self.bias
+            if trial_return == runtime["ordinary_assignment_return"]:
+                kind = "assignment"
+            elif trial_return == runtime["target_assignment_return"]:
+                kind = "target"
+            else:
+                raise read_epochs.ReadEpochError("runtime definition has a foreign trial caller")
+        elif returned == runtime["define_definition_return"]:
+            evaluator, kind = registers.rbp, "define"
+            if registers.rdi != evaluator + runtime["define_floc"]:
+                raise read_epochs.ReadEpochError("runtime define lost its actual copied header floc")
+        elif returned == runtime["reader_definition_return"]:
+            evaluator, kind = None, "reader"
+        else:
+            raise read_epochs.ReadEpochError("runtime definition has an unqualified original caller")
+        if not self.active or registers.r8 not in range(1, 7) or registers.rcx not in range(7) or registers.r9 not in {0, 1}:
+            raise read_epochs.ReadEpochError("runtime definition has invalid actual parameters")
+        name, value = self.string(registers.rsi, 129), self.string(registers.rdx, 65537)
+        if not name or value is None:
+            raise read_epochs.ReadEpochError("runtime definition lacks a bounded actual name/value")
+        location = None if kind == "reader" else self.runtime_location(evaluator)
+        self.effects += 1
+        entry = self.event(
+            "effect-entry", **self.context(), effect=self.effects, parent=self.runtime_parent(),
+            visit=self.active[-1]["visit"], caller=kind, location=location,
+            name=name, value=value, flavor=registers.r8, origin=registers.rcx,
+            target=bool(registers.r9),
+            declaration=[
+                self.string(self.number(registers.rdi), 4096),
+                self.number(registers.rdi + 8), self.number(registers.rdi + 16),
+            ],
+        )
+        self.machine_event(
+            "effect-input", self.pid, effect=self.effects,
+            sha256=hashlib.sha256(encoded(entry)).hexdigest(),
+        )
+        self.invocations.append({
+            **frame, "kind": "effect", "purpose": "effect-return", "number": self.effects,
+            "entry": entry, "evaluator": evaluator,
+        })
+
+    def runtime_effect_return(self, registers):
+        frame = self.invocations[-1]
+        if frame["kind"] != "effect" or registers.rsp != frame["stack"] + 8 or not registers.rax:
+            raise read_epochs.ReadEpochError("runtime definition returned with a foreign lifetime/result")
+        frame["variable"] = registers.rax
+        self.event("effect-return", **self.context(), effect=frame["number"])
+        if frame["entry"]["caller"] != "reader":
+            frame["purpose"] = "effect-completion"
+            frame["return"] = self.bias + (
+                self.abi["completion"]["runtime"]["target_completion"]
+                if frame["entry"]["caller"] == "target" else self.abi["completion"]["pc"]
+            )
+        else:
+            self.runtime_effect_completion(registers, self.policy.processes[self.pid], returned=True)
+
+    def runtime_effect_completion(self, registers, state, *, returned=False):
+        frame = self.invocations[-1]
+        if frame["kind"] != "effect" or not returned and (
+            registers.rbp != frame["evaluator"]
+            or (registers.r13 if frame["entry"]["caller"] == "target" else registers.rbx)
+            != frame["variable"]
+        ):
+            raise read_epochs.ReadEpochError("runtime definition lost its post-modifier effective result")
+        variable = read_epochs.original_variable(self.memory, frame["variable"], self.string)
+        if variable[0] != frame["entry"]["name"] or not isinstance(state.cwd, str) or not state.cwd.startswith("/"):
+            raise read_epochs.ReadEpochError("runtime definition returned a foreign effective name/CWD")
+        completion = self.event(
+            "effect-completion", **self.context(), effect=frame["number"],
+            cwd=state.cwd, variable=variable,
+        )
+        self.machine_event(
+            "effect-result", self.pid, effect=frame["number"],
+            sha256=hashlib.sha256(encoded(completion)).hexdigest(),
+        )
+        self.invocations.pop()
+
+    def runtime_eval_entry(self, registers):
+        if not self.active:
+            raise read_epochs.ReadEpochError("runtime eval has no original source occurrence")
+        frame = self.caller(registers, registers.rip)
+        location = self.runtime_location(self.runtime_evaluator(registers.rbp))
+        text = self.string(registers.rdi, self.config["file_limit"] + 1)
+        if text is None:
+            raise read_epochs.ReadEpochError("runtime eval has no bounded pristine buffer")
+        data = text.encode("utf-8")
+        self.policy.charge_metadata(len(data))
+        number = len(self.sources) + 1
+        source = {
+            "id": number, "mode": 0o600, "bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "data": base64.b64encode(data).decode("ascii"),
+        }
+        self.policy.charge_metadata(len(encoded(source)))
+        self.sources.append(source)
+        self.statement_indexes[number] = read_epochs._statement_index(
+            data, checkpoint=self.deadline, count_limit=self.config["observation_count"],
+            reserve=self.policy.charge_metadata,
+        )
+        self.evaluations += 1
+        self.event(
+            "eval-entry", **self.context(), evaluation=self.evaluations,
+            parent=self.runtime_parent(), location=location, source=number,
+        )
+        self.machine_event(
+            "eval-buffer", self.pid, evaluation=self.evaluations, source=number,
+            sha256=source["sha256"],
+        )
+        self.invocations.append({
+            **frame, "kind": "eval", "purpose": "eval-return", "number": self.evaluations,
+            "source": number, "buffer": registers.rdi, "data": data,
+        })
+
+    def runtime_eval_return(self, registers):
+        frame = self.invocations[-1]
+        if frame["kind"] != "eval" or registers.rsp != frame["stack"] + 8:
+            raise read_epochs.ReadEpochError("runtime eval returned across an active occurrence")
+        self.event("eval-exit", **self.context(), evaluation=frame["number"], source=frame["source"])
+        self.invocations.pop()
 
     def assignment_completion(self, registers, state):
         if self.version not in {3, read_epochs.COMPLETION_VERSION} or not self.active or self.pass_frame is None or self.io is not None:
@@ -523,7 +763,7 @@ class NativeReadTrace:
                     self.policy.charge_metadata(len(encoded(row)))
                     self.sources.append(row)
                     self.pool[key] = snapshot
-                if self.version in {3, read_epochs.COMPLETION_VERSION} and snapshot not in self.statement_indexes:
+                if self.version in {3, read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION} and snapshot not in self.statement_indexes:
                     self.policy.charge_metadata(len(data))
                     self.statement_indexes[snapshot] = read_epochs._statement_index(
                         bytes(data), checkpoint=self.deadline,
@@ -532,7 +772,7 @@ class NativeReadTrace:
                 relative = path.removeprefix("/repo/")
                 custody = None
                 selection_index = None
-                if self.version == read_epochs.COMPLETION_VERSION:
+                if self.version in {read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION}:
                     if not relative or relative.startswith("/") or ".." in relative.split("/") or "\\" in relative:
                         raise read_epochs.ReadEpochError("opened source has no exact repository-relative path")
                     content_digest = hashlib.sha256(data).hexdigest()
@@ -546,16 +786,17 @@ class NativeReadTrace:
                         raise read_epochs.ReadEpochError(
                             "opened source is outside the exact readonly snapshot inventory"
                         )
-                    rows, references, dependencies = read_epochs.completion_source_facts(
-                        relative, bytes(data),
-                        checkpoint=self.deadline, count_limit=self.config["observation_count"],
-                        charge=self.policy.charge_metadata,
-                    )
-                    read_epochs.require_completion_reference_closure(
-                        references, self.selection_names, dependencies=dependencies,
-                    )
-                    sites = [site for site in rows if site[5] in self.selection_names]
-                    selection_index = MappingProxyType({tuple(site[:5]): site for site in sites})
+                    if self.version == read_epochs.COMPLETION_VERSION:
+                        rows, references, dependencies = read_epochs.completion_source_facts(
+                            relative, bytes(data),
+                            checkpoint=self.deadline, count_limit=self.config["observation_count"],
+                            charge=self.policy.charge_metadata,
+                        )
+                        read_epochs.require_completion_reference_closure(
+                            references, self.selection_names, dependencies=dependencies,
+                        )
+                        sites = [site for site in rows if site[5] in self.selection_names]
+                        selection_index = MappingProxyType({tuple(site[:5]): site for site in sites})
                 current.update(
                     source=snapshot, pin=pin, identity=identity, descriptor=descriptor, path=path,
                     relative=relative, custody=custody, selection_index=selection_index,
@@ -568,7 +809,7 @@ class NativeReadTrace:
             "source-open", **self.context(), visit=visit, name=name, mode=mode, result=result,
             source=snapshot, identity=None if identity is None else list(identity),
             **({"path": current.get("relative"), "custody": current.get("custody")}
-               if source and self.version == read_epochs.COMPLETION_VERSION else {}),
+               if source and self.version in {read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION} else {}),
         )
 
     def fd_closed(self, pid, descriptor):
@@ -611,19 +852,27 @@ class NativeReadTrace:
                 identity=list(current["identity"]),
             )
         self.active.pop()
+        if self.version == read_epochs.RUNTIME_VERSION:
+            frame = self.invocations.pop()
+            if frame["kind"] != "source" or frame["visit"] != current["visit"]:
+                raise read_epochs.ReadEpochError("runtime source returned across an active invocation")
 
     def finish(self):
         if (
             self.active or self.pass_frame is not None or self.io is not None or self.pending_barrier is not None
+            or self.invocations
             or not self.passes or self.passes != self.execs
-            or self.version in {2, 3, read_epochs.COMPLETION_VERSION} and self.barriers != self.passes
+            or self.version in {2, 3, read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION} and self.barriers != self.passes
         ):
             raise read_epochs.ReadEpochError("original read trace ended with incomplete native state")
-        self.event("complete", execs=self.execs, passes=self.passes, visits=self.visits)
+        self.event(
+            "complete", execs=self.execs, passes=self.passes, visits=self.visits,
+            **({"effects": self.effects, "evaluations": self.evaluations} if self.version == read_epochs.RUNTIME_VERSION else {}),
+        )
         result = {"version": self.version, "scope": self.scope, "events": self.events, "sources": self.sources, "complete": True}
         if self.version == 3:
             result["selection"] = [list(row) for row in self.selection]
-        elif self.version == read_epochs.COMPLETION_VERSION:
+        elif self.version in {read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION}:
             result["selection"] = self.selection
             result["machine"] = {"version": 1, "events": self.machine, "closed": True}
         read_epochs.validate_trace(result, self.scope, count_limit=self.config["observation_count"],

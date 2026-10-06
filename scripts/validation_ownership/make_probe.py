@@ -614,6 +614,7 @@ class ProbeSession:
         self.native_tools = {}
         self.native_runtimes = {}
         self.native_selection = None
+        self.native_runtime_selection = None
         self.published_sources = {}
         self.published_versions = {}
         self.publication_serial = 0
@@ -710,6 +711,7 @@ class ProbeSession:
             self.loader, self.snapshot, self.tree, self.cache, self.mappings, self.native_tools,
             self.native_runtimes,
             self.native_selection,
+            self.native_runtime_selection,
         )
         cache, mappings, tools = {}, {}, {}
         runtimes = {}
@@ -724,7 +726,7 @@ class ProbeSession:
                 self._views.pop()
                 (self.loader, self.snapshot, self.tree,
                  self.cache, self.mappings, self.native_tools, self.native_runtimes,
-                 self.native_selection) = previous
+                 self.native_selection, self.native_runtime_selection) = previous
 
         try:
             self.budget.plan(1)
@@ -755,8 +757,8 @@ class ProbeSession:
                     self._views.append(previous)
                     (self.loader, self.snapshot, self.tree,
                      self.cache, self.mappings, self.native_tools, self.native_runtimes,
-                     self.native_selection) = (
-                        loader, snapshot, tree, cache, mappings, tools, runtimes, None,
+                     self.native_selection, self.native_runtime_selection) = (
+                        loader, snapshot, tree, cache, mappings, tools, runtimes, None, None,
                     )
                     selected = True
                 finally:
@@ -774,6 +776,7 @@ class ProbeSession:
             self.native_tools.clear()
             self.native_runtimes.clear()
             self.native_selection = None
+            self.native_runtime_selection = None
             self.published_sources.clear()
             self.published_versions.clear()
             self.generated_paths.clear()
@@ -787,7 +790,7 @@ class ProbeSession:
             self.runtime_root = None
             self.snapshot = None
             self.loader.live_modes.clear()
-            for loader, snapshot, tree, cache, mappings, tools, runtimes, selection in self._views:
+            for loader, snapshot, tree, cache, mappings, tools, runtimes, selection, runtime_selection in self._views:
                 loader.live_modes.clear()
                 cache.clear()
                 mappings.clear()
@@ -1053,7 +1056,7 @@ class ProbeSession:
         directories=(), executables=None, mapping_entries=(), metadata_validation=False,
         producer_handler=None, publication_observer=None, publication_allowed=True,
         dependency=None, native_runtime=(), read_abi=None, read_selection=None,
-        native_executables=(), native_runtime_directories=(),
+        native_executables=(), native_runtime_directories=(), runtime_completions=False,
     ):
         self.budget.remaining()
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
@@ -1145,11 +1148,11 @@ class ProbeSession:
             config["runtime_closure"] = sorted(set(config["runtime_closure"]) | {native_shell})
             config["native_runtime_directories"] = list(native_runtime_directories)
         if read_abi is not None:
-            from .read_epochs import COMPLETION_VERSION
+            from .read_epochs import COMPLETION_VERSION, RUNTIME_VERSION
             if not native_runtime:
                 raise MakeProbeError("source read observation requires original readonly native execution")
             config["read_epochs"] = {
-                "version": COMPLETION_VERSION if read_selection is not None else 1,
+                "version": RUNTIME_VERSION if runtime_completions else COMPLETION_VERSION if read_selection is not None else 1,
                 "scope": self.base.name + "/" + root.name, "abi": read_abi,
             }
             if read_selection is not None:
@@ -2055,14 +2058,16 @@ class ProbeSession:
     def _native_make_readonly(
         self, target, *, makefile="Makefile", variables=(), assignments=(), observe_reads=False,
         observe_completions=False, native_executables=(), native_runtime_directories=(), native_tool=None,
-        native_libraries=(),
+        native_libraries=(), observe_runtime_completions=False,
     ):
         variables, cli, environment = self._make_request(target, makefile, variables, assignments, ())
         if self.published_sources or self.make_depth:
             raise MakeProbeError("readonly native Make requires an unmapped immutable source session")
         if (
             type(observe_reads) is not bool or type(observe_completions) is not bool
-            or observe_completions and not observe_reads
+            or type(observe_runtime_completions) is not bool
+            or (observe_completions or observe_runtime_completions) and not observe_reads
+            or observe_completions and observe_runtime_completions
         ):
             raise MakeProbeError("invalid native read observation request or completion dependency")
         if (
@@ -2134,8 +2139,12 @@ class ProbeSession:
             native_executables = (*native_executables, "/native/tool")
         native_runtime = tuple(sorted(runtime.items()))
         environment["VO_OBSERVE_NATIVE_READONLY"] = "1"
-        read_abi = self._native_read_abi(completions=observe_completions) if observe_reads else None
-        read_selection = self._native_completion_selection() if observe_completions else None
+        read_abi = self._native_read_abi(
+            completions=observe_completions or observe_runtime_completions,
+        ) if observe_reads else None
+        read_selection = self._native_completion_selection(
+            runtime=observe_runtime_completions,
+        ) if observe_completions or observe_runtime_completions else None
         if observe_reads:
             environment["VO_OBSERVE_READS"] = "1"
         root_name = f"native-readonly-root-{self.serial + 1}"
@@ -2165,6 +2174,7 @@ class ProbeSession:
                 read_selection=read_selection,
                 native_executables=native_executables,
                 native_runtime_directories=runtime_directories,
+                runtime_completions=observe_runtime_completions,
                 mounts=[
                     *(self._mount(Path(path), path, executable=True) for path in runtime_directories),
                     self._mount(self.tree, "/repo"),
@@ -2192,14 +2202,15 @@ class ProbeSession:
             self.native_runtimes[path] = captured
         return self.native_runtimes[path]
 
-    def _native_completion_selection(self):
+    def _native_completion_selection(self, *, runtime=False):
         from . import read_epochs
         self.budget.remaining()
         if self.base is None or self.snapshot is None:
             raise MakeProbeError("native completion selection requires an active snapshot view")
-        if self.native_selection is not None:
-            self.budget.charge("cache", len(self.native_selection))
-            selection = parse_json(self.native_selection, "cached native completion selection")
+        cached = self.native_runtime_selection if runtime else self.native_selection
+        if cached is not None:
+            self.budget.charge("cache", len(cached))
+            selection = parse_json(cached, "cached native completion selection")
             return read_epochs.validate_completion_selection(
                 selection, count_limit=self.budget.limits.observation_count,
                 file_limit=self.budget.limits.file_bytes,
@@ -2250,7 +2261,7 @@ class ProbeSession:
             }
             self.budget.charge("cache", len(encoded(entry)))
             inventory.append(entry)
-            if screen == "text":
+            if screen == "text" and not runtime:
                 read_epochs.completion_reference_names(
                     data, names=selected, checkpoint=self.budget.remaining,
                     count_limit=self.budget.limits.observation_count,
@@ -2267,7 +2278,10 @@ class ProbeSession:
         )
         captured = encoded(selection)
         self.budget.charge("cache", len(captured))
-        self.native_selection = captured
+        if runtime:
+            self.native_runtime_selection = captured
+        else:
+            self.native_selection = captured
         return selection
 
     def _native_read_abi(self, *, completions=False):

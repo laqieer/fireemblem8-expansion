@@ -272,12 +272,12 @@ class Policy:
             if (
                 not self.native_readonly or not isinstance(request, dict)
                 or set(request) != {"version", "scope", "abi"} | (
-                    {"selection"} if request.get("version") == 4 else set()
+                    {"selection"} if request.get("version") in {4, 5} else set()
                 )
-                or type(request["version"]) is not int or request["version"] not in {1, 4}
+                or type(request["version"]) is not int or request["version"] not in {1, 4, 5}
                 or not isinstance(request["abi"], dict)
-                or request["abi"].get("version") != (2 if request["version"] == 4 else 1)
-                or request["version"] == 4 and (
+                or request["abi"].get("version") != (2 if request["version"] in {4, 5} else 1)
+                or request["version"] in {4, 5} and (
                     not isinstance(request["selection"], dict)
                     or not isinstance(request["selection"].get("inventory"), list)
                     or any(not isinstance(row, dict) or row.get("kind") != "snapshot"
@@ -448,7 +448,7 @@ class Policy:
         mounts = self.config.get("mounts", ())
         repository = [row for row in mounts if row["target"] == "/repo"]
         if (
-            not self.native_readonly or trace.version != 4 or pid != self.make_pid or pid != trace.pid
+            not self.native_readonly or trace.version not in {4, 5} or pid != self.make_pid or pid != trace.pid
             or self.processes.get(pid) is not state or state.role != "make"
             or not state.observer_ready or not state.parked or state.pidfd < 0
             or len(repository) != 1 or repository[0]["writable"] is not False

@@ -89,6 +89,7 @@ class FoundationTests(unittest.TestCase):
         self.assertFalse(session.native_tools)
         self.assertFalse(session.native_runtimes)
         self.assertIsNone(session.native_selection)
+        self.assertIsNone(session.native_runtime_selection)
         self.assertFalse(session._views)
         self.assertFalse(session.make_runtime)
         self.assertFalse(session.runtime_inputs)
@@ -2907,6 +2908,316 @@ class FoundationTests(unittest.TestCase):
             self.assertNotIn("read_trace", completed["observed"])
             self.assertTrue(session.budget.failed)
         self.assert_clean(session)
+
+    def test_native_runtime_effects_capture_computed_staged_define_and_eval(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("empty.mk", "")
+        self.add("Makefile", (
+            "NAME := SUPPLIER\n$(NAME) := original\n"
+            "OUTPUT := $(call if,yes,$$($$(NAME)))\n"
+            "define MACRO\nEVALUATED := $(OUTPUT)\nSECOND := next\nendef\n"
+            "$(eval $(MACRO))\n"
+            "unused:\ninclude empty.mk\n\tINCLUDED := included\n"
+            "all: $(NAME) := local\n\tGLOBAL := global\n"
+            "all: ; @v='$(EVALUATED)|$(SECOND)|$(INCLUDED)|$(GLOBAL)'; printf '%s' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("OUTPUT", "EVALUATED", "GLOBAL"),
+                observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"original|next|included|global")
+            self.assertEqual(semantics["domains"]["OUTPUT"]["value"], "original")
+            trace = observed["read_trace"]
+            self.assertEqual(trace["version"], 5)
+            self.assertEqual(trace["selection"]["names"], [])
+            entries = [row for row in trace["events"] if row["kind"] == "effect-entry"]
+            values = {
+                row["variable"][0]: row["variable"][1]
+                for row in trace["events"] if row["kind"] == "effect-completion"
+            }
+            self.assertEqual(values["EVALUATED"], "original")
+            self.assertEqual(values["SECOND"], "next")
+            self.assertEqual(values["GLOBAL"], "global")
+            self.assertEqual(
+                [row["caller"] for row in entries if row["name"] == "SUPPLIER"],
+                ["assignment", "target"],
+            )
+            macro, = [row for row in entries if row["name"] == "MACRO"]
+            self.assertEqual(macro["caller"], "define")
+            self.assertEqual(macro["declaration"], ["Makefile", 4, 0])
+            evaluation, = [row for row in trace["events"] if row["kind"] == "eval-entry"]
+            source = trace["sources"][evaluation["source"] - 1]
+            self.assertEqual(base64.b64decode(source["data"]), b"EVALUATED := original\nSECOND := next")
+            self.assertEqual(
+                [row["location"]["evaluation"] for row in entries if row["name"] in {"EVALUATED", "SECOND"}],
+                [evaluation["evaluation"]] * 2,
+            )
+            archive = read_epochs.reconstruct_archive(trace, budget=session.budget)
+            self.assertEqual(archive.version, 5)
+            part, = archive.passes
+            self.assertEqual(len(part.effects), len(entries))
+            self.assertEqual(part.evaluations[0].source.data, b"EVALUATED := original\nSECOND := next")
+            self.assertEqual(
+                [effect.variable.value for effect in part.effects if effect.name == "EVALUATED"],
+                ["original"],
+            )
+        self.assert_clean(session)
+
+    def test_native_runtime_nested_eval_include_and_effect_lifetimes(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("included.mk", "OWNED := included\n")
+        self.add("Makefile", (
+            "define OUTER\n"
+            "include included.mk\n"
+            "INNER := $$(eval THIRD := nested)done\n"
+            "define NESTED\n"
+            "literal\n"
+            "endef\n"
+            "endef\n"
+            "$(eval $(OUTER))\n"
+            "all: ; @v='$(OWNED)|$(INNER)|$(THIRD)|$(NESTED)'; printf '%s' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"included|done|nested|literal")
+            trace = observed["read_trace"]
+            archive = read_epochs.reconstruct_archive(trace, budget=session.budget)
+            part, = archive.passes
+            self.assertEqual(len(part.evaluations), 2)
+            outer, inner = part.evaluations
+            self.assertEqual(inner.source.data, b"THIRD := nested")
+            parent = next(effect for effect in part.effects if effect.name == "INNER")
+            self.assertEqual(inner.parent, ("effect", parent.number))
+            self.assertEqual(inner.location.evaluation, outer.number)
+            owned = next(effect for effect in part.effects if effect.name == "OWNED")
+            self.assertIsNone(owned.location.evaluation)
+            included = next(visit for visit in part.visits if visit.name == "included.mk")
+            self.assertEqual(included.location.evaluation, outer.number)
+            third = next(effect for effect in part.effects if effect.name == "THIRD")
+            self.assertEqual(third.location.evaluation, inner.number)
+            self.assertLess(parent.entry_seq, inner.entry_seq)
+            self.assertLess(inner.exit_seq, parent.completion_seq)
+        self.assert_clean(session)
+
+    def test_native_runtime_deferred_builtins_and_context_reset_capture_all_effects(self):
+        for expression in (
+            "$(call if,yes,$$($$(NAME)))", "$(call and,yes,$$($$(NAME)))",
+            "$(call or,,$$($$(NAME)))", "$(call foreach,ITEM,one,$$($$(NAME)))",
+        ):
+            for prefix in (
+                "ifeq (no,yes)\nunused:\nendif\n",
+                "unused:\ninclude empty.mk\n",
+                "unused:\n-include empty.mk\n",
+                "unused:\nsinclude empty.mk\n",
+                "all: 1NAME := local\n",
+            ):
+                self.add("empty.mk", "")
+                self.add("Makefile", "NAME := SUPPLIER\n" + prefix + (
+                    "\tSUPPLIER := original\nOUTPUT := " + expression +
+                    "\nall: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+                ))
+                session = self.session()
+                with self.subTest(expression=expression, prefix=prefix), session:
+                    completed, _, observed = session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                    )
+                    self.assertEqual(completed.stdout, b"original")
+                    values = [
+                        row["variable"][1] for row in observed["read_trace"]["events"]
+                        if row["kind"] == "effect-completion" and row["variable"][0] == "SUPPLIER"
+                    ]
+                    self.assertEqual(values, ["original"])
+                self.assert_clean(session)
+
+    def test_native_runtime_returned_effect_eval_and_machine_mutations_refuse(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", (
+            "NAME := VALUE\n$(NAME) := original\n$(eval SECOND := $(VALUE))\n"
+            "all: ; @v='$(SECOND)'; printf '%s' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            _, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+            )
+            trace = observed["read_trace"]
+            saved = encoded(trace)
+            mutations = (
+                ("effect-entry", "caller", []),
+                ("source-entry", "visit", []),
+                ("source-open", "source", []),
+                ("source-open", "result", []),
+                ("effect-entry", "parent", ["pass", 1]),
+                ("effect-entry", "target", True),
+                ("effect-entry", "flavor", 0),
+                ("effect-entry", "name", "FOREIGN"),
+                ("effect-entry", "declaration", ["Makefile", 999, 0]),
+                ("effect-return", "effect", 999),
+                ("effect-completion", "cwd", "relative"),
+                ("eval-entry", "source", 1),
+                ("eval-exit", "evaluation", 999),
+                ("complete", "effects", 0),
+            )
+            for kind, key, replacement in mutations:
+                changed = parse_json(saved, "runtime projection")
+                row = next(row for row in changed["events"] if row["kind"] == kind)
+                row[key] = replacement
+                with self.subTest(kind=kind, key=key):
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            changed, trace["scope"], count_limit=session.budget.limits.observation_count,
+                            file_limit=session.budget.limits.file_bytes,
+                        )
+            for kind, key in (("pass-entry", "exec"), ("source-open", "path"), ("source-exit", "source")):
+                changed = parse_json(saved, "runtime missing field")
+                row = next(row for row in changed["events"] if row["kind"] == kind)
+                del row[key]
+                with self.subTest(missing=(kind, key)):
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            changed, trace["scope"], count_limit=session.budget.limits.observation_count,
+                            file_limit=session.budget.limits.file_bytes,
+                        )
+            for binding in ("effect-input", "effect-result", "eval-buffer"):
+                changed = parse_json(saved, "runtime machine omission")
+                changed["machine"]["events"] = [
+                    row for row in changed["machine"]["events"] if row["kind"] != binding
+                ]
+                for sequence, row in enumerate(changed["machine"]["events"], 1):
+                    row["seq"] = sequence
+                with self.subTest(binding=binding):
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "omit effect/eval payload"):
+                        read_epochs.validate_trace(
+                            changed, trace["scope"], count_limit=session.budget.limits.observation_count,
+                            file_limit=session.budget.limits.file_bytes,
+                        )
+            changed = parse_json(saved, "coherent runtime eval byte mutation")
+            entry = next(row for row in changed["events"] if row["kind"] == "eval-entry")
+            source = changed["sources"][entry["source"] - 1]
+            data = base64.b64decode(source["data"]).replace(b"original", b"modified")
+            self.assertNotEqual(hashlib.sha256(data).hexdigest(), source["sha256"])
+            source.update(
+                data=base64.b64encode(data).decode(), sha256=hashlib.sha256(data).hexdigest(),
+                bytes=len(data),
+            )
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "eval bytes differ from pristine capture"):
+                read_epochs.validate_trace(
+                    changed, trace["scope"], count_limit=session.budget.limits.observation_count,
+                    file_limit=session.budget.limits.file_bytes,
+                )
+        self.assert_clean(session)
+
+    def test_native_runtime_live_effect_and_buffer_custody_mutations_refuse(self):
+        cases = (
+            (
+                "runtime_effect_return",
+                " if self.invocations[-1]['kind']=='effect': self.invocations[-1]['variable']+=8\n",
+                "runtime definition",
+            ),
+            (
+                "runtime_eval_entry",
+                " self.invocations[-1]['buffer']+=1\n",
+                "pristine eval buffer",
+            ),
+        )
+        for method, mutation, message in cases:
+            self.add("Makefile", "VALUE := original\n$(eval SECOND := $(VALUE))\nall: ; @:\n")
+            body = (
+                "import read_trace\n"
+                f"original=read_trace.NativeReadTrace.{method}\n"
+                "def mutate(self,*args,**kwargs):\n"
+                " result=original(self,*args,**kwargs)\n" + mutation +
+                " return result\n"
+                f"read_trace.NativeReadTrace.{method}=mutate\n"
+            )
+            session = self.session()
+            with self.subTest(method=method), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, message):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                    )
+            self.assert_clean(session)
+        for request in (
+            {"observe_runtime_completions": True},
+            {"observe_reads": True, "observe_runtime_completions": 1},
+            {"observe_reads": True, "observe_completions": True, "observe_runtime_completions": True},
+        ):
+            session = self.session()
+            with self.subTest(request=request), session:
+                with self.assertRaisesRegex(MakeProbeError, "invalid native read observation request"):
+                    session._native_make_readonly("all", **request)
+            self.assert_clean(session)
+
+    def test_native_runtime_actual_private_prefix_secondary_and_failed_lifetimes(self):
+        self.add("Makefile", (
+            "private VALUE := original\nPUBLIC := $(VALUE)\n.RECIPEPREFIX := >\n"
+            ".SECONDEXPANSION:\n"
+            "all: $$(EMPTY)\n> @v='$(PUBLIC)'; printf '%s' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"original")
+            variable, = [
+                row["variable"] for row in observed["read_trace"]["events"]
+                if row["kind"] == "effect-completion" and row["variable"][0] == "VALUE"
+            ]
+            self.assertTrue(variable[2] & (1 << 7))
+        self.assert_clean(session)
+        self.add("Makefile", "VALUE := original\n$(error intended-runtime-failure)\nall: ;\n")
+        session = self.session()
+        captured = {}
+        with session:
+            run = session._sandbox_run
+            def actual(*args, **kwargs):
+                result, observed = run(*args, **kwargs)
+                captured.update(result=result, observed=observed)
+                return result, observed
+            with patch.object(session, "_sandbox_run", side_effect=actual):
+                with self.assertRaisesRegex(MakeProbeError, "readonly native GNU Make failed: 2"):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                    )
+            self.assertNotIn("read_trace", captured["observed"])
+            self.assertIn(b"intended-runtime-failure", captured["result"].stderr)
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_runtime_target_modifiers_and_ignored_origin_capture_effective_bindings(self):
+        for override, inputs, expected in (
+            ("", {}, b"local|local"),
+            ("override ", {"VALUE": "command"}, b"local|local"),
+            ("", {"VALUE": "command"}, b"command|command"),
+        ):
+            with self.subTest(override=override, inputs=inputs):
+                self.add("Makefile", (
+                    "all other: " + override + "private export VALUE := local\n"
+                    "all: ; @printf '%s' '$(VALUE)|'\"$$VALUE\"\n"
+                ))
+                session = self.session()
+                with session:
+                    completed, _, observed = session._native_make_readonly(
+                        "all", assignments=tuple(("command-line", name, value) for name, value in inputs.items()),
+                        observe_reads=True, observe_runtime_completions=True,
+                    )
+                    self.assertEqual(completed.stdout, expected)
+                    bindings = [
+                        row["variable"] for row in observed["read_trace"]["events"]
+                        if row["kind"] == "effect-completion" and row["variable"][0] == "VALUE"
+                    ]
+                    self.assertEqual(len(bindings), 2)
+                    for variable in bindings:
+                        self.assertEqual(variable[1], expected.split(b"|")[0].decode())
+                        self.assertTrue(variable[2] & (1 << 7))
+                        self.assertEqual(variable[2] >> 29 & 3, 0)
+                self.assert_clean(session)
 
     def test_native_runtime_effect_abi_binds_complete_machine_call_families(self):
         from scripts.validation_ownership import read_epochs
