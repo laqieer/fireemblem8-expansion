@@ -856,6 +856,15 @@ the existing namespace launcher, run these `FoundationTests` controls:
    with their dollar references still analyzed. The plain recipe's command
    echo is preserved as well as its output. Coherent returned archives exercise
    every private-global declaration form.
+   `test_native_completion_conditional_recipe_context_refuses_ambiguity`
+   exercises false rules under all four conditional directives, else/chained
+   else and nesting. Conditional transitions invalidate recipe context; rules
+   within unresolved conditionals cannot authorize tab statements. Literal and
+   computed tab assignments must refuse rather than disappear as recipes.
+   Even genuine conditional tab recipes are unsupported until actual parser
+   context is bound; native no-completion execution remains unchanged.
+   A new unconditional local rule restores recipe admission. Coherent returned
+   archive payloads cover skipped-rule literal and computed assignments.
    Repeat the no-completion execution control with computed assignment and short
    lookup sources: genuine native output must remain `original` without an
    invented completion trace. No native evaluator, source rewrite, new budget,

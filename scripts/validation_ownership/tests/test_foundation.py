@@ -2054,6 +2054,58 @@ class FoundationTests(unittest.TestCase):
                     self.assertEqual(completed.stdout, ordinary.stdout)
                 self.assert_clean(session)
 
+    def test_native_completion_conditional_recipe_context_refuses_ambiguity(self):
+        from scripts.validation_ownership import read_epochs
+        prefixes = (
+            "ifeq (no,yes)\nunused:\nendif\n",
+            "ifneq (yes,yes)\nunused:\nendif\n",
+            "ifdef ABSENT\nunused:\nendif\n",
+            "DEFINED := yes\nifndef DEFINED\nunused:\nendif\n",
+            "ifeq (yes,yes)\nelse\nunused:\nendif\n",
+            "ifeq (no,yes)\nelse ifeq (no,yes)\nunused:\nendif\n",
+            "ifeq (yes,yes)\nifeq (no,yes)\nunused:\nendif\nendif\n",
+        )
+        for prefix in prefixes:
+            for assignment in ("SUPPLIER := original", "$(NAME) := original"):
+                source = "NAME := SUPPLIER\n" + prefix + "\t" + assignment + (
+                    "\nOUTPUT := $(SUPPLIER)\nall: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+                )
+                self.add("Makefile", source)
+                with self.subTest(prefix=prefix, assignment=assignment):
+                    ordinary = subprocess.run(
+                        ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                        env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                    )
+                    self.assertEqual(ordinary.stdout, b"original")
+                    with self.assertRaisesRegex(MakeProbeError, "unsupported completion tab statement"):
+                        read_epochs.completion_source_facts("Makefile", source.encode())
+                    session = self.session()
+                    with self.assertRaisesRegex(MakeProbeError, "unsupported completion tab statement"), session:
+                        session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                    self.assert_clean(session)
+        self.add("Makefile", (
+            "ifeq (yes,yes)\nall:\n\t@v=original; printf '%s' \"$$v\"\nendif\n"
+        ))
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "unsupported completion tab statement"), session:
+            session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+        self.assert_clean(session)
+        session = self.session()
+        with session:
+            completed, _, _ = session._native_make_readonly("all", observe_reads=True)
+            self.assertEqual(completed.stdout, b"original")
+        self.assert_clean(session)
+        self.add("Makefile", (
+            "ifeq (no,yes)\nunused:\nendif\nall:\n\t@v=original; printf '%s' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            completed, _, _ = session._native_make_readonly(
+                "all", observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"original")
+        self.assert_clean(session)
+
     def test_native_completion_private_and_directive_context(self):
         from scripts.validation_ownership import read_epochs
         declarations = [
@@ -2369,6 +2421,8 @@ class FoundationTests(unittest.TestCase):
                 *("private VALUE " + operator + " original\nOUTPUT := $(VALUE)\n" + recipe
                   for operator in ("=", ":=", "::=", "?=", "+=", "!=")),
                 "private define VALUE\noriginal\nendef\nOUTPUT := $(VALUE)\n" + recipe,
+                "ifeq (no,yes)\nunused:\nendif\n\tOUTPUT := original\n" + recipe,
+                "NAME := OUTPUT\nifdef ABSENT\nunused:\nendif\n\t$(NAME) := original\n" + recipe,
                 *("NAME := VALUE\nVALUE := original\nOUTPUT := $(call " + target + ",$(NAME))\n" + recipe
                   for target in ("value", "origin", "flavor", "call")),
             ):

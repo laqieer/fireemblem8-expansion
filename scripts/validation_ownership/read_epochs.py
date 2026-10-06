@@ -666,6 +666,7 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
         raise ReadEpochError("completion source has unsupported bytes")
     rows, dependencies, roots = [], {}, set()
     definition, depth, recipe_allowed = None, 0, False
+    conditional_depth = 0
     digest = hashlib.sha256(data).hexdigest()
     for logical, first, last, raw in physical_statements(
         data, checkpoint=checkpoint, count_limit=count_limit,
@@ -687,6 +688,18 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
             charge(len(encoded(sorted(names))))
             dependencies[definition].update(names)
             continue
+        conditional = (
+            None if raw.startswith("\t") else
+            re.match(r"^(ifeq|ifneq|ifdef|ifndef|else|endif)(?:[ \t]|$)", header)
+        )
+        if conditional:
+            recipe_allowed = False
+            if conditional[1] in {"ifeq", "ifneq", "ifdef", "ifndef"}:
+                conditional_depth += 1
+            elif not conditional_depth:
+                raise ReadEpochError("unsupported completion unmatched conditional")
+            elif conditional[1] == "endif":
+                conditional_depth -= 1
         if raw.startswith("\t"):
             if not recipe_allowed:
                 raise ReadEpochError("unsupported completion tab statement before admitted rule")
@@ -696,7 +709,7 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
         if assignment is not None or macro is not None or make_lexical.MODE_TARGET_ASSIGNMENT.fullmatch(statement):
             recipe_allowed = False
         else:
-            recipe_allowed |= rule
+            recipe_allowed |= rule and not conditional_depth
         if assignment is None:
             names = make_lexical.references(statement, directives=not raw.startswith("\t"))
             charge(len(encoded(sorted(names))))
@@ -723,6 +736,8 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
             raise ReadEpochError("completion source selection exceeds observation count")
     if depth:
         raise ReadEpochError("completion selection encountered an unterminated define body")
+    if conditional_depth:
+        raise ReadEpochError("unsupported completion unterminated conditional")
     return rows, roots, dependencies
 
 
