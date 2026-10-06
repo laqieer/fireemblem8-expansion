@@ -1841,6 +1841,48 @@ class FoundationTests(unittest.TestCase):
                                      for event in observed["read_trace"]["events"]))
             self.assert_clean(session)
 
+    def test_native_completion_eval_assignment_requires_source_provenance(self):
+        prefix = "define MACRO\nVALUE := original\nendef\n"
+        suffix = "OUTPUT := $(VALUE)\nREFERENCES = $(OUTPUT) $(VALUE)\nall: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+        self.add("Makefile", prefix + suffix)
+        session = self.session()
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"")
+            self.assertEqual(semantics["domains"]["VALUE"]["origin"], "undefined")
+            self.assertNotIn("VALUE", [event["name"] for event in observed["read_trace"]["events"]
+                                      if event["kind"] == "assignment-completion"])
+        self.assert_clean(session)
+        self.add("Makefile", prefix + "$(eval $(MACRO))\n" + suffix)
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+        )
+        self.assertEqual(ordinary.stdout, b"original")
+        session = self.session()
+        with session:
+            completed, _, _ = session._native_make_readonly("all", observe_reads=True)
+            self.assertEqual(completed.stdout, ordinary.stdout)
+        self.assert_clean(session)
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "evaluated assignment lacks admitted source provenance"), session:
+            session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+        self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+        self.add("Makefile", (
+            "define RULE\nall: ; @v=original; printf '%s' \"$$$$v\"\nendef\n"
+            "$(eval $(RULE))\n"
+        ))
+        session = self.session()
+        with session:
+            completed, _, _ = session._native_make_readonly(
+                "all", observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"original")
+        self.assert_clean(session)
+
     def test_native_returned_archive_uses_finite_source_admission(self):
         from scripts.validation_ownership import read_epochs
         recipe = "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"

@@ -417,6 +417,8 @@ class NativeReadTrace:
         current, abi = self.active[-1], self.abi["completion"]
         location = self.source_location(registers, current, allow_eval=True)
         if location is None:
+            if self.version == read_epochs.COMPLETION_VERSION:
+                raise read_epochs.ReadEpochError("evaluated assignment lacks admitted source provenance")
             return
         modifiers = int.from_bytes(self.memory(registers.rbp + abi["modifiers"], 4), "little")
         path = current.get("relative", current["name"].removeprefix("/repo/"))

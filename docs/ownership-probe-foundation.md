@@ -754,6 +754,19 @@ the existing namespace launcher, run these `FoundationTests` controls:
    directive and nested literal-define contexts. Literal define bodies retain
    dependencies but are not ordinary assignment sites; arbitrary macro/eval
    execution still needs broader supplier qualification.
+   `test_native_completion_eval_assignment_requires_source_provenance`
+   requires a dead literal macro to preserve empty output and undefined VALUE
+   without manufacturing its completion. Evaluating the macro must return
+   `original` under ordinary GNU and native execution without completion
+   evidence. Completion-enabled execution must instead explicitly refuse the
+   actual evaluated assignment lacking admitted source provenance and clean
+   owned pins/processes; it must not publish a success-shaped archive omitting
+   the supplier. A macro emitting only a literal rule remains executable with
+   completion observation. The existing verified eval ancestry check remains
+   mandatory before this refusal. Version-3 legacy readers are unchanged;
+   version-4 evaluated assignment provenance is unqualified, not silently
+   ignored. Runtime buffer bytes modified by GNU are not original authored
+   source and cannot borrow immutable-source authority.
    Repeat the no-completion execution control with computed assignment and short
    lookup sources: genuine native output must remain `original` without an
    invented completion trace. No native evaluator, source rewrite, new budget,
