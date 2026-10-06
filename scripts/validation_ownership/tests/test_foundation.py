@@ -314,7 +314,10 @@ class FoundationTests(unittest.TestCase):
         resource = "/usr/share/zoneinfo/Etc/UTC"
         captured = make_probe._capture_runtime_input(resource, budget)
         self.assertEqual(captured.data, Path(resource).read_bytes())
-        self.assertEqual(captured.mode, stat.S_IMODE(Path(resource).stat().st_mode))
+        self.assertEqual(
+            captured.mode,
+            stat.S_IMODE((self.directory / "timezone" / resource.lstrip("/")).stat().st_mode),
+        )
         self.assertEqual(captured.canonical, resource)
         self.assertGreater(budget.bytes["control"], len(captured.data))
         absent = make_probe._capture_runtime_input("/usr/pyvenv.cfg", budget)
@@ -327,6 +330,18 @@ class FoundationTests(unittest.TestCase):
         self.assertEqual(alias.mode, captured.mode)
         self.assertEqual(alias.canonical, captured.canonical)
         self.assertIn(("/usr/share/zoneinfo/UTC", "Etc/UTC"), alias.aliases)
+
+    def test_owned_timezone_capture_ignores_installed_host_mode(self):
+        original_stat = Path.stat
+        def shaped(path, *args, **kwargs):
+            row = original_stat(path, *args, **kwargs)
+            if str(path) == "/usr/share/zoneinfo/Etc/UTC":
+                values = list(row)
+                values[0] = stat.S_IFREG | 0o777
+                return os.stat_result(values)
+            return row
+        with patch.object(Path, "stat", shaped):
+            self.test_native_optional_usr_data_capture_preserves_bytes_and_real_absence()
 
     def test_native_runtime_system_owner_and_write_permissions_refuse_before_capture(self):
         from scripts.validation_ownership import make_probe
