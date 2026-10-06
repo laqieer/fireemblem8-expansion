@@ -363,6 +363,7 @@ def _capture_runtime_input(path, budget):
             target = os.readlink(path)
             if (
                 len(os.fsencode(target)) > 4096
+                or ".." in target.split("/")
                 or Path(os.path.normpath(os.path.join(str(Path(path).parent), target))) != resolved
             ):
                 raise MakeProbeError("runtime file alias is not a single canonical target")

@@ -561,6 +561,41 @@ class FoundationTests(unittest.TestCase):
         with self.assertRaisesRegex(MakeProbeError, "single canonical target"):
             make_probe._capture_runtime_input("/usr/share/zoneinfo/localtime", ProbeBudget())
 
+    def test_captured_file_alias_traversal_refuses_and_direct_spellings_roundtrip(self):
+        from scripts.validation_ownership import make_probe
+        target = self.root / "target"
+        target.write_bytes(b"original")
+        (self.root / "sub").mkdir()
+        alias = self.root / "alias"
+        for spelling in ("sub/../target", str(self.root / "sub/../target")):
+            with self.subTest(spelling=spelling):
+                alias.symlink_to(spelling)
+                self.assertEqual(alias.read_bytes(), b"original")
+                try:
+                    with patch.object(make_probe, "_trusted_runtime_path", return_value=target):
+                        with self.assertRaisesRegex(MakeProbeError, "single canonical target"):
+                            make_probe._capture_runtime_input(str(alias), ProbeBudget())
+                finally:
+                    alias.unlink()
+        nested = self.root / "sub" / "target"
+        nested.write_bytes(b"nested")
+        for spelling, resolved in (("target", target), ("./target", target), ("sub/target", nested)):
+            with self.subTest(spelling=spelling):
+                alias.symlink_to(spelling)
+                with patch.object(make_probe, "_trusted_runtime_path", return_value=resolved):
+                    captured = make_probe._capture_runtime_input(str(alias), ProbeBudget())
+                backing = self.root / ("backing-" + spelling.replace("/", "-"))
+                backing.mkdir()
+                destination = backing / captured.path.lstrip("/")
+                destination.parent.mkdir(parents=True)
+                destination.symlink_to(dict(captured.aliases)[str(alias)])
+                output = backing / captured.canonical.lstrip("/")
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_bytes(captured.data)
+                self.assertEqual(os.readlink(destination), spelling)
+                self.assertEqual(destination.read_bytes(), resolved.read_bytes())
+                alias.unlink()
+
     def test_native_readonly_captured_alias_metadata_and_overlap(self):
         self.add("Makefile", ".PHONY: all\nall: ; @/usr/bin/readlink /usr/share/zoneinfo/UTC\n")
         session = self.session(runtime_files=("/usr/share/zoneinfo/UTC",))

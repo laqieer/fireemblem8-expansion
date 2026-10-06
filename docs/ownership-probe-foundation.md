@@ -381,6 +381,17 @@ qualification remain incomplete.
 
 ### Declared original direct executables
 
+Captured final file-alias targets must not contain `..` path components:
+normalizing the final target does not materialize directories required by
+kernel traversal of the preserved link text. Direct, `./target` and nested
+canonical targets remain supported. Run
+`test_captured_file_alias_traversal_refuses_and_direct_spellings_roundtrip`:
+existing-host relative and absolute `sub/../target` aliases must refuse at
+capture; direct/dot/nested spellings must preserve link text and round-trip
+captured bytes. Retain live link/target replacement and native alias metadata
+controls. This is final optional-runtime file-alias admission, not repository
+include-path normalization or stock ancestor-alias behavior.
+
 Trusted native ELF closures are captured once per exact active immutable view
 and requested executable pathname. First acquisition charges the actual
 captured bytes and retained cache resources; repeat queries reuse these bytes
