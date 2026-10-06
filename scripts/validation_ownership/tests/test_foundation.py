@@ -1977,6 +1977,242 @@ class FoundationTests(unittest.TestCase):
             self.assertIs(session.budget.limits, limits)
         self.assert_clean(session)
 
+    def test_native_selinux_mount_metadata_preserves_actual_type_and_absence(self):
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <errno.h>\n#include <stdio.h>\n#include <sys/vfs.h>\n"
+            "int main(int argc, char **argv) {\n"
+            " struct statfs info; int rc;\n"
+            " if (argc != 2) return 7;\n"
+            " rc=statfs(argv[1], &info);\n"
+            " if (rc) printf(\"error:%d\\n\", errno);\n"
+            " else printf(\"type:%lx;size:%ld;readonly:%d\\n\", (unsigned long)info.f_type,"
+            " (long)info.f_bsize, !!(info.f_flags & 1));\n"
+            " return 0;\n}\n"
+        ))
+        for path in ("/sys/fs/selinux", "/selinux"):
+            self.add("Makefile", "all: ; @/native/tool " + path + "\n")
+            session = self.session()
+            with self.subTest(path=path), session:
+                tool = session.compile_native(("native.c",))
+                ordinary = subprocess.run(
+                    (str(tool.path), path), cwd=self.root, env=ENVIRONMENT,
+                    capture_output=True, timeout=10, check=True,
+                )
+                completed, _, observed = session._native_make_readonly(
+                    "all", native_tool=tool, native_metadata_directories=(path,),
+                    observe_reads=True, observe_runtime_completions=True,
+                )
+                if Path(path).exists():
+                    self.assertEqual(completed.stdout.split(b";")[:2], ordinary.stdout.split(b";")[:2])
+                    self.assertEqual(completed.stdout.split(b";")[2], b"readonly:1\n")
+                else:
+                    self.assertEqual(completed.stdout, ordinary.stdout)
+                    self.assertEqual(completed.stdout, f"error:{errno.ENOENT}\n".encode())
+                if Path(path).exists():
+                    self.assertIn(path, observed["accessed"])
+                record, = [row for row in observed["metadata"] if row[0] == 137 and row[1] == path]
+                self.assertEqual(record[2:6], (0, 0, 120, 0))
+                self.assertEqual(record[6], 0 if Path(path).exists() else -errno.ENOENT)
+            self.assert_clean(session)
+
+    def test_native_selinux_metadata_mount_has_no_content_or_descendant_authority(self):
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <dirent.h>\n#include <fcntl.h>\n#include <string.h>\n"
+            "#include <sys/vfs.h>\n#include <unistd.h>\n"
+            "int main(int argc, char **argv) {\n"
+            " struct statfs info;\n"
+            " if (argc != 2) return 7;\n"
+            " if (!strcmp(argv[1], \"read\")) open(\"/sys/fs/selinux\", O_RDONLY);\n"
+            " else if (!strcmp(argv[1], \"list\")) opendir(\"/sys/fs/selinux\");\n"
+            " else if (!strcmp(argv[1], \"write\")) open(\"/sys/fs/selinux/test\", O_WRONLY|O_CREAT, 0600);\n"
+            " else statfs(argv[1], &info);\n"
+            " return 0;\n}\n"
+        ))
+        for operation, message in (
+            ("read", "metadata-only runtime operation denied"),
+            ("list", "metadata-only runtime operation denied"),
+            ("write", "filesystem write denied"),
+            ("/sys/fs/selinux/child", "uncaptured Make runtime access"),
+            ("/sys/fs/other", "uncaptured Make runtime access"),
+            ("/selinux/child", "uncaptured Make runtime access"),
+        ):
+            self.add("Makefile", "all: ; @/native/tool " + operation + "\n")
+            session = self.session()
+            with self.subTest(operation=operation):
+                with self.assertRaisesRegex(MakeProbeError, message), session:
+                    tool = session.compile_native(("native.c",))
+                    session._native_make_readonly(
+                        "all", native_tool=tool,
+                        native_metadata_directories=("/sys/fs/selinux", "/selinux"),
+                    )
+                self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_selinux_metadata_declarations_keep_exact_trust_and_identity(self):
+        from scripts.validation_ownership import make_probe
+        self.add("Makefile", "all: ; @:\n")
+        for declarations in (
+            ["/sys/fs/selinux"], ("/sys",), ("/sys/fs/selinux/child",),
+            ("/sys/fs/selinux", "/sys/fs/selinux"), (True,), ("/selinux/../selinux",),
+        ):
+            session = self.session()
+            with self.subTest(declarations=declarations):
+                with self.assertRaisesRegex(MakeProbeError, "metadata directory"), session:
+                    session._native_make_readonly("all", native_metadata_directories=declarations)
+                self.assert_clean(session)
+        path = Path("/sys/fs/selinux")
+        original_stat, original_resolve = Path.lstat, Path.resolve
+        fixture = list(self.root.stat())
+        fixture[4] = fixture[5] = 0
+        fixture[0] = stat.S_IFDIR | 0o555
+        for field, value in ((4, os.getuid() + 1), (0, stat.S_IFDIR | 0o777), (0, stat.S_IFREG | 0o444)):
+            def changed(source, *args, **kwargs):
+                if source != path:
+                    return original_stat(source, *args, **kwargs)
+                fields = fixture.copy()
+                fields[field] = value
+                return os.stat_result(fields)
+            with self.subTest(field=field), patch.object(Path, "lstat", changed):
+                with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted"):
+                    make_probe._native_metadata_directory(str(path), ProbeBudget())
+        def redirected(source, *args, **kwargs):
+            return Path("/sys/fs") if source == path else original_resolve(source, *args, **kwargs)
+        with patch.object(Path, "resolve", redirected):
+            with self.assertRaisesRegex(MakeProbeError, "canonical"):
+                make_probe._native_metadata_directory(str(path), ProbeBudget())
+        capture = make_probe._native_metadata_directory
+        calls = 0
+        def replaced(name, budget):
+            nonlocal calls
+            row = capture(name, budget)
+            calls += 1
+            if calls == 2:
+                if row[1] is None:
+                    return row[0], (0, 1, stat.S_IFDIR | 0o555, 0, 0)
+                identity = list(row[1])
+                identity[1] += 1
+                return row[0], tuple(identity)
+            return row
+        session = self.session()
+        with patch.object(make_probe, "_native_metadata_directory", replaced):
+            with self.assertRaisesRegex(MakeProbeError, "changed before invocation"), session:
+                session._native_make_readonly("all", native_metadata_directories=(str(path),))
+        self.assert_clean(session)
+
+    def test_native_original_find_with_exact_selinux_startup_resources(self):
+        self.add("tree/a.txt", "original")
+        self.add("tree/other.bin", "unused")
+        self.add("Makefile", (
+            "VALUE := $(shell /usr/bin/find tree -type f -name '*.txt')\n"
+            "all: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n"
+        ))
+        ordinary = subprocess.run(
+            ("/usr/bin/make", "-rR", "--no-print-directory", "-f", "Makefile", "all"),
+            cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        )
+        session = self.session(runtime_files=(
+            "/proc/filesystems", "/proc/mounts", "/etc/selinux/config",
+        ))
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), native_executables=("/usr/bin/find",),
+                native_metadata_directories=("/sys/fs/selinux", "/selinux"),
+                observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, ordinary.stdout)
+            self.assertEqual(completed.stdout, b"tree/a.txt")
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "tree/a.txt")
+            self.assertIn("/repo/tree", observed["accessed"])
+        self.assert_clean(session)
+
+    def test_native_selinux_config_exact_optional_file_boundary(self):
+        from scripts.validation_ownership import make_probe
+        path = "/etc/selinux/config"
+        item = make_probe._capture_runtime_input(path, ProbeBudget())
+        self.assertEqual(item.canonical, path)
+        actual = Path(path).read_bytes() if Path(path).exists() else None
+        self.assertEqual(item.data, actual)
+        self.add("Makefile", (
+            f"VALUE := $(shell if test -e {path}; then printf present; else printf absent; fi)\n"
+            "all: ; @:\n"
+        ))
+        session = self.session(runtime_files=(path,))
+        with session:
+            _, semantics, _ = session._native_make_readonly("all", variables=("VALUE",))
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "present" if actual is not None else "absent")
+        self.assert_clean(session)
+        original = Path.resolve
+        def redirected(source, *args, **kwargs):
+            return Path("/etc/passwd") if str(source) == path else original(source, *args, **kwargs)
+        with patch.object(Path, "resolve", redirected):
+            with self.assertRaisesRegex(MakeProbeError, "exact canonical"):
+                make_probe._capture_runtime_input(path, ProbeBudget())
+        for name in ("/etc/selinux/other", path + ".old", path + "/child"):
+            with self.subTest(name=name), self.assertRaisesRegex(MakeProbeError, "outside"):
+                make_probe._capture_runtime_input(name, ProbeBudget())
+        for makefile, message in (
+            ("all: ; @read -r v < /etc/selinux/other\n", "uncaptured Make runtime access"),
+            (f"all: ; @printf changed > {path}\n", "filesystem write denied"),
+        ):
+            self.add("Makefile", makefile)
+            session = self.session(runtime_files=(path,))
+            with self.assertRaisesRegex(MakeProbeError, message), session:
+                session._native_make_readonly("all")
+            self.assert_clean(session)
+
+    def test_native_selinux_metadata_supervisor_rejects_malformed_authority(self):
+        from scripts.validation_ownership.syscall_guard import Policy, Violation
+        identity = [1, 2, stat.S_IFDIR | 0o555, 0, 0]
+        row = {"path": "/sys/fs/selinux", "identity": identity}
+        invalid = (
+            {}, None, [None], [{**row, "path": []}], [{**row, "extra": 1}],
+            [{**row, "path": "/sys"}], [row, row], [row, row, row],
+            [{**row, "identity": True}], [{**row, "identity": identity[:-1]}],
+            [{**row, "identity": [True, *identity[1:]]}],
+            [{**row, "identity": [-1, *identity[1:]]}],
+            [{**row, "identity": [1 << 64, *identity[1:]]}],
+            [{**row, "identity": [1, 2, 1 << 32, 0, 0]}],
+            [{**row, "identity": [1, 2, stat.S_IFREG | 0o444, 0, 0]}],
+            [{**row, "identity": [1, 2, stat.S_IFDIR | 0o777, 0, 0]}],
+            [{**row, "identity": [1, 2, stat.S_IFDIR | 0o555, 1000, 0]}],
+        )
+        for declaration in invalid:
+            with self.subTest(declaration=declaration):
+                with self.assertRaisesRegex(Violation, "metadata-only directory authority"):
+                    Policy({
+                        "mode": "make", "native_readonly": True,
+                        "native_metadata_directories": declaration,
+                    })
+
+    def test_native_selinux_metadata_absence_rejects_actual_replaced_backing(self):
+        from scripts.validation_ownership.syscall_guard import Policy, Violation
+        source = self.directory / "metadata-absent"
+        guest = self.root / str(source).lstrip("/")
+        guest.parent.mkdir(parents=True, exist_ok=True)
+        policy = Policy.__new__(Policy)
+        policy.config = {"root": str(self.root), "mounts": []}
+        policy.validate_native_metadata_mount(str(source), None)
+        for location in (source, guest):
+            for kind in ("dangling", "file", "directory"):
+                if kind == "dangling":
+                    location.symlink_to("missing-target")
+                    self.assertFalse(location.exists())
+                    self.assertTrue(location.is_symlink())
+                elif kind == "file":
+                    location.write_bytes(b"changed")
+                else:
+                    location.mkdir()
+                with self.subTest(location=location, kind=kind):
+                    with self.assertRaisesRegex(Violation, "absent.*present backing"):
+                        policy.validate_native_metadata_mount(str(source), None)
+                if kind == "directory":
+                    location.rmdir()
+                else:
+                    location.unlink()
+        policy.config["mounts"] = [{"target": str(source)}]
+        with self.assertRaisesRegex(Violation, "absent.*present backing"):
+            policy.validate_native_metadata_mount(str(source), None)
+
     def test_native_readonly_issued_statfs_preserves_source_and_kernel_outcomes(self):
         self.add("input", "original")
         self.add("native.c", (

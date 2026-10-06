@@ -296,6 +296,7 @@ def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
     kernel_fips = optional and path == "/proc/sys/crypto/fips_enabled"
     kernel_filesystems = optional and path == "/proc/filesystems"
     task_mounts = optional and path == "/proc/mounts"
+    selinux_config = optional and path == "/etc/selinux/config"
     task_directory = Path(f"/proc/{os.getpid()}")
     task_mount_file = task_directory / "mounts"
     openssl_config = optional and path in {"/usr/lib/ssl/openssl.cnf", "/etc/ssl/openssl.cnf"}
@@ -303,7 +304,7 @@ def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
         "/usr/bin/", "/usr/lib/", "/usr/lib64/", "/lib/", "/lib64/",
         *(("/usr/libexec/",) if compiler else ()),
         *(("/usr/", "/bin/", ENVIRONMENT["HOME"] + "/") if optional else ()),
-        *((path,) if sitecustomize or kernel_fips or kernel_filesystems else ()),
+        *((path,) if sitecustomize or kernel_fips or kernel_filesystems or selinux_config else ()),
         *((path, str(task_mount_file)) if task_mounts else ()),
         *(("/etc/ssl/openssl.cnf",) if openssl_config else ()),
     )
@@ -316,6 +317,8 @@ def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
         raise MakeProbeError("kernel FIPS runtime input must be canonical")
     if kernel_filesystems and resolved.as_posix() != path:
         raise MakeProbeError("kernel filesystem list must be canonical")
+    if selinux_config and resolved.as_posix() != path:
+        raise MakeProbeError("SELinux configuration must name its exact canonical input")
     task_mounts_present = False
     if task_mounts:
         try:
@@ -510,6 +513,36 @@ def _capture_runtime_input(path, budget):
             raise MakeProbeError("runtime ancestor changed during capture")
     budget.charge("control", len(encoded([path, mode, parents, str(resolved), aliases])))
     return RuntimeInput(path, data, mode, tuple(parents), str(resolved), tuple(aliases))
+
+
+def _native_metadata_directory(path, budget):
+    if path not in {"/sys/fs/selinux", "/selinux"}:
+        raise MakeProbeError("native metadata directory must name an exact standard SELinux mount")
+    budget.remaining()
+    source = Path(path)
+    if source.resolve(strict=False) != source:
+        raise MakeProbeError("native metadata directory must be canonical without aliases")
+    for entry in (source, *source.parents):
+        budget.remaining()
+        try:
+            info = entry.lstat()
+        except FileNotFoundError:
+            if entry == source:
+                continue
+            raise MakeProbeError("native metadata directory has a missing ancestor")
+        if (
+            not stat.S_ISDIR(info.st_mode) or info.st_uid != 0
+            or info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+        ):
+            raise MakeProbeError("native metadata directory has mutable/untrusted backing")
+    try:
+        info = source.lstat()
+    except FileNotFoundError:
+        identity = None
+    else:
+        identity = (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid)
+    budget.charge("control", len(encoded([path, identity])))
+    return path, identity
 
 
 def _trusted_python_directory(path, budget):
@@ -1176,7 +1209,8 @@ class ProbeSession:
         directories=(), executables=None, mapping_entries=(), metadata_validation=False,
         producer_handler=None, publication_observer=None, publication_allowed=True,
         dependency=None, native_runtime=(), read_abi=None, read_selection=None,
-        native_executables=(), native_runtime_directories=(), runtime_completions=False,
+        native_executables=(), native_runtime_directories=(), native_metadata_directories=(),
+        runtime_completions=False,
         repository_outputs=(), cwd="/repo", initial_executable=None,
         original_tool=None,
     ):
@@ -1189,7 +1223,8 @@ class ProbeSession:
                 or native_runtime or dependency is not None or producer_handler is not None
                 or initial_executable not in executables
                 or mapping_entries or metadata_validation or publication_observer is not None
-                or native_executables or native_runtime_directories or runtime_completions
+                or native_executables or native_runtime_directories or native_metadata_directories
+                or runtime_completions
                 or read_abi is not None or read_selection is not None
                 or any(item["target"] == "/" or item["target"].startswith("/repo/") for item in mounts)
             ):
@@ -1263,7 +1298,7 @@ class ProbeSession:
             ):
                 raise MakeProbeError("native readonly invocation conflicts with mapped/runtime/publication authority")
             executable = ["/usr/bin/make", native_shell, *native_executables]
-        elif native_executables or native_runtime_directories:
+        elif native_executables or native_runtime_directories or native_metadata_directories:
             raise MakeProbeError("native executable admission requires its readonly runtime")
         file_remaining = min(
             self.budget.limits.file_bytes,
@@ -1329,6 +1364,10 @@ class ProbeSession:
             config["native_executables"] = [native_shell, *native_executables]
             config["runtime_closure"] = sorted(set(config["runtime_closure"]) | {native_shell})
             config["native_runtime_directories"] = list(native_runtime_directories)
+            config["native_metadata_directories"] = [
+                {"path": path, "identity": None if identity is None else list(identity)}
+                for path, identity in native_metadata_directories
+            ]
         if read_abi is not None:
             from .read_epochs import COMPLETION_VERSION, RUNTIME_VERSION
             if not native_runtime:
@@ -1581,7 +1620,8 @@ class ProbeSession:
                     self.budget.limits.file_bytes,
                     self.budget.limits.control_bytes - self.budget.bytes.get("control", 0),
                 ),
-                runtime_paths=set(config["runtime_files"]) | set(config["runtime_parents"]),
+                runtime_paths=set(config["runtime_files"]) | set(config["runtime_parents"])
+                | {path for path, _ in native_metadata_directories},
                 runtime_absent=config["runtime_absent"],
                 reserve=lambda size: self.budget.charge("control", size),
             )
@@ -2364,7 +2404,7 @@ class ProbeSession:
         self, target, *, makefile="Makefile", variables=(), assignments=(), observe_reads=False,
         observe_completions=False, native_executables=(), native_runtime_directories=(), native_tool=None,
         native_libraries=(), observe_runtime_completions=False,
-        original_tool=False,
+        original_tool=False, native_metadata_directories=(),
     ):
         variables, cli, environment = self._make_request(target, makefile, variables, assignments, ())
         if self.published_sources or self.make_depth:
@@ -2409,6 +2449,15 @@ class ProbeSession:
             raise MakeProbeError("invalid native runtime directory declaration")
         runtime_directories = tuple(
             _trusted_python_directory(path, self.budget) for path in native_runtime_directories
+        )
+        if (
+            not isinstance(native_metadata_directories, tuple) or len(native_metadata_directories) > 2
+            or any(not isinstance(path, str) for path in native_metadata_directories)
+            or len(set(native_metadata_directories)) != len(native_metadata_directories)
+        ):
+            raise MakeProbeError("invalid native metadata directory declaration")
+        metadata_directories = tuple(
+            _native_metadata_directory(path, self.budget) for path in native_metadata_directories
         )
         captured = self._captured_native_runtime("/usr/bin/sh")
         native_runtime = tuple(
@@ -2481,6 +2530,24 @@ class ProbeSession:
                 ):
                     raise MakeProbeError("native runtime directory overlaps captured runtime resources")
                 _mkdir_target(root, path, directory=True)
+            for path, identity in metadata_directories:
+                if any(
+                    name == path or name.startswith(path + "/") or path.startswith(name + "/")
+                    for name in runtime_directories
+                ) or any(
+                    name == path or name.startswith(path + "/")
+                    for name in runtime.keys() | dict(self.make_runtime).keys()
+                ) or any(
+                    name == path or name.startswith(path + "/")
+                    for item in self.runtime_inputs for name in (item.path, item.canonical)
+                ):
+                    raise MakeProbeError("native metadata directory overlaps runtime resources")
+                if _native_metadata_directory(path, self.budget) != (path, identity):
+                    raise MakeProbeError("native metadata directory changed before invocation")
+                if identity is not None:
+                    _mkdir_target(root, path, directory=True)
+                else:
+                    _mkdir_target(root, str(Path(path).parent), directory=True)
             control.mkdir(mode=0o700)
             result_path = control / "result"
             result_path.touch()
@@ -2490,10 +2557,13 @@ class ProbeSession:
                 read_selection=read_selection,
                 native_executables=native_executables,
                 native_runtime_directories=runtime_directories,
+                native_metadata_directories=metadata_directories,
                 runtime_completions=observe_runtime_completions,
                 original_tool=native_tool if original_tool else None,
                 mounts=[
                     *(self._mount(Path(path), path, executable=True) for path in runtime_directories),
+                    *(self._mount(Path(path), path) for path, identity in metadata_directories
+                      if identity is not None),
                     self._mount(self.tree, "/repo"),
                     self._mount(control, "/control", writable=True),
                     self._mount(Path("/dev/null"), "/dev/null", writable=True),

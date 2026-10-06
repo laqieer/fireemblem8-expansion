@@ -258,6 +258,28 @@ class Policy:
         ):
             raise Violation("invalid native executable resource declaration")
         self.native_executables = set(native_executables)
+        metadata_directories = config.get("native_metadata_directories", [])
+        if (
+            not isinstance(metadata_directories, list) or len(metadata_directories) > 2
+            or any(
+                not isinstance(item, dict) or set(item) != {"path", "identity"}
+                or not isinstance(item["path"], str)
+                or item["path"] not in {"/sys/fs/selinux", "/selinux"}
+                or item["identity"] is not None and (
+                    not isinstance(item["identity"], list) or len(item["identity"]) != 5
+                    or any(type(value) is not int or value < 0 for value in item["identity"])
+                    or any(value >= 1 << 64 for value in item["identity"][:2])
+                    or any(value >= 1 << 32 for value in item["identity"][2:])
+                    or not stat.S_ISDIR(item["identity"][2]) or item["identity"][3] != 0
+                    or item["identity"][2] & (stat.S_IWGRP | stat.S_IWOTH)
+                )
+                for item in metadata_directories
+            )
+            or len({item["path"] for item in metadata_directories}) != len(metadata_directories)
+            or metadata_directories and not self.native_readonly
+        ):
+            raise Violation("invalid native metadata-only directory authority")
+        self.native_metadata_directories = {item["path"]: item["identity"] for item in metadata_directories}
         self.native_runtime_directories = config.get("native_runtime_directories", [])
         if (
             not isinstance(self.native_runtime_directories, list)
@@ -355,6 +377,8 @@ class Policy:
                 != os.ST_RDONLY | os.ST_NOSUID | os.ST_NODEV
             ):
                 raise Violation("native managed runtime mount backing or readonly flags differ")
+        for path, identity in self.native_metadata_directories.items():
+            self.validate_native_metadata_mount(path, identity)
         self.executable = set(config["executables"])
         self.executable.update(self.resolve(path) for path in config["executables"])
         if self.native_readonly and (
@@ -1473,9 +1497,41 @@ class Policy:
             return ()
         return entries[index]["metadata"]
 
+    def validate_native_metadata_mount(self, path, identity):
+        mounts = [item for item in self.config["mounts"] if item["target"] == path]
+        guest_path = Path(self.config["root"]) / path.lstrip("/")
+        if identity is None:
+            for source in (Path(path), guest_path):
+                try:
+                    source.lstat()
+                except FileNotFoundError:
+                    continue
+                raise Violation("absent native metadata directory has present backing")
+            if mounts:
+                raise Violation("absent native metadata directory has present backing")
+            return
+        expected = {"source": path, "target": path, "writable": False, "executable": False}
+        source, guest = Path(path).lstat(), guest_path.lstat()
+        actual = [source.st_dev, source.st_ino, source.st_mode, source.st_uid, source.st_gid]
+        mounted = os.statvfs(guest_path)
+        self.charge_metadata(len(encoded([list(source), list(guest), list(mounted)])))
+        required = os.ST_RDONLY | os.ST_NOSUID | os.ST_NODEV | os.ST_NOEXEC
+        if (
+            mounts != [expected] or actual[:3] != identity[:3]
+            or (guest.st_dev, guest.st_ino, guest.st_mode, guest.st_uid, guest.st_gid)
+            != tuple(actual) or mounted.f_flag & required != required
+        ):
+            raise Violation(
+                f"native metadata directory mount identity or flags differ: "
+                f"{path} source={actual} expected={identity} "
+                f"guest={[guest.st_dev, guest.st_ino, guest.st_mode, guest.st_uid, guest.st_gid]} "
+                f"flags={mounted.f_flag} mounts={mounts}"
+            )
+
     def runtime_metadata(self, path, *, parents=True):
         return (
-            path in self.config.get("runtime_files", ())
+            path in self.native_metadata_directories
+            or path in self.config.get("runtime_files", ())
             or parents and path in self.config.get("runtime_parents", ())
             or any(path.startswith(absent + "/") for absent in self.config.get("runtime_absent", ()))
         )
@@ -1513,6 +1569,12 @@ class Policy:
         )
 
     def make_runtime_access(self, state, path, operation):
+        if path in self.native_metadata_directories:
+            if operation != "metadata":
+                raise Violation(f"metadata-only runtime operation denied: {operation} {path}")
+            self.check_optional_make_spelling(state, path, operation)
+            self.defer_observation(state, "accessed", path)
+            return
         if self.native_managed_runtime(path) and operation in {"read", "metadata", "directory"}:
             self.check_optional_make_spelling(state, path, operation)
             self.defer_observation(state, "accessed", path)

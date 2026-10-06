@@ -2328,14 +2328,66 @@ all session state; dependencies are the existing path/fd authority, compiler
 and metadata seams, with no new resource grant, conflict, ROM/RAM/save,
 locale/profile or archival impact.
 
-This operation correction does not qualify original `find` or the eight
-queries. The preserved original-find reproduction now refuses undeclared
-`/sys/fs/selinux` rather than syscall 137. On the measured host this is a
-present sysfs directory, not an absence; libselinux also has separate mount,
-filesystem-list and configuration startup probes. Those runtime resources
-remain unadmitted pending their complete capture contract. Do not fabricate
-absence, replace original `find`, or grant a broad live `/sys` or `/proc` tree
-to turn the diagnostic into success.
+The original-find reproduction first progressed from syscall 137 to undeclared
+`/sys/fs/selinux`. On the measured host this is a present sysfs directory, not
+an absence. The optional `native_metadata_directories` tuple now admits only
+the exact standard `/sys/fs/selinux` and `/selinux` mount probes, with a maximum
+of two distinct names. Present probes retain actual root-owned, nonmutable,
+canonical directory backing through exact readonly/nosuid/nodev/noexec bind
+mounts; absent probes remain absent. Content, enumeration, descendants, writes
+and execution are not granted. Declaration and pre-invocation capture check
+actual identities; the supervisor binds actual mount dev/inode/mode and
+source/guest identities within its namespace, where host UID 0 may be unmapped.
+Collector-side root ownership is not replaced by a guest UID spelling test.
+Actual confined `statfs` flags are retained: a readonly bind may set
+`ST_RDONLY`, so arbitrary unconfined SELinux-library equivalence is not claimed.
+The accepted outcome is unchanged original filename traversal and source
+queries, not fabricated host flags.
+
+Libselinux's filesystem/mount text and `/etc/selinux/config` startup inputs
+remain explicit optional file declarations. The configuration name has exact
+canonical root-trusted regular-file presence/absence capture through the
+existing runtime input seam, not a broad `/etc/selinux` grant. No input is
+added to native defaults; nonstandard discovered mount paths still refuse.
+
+For #270 `TC-WORKFLOW-NATIVE-MAKE-001`, run
+`test_native_selinux_mount_metadata_preserves_actual_type_and_absence`:
+an issued C tool in original Make observes the real present mount type/block
+size, actual readonly guest flag, and `ENOENT` for the absent standard probe;
+the returned 137 frame has its real status and 120-byte ABI. The pre-fix
+request has no metadata-directory API and the preserved original-find
+preimages refuse syscall 137 and then the unadmitted present mount. Run
+`test_native_selinux_metadata_mount_has_no_content_or_descendant_authority`
+for actual read/list/write/child/neighbor refusal on both standard probes.
+Run `test_native_selinux_metadata_declarations_keep_exact_trust_and_identity`
+for malformed/duplicate/nonstandard declarations, actual trust/type/alias
+guards and changed backing before invocation. Run
+`test_native_selinux_metadata_supervisor_rejects_malformed_authority` for the
+actual typed supervisor parser, including unhashable paths, wrong shapes,
+duplicate/count limits, boolean/negative/overflow identities, file/writable
+backing and foreign ownership. Run
+`test_native_selinux_metadata_absence_rejects_actual_replaced_backing` against
+the supervisor's admission routine: real host and guest dangling symlinks,
+files, directories and unexpected mounts cannot replace captured absence.
+Only an actual `lstat` `ENOENT` is absence; a symlink-following existence
+check fails the preserved negative control. Run
+`test_native_selinux_config_exact_optional_file_boundary` for real config
+presence/absence through original Make and exact canonical/neighbor/write
+controls. Run `test_native_original_find_with_exact_selinux_startup_resources`
+to declare all startup resources and compare unchanged GNU Make/find source
+traversal with ordinary execution: exact `tree/a.txt` stdout and Make value.
+Temporary trees/session state are retired by every case. Dependencies are
+the existing trusted runtime, exact mounts, metadata transport and kernel-text
+capture seams; conflicts are none, with no ROM/RAM/save/locale/profile or
+archival impact.
+
+This small original-find positive is not original eight-query qualification.
+With the same 2148-file fixture, original producer/argv and unchanged limits,
+the first query now progresses to an unadmitted original `/usr/bin/mkdir`
+at 26,873,532 control bytes. The readonly evaluator does not grant original
+producer writes merely because this diagnostic reaches them. Complete native
+producer lifecycle, read-time generated versions, nested/remake/reexec,
+all eight queries and final architecture/delivery gates remain open.
 
 The supervisor-to-parent transport for those records is now a strict metadata
 envelope:
