@@ -2080,10 +2080,12 @@ class Policy:
         elif n in {62, 129, 200}:  # kill, rt_sigqueueinfo, tkill
             self.signal_target(pid, a)
             if self.native_readonly and state.role == "native" and 0 < b <= 64:
+                state.pending = ("native-signal", (b, b not in state.native_signals))
                 state.native_signals.add(b)
         elif n in {234, 297}:  # tgkill, rt_tgsigqueueinfo
             self.signal_target(pid, a, b)
             if self.native_readonly and state.role == "native" and 0 < c <= 64:
+                state.pending = ("native-signal", (c, c not in state.native_signals))
                 state.native_signals.add(c)
         elif n == 424:
             raise Violation("candidate pidfd signal authority is not admitted")
@@ -2136,6 +2138,8 @@ class Policy:
             state.break_end = result
         operation, value = pending if pending is not None else (None, None)
         if result < 0:
+            if operation == "native-signal" and value[1]:
+                state.native_signals.discard(value[0])
             if operation == "make-source-exec" and result == -errno.EACCES and self.source_execute_allowed(pid, *value):
                 raise Violation(f"Make source executable lookup denied by noexec view: {value[0]}")
             return

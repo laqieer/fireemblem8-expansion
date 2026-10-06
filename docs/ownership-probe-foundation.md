@@ -117,6 +117,25 @@ Run the following controls individually from the same clean host checkout:
    signals do not acquire candidate self-signal authority.
    The externally injected SIGKILL control may reject at the earlier vanished
    ptrace target or terminal provenance check; it does not prove both paths.
+   Also run
+   `test_native_readonly_failed_queued_signal_cannot_admit_foreign_sigkill`:
+   at genuine native shell syscall stops, replace self-kill arguments with
+   `rt_sigqueueinfo` or `rt_tgsigqueueinfo` and a null information pointer.
+   Both must actually return kernel `EFAULT`; after resuming, inject foreign
+   SIGKILL. Before correction both ignored recipes continue and print `done`.
+   Now both must reject terminal self-signal provenance and clean owned state.
+   This is controlled syscall-argument and foreign-signal injection, not a
+   hostile-process isolation claim. The existing pending-call lifecycle
+   retracts a failed attempt's new signal authorization without discarding a
+   preceding successful authorization.
+   `test_native_readonly_failed_signal_preserves_prior_success_authorization`
+   runs actual declared Python with SIGUSR1 blocked, records successful
+   self-kill and a later queued `EFAULT`, and requires both the surviving
+   authorization and actual kernel pending-signal bit. The signal remains
+   blocked until Python exits after that fault; this is not complete signal
+   queue or cancellation qualification.
+   `test_native_readonly_successful_self_sigkill_status_is_preserved` requires
+   `.SHELLSTATUS` 137 and ignored-recipe continuation matching ordinary Make.
 
 The round-three supplier reconsideration removes duplicated syscall-origin
 observation. Native loader and dependency negative-purpose checks share one

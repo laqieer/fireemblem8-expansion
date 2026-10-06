@@ -1073,6 +1073,133 @@ class FoundationTests(unittest.TestCase):
                 session._native_make_readonly("all")
         self.assert_clean(session)
 
+    def test_native_readonly_failed_queued_signal_cannot_admit_foreign_sigkill(self):
+        self.add("Makefile", (
+            ".PHONY: all\nall:\n\t-@v=ignored; kill -KILL $$$$\n"
+            "\t@v=done; printf '%s\\n' \"$$v\"\n"
+        ))
+        for number in (129, 297):
+            with self.subTest(number=number):
+                receipt = self.directory / f"queued-fault-{number}.json"
+                body = (
+                    "entry=guard.Policy.entry\nleave=guard.Policy.leave\n"
+                    "original_ptrace=guard.ptrace\nforeign=set()\n"
+                    "def queued(self,pid,state,r):\n"
+                    " if state.role=='native' and r.orig_rax==62 and r.rsi==9:\n"
+                    f"  r.orig_rax={number}\n"
+                    "  r.rdx=0\n"
+                    + ("  r.rsi=pid;r.rdx=9;r.r10=0\n" if number == 297 else "")
+                    + "  state.kernel_call=r.orig_rax\n"
+                    "  original_ptrace(guard.SETREGS,pid,0,guard.ctypes.byref(r))\n"
+                    " return entry(self,pid,state,r)\n"
+                    "def failed(self,pid,state,r):\n"
+                    " result=leave(self,pid,state,r)\n"
+                    f" if state.role=='native' and r.orig_rax=={number}:\n"
+                    "  if guard.signed(r.rax)!=-14:raise guard.Violation('queued control did not fault')\n"
+                    f"  Path({str(receipt)!r}).write_text(json.dumps("
+                    "{'number':r.orig_rax,'result':guard.signed(r.rax),'pid':pid}))\n"
+                    "  foreign.add(pid)\n"
+                    " return result\n"
+                    "def terminate(request,pid,*args):\n"
+                    " result=original_ptrace(request,pid,*args)\n"
+                    " if request==guard.SYSCALL and pid in foreign:\n"
+                    "  foreign.remove(pid);os.kill(pid,9)\n"
+                    " return result\n"
+                    "guard.Policy.entry=queued;guard.Policy.leave=failed;guard.ptrace=terminate\n"
+                )
+                session = self.session()
+                error = None
+                completed = None
+                with self.native_supervisor(body), session:
+                    try:
+                        completed, _, _ = session._native_make_readonly("all")
+                    except MakeProbeError as failure:
+                        error = failure
+                actual = json.loads(receipt.read_bytes())
+                self.assertEqual((actual["number"], actual["result"]), (number, -errno.EFAULT))
+                self.assertGreater(actual["pid"], 0)
+                self.assert_clean(session)
+                self.assertIsNotNone(error, (
+                    f"kernel fault {actual} accepted foreign termination with "
+                    f"{None if completed is None else completed.stdout!r}"
+                ))
+                self.assertRegex(str(error), "native shell termination lacks an admitted self-signal")
+
+    def test_native_readonly_successful_self_sigkill_status_is_preserved(self):
+        self.add("Makefile", (
+            "VALUE := $(shell printf observed; kill -KILL $$$$)\n"
+            "STATUS := $(.SHELLSTATUS)\n"
+            ".PHONY: all\nall:\n\t-@v=ignored; kill -KILL $$$$\n"
+            "\t@v=done; printf '%s\\n' \"$$v\"\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+        )
+        session = self.session()
+        with session:
+            completed, semantics, _ = session._native_make_readonly(
+                "all", variables=("VALUE", "STATUS"),
+            )
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "observed")
+            self.assertEqual(semantics["domains"]["STATUS"]["value"], "137")
+            self.assertEqual(completed.stdout, ordinary.stdout)
+            self.assertEqual(completed.stdout, b"done\n")
+            self.assertIn(b"(ignored)", completed.stderr)
+        self.assert_clean(session)
+
+    def test_native_readonly_failed_signal_preserves_prior_success_authorization(self):
+        runtime, resources = self.native_python_startup_fixture()
+        script = (
+            "import os,signal; "
+            "signal.pthread_sigmask(signal.SIG_BLOCK,{signal.SIGUSR1}); "
+            "print(signal.SIGUSR1,flush=True); "
+            "os.kill(os.getpid(),signal.SIGUSR1); os.kill(os.getpid(),signal.SIGUSR1)"
+        )
+        self.add("Makefile", (
+            ".PHONY: all\nall:\n"
+            f"\t-@/usr/bin/python3 -I -S -c {shlex.quote(script)}\n"
+            "\t@v=done; printf '%s' \"$$v\"\n"
+        ))
+        receipt = self.directory / "prior-self-signal.json"
+        body = (
+            "entry=guard.Policy.entry\nleave=guard.Policy.leave\n"
+            "calls={};actual={}\n"
+            "def queued(self,pid,state,r):\n"
+            " if state.role=='native' and r.orig_rax==62 and r.rsi==10:\n"
+            "  calls[pid]=calls.get(pid,0)+1\n"
+            "  if calls[pid]==2:\n"
+            "   r.orig_rax=129;r.rdx=0;state.kernel_call=129\n"
+            "   guard.ptrace(guard.SETREGS,pid,0,guard.ctypes.byref(r))\n"
+            " return entry(self,pid,state,r)\n"
+            "def completed(self,pid,state,r):\n"
+            " result=leave(self,pid,state,r)\n"
+            " if state.role=='native' and calls.get(pid)==1 and r.orig_rax==62:\n"
+            "  actual['successful']=[r.orig_rax,guard.signed(r.rax)]\n"
+            " if state.role=='native' and calls.get(pid)==2 and r.orig_rax==129:\n"
+            "  actual['failed']=[r.orig_rax,guard.signed(r.rax)]\n"
+            "  actual['authorization']=10 in state.native_signals\n"
+            "  status=Path(f'/proc/{pid}/status').read_bytes();self.charge_metadata(len(status))\n"
+            "  pending=[int(line.split()[1],16) for line in status.splitlines()"
+            " if line.startswith((b'SigPnd:',b'ShdPnd:'))]\n"
+            "  actual['kernel_pending']=any(value & (1<<9) for value in pending)\n"
+            f"  Path({str(receipt)!r}).write_text(json.dumps(actual))\n"
+            " return result\n"
+            "guard.Policy.entry=queued;guard.Policy.leave=completed\n"
+        )
+        session = self.session(runtime_files=(*resources, "/usr/share/zoneinfo/UTC"))
+        with self.native_supervisor(body), session:
+            completed, _, _ = session._native_make_readonly(
+                "all", native_executables=("/usr/bin/python3",),
+                native_runtime_directories=(runtime,),
+            )
+            self.assertEqual(completed.stdout, b"10\ndone")
+        self.assertEqual(json.loads(receipt.read_bytes()), {
+            "successful": [62, 0], "failed": [129, -errno.EFAULT],
+            "authorization": True, "kernel_pending": True,
+        })
+        self.assert_clean(session)
+
     def test_native_readonly_chld_trap_and_unsupported_stop(self):
         self.add("Makefile", (
             ".PHONY: all\nall:\n"
