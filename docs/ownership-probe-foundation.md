@@ -621,11 +621,12 @@ does not waive those criteria or any final gate.
 
 Dependencies are the existing captured ELF closure, readonly loader-origin
 proof and original job/machine lifecycle; conflicts are none. No ROM/RAM/save,
-localization, generated or archival change. Python runtime resources, compiled
-candidate `NativeTool` admission, optional runtime metadata profiles, arbitrary
+localization, generated or archival change. Original Python generator resources,
+compiled candidate `NativeTool` source-path placement, optional runtime metadata profiles, arbitrary
 descendants, generated versions/remakes, general recursive final observation
 and original eight-query qualification remain unsupported or unqualified.
-`NativeTool` is still outside the Make capsule. This component does not waive
+`NativeTool` remains excluded from mapped Make; explicit readonly native-Make
+admission at `/native/tool` is covered above. This component does not waive
 any complete-supplier or final delivery criterion.
 
 ### Original readonly completion component
