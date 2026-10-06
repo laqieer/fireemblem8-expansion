@@ -1495,7 +1495,7 @@ class FoundationTests(unittest.TestCase):
         session = self.session()
         with self.native_supervisor(body), self.assertRaisesRegex(
             MakeProbeError,
-            "native shell termination lacks an admitted self-signal|ptrace request .*No such process",
+            "native SIGKILL lacks an actual successful self-send outcome|ptrace request .*No such process",
         ):
             with session:
                 session._native_make_readonly("all")
@@ -1551,7 +1551,7 @@ class FoundationTests(unittest.TestCase):
                     f"kernel fault {actual} accepted foreign termination with "
                     f"{None if completed is None else completed.stdout!r}"
                 ))
-                self.assertRegex(str(error), "native shell termination lacks an admitted self-signal")
+                self.assertRegex(str(error), "native SIGKILL lacks an actual successful self-send outcome")
 
     def test_native_readonly_successful_self_sigkill_status_is_preserved(self):
         self.add("Makefile", (
@@ -3882,6 +3882,176 @@ class FoundationTests(unittest.TestCase):
                     read_epochs.native_job_tree(
                         job["tree"], job, make_pid, {"/bin/sh", "/usr/bin/printf"},
                         count_limit=session.budget.limits.observation_count,
+                    )
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_actual_sigkill_outcomes_cover_all_self_send_forms(self):
+        for number in (62, 129, 200, 234, 297):
+            self.add("kill.c", (
+                ROOT / "scripts/validation_ownership/tests/fixtures/native_sigkill.c"
+            ).read_bytes())
+            self.add("Makefile", "all:\n\t-@/native/tool " + str(number)
+                     + "\n\t@v=done; printf '%s' \"$$v\"\n")
+            body = (
+                "import syscall_guard as guard\noriginal=guard.Policy.native_sigkill_exit\n"
+                "def outcome(self,pid,state,status):\n"
+                " result=original(self,pid,state,status)\n"
+                " if state.role=='native' and status==9:\n"
+                "  r=guard.Registers();guard.ptrace(guard.GETREGS,pid,0,guard.ctypes.byref(r))\n"
+                "  self.charge_metadata(guard.ctypes.sizeof(r))\n"
+                "  self.observe('accessed','actual-sigkill:'+guard.encoded({"
+                "'pid':pid,'number':r.orig_rax,'result':guard.signed(r.rax),"
+                "'status':status,'verified':state.native_sigkill_outcome}).decode('ascii'))\n"
+                " return result\nguard.Policy.native_sigkill_exit=outcome\n"
+            )
+            session = self.session()
+            with self.subTest(number=number), self.native_supervisor(body), session:
+                tool = session.compile_native(("kill.c",))
+                ordinary = subprocess.run(
+                    [str(tool.path), str(number)], env=ENVIRONMENT, capture_output=True, timeout=10,
+                )
+                self.assertEqual(ordinary.returncode, -signal.SIGKILL)
+                completed, _, observed = session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual(completed.stdout, b"done")
+                actual, = [
+                    parse_json(row.removeprefix("actual-sigkill:").encode(), "actual sigkill")
+                    for row in observed["accessed"] if row.startswith("actual-sigkill:")
+                ]
+                self.assertEqual(
+                    {key: actual[key] for key in ("number", "result", "status", "verified")},
+                    {"number": number, "result": 0, "status": 9, "verified": True},
+                )
+                job = next(
+                    parse_json(row.removeprefix("native-job:").encode(), "sigkill job")
+                    for row in observed["accessed"] if row.startswith("native-job:")
+                    and parse_json(row.removeprefix("native-job:").encode(), "sigkill job")["executable"] == "/native/tool"
+                )
+                self.assertEqual(job["pid"], actual["pid"])
+                self.assertEqual(job["terminal_status"], actual["status"])
+                self.assertTrue(job["ignored"])
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_sigkill_entry_attempt_and_outcome_mutations_refuse(self):
+        self.add("Makefile", "all:\n\t-@v=ignored; kill -KILL $$$$\n"
+                 "\t@v=done; printf '%s' \"$$v\"\n")
+        receipt = self.directory / "sigkill-outcome.json"
+        for mode in ("foreign-entry", "rax", "syscall", "target", "signal", "pending", "terminal"):
+            body = (
+                "import syscall_guard as guard,os,errno\nentry=guard.Policy.entry\n"
+                "exit=guard.Policy.native_sigkill_exit\noriginal=guard.ptrace\narmed=set()\n"
+                "def entered(self,pid,state,r):\n"
+                " result=entry(self,pid,state,r)\n"
+                f" if {mode!r}=='foreign-entry' and state.role=='native' and r.orig_rax==62 and r.rsi==9:armed.add(pid)\n"
+                " return result\n"
+                "def resumed(request,pid,*args):\n"
+                " if request==guard.SYSCALL and pid in armed:\n"
+                "  armed.remove(pid);os.kill(pid,9)\n"
+                "  try:return original(request,pid,*args)\n"
+                "  except OSError as error:\n"
+                "   if error.errno!=errno.ESRCH:raise\n"
+                "   return 0\n"
+                " result=original(request,pid,*args)\n"
+                " if request==guard.GETREGS and changing:\n"
+                "  r=guard.ctypes.cast(args[1],guard.ctypes.POINTER(guard.Registers)).contents\n"
+                f"  if {mode!r}=='rax':r.rax=(1<<64)-38\n"
+                f"  if {mode!r}=='syscall':r.orig_rax=1\n"
+                f"  if {mode!r}=='target':r.rdi=pid+100\n"
+                f"  if {mode!r}=='signal':r.rsi=10\n"
+                " return result\n"
+                "changing=False\n"
+                "def outcome(self,pid,state,status):\n"
+                " global changing\n"
+                " if state.role=='native' and status==9:\n"
+                "  r=guard.Registers();original(guard.GETREGS,pid,0,guard.ctypes.byref(r))\n"
+                f"  Path({str(receipt)!r}).write_text(json.dumps({{'pid':pid,'rax':guard.signed(r.rax),'number':r.orig_rax,'pending':state.pending}}))\n"
+                f"  if {mode!r}=='pending':state.pending=None\n"
+                "  changing=True\n"
+                "  try:\n"
+                "   result=exit(self,pid,state,status)\n"
+                f"   if {mode!r}=='terminal':state.native_exit_status=256\n"
+                "   return result\n"
+                "  finally:changing=False\n"
+                " return exit(self,pid,state,status)\n"
+                "guard.Policy.entry=entered;guard.Policy.native_sigkill_exit=outcome;guard.ptrace=resumed\n"
+            )
+            session = self.session(seconds=10)
+            with self.subTest(mode=mode), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(
+                    MakeProbeError, "native terminal status differs" if mode == "terminal"
+                    else "native SIGKILL lacks an actual successful self-send",
+                ):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                    )
+                actual = json.loads(receipt.read_bytes())
+                self.assertEqual(actual["number"], 62)
+                self.assertEqual(actual["rax"], -errno.ENOSYS if mode == "foreign-entry" else 0)
+                self.assertEqual(actual["pending"], ["native-signal", 9])
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_realtime_counts_standard_coalescing_and_failed_send(self):
+        for mode in ("queued", "kill", "standard", "direct", "failed"):
+            self.add("queue.c", (
+                ROOT / "scripts/validation_ownership/tests/fixtures/native_queued_exec.c"
+            ).read_bytes())
+            self.add("Makefile", "all: ; @/native/tool " + mode + "\n")
+            body = (
+                "import syscall_guard as guard\nentry=guard.Policy.entry\nleave=guard.Policy.leave\n"
+                "exec=guard.Policy.native_exec_signals\ncalls={}\n"
+                "def attempted(self,pid,state,r):\n"
+                " if state.role=='native' and r.orig_rax==129:\n"
+                "  calls[pid]=calls.get(pid,0)+1\n"
+                f"  if {mode!r}=='failed' and calls[pid]==2:\n"
+                "   r.rdx=0;guard.ptrace(guard.SETREGS,pid,0,guard.ctypes.byref(r))\n"
+                " return entry(self,pid,state,r)\n"
+                "def returned(self,pid,state,r):\n"
+                " result=leave(self,pid,state,r)\n"
+                " if state.role=='native' and r.orig_rax in {62,129}:\n"
+                "  self.observe('accessed','signal-outcome:'+guard.encoded({"
+                "'pid':pid,'call':calls.get(pid,0),'result':guard.signed(r.rax),"
+                "'grants':sorted(state.native_signals.items())}).decode('ascii'))\n"
+                " return result\n"
+                "def replacement(self,pid,state):\n"
+                " result=exec(self,pid,state)\n"
+                " self.observe('accessed','signal-exec:'+guard.encoded({"
+                "'pid':pid,'generation':state.native_execs,'grants':sorted(state.native_signals.items())}).decode('ascii'))\n"
+                " return result\n"
+                "guard.Policy.entry=attempted;guard.Policy.leave=returned;guard.Policy.native_exec_signals=replacement\n"
+            )
+            session = self.session()
+            with self.subTest(mode=mode), self.native_supervisor(body), session:
+                tool = session.compile_native(("queue.c",))
+                if mode != "failed":
+                    ordinary = subprocess.run(
+                        [str(tool.path), mode], env=ENVIRONMENT, capture_output=True, timeout=10,
+                    )
+                    self.assertEqual(ordinary.returncode, 0)
+                completed, _, observed = session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual(completed.returncode, 0)
+                outcomes = [
+                    parse_json(row.removeprefix("signal-outcome:").encode(), "signal outcome")
+                    for row in observed["accessed"] if row.startswith("signal-outcome:")
+                ]
+                self.assertTrue(outcomes)
+                if mode == "failed":
+                    failed = next(row for row in outcomes if row["result"] == -errno.EFAULT)
+                    self.assertEqual(failed["grants"], [[int(signal.SIGRTMIN), 1]])
+                if mode != "direct":
+                    replacement = next(
+                        parse_json(row.removeprefix("signal-exec:").encode(), "signal exec")
+                        for row in observed["accessed"] if row.startswith("signal-exec:")
+                        and parse_json(row.removeprefix("signal-exec:").encode(), "signal exec")["generation"] == 2
+                    )
+                    self.assertEqual(
+                        replacement["grants"],
+                        [[int(signal.SIGUSR1), 1]] if mode == "standard" else [[int(signal.SIGRTMIN), 2]],
                     )
                 self.assertFalse(session.budget.failed)
             self.assert_clean(session)

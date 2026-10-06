@@ -724,6 +724,55 @@ and retain failed queued-signal rollback and actual hardware parity controls.
 These cases do not qualify generated versions, nested Make or the original
 eight-query budget.
 
+Self-signal admission records the attempted syscall separately and issues grants
+only after its actual successful kernel return. Failed sends neither introduce
+a grant nor discard an earlier successful one. Standard signals coalesce to
+one grant; kernel realtime signals (32 through 64 on the admitted Linux
+x86-64 host) retain a count per successful send and consume one on each
+authenticated delivery. Existing observation-count and byte budgets charge
+every successful grant and bound outstanding counts. Exec pending-mask
+reconciliation retains those counts only for already-authorized pending
+signals, without interpreting a mask bit as a new or repeated grant.
+
+Self-SIGKILL does not reach an ordinary syscall return. The supervisor uses the
+actual ptrace exit stop instead: it requires the exact outstanding self-send
+syscall, original self-PID/signal operands and actual return register zero,
+with the kernel exit status paired to the final terminal wait. An external
+SIGKILL while stopped before the send leaves return register `-ENOSYS` and
+explicitly refuses; an entry attempt is never terminal authorization.
+Exit stops resume before the final wait. On refusal, owned cleanup resumes
+already-parked killed processes before reaping, including processes stopped
+at exit; otherwise those stops could prevent cleanup from completing.
+
+Run `test_native_runtime_actual_sigkill_outcomes_cover_all_self_send_forms`:
+compile the owned `native_sigkill.c` fixture and exercise kill,
+rt_sigqueueinfo, tkill, tgkill and rt_tgsigqueueinfo. The same ordinary binary
+must terminate with SIGKILL; native Make must preserve ignored status 9,
+continue to `done` and retain actual zero-result/exit-status observations on
+the same job PID. Run
+`test_native_runtime_sigkill_entry_attempt_and_outcome_mutations_refuse`:
+send a real supervisor-origin SIGKILL before resuming the self-send syscall,
+require its actual `-ENOSYS` outcome and explicit refusal, then independently
+substitute return/syscall/target/signal/pending/terminal fields on genuine
+self-send controls. Kernel-readback substitutions are decoder controls, not
+physical register corruption. Every refusal must complete owned cleanup.
+The pre-fix entry grant admitted an attempt without requiring a successful
+send; the actual exit-stop diagnosis distinguishes those outcomes.
+
+Run `test_native_runtime_realtime_counts_standard_coalescing_and_failed_send`:
+the `native_queued_exec.c` fixture blocks and sends two realtime signals via
+kill or sigqueue, execs and receives both; also receive both without exec.
+Two standard signals coalesce to one. A genuine EFAULT on the middle queued
+send must leave the earlier grant intact, and the later success must result
+in exactly two retained realtime grants. Bind captured grant counts to actual
+syscall returns and exec generations; compare ordinary binary behavior for
+unmodified controls. The pre-fix two-queued/exec case rejects its second real
+delivery as signal 34. Retain old successful self-SIGKILL, failed queued send
+followed by foreign SIGKILL, pending-mask/fork controls, actual SIGPIPE,
+orphan/deadline cleanup and direct hardware restoration. These are the
+existing signal-lifetime contract, not generated custody or overall native
+qualification.
+
 Run `test_native_readonly_reuses_captured_runtime_without_second_host_read`:
 execute two original shell/direct-printf Make queries in one session, deny a
 second host runtime acquisition and require identical real output/values,

@@ -54,7 +54,7 @@ VO_JOB_POLICY = 0x564F4D4B00000007
 LIBC.ptrace.restype = ctypes.c_long
 WALL = 0x40000000
 TRACEME, PEEKDATA, SYSCALL, GETREGS, SETREGS, SETOPTIONS = 0, 2, 24, 12, 13, 0x4200
-OPTIONS = 1 | 2 | 4 | 8 | 16 | 32 | 0x100000  # syscall/fork/vfork/clone/exec/vforkdone/exitkill
+OPTIONS = 1 | 2 | 4 | 8 | 16 | 32 | 64 | 0x100000  # syscall/process/exec/exit stops and exitkill
 PROT_READ, PROT_WRITE, PROT_EXEC = 1, 2, 4
 MAP_SHARED, MAP_PRIVATE, MAP_SHARED_VALIDATE = 1, 2, 3
 MAP_ANONYMOUS = 0x20
@@ -215,7 +215,9 @@ class Process:
     dependency_image: str | None = None
     dependency_stop: tuple[int, int, int] | None = None
     native_stop: tuple[int, int, int] | None = None
-    native_signals: set[int] = field(default_factory=set)
+    native_signals: dict[int, int] = field(default_factory=dict)
+    native_sigkill_outcome: bool = False
+    native_exit_status: int | None = None
     delivery_signal: int = 0
     native_delivered: int = 0
     newborn_stop: bool = False
@@ -584,9 +586,37 @@ class Policy:
             data = stream.read(4097)
         self.charge_metadata(len(data))
         pending = self.pending_signal_mask(data)
-        state.native_signals.intersection_update(
-            number for number in tuple(state.native_signals) if pending & (1 << (number - 1))
-        )
+        for number in tuple(state.native_signals):
+            if not pending & (1 << (number - 1)):
+                del state.native_signals[number]
+
+    def native_signal_grant(self, state, number):
+        if sum(state.native_signals.values()) >= self.config["observation_count"]:
+            raise Violation("native pending-signal grants exceed the observation bound")
+        self.reserve_trace_observation()
+        self.charge_metadata(16)
+        state.native_signals[number] = state.native_signals.get(number, 0) + 1 if number >= 32 else 1
+
+    def native_sigkill_exit(self, pid, state, status):
+        if not self.native_readonly or state.role != "native" or status != signal.SIGKILL:
+            return
+        registers = Registers()
+        self.charge_metadata(ctypes.sizeof(registers))
+        ptrace(GETREGS, pid, 0, ctypes.byref(registers))
+        number = registers.orig_rax
+        if (
+            state.pending != ("native-signal", signal.SIGKILL)
+            or state.kernel_call != number or signed(registers.rax) != 0
+            or number in {62, 129, 200} and (
+                registers.rdi != pid or registers.rsi != signal.SIGKILL
+            )
+            or number in {234, 297} and (
+                registers.rdi != pid or registers.rsi != pid or registers.rdx != signal.SIGKILL
+            )
+            or number not in {62, 129, 200, 234, 297}
+        ):
+            raise Violation("native SIGKILL lacks an actual successful self-send outcome")
+        state.native_sigkill_outcome = True
 
     def native_child_signal(self, pid, state):
         if self.read_trace is None or self.read_trace.version != 5:
@@ -2196,13 +2226,11 @@ class Policy:
         elif n in {62, 129, 200}:  # kill, rt_sigqueueinfo, tkill
             self.signal_target(pid, a)
             if self.native_readonly and state.role == "native" and 0 < b <= 64:
-                state.pending = ("native-signal", (b, b not in state.native_signals))
-                state.native_signals.add(b)
+                state.pending = ("native-signal", b)
         elif n in {234, 297}:  # tgkill, rt_tgsigqueueinfo
             self.signal_target(pid, a, b)
             if self.native_readonly and state.role == "native" and 0 < c <= 64:
-                state.pending = ("native-signal", (c, c not in state.native_signals))
-                state.native_signals.add(c)
+                state.pending = ("native-signal", c)
         elif n == 424:
             raise Violation("candidate pidfd signal authority is not admitted")
         elif n in {105, 106, 113, 114, 117, 119}:
@@ -2259,15 +2287,15 @@ class Policy:
                 and state.role == "native" and result == -errno.EPIPE
                 and r.orig_rax in {1, 18, 20} and state.kernel_io == "<pipe>"
             ):
-                state.native_signals.add(signal.SIGPIPE)
+                self.native_signal_grant(state, signal.SIGPIPE)
                 self.native_tree_event(state, {
                     "kind": "pipe-error", "pid": pid, "syscall": r.orig_rax, "error": errno.EPIPE,
                 })
-            if operation == "native-signal" and value[1]:
-                state.native_signals.discard(value[0])
             if operation == "make-source-exec" and result == -errno.EACCES and self.source_execute_allowed(pid, *value):
                 raise Violation(f"Make source executable lookup denied by noexec view: {value[0]}")
             return
+        if operation == "native-signal":
+            self.native_signal_grant(state, value)
         if operation in {"open", "dup"}:
             state.fds[result] = value
         elif operation == "close":
@@ -2313,11 +2341,17 @@ def observer_ranges(pid):
 
 
 def signal_tracees(processes):
-    for record in processes.values():
+    for pid, record in processes.items():
         try:
             signal.pidfd_send_signal(record.pidfd, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        if record.parked:
+            try:
+                ptrace(7, pid, 0, signal.SIGKILL)
+            except OSError as error:
+                if error.errno != errno.ESRCH:
+                    raise
 
 
 def supervise(config, drop_privileges):
@@ -2426,10 +2460,12 @@ def supervise(config, drop_privileges):
             raise Violation("unrecorded sandbox descendant")
         if os.WIFEXITED(status) or os.WIFSIGNALED(status):
             code = os.waitstatus_to_exitcode(status)
+            if policy.native_readonly and state.role == "native" and state.native_exit_status != status:
+                raise Violation("native terminal status differs from its actual kernel exit stop")
             if policy.native_readonly and state.role == "native" and os.WIFSIGNALED(status):
                 terminated = os.WTERMSIG(status)
                 if terminated != state.native_delivered and not (
-                    terminated == signal.SIGKILL and terminated in state.native_signals
+                    terminated == signal.SIGKILL and state.native_sigkill_outcome
                 ):
                     raise Violation("native shell termination lacks an admitted self-signal")
             if policy.native_readonly and state.role == "native":
@@ -2462,6 +2498,18 @@ def supervise(config, drop_privileges):
                 policy.read_trace.clear(stopped)
                 if state.role == "native" and policy.read_trace.version == 5:
                     policy.native_tree_event(state, {"kind": "start", "pid": stopped})
+        if sig == signal.SIGTRAP and event == 6:
+            outcome = ctypes.c_ulong()
+            policy.charge_metadata(ctypes.sizeof(outcome))
+            ptrace(0x4201, stopped, 0, ctypes.byref(outcome))
+            if policy.native_readonly and state.role == "native":
+                if state.native_exit_status is not None:
+                    raise Violation("native process reused its terminal kernel exit stop")
+                state.native_exit_status = outcome.value
+            policy.native_sigkill_exit(stopped, state, outcome.value)
+            state.parked = False
+            ptrace(7, stopped, 0, 0)
+            return
         if sig == signal.SIGTRAP and event in {1, 2, 3}:
             child = ctypes.c_ulong()
             ptrace(0x4201, stopped, 0, ctypes.byref(child))
@@ -2535,6 +2583,7 @@ def supervise(config, drop_privileges):
             policy.native_exec_signals(stopped, state)
             state.delivery_signal = 0
             state.native_delivered = 0
+            state.native_sigkill_outcome = False
             state.memory_reservation = 0
             state.break_end = 0
             state.kernel_call = None
@@ -2608,7 +2657,9 @@ def supervise(config, drop_privileges):
                 or int.from_bytes(bytes(information[16:20]), "little", signed=True) != stopped
             ):
                 raise Violation("native shell signal delivery is not its admitted self-signal")
-            state.native_signals.remove(sig)
+            state.native_signals[sig] -= 1
+            if not state.native_signals[sig]:
+                del state.native_signals[sig]
             state.delivery_signal = sig
         resume(stopped)
 
