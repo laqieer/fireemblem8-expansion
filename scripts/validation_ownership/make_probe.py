@@ -2062,12 +2062,14 @@ class ProbeSession:
         if not isinstance(command, Command):
             raise MakeProbeError("original compiler requires a typed Command")
         Command.__post_init__(command)
+        fields = (command.argv, command.code, command.sources, command.directories, command.outputs)
+        if any(type(value) is not tuple for value in fields) or any(
+            not isinstance(item, str) for value in fields for item in value
+        ):
+            raise MakeProbeError("original compiler declarations require immutable string tuples")
         if (
             not command.argv
             or command.argv[0] not in {"g++", "gcc", "/usr/bin/g++", "/usr/bin/gcc"}
-            or any(type(value) is not tuple for value in (
-                command.argv, command.code, command.sources, command.directories, command.outputs,
-            ))
             or not command.code or len(command.outputs) != 1
             or command.sources or command.directories or command.native_tool is not None
             or command.dependency_only or command.publication_policy != "replace"

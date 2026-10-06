@@ -226,7 +226,9 @@ original four C++ files/four headers, flags, CWD and `scaninc` output compile,
 and the sealed scanner reports the same actual header dependency as the
 ordinary scanner, with no artifact added to the immutable tree.
 
-Run the command/namespace and compile-only layout controls; wrong CWD/output,
+Run the malformed-typed-input, command/namespace and compile-only layout controls;
+nonstrings or mutable declaration containers must fail through the normal
+terminal `MakeProbeError` boundary, leaving no issued tool. Wrong CWD/output,
 collisions, unsupported driver, additional authority and cross-mode source
 mounts must reject. The actual-initial-argv mutant must reject despite
 successful compilation. In the real-write/capture controls, a linker map

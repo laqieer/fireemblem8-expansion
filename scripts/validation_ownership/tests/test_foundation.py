@@ -822,6 +822,29 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(tool.inputs, tuple(session.snapshot.owners(command.code)))
         self.assert_clean(session)
 
+    def test_original_compiler_rejects_malformed_typed_inputs(self):
+        self.add("tool/source.cpp", "int main() { return 0; }\n")
+        command = Command(
+            ("g++", "source.cpp", "-o", "program"),
+            code=("tool/source.cpp",), outputs=("tool/program",),
+        )
+        for changes in (
+            {"argv": (["g++"], "source.cpp", "-o", "program")},
+            {"argv": ("g++", [], "-o", "program")},
+            {"code": (["tool/source.cpp"],)},
+            {"outputs": (["tool/program"],)},
+            {"argv": list(command.argv)},
+            {"code": list(command.code)},
+            {"outputs": list(command.outputs)},
+        ):
+            session = self.session()
+            with self.subTest(changes=changes), session:
+                with self.assertRaises(MakeProbeError):
+                    session.compile_native_command(replace(command, **changes), cwd="tool")
+                self.assertTrue(session.budget.failed)
+                self.assertFalse(session.native_tools)
+            self.assert_clean(session)
+
     def test_original_compiler_layout_is_compile_only_and_snapshot_derived(self):
         self.add("tool/source.cpp", "int main() { return 0; }\n")
         options = {
