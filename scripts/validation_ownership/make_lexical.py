@@ -144,16 +144,17 @@ def _make_function(expression):
     if match is None:
         return None
     value = match[2]
-    arguments, start, stack = [], 0, []
+    opening, closing = text[1], text[-1]
+    arguments, start, depth = [], 0, 0
     for index, character in enumerate(value):
-        if character in "({":
-            stack.append(")" if character == "(" else "}")
-        elif stack and character == stack[-1]:
-            stack.pop()
-        elif character == "," and not stack:
+        if character == opening:
+            depth += 1
+        elif depth and character == closing:
+            depth -= 1
+        elif character == "," and not depth:
             arguments.append(value[start:index])
             start = index + 1
-    if stack:
+    if depth:
         raise MakeProbeError("incomplete Make function argument")
     arguments.append(value[start:])
     return match[1], arguments

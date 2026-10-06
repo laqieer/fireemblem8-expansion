@@ -594,6 +594,14 @@ the existing namespace launcher, run these `FoundationTests` controls:
    those suppliers. Removing a supplier from the selected closure must refuse
    in both live-source and archive validation, including assignment RHS
    references. The existing underscore and scoped-variable controls remain.
+   `test_native_readonly_function_delimiters_preserve_original_suppliers`
+   compares actual ordinary Make with native completion for opposite-delimiter
+   literals in both function forms, nested and ordinary arguments, and empty
+   short-circuit arguments. The pre-fix native reader rejects six valid sources
+   although ordinary Make succeeds; all seven fixtures must now retain exact
+   output and their actual `SUPPLIER`/`VALUE` completions. The existing splitter
+   uses one enclosing-delimiter depth counter instead of a mixed-delimiter
+   stack; no second Make parser or source transformation is introduced.
 4. `test_native_readonly_completion_failed_make_has_no_successful_archive`:
    a real source error must retain Make's status and diagnostic, fail the
    invocation and clean active pins without a successful trace.

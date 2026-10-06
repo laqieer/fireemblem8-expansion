@@ -1399,6 +1399,41 @@ class FoundationTests(unittest.TestCase):
                     session._native_make_readonly("all", observe_reads=True, observe_completions=True)
         self.assert_clean(session)
 
+    def test_native_readonly_function_delimiters_preserve_original_suppliers(self):
+        cases = (
+            ("$(and {,$(SUPPLIER))", "original"),
+            ("${and (,${SUPPLIER}}", "original"),
+            ("$(and nonempty,$(SUPPLIER))", "original"),
+            ("$(and $(and {,$(SUPPLIER)),$(SUPPLIER))", "original"),
+            ("${and ${and (,${SUPPLIER}},${SUPPLIER}}", "original"),
+            ("$(and ,{)", ""),
+            ("${and ,(}", ""),
+        )
+        for expression, expected in cases:
+            self.add("Makefile", (
+                f"SUPPLIER := original\nVALUE := {expression}\n"
+                "REFERENCES = $(VALUE) $(SUPPLIER)\n"
+                "all: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n"
+            ))
+            ordinary = subprocess.run(
+                ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+            )
+            self.assertEqual(ordinary.stdout, expected.encode())
+            session = self.session()
+            with self.subTest(expression=expression), session:
+                completed, _, observed = session._native_make_readonly(
+                    "all", observe_reads=True, observe_completions=True,
+                )
+                self.assertEqual(completed.stdout, ordinary.stdout)
+                bindings = {
+                    row["name"]: row["variable"][1] for row in observed["read_trace"]["events"]
+                    if row["kind"] == "assignment-completion"
+                }
+                self.assertEqual(bindings.get("SUPPLIER"), "original")
+                self.assertEqual(bindings.get("VALUE"), expected)
+            self.assert_clean(session)
+
     def test_native_trace_count_shares_filesystem_event_machine_and_trap_limit(self):
         from scripts.validation_ownership.read_trace import NativeReadTrace
         from scripts.validation_ownership.syscall_guard import Process, Violation
