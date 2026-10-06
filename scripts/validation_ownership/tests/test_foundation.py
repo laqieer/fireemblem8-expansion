@@ -121,6 +121,112 @@ class FoundationTests(unittest.TestCase):
             replay.assert_not_called()
         self.assert_clean(session)
 
+    def test_native_readonly_managed_python_directory_preserves_real_namespace(self):
+        runtime = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}"
+        source = Path(runtime) / "json/__init__.py"
+        expected = source.read_bytes().splitlines()[0]
+        self.add("Makefile", (
+            f"VALUE := $(shell read -r line < {source}; printf '%s' \"$$line\")\n"
+            ".PHONY: all\nall: ; @v='$(VALUE)'; printf '%s\\n' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), native_runtime_directories=(runtime,),
+            )
+            self.assertEqual(semantics["domains"]["VALUE"]["value"].encode(), expected)
+            self.assertEqual(completed.stdout, expected + b"\n")
+            self.assertIn(str(source), observed["accessed"])
+        self.assert_clean(session)
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "uncaptured Make runtime access"):
+                session._native_make_readonly("all")
+        self.assert_clean(session)
+
+    def test_native_readonly_managed_python_directory_boundaries_refuse(self):
+        runtime = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}"
+        for declaration in (["/usr/lib"], ("/usr",), (runtime, runtime), (runtime + "/json",)):
+            self.add("Makefile", ".PHONY: all\nall: ; @:\n")
+            session = self.session()
+            with self.subTest(declaration=declaration), session:
+                with self.assertRaisesRegex(MakeProbeError, "native runtime directory"):
+                    session._native_make_readonly("all", native_runtime_directories=declaration)
+            self.assert_clean(session)
+        cases = (
+            (f"printf changed > {runtime}/json/__init__.py", "filesystem write denied"),
+            (f"read -r v < {runtime}/../../include/stdlib.h", "uncaptured Make runtime access"),
+            (f"read -r v < {runtime}/sitecustomize.py", "uncaptured Make runtime access"),
+            (f"{runtime}/pdb.py", "untrusted executable dispatch"),
+        )
+        for command, message in cases:
+            self.add("Makefile", f".PHONY: all\nall: ; @{command}\n")
+            session = self.session()
+            with self.subTest(command=command), session:
+                with self.assertRaisesRegex(MakeProbeError, message):
+                    session._native_make_readonly("all", native_runtime_directories=(runtime,))
+            self.assert_clean(session)
+
+    def test_native_readonly_managed_python_make_enumeration_is_complete(self):
+        runtime = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}"
+        expected = " ".join(sorted(str(path) for path in (Path(runtime) / "json").glob("*.py")))
+        self.add("Makefile", (
+            f"VALUE := $(wildcard {runtime}/json/*.py)\n"
+            ".PHONY: all\nall: ; @:\n"
+        ))
+        session = self.session()
+        with session:
+            _, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), native_runtime_directories=(runtime,),
+            )
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], expected)
+            self.assertIn(runtime + "/json", observed["accessed"])
+        self.assert_clean(session)
+        self.add("Makefile", "VALUE := $(wildcard /usr/lib/*.py)\n.PHONY: all\nall: ; @:\n")
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "uncaptured Make runtime access: metadata /usr/lib"):
+                session._native_make_readonly("all", native_runtime_directories=(runtime,))
+        self.assert_clean(session)
+
+    def test_native_readonly_managed_python_startup_does_not_invent_absence(self):
+        runtime = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}"
+        self.add("Makefile", (
+            "VALUE := $(shell /usr/bin/python3 -I -S -c "
+            "'import importlib; print(importlib.import_module(\"json\").dumps([1,2]))')\n"
+            ".PHONY: all\nall: ; @v='$(VALUE)'; printf '%s\\n' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "uncaptured Make runtime access: read /usr/pyvenv.cfg"):
+                session._native_make_readonly(
+                    "all", variables=("VALUE",), native_executables=("/usr/bin/python3",),
+                    native_runtime_directories=(runtime,),
+                )
+        self.assert_clean(session)
+
+    def test_native_readonly_managed_python_mount_and_capture_overlap_refuse(self):
+        runtime = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}"
+        self.add("Makefile", ".PHONY: all\nall: ; @:\n")
+        session = self.session(runtime_files=(runtime + "/json/__init__.py",))
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "overlaps captured runtime resources"):
+                session._native_make_readonly("all", native_runtime_directories=(runtime,))
+        self.assert_clean(session)
+        body = (
+            "import syscall_guard\n"
+            "original=syscall_guard.os.statvfs\n"
+            "def mutable(path):\n"
+            " row=list(original(path));row[8]=0\n"
+            " return syscall_guard.os.statvfs_result(row)\n"
+            "syscall_guard.os.statvfs=mutable\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            with self.assertRaisesRegex(MakeProbeError, "mount backing or readonly flags differ"):
+                session._native_make_readonly("all", native_runtime_directories=(runtime,))
+        self.assert_clean(session)
+
     def test_native_readonly_declared_direct_executable_preserves_original_jobs(self):
         self.add("Makefile", (
             "VALUE := $(shell /usr/bin/printf %s original)\n"

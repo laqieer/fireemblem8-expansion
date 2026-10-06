@@ -253,6 +253,18 @@ class Policy:
         ):
             raise Violation("invalid native executable resource declaration")
         self.native_executables = set(native_executables)
+        self.native_runtime_directories = config.get("native_runtime_directories", [])
+        if (
+            not isinstance(self.native_runtime_directories, list)
+            or len(self.native_runtime_directories) > 1
+            or any(
+                not isinstance(path, str)
+                or re.fullmatch(r"/usr/lib/python[0-9]+\.[0-9]+", path) is None
+                for path in self.native_runtime_directories
+            )
+            or self.native_runtime_directories and not self.native_readonly
+        ):
+            raise Violation("invalid native managed runtime directory authority")
         self.read_trace = None
         request = config.get("read_epochs")
         if request is not None:
@@ -319,6 +331,24 @@ class Policy:
         self.live_process_peak = 0
         self.make_pid = 0
         self.make_restarts = 0
+        for path in self.native_runtime_directories:
+            expected_mount = {
+                "source": path, "target": path, "writable": False, "executable": True,
+            }
+            if [item for item in config["mounts"] if item["target"] == path] != [expected_mount]:
+                raise Violation("native managed runtime lacks its exact readonly mount")
+            source = Path(path).stat()
+            guest = (Path(config["root"]) / path.lstrip("/")).stat()
+            mounted = os.statvfs(Path(config["root"]) / path.lstrip("/"))
+            self.charge_metadata(len(encoded([list(source), list(guest), list(mounted)])))
+            if (
+                (source.st_dev, source.st_ino) != (guest.st_dev, guest.st_ino)
+                or not stat.S_ISDIR(guest.st_mode) or guest.st_uid != source.st_uid
+                or guest.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+                or mounted.f_flag & (os.ST_RDONLY | os.ST_NOSUID | os.ST_NODEV)
+                != os.ST_RDONLY | os.ST_NOSUID | os.ST_NODEV
+            ):
+                raise Violation("native managed runtime mount backing or readonly flags differ")
         self.executable = set(config["executables"])
         self.executable.update(self.resolve(path) for path in config["executables"])
         if self.native_readonly and (
@@ -1300,7 +1330,17 @@ class Policy:
         if any(name.startswith(prefix) for name in self.config["forbidden_paths"]):
             raise Violation(f"nonregular namespace in source enumeration: {path}")
 
+    def native_managed_runtime(self, path):
+        return self.native_readonly and any(
+            path == root or path.startswith(root + "/")
+            for root in self.native_runtime_directories
+        )
+
     def make_runtime_access(self, state, path, operation):
+        if self.native_managed_runtime(path) and operation in {"read", "metadata", "directory"}:
+            self.check_optional_make_spelling(state, path, operation)
+            self.defer_observation(state, "accessed", path)
+            return
         if self.native_readonly and operation in {"read", "metadata"} and self.runtime_metadata(path):
             self.check_optional_make_spelling(state, path, operation)
             self.defer_observation(state, "accessed", path)
@@ -1493,6 +1533,9 @@ class Policy:
             if path == "/lib/vo-observer.so" and not observer:
                 raise Violation("supervisor observer image access denied")
             if operation == "directory" and not (path == "/repo" or path.startswith("/repo/")):
+                if self.native_managed_runtime(path):
+                    self.make_runtime_access(state, path, operation)
+                    return
                 raise Violation("Make runtime directory enumeration denied")
         if path == "/control" or path.startswith("/control/"):
             if state.role == "helper":

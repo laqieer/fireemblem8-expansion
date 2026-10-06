@@ -379,6 +379,36 @@ def _capture_runtime_input(path, budget):
     return RuntimeInput(path, data, mode, tuple(parents), str(resolved), tuple(aliases))
 
 
+def _trusted_python_directory(path, budget):
+    if not isinstance(path, str) or re.fullmatch(r"/usr/lib/python[0-9]+\.[0-9]+", path) is None:
+        raise MakeProbeError("native runtime directory must be an exact versioned Python stdlib")
+    root = _trusted_runtime_path(path)
+    if root.as_posix() != path or not root.is_dir():
+        raise MakeProbeError("native Python directory must be a canonical trusted directory")
+    pending, count = [root], 0
+    while pending:
+        budget.remaining()
+        directory = pending.pop()
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                budget.remaining()
+                count += 1
+                if count > budget.limits.entries:
+                    budget.reject("native Python runtime directory exceeds entry admission")
+                info = entry.stat(follow_symlinks=False)
+                budget.charge("control", len(os.fsencode(entry.path)) + 144)
+                if info.st_uid != 0 or (
+                    not stat.S_ISLNK(info.st_mode)
+                    and info.st_mode & (stat.S_IWGRP | stat.S_IWOTH | 0o7000)
+                ):
+                    raise MakeProbeError("native Python directory contains mutable/untrusted resources")
+                if stat.S_ISDIR(info.st_mode):
+                    pending.append(Path(entry.path))
+                elif not (stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode)):
+                    raise MakeProbeError("native Python directory contains nonregular resources")
+    return path
+
+
 def _make_interpreter(binary: bytes, *, label="trusted Make"):
     if len(binary) < 64 or binary[:6] != b"\x7fELF\x02\x01" or binary[18:20] != b"\x3e\0":
         raise MakeProbeError(f"{label} is not a Linux x86-64 ELF")
@@ -984,7 +1014,7 @@ class ProbeSession:
         directories=(), executables=None, mapping_entries=(), metadata_validation=False,
         producer_handler=None, publication_observer=None, publication_allowed=True,
         dependency=None, native_runtime=(), read_abi=None, read_selection=None,
-        native_executables=(),
+        native_executables=(), native_runtime_directories=(),
     ):
         self.budget.remaining()
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
@@ -1012,7 +1042,7 @@ class ProbeSession:
             ):
                 raise MakeProbeError("native readonly invocation conflicts with mapped/runtime/publication authority")
             executable = ["/usr/bin/make", native_shell, *native_executables]
-        elif native_executables:
+        elif native_executables or native_runtime_directories:
             raise MakeProbeError("native executable admission requires its readonly runtime")
         file_remaining = min(
             self.budget.limits.file_bytes,
@@ -1074,6 +1104,7 @@ class ProbeSession:
             config["native_shell"] = native_shell
             config["native_executables"] = [native_shell, *native_executables]
             config["runtime_closure"] = sorted(set(config["runtime_closure"]) | {native_shell})
+            config["native_runtime_directories"] = list(native_runtime_directories)
         if read_abi is not None:
             from .read_epochs import COMPLETION_VERSION
             if not native_runtime:
@@ -1979,7 +2010,7 @@ class ProbeSession:
     @terminal_failure
     def _native_make_readonly(
         self, target, *, makefile="Makefile", variables=(), assignments=(), observe_reads=False,
-        observe_completions=False, native_executables=(),
+        observe_completions=False, native_executables=(), native_runtime_directories=(),
     ):
         variables, cli, environment = self._make_request(target, makefile, variables, assignments, ())
         if self.published_sources or self.make_depth:
@@ -2002,6 +2033,13 @@ class ProbeSession:
             raise MakeProbeError("invalid native executable resource declaration")
         for path in native_executables:
             relative_path(path[1:])
+        if (
+            not isinstance(native_runtime_directories, tuple) or len(native_runtime_directories) > 1
+        ):
+            raise MakeProbeError("invalid native runtime directory declaration")
+        runtime_directories = tuple(
+            _trusted_python_directory(path, self.budget) for path in native_runtime_directories
+        )
         captured = self._captured_native_runtime("/usr/bin/sh")
         native_runtime = tuple(
             ("/bin/sh" if name == "/usr/bin/sh" else name, data) for name, data in captured
@@ -2029,6 +2067,16 @@ class ProbeSession:
             lambda: _remove_owned_tree(control), lambda: _remove_owned_tree(root),
         ]):
             self._new_root(root_name, make=True, native_runtime=native_runtime)
+            for path in runtime_directories:
+                if any(
+                    name == path or name.startswith(path + "/")
+                    for name in runtime.keys() | dict(self.make_runtime).keys()
+                ) or any(
+                    item.canonical == path or item.canonical.startswith(path + "/")
+                    for item in self.runtime_inputs
+                ):
+                    raise MakeProbeError("native runtime directory overlaps captured runtime resources")
+                _mkdir_target(root, path, directory=True)
             control.mkdir(mode=0o700)
             result_path = control / "result"
             result_path.touch()
@@ -2037,7 +2085,9 @@ class ProbeSession:
                 environment=environment, native_runtime=native_runtime, read_abi=read_abi,
                 read_selection=read_selection,
                 native_executables=native_executables,
+                native_runtime_directories=runtime_directories,
                 mounts=[
+                    *(self._mount(Path(path), path, executable=True) for path in runtime_directories),
                     self._mount(self.tree, "/repo"),
                     self._mount(control, "/control", writable=True),
                     self._mount(Path("/dev/null"), "/dev/null", writable=True),

@@ -458,6 +458,61 @@ namespace launcher, extend `TC-OWNERSHIP-NATIVE-COMPLETION-001` (#270):
    remains publication-capable; these are request-specific return mutations,
    not proof of protection against a hostile same-UID process.
 
+### Explicit managed Python resource directory
+
+`TC-OWNERSHIP-NATIVE-MANAGED-RUNTIME-001` (#270) covers the internal
+`native_runtime_directories=()` resource declaration. Its empty default retains
+the captured-only native runtime. One exact `/usr/lib/pythonM.N` directory may
+be explicitly declared through the existing readonly bind-mount seam. Before
+mounting, every namespace entry is checked for root ownership and nonmutable
+group/other permissions, regular-file/directory/symlink type, entry bounds and
+the existing deadline; metadata admission charges the existing control budget.
+Real installed symlinks are preserved, but resolving outside the declared
+directory grants no target access. Captured executable/optional-resource
+overlap refuses. The supervisor checks exact mount declaration, actual backing
+device/inode and readonly/nosuid/nodev flags before candidate execution.
+
+This is an explicit amendment to the early captured-runtime-only design, not a
+claim of captured resource bytes. The managed system runtime must remain stable
+through the session; privileged host updates are outside this trust model.
+Resource reads, metadata and enumeration do not grant additional command
+execution, writes, candidate-source or generated-output authority. Executable
+ELF admission remains separately captured and explicit; argv is not rewritten.
+No broad `/usr` or library-directory mount is introduced.
+
+Tester prerequisites are the installed system versioned Python stdlib and the
+existing native namespace launcher; no ROM, save, localization or archival
+interaction applies. Start with a clean fixture and run:
+
+1. `test_native_readonly_managed_python_directory_preserves_real_namespace`:
+   original shell reads a real stdlib resource and returns its actual first
+   line; successful access evidence must include that file. Repeat without the
+   declaration and require uncaptured-access refusal and owned cleanup.
+2. `test_native_readonly_managed_python_directory_boundaries_refuse`: reject
+   broad/nested/duplicate declarations, resource writes, parent escapes,
+   external symlink targets and execution of an unissued executable stdlib
+   file. Cleanup must retain no capsule or session cache.
+3. `test_native_readonly_managed_python_startup_does_not_invent_absence`:
+   dispatch real explicitly admitted Python with the fixture's actual `-I -S`
+   argv. Its unadmitted `/usr/pyvenv.cfg` startup read must refuse, not become a
+   false-absence branch. **Python startup, dynamic imports, site/zip/package
+   resources and extension dependency closure are still unqualified.** This
+   negative is not a successful Python execution or original-eight-query proof.
+4. `test_native_readonly_managed_python_make_enumeration_is_complete`: original
+   ready Make wildcard enumeration must match the actual declared stdlib
+   directory's complete `.py` names; the adjacent parent root remains denied.
+   This also checks the Make consumer rather than only a native child.
+5. `test_native_readonly_managed_python_mount_and_capture_overlap_refuse`:
+   reject an actual optional captured file overlapping the mount, and projected
+   missing readonly mount flags. The latter tests verification, not a physical
+   kernel remount or hostile host writer.
+
+Dependencies are the existing mount/namespace and runtime trust mechanisms;
+conflicts are captured-resource overlap. The full original invocation still
+requires complete startup/resource and producer/job/source custody plus
+unchanged aggregate accounting. This bounded resource-directory component
+does not waive those criteria or any final gate.
+
 Dependencies are the existing captured ELF closure, readonly loader-origin
 proof and original job/machine lifecycle; conflicts are none. No ROM/RAM/save,
 localization, generated or archival change. Python runtime resources, compiled
