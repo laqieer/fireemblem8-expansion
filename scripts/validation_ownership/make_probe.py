@@ -555,6 +555,7 @@ class ProbeSession:
         self.cache = {}
         self.mappings = {}
         self.native_tools = {}
+        self.native_runtimes = {}
         self.published_sources = {}
         self.published_versions = {}
         self.publication_serial = 0
@@ -649,8 +650,10 @@ class ProbeSession:
             raise MakeProbeError("cannot select a view during active report execution")
         previous = (
             self.loader, self.snapshot, self.tree, self.cache, self.mappings, self.native_tools,
+            self.native_runtimes,
         )
         cache, mappings, tools = {}, {}, {}
+        runtimes = {}
         selected = False
 
         def restore():
@@ -661,7 +664,7 @@ class ProbeSession:
                     raise error
                 self._views.pop()
                 (self.loader, self.snapshot, self.tree,
-                 self.cache, self.mappings, self.native_tools) = previous
+                 self.cache, self.mappings, self.native_tools, self.native_runtimes) = previous
 
         try:
             self.budget.plan(1)
@@ -669,7 +672,8 @@ class ProbeSession:
             root = self.base / f"view-{self.serial}"
             tree = root / "tree"
             with cleanup_scope([
-                cache.clear, mappings.clear, tools.clear, lambda: _remove_owned_tree(root), restore,
+                cache.clear, mappings.clear, tools.clear, runtimes.clear,
+                lambda: _remove_owned_tree(root), restore,
             ]):
                 root.mkdir()
                 tree.mkdir()
@@ -690,8 +694,8 @@ class ProbeSession:
                 try:
                     self._views.append(previous)
                     (self.loader, self.snapshot, self.tree,
-                     self.cache, self.mappings, self.native_tools) = (
-                        loader, snapshot, tree, cache, mappings, tools,
+                     self.cache, self.mappings, self.native_tools, self.native_runtimes) = (
+                        loader, snapshot, tree, cache, mappings, tools, runtimes,
                     )
                     selected = True
                 finally:
@@ -707,6 +711,7 @@ class ProbeSession:
             self.cache.clear()
             self.mappings.clear()
             self.native_tools.clear()
+            self.native_runtimes.clear()
             self.published_sources.clear()
             self.published_versions.clear()
             self.generated_paths.clear()
@@ -720,11 +725,12 @@ class ProbeSession:
             self.runtime_root = None
             self.snapshot = None
             self.loader.live_modes.clear()
-            for loader, snapshot, tree, cache, mappings, tools in self._views:
+            for loader, snapshot, tree, cache, mappings, tools, runtimes in self._views:
                 loader.live_modes.clear()
                 cache.clear()
                 mappings.clear()
                 tools.clear()
+                runtimes.clear()
             if self._views:
                 self.loader = self._views[0][0]
             self._views.clear()
@@ -1987,14 +1993,14 @@ class ProbeSession:
             raise MakeProbeError("invalid native executable resource declaration")
         for path in native_executables:
             relative_path(path[1:])
-        captured = _executable_runtime("/usr/bin/sh", self.budget)
+        captured = self._captured_native_runtime("/usr/bin/sh")
         native_runtime = tuple(
             ("/bin/sh" if name == "/usr/bin/sh" else name, data) for name, data in captured
         )
         runtime = dict(native_runtime)
         interpreter = _make_interpreter(runtime["/bin/sh"])
         for path in native_executables:
-            captured = _executable_runtime(path, self.budget)
+            captured = self._captured_native_runtime(path)
             if _make_interpreter(dict(captured)[path]) != interpreter:
                 raise MakeProbeError("native executable requires an unadmitted interpreter")
             for name, data in captured:
@@ -2036,6 +2042,17 @@ class ProbeSession:
                 self.budget.read_bytes(result_path, "control"), target, variables,
             )
             return completed, semantics, observed
+
+    def _captured_native_runtime(self, path):
+        self.budget.remaining()
+        if path not in self.native_runtimes:
+            captured = _executable_runtime(path, self.budget)
+            self.budget.charge(
+                "cache", len(path.encode("utf-8")) + 16
+                + sum(len(name.encode("utf-8")) + len(data) for name, data in captured),
+            )
+            self.native_runtimes[path] = captured
+        return self.native_runtimes[path]
 
     def _native_completion_selection(self):
         from . import read_epochs

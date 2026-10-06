@@ -329,6 +329,29 @@ qualification remain incomplete.
 
 ### Declared original direct executables
 
+Trusted native ELF closures are captured once per exact active immutable view
+and requested executable pathname. First acquisition charges the actual
+captured bytes and retained cache resources; repeat queries reuse these bytes
+rather than rereading the live host. Every invocation still gets fresh readonly
+backing and actual source/dispatch/job/machine observations under the same
+cumulative deadline and budgets. Nested `select_view` isolates captures,
+restores the outer objects and clears selected caches; session failure/exit
+clears all runtime captures. ABI decoding and source selection are not cached
+by this component.
+
+Run `test_native_readonly_reuses_captured_runtime_without_second_host_read`:
+execute two original shell/direct-printf Make queries in one session, deny a
+second host runtime acquisition and require identical real output/values,
+retained exact capture resources, lower incremental control cost, unchanged
+deadline/limits and growing observations. Before reuse, the second real query
+tries another host acquisition. Run
+`test_native_readonly_runtime_capture_view_isolation_restoration_and_failure`:
+select base/current nested immutable views, require isolated captures and
+correct original outputs, restore the outer capture object, then reject a
+new executable capture and prove it is not cached; cleanup empties every
+retained view cache. This does not make an oversized Python runtime profile
+admissible or qualify the original eight-query family.
+
 Captured session `runtime_files` are also supported as readonly optional data,
 including real absent paths and recorded stock ancestor aliases. The native
 invocation builds fresh captured backing; it does not mount the session's

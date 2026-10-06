@@ -87,6 +87,7 @@ class FoundationTests(unittest.TestCase):
         self.assertFalse(session.cache)
         self.assertFalse(session.mappings)
         self.assertFalse(session.native_tools)
+        self.assertFalse(session.native_runtimes)
         self.assertFalse(session._views)
         self.assertFalse(session.make_runtime)
         self.assertFalse(session.runtime_inputs)
@@ -150,6 +151,81 @@ class FoundationTests(unittest.TestCase):
             ]
             self.assertEqual(sorted(executed), sorted((row["sequence"], row["pid"]) for row in jobs))
             replay.assert_not_called()
+        self.assert_clean(session)
+
+    def test_native_readonly_reuses_captured_runtime_without_second_host_read(self):
+        from scripts.validation_ownership import make_probe
+        self.add("Makefile", "VALUE := $(shell printf original)\nall: ; @/usr/bin/printf 'recipe\\n'\n")
+        capture = make_probe._executable_runtime
+        images = {}
+        def initial(path, budget):
+            result = capture(path, budget)
+            images[path] = result
+            return result
+        session = self.session()
+        with session:
+            deadline, limits = session.budget.deadline, session.budget.limits
+            with patch.object(make_probe, "_executable_runtime", side_effect=initial):
+                first = session._native_make_readonly(
+                    "all", variables=("VALUE",), native_executables=("/usr/bin/printf",),
+                    observe_reads=True, observe_completions=True,
+                )
+            control = session.budget.bytes["control"]
+            observations = session.observations_used
+            with patch.object(
+                make_probe, "_executable_runtime", side_effect=AssertionError("second live runtime capture"),
+            ):
+                second = session._native_make_readonly(
+                    "all", variables=("VALUE",), native_executables=("/usr/bin/printf",),
+                    observe_reads=True, observe_completions=True,
+                )
+            self.assertEqual(first[0].stdout, second[0].stdout)
+            self.assertEqual(second[0].stdout, b"recipe\n")
+            self.assertEqual(first[1], second[1])
+            self.assertEqual(second[1]["domains"]["VALUE"]["value"], "original")
+            self.assertEqual(set(images), {"/usr/bin/sh", "/usr/bin/printf"})
+            self.assertEqual(session.native_runtimes, images)
+            runtime_bytes = sum(len(data) for rows in images.values() for _, data in rows)
+            self.assertLess(session.budget.bytes["control"] - control, runtime_bytes)
+            self.assertGreater(session.observations_used, observations)
+            self.assertEqual(session.budget.deadline, deadline)
+            self.assertIs(session.budget.limits, limits)
+        self.assert_clean(session)
+
+    def test_native_readonly_runtime_capture_view_isolation_restoration_and_failure(self):
+        from scripts.validation_ownership import make_probe
+        budget = ProbeBudget()
+        self.add("Makefile", "VALUE := base\nall: ; @v=base; printf '%s' \"$$v\"\n")
+        base = self.capture_view(budget)
+        self.add("Makefile", "VALUE := current\nall: ; @v=current; printf '%s' \"$$v\"\n")
+        current = self.capture_view(budget)
+        session = ProbeSession(current, scratch_root=self.scratch, budget=budget)
+        with session:
+            session._native_make_readonly("all")
+            outer = session.native_runtimes
+            image = outer["/usr/bin/sh"]
+            with session.select_view(base):
+                self.assertFalse(session.native_runtimes)
+                selected = session.native_runtimes
+                completed, _, _ = session._native_make_readonly("all")
+                self.assertEqual(completed.stdout, b"base")
+                with session.select_view(current):
+                    self.assertFalse(session.native_runtimes)
+                    completed, _, _ = session._native_make_readonly("all")
+                    self.assertEqual(completed.stdout, b"current")
+                self.assertIs(session.native_runtimes, selected)
+                self.assertTrue(selected)
+            self.assertFalse(selected)
+            self.assertIs(session.native_runtimes, outer)
+            self.assertIs(session.native_runtimes["/usr/bin/sh"], image)
+            with patch.object(
+                make_probe, "_executable_runtime", side_effect=MakeProbeError("actual capture refusal"),
+            ):
+                with self.assertRaisesRegex(MakeProbeError, "actual capture refusal"):
+                    session._native_make_readonly("all", native_executables=("/usr/bin/printf",))
+            self.assertNotIn("/usr/bin/printf", session.native_runtimes)
+            self.assertTrue(budget.failed)
+        self.assertFalse(outer)
         self.assert_clean(session)
 
     def test_native_readonly_direct_executable_default_invalid_and_conflicting_admission_refuse(self):
