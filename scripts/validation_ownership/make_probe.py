@@ -294,12 +294,17 @@ def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
         raise MakeProbeError("noncanonical trusted runtime path")
     sitecustomize = optional and re.fullmatch(r"/etc/python[0-9]+\.[0-9]+/sitecustomize\.py", path)
     kernel_fips = optional and path == "/proc/sys/crypto/fips_enabled"
+    kernel_filesystems = optional and path == "/proc/filesystems"
+    task_mounts = optional and path == "/proc/mounts"
+    task_directory = Path(f"/proc/{os.getpid()}")
+    task_mount_file = task_directory / "mounts"
     openssl_config = optional and path in {"/usr/lib/ssl/openssl.cnf", "/etc/ssl/openssl.cnf"}
     roots = (
         "/usr/bin/", "/usr/lib/", "/usr/lib64/", "/lib/", "/lib64/",
         *(("/usr/libexec/",) if compiler else ()),
         *(("/usr/", "/bin/", ENVIRONMENT["HOME"] + "/") if optional else ()),
-        *((path,) if sitecustomize or kernel_fips else ()),
+        *((path,) if sitecustomize or kernel_fips or kernel_filesystems else ()),
+        *((path, str(task_mount_file)) if task_mounts else ()),
         *(("/etc/ssl/openssl.cnf",) if openssl_config else ()),
     )
     if not path.startswith(roots):
@@ -309,18 +314,38 @@ def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
         raise MakeProbeError("sitecustomize runtime input must be canonical")
     if kernel_fips and resolved.as_posix() != path:
         raise MakeProbeError("kernel FIPS runtime input must be canonical")
+    if kernel_filesystems and resolved.as_posix() != path:
+        raise MakeProbeError("kernel filesystem list must be canonical")
+    task_mounts_present = False
+    if task_mounts:
+        try:
+            Path(path).lstat()
+        except FileNotFoundError:
+            if resolved != Path(path):
+                raise MakeProbeError("absent kernel mount list must be canonical")
+        else:
+            task_mounts_present = True
+            if (
+                resolved != task_mount_file or os.readlink("/proc/mounts") != "self/mounts"
+                or os.readlink("/proc/self") != str(os.getpid())
+            ):
+                raise MakeProbeError("kernel mount list must name the exact current task")
     if openssl_config and resolved.as_posix() != "/etc/ssl/openssl.cnf":
         raise MakeProbeError("OpenSSL configuration must name its exact canonical input")
     if not resolved.as_posix().startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
-    for entry in {Path(path), *Path(path).parents, resolved, *resolved.parents}:
+    entries = {Path(path), *Path(path).parents, resolved, *resolved.parents}
+    if task_mounts_present:
+        entries.add(Path("/proc/self"))
+    for entry in entries:
         try:
             mode = entry.lstat()
         except FileNotFoundError:
             if optional:
                 continue
             raise
-        if mode.st_uid != 0 or (
+        task_owned = task_mounts and entry in {task_directory, task_mount_file}
+        if mode.st_uid not in ({os.getuid()} if task_owned else {0}) or (
             not stat.S_ISLNK(mode.st_mode) and mode.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
         ):
             raise MakeProbeError(f"mutable/untrusted runtime input: {path}")
@@ -365,6 +390,31 @@ def _kernel_fips_bytes(path, budget, expected):
         return bytes(data)
 
 
+def _kernel_filesystem_text_bytes(path, budget, expected):
+    budget.remaining()
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, "rb", buffering=0) as stream:
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode) or _runtime_input_identity(before) != expected:
+            budget.reject("kernel filesystem input changed before its bounded read")
+        data = bytearray()
+        while True:
+            budget.remaining()
+            maximum = min(4096, budget.limits.file_bytes + 1 - len(data))
+            budget.charge("control", 3 * maximum)
+            block = stream.read(maximum)
+            if block is None:
+                budget.reject("kernel filesystem input blocked during its bounded read")
+            if not block:
+                break
+            data.extend(block)
+            if len(data) > budget.limits.file_bytes:
+                budget.reject("kernel filesystem input exceeds bounded kernel-data admission")
+        if _runtime_input_identity(os.fstat(stream.fileno())) != expected:
+            budget.reject("kernel filesystem input changed during its bounded read")
+        return bytes(data)
+
+
 def _capture_runtime_input(path, budget):
     if (
         not isinstance(path, str) or not path.startswith("/")
@@ -391,6 +441,11 @@ def _capture_runtime_input(path, budget):
                 raise MakeProbeError("runtime input has a non-directory/symlink ancestor")
             parents.append((str(parent), True))
             states[parent] = (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid)
+    if path == "/proc/mounts" and resolved != Path(path):
+        for parent in (Path("/proc/self"), resolved.parent):
+            info = parent.lstat()
+            states[parent] = (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid)
+        aliases.append(("/proc/self", str(os.getpid())))
     try:
         before = Path(path).lstat()
     except FileNotFoundError:
@@ -411,6 +466,7 @@ def _capture_runtime_input(path, budget):
                     and resolved == Path("/etc/ssl/openssl.cnf")
                 )
                 or Path(os.path.normpath(os.path.join(str(Path(path).parent), target))) != resolved
+                and not (path == "/proc/mounts" and target == "self/mounts")
             ):
                 raise MakeProbeError("runtime file alias is not a single canonical target")
             try:
@@ -420,9 +476,14 @@ def _capture_runtime_input(path, budget):
             aliases.append((path, target))
         if not stat.S_ISREG(resource_before.st_mode) or resource_before.st_mode & 0o7000:
             raise MakeProbeError("runtime input is not an ordinary regular file")
-        data = _kernel_fips_bytes(
-            resolved, budget, _runtime_input_identity(resource_before),
-        ) if path == "/proc/sys/crypto/fips_enabled" else budget.read_bytes(resolved, "control")
+        if path == "/proc/sys/crypto/fips_enabled":
+            data = _kernel_fips_bytes(resolved, budget, _runtime_input_identity(resource_before))
+        elif path in {"/proc/filesystems", "/proc/mounts"}:
+            data = _kernel_filesystem_text_bytes(
+                resolved, budget, _runtime_input_identity(resource_before),
+            )
+        else:
+            data = budget.read_bytes(resolved, "control")
         mode = stat.S_IMODE(resource_before.st_mode)
     try:
         after = Path(path).lstat()
@@ -1056,7 +1117,10 @@ class ProbeSession:
         if make:
             if self.runtime_root is not None and not native_runtime:
                 return root
-            for alias, target in sorted({pair for item in self.runtime_inputs for pair in item.aliases}):
+            for alias, target in sorted(
+                {pair for item in self.runtime_inputs for pair in item.aliases},
+                key=lambda pair: (pair[0] != "/proc/self", pair),
+            ):
                 destination = root / alias.lstrip("/")
                 if alias in STOCK_RUNTIME_ALIASES:
                     _mkdir_target(root, "/" + target, directory=True)
@@ -1066,7 +1130,7 @@ class ProbeSession:
                         raise MakeProbeError("native runtime image overlaps a captured file alias")
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     canonical = os.path.normpath(os.path.join(str(Path(alias).parent), target))
-                    _mkdir_target(root, canonical)
+                    _mkdir_target(root, canonical, directory=alias == "/proc/self")
                 destination.symlink_to(target)
             for target, data in self.make_runtime:
                 _mkdir_target(root, target).write_bytes(data)

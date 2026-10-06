@@ -2252,6 +2252,48 @@ and directory results retain their actual supported ABI data. Failed operations
 keep their status without becoming successful source consumption. Unreadable
 buffers and unsupported requests are explicit, not empty successful records.
 
+Explicit optional `/proc/filesystems` and `/proc/mounts` declarations capture
+their actual bounded kernel text despite an advertised zero file size. They
+are copied immutable inputs, not live guest `/proc` mounts. The mount-list
+declaration preserves the physical `mounts -> self/mounts` and
+`self -> <collector-pid>` aliases and binds bytes to that exact collector task.
+Only its task directory and mount-list leaf may use the collector's actual
+UID; other objects retain root-owned/nonmutable trust. Foreign PID leaves and
+direct `/proc/self/mounts` declarations are not extra admitted input names.
+Neither declaration grants neighboring proc content, writes or execution.
+The reader uses bounded nonblocking/no-follow reads through complete EOF,
+before/after descriptor identity, original fixed-file/deadline limits, and
+conservative scratch/assembled/returned control charges. A blocked, changed
+or over-budget input terminates; no truncation or empty-size fallback exists.
+
+For #270 `TC-WORKFLOW-NATIVE-MAKE-001`, on the documented Linux native host,
+run `test_kernel_filesystem_text_capture_preserves_actual_proc_aliases_and_bytes`
+to compare real kernel input bytes and parsed current-task alias identities.
+Its pre-fix capture refuses both paths. Run
+`test_native_kernel_filesystem_text_reads_sealed_actual_capture` to compile a
+real C reader and invoke it through original GNU Make: guest stdout equals
+the captured bytes even with a live kernel recapture trap active. Run
+`test_kernel_filesystem_text_reader_keeps_bounded_complete_reads` for empty/
+nonempty/multichunk EOF and actual fixed-file/control/deadline/blocked/identity
+negative controls. Run
+`test_kernel_filesystem_text_exact_alias_and_trust_boundaries` for foreign
+PID, physical alias redirection, foreign UID, writable input and post-read
+replacement refusal. Run
+`test_kernel_filesystem_text_actual_absence_stays_absent_in_guest` for both
+optional leaves: actual absent leaf state has no bytes or invented task
+aliases, and original GNU Make sees absence in the guest. A present dangling
+mount-list alias still refuses its missing target rather than becoming absence.
+Run
+`test_native_kernel_filesystem_text_grants_no_neighbor_write_or_execution`
+for undeclared reads, proc neighbors, writes and executable admission refusal.
+Retain existing exact FIPS, SSL and generic runtime-alias controls. New source
+trees and session state are retired by each case. Dependencies are the existing
+runtime capture/materialization/alias and bounded-reader seams; conflicts are
+none, with no new default inputs or ROM/RAM/save/locale/profile/archival impact.
+This does not admit present SELinux metadata directories or prove original
+`find`/eight-query qualification. Captured mount-list text is a collector
+snapshot, not a claim that its namespaces match later guest namespaces.
+
 Path `statfs` (x86-64 syscall 137) uses the same guarded ownership and metadata
 transport as descriptor `fstatfs` (138), not an unrestricted syscall grant.
 Both have a 120-byte frame, zero flags/mask/offset, and a zero success or

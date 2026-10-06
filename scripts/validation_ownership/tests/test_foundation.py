@@ -234,6 +234,218 @@ class FoundationTests(unittest.TestCase):
             self.assertTrue(session.budget.failed)
             self.assert_clean(session)
 
+    def test_kernel_filesystem_text_capture_preserves_actual_proc_aliases_and_bytes(self):
+        from scripts.validation_ownership import make_probe
+        for path in ("/proc/filesystems", "/proc/mounts"):
+            session_budget = ProbeBudget()
+            source = Path(path)
+            self.assertEqual(source.stat().st_size, 0)
+            actual = source.read_bytes()
+            self.assertGreater(len(actual), 0)
+            with self.subTest(path=path):
+                item = make_probe._capture_runtime_input(path, session_budget)
+                self.assertEqual(item.data, actual)
+                self.assertEqual(item.mode, 0o444)
+                self.assertGreaterEqual(session_budget.bytes["control"], len(actual))
+                if path == "/proc/mounts":
+                    self.assertEqual(item.canonical, f"/proc/{os.getpid()}/mounts")
+                    self.assertIn(("/proc/mounts", "self/mounts"), item.aliases)
+                    self.assertIn(("/proc/self", str(os.getpid())), item.aliases)
+                else:
+                    self.assertEqual(item.canonical, path)
+                    self.assertEqual(item.aliases, ())
+                self.assertEqual(source.read_bytes(), actual)
+
+    def test_native_kernel_filesystem_text_reads_sealed_actual_capture(self):
+        from scripts.validation_ownership import make_probe
+        self.add("native.c", (
+            "#include <stdio.h>\n"
+            "int main(int argc, char **argv) {\n"
+            " char buffer[4096]; size_t size; FILE *f;\n"
+            " if (argc != 2 || !(f = fopen(argv[1], \"rb\"))) return 7;\n"
+            " while ((size = fread(buffer, 1, sizeof(buffer), f)))\n"
+            "  if (fwrite(buffer, 1, size, stdout) != size) return 8;\n"
+            " if (ferror(f)) return 9;\n"
+            " return fclose(f) ? 10 : 0;\n}\n"
+        ))
+        for path in ("/proc/filesystems", "/proc/mounts"):
+            self.add("Makefile", "all: ; @/native/tool " + path + "\n")
+            session = self.session(runtime_files=(path,))
+            with self.subTest(path=path), session:
+                captured, = [item for item in session.runtime_inputs if item.path == path]
+                tool = session.compile_native(("native.c",))
+                with patch.object(
+                    make_probe, "_kernel_filesystem_text_bytes",
+                    side_effect=AssertionError("live kernel recapture"),
+                ):
+                    completed, _, observed = session._native_make_readonly(
+                        "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                    )
+                self.assertEqual(completed.stdout, captured.data)
+                self.assertGreater(len(completed.stdout), 0)
+                self.assertIn(captured.canonical, observed["accessed"])
+            self.assert_clean(session)
+
+    def test_kernel_filesystem_text_reader_keeps_bounded_complete_reads(self):
+        from scripts.validation_ownership import make_probe
+        source = self.directory / "kernel-text"
+        for data in (b"", b"nodev\tsysfs\n", b"x" * 9000):
+            source.write_bytes(data)
+            expected = make_probe._runtime_input_identity(source.stat())
+            budget = ProbeBudget()
+            self.assertEqual(make_probe._kernel_filesystem_text_bytes(source, budget, expected), data)
+            self.assertGreaterEqual(budget.bytes["control"], 3 * len(data))
+        data = b"x" * 8192
+        source.write_bytes(data)
+        expected = make_probe._runtime_input_identity(source.stat())
+        for limits, message in (
+            (Limits(file_bytes=len(data) - 1), "exceeds bounded"),
+            (Limits(control_bytes=100), "control byte budget"),
+            (Limits(seconds=1), "deadline"),
+        ):
+            budget = ProbeBudget(limits)
+            if limits.seconds == 1:
+                budget.started = time.monotonic() - 2
+            with self.subTest(message=message), self.assertRaisesRegex(MakeProbeError, message):
+                make_probe._kernel_filesystem_text_bytes(source, budget, expected)
+            self.assertTrue(budget.failed)
+        budget = ProbeBudget()
+        with self.assertRaisesRegex(MakeProbeError, "changed before"):
+            make_probe._kernel_filesystem_text_bytes(source, budget, None)
+        self.assertTrue(budget.failed)
+        open_stream = os.fdopen
+        for action, message in (("blocked", "blocked"), ("changed", "changed during")):
+            budget = ProbeBudget()
+            class ChangedReader:
+                def __init__(self, descriptor, *args, **kwargs):
+                    self.stream = open_stream(descriptor, *args, **kwargs)
+                    self.changed = False
+                def __enter__(self):
+                    return self
+                def __exit__(self, *args):
+                    self.stream.close()
+                def fileno(self):
+                    return self.stream.fileno()
+                def read(self, size):
+                    if action == "blocked":
+                        return None
+                    result = self.stream.read(size)
+                    if not self.changed:
+                        self.changed = True
+                        os.utime(source, ns=(1, 1))
+                    return result
+            expected = make_probe._runtime_input_identity(source.stat())
+            with self.subTest(action=action), patch.object(make_probe.os, "fdopen", ChangedReader):
+                with self.assertRaisesRegex(MakeProbeError, message):
+                    make_probe._kernel_filesystem_text_bytes(source, budget, expected)
+            self.assertTrue(budget.failed)
+        for path in ("/proc/mounts-neighbor", "/proc/filesystems/child",
+                     f"/proc/{os.getpid()}/mounts", "/proc/self/mounts", "/proc/1/mounts"):
+            with self.subTest(path=path), self.assertRaisesRegex(MakeProbeError, "outside"):
+                make_probe._trusted_runtime_path(path, optional=True)
+
+    def test_kernel_filesystem_text_exact_alias_and_trust_boundaries(self):
+        from scripts.validation_ownership import make_probe
+        original_resolve, original_link, original_stat = Path.resolve, os.readlink, Path.lstat
+        for path, target in (
+            ("/proc/filesystems", Path("/proc/cpuinfo")),
+            ("/proc/mounts", Path("/proc/1/mounts")),
+        ):
+            def redirected(source, *args, **kwargs):
+                return target if str(source) == path else original_resolve(source, *args, **kwargs)
+            with self.subTest(path=path), patch.object(Path, "resolve", redirected):
+                with self.assertRaisesRegex(MakeProbeError, "canonical|exact current task"):
+                    make_probe._capture_runtime_input(path, ProbeBudget())
+        for path, target in (("/proc/mounts", "1/mounts"), ("/proc/self", "1")):
+            def redirected_link(source, *args, **kwargs):
+                return target if str(source) == path else original_link(source, *args, **kwargs)
+            with self.subTest(path=path), patch.object(make_probe.os, "readlink", redirected_link):
+                with self.assertRaisesRegex(MakeProbeError, "exact current task"):
+                    make_probe._capture_runtime_input("/proc/mounts", ProbeBudget())
+        def missing_target(source, *args, **kwargs):
+            if str(source) == f"/proc/{os.getpid()}/mounts":
+                raise FileNotFoundError(errno.ENOENT, "missing mount alias target", str(source))
+            return original_stat(source, *args, **kwargs)
+        with patch.object(Path, "lstat", missing_target):
+            with self.assertRaisesRegex(MakeProbeError, "runtime file alias has a missing target"):
+                make_probe._capture_runtime_input("/proc/mounts", ProbeBudget())
+        for path in ("/proc/filesystems", "/proc/self", f"/proc/{os.getpid()}",
+                     f"/proc/{os.getpid()}/mounts"):
+            for field, value in ((4, os.getuid() + 1), (0, stat.S_IFREG | 0o666)):
+                def changed_stat(source, *args, **kwargs):
+                    info = original_stat(source, *args, **kwargs)
+                    if str(source) != path:
+                        return info
+                    fields = list(info)
+                    fields[field] = value
+                    return os.stat_result(fields)
+                request = "/proc/filesystems" if path == "/proc/filesystems" else "/proc/mounts"
+                with self.subTest(path=path, field=field), patch.object(Path, "lstat", changed_stat):
+                    with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted|exact current task"):
+                        make_probe._capture_runtime_input(request, ProbeBudget())
+        capture = make_probe._kernel_filesystem_text_bytes
+        replaced = False
+        def after_read(*args):
+            nonlocal replaced
+            result = capture(*args)
+            replaced = True
+            return result
+        def changed_after(source, *args, **kwargs):
+            info = original_stat(source, *args, **kwargs)
+            if replaced and str(source) == f"/proc/{os.getpid()}/mounts":
+                fields = list(info)
+                fields[1] += 1
+                return os.stat_result(fields)
+            return info
+        with patch.object(make_probe, "_kernel_filesystem_text_bytes", after_read):
+            with patch.object(Path, "lstat", changed_after):
+                with self.assertRaisesRegex(MakeProbeError, "changed during capture"):
+                    make_probe._capture_runtime_input("/proc/mounts", ProbeBudget())
+
+    def test_native_kernel_filesystem_text_grants_no_neighbor_write_or_execution(self):
+        for path in ("/proc/filesystems", "/proc/mounts"):
+            for makefile, resources, executable, message in (
+                (f"all: ; @test -e {path}\n", (), (), "uncaptured Make runtime access"),
+                ("all: ; @read -r value < /proc/self/status\n", (path,), (),
+                 "unrequested stock runtime alias spelling" if path == "/proc/mounts"
+                 else "uncaptured Make runtime access"),
+                (f"all: ; @printf changed > {path}\n", (path,), (), "filesystem write denied"),
+                ("all: ; @:\n", (path,), (path,), "outside the trusted system tool/library roots"),
+            ):
+                self.add("Makefile", makefile)
+                session = self.session(runtime_files=resources)
+                with self.subTest(path=path, makefile=makefile):
+                    with self.assertRaisesRegex(MakeProbeError, message), session:
+                        session._native_make_readonly("all", native_executables=executable)
+                    self.assertTrue(session.budget.failed)
+                    self.assert_clean(session)
+
+    def test_kernel_filesystem_text_actual_absence_stays_absent_in_guest(self):
+        from scripts.validation_ownership import make_probe
+        original_resolve, original_stat = Path.resolve, Path.lstat
+        for path in ("/proc/filesystems", "/proc/mounts"):
+            def absent_resolve(source, *args, **kwargs):
+                return Path(path) if str(source) == path else original_resolve(source, *args, **kwargs)
+            def absent_stat(source, *args, **kwargs):
+                if str(source) == path:
+                    raise FileNotFoundError(errno.ENOENT, "absent optional input", path)
+                return original_stat(source, *args, **kwargs)
+            self.add("Makefile", (
+                f"VALUE := $(shell if test -e {path}; then printf present; else printf absent; fi)\n"
+                "all: ; @:\n"
+            ))
+            session = self.session(runtime_files=(path,))
+            with self.subTest(path=path), patch.object(Path, "resolve", absent_resolve):
+                with patch.object(Path, "lstat", absent_stat), session:
+                    item, = [row for row in session.runtime_inputs if row.path == path]
+                    self.assertIsNone(item.data)
+                    self.assertIsNone(item.mode)
+                    self.assertEqual(item.canonical, path)
+                    self.assertEqual(item.aliases, ())
+                    _, semantics, _ = session._native_make_readonly("all", variables=("VALUE",))
+                    self.assertEqual(semantics["domains"]["VALUE"]["value"], "absent")
+            self.assert_clean(session)
+
     def test_kernel_fips_reader_captures_actual_linux_int_sysctl(self):
         from scripts.validation_ownership import make_probe
         source = Path("/proc/sys/kernel/pid_max")
