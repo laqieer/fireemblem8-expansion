@@ -97,9 +97,10 @@ class FoundationTests(unittest.TestCase):
         self.assertFalse(session.mappings)
         self.assertFalse(session.native_tools)
         self.assertFalse(session.native_runtimes)
+        self.assertFalse(session.native_runtime_inputs)
         self.assertIsNone(session.native_selection)
         self.assertIsNone(session.native_runtime_selection)
-        self.assertFalse(session._views)
+        self.assertEqual(len(session._views), 0)
         self.assertFalse(session.make_runtime)
         self.assertFalse(session.runtime_inputs)
         self.assertFalse(session.runtime_dispatch)
@@ -1730,8 +1731,8 @@ class FoundationTests(unittest.TestCase):
         self.add("Makefile", "VALUE := $(shell printf original)\nall: ; @/usr/bin/printf 'recipe\\n'\n")
         capture = make_probe._executable_runtime
         images = {}
-        def initial(path, budget):
-            result = capture(path, budget)
+        def initial(path, budget, **kwargs):
+            result = capture(path, budget, **kwargs)
             images[path] = result
             return result
         session = self.session()
@@ -1764,6 +1765,103 @@ class FoundationTests(unittest.TestCase):
             self.assertIs(session.budget.limits, limits)
         self.assert_clean(session)
 
+    def test_native_shared_runtime_bodies_are_captured_and_retained_once(self):
+        from collections import Counter
+        from scripts.validation_ownership import make_probe
+        self.add("Makefile", "all: ; @/usr/bin/printf runtime\n")
+        session = self.session()
+        with session:
+            session._native_make_readonly("all", native_executables=("/usr/bin/printf",))
+            core = dict(session.make_runtime)
+            libc, = [name for name in core if name.endswith("/libc.so.6")]
+            reads = Counter()
+            capture = make_probe._trusted_runtime_bytes
+            def counted(path, budget):
+                reads[path] += 1
+                return capture(path, budget)
+            with patch.object(make_probe, "_trusted_runtime_bytes", counted):
+                cache_before = session.budget.bytes.get("cache", 0)
+                inputs_before = set(session.native_runtime_inputs)
+                python = session._captured_native_runtime("/usr/bin/python3")
+                retained = sum(
+                    len(name.encode("utf-8")) + 16 + (0 if name in core else len(data))
+                    for name, data in session.native_runtime_inputs.items() if name not in inputs_before
+                )
+                closure = len("/usr/bin/python3") + 16 + sum(
+                    len(name.encode("utf-8")) + 16 for name, _ in python
+                )
+                self.assertEqual(session.budget.bytes["cache"] - cache_before, retained + closure)
+                for _ in range(2):
+                    completed, _, _ = session._native_make_readonly(
+                        "all", native_executables=("/usr/bin/printf",), native_libraries=(libc,),
+                    )
+                    self.assertEqual(completed.stdout, b"runtime")
+            self.assertEqual({name: reads[name] for name in core}, dict.fromkeys(core, 0))
+            for name, data in python:
+                if name in core:
+                    self.assertIs(data, core[name])
+            self.assertEqual(reads["/usr/bin/python3"], 1)
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_shared_runtime_cold_capture_preserves_original_quota_and_trust_failures(self):
+        self.add("Makefile", "all: ; @:\n")
+        inactive = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "probe session is not active"):
+            inactive._captured_native_runtime_input("/usr/bin/python3")
+        self.assertFalse(inactive.native_runtime_inputs)
+        for limits in (
+            {"file_bytes": 4 * 1024 * 1024},
+            {"control_bytes": 8 * 1024 * 1024},
+            {"cache_bytes": 64},
+        ):
+            session = self.session(**limits)
+            with self.subTest(limits=limits), session:
+                with self.assertRaises(MakeProbeError):
+                    session._captured_native_runtime_input("/usr/bin/python3")
+                self.assertNotIn("/usr/bin/python3", session.native_runtime_inputs)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "outside the trusted system tool/library roots"):
+                session._captured_native_runtime_input(str(self.root / "untrusted"))
+            self.assertNotIn(str(self.root / "untrusted"), session.native_runtime_inputs)
+        self.assert_clean(session)
+
+    def test_native_shared_runtime_active_view_shutdown_and_misnesting_cleanup(self):
+        self.add("Makefile", "all: ; @v=owned; printf '%s' \"$$v\"\n")
+        for shutdown in (True, False):
+            budget = ProbeBudget()
+            loader = self.capture_view(budget)
+            session = ProbeSession(loader, scratch_root=self.scratch, budget=budget)
+            with self.subTest(shutdown=shutdown), session:
+                session._native_make_readonly("all")
+                maps = [(session.native_runtimes, session.native_runtime_inputs)]
+                outer, inner = session.select_view(loader), session.select_view(loader)
+                outer.__enter__()
+                session._native_make_readonly("all")
+                maps.append((session.native_runtimes, session.native_runtime_inputs))
+                inner.__enter__()
+                session._native_make_readonly("all")
+                maps.append((session.native_runtimes, session.native_runtime_inputs))
+                self.assertTrue(all(closures and bodies for closures, bodies in maps))
+                try:
+                    if shutdown:
+                        session.__exit__(None, None, None)
+                    else:
+                        with self.assertRaisesRegex(MakeProbeError, "nesting order"):
+                            outer.__exit__(None, None, None)
+                    self.assertIs(session.loader, loader)
+                    self.assertFalse(session._views)
+                    self.assertTrue(all(not closures and not bodies for closures, bodies in maps))
+                    self.assert_clean(session)
+                finally:
+                    inner.__exit__(None, None, None)
+                    if shutdown:
+                        outer.__exit__(None, None, None)
+            self.assert_clean(session)
+
     def test_native_readonly_runtime_capture_view_isolation_restoration_and_failure(self):
         from scripts.validation_ownership import make_probe
         budget = ProbeBudget()
@@ -1775,20 +1873,27 @@ class FoundationTests(unittest.TestCase):
         with session:
             session._native_make_readonly("all")
             outer = session.native_runtimes
+            outer_inputs = session.native_runtime_inputs
             image = outer["/usr/bin/sh"]
             with session.select_view(base):
                 self.assertFalse(session.native_runtimes)
+                self.assertFalse(session.native_runtime_inputs)
                 selected = session.native_runtimes
+                selected_inputs = session.native_runtime_inputs
                 completed, _, _ = session._native_make_readonly("all")
                 self.assertEqual(completed.stdout, b"base")
                 with session.select_view(current):
                     self.assertFalse(session.native_runtimes)
+                    self.assertFalse(session.native_runtime_inputs)
                     completed, _, _ = session._native_make_readonly("all")
                     self.assertEqual(completed.stdout, b"current")
                 self.assertIs(session.native_runtimes, selected)
+                self.assertIs(session.native_runtime_inputs, selected_inputs)
                 self.assertTrue(selected)
             self.assertFalse(selected)
+            self.assertFalse(selected_inputs)
             self.assertIs(session.native_runtimes, outer)
+            self.assertIs(session.native_runtime_inputs, outer_inputs)
             self.assertIs(session.native_runtimes["/usr/bin/sh"], image)
             with patch.object(
                 make_probe, "_executable_runtime", side_effect=MakeProbeError("actual capture refusal"),
@@ -1798,6 +1903,7 @@ class FoundationTests(unittest.TestCase):
             self.assertNotIn("/usr/bin/printf", session.native_runtimes)
             self.assertTrue(budget.failed)
         self.assertFalse(outer)
+        self.assertFalse(outer_inputs)
         self.assert_clean(session)
 
     def test_native_readonly_direct_executable_default_invalid_and_conflicting_admission_refuse(self):
@@ -1816,8 +1922,8 @@ class FoundationTests(unittest.TestCase):
                     session._native_make_readonly("all", native_executables=request)
             self.assert_clean(session)
         original = make_probe._executable_runtime
-        def conflict(path, budget):
-            captured = original(path, budget)
+        def conflict(path, budget, **kwargs):
+            captured = original(path, budget, **kwargs)
             if path == "/usr/bin/printf":
                 return tuple(
                     (name, data + b"changed" if "libc.so" in name else data)
@@ -2235,8 +2341,8 @@ class FoundationTests(unittest.TestCase):
         self.add("Makefile", ".PHONY: all\nall:\n\t@:\n")
         from scripts.validation_ownership import make_probe
         original = make_probe._executable_runtime
-        def capture(path, budget):
-            result = original(path, budget)
+        def capture(path, budget, **kwargs):
+            result = original(path, budget, **kwargs)
             if path == "/usr/bin/sh":
                 return tuple(
                     (name, data + b"changed" if name != path else data) for name, data in result

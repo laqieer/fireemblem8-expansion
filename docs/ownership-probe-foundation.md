@@ -450,6 +450,49 @@ write. Dispatch, exec, context, exit and wait bookkeeping share the aggregate
 observation/byte bounds; no retired process retains executable or signal
 authority. A failed spawn without a complete observed child refuses rather
 
+Trusted native ELF bodies are captured once per exact requested pathname in
+the active immutable view, shared by executable closures and explicit library
+declarations. The already captured core Make runtime retains its existing
+whole-session lifetime and supplies identical shared bytes without another
+host read. Each new executable still resolves its closure through the trusted
+interpreter's original `--list`; generic command/compiler capture is unchanged.
+New bodies keep the original trust, identity, file/control/deadline checks and
+retained-byte charge. Map entries and closure references retain their own
+metadata charges, but referencing the same byte object does not allocate or
+read another body. This is not a larger quota, a global snapshot service, or
+additional executable/library authority. View selection isolates the native
+body map, restores the preceding map, and clears retired maps and session state.
+
+For #270 `TC-WORKFLOW-NATIVE-MAKE-001`, run
+`test_native_shared_runtime_bodies_are_captured_and_retained_once` for actual
+trusted Python/sh/printf closure capture, two original guest invocations with
+explicit libc, shared core byte identities and exact retained allocation cost.
+The pre-fix run rereads libc three times and the interpreter once after warm
+capture; the fixed run must perform no such duplicate body read while preserving
+stdout. Run
+`test_native_shared_runtime_cold_capture_preserves_original_quota_and_trust_failures`
+for inactive-session, actual cold Python fixed-file/control/cache failures,
+and an untrusted new pathname. Run the existing runtime reuse, nested view
+isolation/restoration/failure and direct/shell conflicting-capture controls.
+Run `test_native_shared_runtime_active_view_shutdown_and_misnesting_cleanup`
+for populated outer and selected body/closure maps at explicit shutdown and
+out-of-order view exit. Both retire every saved map, restore the original
+loader, empty the view stack and retain normal owned cleanup; the pre-fix
+saved-tuple mismatch raises `ValueError` and strands outer maps.
+They require original deadline/limit identity, no second loader capture for a
+warm executable, actual shared-map cleanup and terminal conflicting bytes.
+Dependencies are the existing trusted capture, loader and immutable-view seams;
+conflicts are none. No ROM/RAM/save/locale/profile or archival impact.
+
+The original 2148-file first-query diagnostic remains a separate criterion.
+With unchanged source, argv, original compiler and budgets, duplicate capture
+removal progresses beyond aggregate exhaustion at 25,648,667 control bytes
+to an undeclared original `find` executable. Explicitly capturing that
+tool progresses to unsupported syscall 137 at 26,678,061 control bytes; both
+are failed queries, not original eight-query qualification. Managed-Python
+directory-wide trust admission and original producer/nested/reexec custody are
+unchanged by this byte-cache correction.
+
 The original Python/hashlib runtime may also read OpenSSL configuration.
 Declare only `/usr/lib/ssl/openssl.cnf` or its exact canonical
 `/etc/ssl/openssl.cnf` through existing optional runtime files. The alias must

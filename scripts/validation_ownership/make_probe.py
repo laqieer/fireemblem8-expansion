@@ -524,12 +524,13 @@ def _runtime_library_paths(raw, existing):
     return tuple(result)
 
 
-def _executable_runtime(path: str, budget: ProbeBudget):
-    binary = _trusted_runtime_bytes(path, budget)
+def _executable_runtime(path: str, budget: ProbeBudget, *, read_runtime=None):
+    capture = (lambda name: _trusted_runtime_bytes(name, budget)) if read_runtime is None else read_runtime
+    binary = capture(path)
     interpreter = _make_interpreter(binary, label="trusted executable")
     runtime = {
         path: binary,
-        interpreter: _trusted_runtime_bytes(interpreter, budget),
+        interpreter: capture(interpreter),
     }
     # Only the trusted interpreter sees the trusted system executable, never a
     # candidate ELF, preload, library path, ldd script or repository cwd.
@@ -537,7 +538,7 @@ def _executable_runtime(path: str, budget: ProbeBudget):
     if result.returncode:
         raise MakeProbeError(f"cannot resolve trusted executable runtime: {result.stderr!r}")
     for path in _runtime_library_paths(result.stdout, runtime):
-        runtime[path] = _trusted_runtime_bytes(path, budget)
+        runtime[path] = capture(path)
     if len(runtime) < 3:
         raise MakeProbeError("trusted executable runtime closure is incomplete")
     return tuple(sorted(runtime.items()))
@@ -658,6 +659,7 @@ class ProbeSession:
         self.mappings = {}
         self.native_tools = {}
         self.native_runtimes = {}
+        self.native_runtime_inputs = {}
         self.native_selection = None
         self.native_runtime_selection = None
         self.published_sources = {}
@@ -755,11 +757,13 @@ class ProbeSession:
         previous = (
             self.loader, self.snapshot, self.tree, self.cache, self.mappings, self.native_tools,
             self.native_runtimes,
+            self.native_runtime_inputs,
             self.native_selection,
             self.native_runtime_selection,
         )
         cache, mappings, tools = {}, {}, {}
         runtimes = {}
+        runtime_inputs = {}
         selected = False
 
         def restore():
@@ -771,6 +775,7 @@ class ProbeSession:
                 self._views.pop()
                 (self.loader, self.snapshot, self.tree,
                  self.cache, self.mappings, self.native_tools, self.native_runtimes,
+                 self.native_runtime_inputs,
                  self.native_selection, self.native_runtime_selection) = previous
 
         try:
@@ -779,7 +784,7 @@ class ProbeSession:
             root = self.base / f"view-{self.serial}"
             tree = root / "tree"
             with cleanup_scope([
-                cache.clear, mappings.clear, tools.clear, runtimes.clear,
+                cache.clear, mappings.clear, tools.clear, runtimes.clear, runtime_inputs.clear,
                 lambda: _remove_owned_tree(root), restore,
             ]):
                 root.mkdir()
@@ -802,8 +807,9 @@ class ProbeSession:
                     self._views.append(previous)
                     (self.loader, self.snapshot, self.tree,
                      self.cache, self.mappings, self.native_tools, self.native_runtimes,
+                     self.native_runtime_inputs,
                      self.native_selection, self.native_runtime_selection) = (
-                        loader, snapshot, tree, cache, mappings, tools, runtimes, None, None,
+                        loader, snapshot, tree, cache, mappings, tools, runtimes, runtime_inputs, None, None,
                     )
                     selected = True
                 finally:
@@ -820,6 +826,7 @@ class ProbeSession:
             self.mappings.clear()
             self.native_tools.clear()
             self.native_runtimes.clear()
+            self.native_runtime_inputs.clear()
             self.native_selection = None
             self.native_runtime_selection = None
             self.published_sources.clear()
@@ -835,12 +842,16 @@ class ProbeSession:
             self.runtime_root = None
             self.snapshot = None
             self.loader.live_modes.clear()
-            for loader, snapshot, tree, cache, mappings, tools, runtimes, selection, runtime_selection in self._views:
+            for (
+                loader, snapshot, tree, cache, mappings, tools, runtimes,
+                runtime_inputs, selection, runtime_selection,
+            ) in self._views:
                 loader.live_modes.clear()
                 cache.clear()
                 mappings.clear()
                 tools.clear()
                 runtimes.clear()
+                runtime_inputs.clear()
             if self._views:
                 self.loader = self._views[0][0]
             self._views.clear()
@@ -2349,7 +2360,7 @@ class ProbeSession:
             ):
                 raise MakeProbeError("invalid native library resource declaration")
             library_identities.add(canonical)
-            binary = _trusted_runtime_bytes(path, self.budget)
+            binary = self._captured_native_runtime_input(path)
             self._validate_native(binary)
             if path in runtime and runtime[path] != binary:
                 raise MakeProbeError("native library runtime conflicts with captured bytes")
@@ -2461,13 +2472,28 @@ class ProbeSession:
             mounts.append(self._mount(source, "/repo/" + name))
         return mounts
 
+    def _captured_native_runtime_input(self, path):
+        if self.base is None or self.snapshot is None:
+            raise MakeProbeError("probe session is not active")
+        self.budget.remaining()
+        if path not in self.native_runtime_inputs:
+            core = next((data for name, data in self.make_runtime if name == path), None)
+            data = core if core is not None else _trusted_runtime_bytes(path, self.budget)
+            self.budget.charge(
+                "cache", len(path.encode("utf-8")) + 16 + (0 if core is not None else len(data)),
+            )
+            self.native_runtime_inputs[path] = data
+        return self.native_runtime_inputs[path]
+
     def _captured_native_runtime(self, path):
         self.budget.remaining()
         if path not in self.native_runtimes:
-            captured = _executable_runtime(path, self.budget)
+            captured = _executable_runtime(
+                path, self.budget, read_runtime=self._captured_native_runtime_input,
+            )
             self.budget.charge(
                 "cache", len(path.encode("utf-8")) + 16
-                + sum(len(name.encode("utf-8")) + len(data) for name, data in captured),
+                + sum(len(name.encode("utf-8")) + 16 for name, _ in captured),
             )
             self.native_runtimes[path] = captured
         return self.native_runtimes[path]
