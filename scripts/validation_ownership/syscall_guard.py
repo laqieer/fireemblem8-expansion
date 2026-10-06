@@ -622,13 +622,12 @@ class Policy:
         if (
             state.pending != ("native-signal", signal.SIGKILL)
             or state.kernel_call != number or signed(registers.rax) != 0
-            or number in {62, 129, 200} and registers.rsi != signal.SIGKILL
-            or number in {234, 297} and registers.rdx != signal.SIGKILL
-            or number not in {62, 129, 200, 234, 297}
         ):
             raise Violation("native SIGKILL lacks an actual successful self-send outcome")
-        targets = (registers.rdi, registers.rsi) if number in {234, 297} else (registers.rdi,)
-        self.signal_target(pid, *targets)
+        if self.signal_request(
+            pid, number, registers.rdi, registers.rsi, registers.rdx,
+        ) != signal.SIGKILL:
+            raise Violation("native SIGKILL lacks an actual successful self-send outcome")
         state.native_sigkill_outcome = True
 
     def native_child_signal(self, pid, state):
@@ -1880,6 +1879,15 @@ class Policy:
         if any(ctypes.c_int(target).value != pid for target in targets):
             raise Violation("cross-process signal target denied")
 
+    @classmethod
+    def signal_request(cls, pid, number, a, b, c):
+        two_targets = number in {234, 297}
+        if not two_targets and number not in {62, 129, 200}:
+            raise Violation("unsupported self-signal syscall")
+        targets = (a, b) if two_targets else (a,)
+        cls.signal_target(pid, *targets)
+        return ctypes.c_int(c if two_targets else b).value
+
     def entry(self, pid, state, r):
         self.calls += 1
         if self.calls > self.config["syscall_limit"]:
@@ -2236,14 +2244,10 @@ class Policy:
             self.check(state, self.path(pid, state, b, signed(a), follow_final=bool(e & 0x400)), "write")
             self.check(state, self.path(pid, state, d, signed(c), follow_final=False), "write")
             self.reserve_creation()
-        elif n in {62, 129, 200}:  # kill, rt_sigqueueinfo, tkill
-            self.signal_target(pid, a)
-            if self.native_readonly and state.role == "native" and 0 < b <= 64:
-                state.pending = ("native-signal", b)
-        elif n in {234, 297}:  # tgkill, rt_tgsigqueueinfo
-            self.signal_target(pid, a, b)
-            if self.native_readonly and state.role == "native" and 0 < c <= 64:
-                state.pending = ("native-signal", c)
+        elif n in {62, 129, 200, 234, 297}:
+            number = self.signal_request(pid, n, a, b, c)
+            if self.native_readonly and state.role == "native" and 0 < number <= 64:
+                state.pending = ("native-signal", number)
         elif n == 424:
             raise Violation("candidate pidfd signal authority is not admitted")
         elif n in {105, 106, 113, 114, 117, 119}:

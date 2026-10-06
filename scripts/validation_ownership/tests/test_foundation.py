@@ -3995,6 +3995,130 @@ class FoundationTests(unittest.TestCase):
             self.assertFalse(session.budget.failed)
         self.assert_clean(session)
 
+    def test_native_runtime_actual_signal_operands_use_kernel_int_conversion(self):
+        for number in (62, 129, 200, 234, 297):
+            for mode in ("standard", "fatal"):
+                self.add("signal.c", (
+                    ROOT / "scripts/validation_ownership/tests/fixtures/native_signal_width.c"
+                ).read_bytes())
+                self.add("Makefile", "all:\n" + "".join(
+                    "\t-@/native/tool " + str(number) + " " + mode + " " + upper + "\n"
+                    for upper in ("bit", "ones")
+                ) + "\t@v=done; printf '%s' \"$$v\"\n")
+                session = self.session()
+                with self.subTest(number=number, mode=mode), session:
+                    tool = session.compile_native(("signal.c",))
+                    for upper in ("bit", "ones"):
+                        ordinary = subprocess.run(
+                            [str(tool.path), str(number), mode, upper], env=ENVIRONMENT,
+                            capture_output=True, timeout=10,
+                        )
+                        self.assertEqual(ordinary.returncode, -signal.SIGKILL if mode == "fatal" else 0)
+                        if mode != "fatal":
+                            result = parse_json(ordinary.stdout, "ordinary actual signal")
+                            self.assertEqual((result["count"], result["signal"], result["send_result"]),
+                                             (1, signal.SIGUSR1, 0))
+                            self.assertEqual(result["sender"], result["pid"])
+                    completed, _, observed = session._native_make_readonly(
+                        "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                    )
+                    output = completed.stdout.splitlines()
+                    self.assertEqual(output[-1], b"done")
+                    jobs = [
+                        parse_json(row.removeprefix("native-job:").encode(), "signal width job")
+                        for row in observed["accessed"] if row.startswith("native-job:")
+                    ]
+                    sent = [job for job in jobs if job["executable"] == "/native/tool"]
+                    self.assertEqual(len(sent), 2)
+                    if mode == "fatal":
+                        self.assertEqual(output, [b"done"])
+                        self.assertTrue(all(job["ignored"] and job["terminal_status"] == signal.SIGKILL
+                                            for job in sent))
+                    else:
+                        self.assertEqual(len(output), 3)
+                        by_pid = {job["pid"]: job for job in sent}
+                        for row in output[:-1]:
+                            actual = parse_json(row, "actual signal delivery")
+                            self.assertIn(actual["pid"], by_pid)
+                            self.assertEqual((actual["count"], actual["signal"], actual["send_result"]),
+                                             (1, signal.SIGUSR1, 0))
+                            self.assertEqual(actual["sender"], actual["pid"])
+                            self.assertEqual(actual["code"], -1 if number in {129, 297}
+                                             else -6 if number in {200, 234} else 0)
+                    self.assertFalse(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_runtime_normalized_invalid_signals_do_not_add_grants(self):
+        for number in (62, 129, 200, 234, 297):
+            self.add("signal.c", (
+                ROOT / "scripts/validation_ownership/tests/fixtures/native_signal_width.c"
+            ).read_bytes())
+            self.add("Makefile", "all:\n" + "".join(
+                "\t@/native/tool " + str(number) + " " + mode + " ones\n"
+                for mode in ("zero", "negative", "large", "prior")
+            ))
+            body = (
+                "left=guard.Policy.leave\n"
+                "def leave(self,pid,state,r):\n"
+                " pending=state.pending\n"
+                " result=left(self,pid,state,r)\n"
+                " if state.role=='native' and r.orig_rax in {62,129,200,234,297}:\n"
+                "  self.observe('accessed','actual-signal-width:'+guard.encoded({"
+                "'pid':pid,'number':r.orig_rax,'result':guard.signed(r.rax),"
+                "'raw_signal':r.rdx if r.orig_rax in {234,297} else r.rsi,"
+                "'pending':pending,'grants':state.native_signals}).decode('ascii'))\n"
+                " return result\n"
+                "guard.Policy.leave=leave\n"
+            )
+            session = self.session()
+            with self.subTest(number=number), self.native_supervisor(body), session:
+                tool = session.compile_native(("signal.c",))
+                for mode in ("zero", "negative", "large", "prior"):
+                    ordinary = subprocess.run(
+                        [str(tool.path), str(number), mode, "ones"], env=ENVIRONMENT,
+                        capture_output=True, timeout=10,
+                    )
+                    self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+                    actual = parse_json(ordinary.stdout, "ordinary invalid signal")
+                    self.assertEqual(actual["first_result"], 0 if mode == "zero" else -1)
+                completed, _, observed = session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+                results = [parse_json(row, "actual normalized signal") for row in completed.stdout.splitlines()]
+                self.assertEqual(len(results), 4)
+                calls = [
+                    parse_json(row.removeprefix("actual-signal-width:").encode(), "actual signal syscall")
+                    for row in observed["accessed"] if row.startswith("actual-signal-width:")
+                ]
+                jobs = [
+                    parse_json(row.removeprefix("native-job:").encode(), "invalid signal job")
+                    for row in observed["accessed"] if row.startswith("native-job:")
+                ]
+                modes = {
+                    job["pid"]: job["argv"][2]
+                    for job in jobs if job["executable"] == "/native/tool"
+                }
+                self.assertEqual(set(modes.values()), {"zero", "negative", "large", "prior"})
+                for actual in results:
+                    self.assertEqual((actual["count"], actual["signal"], actual["send_result"]),
+                                     (1, signal.SIGUSR1, 0))
+                    self.assertEqual(actual["sender"], actual["pid"])
+                    owned = [row for row in calls if row["pid"] == actual["pid"]]
+                    self.assertEqual(len(owned), 2)
+                    invalid = next(row for row in owned if row["pending"] is None)
+                    self.assertEqual(invalid["number"], number)
+                    low = ctypes.c_int(invalid["raw_signal"]).value
+                    mode = modes[actual["pid"]]
+                    self.assertEqual(low, {"zero": 0, "negative": -1, "large": 65, "prior": 65}[mode])
+                    self.assertEqual(invalid["result"], 0 if low == 0 else -errno.EINVAL)
+                    self.assertEqual(invalid["grants"], {str(signal.SIGUSR1): 1} if mode == "prior" else {})
+                    valid = next(row for row in owned if row["pending"] is not None)
+                    self.assertEqual(valid["pending"], ["native-signal", signal.SIGUSR1])
+                    self.assertEqual(valid["result"], 0)
+                    self.assertEqual(valid["grants"], {str(signal.SIGUSR1): 1})
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
     def test_native_runtime_actual_sigkill_uses_kernel_pid_t_conversion(self):
         for number in (62, 129, 200, 234, 297):
             modes = ("pid-high", "ones-high") if number in {62, 129, 200} else (

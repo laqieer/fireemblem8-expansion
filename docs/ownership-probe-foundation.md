@@ -768,9 +768,10 @@ signals, without interpreting a mask bit as a new or repeated grant.
 Self-SIGKILL does not reach an ordinary syscall return. The supervisor uses the
 actual ptrace exit stop instead: it requires the exact outstanding self-send
 syscall, original self-PID/signal operands and actual return register zero,
-with PID/TID operands interpreted through the same signed 32-bit `pid_t`
-conversion as syscall entry, and the kernel exit status paired to the final
-terminal wait. An external
+with PID/TID and signal operands interpreted through one shared signed 32-bit
+request decoder at syscall entry and fatal exit, and the kernel exit status
+paired to the final terminal wait. Upper register bits are not part of the
+kernel's `pid_t` or `int` argument. An external
 SIGKILL while stopped before the send leaves return register `-ENOSYS` and
 explicitly refuses; an entry attempt is never terminal authorization.
 Exit stops resume before the final wait. On refusal, owned cleanup resumes
@@ -790,6 +791,22 @@ ordinary binaries must actually die by SIGKILL, and native ignored recipes must
 retain raw status 9 and `done`. Before correction all 14 native invocations
 refuse the successful send at exit. Upper-bit normalization must still refuse
 low-32-bit foreign, zero/broadcast and negative/group target mutations.
+Run `test_native_runtime_actual_signal_operands_use_kernel_int_conversion`:
+compile `native_signal_width.c` and pass bit 32 or all-ones upper 32 bits in
+both target and signal operands for all five syscall forms. Compare each
+ordinary binary with its native execution: blocked SIGUSR1 must reach exactly
+one handler with its actual sender PID and signal code; SIGKILL must terminate
+with status 9 while the ignored native recipe continues to `done`. Before the
+shared decoder, these successful native sends refuse despite ordinary kernel
+success. Run `test_native_runtime_normalized_invalid_signals_do_not_add_grants`:
+use upper-bit zero, negative and 65 signals, plus a valid blocked SIGUSR1
+followed by invalid 65. Bind actual syscall returns and grants to each job's
+captured argv/PID. Zero returns zero without a grant; negative and 65 return
+EINVAL without a grant; the prior-send case retains exactly its earlier
+SIGUSR1 grant. Every case then receives exactly one valid SIGUSR1, matching
+the ordinary binary. Invalid sends must neither create authority nor erase
+prior authority. These controls do not qualify generated namespace custody
+or the original eight-query family.
 Run
 `test_native_runtime_sigkill_entry_attempt_and_outcome_mutations_refuse`:
 send a real supervisor-origin SIGKILL before resuming the self-send syscall,
