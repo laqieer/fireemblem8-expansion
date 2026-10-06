@@ -578,6 +578,21 @@ class Policy:
             result |= int(rows[0][1], 16)
         return result
 
+    def native_exec_descriptors(self, pid, state):
+        retained = {}
+        for descriptor, path in state.fds.items():
+            self.reserve_trace_observation()
+            try:
+                target = os.readlink(f"/proc/{pid}/fd/{descriptor}")
+            except FileNotFoundError:
+                continue
+            data = os.fsencode(target)
+            self.charge_metadata(len(data))
+            if len(data) > 4096:
+                raise Violation("native exec descriptor target exceeds the observation bound")
+            retained[descriptor] = path
+        return retained
+
     def native_exec_signals(self, pid, state):
         if self.read_trace is None or self.read_trace.version != 5 or not state.native_signals:
             state.native_signals.clear()
@@ -2574,7 +2589,7 @@ def supervise(config, drop_privileges):
             state.role = state.pending[1]
             state.bootstrap = False
             state.fds = (
-                {fd: state.fds[fd] for fd in (0, 1, 2) if fd in state.fds}
+                policy.native_exec_descriptors(stopped, state)
                 if state.role == "native" and policy.read_trace is not None and policy.read_trace.version == 5
                 else {0: "<stdin>", 1: "<stdout>", 2: "<stderr>"}
             )

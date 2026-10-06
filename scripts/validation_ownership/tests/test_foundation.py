@@ -3886,6 +3886,115 @@ class FoundationTests(unittest.TestCase):
                 self.assertFalse(session.budget.failed)
             self.assert_clean(session)
 
+    def test_native_runtime_descriptors_survive_only_their_actual_exec_lifetime(self):
+        for kind, expected in (
+            ("source", b"first"), ("dup", b"first"), ("fcntl", b"first"),
+            ("pipe", b"pipe"), ("directory", b"first"), ("fork", b"first"),
+            ("reuse", b"second"), ("cloexec-clear", b"first"),
+            ("dup-cloexec-clear", b"first"), ("ioctl-cloexec-clear", b"first"),
+        ):
+            self.add("fd.c", (
+                ROOT / "scripts/validation_ownership/tests/fixtures/native_fd_exec.c"
+            ).read_bytes())
+            self.add("input", "first")
+            self.add("second", "second")
+            self.add("data/input", "first")
+            self.add("Makefile", "all: ; @/native/tool " + kind + "\n")
+            session = self.session()
+            with self.subTest(kind=kind), session:
+                tool = session.compile_native(("fd.c",))
+                ordinary = subprocess.run(
+                    [str(tool.path), kind], cwd=self.root, env=ENVIRONMENT,
+                    capture_output=True, timeout=10,
+                )
+                self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+                self.assertEqual(ordinary.stdout, expected)
+                completed, _, observed = session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual(completed.stdout, ordinary.stdout)
+                job, = [
+                    parse_json(row.removeprefix("native-job:").encode(), "descriptor lifetime job")
+                    for row in observed["accessed"] if row.startswith("native-job:")
+                ]
+                executions = [row for row in job["tree"] if row["kind"] == "exec"]
+                self.assertEqual(executions[-1]["argv"][1:3], ["after", kind])
+                if kind == "fork":
+                    self.assertNotEqual(executions[0]["pid"], executions[-1]["pid"])
+                else:
+                    self.assertEqual(executions[-1]["generation"], 2)
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_closed_exec_descriptors_do_not_keep_authority(self):
+        for kind in ("closed", "cloexec", "dup-cloexec", "stdin-cloexec",
+                     "set-cloexec", "ioctl-cloexec", "unknown"):
+            self.add("fd.c", (
+                ROOT / "scripts/validation_ownership/tests/fixtures/native_fd_exec.c"
+            ).read_bytes())
+            self.add("input", "first")
+            self.add("Makefile", "all: ; @/native/tool " + kind + "\n")
+            session = self.session()
+            with self.subTest(kind=kind), session:
+                tool = session.compile_native(("fd.c",))
+                ordinary = subprocess.run(
+                    [str(tool.path), kind], cwd=self.root, env=ENVIRONMENT,
+                    capture_output=True, timeout=10,
+                )
+                self.assertEqual((ordinary.returncode, ordinary.stdout), (
+                    7 if kind == "unknown" else 0, b"",
+                ))
+                with self.assertRaisesRegex(MakeProbeError, "unavailable inherited/unknown descriptor"):
+                    session._native_make_readonly(
+                        "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_failed_actual_exec_preserves_authorized_descriptors(self):
+        self.add("fd.c", (
+            ROOT / "scripts/validation_ownership/tests/fixtures/native_fd_exec.c"
+        ).read_bytes())
+        self.add("input", "first")
+        self.add("Makefile", "all: ; @/native/tool exec-failure\n")
+        body = (
+            "entered=guard.Policy.entry;left=guard.Policy.leave\n"
+            "def entry(self,pid,state,r):\n"
+            " result=entered(self,pid,state,r)\n"
+            " if state.role=='native' and state.native_execs==1 and r.orig_rax==59:\n"
+            "  r.rsi=1;guard.ptrace(guard.SETREGS,pid,0,guard.ctypes.byref(r))\n"
+            " return result\n"
+            "def leave(self,pid,state,r):\n"
+            " result=left(self,pid,state,r)\n"
+            " if state.role=='native' and r.orig_rax==59 and guard.signed(r.rax)<0:\n"
+            "  self.observe('accessed','actual-exec-failure:'+guard.encoded({"
+            "'pid':pid,'syscall':r.orig_rax,'result':guard.signed(r.rax),"
+            "'generation':state.native_execs,'fds':state.fds}).decode('ascii'))\n"
+            " return result\n"
+            "guard.Policy.entry=entry;guard.Policy.leave=leave\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            tool = session.compile_native(("fd.c",))
+            completed, _, observed = session._native_make_readonly(
+                "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"first")
+            failure, = [
+                parse_json(row.removeprefix("actual-exec-failure:").encode(), "actual failed exec")
+                for row in observed["accessed"] if row.startswith("actual-exec-failure:")
+            ]
+            self.assertEqual((failure["syscall"], failure["result"], failure["generation"]),
+                             (59, -errno.EFAULT, 1))
+            self.assertEqual(failure["fds"]["3"], "/repo/input")
+            job, = [
+                parse_json(row.removeprefix("native-job:").encode(), "failed exec descriptor job")
+                for row in observed["accessed"] if row.startswith("native-job:")
+            ]
+            self.assertEqual(sum(row["kind"] == "exec" for row in job["tree"]), 1)
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+
     def test_native_runtime_actual_sigkill_outcomes_cover_all_self_send_forms(self):
         for number in (62, 129, 200, 234, 297):
             self.add("kill.c", (

@@ -645,12 +645,43 @@ tree equal to the observed machine tree. Child start and every exec independentl
 require their immediately preceding actual register clear. These are captured
 runtime/integrity observations, not signatures or hostile same-UID isolation.
 Version 4 retains its original descendant/reexec refusal and wire format.
+Version-5 exec reconciles every previously authorized descriptor, including
+those above stderr, with its actual stopped-process `/proc` lifetime. Only
+still-present known descriptors retain authority; closed and close-on-exec
+descriptors are removed. Observations are bounded by the existing descriptor
+limit and charged to the same observation budget. Unknown kernel descriptors
+are never discovered into authority. This preserves original source,
+directory and pipe inheritance without a second grant or CLOEXEC-flag model;
+an unsuccessful exec has no exec event and does not perform this reconciliation.
 Failed Make runs retain structural job/tree validation and their original
 status/diagnostic, but do not publish a successful trace. Only successful runs
 bind the root parent and complete returned tree to that trace's machine
 observations; failed-run structural parent values are not archive authority.
 Nested Make/read forests, Make restart, generated producers and the original
 aggregate-budget qualification are separate unresolved contracts.
+
+Run `test_native_runtime_descriptors_survive_only_their_actual_exec_lifetime`
+and `test_native_runtime_closed_exec_descriptors_do_not_keep_authority` on the
+admitted Linux GNU Make 4.3 x86-64 host. Compile `native_fd_exec.c` through the
+existing NativeTool route. An original non-CLOEXEC source FD above stderr,
+`dup2`, `F_DUPFD`, pipe endpoint, directory with `openat`, and fork-child exec
+must retain their actual source/pipe output, matching the ordinary executable.
+Clearing CLOEXEC through `F_SETFD` or `FIONCLEX`, including a descriptor created
+by `F_DUPFD_CLOEXEC`, must retain it. Reopening a closed descriptor number after
+exec must read the new `second` source, not its old `input` source.
+Consumption of an explicitly closed, `O_CLOEXEC`, `F_DUPFD_CLOEXEC`,
+`F_SETFD`/`FIOCLEX`, or close-on-exec stdin descriptor must refuse as unavailable;
+so must an unknown descriptor. Before correction all six nonstandard
+source/dup/pipe/directory/fork cases refuse despite ordinary success.
+Run `test_native_runtime_failed_actual_exec_preserves_authorized_descriptors`:
+the bounded diagnostic changes the already-admitted exec's argv register to an
+invalid address, observes the actual kernel `EFAULT` return, and requires the
+original live source FD/output and unchanged exec generation. This is an
+injected failed-kernel-transition control, not an ordinary argv parity claim.
+Every case requires owned cleanup; unchanged v4 refusal and original descendant
+pipeline/SIGPIPE controls remain coupled checks. These readonly cases do not
+qualify generated descriptors, nested Make/restarts or the original eight-query
+aggregate budget.
 
 On the admitted GNU Make 4.3 x86-64 host, run
 `test_native_runtime_readonly_descendant_pipelines_and_exec_lifetimes`:
