@@ -1567,6 +1567,78 @@ class FoundationTests(unittest.TestCase):
                 self.assertEqual(bindings.get(name), expected)
             self.assert_clean(session)
 
+    def test_native_readonly_computed_suppliers_refuse_incomplete_completion(self):
+        from scripts.validation_ownership import read_epochs
+        cases = (
+            ("OUTPUT := $($(NAME))", "original"),
+            ("OUTPUT := ${${NAME}}", "original"),
+            ("OUTPUT := $(VA$(SUFFIX))", "original"),
+            ("OUTPUT := $($(NAME):original=replaced)", "replaced"),
+            ("OUTPUT := $(call $(NAME))", "original"),
+            ("OUTPUT := ${call ${NAME}}", "original"),
+            ("OUTPUT := $(origin $(NAME))", "file"),
+            ("OUTPUT := $(flavor $(NAME))", "simple"),
+            ("OUTPUT := $(value $(NAME))", "original"),
+            ("ifdef $(NAME)\nOUTPUT := selected\nelse\nOUTPUT := wrong\nendif", "selected"),
+            ("ifndef ${NAME}\nOUTPUT := wrong\nelse\nOUTPUT := selected\nendif", "selected"),
+            ("ifdef VA$(SUFFIX)\nOUTPUT := selected\nelse\nOUTPUT := wrong\nendif", "selected"),
+        )
+        for assignment, expected in cases:
+            with self.subTest(assignment=assignment):
+                self.add("Makefile", (
+                    f"NAME := VALUE\nSUFFIX := LUE\nVALUE := original\n{assignment}\nREFERENCES = $(OUTPUT)\n"
+                    "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+                ))
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, expected.encode())
+                with self.assertRaisesRegex(MakeProbeError, "computed Make supplier is not bound"):
+                    read_epochs.completion_source_facts("Makefile", (self.root / "Makefile").read_bytes())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "computed Make supplier is not bound"):
+                    with session:
+                        completed, _, _ = session._native_make_readonly(
+                            "all", observe_reads=True, observe_completions=True,
+                        )
+                        self.assertEqual(completed.stdout, ordinary.stdout)
+                self.assert_clean(session)
+
+    def test_native_computed_supplier_execution_without_completion_still_works(self):
+        for expression in ("$($(NAME))", "$(call $(NAME))"):
+            self.add("Makefile", (
+                f"NAME := VALUE\nVALUE := original\nOUTPUT := {expression}\n"
+                "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+            ))
+            session = self.session()
+            with self.subTest(expression=expression), session:
+                completed, _, observed = session._native_make_readonly("all", observe_reads=True)
+                self.assertEqual(completed.stdout, b"original")
+                self.assertFalse(any(
+                    row["kind"] == "assignment-completion" for row in observed["read_trace"]["events"]
+                ))
+            self.assert_clean(session)
+
+    def test_native_reference_analysis_preserves_builtin_scoped_and_dead_computed_forms(self):
+        from scripts.validation_ownership import make_lexical
+        self.assertEqual(make_lexical.references(
+            "$(call VALUE,$(NAME)) $@ $(subst original,replaced,$(VALUE))",
+        ), {"VALUE", "NAME", "@"})
+        self.assertEqual(make_lexical.references("ifdef NAME\nVALUE := $(OTHER)"), {"NAME", "OTHER"})
+        self.add("Makefile", (
+            "NAME := VALUE\nVALUE := original\nOUTPUT := $(and ,$($(NAME)))\n"
+            "REFERENCES = $(OUTPUT)\nall: ; @v='$(OUTPUT)'; printf '[%s]' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            completed, semantics, _ = session._native_make_readonly(
+                "all", variables=("OUTPUT",), observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"[]")
+            self.assertEqual(semantics["domains"]["OUTPUT"]["value"], "")
+        self.assert_clean(session)
+
     def test_native_readonly_literal_metadata_conditional_and_selection_closure(self):
         from scripts.validation_ownership import read_epochs
         cases = (

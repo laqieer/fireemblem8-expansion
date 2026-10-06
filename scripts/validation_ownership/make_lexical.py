@@ -275,12 +275,19 @@ def references(line, *, reference_base=_make_reference_base):
             names.add(name)
         else:
             function = _make_function(line[start:stop])
-            if function is not None and function[0] == "call":
+            if function is None and "$" in name:
+                raise MakeProbeError("computed Make supplier is not bound to native completion")
+            if function is not None and function[0] in {"call", "origin", "flavor", "value"}:
                 name = reference_base(function[1][0].lstrip(MAKE_SPACE), call=True)
-                if re.fullmatch(LITERAL_NAME, name):
+                if "$" in name:
+                    raise MakeProbeError("computed Make supplier is not bound to native completion")
+                if function[0] == "call" and re.fullmatch(LITERAL_NAME, name):
                     names.add(name)
     names.update(name for _, _, name in _literal_metadata(line))
     conditional = CONDITIONAL.match(line)
+    conditional_name = re.match(r"^\s*(?:ifdef|ifndef)[ \t]+([^\r\n]*)", line)
+    if conditional_name and "$" in conditional_name[1]:
+        raise MakeProbeError("computed Make supplier is not bound to native completion")
     if conditional:
         names.add(conditional.group(1))
     return names

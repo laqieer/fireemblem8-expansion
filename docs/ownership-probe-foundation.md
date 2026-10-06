@@ -587,6 +587,10 @@ share one literal-name grammar: optional leading dot, initial ASCII letter or
 underscore, then ASCII letters/digits/underscore/dot/hyphen. Opened source bytes, mode
 and extent must match that frozen snapshot inventory, and references must be
 covered, including assignment RHS dependencies rather than only roots.
+Computed lookup, named-function or conditional suppliers are not yet bound
+to actual native observations. Completion-enabled source facts explicitly
+refuse them instead of claiming a complete literal closure; ordinary native
+execution without assignment-completion evidence remains available.
 Publication origins are forbidden rather than serviced by a null
 publication fallback.
 
@@ -640,6 +644,21 @@ the existing namespace launcher, run these `FoundationTests` controls:
    output and their actual `SUPPLIER`/`VALUE` completions. The existing splitter
    uses one enclosing-delimiter depth counter instead of a mixed-delimiter
    stack; no second Make parser or source transformation is introduced.
+   `test_native_readonly_computed_suppliers_refuse_incomplete_completion`
+   compares twelve real ordinary Make lookup/call/metadata/conditional forms
+   with the shared source-facts parser and completion-enabled native reader.
+   Before correction nine original forms returned correct values with
+   incomplete supplier selection; all twelve now explicitly refuse computed
+   supplier binding. Concatenation and substitution names are included.
+   `test_native_computed_supplier_execution_without_completion_still_works`
+   requires original computed lookup/call output when completion evidence is
+   not requested, rather than silently manufacturing an assignment trace.
+   `test_native_reference_analysis_preserves_builtin_scoped_and_dead_computed_forms`
+   keeps literal call arguments, ordinary function references, scoped tokens
+   and multiline literal conditionals in reference analysis; a genuine
+   constant-empty `and` fixture must retain empty output and semantics without
+   rejecting its already-pruned computed branch. This is a bounded
+   completion limitation, not qualification of arbitrary computed Make source.
 4. `test_native_readonly_completion_failed_make_has_no_successful_archive`:
    a real source error must retain Make's status and diagnostic, fail the
    invocation and clean active pins without a successful trace.
