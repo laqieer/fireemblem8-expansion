@@ -2054,6 +2054,55 @@ class FoundationTests(unittest.TestCase):
                     self.assertEqual(completed.stdout, ordinary.stdout)
                 self.assert_clean(session)
 
+    def test_native_completion_private_and_directive_context(self):
+        from scripts.validation_ownership import read_epochs
+        declarations = [
+            f"private SUPPLIER {operator} " + ("v=original; printf '%s' \"$$v\"" if operator == "!=" else "original")
+            for operator in ("=", ":=", "::=", "?=", "+=", "!=")
+        ]
+        declarations.append("private define SUPPLIER\noriginal\nendef")
+        for declaration in declarations:
+            source = declaration + "\nOUTPUT := $(SUPPLIER)\nall: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+            self.add("Makefile", source)
+            with self.subTest(declaration=declaration):
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, b"original")
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion private global"):
+                    read_epochs.completion_source_facts("Makefile", source.encode())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion private global"), session:
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assert_clean(session)
+                session = self.session()
+                with session:
+                    completed, _, _ = session._native_make_readonly("all", observe_reads=True)
+                    self.assertEqual(completed.stdout, ordinary.stdout)
+                self.assert_clean(session)
+        for recipe in (
+            "all:\n\texport LOCAL=original; printf '%s' \"$$LOCAL\"\n",
+            "all:\n\t@export LOCAL=original; printf '%s' \"$$LOCAL\"\n",
+            "all: ; @export LOCAL=original; printf '%s' \"$$LOCAL\"\n",
+            "define CMD\nexport LOCAL=original; printf '%s' \"$$LOCAL\"\nendef\nall: ; @$(CMD)\n",
+            "CMD = export LOCAL=original; printf '%s' \"$$LOCAL\"\nall: ; @$(CMD)\n",
+        ):
+            self.add("Makefile", recipe)
+            with self.subTest(recipe=recipe):
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertTrue(ordinary.stdout.endswith(b"original"))
+                session = self.session()
+                with session:
+                    completed, _, _ = session._native_make_readonly(
+                        "all", observe_reads=True, observe_completions=True,
+                    )
+                    self.assertEqual(completed.stdout, ordinary.stdout)
+                self.assert_clean(session)
+
     def test_native_completion_rule_context_and_special_aliases(self):
         from scripts.validation_ownership import read_epochs
         cases = [
@@ -2317,6 +2366,9 @@ class FoundationTests(unittest.TestCase):
                 "././.EXPORT_ALL_VARIABLES:\nOUTPUT := original\n" + recipe,
                 "./.SECONDEXPANSION:\nOUTPUT := original\n" + recipe,
                 "././.SECONDEXPANSION:\nOUTPUT := original\n" + recipe,
+                *("private VALUE " + operator + " original\nOUTPUT := $(VALUE)\n" + recipe
+                  for operator in ("=", ":=", "::=", "?=", "+=", "!=")),
+                "private define VALUE\noriginal\nendef\nOUTPUT := $(VALUE)\n" + recipe,
                 *("NAME := VALUE\nVALUE := original\nOUTPUT := $(call " + target + ",$(NAME))\n" + recipe
                   for target in ("value", "origin", "flavor", "call")),
             ):

@@ -303,6 +303,8 @@ def completion_declaration(statement):
     """Classify literal global sites before admitting non-site source context."""
     assignment = MODE_ASSIGNMENT.fullmatch(statement)
     if assignment is not None:
+        if "private" in statement[:assignment.start("name")].split():
+            raise MakeProbeError("unsupported completion private global")
         if assignment["name"] == ".RECIPEPREFIX":
             raise MakeProbeError("unsupported completion recipe prefix")
         return assignment, None, False
@@ -311,6 +313,8 @@ def completion_declaration(statement):
         macro = DEFINE.fullmatch(header)
         if macro is None:
             raise MakeProbeError("unsupported completion define name")
+        if "private" in header[:macro.start(1)].split():
+            raise MakeProbeError("unsupported completion private global")
         if macro[1] == ".RECIPEPREFIX":
             raise MakeProbeError("unsupported completion recipe prefix")
         return None, macro, False
@@ -341,7 +345,7 @@ def completion_declaration(statement):
     return None, None, False
 
 
-def references(line, *, reference_base=_make_reference_base):
+def references(line, *, reference_base=_make_reference_base, directives=True):
     line = _prune_and(line)
     names = set()
     try:
@@ -375,7 +379,7 @@ def references(line, *, reference_base=_make_reference_base):
                 if name:
                     names.add(name)
     names.update(name for _, _, name in _literal_metadata(line))
-    conditional = CONDITIONAL.match(line)
+    conditional = CONDITIONAL.match(line) if directives else None
     if conditional:
         name = conditional[1].strip(MAKE_SPACE)
         if "$" in name:
@@ -383,7 +387,7 @@ def references(line, *, reference_base=_make_reference_base):
         if not re.fullmatch(LITERAL_NAME, name):
             raise MakeProbeError("unsupported Make supplier is not bound to native completion")
         names.add(name)
-    export = re.match(r"^[ \t]*(?:(?:override|private)[ \t]+)*export(?:[ \t]+(.*))?$", line)
+    export = re.match(r"^[ \t]*(?:(?:override|private)[ \t]+)*export(?:[ \t]+(.*))?$", line) if directives else None
     if export is not None:
         consumers = (export[1] or "").split()
         if not consumers or any(not re.fullmatch(LITERAL_NAME, name) for name in consumers):

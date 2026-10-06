@@ -683,7 +683,7 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
                     if not depth:
                         definition = None
                         continue
-            names = make_lexical.references(statement)
+            names = make_lexical.references(statement, directives=False)
             charge(len(encoded(sorted(names))))
             dependencies[definition].update(names)
             continue
@@ -698,7 +698,7 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
         else:
             recipe_allowed |= rule
         if assignment is None:
-            names = make_lexical.references(statement)
+            names = make_lexical.references(statement, directives=not raw.startswith("\t"))
             charge(len(encoded(sorted(names))))
             if macro is not None:
                 definition, depth = macro[1], 1
@@ -707,21 +707,20 @@ def completion_source_facts(path, data, *, checkpoint=lambda: None, count_limit=
                 roots.update(names)
             continue
         name = assignment["name"]
-        names = make_lexical.references(assignment["value"])
+        names = make_lexical.references(assignment["value"], directives=False)
         charge(len(encoded((name, sorted(names)))))
         dependencies.setdefault(name, set()).update(names)
         prefix = statement[:assignment.start("name")].split()
         if "export" in prefix:
             roots.add(name)
-        if "private" not in prefix:
-            row = [
-                path, digest, logical, first, last, name, assignment["operator"],
-                hashlib.sha256(raw.encode("utf-8")).hexdigest(), "override" in prefix,
-            ]
-            charge(len(encoded(row)))
-            rows.append(row)
-            if count_limit is not None and len(rows) > count_limit:
-                raise ReadEpochError("completion source selection exceeds observation count")
+        row = [
+            path, digest, logical, first, last, name, assignment["operator"],
+            hashlib.sha256(raw.encode("utf-8")).hexdigest(), "override" in prefix,
+        ]
+        charge(len(encoded(row)))
+        rows.append(row)
+        if count_limit is not None and len(rows) > count_limit:
+            raise ReadEpochError("completion source selection exceeds observation count")
     if depth:
         raise ReadEpochError("completion selection encountered an unterminated define body")
     return rows, roots, dependencies

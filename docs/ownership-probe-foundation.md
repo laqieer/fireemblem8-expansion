@@ -846,6 +846,16 @@ the existing namespace launcher, run these `FoundationTests` controls:
    blanket-export refusal; other filesystem normalization is not inferred.
    Real GNU/native controls and coherent returned-archive mutations cover
    literal/computed leading-tab assignments and both aliased special targets.
+   `test_native_completion_private_and_directive_context` requires private
+   global assignments across all six operators and private definitions to
+   refuse completion evidence rather than disappear from assignment sites.
+   Native no-completion execution retains ordinary GNU output. Target-local
+   private bindings remain a separate non-global context. Make directive
+   consumers are checked only in statement headers: plain/quiet/inline shell
+   exports and export text in assignment or define values remain shell text,
+   with their dollar references still analyzed. The plain recipe's command
+   echo is preserved as well as its output. Coherent returned archives exercise
+   every private-global declaration form.
    Repeat the no-completion execution control with computed assignment and short
    lookup sources: genuine native output must remain `original` without an
    invented completion trace. No native evaluator, source rewrite, new budget,
