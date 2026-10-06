@@ -3131,6 +3131,39 @@ class FoundationTests(unittest.TestCase):
                             changed, trace["scope"], count_limit=session.budget.limits.observation_count,
                             file_limit=session.budget.limits.file_bytes,
                         )
+            for slots in (None, (0, 1), (0, 1, 2), (0, 1, 3), "active"):
+                changed = parse_json(saved, "runtime post-read guard mutation")
+                guards = [
+                    row for row in changed["machine"]["events"]
+                    if row["kind"] == "arm"
+                    and changed["events"][row["trace_seq"] - 1]["kind"] == "pass-exit"
+                ]
+                self.assertEqual(len(guards), 1)
+                guard, = guards
+                if slots is None:
+                    changed["machine"]["events"].remove(guard)
+                elif slots == "active":
+                    active = next(
+                        row for row in changed["machine"]["events"]
+                        if row["kind"] == "arm" and len(row["slots"]) == 4
+                        and row["slots"][0][2] == "source-entry"
+                    )
+                    guard["slots"] = active["slots"]
+                    guard["registers"] = active["registers"]
+                else:
+                    guard["slots"] = [row for row in guard["slots"] if row[0] in slots]
+                    guard["registers"][:4] = [
+                        guard["registers"][index] if index in slots else 0 for index in range(4)
+                    ]
+                    guard["registers"][5] = sum(1 << (2 * index) for index in slots)
+                for sequence, row in enumerate(changed["machine"]["events"], 1):
+                    row["seq"] = sequence
+                with self.subTest(guard_slots=slots):
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            changed, trace["scope"], count_limit=session.budget.limits.observation_count,
+                            file_limit=session.budget.limits.file_bytes,
+                        )
             changed = parse_json(saved, "coherent runtime eval byte mutation")
             entry = next(row for row in changed["events"] if row["kind"] == "eval-entry")
             source = changed["sources"][entry["source"] - 1]
@@ -3529,6 +3562,116 @@ class FoundationTests(unittest.TestCase):
                 for name, (before, after) in row.items():
                     self.assertEqual(after, before | (1 << 16) if name == "eflags" else before)
         self.assert_clean(session)
+
+    def test_native_runtime_post_read_recipe_and_secondary_eval_refuse(self):
+        for body in (
+            "VALUE := early\nall: ; @$(eval VALUE := late)v='$(VALUE)'; printf '%s' \"$$v\"\n",
+            "VALUE := early\nEFFECT = $(eval VALUE := late)\n.SECONDEXPANSION:\n"
+            "all: $$(EFFECT)\n\t@v='$(VALUE)'; printf '%s' \"$$v\"\n",
+        ):
+            self.add("Makefile", body)
+            session = self.session()
+            with self.subTest(body=body), session:
+                with self.assertRaisesRegex(MakeProbeError, "runtime post-read effect/eval is not qualified"):
+                    session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_actual_trap_registers_preserve_all_invocation_purposes(self):
+        self.add("Makefile", (
+            "NAME := VALUE\n$(NAME) := original\n"
+            "inner = $(eval SECOND := $(VALUE))\n"
+            "$(eval $(inner)THIRD := $(SECOND))\ninclude nested.mk\n"
+            "all: private VALUE := target\n"
+            "all: ; @v='$(THIRD)|$(VALUE)|$(NESTED)'; printf '%s' \"$$v\"\n"
+        ))
+        self.add("nested.mk", "NESTED := $(THIRD)\n")
+        output = self.directory / "runtime-register-restoration.json"
+        body = (
+            "import ctypes,read_trace\n"
+            "original=read_trace.NativeReadTrace.trap\nrows=[]\n"
+            "def observed(self,pid,state):\n"
+            " before=self.native.Registers()\n"
+            " self.native.ptrace(self.native.GETREGS,pid,0,ctypes.byref(before))\n"
+            " result=original(self,pid,state)\n"
+            " after=self.native.Registers()\n"
+            " self.native.ptrace(self.native.GETREGS,pid,0,ctypes.byref(after))\n"
+            " rows.append({name:[getattr(before,name),getattr(after,name)] for name,*_ in before._fields_})\n"
+            f" Path({str(output)!r}).write_text(json.dumps(rows))\n"
+            " return result\nread_trace.NativeReadTrace.trap=observed\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"original|target|original")
+            traps = [row for row in observed["read_trace"]["machine"]["events"] if row["kind"] == "trap"]
+            rows = json.loads(output.read_bytes())
+            self.assertEqual(len(rows), len(traps))
+            self.assertEqual(
+                {row["purpose"] for row in traps},
+                {"pass-entry", "pass-return", "source-entry", "source-return",
+                 "effect-entry", "effect-return", "effect-completion", "eval-entry", "eval-return"},
+            )
+            from scripts.validation_ownership.syscall_guard import Registers
+            fields = {name for name, *_ in Registers._fields_}
+            for row in rows:
+                self.assertEqual(set(row), fields)
+                for name, (before, after) in row.items():
+                    self.assertEqual(after, before | (1 << 16) if name == "eflags" else before)
+        self.assert_clean(session)
+
+    def test_native_runtime_callback_and_restoration_mutations_refuse_each_new_purpose(self):
+        self.add("Makefile", (
+            "VALUE := original\n$(eval SECOND := $(VALUE))\n"
+            "all: ; @printf '%s' '$(SECOND)'\n"
+        ))
+        callbacks = (
+            "runtime_effect_entry", "runtime_effect_return", "runtime_effect_completion",
+            "runtime_eval_entry", "runtime_eval_return",
+        )
+        for callback in callbacks:
+            body = (
+                "import read_trace\n"
+                f"original=read_trace.NativeReadTrace.{callback}\n"
+                "def changed(self,registers,*args,**kwargs):\n"
+                " result=original(self,registers,*args,**kwargs)\n"
+                " registers.r10^=1\n return result\n"
+                f"read_trace.NativeReadTrace.{callback}=changed\n"
+            )
+            session = self.session()
+            with self.subTest(callback=callback), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "original read callback changed its register state"):
+                    session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        for purpose in ("effect-entry", "effect-return", "effect-completion", "eval-entry", "eval-return"):
+            body = (
+                "import ctypes,read_trace\noriginal=read_trace.NativeReadTrace.trap\n"
+                "def changed(self,pid,state):\n"
+                " saved=self.native.ptrace\n written=False\n selected=False\n"
+                " def wrong_readback(number,process,address=0,data=0):\n"
+                "  nonlocal written,selected\n"
+                "  result=saved(number,process,address,data)\n"
+                "  if number==self.native.GETREGS and not written:\n"
+                "   registers=ctypes.cast(data,ctypes.POINTER(self.native.Registers)).contents\n"
+                f"   selected=any(self.purposes.get(index)=={purpose!r} and pc==registers.rip for index,pc in self.slots.items())\n"
+                "  if number==self.native.SETREGS:written=True\n"
+                "  elif number==self.native.GETREGS and written and selected:\n"
+                "   ctypes.cast(data,ctypes.POINTER(self.native.Registers)).contents.r10^=1\n"
+                "  return result\n"
+                " self.native.ptrace=wrong_readback\n"
+                " try:return original(self,pid,state)\n"
+                " finally:self.native.ptrace=saved\n"
+                "read_trace.NativeReadTrace.trap=changed\n"
+            )
+            session = self.session()
+            with self.subTest(purpose=purpose), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "original read register restoration failed kernel readback"):
+                    session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
 
     def test_native_readonly_actual_callback_register_and_restore_readback_mutations_refuse(self):
         self.native_completion_fixture()

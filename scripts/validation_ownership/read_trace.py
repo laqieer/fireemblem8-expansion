@@ -250,6 +250,12 @@ class NativeReadTrace:
                 0: "source-entry", 1: "eval-entry", 2: "effect-entry",
                 3: self.invocations[-1]["purpose"],
             }
+        elif self.version == read_epochs.RUNTIME_VERSION and self.passes:
+            runtime = self.abi["completion"]["runtime"]
+            slots[2] = self.bias + runtime["eval_buffer"][0]
+            slots[3] = self.bias + runtime["definition"][0]
+            purposes[2] = "eval-entry"
+            purposes[3] = "effect-entry"
         elif self.active:
             slots[2] = self.active[-1]["return"]
             purposes[2] = "source-return"
@@ -313,6 +319,11 @@ class NativeReadTrace:
             "trap", pid, index=index, purpose=purpose, pc=registers.rip,
             status=status, sigcode=TRAP_HWBKPT,
         )
+        if (
+            self.version == read_epochs.RUNTIME_VERSION and self.pass_frame is None
+            and purpose in {"eval-entry", "effect-entry"}
+        ):
+            raise read_epochs.ReadEpochError("runtime post-read effect/eval is not qualified")
         if purpose == "pass-entry":
             if self.pass_frame is not None or self.active or self.passes + 1 != self.execs:
                 raise read_epochs.ReadEpochError("repeated original read entry in one exec")

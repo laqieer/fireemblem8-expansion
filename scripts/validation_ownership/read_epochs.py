@@ -1270,6 +1270,7 @@ def validate_machine_observations(value, trace, *, count_limit):
             "eval-buffer": {"evaluation", "source", "sha256"},
         })
     runtime_bindings = {kind: set() for kind in ("effect-input", "effect-result", "eval-buffer")}
+    postread_guards = set()
     armed, retired = {}, set()
     previous = 0
     make_pid = None
@@ -1332,10 +1333,19 @@ def validate_machine_observations(value, trace, *, count_limit):
                 or runtime and (
                     not (
                         len(issued) == 2
+                        and context is not None and context["kind"] == "exec"
                         and issued.get(0, [None, None])[1] == "pass-entry"
                         and issued.get(1, [None, None])[1] == "source-entry"
                     ) and not (
                         len(issued) == 4
+                        and context is not None and context["kind"] == "pass-exit"
+                        and issued.get(0, [None, None])[1] == "pass-entry"
+                        and issued.get(1, [None, None])[1] == "source-entry"
+                        and issued.get(2, [None, None])[1] == "eval-entry"
+                        and issued.get(3, [None, None])[1] == "effect-entry"
+                    ) and not (
+                        len(issued) == 4
+                        and context is not None and context["kind"] not in {"exec", "pass-exit"}
                         and issued.get(0, [None, None])[1] == "source-entry"
                         and issued.get(1, [None, None])[1] == "eval-entry"
                         and issued.get(2, [None, None])[1] == "effect-entry"
@@ -1350,6 +1360,10 @@ def validate_machine_observations(value, trace, *, count_limit):
                 raise ReadEpochError("native readback differs from its issued slots/control")
             if make_pid is not None and pid != make_pid:
                 raise ReadEpochError("native arm belongs to a foreign Make child")
+            if runtime and context is not None and context["kind"] == "pass-exit":
+                if previous in postread_guards:
+                    raise ReadEpochError("runtime post-read guard is repeated")
+                postread_guards.add(previous)
             make_pid = pid
             armed[pid] = issued
         elif kind == "trap":
@@ -1464,6 +1478,10 @@ def validate_machine_observations(value, trace, *, count_limit):
         )
     ):
         raise ReadEpochError("runtime machine observations omit effect/eval payload bindings")
+    if runtime and postread_guards != {
+        event["seq"] for event in trace["events"] if event["kind"] == "pass-exit"
+    }:
+        raise ReadEpochError("runtime machine observations omit the actual post-read guard")
     return value
 
 

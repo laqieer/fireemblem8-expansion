@@ -476,6 +476,14 @@ bind the observer's exact captured event; eval-buffer digests bind its pristine
 bytes. These are reconstruction/integrity observations, not signatures or
 protection against hostile same-UID processes. Malformed read rows use the
 shared versioned wire schema before runtime lifecycle interpretation.
+After the read pass returns, version 5 keeps actual eval/definition entry
+traps armed and explicitly refuses those unqualified post-read operations.
+It must not publish a successful archive that omits a recipe-expansion or
+secondary-expansion eval. This is a temporary fail-closed boundary, not complete
+post-read lifecycle support; full native qualification still requires it.
+Version-4 staged suppliers forwarded through call-if/and/or/foreach remain
+unqualified under the runtime redesign hold; compatibility results do not
+grant complete supplier authority.
 
 To exercise this WIP checkpoint on the admitted GNU Make 4.3 x86-64 host,
 start each `FoundationTests` case with its temporary immutable view and let
@@ -519,6 +527,36 @@ fixtures are unchanged. No ROM/RAM/save/localization, modern/archival profile or
 generated-data change; no new execution authority or service. The new request
 remains incompatible with generated/published resources until their real
 producer custody is implemented and qualified.
+
+Version-4 register controls establish compatibility only. Run
+`test_native_runtime_actual_trap_registers_preserve_all_invocation_purposes`
+for direct version-5 evidence: computed assignments, nested eval, includes and
+a private target binding must return `original|target|original`. Read actual
+kernel registers before/after every hardware trap and require all fields
+unchanged except the required resume flag. The observed purpose set must
+contain pass/source entry/return, effect entry/return/completion and eval
+entry/return. Run
+`test_native_runtime_callback_and_restoration_mutations_refuse_each_new_purpose`:
+each of the five new runtime callbacks must reject a changed register object;
+each matching trap purpose must reject a corrupted restoration readback.
+Readback projections are decoder controls, not claims of physical kernel
+register corruption. Both cases require owned cleanup. These are the existing
+restoration criterion on actual version-5 paths, not generated/descendant or
+aggregate-budget qualification.
+
+Run `test_native_runtime_post_read_recipe_and_secondary_eval_refuse`: recipe
+expansion and a valid deferred secondary-expansion reference each evaluate a
+VALUE assignment after source reading. Both must explicitly refuse with failed
+budget state and owned cleanup, rather than return a successful incomplete
+archive. The pre-fix controls accept both original invocations. Preserve the
+private/custom-prefix/ordinary-secondary positive and actual nested read-pass
+eval observations and kernel restoration case.
+The returned-machine mutation case also removes the post-read guard arm or
+coherently substitutes startup-only/either-missing-slot shapes, updating slot
+readbacks, control bits and sequence numbers; substituting the active-reader
+four-slot shape must also refuse. Each completed
+pass requires exactly one actual four-slot guard arm; the two-slot startup
+shape is admitted only in its original exec context.
 
 Run `test_native_readonly_reuses_captured_runtime_without_second_host_read`:
 execute two original shell/direct-printf Make queries in one session, deny a
