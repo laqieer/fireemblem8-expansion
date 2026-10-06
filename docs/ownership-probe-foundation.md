@@ -481,6 +481,21 @@ traps armed and explicitly refuses those unqualified post-read operations.
 It must not publish a successful archive that omits a recipe-expansion or
 secondary-expansion eval. This is a temporary fail-closed boundary, not complete
 post-read lifecycle support; full native qualification still requires it.
+The separate `runtime_expansion_abi` discovery prerequisite identifies original
+target-aware expansion and both actual secondary prerequisite loops from the
+captured executable. It binds the restored variable/reader anchors, file layout,
+recipe entry's saved original file, secondary entry's actual target/dependency
+chain, and expansion/set-variables/split/enter callees. Neither an exported
+symbol alone nor copied recipe floc authorizes secondary source attribution.
+This helper is not wired into runtime admission yet: existing post-read refusal,
+wire/archive semantics and generated-source restrictions are unchanged.
+Run `test_native_runtime_expansion_abi_binds_original_callers_anchors_and_layout`
+on the admitted host: captured Make must yield both verified loop callers and
+the actual recipe/secondary expansion callers. Independent machine mutations
+of each loop call, entry, target/dependency association, original file save,
+anchor, layout and relied-on callee must refuse rather than selecting a surviving
+sibling as complete evidence. This is ELF/ABI evidence, not post-read archive,
+generated-resource or eight-query resource qualification.
 Version-4 staged suppliers forwarded through call-if/and/or/foreach remain
 unqualified under the runtime redesign hold; compatibility results do not
 grant complete supplier authority.

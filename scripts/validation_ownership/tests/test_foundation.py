@@ -3376,6 +3376,89 @@ class FoundationTests(unittest.TestCase):
                         self.assertEqual(variable[2] >> 29 & 3, 0)
                 self.assert_clean(session)
 
+    def test_native_runtime_expansion_abi_binds_original_callers_anchors_and_layout(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", "all: ; @:\n")
+        session = self.session()
+        with session:
+            data = dict(session.make_runtime)["/usr/bin/make"]
+            image = read_epochs.Elf(data)
+            abi = read_epochs.runtime_expansion_abi(image)
+            expansion = image.symbol("variable_expand_for_file", 2)[0]
+            calls = {
+                "recipe": abi["recipe_return"] - 5,
+                "secondary": abi["secondary_return"] - 5,
+                "snap-suffix": abi["secondary_snap_returns"][0] - 5,
+                "snap-ordinary": abi["secondary_snap_returns"][1] - 5,
+            }
+            for key, target in (
+                ("recipe", expansion), ("secondary", expansion),
+                ("snap-suffix", abi["secondary"][0]), ("snap-ordinary", abi["secondary"][0]),
+            ):
+                address = calls[key]
+                self.assertEqual(
+                    read_epochs.direct_call(address, image.bytes(address, 5, executable=True)), target,
+                )
+            self.assertEqual((abi["file_commands"], abi["file_variables"]), (32, 80))
+            begin, end = abi["secondary"]
+            helper = image.bytes(begin, end - begin, executable=True)
+            secondary_mutations = {}
+            for label, pattern, displacement in (
+                ("secondary-prerequisites", rb"\x48\x8b\x5f\x18", 3),
+                ("secondary-target", rb"\x49\x89\xfe", 2),
+            ):
+                matches = list(re.finditer(pattern, helper, re.S))
+                self.assertEqual(len(matches), 1)
+                address = begin + matches[0].start() + displacement
+                secondary_mutations[label] = (address, image.bytes(address, 1, executable=True)[0] ^ 1)
+            for name in ("set_file_variables", "split_prereqs", "enter_prereqs"):
+                target = image.symbol(name, 2)[0]
+                sites = [
+                    begin + offset for offset in range(len(helper) - 4)
+                    if read_epochs.direct_call(begin + offset, helper[offset:offset + 5]) == target
+                ]
+                self.assertEqual(len(sites), 1)
+                calls[name] = sites[0]
+            mutations = {key + "-call": (address, 0x90) for key, address in calls.items()}
+            mutations.update(secondary_mutations)
+            mutations.update({
+                key + "-entry": (abi[key][0], 0x90)
+                for key in ("function", "recipe", "secondary", "snap")
+            })
+            start = abi["function"][0]
+            expansion_code = image.bytes(start, abi["function"][1] - start, executable=True)
+            for key, pattern, changed, displacement in (
+                ("variable-layout", rb"\x48\x8b\x46\x50", 0x58, 3),
+                ("commands-layout", rb"\x48\x8b\x46\x20", 0x28, 3),
+                ("variables-anchor", rb"\x4c\x8d\x25....", None, 3),
+                ("reading-anchor", rb"\x48\x8d\x1d....", None, 3),
+                ("expansion-callee", rb"\xe8....\x4d\x89\x34\x24", 0x90, 0),
+            ):
+                sites = list(re.finditer(pattern, expansion_code, re.S))
+                self.assertEqual(len(sites), 1)
+                address = start + sites[0].start() + displacement
+                original = image.bytes(address, 1, executable=True)[0]
+                mutations[key] = (address, original ^ 1 if changed is None else changed)
+            start, end = abi["recipe"]
+            recipe_code = image.bytes(start, end - start, executable=True)
+            saved = list(re.finditer(rb"\x48\x89\x7d.\x48\x8b\x5f\x20", recipe_code[:64], re.S))
+            self.assertEqual(len(saved), 1)
+            address = start + saved[0].start() + 3
+            mutations["recipe-saved-file"] = (address, image.bytes(address, 1, executable=True)[0] ^ 1)
+            for label, (address, changed) in mutations.items():
+                mutant = bytearray(data)
+                locations = [
+                    offset + address - start
+                    for start, extent, offset, size, flags in image.loads
+                    if start <= address < start + size and flags & 1
+                ]
+                self.assertEqual(len(locations), 1)
+                mutant[locations[0]] = changed
+                with self.subTest(mutation=label), self.assertRaises(read_epochs.ReadEpochError):
+                    read_epochs.runtime_expansion_abi(read_epochs.Elf(bytes(mutant)))
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+
     def test_native_runtime_effect_abi_binds_complete_machine_call_families(self):
         from scripts.validation_ownership import read_epochs
         self.add("Makefile", "VALUE := original\nall: ; @:\n")

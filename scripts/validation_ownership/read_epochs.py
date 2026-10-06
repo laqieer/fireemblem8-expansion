@@ -240,6 +240,113 @@ def evaluator_target(image, source):
     return direct_call(start + call.start(1), call[1])
 
 
+def runtime_expansion_abi(image):
+    def function(name):
+        start, size = image.symbol(name, 2)
+        if not 0 < size <= 65536:
+            raise ReadEpochError("runtime expansion has an unbounded function")
+        return start, image.bytes(start, size, executable=True)
+
+    expansion, code = function("variable_expand_for_file")
+    entry = _unique(
+        rb"\xf3\x0f\x1e\xfa\x48\x85\xf6\x74.\x55\x48\x89\xe5"
+        rb"\x41\x56\x41\x55\x41\x54\x4c\x8d\x25(?P<variables_anchor>....)\x53"
+        rb"\x48\x8b\x46(?P<variables>.)\x4d\x8b\x34\x24"
+        rb"\x48\x8d\x1d(?P<reading_anchor>....)\x49\x89\x04\x24"
+        rb"\x48\x8b\x46(?P<commands>.)\x4c\x8b\x2b\x48\x85\xc0"
+        rb"\x74.\x31\xd2\x48\x83\x38\x00\x48\x0f\x44\xc2"
+        rb"\x48\x89\xfe\x48\xc7\xc2\xff\xff\xff\xff\x31\xff"
+        rb"\x48\x89\x03(?P<call>\xe8....)"
+        rb"\x4d\x89\x34\x24\x4c\x89\x2b"
+        rb"\x5b\x41\x5c\x41\x5d\x41\x5e\x5d\xc3",
+        code, "target-aware expansion frame and restored anchors",
+    )
+    if entry.start() != 0:
+        raise ReadEpochError("runtime expansion has a foreign actual entry")
+    for group, offset, symbol in (
+        ("variables_anchor", 19, "current_variable_set_list"), ("reading_anchor", 35, "reading_file"),
+    ):
+        if expansion + offset + 7 + int.from_bytes(entry[group], "little", signed=True) != image.symbol(symbol, 1)[0]:
+            raise ReadEpochError("runtime expansion substituted an actual anchor")
+    call = expansion + entry.start("call")
+    if direct_call(call, entry["call"]) != image.symbol("variable_expand_string", 2)[0]:
+        raise ReadEpochError("runtime expansion substituted its original callee")
+    if entry["variables"] != b"\x50" or entry["commands"] != b"\x20":
+        raise ReadEpochError("runtime expansion has a foreign file layout")
+
+    job, job_code = function("new_job")
+    if not job_code.startswith(b"\xf3\x0f\x1e\xfa\x55\x48\x89\xe5"):
+        raise ReadEpochError("runtime recipe has a foreign actual frame entry")
+    recipe = _unique(
+        rb"\x48\x8b\x43\x20\x48\x8b\x75(?P<file>.)\x4c\x89\x63\x10"
+        rb"\x4a\x8b\x3c\x30\x48\x8d\x05....\x4c\x8b\x35...."
+        rb"\x4c\x8b\x38\x48\xc7\x00\x00\x00\x00\x00(?P<call>\xe8....)"
+        rb"\x48\x8d\x0d....\x4c\x89\x35....\x4c\x89\x39",
+        job_code, "original recipe command-line expansion",
+    )
+    recipe_call = job + recipe.start("call")
+    if direct_call(recipe_call, recipe["call"]) != expansion:
+        raise ReadEpochError("runtime recipe expansion substituted its original callee")
+    saved_file = _unique(
+        rb"\x48\x89\x7d(?P<file>.)\x48\x8b\x5f\x20",
+        job_code[:64], "recipe entry file/commands association",
+    )
+    if saved_file["file"] != recipe["file"]:
+        raise ReadEpochError("runtime recipe borrowed another saved file")
+
+    snap, snap_code = function("snap_deps")
+    if not snap_code.startswith(b"\xf3\x0f\x1e\xfa\x55\x48\x89\xe5"):
+        raise ReadEpochError("runtime secondary has a foreign actual frame entry")
+    loops = [
+        _unique(pattern, snap_code, "secondary " + label + " target loop")
+        for label, pattern in (
+            ("suffix", rb"\x48\x8b\x18\x4c\x89\xe7(?P<call>\xe8....)\x4d\x8b\x64\x24\x38\x4d\x85\xe4\x75."),
+            ("ordinary", rb"\x49\x39\x1f\x74\x08\x4c\x89\xff(?P<call>\xe8....)\x4d\x8b\x7f\x38\x4d\x85\xff\x75."),
+        )
+    ]
+    targets = [direct_call(snap + loop.start("call"), loop["call"]) for loop in loops]
+    secondary = targets[0]
+    if secondary is None or targets[1] != secondary:
+        raise ReadEpochError("runtime secondary loops have different actual helpers")
+    helper = image.bytes(secondary, 1024, executable=True)
+    initialized = _unique(
+        rb"\x55\x48\x89\xe5\x41\x57\x41\x56\x41\x55\x41\x54\x53"
+        rb"\x48\x83\xec\x18\x48\x8b\x5f\x18"
+        rb"\x80\xa7\x89\x00\x00\x00\xfd\x48\x8b\x4f\x28\x48\x85\xdb"
+        rb"\x0f\x84....\x48\x89\x4d.\x49\x89\xfe\x4c\x8d\x67\x18\x45\x31\xff",
+        helper, "secondary entry target and prerequisite chain",
+    )
+    if initialized.start() != 0:
+        raise ReadEpochError("runtime secondary helper has a foreign frame entry")
+    match = _unique(
+        rb"\x4c\x89\xf7(?P<set>\xe8....)\x48\x8b\x7b\x08"
+        rb"\x4c\x89\xf6(?P<expand>\xe8....)\x48\x83\x7b\x18\x00"
+        rb"\x49\x89\xc7\x74.\x48\x8b\x45.\x49\x89\x46\x28"
+        rb"\x4c\x89\xef\xe8....\x4c\x8b\x6b\x18\x4c\x89\xff"
+        rb"(?P<split>\xe8....)\x48\x89\xc7\x4c\x89\xee(?P<enter>\xe8....)",
+        helper, "original secondary prerequisite expansion",
+    )
+    if any(
+        direct_call(secondary + match.start(group), match[group]) != image.symbol(name, 2)[0]
+        for group, name in (
+            ("set", "set_file_variables"), ("expand", "variable_expand_for_file"),
+            ("split", "split_prereqs"), ("enter", "enter_prereqs"),
+        )
+    ):
+        raise ReadEpochError("runtime secondary expansion substituted an actual callee")
+    return {
+        "function": [expansion, expansion + len(code)],
+        "recipe": [job, job + len(job_code)],
+        "secondary": [secondary, secondary + match.end()],
+        "snap": [snap, snap + len(snap_code)],
+        "recipe_return": recipe_call + 5,
+        "recipe_file": int.from_bytes(recipe["file"], "little", signed=True),
+        "secondary_return": secondary + match.end("expand"),
+        "secondary_snap_returns": [snap + loop.end("call") for loop in loops],
+        "file_commands": 32, "file_variables": 80,
+    }
+
+
 def runtime_effect_abi(image, source, evaluator, ordinary_return):
     def function(name):
         address, extent = image.symbol(name, 2)
