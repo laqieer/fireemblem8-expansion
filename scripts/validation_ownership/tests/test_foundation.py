@@ -3563,6 +3563,102 @@ class FoundationTests(unittest.TestCase):
                     self.assertEqual(after, before | (1 << 16) if name == "eflags" else before)
         self.assert_clean(session)
 
+    def test_native_runtime_jobs_capture_actual_argv_cwd_and_machine_binding(self):
+        from scripts.validation_ownership import read_epochs
+        expansion = "v=input; printf '%s' \"$v\""
+        recipe = "v='$(VALUE)'; printf '%s' \"$v\""
+        self.add("Makefile", (
+            "VALUE := $(shell " + expansion.replace("$", "$$") + ")\n"
+            "all: direct\n\t@" + recipe.replace("$v", "$$v") + "\n"
+            "direct: ; @/usr/bin/printf '%s' direct '' 'two words'\n"
+        ))
+        session = self.session()
+        with session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+                native_executables=("/usr/bin/printf",),
+            )
+            self.assertEqual(completed.stdout, b"directtwo wordsinput")
+            jobs = [
+                parse_json(row.removeprefix("native-job:").encode(), "actual native job")
+                for row in observed["accessed"] if row.startswith("native-job:")
+            ]
+            self.assertEqual(len(jobs), 3)
+            expected = {
+                ("/bin/sh", "-c", expansion),
+                ("/bin/sh", "-c", recipe.replace("$(VALUE)", "input")),
+                ("/usr/bin/printf", "%s", "direct", "", "two words"),
+            }
+            self.assertEqual({tuple(row["argv"]) for row in jobs}, expected)
+            self.assertEqual({row["cwd"] for row in jobs}, {"/repo"})
+            machines = {
+                (row["dispatch"], row["pid"]): row["input_sha256"]
+                for row in observed["read_trace"]["machine"]["events"]
+                if row["kind"] == "execute" and not row["make"]
+            }
+            for row in jobs:
+                self.assertEqual(
+                    machines[(row["sequence"], row["pid"])],
+                    hashlib.sha256(encoded({"argv": row["argv"], "cwd": row["cwd"]})).hexdigest(),
+                )
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_runtime_job_execution_input_mutations_and_capture_failures_refuse(self):
+        self.add("Makefile", "all: ; @v=original; printf '%s' \"$$v\"\n")
+        for mutation in (
+            "row.pop('argv')", "row.pop('cwd')", "row['argv']=[]",
+            "row['argv']=[False]", "row['argv']=['\\ud800']",
+            "row['argv']=['x'*65536]", "row['argv']=['x']*1025",
+            "row['argv'][-1]='foreign'", "row['cwd']='relative'",
+            "row['cwd']='/foreign'", "row['cwd']=False",
+        ):
+            body = (
+                "original=guard.Policy.observe\n"
+                "def changed(self,name,value):\n"
+                " if name=='accessed' and value.startswith('native-job:'):\n"
+                "  row=json.loads(value[len('native-job:'):])\n"
+                f"  {mutation}\n"
+                "  value='native-job:'+guard.encoded(row).decode('ascii')\n"
+                " return original(self,name,value)\n"
+                "guard.Policy.observe=changed\n"
+            )
+            session = self.session()
+            with self.subTest(mutation=mutation), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "native job"):
+                    session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        for data in (b"", b"missing-null", b"/bin/sh\0\xff\0", b"\0", b"x" * 65537):
+            body = (
+                "import builtins,io\noriginal_open=builtins.open\n"
+                "def captured(path,*args,**kwargs):\n"
+                " if isinstance(path,str) and path.startswith('/proc/') and path.endswith('/cmdline'):\n"
+                f"  return io.BytesIO({data!r})\n"
+                " return original_open(path,*args,**kwargs)\n"
+                "builtins.open=captured\n"
+            )
+            session = self.session()
+            with self.subTest(capture=data[:20]), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "native job"):
+                    session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        body = (
+            "import read_trace\noriginal=read_trace.NativeReadTrace.finish\n"
+            "def changed(self):\n"
+            " result=original(self)\n"
+            " row=next(row for row in result['machine']['events'] if row['kind']=='execute' and not row['make'])\n"
+            " row['input_sha256']='0'*64\n return result\n"
+            "read_trace.NativeReadTrace.finish=changed\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            with self.assertRaisesRegex(MakeProbeError, "native job execution inputs differ"):
+                session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
     def test_native_runtime_post_read_recipe_and_secondary_eval_refuse(self):
         for body in (
             "VALUE := early\nall: ; @$(eval VALUE := late)v='$(VALUE)'; printf '%s' \"$$v\"\n",

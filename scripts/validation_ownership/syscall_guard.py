@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 if __package__:
+    from . import read_epochs
     from .read_trace import NativeReadTrace
     from .authority import PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, parse_json
     from .lifecycle import finish_cleanup
@@ -35,6 +36,7 @@ if __package__:
         publication_identity, validate_publication_identity,
     )
 else:
+    import read_epochs
     from read_trace import NativeReadTrace
     from authority import PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, parse_json
     from lifecycle import finish_cleanup
@@ -514,6 +516,19 @@ class Policy:
             raise Violation("native job exec has a foreign or reused dispatch child")
         self.native_job_event({"sequence": state.native_dispatch, "pid": pid})
         row["pid"] = pid
+        if self.read_trace is not None and self.read_trace.version == 5:
+            with open(f"/proc/{pid}/cmdline", "rb") as stream:
+                data = stream.read(65537)
+            self.charge_metadata(len(data))
+            if not data or len(data) > 65536 or not data.endswith(b"\0"):
+                raise Violation("native job command line is missing or exceeds its byte bound")
+            try:
+                argv = [item.decode("utf-8", "strict") for item in data[:-1].split(b"\0")]
+            except UnicodeDecodeError as error:
+                raise Violation("native job command line is not strict UTF-8") from error
+            inputs = read_epochs.native_execution_input(argv, state.cwd)
+            self.native_job_event({"sequence": state.native_dispatch, **inputs})
+            row.update(inputs)
 
     def native_job_frame(self, pid, state, pointer, size):
         if (
@@ -2405,6 +2420,9 @@ def supervise(config, drop_privileges):
                 policy.read_trace.actual_exec(
                     stopped, state.role == "make",
                     None if state.role == "make" else state.native_dispatch,
+                    **({"inputs": None if state.role == "make" else {
+                        key: policy.native_jobs[state.native_dispatch][key] for key in ("argv", "cwd")
+                    }} if policy.read_trace.version == 5 else {}),
                 )
             release_vfork(stopped)
         elif sig == signal.SIGTRAP and event == 5:

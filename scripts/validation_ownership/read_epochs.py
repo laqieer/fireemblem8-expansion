@@ -1247,6 +1247,23 @@ def original_inputs(memory, pointer, deleted, *, count_limit, string):
     return result
 
 
+def native_execution_input(argv, cwd):
+    if (
+        not isinstance(argv, list) or not 1 <= len(argv) <= 1024
+        or any(
+            not isinstance(item, str) or "\0" in item
+            or any(0xD800 <= ord(char) <= 0xDFFF for char in item)
+            for item in argv
+        )
+        or not argv[0] or sum(len(item.encode("utf-8")) + 1 for item in argv) > 65536
+        or not isinstance(cwd, str) or not cwd.startswith("/") or "\0" in cwd
+        or any(0xD800 <= ord(char) <= 0xDFFF for char in cwd)
+        or len(cwd.encode("utf-8")) > 4096
+    ):
+        raise ReadEpochError("native job has invalid actual execution inputs")
+    return {"argv": argv, "cwd": cwd}
+
+
 def validate_machine_observations(value, trace, *, count_limit):
     if (
         not isinstance(value, dict) or set(value) != {"version", "events", "closed"}
@@ -1264,6 +1281,7 @@ def validate_machine_observations(value, trace, *, count_limit):
     purposes = {"pass-entry", "source-entry", "source-return", "pass-return", "assignment-completion"}
     runtime = trace["version"] == RUNTIME_VERSION
     if runtime:
+        fields["execute"] |= {"input_sha256"}
         purposes |= {"effect-entry", "effect-return", "effect-completion", "eval-entry", "eval-return"}
         fields.update({
             "effect-input": {"effect", "sha256"}, "effect-result": {"effect", "sha256"},
@@ -1385,6 +1403,13 @@ def validate_machine_observations(value, trace, *, count_limit):
                 or not row["make"] and (
                     type(row["dispatch"]) is not int or row["dispatch"] <= 0
                     or row["dispatch"] in child_dispatches
+                )
+                or runtime and (
+                    row["make"] and row["input_sha256"] is not None
+                    or not row["make"] and (
+                        not isinstance(row["input_sha256"], str)
+                        or re.fullmatch("[0-9a-f]{64}", row["input_sha256"]) is None
+                    )
                 )
             ):
                 raise ReadEpochError("native execution lacks its immediately preceding child clear")

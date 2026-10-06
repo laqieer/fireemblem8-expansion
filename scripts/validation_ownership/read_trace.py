@@ -169,9 +169,13 @@ class NativeReadTrace:
         addresses = [self.debug(pid, index, 0) for index in range(4)]
         self.machine_event("clear", pid, registers=[*addresses, status, control])
 
-    def actual_exec(self, pid, make, dispatch=None):
+    def actual_exec(self, pid, make, dispatch=None, inputs=None):
         self.clear(pid)
-        self.machine_event("execute", pid, make=make, dispatch=dispatch)
+        self.machine_event(
+            "execute", pid, make=make, dispatch=dispatch,
+            **({"input_sha256": None if make else hashlib.sha256(encoded(inputs)).hexdigest()}
+               if self.version == read_epochs.RUNTIME_VERSION else {}),
+        )
         if not make:
             return
         if self.active or self.pass_frame is not None or self.io is not None or self.pending_barrier is not None or self.execs != self.passes:

@@ -558,6 +558,31 @@ four-slot shape must also refuse. Each completed
 pass requires exactly one actual four-slot guard arm; the two-slot startup
 shape is admitted only in its original exec context.
 
+Version-5 native jobs additionally retain actual `argv` and supervised `cwd`.
+Capture command-line bytes through the owned child's `/proc/<pid>/cmdline` at
+its successful kernel exec stop, before resuming the executable. Retain at most
+65536 bytes and 1024 arguments, preserving empty arguments and spaces, with
+strict UTF-8 and a nonempty argv[0]. Charge captured bytes and retained job
+observations under the existing cumulative accounting. The same stopped exec
+machine observation carries `input_sha256` binding encoded argv/cwd to that
+dispatch/PID; Make execution has a null binding. Returned jobs must match the
+exact child machine binding. Version-4 and nontrace job formats are unchanged.
+This is original execution-input observation, not generated-output authority,
+registration matching, command replay, a signature or same-UID isolation.
+
+Run `test_native_runtime_jobs_capture_actual_argv_cwd_and_machine_binding`:
+execute an original shell expansion, recipe shell and declared direct printf.
+Require `directtwo wordsinput`, their exact argv (including empty/spaced direct
+arguments), actual `/repo` cwd and paired machine input bindings.
+The pre-checkpoint observation lacks argv/cwd. Run
+`test_native_runtime_job_execution_input_mutations_and_capture_failures_refuse`:
+missing/malformed/foreign returned inputs, wrong machine input binding and
+empty/nonterminated/invalid-UTF-8/oversized command-line captures must refuse
+with owned cleanup. Capture substitutions are decoder controls, not actual
+malformed Linux exec claims. Retain version-4 source/job/machine controls and
+direct version-5 hardware parity. Generated command-to-resource matching,
+descriptor/version custody and original budget qualification remain open.
+
 Run `test_native_readonly_reuses_captured_runtime_without_second_host_read`:
 execute two original shell/direct-printf Make queries in one session, deny a
 second host runtime acquisition and require identical real output/values,

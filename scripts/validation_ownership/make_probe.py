@@ -1449,7 +1449,7 @@ class ProbeSession:
                         for absent in config["runtime_absent"]
                     ):
                         raise MakeProbeError("native optional absence differs from its kernel metadata")
-                jobs, executions, dispatches = {}, {}, []
+                jobs, executions, dispatches, job_inputs = {}, {}, [], {}
                 for value in observed["accessed"]:
                     if value.startswith("native-job:"):
                         raw = value.removeprefix("native-job:").encode("utf-8")
@@ -1460,7 +1460,7 @@ class ProbeSession:
                             or set(job) != {
                                 "sequence", "executable", "pid", "context", "returncode",
                                 "terminal_status", "waited", "ignored",
-                            }
+                            } | ({"argv", "cwd"} if runtime_completions else set())
                             or not 0 < job["pid"] < 1 << 31
                             or type(job["sequence"]) is not int or job["sequence"] <= 0
                             or type(job["returncode"]) is not int
@@ -1495,6 +1495,10 @@ class ProbeSession:
                             or job["pid"] in jobs
                         ):
                             raise MakeProbeError("native job differs from its admitted executable")
+                        if runtime_completions:
+                            from .read_epochs import native_execution_input
+                            inputs = native_execution_input(job["argv"], job["cwd"])
+                            job_inputs[(job["sequence"], job["pid"])] = hashlib.sha256(encoded(inputs)).hexdigest()
                         jobs[job["pid"]] = job["executable"]
                         dispatches.append((job["sequence"], job["pid"]))
                     elif value.startswith(("native-shell:", "native-exec:")):
@@ -1519,6 +1523,12 @@ class ProbeSession:
                     ]
                     if sorted(dispatches) != sorted(children):
                         raise MakeProbeError("native job dispatch differs from its returned machine execution")
+                    if runtime_completions and job_inputs != {
+                        (row["dispatch"], row["pid"]): row["input_sha256"]
+                        for row in observed["read_trace"]["machine"]["events"]
+                        if row["kind"] == "execute" and row["make"] is False
+                    }:
+                        raise MakeProbeError("native job execution inputs differ from returned machine observation")
             if channel is not None:
                 final = observed["rendezvous"]
                 if (
