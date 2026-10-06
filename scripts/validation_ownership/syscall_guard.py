@@ -424,13 +424,15 @@ class Policy:
             "/usr/bin/lib/python" + version + "/lib-dynload",
         }
         self.link_option_probes = {
-            "/repo/" + argument for argument in (
+            config.get("cwd", "/repo") + "/" + argument for argument in (
                 "-lc", "-lm", "-lgcc", "-lgcc_s", "-lstdc++", *config["argv"],
             ) if argument.startswith("-l") and re.fullmatch(r"-l[A-Za-z0-9_+.-]+", argument)
         }
         self.link_option_probes.update({
-            "/repo/libgcc_s.so.1", "/repo/libgcc.a", "/repo/libc.so.6",
-            "/repo/libc_nonshared.a", "/repo/ld-linux-x86-64.so.2",
+            config.get("cwd", "/repo") + "/" + name for name in (
+                "libgcc_s.so.1", "libgcc.a", "libc.so.6", "libc_nonshared.a",
+                "ld-linux-x86-64.so.2",
+            )
         })
         self.code_dirs = {"/repo"}
         self.source_dirs = set()
@@ -1748,6 +1750,10 @@ class Policy:
             for name in ("gnm", "gstrip", "gld")
         }:
             return
+        if self.mode == "compile" and path in self.config.get("repository_outputs", ()):
+            if state.role == "compiler" and operation in {"read", "metadata", "write"}:
+                return
+            raise Violation(f"original compiler output operation denied: {operation} {path}")
         if operation == "write":
             if self.mode in {"command", "compile"} and (path == "/work" or path.startswith("/work/")):
                 return
@@ -2410,7 +2416,7 @@ def supervise(config, drop_privileges):
     if pid == 0:
         try:
             os.chroot(config["root"])
-            os.chdir("/repo")
+            os.chdir(config.get("cwd", "/repo"))
             os.umask(0o022)
             os.closerange(3, 65536)
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
@@ -2425,13 +2431,14 @@ def supervise(config, drop_privileges):
                     if hasattr(signal, name):
                         signal.signal(getattr(signal, name), signal.SIG_DFL)
             trace_me(drop_privileges)
-            os.execve(config["argv"][0], config["argv"], config["environment"])
+            os.execve(config.get("initial_executable", config["argv"][0]),
+                      config["argv"], config["environment"])
         except BaseException as failure:
             os.write(2, ("capsule exec failed: " + repr(failure)).encode("utf-8")[:4096])
             os._exit(125)
     processes[pid] = Process(
         "make" if config["mode"] == "make" else "compiler" if config["mode"] == "compile" else "command",
-        memory_group=pid, pidfd=os.pidfd_open(pid),
+        memory_group=pid, pidfd=os.pidfd_open(pid), cwd=config.get("cwd", "/repo"),
     )
     if config.get("metadata_validation"):
         processes[pid].helper_kind = VO_VALIDATE
@@ -2584,6 +2591,23 @@ def supervise(config, drop_privileges):
                 policy.executed.append(state.exec_path)
                 state.exec_path = None
             if state.bootstrap:
+                if config.get("repository_outputs") and stopped == pid:
+                    with open(f"/proc/{stopped}/cmdline", "rb") as stream:
+                        data = stream.read(65537)
+                    policy.charge_metadata(len(data))
+                    if not data or len(data) > 65536 or not data.endswith(b"\0"):
+                        raise Violation("original compiler command line exceeds its byte bound")
+                    try:
+                        argv = [item.decode("utf-8", "strict") for item in data[:-1].split(b"\0")]
+                    except UnicodeDecodeError as error:
+                        raise Violation("original compiler command line is not strict UTF-8") from error
+                    actual = os.stat(f"/proc/{stopped}/cwd")
+                    expected = os.stat(Path(config["root"]) / config["cwd"].lstrip("/"))
+                    policy.charge_metadata(256)
+                    if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
+                        raise Violation("original compiler CWD differs from its owned directory")
+                    inputs = read_epochs.native_execution_input(argv, config["cwd"])
+                    policy.observe("accessed", "compiler-input:" + json.dumps(inputs))
                 descriptors = {entry.name for entry in Path(f"/proc/{stopped}/fd").iterdir()}
                 policy.charge_metadata(sum(len(name) + 16 for name in descriptors))
                 if descriptors != {"0", "1", "2"}:

@@ -188,6 +188,64 @@ implementation; these passing controls do not qualify those missing contracts.
 Ordinary live/mapped Make remains unchanged. No save, localization, ROM/RAM,
 modern/archival build profile or public configuration change is involved.
 
+### Original compiler component
+
+`ProbeSession.compile_native_command(command, cwd=".")` reuses the existing
+typed `Command`, trusted compiler capsule, immutable `Snapshot`, output
+collision check, compiler resource policy and session-issued `NativeTool`.
+The admitted original driver names are `g++`, `gcc`, `/usr/bin/g++` and
+`/usr/bin/gcc`; `cc` and arbitrary executable spellings are not admitted by
+this component. The existing `compile_native` C/C++ lane is unchanged.
+Declare snapshot-only `code`, exactly one repository-relative `outputs` path,
+an existing snapshot directory as `cwd`, and exactly one separated `-o`
+operand resolving to that output. Arguments, including argv[0] and relative
+source/output operands, are not rewritten. At the owned initial exec stop,
+the supervisor reads the actual bounded command line and verifies the actual
+CWD inode against the configured private directory; the host binds that
+structured observation to the original command before accepting its artifact.
+
+Only this compile route derives a private source scaffold from the actual
+snapshot: writable ancestors around the declared output, maximal readonly
+source islands, and no precreated output. Exact output read/metadata/write
+authority is compiler-only. Source/CWD ancestor mutation and undeclared
+resources remain denied. The existing private `/work` compiler temporaries,
+readonly trusted system runtime, aggregate budgets and owned cleanup remain;
+generic native runtime limits and Make publication authority are not widened.
+Only a regular output passing the existing ELF validator can be sealed with
+its immutable input identities. A missing, symlink, directory or invalid
+artifact is an explicit failure, not a usable tool.
+
+For the #270 `TC-WORKFLOW-NATIVE-MAKE-001` compiler component, start from a
+clean Linux host with the existing namespace launcher and trusted GCC tools.
+Run `test_original_compiler_preserves_relative_argv_cwd_and_output` and
+`test_original_c_compiler_preserves_relative_inputs`: actual compiler and
+native execution must retain `source.cpp:7` and `source.c` relative-file
+results and snapshot input owners. Run
+`test_original_scaninc_compiles_original_sources_flags_cwd_and_output`: the
+original four C++ files/four headers, flags, CWD and `scaninc` output compile,
+and the sealed scanner reports the same actual header dependency as the
+ordinary scanner, with no artifact added to the immutable tree.
+
+Run the command/namespace and compile-only layout controls; wrong CWD/output,
+collisions, unsupported driver, additional authority and cross-mode source
+mounts must reject. The actual-initial-argv mutant must reject despite
+successful compilation. In the real-write/capture controls, a linker map
+targeting immutable source or its ancestor must reject at write admission;
+an undeclared map target rejects at its earlier metadata probe. The direct
+production resource predicate separately rejects every ancestor/source/extra
+write and noncompiler output access. After a real successful compile, the
+missing/directory/symlink/invalid capture mutants must refuse sealing.
+Candidate executable GCC plugins remain unsupported: the ordinary plugin
+control actually overwrites its private source, while the capsule rejects its
+executable mapping before the plugin runs. This is not claimed as evidence of
+plugin-origin write or rename interception. Every case retains source bytes,
+refuses unissued tools and cleans its owned scratch.
+
+This component has no save, ROM/RAM, localization or profile interaction.
+It does not qualify generated-source versions/read pins, original Make
+producer ownership, nested Make/reexec or the supervised eight-query family.
+Those dependent #270 contracts and all final delivery gates remain open.
+
 ### Original source-entry observation component
 
 The internal readonly invocation can now request `observe_reads=True`. Only

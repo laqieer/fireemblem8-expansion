@@ -1058,10 +1058,35 @@ class ProbeSession:
         producer_handler=None, publication_observer=None, publication_allowed=True,
         dependency=None, native_runtime=(), read_abi=None, read_selection=None,
         native_executables=(), native_runtime_directories=(), runtime_completions=False,
+        repository_outputs=(), cwd="/repo", initial_executable=None,
     ):
         self.budget.remaining()
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
             raise MakeProbeError("incomplete/non-readonly source backing is not admitted")
+        if repository_outputs:
+            if (
+                mode != "compile" or executables is None or len(repository_outputs) != 1
+                or native_runtime or dependency is not None or producer_handler is not None
+                or initial_executable not in executables
+                or mapping_entries or metadata_validation or publication_observer is not None
+                or native_executables or native_runtime_directories or runtime_completions
+                or read_abi is not None or read_selection is not None
+                or any(item["target"] == "/" or item["target"].startswith("/repo/") for item in mounts)
+            ):
+                raise MakeProbeError("original repository outputs require the trusted compile route")
+            repository_outputs = self._output_paths(repository_outputs)
+            if cwd != "/repo":
+                for name in self.snapshot.files:
+                    self.budget.remaining()
+                    if cwd.startswith("/repo/") and name.startswith(cwd[6:] + "/"):
+                        break
+                else:
+                    raise MakeProbeError("original compiler CWD is not an existing snapshot directory")
+            mounts = [
+                item for item in mounts if item["target"] != "/repo"
+            ] + self._compiler_source_mounts(root, repository_outputs)
+        elif cwd != "/repo" or initial_executable is not None:
+            raise MakeProbeError("original compiler execution options require declared repository output")
         if self.runtime_root is not None and not native_runtime and (mode == "make" or metadata_validation):
             mounts = [
                 self._mount(self.runtime_root, "/", executable=True),
@@ -1096,6 +1121,8 @@ class ProbeSession:
             self.budget.reject("aggregate channel file budget exhausted")
         config = {
             "argv": argv, "root": str(root), "mode": mode,
+            "cwd": cwd, "initial_executable": initial_executable or argv[0],
+            "repository_outputs": ["/repo/" + name for name in repository_outputs],
             "environment": environment, "mounts": mounts, "code": list(code),
             "sources": list(sources), "enumerations": list(directories),
             "executables": executable, "report": str(report),
@@ -1736,7 +1763,8 @@ class ProbeSession:
             raise MakeProbeError("sealed native tool changed after validation")
         return binary
 
-    def _command(self, command: Command, *, compiler=None, native=None):
+    def _command(self, command: Command, *, compiler=None, native=None,
+                 original_cwd=None, original_executable=None):
         self.budget.remaining()
         if not isinstance(command, Command):
             raise MakeProbeError("registered command requires a typed Command")
@@ -1759,6 +1787,10 @@ class ProbeSession:
             programs.add("/native/tool")
         if compiler is not None:
             programs.update(compiler)
+        if original_executable is not None:
+            if compiler is None or original_executable not in compiler or original_cwd is None:
+                raise MakeProbeError("original compiler requires its trusted driver and CWD")
+            programs.add(command.argv[0])
         if command.dependency_only:
             programs.add("/usr/bin/cc")
         if (
@@ -1799,7 +1831,11 @@ class ProbeSession:
         work = self.base / f"command-{self.serial + 1}"
         root_name = f"command-root-{self.serial + 1}"
         root = self.base / root_name
-        with cleanup_scope([lambda: _remove_owned_tree(work), lambda: _remove_owned_tree(root)]):
+        repository_backing = root.parent / (root.name + "-sources")
+        with cleanup_scope([
+            lambda: _remove_owned_tree(work), lambda: _remove_owned_tree(root),
+            lambda: _remove_owned_tree(repository_backing),
+        ]):
             work.mkdir()
             output = work / "output"
             output.mkdir()
@@ -1848,8 +1884,21 @@ class ProbeSession:
                 ],
                 code=code, sources=sources, directories=directories,
                 executables=compiler, dependency=dependency,
+                **({} if original_executable is None else {
+                    "repository_outputs": outputs, "cwd": original_cwd,
+                    "initial_executable": original_executable,
+                }),
             )
             consumed = tuple(observed["consumed"])
+            if original_executable is not None:
+                from .read_epochs import native_execution_input
+                inputs = [
+                    parse_json(value.removeprefix("compiler-input:").encode("utf-8"),
+                               "original compiler execution inputs")
+                    for value in observed["accessed"] if value.startswith("compiler-input:")
+                ]
+                if inputs != [native_execution_input(list(command.argv), original_cwd)]:
+                    raise MakeProbeError("original compiler actual argv/CWD differs from its command")
             if consumed != sources:
                 raise MakeProbeError(f"declared/consumed source mismatch: declared={sources!r}, consumed={consumed!r}")
             if command.dependency_only:
@@ -1857,11 +1906,24 @@ class ProbeSession:
                 if not set(observed["code_consumed"]) <= set(code):
                     raise MakeProbeError("dependency result names undeclared header code")
                 input_identities = tuple(item for item in input_identities if item[0] in used)
+            artifact = None
+            if compiler is not None and not command.dependency_only:
+                artifact_path = (
+                    output / "tool" if original_executable is None
+                    else repository_backing / outputs[0]
+                )
+                try:
+                    regular = stat.S_ISREG(artifact_path.lstat().st_mode)
+                except FileNotFoundError as error:
+                    raise MakeProbeError("native compiler did not produce its declared output") from error
+                if not regular:
+                    raise MakeProbeError("native compiler output is not a regular file")
+                artifact = self.budget.read_bytes(artifact_path, "control")
             result = ProcessOutput(
                 completed.stdout, completed.stderr, consumed, tuple(observed["code_consumed"]),
-                None if compiler is None or command.dependency_only else self.budget.read_bytes(output / "tool", "control"),
+                artifact,
                 observed["metadata"],
-                self._capture_outputs(output, outputs),
+                () if original_executable is not None else self._capture_outputs(output, outputs),
                 input_identities,
                 tuple(observed.get("executed", ())),
             )
@@ -1992,10 +2054,64 @@ class ProbeSession:
             code=tuple(sorted(set(sources) | set(headers))),
         )
         result = self._command(command, compiler=tuple(sorted(set(executables))))
-        binary = result.artifact
+        return self._seal_native_tool(result.artifact, result.input_identities)
+
+    @terminal_failure
+    def compile_native_command(self, command: Command, *, cwd="."):
+        """Run the original compiler argv/CWD and seal its one declared ELF."""
+        if not isinstance(command, Command):
+            raise MakeProbeError("original compiler requires a typed Command")
+        Command.__post_init__(command)
+        if (
+            not command.argv
+            or command.argv[0] not in {"g++", "gcc", "/usr/bin/g++", "/usr/bin/gcc"}
+            or any(type(value) is not tuple for value in (
+                command.argv, command.code, command.sources, command.directories, command.outputs,
+            ))
+            or not command.code or len(command.outputs) != 1
+            or command.sources or command.directories or command.native_tool is not None
+            or command.dependency_only or command.publication_policy != "replace"
+            or any(name not in self.snapshot.files for name in command.code)
+        ):
+            raise MakeProbeError("unsupported original compiler command or input/output authority")
+        cwd = "/repo" if cwd == "." else "/repo/" + relative_path(cwd)
+        from .read_epochs import native_execution_input
+        native_execution_input(list(command.argv), cwd)
+        outputs = self._output_paths(command.outputs)
+        if command.argv.count("-o") != 1:
+            raise MakeProbeError("original compiler requires exactly one -o operand")
+        index = command.argv.index("-o") + 1
+        if (
+            index == len(command.argv) or not command.argv[index]
+            or command.argv[index].startswith("-")
+            or os.path.normpath(os.path.join(cwd, command.argv[index])) != "/repo/" + outputs[0]
+        ):
+            raise MakeProbeError("original compiler -o operand differs from its declared output")
+        cxx = command.argv[0] in {"g++", "/usr/bin/g++"}
+        compiler, executables = self._compiler_tools(
+            cxx, ("cc1plus" if cxx else "cc1", "collect2", "as", "ld", "nm", "strip"),
+        )
+        aliases = set(executables)
+        alias = Path("/usr/bin/g++" if cxx else "/usr/bin/gcc")
+        for _ in range(40):
+            if _trusted_runtime_path(str(alias), compiler=True) != Path(compiler):
+                raise MakeProbeError("original compiler alias selects a foreign driver")
+            aliases.add(str(alias))
+            if not alias.is_symlink():
+                break
+            target = Path(os.readlink(alias))
+            alias = Path(os.path.normpath(target if target.is_absolute() else alias.parent / target))
+        else:
+            raise MakeProbeError("original compiler alias chain exceeds its bound")
+        executables = tuple(sorted(aliases))
+        result = self._command(
+            command, compiler=executables, original_cwd=cwd, original_executable=compiler,
+        )
+        return self._seal_native_tool(result.artifact, result.input_identities)
+
+    def _seal_native_tool(self, binary, inputs):
         self._validate_native(binary)
         digest = hashlib.sha256(binary).hexdigest()
-        inputs = result.input_identities
         key = hashlib.sha256(encoded([digest, inputs])).hexdigest()
         if key not in self.native_tools:
             self.budget.charge("cache", len(encoded([digest, inputs])))
@@ -2221,6 +2337,34 @@ class ProbeSession:
                 self.budget.read_bytes(result_path, "control"), target, variables,
             )
             return completed, semantics, observed
+
+    def _compiler_source_mounts(self, root, outputs):
+        backing = root.parent / (root.name + "-sources")
+        backing.mkdir()
+        ancestors = {""} | {
+            "" if parent.as_posix() == "." else parent.as_posix()
+            for name in outputs for parent in PurePosixPath(name).parents
+        }
+        cover = set()
+        for name in self.snapshot.files.keys() | self.snapshot.gitlink_roots:
+            self.budget.remaining()
+            parts = PurePosixPath(name).parts
+            for index in range(1, len(parts) + 1):
+                prefix = "/".join(parts[:index])
+                if prefix not in ancestors:
+                    cover.add(prefix)
+                    break
+        mounts = [self._mount(backing, "/repo", writable=True)]
+        for name in sorted(cover):
+            self.budget.charge("control", 128 + len(os.fsencode(name)))
+            source, destination = self.tree / name, backing / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if source.is_dir():
+                destination.mkdir(exist_ok=True)
+            else:
+                destination.touch()
+            mounts.append(self._mount(source, "/repo/" + name))
+        return mounts
 
     def _captured_native_runtime(self, path):
         self.budget.remaining()

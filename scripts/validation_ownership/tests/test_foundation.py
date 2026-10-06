@@ -742,6 +742,256 @@ class FoundationTests(unittest.TestCase):
             replay.assert_not_called()
         self.assert_clean(session)
 
+    def test_original_compiler_preserves_relative_argv_cwd_and_output(self):
+        self.add("tool/source.cpp", (
+            '#include <stdio.h>\n#include "input.h"\n'
+            'int main() { printf("%s:%d", __FILE__, VALUE); return 0; }\n'
+        ))
+        self.add("tool/input.h", "#define VALUE 7\n")
+        command = Command(
+            ("g++", "-Wall", "-Werror", "-std=c++11", "-O2", "source.cpp", "-o", "program"),
+            code=("tool/source.cpp", "tool/input.h"), outputs=("tool/program",),
+        )
+        ordinary = subprocess.run(
+            command.argv, executable="/usr/bin/g++", cwd=self.root / "tool",
+            env=ENVIRONMENT, capture_output=True, timeout=30,
+        )
+        self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+        expected = subprocess.run(
+            [str(self.root / "tool/program")], env=ENVIRONMENT, capture_output=True, timeout=10,
+        )
+        self.assertEqual((expected.returncode, expected.stdout), (0, b"source.cpp:7"))
+        session = self.session()
+        with session:
+            tool = session.compile_native_command(command, cwd="tool")
+            self.assertEqual(tool.inputs, tuple(session.snapshot.owners(command.code)))
+            self.assertEqual(session.native(tool).stdout, expected.stdout)
+            self.assertEqual((session.tree / "tool/source.cpp").read_bytes(),
+                             (self.root / "tool/source.cpp").read_bytes())
+            self.assertFalse((session.tree / "tool/program").exists())
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_original_compiler_rejects_unowned_command_and_namespace_requests(self):
+        self.add("tool/source.cpp", "int main() { return 0; }\n")
+        command = Command(
+            ("g++", "source.cpp", "-o", "program"),
+            code=("tool/source.cpp",), outputs=("tool/program",),
+        )
+        cases = (
+            (replace(command, argv=()), "tool"),
+            (replace(command, argv=("/usr/bin/uname",)), "tool"),
+            (replace(command, outputs=()), "tool"),
+            (replace(command, outputs=("tool/source.cpp",)), "tool"),
+            (replace(command, outputs=("tool",)), "tool"),
+            (replace(command, outputs=("../program",)), "tool"),
+            (replace(command, outputs=("tool/extra",)), "tool"),
+            (replace(command, argv=("g++", "source.cpp", "-o")), "tool"),
+            (replace(command, argv=("g++", "source.cpp")), "tool"),
+            (replace(command, dependency_only=True), "tool"),
+            (replace(command, directories=("tool",)), "tool"),
+            (replace(command, code=("tool/missing.cpp",)), "tool"),
+            (replace(command, publication_policy="if-content-changed"), "tool"),
+            (command, ".."),
+            (command, "missing"),
+            (command, "tool/source.cpp"),
+        )
+        for candidate, cwd in cases:
+            session = self.session()
+            with self.subTest(command=candidate, cwd=cwd), session:
+                with self.assertRaises(MakeProbeError):
+                    session.compile_native_command(candidate, cwd=cwd)
+                self.assertTrue(session.budget.failed)
+                self.assertFalse(session.native_tools)
+            self.assert_clean(session)
+        session = self.session()
+        with session, self.assertRaisesRegex(MakeProbeError, "typed Command"):
+            session.compile_native_command(command.argv, cwd="tool")
+        self.assert_clean(session)
+
+    def test_original_c_compiler_preserves_relative_inputs(self):
+        self.add("tool/source.c", '#include <stdio.h>\nint main(void) { puts(__FILE__); return 0; }\n')
+        command = Command(
+            ("gcc", "-Wall", "-Werror", "-std=c11", "-O2", "source.c", "-o", "program"),
+            code=("tool/source.c",), outputs=("tool/program",),
+        )
+        session = self.session()
+        with session:
+            tool = session.compile_native_command(command, cwd="tool")
+            self.assertEqual(session.native(tool).stdout, b"source.c\n")
+            self.assertEqual(tool.inputs, tuple(session.snapshot.owners(command.code)))
+        self.assert_clean(session)
+
+    def test_original_compiler_layout_is_compile_only_and_snapshot_derived(self):
+        self.add("tool/source.cpp", "int main() { return 0; }\n")
+        options = {
+            "argv": ["g++", "source.cpp", "-o", "program"], "environment": ENVIRONMENT,
+            "repository_outputs": ("tool/program",), "cwd": "/repo/tool",
+            "initial_executable": "/usr/bin/g++", "executables": ("/usr/bin/g++",),
+        }
+        for changes in (
+            {"mode": "command"}, {"mode": "make"}, {"dependency": {}},
+            {"mapping_entries": (("foreign",),)}, {"metadata_validation": True},
+            {"native_runtime": (("foreign", b""),)}, {"read_abi": {}},
+            {"native_executables": ("/usr/bin/printf",)},
+            {"publication_observer": lambda *args: None},
+            {"mounts": ["/repo/tool"]}, {"mounts": ["/"]},
+        ):
+            session = self.session()
+            with self.subTest(changes=changes), session:
+                mounts = [session._mount(session.tree, "/repo")]
+                mounts.extend(session._mount(self.root, name) for name in changes.get("mounts", ()))
+                kwargs = {**options, "mode": "compile", **changes, "mounts": mounts}
+                with self.assertRaisesRegex(MakeProbeError, "trusted compile route"):
+                    session._sandbox_run(session.base / "not-launched", **kwargs)
+            self.assert_clean(session)
+
+    def test_original_compiler_binds_actual_initial_argv_not_launch_request_alone(self):
+        self.add("tool/source.cpp", "int main() { return 0; }\n")
+        command = Command(
+            ("g++", "source.cpp", "-o", "program"),
+            code=("tool/source.cpp",), outputs=("tool/program",),
+        )
+        session = self.session()
+        run = session._sandbox_run
+        def change_argv(*args, **kwargs):
+            kwargs["argv"] = ["/usr/bin/g++", *kwargs["argv"][1:]]
+            return run(*args, **kwargs)
+        with session, patch.object(session, "_sandbox_run", side_effect=change_argv):
+            with self.assertRaisesRegex(MakeProbeError, "actual argv/CWD differs"):
+                session.compile_native_command(command, cwd="tool")
+            self.assertFalse(session.native_tools)
+        self.assert_clean(session)
+
+    def test_original_compiler_refuses_candidate_executable_plugins(self):
+        plugin = self.directory / "attack.so"
+        build = subprocess.run(
+            ["/usr/bin/cc", "-shared", "-fPIC", "-Wall", "-Wextra", "-Werror",
+             str(ROOT / "scripts/validation_ownership/tests/fixtures/original_compiler_attack.c"),
+             "-o", str(plugin)], env=ENVIRONMENT, capture_output=True, timeout=30,
+        )
+        self.assertEqual(build.returncode, 0, build.stderr)
+        self.add("tool/attack.so", plugin.read_bytes())
+        source = "int main() { return 0; }\n"
+        self.add("tool/source.cpp", source)
+        command = Command(
+            ("g++", "-fplugin=./attack.so", "-fsyntax-only", "source.cpp", "-o", "program"),
+            code=("tool/attack.so", "tool/source.cpp"), outputs=("tool/program",),
+        )
+        ordinary_tool = self.directory / "ordinary-plugin/tool"
+        ordinary_tool.mkdir(parents=True)
+        (ordinary_tool / "source.cpp").write_text(source)
+        shutil.copyfile(plugin, ordinary_tool / "attack.so")
+        ordinary = subprocess.run(
+            command.argv, executable="/usr/bin/g++", cwd=ordinary_tool,
+            env=ENVIRONMENT, capture_output=True, timeout=30,
+        )
+        self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+        self.assertEqual((ordinary_tool / "source.cpp").read_bytes(), b"invalid")
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "candidate executable mmap denied"):
+                session.compile_native_command(command, cwd="tool")
+            self.assertEqual((session.tree / "tool/source.cpp").read_bytes(), source.encode())
+            self.assertFalse(session.native_tools)
+        self.assert_clean(session)
+
+    def test_original_compiler_real_writes_and_artifact_capture_boundaries(self):
+        self.add("tool/source.cpp", "int main() { return 0; }\n")
+        command = Command(
+            ("g++", "source.cpp", "-o", "program"),
+            code=("tool/source.cpp",), outputs=("tool/program",),
+        )
+        for arguments, error in (
+            (("g++", "source.cpp", "-Wl,-Map=source.cpp", "-o", "program"), "write outside"),
+            (("g++", "source.cpp", "-Wl,-Map=extra", "-o", "program"), "undeclared source metadata"),
+            (("g++", "source.cpp", "-Wl,-Map=../tool", "-o", "program"), "write outside"),
+        ):
+            session = self.session()
+            with self.subTest(arguments=arguments), session:
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    session.compile_native_command(replace(command, argv=arguments), cwd="tool")
+                self.assertEqual((session.tree / "tool/source.cpp").read_bytes(),
+                                 (self.root / "tool/source.cpp").read_bytes())
+                self.assertFalse(session.native_tools)
+            self.assert_clean(session)
+        for mutation, error in (
+            ("missing", "did not produce its declared output"),
+            ("directory", "not a regular file"),
+            ("symlink", "not a regular file"),
+            ("invalid", "did not produce a Linux x86-64 ELF"),
+        ):
+            session = self.session()
+            run = session._sandbox_run
+            def mutate_artifact(root, **kwargs):
+                result = run(root, **kwargs)
+                path = root.parent / (root.name + "-sources") / "tool/program"
+                path.unlink()
+                if mutation == "directory":
+                    path.mkdir()
+                elif mutation == "symlink":
+                    path.symlink_to("source.cpp")
+                elif mutation == "invalid":
+                    path.write_bytes(b"invalid")
+                return result
+            with self.subTest(mutation=mutation), session, patch.object(
+                session, "_sandbox_run", side_effect=mutate_artifact,
+            ):
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    session.compile_native_command(command, cwd="tool")
+                self.assertFalse(session.native_tools)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        from scripts.validation_ownership.syscall_guard import Process, Violation
+        policy = self.observation_policy(mode="compile")
+        policy.config["repository_outputs"] = ["/repo/tool/program"]
+        for path in ("/repo", "/repo/tool", "/repo/tool/source.cpp", "/repo/tool/extra"):
+            with self.subTest(path=path), self.assertRaisesRegex(Violation, "write outside"):
+                policy.check(Process("compiler"), path, "write")
+        for operation in ("read", "metadata", "write"):
+            policy.check(Process("compiler"), "/repo/tool/program", operation)
+            with self.assertRaisesRegex(Violation, "output operation denied"):
+                policy.check(Process("command"), "/repo/tool/program", operation)
+        with self.assertRaisesRegex(Violation, "output operation denied"):
+            policy.check(Process("compiler"), "/repo/tool/program", "directory")
+        self.assertEqual(policy.config["repository_outputs"], ["/repo/tool/program"])
+
+    def test_original_scaninc_compiles_original_sources_flags_cwd_and_output(self):
+        names = (
+            "scaninc.cpp", "c_file.cpp", "asm_file.cpp", "source_file.cpp",
+            "scaninc.h", "c_file.h", "asm_file.h", "source_file.h",
+        )
+        for name in names:
+            path = "tools/scaninc/" + name
+            self.add(path, (ROOT / path).read_bytes())
+        self.add("unit.c", '#include "sample.h"\n')
+        self.add("include/sample.h", "#define SAMPLE 1\n")
+        command = Command(
+            ("g++", "-Wall", "-Werror", "-std=c++11", "-O2", *names[:4], "-o", "scaninc"),
+            code=tuple("tools/scaninc/" + name for name in names),
+            outputs=("tools/scaninc/scaninc",),
+        )
+        ordinary = subprocess.run(
+            command.argv, cwd=self.root / "tools/scaninc", env=ENVIRONMENT,
+            capture_output=True, timeout=30,
+        )
+        self.assertEqual((ordinary.returncode, ordinary.stderr), (0, b""))
+        expected = subprocess.run(
+            [str(self.root / "tools/scaninc/scaninc"), "-I", "include", "unit.c"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, timeout=10,
+        )
+        self.assertEqual((expected.returncode, expected.stderr), (0, b""))
+        self.assertEqual(set(expected.stdout.split()), {b"include/sample.h"})
+        session = self.session()
+        with session:
+            tool = session.compile_native_command(command, cwd="tools/scaninc")
+            result = session.native(
+                tool, ("-I", "include", "unit.c"), sources=("unit.c", "include/sample.h"),
+            )
+            self.assertEqual((result.stdout, result.stderr), (expected.stdout, b""))
+            self.assertFalse((session.tree / "tools/scaninc/scaninc").exists())
+        self.assert_clean(session)
+
     def test_completion_expression_depth_rejects_before_nested_body_allocation(self):
         import tracemalloc
         from scripts.validation_ownership import make_lexical, read_epochs
@@ -3891,7 +4141,7 @@ class FoundationTests(unittest.TestCase):
         )
         session = self.session()
         with self.native_supervisor(body), session:
-            with self.assertRaisesRegex(MakeProbeError, "native job execution inputs differ"):
+            with self.assertRaisesRegex(MakeProbeError, "native machine tree differs from its original job inputs"):
                 session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
             self.assertTrue(session.budget.failed)
         self.assert_clean(session)
