@@ -284,6 +284,8 @@ def completion_declaration(statement):
     if assignment is not None:
         return assignment, None
     header = statement.strip(MAKE_SPACE)
+    if re.match(r"^\.SECONDEXPANSION[ \t]*:", header):
+        raise MakeProbeError("unsupported completion secondary expansion")
     if re.match(r"^(?:(?:export|override|private)[ \t]+)*define(?:[ \t]|$)", header):
         macro = DEFINE.fullmatch(header)
         if macro is None:
@@ -337,6 +339,8 @@ def references(line, *, reference_base=_make_reference_base):
                     raise MakeProbeError("computed Make supplier is not bound to native completion")
                 if name and not re.fullmatch(LITERAL_NAME, name):
                     raise MakeProbeError("unsupported Make supplier is not bound to native completion")
+                if function[0] == "call" and name in {"value", "origin", "flavor", "call"}:
+                    raise MakeProbeError("unsupported completion forwarded name-taking builtin")
                 if name:
                     names.add(name)
     names.update(name for _, _, name in _literal_metadata(line))

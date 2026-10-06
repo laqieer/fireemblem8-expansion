@@ -1883,10 +1883,44 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(completed.stdout, b"original")
         self.assert_clean(session)
 
+    def test_native_completion_secondary_and_forwarded_suppliers_refuse(self):
+        from scripts.validation_ownership import read_epochs
+        cases = [
+            (".SECONDEXPANSION:\nNAME := VALUE\nVALUE := file-shell\n"
+             "all: $$($$(NAME)) ; @v=selected; printf '%s' \"$$v\"\nfile-shell: ;\n", "selected"),
+        ]
+        for target, expected in (("value", "original"), ("origin", "file"), ("flavor", "simple"),
+                                 ("call", "original")):
+            expression = f"$(call {target},$(NAME))" if target != "call" else "$(call call,$(NAME))"
+            cases.append((
+                f"NAME := SUPPLIER\nSUPPLIER := original\nOUTPUT := {expression}\n"
+                "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n", expected,
+            ))
+        for source, expected in cases:
+            self.add("Makefile", source)
+            with self.subTest(source=source):
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, expected.encode())
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion"):
+                    read_epochs.completion_source_facts("Makefile", source.encode())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion"), session:
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assert_clean(session)
+                session = self.session()
+                with session:
+                    completed, _, _ = session._native_make_readonly("all", observe_reads=True)
+                    self.assertEqual(completed.stdout, ordinary.stdout)
+                self.assert_clean(session)
+
     def test_native_returned_archive_uses_finite_source_admission(self):
         from scripts.validation_ownership import read_epochs
         recipe = "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
         source = "NAME := VALUE\nVALUE := original\nOUTPUT := $(VALUE)\n" + recipe + "# reserved padding................\n"
+        source += "# " + "." * 200 + "\n"
         self.add("Makefile", source)
         session = self.session()
         with session:
@@ -1903,6 +1937,9 @@ class FoundationTests(unittest.TestCase):
                 "NAME := VALUE\nVALUE := original\nOUTPUT := $.\n" + recipe,
                 "NAME := VALUE\n$(NAME) := original\nOUTPUT := $(VALUE)\n" + recipe,
                 "NAME := VALUE\ndefine $(NAME)\noriginal\nendef\nOUTPUT := $(VALUE)\n" + recipe,
+                ".SECONDEXPANSION:\nNAME := VALUE\nVALUE := original\nOUTPUT := $(VALUE)\n" + recipe,
+                *("NAME := VALUE\nVALUE := original\nOUTPUT := $(call " + target + ",$(NAME))\n" + recipe
+                  for target in ("value", "origin", "flavor", "call")),
             ):
                 mutated = json.loads(json.dumps(trace))
                 opened = next(event for event in mutated["events"]

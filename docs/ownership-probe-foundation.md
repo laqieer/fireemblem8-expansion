@@ -767,6 +767,18 @@ the existing namespace launcher, run these `FoundationTests` controls:
    version-4 evaluated assignment provenance is unqualified, not silently
    ignored. Runtime buffer bytes modified by GNU are not original authored
    source and cannot borrow immutable-source authority.
+   `test_native_completion_secondary_and_forwarded_suppliers_refuse` compares
+   real ordinary GNU and native no-completion output for computed secondary
+   prerequisites and `call` forwarding to `value`, `origin`, `flavor` and
+   `call`. Completion-enabled source admission must explicitly refuse
+   `.SECONDEXPANSION` and these forwarded name-taking builtin targets rather
+   than omit suppliers. Secondary expansion is a source-level unsupported
+   completion context, not a recipe-dollar heuristic. Ordinary escaped dollars
+   in values/recipes and custom literal calls remain supported.
+   The returned-archive admission test also supplies coherent payload mutations
+   for the secondary declaration and all four forwarded targets; each must fail
+   its named admission boundary. This bounded limitation does not qualify
+   arbitrary deferred prerequisite expansion or builtin forwarding.
    Repeat the no-completion execution control with computed assignment and short
    lookup sources: genuine native output must remain `original` without an
    invented completion trace. No native evaluator, source rewrite, new budget,
