@@ -422,6 +422,27 @@ GNU/native escaped-colon, escaped-hash, recipe/hash and returned-archive control
 remain required. This restores bounded scanning cost, not runtime source
 authority; the separately bound architecture hold remains in force.
 
+Runtime effect-custody redesign is still WIP. The existing independently
+validated completion ABI also derives original `do_variable_definition`,
+`try_variable_definition` and `eval_buffer` executable spans; the ordinary,
+direct multiline-define, reader-internal and target-specific machine callers;
+and the copied eval ebuffer/floc member offsets. Derivation verifies frame
+entries, parsed-name/flavor/result instructions, unique direct calls, null
+file/size fields and the original `reading_file` anchor. It does not yet grant
+runtime completion authority or admit previously unsupported source forms.
+
+Run `test_native_runtime_effect_abi_binds_complete_machine_call_families`
+against the actually captured Make ELF. Verify each derived call targets its
+real exported callee and the eval floc is 40 bytes after its ebuffer. Mutating
+each caller opcode or function entry must refuse; mutating each supplied ABI
+coordinate must fail independent machine-operand validation. Existing real
+completion/barrier/job and foreign-ABI controls remain required. These are
+machine ABI predicates, not source spelling evidence, and are necessary to
+bind original parser effects without a second evaluator. Full nested
+entry/exit/post-modifier observations, archive and graph consumers, generated
+custody, descendants and unchanged original eight-query qualification remain
+incomplete; this ABI checkpoint is not independently deliverable.
+
 Run `test_native_readonly_reuses_captured_runtime_without_second_host_read`:
 execute two original shell/direct-printf Make queries in one session, deny a
 second host runtime acquisition and require identical real output/values,

@@ -239,6 +239,86 @@ def evaluator_target(image, source):
     return direct_call(start + call.start(1), call[1])
 
 
+def runtime_effect_abi(image, source, evaluator, ordinary_return):
+    def function(name):
+        address, extent = image.symbol(name, 2)
+        if not 0 < extent <= 65536:
+            raise ReadEpochError("runtime effect function has an unbounded code span")
+        code = image.bytes(address, extent, executable=True)
+        if not code.startswith(b"\xf3\x0f\x1e\xfa\x55\x48\x89\xe5"):
+            raise ReadEpochError("runtime effect function lacks its actual frame entry")
+        return address, extent, code
+
+    def returned(start, code, target, label):
+        calls = [
+            start + offset + 5 for offset in range(len(code) - 4)
+            if direct_call(start + offset, code[offset:offset + 5]) == target
+        ]
+        if len(calls) != 1:
+            raise ReadEpochError("runtime effect lacks one actual caller: " + label)
+        return calls[0]
+
+    definition, definition_size, _ = function("do_variable_definition")
+    trial, trial_size, trial_code = function("try_variable_definition")
+    ordinary_definition = returned(trial, trial_code, definition, "ordinary definition")
+    _unique(
+        rb"\x4c\x89\xfe\x41\x83\xe0\x07\xe8....\x4c\x89\xff\x48\x89\xc3",
+        trial_code, "ordinary parsed name/flavor and effective result",
+    )
+    evaluator_code = image.bytes(evaluator, source[0] - evaluator, executable=True)
+    define_definition = returned(evaluator, evaluator_code, definition, "multiline define")
+    _unique(
+        rb"\x44\x0f\xb7\x45.\x45\x31\xc9\x44\x89\xf9\x4c\x89\xea"
+        rb"\x48\x8d\xbd....\x44\x88\x95....\x66\x41\xc1\xe8\x07"
+        rb"\x41\x83\xe0\x07\xe8....\x4c\x89\xef\x48\x89\xc3",
+        evaluator_code, "direct define name/flavor and effective result",
+    )
+    target_returns = [
+        evaluator + offset + 5 for offset in range(len(evaluator_code) - 4)
+        if direct_call(evaluator + offset, evaluator_code[offset:offset + 5]) == trial
+        and evaluator + offset + 5 != ordinary_return
+    ]
+    if len(target_returns) != 1:
+        raise ReadEpochError("runtime effect lacks one target-specific definition caller")
+    reader_code = image.bytes(source[0], source[1] - source[0], executable=True)
+    reader_definition = returned(source[0], reader_code, definition, "reader internal definition")
+    buffer, buffer_size, buffer_code = function("eval_buffer")
+    size_store = _unique(
+        rb"\x48\x89\x45(.)\x48\xc7\x45(.)\x00\x00\x00\x00",
+        buffer_code, "pristine eval size and null file",
+    )
+    buffer_setup = _unique(
+        rb"\x48\x89\x03\x48\x8d\x7d(.)", buffer_code, "eval ebuffer argument",
+    )
+    floc_setup = _unique(
+        rb"\x48\x8d\x45(.)\x66\x0f\xef\xc0\xbe\x01\x00\x00\x00",
+        buffer_code, "eval copied floc argument",
+    )
+    ebuffer = int.from_bytes(buffer_setup[1], "little", signed=True)
+    floc = int.from_bytes(floc_setup[1], "little", signed=True)
+    if (
+        floc - ebuffer != 40
+        or int.from_bytes(size_store[1], "little", signed=True) - ebuffer != 24
+        or int.from_bytes(size_store[2], "little", signed=True) - ebuffer != 32
+    ):
+        raise ReadEpochError("runtime eval buffer fields have a foreign LP64 layout")
+    anchor = _unique(
+        rb"\x48\x8d\x1d(....)\x66\x0f\x6c\xc0", buffer_code, "eval reading_file anchor",
+    )
+    if buffer + anchor.start() + 7 + int.from_bytes(anchor[1], "little", signed=True) != image.symbol("reading_file", 1)[0]:
+        raise ReadEpochError("runtime eval floc lacks its original reading_file anchor")
+    return {
+        "definition": [definition, definition + definition_size],
+        "try_definition": [trial, trial + trial_size],
+        "eval_buffer": [buffer, buffer + buffer_size],
+        "ordinary_definition_return": ordinary_definition,
+        "define_definition_return": define_definition,
+        "reader_definition_return": reader_definition,
+        "target_assignment_return": target_returns[0],
+        "eval_ebuffer": ebuffer, "eval_floc": floc,
+    }
+
+
 def completion_abi(image, source):
     """Derive coordinates from code operands, never from a host address table."""
     begin, end = source
@@ -377,6 +457,7 @@ def completion_abi(image, source):
         "nlines": int.from_bytes(match[2], "little", signed=True),
         "loop": loop, "relied_code": relied, "flavor_table": [table, table + 28],
         "eval_return": eval_calls[0],
+        "runtime": runtime_effect_abi(image, source, evaluator, evaluator + calls[0] + 5),
     }
 
 

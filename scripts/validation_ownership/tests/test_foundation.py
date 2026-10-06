@@ -2908,6 +2908,83 @@ class FoundationTests(unittest.TestCase):
             self.assertTrue(session.budget.failed)
         self.assert_clean(session)
 
+    def test_native_runtime_effect_abi_binds_complete_machine_call_families(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", "VALUE := original\nall: ; @:\n")
+        session = self.session()
+        with session:
+            data = dict(session.make_runtime)["/usr/bin/make"]
+            image = read_epochs.Elf(data)
+            abi = session._native_read_abi(completions=True)
+            self.assertIn("runtime", abi["completion"])
+            runtime = abi["completion"]["runtime"]
+            definition, size = image.symbol("do_variable_definition", 2)
+            self.assertEqual(runtime["definition"], [definition, definition + size])
+            for key, target in (
+                ("ordinary_definition_return", definition),
+                ("define_definition_return", definition),
+                ("reader_definition_return", definition),
+                ("target_assignment_return", image.symbol("try_variable_definition", 2)[0]),
+            ):
+                returned = runtime[key]
+                self.assertEqual(
+                    read_epochs.direct_call(
+                        returned - 5, image.bytes(returned - 5, 5, executable=True),
+                    ), target,
+                )
+                mutated = bytearray(data)
+                for address, extent, offset, file_size, flags in image.loads:
+                    if address <= returned - 5 < address + file_size:
+                        mutated[offset + returned - 5 - address] = 0x90
+                        break
+                with self.subTest(call=key):
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.completion_abi(read_epochs.Elf(bytes(mutated)), abi["source"])
+            self.assertEqual(
+                runtime["eval_floc"] - runtime["eval_ebuffer"], 40,
+            )
+            for key in ("definition", "try_definition", "eval_buffer"):
+                mutated = bytearray(data)
+                entry = runtime[key][0]
+                for address, extent, offset, file_size, flags in image.loads:
+                    if address <= entry < address + file_size:
+                        mutated[offset + entry - address] = 0x90
+                        break
+                with self.subTest(entry=key):
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "actual frame entry"):
+                        read_epochs.completion_abi(read_epochs.Elf(bytes(mutated)), abi["source"])
+            begin, end = runtime["eval_buffer"]
+            buffer_code = image.bytes(begin, end - begin, executable=True)
+            zero_file = list(re.finditer(rb"\x48\xc7\x45.\x00\x00\x00\x00", buffer_code))
+            file_sites = [
+                match for match in zero_file
+                if int.from_bytes(match[0][3:4], "little", signed=True)
+                == runtime["eval_ebuffer"] + 32
+            ]
+            self.assertEqual(len(file_sites), 1)
+            file_site, = file_sites
+            mutated = bytearray(data)
+            changed_address = begin + file_site.start() + 3
+            for address, extent, offset, file_size, flags in image.loads:
+                if address <= changed_address < address + file_size:
+                    mutated[offset + changed_address - address] += 1
+                    break
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "foreign LP64 layout"):
+                read_epochs.completion_abi(read_epochs.Elf(bytes(mutated)), abi["source"])
+            self.assertEqual(read_epochs.validate_abi(abi, data), abi)
+            for key in runtime:
+                changed = parse_json(encoded(abi), "runtime ABI mutation")
+                if isinstance(runtime[key], list):
+                    changed["completion"]["runtime"][key][0] += 1
+                else:
+                    changed["completion"]["runtime"][key] += 1
+                with self.subTest(coordinate=key):
+                    with self.assertRaisesRegex(
+                        read_epochs.ReadEpochError, "independent machine operand discovery",
+                    ):
+                        read_epochs.validate_abi(changed, data)
+        self.assert_clean(session)
+
     def test_native_readonly_completion_foreign_abi_and_returned_selection_refuse(self):
         self.native_completion_fixture()
         session = self.session()
