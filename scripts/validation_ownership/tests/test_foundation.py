@@ -618,6 +618,21 @@ class FoundationTests(unittest.TestCase):
             replay.assert_not_called()
         self.assert_clean(session)
 
+    def test_completion_long_statement_preserves_source_with_bounded_scan(self):
+        from scripts.validation_ownership import make_lexical, read_epochs
+        target = "t" * (512 * 1024)
+        source = target + ": ; @v=original; printf '%s' \"$$v\" # shell comment\n"
+        started = time.monotonic()
+        self.assertEqual(make_lexical.strip_comment(source, recipe_context=True), source)
+        rows, roots, dependencies = read_epochs.completion_source_facts(
+            "Makefile", ("VALUE := original\n" + source).encode(),
+        )
+        elapsed = time.monotonic() - started
+        self.assertEqual([(row[5], row[6]) for row in rows], [("VALUE", ":=")])
+        self.assertEqual(roots, set())
+        self.assertEqual(dependencies, {"VALUE": set()})
+        self.assertLess(elapsed, 3.0)
+
     def test_native_completion_reuses_screening_without_poisoning_selection(self):
         self.add("Makefile", "VALUE := original\nall: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n")
         padding = b"# immutable unused text\n" * 32768

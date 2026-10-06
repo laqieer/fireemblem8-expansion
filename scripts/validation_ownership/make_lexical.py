@@ -264,7 +264,12 @@ def _statement_syntax(line):
 
 def _statement_boundary(line):
     for index in _statement_syntax(line):
-        if (len(line[:index]) - len(line[:index].rstrip("\\"))) % 2:
+        if line[index] not in "#:=?+!;":
+            continue
+        first = index
+        while first and line[first - 1] == "\\":
+            first -= 1
+        if (index - first) % 2:
             continue
         if line[index] == "#":
             break
@@ -280,23 +285,25 @@ def strip_comment(line, *, recipe_context=False):
         return line
     kind, boundary = _statement_boundary(line)
     syntax = set(_statement_syntax(line))
-    result, index = "", 0
+    result, index, backslashes = [], 0, 0
     while index < len(line):
         character = line[index]
         if character == "#" and index in syntax:
-            count = len(result) - len(result.rstrip("\\"))
+            count = backslashes
             if count:
-                result = result[:-count] + "\\" * (count // 2)
+                del result[-count:]
+                result.extend("\\" * (count // 2))
             if not count % 2:
                 break
         if recipe_context and kind == "rule" and index > boundary and index in syntax:
-            escaped = (len(result) - len(result.rstrip("\\"))) % 2
+            escaped = backslashes % 2
             if not escaped:
                 if character == ";":
-                    return result + line[index:]
-        result += character
+                    return "".join(result) + line[index:]
+        result.append(character)
+        backslashes = backslashes + 1 if character == "\\" else 0
         index += 1
-    return result
+    return "".join(result)
 
 
 def completion_declaration(statement):

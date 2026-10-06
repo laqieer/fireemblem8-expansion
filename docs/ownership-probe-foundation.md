@@ -410,6 +410,18 @@ exact outer cache restoration. The pre-fix repeated screening charges 787648
 bytes and fails the reuse bound. This is not unchanged eight-query qualification
 and does not remove any accounting category or increase limits.
 
+`test_completion_long_statement_preserves_source_with_bounded_scan` admits a
+512-KiB literal rule target, preserves its complete inline recipe/hash text and
+parses the preceding VALUE assignment with unchanged dependency facts. Require
+the combined comment/source scan to finish in less than three seconds on the
+host. The pre-fix control takes 27.584 seconds and fails this exact bound.
+Boundary escape checks visit separator candidates only, counting adjacent
+backslashes without copying preceding prefixes; comment construction tracks
+the current backslash run and joins accumulated characters once. Existing real
+GNU/native escaped-colon, escaped-hash, recipe/hash and returned-archive controls
+remain required. This restores bounded scanning cost, not runtime source
+authority; the separately bound architecture hold remains in force.
+
 Run `test_native_readonly_reuses_captured_runtime_without_second_host_read`:
 execute two original shell/direct-printf Make queries in one session, deny a
 second host runtime acquisition and require identical real output/values,
