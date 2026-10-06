@@ -287,6 +287,8 @@ class NativeReadTrace:
         registers = self.native.Registers()
         self.policy.charge_metadata(ctypes.sizeof(registers))
         self.native.ptrace(self.native.GETREGS, pid, 0, ctypes.byref(registers))
+        self.policy.charge_metadata(ctypes.sizeof(registers))
+        expected = self.native.Registers.from_buffer_copy(registers)
         if len(indices) != 1 or self.slots.get(indices[0]) != registers.rip:
             raise read_epochs.ReadEpochError("original read breakpoint is stale or unissued")
         index = indices[0]
@@ -355,7 +357,17 @@ class NativeReadTrace:
         else:
             raise read_epochs.ReadEpochError("original read trap has no issued slot purpose")
         registers.eflags |= 1 << 16
+        expected.eflags |= 1 << 16
+        self.policy.charge_metadata(2 * ctypes.sizeof(registers))
+        if bytes(registers) != bytes(expected):
+            raise read_epochs.ReadEpochError("original read callback changed its register state")
         self.native.ptrace(self.native.SETREGS, pid, 0, ctypes.byref(registers))
+        restored = self.native.Registers()
+        self.policy.charge_metadata(ctypes.sizeof(restored))
+        self.native.ptrace(self.native.GETREGS, pid, 0, ctypes.byref(restored))
+        self.policy.charge_metadata(2 * ctypes.sizeof(restored))
+        if bytes(restored) != bytes(expected):
+            raise read_epochs.ReadEpochError("original read register restoration failed kernel readback")
         self.arm()
 
     def source_location(self, registers, current, *, allow_eval):

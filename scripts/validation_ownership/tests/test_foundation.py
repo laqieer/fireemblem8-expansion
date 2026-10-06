@@ -1099,6 +1099,87 @@ class FoundationTests(unittest.TestCase):
                 session._native_make_readonly("all", observe_reads=True, observe_completions=True)
         self.assert_clean(session)
 
+    def test_native_readonly_actual_trap_registers_preserve_original_state(self):
+        self.native_completion_fixture()
+        output = self.directory / "actual-register-restoration.json"
+        body = (
+            "import ctypes,read_trace\n"
+            "original=read_trace.NativeReadTrace.trap\n"
+            "rows=[]\n"
+            "def observed(self,pid,state):\n"
+            " before=self.native.Registers()\n"
+            " self.native.ptrace(self.native.GETREGS,pid,0,ctypes.byref(before))\n"
+            " result=original(self,pid,state)\n"
+            " after=self.native.Registers()\n"
+            " self.native.ptrace(self.native.GETREGS,pid,0,ctypes.byref(after))\n"
+            " rows.append({name:[getattr(before,name),getattr(after,name)] for name,*_ in before._fields_})\n"
+            f" Path({str(output)!r}).write_text(json.dumps(rows))\n"
+            " return result\n"
+            "read_trace.NativeReadTrace.trap=observed\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("EARLY",), observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"recipe\n")
+            self.assertEqual(semantics["domains"]["EARLY"]["value"], "original")
+            rows = json.loads(output.read_bytes())
+            traps = [row for row in observed["read_trace"]["machine"]["events"] if row["kind"] == "trap"]
+            self.assertEqual(len(rows), len(traps))
+            self.assertEqual(
+                {row["purpose"] for row in traps},
+                {"pass-entry", "source-entry", "source-return", "assignment-completion", "pass-return"},
+            )
+            from scripts.validation_ownership.syscall_guard import Registers
+            fields = {name for name, *_ in Registers._fields_}
+            for row in rows:
+                self.assertEqual(set(row), fields)
+                for name, (before, after) in row.items():
+                    self.assertEqual(after, before | (1 << 16) if name == "eflags" else before)
+        self.assert_clean(session)
+
+    def test_native_readonly_actual_callback_register_and_restore_readback_mutations_refuse(self):
+        self.native_completion_fixture()
+        cases = (
+            (
+                "import read_trace\n"
+                "original=read_trace.NativeReadTrace.assignment_completion\n"
+                "def changed(self,registers,state):\n"
+                " result=original(self,registers,state)\n"
+                " registers.r10^=1\n"
+                " return result\n"
+                "read_trace.NativeReadTrace.assignment_completion=changed\n",
+                "original read callback changed its register state",
+            ),
+            (
+                "import ctypes,read_trace\n"
+                "original=read_trace.NativeReadTrace.trap\n"
+                "def changed(self,pid,state):\n"
+                " saved=self.native.ptrace\n"
+                " written=False\n"
+                " def wrong_readback(number,process,address=0,data=0):\n"
+                "  nonlocal written\n"
+                "  result=saved(number,process,address,data)\n"
+                "  if number==self.native.SETREGS:written=True\n"
+                "  elif number==self.native.GETREGS and written:\n"
+                "   ctypes.cast(data,ctypes.POINTER(self.native.Registers)).contents.r10^=1\n"
+                "  return result\n"
+                " self.native.ptrace=wrong_readback\n"
+                " try:return original(self,pid,state)\n"
+                " finally:self.native.ptrace=saved\n"
+                "read_trace.NativeReadTrace.trap=changed\n",
+                "original read register restoration failed kernel readback",
+            ),
+        )
+        for body, expected in cases:
+            session = self.session()
+            with self.subTest(expected=expected), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
     def test_native_readonly_source_frame_and_pin_mutations_refuse(self):
         self.add("Makefile", ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n")
         for body, expected in (

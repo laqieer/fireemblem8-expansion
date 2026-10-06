@@ -381,6 +381,28 @@ the existing namespace launcher, run these `FoundationTests` controls:
    while retaining an internally valid archive. The image admission or exact
    host request binding must reject it. These are binding mutations, not
    physical executable replacement.
+6. `test_native_readonly_actual_trap_registers_preserve_original_state`:
+   capture actual kernel general registers before and after every normal
+   pass/source/assignment-completion hardware trap in the same real fixture.
+   Require every field to remain unchanged except the intentional RF bit,
+   all issued trap purposes to be exercised, and original output/values and
+   cleanup to remain correct.
+7. `test_native_readonly_actual_callback_register_and_restore_readback_mutations_refuse`:
+   mutate the actual assignment callback's fetched register object, or alter
+   the projection of an actual kernel GETREGS readback after SETREGS while the
+   owned process remains stopped. Both must refuse explicitly before resume,
+   fail the invocation and clean owned state. Before the guard, both cases
+   returned successfully. The readback control is a projection mutation, not
+   physical arbitrary kernel corruption.
+
+The existing trap owner snapshots the original register state before callback
+interpretation, permits only the existing RF update, checks the callback
+projection, and verifies complete actual kernel readback after SETREGS before
+rearming. Snapshot, readback and comparison-copy bytes consume the unchanged
+shared metadata budget. This is normal owned hardware-trap restoration only;
+it does not qualify cancellation, arbitrary descendants/signals or generated
+source custody. No new trace version, restoration journal or execution
+authority is introduced.
 
 Existing version-1, mapped, input, job, signal, count and observer controls
 remain required. Tests use ordinary immutable fixtures and automatic teardown;
