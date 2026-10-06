@@ -768,7 +768,9 @@ signals, without interpreting a mask bit as a new or repeated grant.
 Self-SIGKILL does not reach an ordinary syscall return. The supervisor uses the
 actual ptrace exit stop instead: it requires the exact outstanding self-send
 syscall, original self-PID/signal operands and actual return register zero,
-with the kernel exit status paired to the final terminal wait. An external
+with PID/TID operands interpreted through the same signed 32-bit `pid_t`
+conversion as syscall entry, and the kernel exit status paired to the final
+terminal wait. An external
 SIGKILL while stopped before the send leaves return register `-ENOSYS` and
 explicitly refuses; an entry attempt is never terminal authorization.
 Exit stops resume before the final wait. On refusal, owned cleanup resumes
@@ -781,6 +783,14 @@ rt_sigqueueinfo, tkill, tgkill and rt_tgsigqueueinfo. The same ordinary binary
 must terminate with SIGKILL; native Make must preserve ignored status 9,
 continue to `done` and retain actual zero-result/exit-status observations on
 the same job PID. Run
+`test_native_runtime_actual_sigkill_uses_kernel_pid_t_conversion`:
+use nonzero bit 32 and all-ones upper 32 PID bits for each supported syscall;
+for tgkill and rt_tgsigqueueinfo also vary TID alone and both operands. All 14
+ordinary binaries must actually die by SIGKILL, and native ignored recipes must
+retain raw status 9 and `done`. Before correction all 14 native invocations
+refuse the successful send at exit. Upper-bit normalization must still refuse
+low-32-bit foreign, zero/broadcast and negative/group target mutations.
+Run
 `test_native_runtime_sigkill_entry_attempt_and_outcome_mutations_refuse`:
 send a real supervisor-origin SIGKILL before resuming the self-send syscall,
 require its actual `-ENOSYS` outcome and explicit refusal, then independently

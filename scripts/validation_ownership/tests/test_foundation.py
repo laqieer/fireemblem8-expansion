@@ -3995,6 +3995,40 @@ class FoundationTests(unittest.TestCase):
             self.assertFalse(session.budget.failed)
         self.assert_clean(session)
 
+    def test_native_runtime_actual_sigkill_uses_kernel_pid_t_conversion(self):
+        for number in (62, 129, 200, 234, 297):
+            modes = ("pid-high", "ones-high") if number in {62, 129, 200} else (
+                "pid-high", "tid-high", "both-high", "ones-high",
+            )
+            for mode in modes:
+                self.add("kill.c", (
+                    ROOT / "scripts/validation_ownership/tests/fixtures/native_sigkill.c"
+                ).read_bytes())
+                self.add("Makefile", "all:\n\t-@/native/tool " + str(number) + " " + mode
+                         + "\n\t@v=done; printf '%s' \"$$v\"\n")
+                session = self.session()
+                with self.subTest(number=number, mode=mode), session:
+                    tool = session.compile_native(("kill.c",))
+                    ordinary = subprocess.run(
+                        [str(tool.path), str(number), mode], env=ENVIRONMENT,
+                        capture_output=True, timeout=10,
+                    )
+                    self.assertEqual(ordinary.returncode, -signal.SIGKILL)
+                    completed, _, observed = session._native_make_readonly(
+                        "all", native_tool=tool,
+                        observe_reads=True, observe_runtime_completions=True,
+                    )
+                    self.assertEqual(completed.stdout, b"done")
+                    jobs = [
+                        parse_json(row.removeprefix("native-job:").encode(), "wide PID job")
+                        for row in observed["accessed"] if row.startswith("native-job:")
+                    ]
+                    failed = next(job for job in jobs if job["executable"] == "/native/tool")
+                    self.assertTrue(failed["ignored"])
+                    self.assertEqual(failed["terminal_status"], signal.SIGKILL)
+                    self.assertFalse(session.budget.failed)
+                self.assert_clean(session)
+
     def test_native_runtime_actual_sigkill_outcomes_cover_all_self_send_forms(self):
         for number in (62, 129, 200, 234, 297):
             self.add("kill.c", (
@@ -4048,7 +4082,10 @@ class FoundationTests(unittest.TestCase):
         self.add("Makefile", "all:\n\t-@v=ignored; kill -KILL $$$$\n"
                  "\t@v=done; printf '%s' \"$$v\"\n")
         receipt = self.directory / "sigkill-outcome.json"
-        for mode in ("foreign-entry", "rax", "syscall", "target", "signal", "pending", "terminal"):
+        for mode in (
+            "foreign-entry", "rax", "syscall", "target", "target-upper",
+            "target-zero", "target-group", "signal", "pending", "terminal",
+        ):
             body = (
                 "import syscall_guard as guard,os,errno\nentry=guard.Policy.entry\n"
                 "exit=guard.Policy.native_sigkill_exit\noriginal=guard.ptrace\narmed=set()\n"
@@ -4069,6 +4106,9 @@ class FoundationTests(unittest.TestCase):
                 f"  if {mode!r}=='rax':r.rax=(1<<64)-38\n"
                 f"  if {mode!r}=='syscall':r.orig_rax=1\n"
                 f"  if {mode!r}=='target':r.rdi=pid+100\n"
+                f"  if {mode!r}=='target-upper':r.rdi=(1<<32)|(pid+100)\n"
+                f"  if {mode!r}=='target-zero':r.rdi=1<<32\n"
+                f"  if {mode!r}=='target-group':r.rdi=(1<<64)-1\n"
                 f"  if {mode!r}=='signal':r.rsi=10\n"
                 " return result\n"
                 "changing=False\n"
@@ -4091,6 +4131,7 @@ class FoundationTests(unittest.TestCase):
             with self.subTest(mode=mode), self.native_supervisor(body), session:
                 with self.assertRaisesRegex(
                     MakeProbeError, "native terminal status differs" if mode == "terminal"
+                    else "cross-process signal target denied" if mode.startswith("target")
                     else "native SIGKILL lacks an actual successful self-send",
                 ):
                     session._native_make_readonly(

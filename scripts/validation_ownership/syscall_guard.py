@@ -622,15 +622,13 @@ class Policy:
         if (
             state.pending != ("native-signal", signal.SIGKILL)
             or state.kernel_call != number or signed(registers.rax) != 0
-            or number in {62, 129, 200} and (
-                registers.rdi != pid or registers.rsi != signal.SIGKILL
-            )
-            or number in {234, 297} and (
-                registers.rdi != pid or registers.rsi != pid or registers.rdx != signal.SIGKILL
-            )
+            or number in {62, 129, 200} and registers.rsi != signal.SIGKILL
+            or number in {234, 297} and registers.rdx != signal.SIGKILL
             or number not in {62, 129, 200, 234, 297}
         ):
             raise Violation("native SIGKILL lacks an actual successful self-send outcome")
+        targets = (registers.rdi, registers.rsi) if number in {234, 297} else (registers.rdi,)
+        self.signal_target(pid, *targets)
         state.native_sigkill_outcome = True
 
     def native_child_signal(self, pid, state):
