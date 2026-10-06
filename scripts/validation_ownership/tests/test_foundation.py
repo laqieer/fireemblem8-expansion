@@ -294,6 +294,63 @@ class FoundationTests(unittest.TestCase):
             self.assertIn("/usr/share/zoneinfo/Etc/UTC", observed["accessed"])
         self.assert_clean(session)
 
+    def test_native_readonly_default_python_home_absence_does_not_hide_installed_site(self):
+        runtime, resources = self.native_python_startup_fixture()
+        home_site = (
+            ENVIRONMENT["HOME"] + f"/.local/lib/python{sys.version_info.major}."
+            f"{sys.version_info.minor}/site-packages"
+        )
+        script = 'import importlib; print(importlib.import_module("json").dumps([1,2]))'
+        ordinary = subprocess.run(
+            ["/usr/bin/python3", "-c", script], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+        )
+        self.assertEqual(ordinary.stdout, b"[1, 2]\n")
+        self.add("Makefile", (
+            f"VALUE := $(shell /usr/bin/python3 -c {shlex.quote(script)})\n"
+            ".PHONY: all\nall: ; @v='$(VALUE)'; printf '%s\\n' \"$$v\"\n"
+        ))
+        session = self.session(runtime_files=(*resources, "/usr/share/zoneinfo/UTC", home_site))
+        with session:
+            with self.assertRaisesRegex(
+                MakeProbeError, "uncaptured Make runtime access: metadata /usr/local/lib/python",
+            ):
+                session._native_make_readonly(
+                    "all", variables=("VALUE",), native_executables=("/usr/bin/python3",),
+                    native_runtime_directories=(runtime,),
+                )
+        self.assert_clean(session)
+        session = self.session(runtime_files=(*resources, "/usr/share/zoneinfo/UTC"))
+        with session:
+            with self.assertRaisesRegex(
+                MakeProbeError, "uncaptured Make runtime access: metadata /nonexistent/.local/lib/python",
+            ):
+                session._native_make_readonly(
+                    "all", variables=("VALUE",), native_executables=("/usr/bin/python3",),
+                    native_runtime_directories=(runtime,),
+                )
+        self.assert_clean(session)
+
+    def test_native_default_home_runtime_capture_requires_actual_absence(self):
+        from scripts.validation_ownership import make_probe
+        path = ENVIRONMENT["HOME"] + (
+            f"/.local/lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages"
+        )
+        captured = make_probe._capture_runtime_input(path, ProbeBudget())
+        self.assertIsNone(captured.data)
+        self.assertIsNone(captured.mode)
+        self.assertEqual(captured.canonical, path)
+        with self.assertRaisesRegex(MakeProbeError, "outside the trusted system tool/library roots"):
+            make_probe._trusted_runtime_path(path)
+        resource = self.root / "present"
+        resource.write_bytes(b"private")
+        budget = ProbeBudget()
+        with patch.dict(make_probe.ENVIRONMENT, {"HOME": str(self.root)}), patch.object(
+            make_probe, "_trusted_runtime_path", return_value=resource,
+        ), patch.object(budget, "read_bytes", side_effect=AssertionError("present HOME data read")):
+            with self.assertRaisesRegex(MakeProbeError, "default HOME runtime probe is not an actual absence"):
+                make_probe._capture_runtime_input(str(resource), budget)
+
     def test_native_captured_file_alias_shape_and_identity_refuse(self):
         from scripts.validation_ownership import make_probe
         target = self.root / "target"

@@ -294,7 +294,7 @@ def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
     roots = (
         "/usr/bin/", "/usr/lib/", "/usr/lib64/", "/lib/", "/lib64/",
         *(("/usr/libexec/",) if compiler else ()),
-        *(("/usr/", "/bin/") if optional else ()),
+        *(("/usr/", "/bin/", ENVIRONMENT["HOME"] + "/") if optional else ()),
     )
     if not path.startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
@@ -352,6 +352,8 @@ def _capture_runtime_input(path, budget):
         before = None
         resource_before = None
     else:
+        if path.startswith(ENVIRONMENT["HOME"] + "/"):
+            raise MakeProbeError("default HOME runtime probe is not an actual absence")
         resource_before = before
         if stat.S_ISLNK(before.st_mode):
             target = os.readlink(path)

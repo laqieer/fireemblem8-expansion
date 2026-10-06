@@ -536,6 +536,21 @@ interaction applies. Start with a clean fixture and run:
    then reaches and explicitly refuses `/usr/share/zoneinfo/UTC`; that final
    symlink has not been declared. This is startup progress, not successful dynamic
    import or qualification of the original nonisolated invocations.
+   Explicit optional probes beneath the fixed sandbox `HOME=/nonexistent`
+   may capture genuine absence with the same ancestry and before/after checks.
+   Present resources there refuse before any byte acquisition; no home mount,
+   user data, enumeration or executable authority is granted.
+   `test_native_default_home_runtime_capture_requires_actual_absence` checks
+   actual missing metadata and unchanged executable roots, plus private
+   present-file refusal with only path admission substituted.
+   `test_native_readonly_default_python_home_absence_does_not_hide_installed_site`
+   runs the genuine default `python3 -c` command, not an isolated substitute.
+   Ordinary Python returns `[1, 2]`; without the exact HOME site declaration
+   confinement must refuse that real metadata probe. Declaring its actual
+   absence reaches the existing `/usr/local/lib/pythonM.N/dist-packages`
+   namespace, which still refuses rather than being reported missing.
+   Default site startup remains unqualified; this is an explicit negative,
+   not successful nonisolated execution.
    `test_native_readonly_python_captured_alias_and_dynamic_import` additionally
    declares that exact UTC resource, runs the fixture's genuine Python command,
    and requires `[1, 2]` from actual JSON dynamic import and recipe output plus
