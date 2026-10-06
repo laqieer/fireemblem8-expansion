@@ -544,12 +544,14 @@ class NativeReadTrace:
                         raise read_epochs.ReadEpochError(
                             "opened source is outside the exact readonly snapshot inventory"
                         )
-                    rows, references, _ = read_epochs.completion_source_facts(
+                    rows, references, dependencies = read_epochs.completion_source_facts(
                         relative, bytes(data),
                         checkpoint=self.deadline, count_limit=self.config["observation_count"],
                         charge=self.policy.charge_metadata,
                     )
-                    read_epochs.require_completion_reference_closure(references, self.selection_names)
+                    read_epochs.require_completion_reference_closure(
+                        references, self.selection_names, dependencies=dependencies,
+                    )
                     sites = [site for site in rows if site[5] in self.selection_names]
                     selection_index = MappingProxyType({tuple(site[:5]): site for site in sites})
                 current.update(

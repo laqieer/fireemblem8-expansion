@@ -530,9 +530,13 @@ requires both `observe_reads=True` and `observe_completions=True`. It decodes
 the existing version-2 completion ABI from captured private Make bytes and
 returns the existing version-4 trace. The complete Snapshot inventory is
 screened with the original bounded text/binary/UTF-8 rules; conservative
-reference names select ordinary assignment sites. Opened source bytes, mode
+reference names select literal assignment sites. Screening, native assignment
+sites, references, metadata/call/conditional consumers and selection validation
+share one literal-name grammar: optional leading dot, initial ASCII letter or
+underscore, then ASCII letters/digits/underscore/dot/hyphen. Opened source bytes, mode
 and extent must match that frozen snapshot inventory, and references must be
-covered. Publication origins are forbidden rather than serviced by a null
+covered, including assignment RHS dependencies rather than only roots.
+Publication origins are forbidden rather than serviced by a null
 publication fallback.
 
 At the actual owned, parked Make read-entry hardware stop, the supervisor
@@ -568,6 +572,15 @@ the existing namespace launcher, run these `FoundationTests` controls:
 3. `test_native_readonly_completion_inventory_misbind_and_invalid_options_refuse`:
    a valid-shaped but wrong source digest must fail against the actual pin;
    completion without reads and nonboolean requests must fail before launch.
+   Also run `test_native_readonly_literal_supplier_names_are_not_omitted` and
+   `test_native_readonly_literal_metadata_conditional_and_selection_closure`
+   (#270): independent `.FLAGS` parenthesis/brace/value, `.SHELLFLAGS`,
+   internal-dot/hyphen, origin/flavor/call and conditional fixtures must retain
+   their actual supplying assignment completions, not merely correct final
+   stdout. The pre-fix six supplier controls return correct values but omit
+   those suppliers. Removing a supplier from the selected closure must refuse
+   in both live-source and archive validation, including assignment RHS
+   references. The existing underscore and scoped-variable controls remain.
 4. `test_native_readonly_completion_failed_make_has_no_successful_archive`:
    a real source error must retain Make's status and diagnostic, fail the
    invocation and clean active pins without a successful trace.

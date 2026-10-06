@@ -1277,6 +1277,82 @@ class FoundationTests(unittest.TestCase):
                 })
             self.assert_clean(session)
 
+    def test_native_readonly_literal_supplier_names_are_not_omitted(self):
+        cases = (
+            (".FLAGS", "$(.FLAGS)", "original"),
+            (".FLAGS", "${.FLAGS}", "original"),
+            (".FLAGS", "$(value .FLAGS)", "original"),
+            (".SHELLFLAGS", "$(.SHELLFLAGS)", "-c"),
+            ("WITH.DOT", "$(WITH.DOT)", "original"),
+            ("WITH-DASH", "$(WITH-DASH)", "original"),
+        )
+        for name, expression, expected in cases:
+            self.add("Makefile", (
+                f"{name} := {expected}\nVALUE := {expression}\n"
+                "REFERENCES = $(VALUE)\n"
+                "all: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n"
+            ))
+            session = self.session()
+            with self.subTest(name=name, expression=expression), session:
+                completed, semantics, observed = session._native_make_readonly(
+                    "all", variables=("VALUE",), observe_reads=True, observe_completions=True,
+                )
+                self.assertEqual(completed.stdout, expected.encode())
+                self.assertEqual(semantics["domains"]["VALUE"]["value"], expected)
+                bindings = {
+                    row["name"]: row["variable"][1] for row in observed["read_trace"]["events"]
+                    if row["kind"] == "assignment-completion"
+                }
+                self.assertEqual(bindings.get(name), expected)
+            self.assert_clean(session)
+
+    def test_native_readonly_literal_metadata_conditional_and_selection_closure(self):
+        from scripts.validation_ownership import read_epochs
+        cases = (
+            ("$(origin .FLAGS)", "file"),
+            ("$(flavor .FLAGS)", "simple"),
+            ("$(call .FLAGS)", "original"),
+            ("ifdef .FLAGS\nVALUE := selected\nelse\nVALUE := wrong\nendif", "selected"),
+        )
+        for expression, expected in cases:
+            assignment = expression if expression.startswith("ifdef") else f"VALUE := {expression}"
+            self.add("Makefile", (
+                f".FLAGS := original\n{assignment}\nREFERENCES = $(VALUE)\n"
+                "all: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n"
+            ))
+            session = self.session()
+            with self.subTest(expression=expression), session:
+                completed, _, observed = session._native_make_readonly(
+                    "all", observe_reads=True, observe_completions=True,
+                )
+                self.assertEqual(completed.stdout, expected.encode())
+                bindings = {
+                    row["name"]: row["variable"][1] for row in observed["read_trace"]["events"]
+                    if row["kind"] == "assignment-completion"
+                }
+                self.assertEqual(bindings.get(".FLAGS"), "original")
+                trace = json.loads(json.dumps(observed["read_trace"]))
+                trace["selection"]["names"].remove(".FLAGS")
+                with self.assertRaisesRegex(MakeProbeError, "outside the frozen name closure"):
+                    read_epochs.validate_trace(
+                        trace, trace["scope"], count_limit=session.budget.limits.observation_count,
+                        file_limit=session.budget.limits.file_bytes,
+                        reserve=lambda size: session.budget.charge("control", size),
+                    )
+            self.assert_clean(session)
+        self.add("Makefile", ".FLAGS := original\nVALUE := $(.FLAGS)\nall: ; @:\n")
+        session = self.session()
+        with session:
+            original = session._native_completion_selection
+            def omit():
+                selection = original()
+                selection["names"].remove(".FLAGS")
+                return selection
+            with patch.object(session, "_native_completion_selection", side_effect=omit):
+                with self.assertRaisesRegex(MakeProbeError, "outside the frozen name closure"):
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+        self.assert_clean(session)
+
     def test_native_trace_count_shares_filesystem_event_machine_and_trap_limit(self):
         from scripts.validation_ownership.read_trace import NativeReadTrace
         from scripts.validation_ownership.syscall_guard import Process, Violation

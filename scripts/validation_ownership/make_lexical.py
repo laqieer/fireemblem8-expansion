@@ -13,19 +13,21 @@ else:
 
 
 IDENTIFIER = r"[A-Za-z_][A-Za-z0-9_]*"
+LITERAL_NAME = r"\.?[A-Za-z_][A-Za-z0-9_.-]*"
 SHORT_REFERENCE_CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_"
+LITERAL_NAME_CHARACTERS = SHORT_REFERENCE_CHARACTERS + "0123456789.-"
 
 
 REFERENCE = re.compile(
-    rf"(?<!\$)\$(?:\((?P<paren>{IDENTIFIER})(?=[:)])"
-    rf"|\{{(?P<brace>{IDENTIFIER})(?=[:}}])|(?P<short>[{SHORT_REFERENCE_CHARACTERS}]))"
+    rf"(?<!\$)\$(?:\((?P<paren>{LITERAL_NAME})(?=[:)])"
+    rf"|\{{(?P<brace>{LITERAL_NAME})(?=[:}}])|(?P<short>[{SHORT_REFERENCE_CHARACTERS}]))"
 )
 
 
 SCOPED = re.compile(r"(?<!\$)\$(?:\(([@%*+<?^|](?:D|F)?|[0-9])\)|\{([@%*+<?^|](?:D|F)?|[0-9])\}|([@%*+<?^|0-9]))")
 
 
-CONDITIONAL = re.compile(rf"^\s*(?:ifdef|ifndef)\s+({IDENTIFIER})")
+CONDITIONAL = re.compile(rf"^\s*(?:ifdef|ifndef)\s+({LITERAL_NAME})")
 
 
 ASSIGNMENT = re.compile(
@@ -42,13 +44,13 @@ TARGET_ASSIGNMENT = re.compile(
 
 MODE_ASSIGNMENT, MODE_TARGET_ASSIGNMENT = (
     re.compile(pattern.pattern.replace(
-        rf"(?P<name>{IDENTIFIER})", rf"(?P<name>(?:{IDENTIFIER}|\.[A-Za-z_][A-Za-z0-9_]*))",
+        rf"(?P<name>{IDENTIFIER})", rf"(?P<name>{LITERAL_NAME})",
     ))
     for pattern in (ASSIGNMENT, TARGET_ASSIGNMENT)
 )
 
 
-DEFINE = re.compile(rf"^\s*(?:(?:export|override|private)\s+)*define\s+({IDENTIFIER})")
+DEFINE = re.compile(rf"^\s*(?:(?:export|override|private)\s+)*define\s+({LITERAL_NAME})")
 
 
 MAKE_SPACE = " \t\r\n\v\f"
@@ -128,7 +130,7 @@ def _make_expression_spans(
 
 def _literal_metadata(expression):
     for start, stop, body in _make_expression_spans(expression):
-        match = re.fullmatch(r"(?:origin|flavor|value)[ \t\r\n\v\f]+(" + IDENTIFIER + ")", body)
+        match = re.fullmatch(r"(?:origin|flavor|value)[ \t\r\n\v\f]+(" + LITERAL_NAME + ")", body)
         if match:
             yield start, stop, match[1]
 
@@ -268,13 +270,13 @@ def references(line, *, reference_base=_make_reference_base):
     names = set()
     for start, stop, body in _make_expression_spans(line, short=True):
         name = reference_base(body)
-        if re.fullmatch(IDENTIFIER, name) or SCOPED.fullmatch("$(" + name + ")"):
+        if re.fullmatch(LITERAL_NAME, name) or SCOPED.fullmatch("$(" + name + ")"):
             names.add(name)
         else:
             function = _make_function(line[start:stop])
             if function is not None and function[0] == "call":
                 name = reference_base(function[1][0].lstrip(MAKE_SPACE), call=True)
-                if re.fullmatch(IDENTIFIER, name):
+                if re.fullmatch(LITERAL_NAME, name):
                     names.add(name)
     names.update(name for _, _, name in _literal_metadata(line))
     conditional = CONDITIONAL.match(line)

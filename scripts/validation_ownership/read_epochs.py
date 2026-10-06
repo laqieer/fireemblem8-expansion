@@ -596,7 +596,7 @@ def completion_reference_names(data, *, names=None, checkpoint=lambda: None, cou
     def retain(name):
         # A longer maximal token cannot be an admitted literal name. Do not
         # split it into invented shorter references.
-        if len(name) <= 128 and name not in names:
+        if len(name) <= 128 and re.fullmatch(make_lexical.LITERAL_NAME, name) and name not in names:
             if count_limit is not None and len(names) >= count_limit:
                 raise ReadEpochError("completion reference names exceed observation bound")
             charge(128 + len(name))
@@ -608,8 +608,7 @@ def completion_reference_names(data, *, names=None, checkpoint=lambda: None, cou
             if (index - start) % 4096 == 0:
                 checkpoint()
             character = text[index] if index < stop else ""
-            letter = bool(character) and character in make_lexical.SHORT_REFERENCE_CHARACTERS
-            if letter or length and character and character in "0123456789":
+            if character and character in make_lexical.LITERAL_NAME_CHARACTERS:
                 length += 1
                 if length <= 128:
                     token.append(character)
@@ -647,7 +646,8 @@ def completion_reference_names(data, *, names=None, checkpoint=lambda: None, cou
     checkpoint()
     collapsed = make_lexical._collapse_make_continuations(text.replace("\r\n", "\n"))
     for match in re.finditer(
-        r"(?<![A-Za-z0-9_])(?:ifdef|ifndef)\s+([A-Za-z_][A-Za-z0-9_]*)", collapsed,
+        rf"(?<![{make_lexical.LITERAL_NAME_CHARACTERS}])(?:ifdef|ifndef)\s+({make_lexical.LITERAL_NAME})",
+        collapsed,
     ):
         checkpoint()
         retain(match[1])
@@ -719,12 +719,15 @@ def completion_sites(path, data, names, *, checkpoint=lambda: None, count_limit=
     return [row for row in rows if row[5] in selected]
 
 
-def require_completion_reference_closure(references, selected_names):
+def require_completion_reference_closure(references, selected_names, *, dependencies=None):
     if any(
         name not in selected_names and make_lexical.SCOPED.fullmatch("$(" + name + ")") is None
         for name in references
     ):
         raise ReadEpochError("opened source adds a consumer outside the frozen name closure")
+    if dependencies is not None:
+        for names in dependencies.values():
+            require_completion_reference_closure(names, selected_names)
 
 
 def statement_at(data, start, nlines, *, checkpoint=lambda: None, count_limit=None):
@@ -794,7 +797,7 @@ def validate_completion_sites(selection, *, count_limit, file_limit):
             or any(type(row[index]) is not int or not 1 <= row[index] <= file_limit for index in (2, 3, 4))
             or row[4] < row[3]
             or not isinstance(row[5], str) or not 1 <= len(row[5].encode()) <= 128
-            or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]*", row[5]) is None
+            or re.fullmatch(make_lexical.LITERAL_NAME, row[5]) is None
             or len(row[5].encode()) > 128
             or row[6] not in {":=", "::=", "=", "?=", "+=", "!="}
             or not isinstance(row[7], str) or not re.fullmatch("[0-9a-f]{64}", row[7])
@@ -851,7 +854,7 @@ def validate_completion_selection(selection, *, count_limit, file_limit):
     try:
         valid_names = names == sorted(set(names)) and all(
             isinstance(name, str) and 1 <= len(name.encode("utf-8", "strict")) <= 128
-            and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]*", name) is not None
+            and re.fullmatch(make_lexical.LITERAL_NAME, name) is not None
             for name in names
         )
     except UnicodeEncodeError as error:
@@ -1466,11 +1469,13 @@ def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size
                         ):
                             raise ReadEpochError("completion source open lacks exact snapshot/publication custody")
                         data = base64.b64decode(source["data"], validate=True)
-                        rows, references, _ = completion_source_facts(
+                        rows, references, dependencies = completion_source_facts(
                             path, data, checkpoint=lambda: reserve(0),
                             count_limit=count_limit, charge=reserve,
                         )
-                        require_completion_reference_closure(references, selected_names)
+                        require_completion_reference_closure(
+                            references, selected_names, dependencies=dependencies,
+                        )
                         sites = [item for item in rows if item[5] in selected_names]
                         opened_paths[event["visit"]] = path
                         opened_sites[event["visit"]] = {tuple(site): site for site in sites}
