@@ -3886,6 +3886,115 @@ class FoundationTests(unittest.TestCase):
                 self.assertFalse(session.budget.failed)
             self.assert_clean(session)
 
+    def pending_exec_fixture(self, argument=""):
+        self.add("pending.c", (
+            ROOT / "scripts/validation_ownership/tests/fixtures/native_pending_exec.c"
+        ).read_bytes())
+        self.add("Makefile", "all:\n\t@/native/tool " + argument
+                 + "\n\t@v=done; printf '%s' \"$$v\"\n")
+
+    def test_native_runtime_pending_self_signals_survive_exec_not_fork(self):
+        from signal import SIGUSR1, SIGUSR2, SIGPIPE
+        body = (
+            "import syscall_guard as guard\noriginal=guard.Policy.native_exec_signals\n"
+            "def observed(self,pid,state):\n"
+            " with open(f'/proc/{pid}/status','rb') as stream:data=stream.read(4097)\n"
+            " self.charge_metadata(len(data));mask=self.pending_signal_mask(data)\n"
+            " before=sorted(state.native_signals)\n"
+            " result=original(self,pid,state)\n"
+            " self.observe('accessed','exec-signals:'+guard.encoded({"
+            "'pid':pid,'generation':state.native_execs,'before':before,"
+            "'after':sorted(state.native_signals),'mask':mask}).decode('ascii'))\n"
+            " return result\nguard.Policy.native_exec_signals=observed\n"
+        )
+        for argument in ("", "queued", "pipe", "fork", "ignored"):
+            self.pending_exec_fixture(argument)
+            session = self.session()
+            with self.subTest(argument=argument), self.native_supervisor(body), session:
+                tool = session.compile_native(("pending.c",))
+                ordinary = subprocess.run(
+                    [str(tool.path), *([argument] if argument else [])],
+                    env=ENVIRONMENT, capture_output=True, timeout=10,
+                )
+                self.assertEqual(ordinary.returncode, 0)
+                completed, _, observed = session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual(completed.stdout, b"done")
+                states = [
+                    parse_json(row.removeprefix("exec-signals:").encode(), "actual exec signal state")
+                    for row in observed["accessed"] if row.startswith("exec-signals:")
+                ]
+                jobs = [
+                    parse_json(row.removeprefix("native-job:").encode(), "signal job")
+                    for row in observed["accessed"] if row.startswith("native-job:")
+                ]
+                job = next(job for job in jobs if job["executable"] == "/native/tool")
+                if argument == "fork":
+                    child = next(event["child"] for event in job["tree"] if event["kind"] == "fork")
+                    child_state = next(state for state in states if state["pid"] == child)
+                    self.assertEqual(child_state, {
+                        "pid": child, "generation": 1, "before": [], "after": [], "mask": 0,
+                    })
+                else:
+                    number = SIGPIPE if argument == "pipe" else SIGUSR1
+                    own = {
+                        state["generation"]: state for state in states if state["pid"] == job["pid"]
+                    }
+                    self.assertEqual(set(own), {1, 2})
+                    self.assertEqual(
+                        own[2]["before"], [number, SIGUSR2] if argument == "ignored" else [number],
+                    )
+                    self.assertEqual(own[2]["after"], [number])
+                    self.assertTrue(own[2]["mask"] & (1 << (number - 1)))
+                    if argument == "ignored":
+                        self.assertFalse(own[2]["mask"] & (1 << (SIGUSR2 - 1)))
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_exec_pending_masks_and_foreign_signal_refuse(self):
+        mutations = (
+            "data=data.replace(b'SigPnd:',b'Absent:')",
+            "data=data.replace(b'ShdPnd:',b'SigPnd:')",
+            "data=data.replace(b'ShdPnd:',b'ShdPnd: invalid')",
+            "data=b''",
+            "data=b'x'*4097",
+            "data=None",
+        )
+        for mutation in mutations:
+            self.pending_exec_fixture()
+            body = (
+                "import syscall_guard as guard\noriginal=guard.Policy.pending_signal_mask\n"
+                "def changed(data):\n"
+                f" {mutation}\n"
+                " return original(data)\nguard.Policy.pending_signal_mask=staticmethod(changed)\n"
+            )
+            session = self.session()
+            with self.subTest(mutation=mutation), self.native_supervisor(body), session:
+                tool = session.compile_native(("pending.c",))
+                with self.assertRaisesRegex(MakeProbeError, "native pending-signal status"):
+                    session._native_make_readonly(
+                        "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        self.pending_exec_fixture()
+        body = (
+            "import syscall_guard as guard,os,signal\noriginal=guard.Policy.native_exec_signals\n"
+            "def foreign(self,pid,state):\n"
+            " if state.native_signals:os.kill(pid,signal.SIGUSR2)\n"
+            " return original(self,pid,state)\nguard.Policy.native_exec_signals=foreign\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            tool = session.compile_native(("pending.c",))
+            with self.assertRaisesRegex(MakeProbeError, "sandbox signal 12"):
+                session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
     def test_native_runtime_undeclared_descendant_images_refuse_before_exec(self):
         for command in (
             "exec /usr/bin/false",

@@ -561,6 +561,33 @@ class Policy:
             event={**event}, sha256=hashlib.sha256(encoded(event)).hexdigest(),
         )
 
+    @staticmethod
+    def pending_signal_mask(data):
+        if not isinstance(data, bytes) or not 0 < len(data) <= 4096:
+            raise Violation("native pending-signal status exceeds its actual extent")
+        result = 0
+        for name in (b"SigPnd:", b"ShdPnd:"):
+            rows = [line.split() for line in data.splitlines() if line.startswith(name)]
+            if (
+                len(rows) != 1 or len(rows[0]) != 2
+                or re.fullmatch(b"[0-9a-fA-F]{16}", rows[0][1]) is None
+            ):
+                raise Violation("native pending-signal status has an invalid kernel mask")
+            result |= int(rows[0][1], 16)
+        return result
+
+    def native_exec_signals(self, pid, state):
+        if self.read_trace is None or self.read_trace.version != 5 or not state.native_signals:
+            state.native_signals.clear()
+            return
+        with open(f"/proc/{pid}/status", "rb") as stream:
+            data = stream.read(4097)
+        self.charge_metadata(len(data))
+        pending = self.pending_signal_mask(data)
+        state.native_signals.intersection_update(
+            number for number in tuple(state.native_signals) if pending & (1 << (number - 1))
+        )
+
     def native_child_signal(self, pid, state):
         if self.read_trace is None or self.read_trace.version != 5:
             return False
@@ -2505,7 +2532,7 @@ def supervise(config, drop_privileges):
             )
             state.observer_ranges = ()
             state.observer_ready = False
-            state.native_signals.clear()
+            policy.native_exec_signals(stopped, state)
             state.delivery_signal = 0
             state.native_delivered = 0
             state.memory_reservation = 0

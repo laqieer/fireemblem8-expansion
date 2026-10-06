@@ -694,6 +694,36 @@ and owned cleanup. The earlier supervisor deadline allows its failure report
 to be decoded within the unchanged host budget; this is a cancellation control,
 not aggregate-budget qualification.
 
+Version-5 native exec reconciles existing self-signal grants against actual
+kernel `SigPnd` and `ShdPnd` masks at the owned exec stop. Only already
+authenticated grants that remain pending survive. Both masks must occur exactly
+once as 64-bit hex fields in a bounded status capture; those bytes are charged
+to existing observation accounting. This neither grants a foreign signal nor
+retains a successful-but-discarded signal. Forked children still start without
+their parent's pending grants. Delivery/termination markers reset as before,
+and actual sender/code checking remains required at delivery. Version 4 retains
+its existing exec boundary.
+
+Run `test_native_runtime_pending_self_signals_survive_exec_not_fork`: compile
+`scripts/validation_ownership/tests/fixtures/native_pending_exec.c` through the
+existing owned native route.
+Blocked self-kill, queued self-SIGUSR1 and actual closed-pipe EPIPE/SIGPIPE must
+survive same-PID exec, then reach their handler on unblock, matching the same
+program's ordinary host result. Bind actual kernel pending masks and grant
+states to the exec generation, not the transport collection's ordering.
+A forked child must inherit neither the pending signal nor its grant. A
+blocked self-SIGUSR2 discarded by changing its disposition to ignored must
+lose its grant at exec while the still-pending SIGUSR1 survives. The pre-fix
+kill/queued/pipe cases refuse with signals 10/10/13 instead of succeeding.
+Run `test_native_runtime_exec_pending_masks_and_foreign_signal_refuse`:
+missing/duplicate/malformed masks, empty/oversized/nonbyte status captures must
+refuse; a real foreign SIGUSR2 sent at the owned exec stop must also refuse
+rather than being granted by its pending bit. Capture substitutions are decoder
+controls, not claims of physical `/proc` corruption. Require owned cleanup,
+and retain failed queued-signal rollback and actual hardware parity controls.
+These cases do not qualify generated versions, nested Make or the original
+eight-query budget.
+
 Run `test_native_readonly_reuses_captured_runtime_without_second_host_read`:
 execute two original shell/direct-printf Make queries in one session, deny a
 second host runtime acquisition and require identical real output/values,
