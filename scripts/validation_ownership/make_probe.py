@@ -613,6 +613,7 @@ class ProbeSession:
         self.mappings = {}
         self.native_tools = {}
         self.native_runtimes = {}
+        self.native_selection = None
         self.published_sources = {}
         self.published_versions = {}
         self.publication_serial = 0
@@ -708,6 +709,7 @@ class ProbeSession:
         previous = (
             self.loader, self.snapshot, self.tree, self.cache, self.mappings, self.native_tools,
             self.native_runtimes,
+            self.native_selection,
         )
         cache, mappings, tools = {}, {}, {}
         runtimes = {}
@@ -721,7 +723,8 @@ class ProbeSession:
                     raise error
                 self._views.pop()
                 (self.loader, self.snapshot, self.tree,
-                 self.cache, self.mappings, self.native_tools, self.native_runtimes) = previous
+                 self.cache, self.mappings, self.native_tools, self.native_runtimes,
+                 self.native_selection) = previous
 
         try:
             self.budget.plan(1)
@@ -751,8 +754,9 @@ class ProbeSession:
                 try:
                     self._views.append(previous)
                     (self.loader, self.snapshot, self.tree,
-                     self.cache, self.mappings, self.native_tools, self.native_runtimes) = (
-                        loader, snapshot, tree, cache, mappings, tools, runtimes,
+                     self.cache, self.mappings, self.native_tools, self.native_runtimes,
+                     self.native_selection) = (
+                        loader, snapshot, tree, cache, mappings, tools, runtimes, None,
                     )
                     selected = True
                 finally:
@@ -769,6 +773,7 @@ class ProbeSession:
             self.mappings.clear()
             self.native_tools.clear()
             self.native_runtimes.clear()
+            self.native_selection = None
             self.published_sources.clear()
             self.published_versions.clear()
             self.generated_paths.clear()
@@ -782,7 +787,7 @@ class ProbeSession:
             self.runtime_root = None
             self.snapshot = None
             self.loader.live_modes.clear()
-            for loader, snapshot, tree, cache, mappings, tools, runtimes in self._views:
+            for loader, snapshot, tree, cache, mappings, tools, runtimes, selection in self._views:
                 loader.live_modes.clear()
                 cache.clear()
                 mappings.clear()
@@ -2189,6 +2194,16 @@ class ProbeSession:
 
     def _native_completion_selection(self):
         from . import read_epochs
+        self.budget.remaining()
+        if self.base is None or self.snapshot is None:
+            raise MakeProbeError("native completion selection requires an active snapshot view")
+        if self.native_selection is not None:
+            self.budget.charge("cache", len(self.native_selection))
+            selection = parse_json(self.native_selection, "cached native completion selection")
+            return read_epochs.validate_completion_selection(
+                selection, count_limit=self.budget.limits.observation_count,
+                file_limit=self.budget.limits.file_bytes,
+            )
         ordered = sorted(self.snapshot.files.items())
         if len(ordered) > self.budget.limits.observation_count:
             self.budget.reject("completion source inventory exceeds observation count")
@@ -2250,6 +2265,9 @@ class ProbeSession:
             selection, count_limit=self.budget.limits.observation_count,
             file_limit=self.budget.limits.file_bytes,
         )
+        captured = encoded(selection)
+        self.budget.charge("cache", len(captured))
+        self.native_selection = captured
         return selection
 
     def _native_read_abi(self, *, completions=False):

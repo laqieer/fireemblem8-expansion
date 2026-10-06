@@ -388,8 +388,27 @@ rather than rereading the live host. Every invocation still gets fresh readonly
 backing and actual source/dispatch/job/machine observations under the same
 cumulative deadline and budgets. Nested `select_view` isolates captures,
 restores the outer objects and clears selected caches; session failure/exit
-clears all runtime captures. ABI decoding and source selection are not cached
-by this component.
+clears all runtime captures. ABI decoding remains per invocation.
+
+Completion screening retains one validated encoded selection per immutable
+view. First acquisition charges the source scan and both the returned selection
+and retained bytes; reuse charges a fresh decoded selection instead of scanning
+the same bytes again. Each invocation still validates opened sources and
+produces fresh actual observations. Nested views isolate this cache and restore
+the outer bytes; failure/exit drops it. Mutating a returned dictionary cannot
+alter the next request.
+
+Run `test_native_completion_reuses_screening_without_poisoning_selection`:
+capture a 786432-byte unused text input, require first screening to charge at
+least its size, then require reuse to charge at least the serialized selection
+but less than that input. Mutate returned names and an inventory digest and
+require an unchanged next selection, two real original Make outputs/values,
+unchanged deadline/limits and refusal after actual budget exhaustion.
+`test_native_completion_screening_view_isolation_and_restoration` exercises
+different BASE/CURRENT names in nested immutable views, real BASE execution and
+exact outer cache restoration. The pre-fix repeated screening charges 787648
+bytes and fails the reuse bound. This is not unchanged eight-query qualification
+and does not remove any accounting category or increase limits.
 
 Run `test_native_readonly_reuses_captured_runtime_without_second_host_read`:
 execute two original shell/direct-printf Make queries in one session, deny a

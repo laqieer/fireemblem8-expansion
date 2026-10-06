@@ -88,6 +88,7 @@ class FoundationTests(unittest.TestCase):
         self.assertFalse(session.mappings)
         self.assertFalse(session.native_tools)
         self.assertFalse(session.native_runtimes)
+        self.assertIsNone(session.native_selection)
         self.assertFalse(session._views)
         self.assertFalse(session.make_runtime)
         self.assertFalse(session.runtime_inputs)
@@ -615,6 +616,70 @@ class FoundationTests(unittest.TestCase):
             ]
             self.assertEqual(sorted(executed), sorted((row["sequence"], row["pid"]) for row in jobs))
             replay.assert_not_called()
+        self.assert_clean(session)
+
+    def test_native_completion_reuses_screening_without_poisoning_selection(self):
+        self.add("Makefile", "VALUE := original\nall: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n")
+        padding = b"# immutable unused text\n" * 32768
+        self.add("notes.txt", padding)
+        session = self.session()
+        with session:
+            deadline, limits = session.budget.deadline, session.budget.limits
+            before = sum(session.budget.bytes.values())
+            first = session._native_completion_selection()
+            initial_cost = sum(session.budget.bytes.values()) - before
+            expected = encoded(first)
+            self.assertGreaterEqual(initial_cost, len(padding))
+            first["names"].append("FOREIGN")
+            first["inventory"][0]["sha256"] = "0" * 64
+            before = sum(session.budget.bytes.values())
+            second = session._native_completion_selection()
+            repeated_cost = sum(session.budget.bytes.values()) - before
+            self.assertEqual(encoded(second), expected)
+            self.assertGreaterEqual(repeated_cost, len(expected))
+            self.assertLess(repeated_cost, len(padding))
+            self.assertEqual(second["snapshot_sha256"], session.snapshot.digest)
+            self.assertEqual(second["names"], ["VALUE", "v"])
+            for _ in range(2):
+                completed, semantics, _ = session._native_make_readonly(
+                    "all", variables=("VALUE",), observe_reads=True, observe_completions=True,
+                )
+                self.assertEqual(completed.stdout, b"original")
+                self.assertEqual(semantics["domains"]["VALUE"]["value"], "original")
+            self.assertEqual(session.budget.deadline, deadline)
+            self.assertIs(session.budget.limits, limits)
+            remaining = limits.cache_bytes - session.budget.bytes["cache"] + 1
+            with self.assertRaisesRegex(MakeProbeError, "aggregate cache byte budget exhausted"):
+                session.budget.charge("cache", remaining)
+            with self.assertRaisesRegex(MakeProbeError, "aggregate probe deadline/budget exhausted"):
+                session._native_completion_selection()
+        self.assert_clean(session)
+
+    def test_native_completion_screening_view_isolation_and_restoration(self):
+        budget = ProbeBudget()
+        self.add("Makefile", "BASE := original\nall: ; @v='$(BASE)'; printf '%s' \"$$v\"\n")
+        base = self.capture_view(budget)
+        self.add("Makefile", "CURRENT := changed\nall: ; @v='$(CURRENT)'; printf '%s' \"$$v\"\n")
+        current = self.capture_view(budget)
+        session = ProbeSession(current, scratch_root=self.scratch, budget=budget)
+        with session:
+            expected = encoded(session._native_completion_selection())
+            retained = session.native_selection
+            with session.select_view(base):
+                self.assertIsNone(session.native_selection)
+                selected = session._native_completion_selection()
+                self.assertEqual(selected["names"], ["BASE", "v"])
+                self.assertNotEqual(encoded(selected), expected)
+                completed, _, _ = session._native_make_readonly(
+                    "all", observe_reads=True, observe_completions=True,
+                )
+                self.assertEqual(completed.stdout, b"original")
+                with session.select_view(current):
+                    self.assertIsNone(session.native_selection)
+                    self.assertEqual(encoded(session._native_completion_selection()), expected)
+                self.assertEqual(encoded(session._native_completion_selection()), encoded(selected))
+            self.assertEqual(encoded(session._native_completion_selection()), expected)
+            self.assertIs(session.native_selection, retained)
         self.assert_clean(session)
 
     def test_native_readonly_reuses_captured_runtime_without_second_host_read(self):
