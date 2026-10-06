@@ -302,6 +302,73 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(semantics["domains"]["UNDEFINED"]["flavor"], "undefined")
         self.assert_clean(session)
 
+    def test_native_readonly_inherited_append_observation_has_no_extra_effects(self):
+        cases = (
+            ("all", "VALUE = $(info observer-only)parent\nall: VALUE += tail\n"),
+            ("all", "VALUE = $(warning observer-only)parent\nall: VALUE += tail\n"),
+            ("all", "VALUE = $(error observer-only)parent\nall: VALUE += tail\n"),
+            ("all", "VALUE = $(eval OBSERVER_EDIT := changed)parent\nall: VALUE += tail\n"),
+            ("all", "VALUE = $(shell printf observer-only >&2)parent\nall: VALUE += tail\n"),
+            ("all", "HIDDEN = $(info observer-only)\nVALUE = $(HIDDEN)parent\nall: VALUE += tail\n"),
+            ("parent", "VALUE = $(info observer-only)hidden\nparent: VALUE += middle\nall: VALUE += tail\n"),
+            ("all", "VALUE = $(info observer-only)parent\n%: VALUE += tail\n"),
+            ("all", "VALUE := valid\nSHELL = $(info original-shell)/bin/sh\nall: SHELL += \n"),
+            ("all", "VALUE := valid\n.SHELLFLAGS = -c$(info original-flags)\nall: .SHELLFLAGS += \n"),
+        )
+        for goal, source in cases:
+            with self.subTest(goal=goal, source=source):
+                self.add("Makefile", source + (
+                    ".PHONY: parent all\nparent: all\n"
+                    "all:\n\t@v=recipe; printf '%s\\n' \"$$v\"\n"
+                ))
+                ordinary = subprocess.run(
+                    ("/usr/bin/make", "-rR", "--no-print-directory", "-f", "Makefile", goal),
+                    cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+                )
+                session = self.session()
+                completed = {}
+                with session:
+                    original = session._sandbox_run
+                    def capture(*args, **kwargs):
+                        result, observed = original(*args, **kwargs)
+                        completed["result"] = result
+                        return result, observed
+                    failure = None
+                    with patch.object(session, "_sandbox_run", side_effect=capture):
+                        try:
+                            session._native_make_readonly(goal, variables=("VALUE",))
+                        except MakeProbeError as error:
+                            failure = error
+                    self.assertIn("result", completed)
+                    self.assertEqual(completed["result"].stdout, ordinary.stdout)
+                    self.assertNotIn(b"observer-only", completed["result"].stderr)
+                    self.assertIsNotNone(failure)
+                    self.assertRegex(str(failure), "unsupported readonly native append observation")
+                self.assert_clean(session)
+
+    def test_native_readonly_target_literals_and_mapped_append_keep_semantics(self):
+        self.add("Makefile", (
+            "SIMPLE := $$literal\nLITERAL = global\nAPPENDED = parent\n"
+            "all: SIMPLE := $$target\nall: LITERAL = target\nall: APPENDED += tail\n"
+            ".PHONY: all\nall:\n\t@:\n"
+        ))
+        with self.session() as session:
+            completed, semantics, _ = session._native_make_readonly(
+                "all", variables=("SIMPLE", "LITERAL", "UNDEFINED"),
+            )
+            self.assertEqual(completed.stdout, b"")
+            target = next(item for item in semantics["files"] if item["target"] == "all")
+            self.assertEqual(target["variables"]["SIMPLE"]["value"], "$target")
+            self.assertEqual(target["variables"]["LITERAL"]["value"], "target")
+            self.assertEqual(target["variables"]["UNDEFINED"]["value"], "")
+            self.assertEqual(semantics["domains"]["SIMPLE"]["value"], "$literal")
+            self.assertEqual(semantics["domains"]["LITERAL"]["value"], "global")
+            mapped = session.make("all", variables=("APPENDED",))
+            target = next(item for item in mapped.semantics["files"] if item["target"] == "all")
+            self.assertEqual(target["variables"]["APPENDED"]["value"], "parent tail")
+            self.assertEqual(mapped.semantics["domains"]["APPENDED"]["value"], "parent")
+        self.assert_clean(session)
+
     def test_native_readonly_shell_loader_probes_cannot_select_false_absence(self):
         for path in ("/etc/ld.so.cache", "/etc/ld.so.preload"):
             with self.subTest(path=path):

@@ -281,7 +281,11 @@ assignment-completion ancestry or the original eight-profile qualification.
 
 `TC-OWNERSHIP-NATIVE-OBSERVE-001` (#270) covers output-independent exit
 observation. Native requested domains and target `SHELL`/`.SHELLFLAGS` values
-are checked through nonexpanding flavor/raw-value metadata before expansion.
+are checked through the original nonexpanding effective-variable lookup in
+the same target/global scope, then flavor/raw-value metadata, before expansion.
+An effective deferred append binding explicitly refuses: its nearest raw value
+can hide an inherited parent's expression. The original variable-set pointer
+is restored after lookup; no append expression is interpreted or replayed.
 Simple and undefined bindings and literal recursive bindings remain supported.
 A recursive raw value containing `$` explicitly refuses before its contents
 are executed. This includes otherwise pure references and escaped dollar
@@ -299,11 +303,23 @@ requested error. Run
 `test_native_readonly_simple_dollar_and_literal_recursive_values_are_safe`:
 a simple dollar-bearing value, literal recursive value and undefined value
 must preserve their original value/flavor and successful recipe output.
+Run `test_native_readonly_inherited_append_observation_has_no_extra_effects`:
+target, inherited and pattern append bindings hiding info/warning/error/eval/
+shell or nested-reference parents must refuse before observation effects.
+Include appended `SHELL` and `.SHELLFLAGS`; preserve their legitimate original
+recipe-time output and compare captured native stdout with ordinary Make.
+The pre-fix observer emits extra output or reaches the wrong failure boundary
+after entering an inherited body. Run
+`test_native_readonly_target_literals_and_mapped_append_keep_semantics`:
+target simple dollar-bearing and literal recursive bindings and undefined
+values must remain correct, global bindings must retain their original scope,
+and ordinary mapped append must still return `parent tail`.
 Retain the existing native shell-spawn refusal and original input/job/source/
 count controls. The mapped inode-identity control also retains its existing
 `readonly executable image` diagnostic and still rejects a zero inode.
 
-Dependencies are the existing observer metadata API and shared origin helper;
+Dependencies are the admitted GNU Make 4.3 file/variable prefix ABI, existing
+observer metadata API and shared origin helper;
 conflicts are none. No new execution authority, input profile, generated data,
 ROM/RAM/save/localization or archival change. Full recursive value support,
 readonly completion integration, generated custody and original eight-query

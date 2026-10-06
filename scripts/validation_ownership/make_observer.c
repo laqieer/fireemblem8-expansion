@@ -4,6 +4,7 @@
  * https://git.savannah.gnu.org/cgit/make.git/tree/src/filedef.h?h=4.3
  * https://git.savannah.gnu.org/cgit/make.git/tree/src/dep.h?h=4.3
  * https://git.savannah.gnu.org/cgit/make.git/tree/src/commands.h?h=4.3
+ * https://git.savannah.gnu.org/cgit/make.git/tree/src/variable.h?h=4.3
  * No candidate-loadable functions are registered with GNU Make.
  */
 #define _GNU_SOURCE
@@ -54,6 +55,20 @@ struct FileView
     const char *stem;
     struct DependencyView *also_make;
     struct FileView *previous;
+    struct FileView *last;
+    struct FileView *parent;
+    void *variables;
+};
+
+struct VariableView
+{
+    const char *name;
+    const char *value;
+    const char *filename;
+    unsigned long line;
+    unsigned long offset;
+    unsigned int length;
+    unsigned int flags;
 };
 
 struct ChildView
@@ -82,6 +97,8 @@ extern char *allocated_variable_expand_for_file(const char *, struct FileView *)
 extern void initialize_file_variables(struct FileView *, int);
 extern void set_file_variables(struct FileView *);
 extern void chop_commands(struct CommandsView *);
+extern struct VariableView *lookup_variable(const char *, unsigned int);
+extern void *current_variable_set_list;
 extern int rebuilding_makefiles;
 extern int ignore_errors_flag;
 extern struct ChildView *children;
@@ -91,6 +108,7 @@ extern char **environ;
 #define MAX_NODES 4096
 #define MAX_NAMES 512
 #define MAX_RESULT (16U * 1024U * 1024U)
+#define VARIABLE_APPEND_FLAG (1U << 1)
 
 static char *target;
 static char *names;
@@ -473,7 +491,20 @@ static char *domain_value(struct FileView *file, const char *name)
     char *value;
     if (native_readonly)
     {
+        void *previous = current_variable_set_list;
+        struct VariableView *binding;
         char *flavor;
+        if (file)
+            current_variable_set_list = file->variables;
+        binding = lookup_variable(name, (unsigned int)strlen(name));
+        current_variable_set_list = previous;
+        /* Deferred append can hide an inherited body from $(value NAME). */
+        if (binding && (binding->flags & VARIABLE_APPEND_FLAG))
+        {
+            static const char message[] = "unsupported readonly native append observation\n";
+            raw_call(SYS_write, STDERR_FILENO, (long)message, sizeof(message) - 1);
+            fail();
+        }
         name_expression(expression, sizeof(expression), "flavor ", name);
         flavor = file ? allocated_variable_expand_for_file(expression, file) : gmk_expand(expression);
         if (!flavor)
