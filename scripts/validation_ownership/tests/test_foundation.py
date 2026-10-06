@@ -1928,6 +1928,79 @@ class FoundationTests(unittest.TestCase):
                     self.assertEqual(completed.stdout, ordinary.stdout)
                 self.assert_clean(session)
 
+    def test_native_completion_define_hash_and_recipe_prefix_context(self):
+        from scripts.validation_ownership import read_epochs
+        for expression, recipe in (
+            ("$(call MACRO)", "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"),
+            ("unused", "all: ; @v='$(MACRO)'; printf '%s' \"$$v\"\n"),
+        ):
+            for reference in ("$(SUPPLIER)", "$($(NAME))"):
+                source = (
+                    "NAME := SUPPLIER\nSUPPLIER := original\n"
+                    f"define MACRO\n# {reference}\nendef\nOUTPUT := {expression}\n" + recipe
+                )
+                self.add("Makefile", source)
+                with self.subTest(expression=expression, reference=reference):
+                    ordinary = subprocess.run(
+                        ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                        env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                    )
+                    self.assertEqual(ordinary.stdout, b"# original")
+                    session = self.session()
+                    if reference == "$(SUPPLIER)":
+                        _, _, dependencies = read_epochs.completion_source_facts("Makefile", source.encode())
+                        self.assertIn("SUPPLIER", dependencies["MACRO"])
+                        with session:
+                            completed, _, observed = session._native_make_readonly(
+                                "all", observe_reads=True, observe_completions=True,
+                            )
+                            self.assertEqual(completed.stdout, ordinary.stdout)
+                            trace = observed["read_trace"]
+                            self.assertTrue(any(
+                                row["kind"] == "assignment-completion" and row["name"] == "SUPPLIER"
+                                for row in trace["events"]
+                            ))
+                            mutated = json.loads(json.dumps(trace))
+                            mutated["selection"]["names"].remove("SUPPLIER")
+                            with self.assertRaises(MakeProbeError):
+                                read_epochs.validate_trace(
+                                    mutated, mutated["scope"],
+                                    count_limit=session.budget.limits.observation_count,
+                                    file_limit=session.budget.limits.file_bytes,
+                                )
+                    else:
+                        with self.assertRaisesRegex(MakeProbeError, "computed Make supplier"):
+                            read_epochs.completion_source_facts("Makefile", source.encode())
+                        with self.assertRaisesRegex(MakeProbeError, "computed Make supplier"), session:
+                            session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                    self.assert_clean(session)
+        for source, expected in (
+            (".RECIPEPREFIX := >\nNAME := SUPPLIER\nSUPPLIER := original\n"
+             "all:\n>@v=unused; printf '#%s' '$($(NAME))'\n", b"#original"),
+            (".RECIPEPREFIX := >\n\tSUPPLIER := original\n"
+             "all:\n>@v='$(SUPPLIER)'; printf '%s' \"$$v\"\n", b"original"),
+            ("define .RECIPEPREFIX\n>\nendef\nall:\n>@v=original; printf '%s' \"$$v\"\n", b"original"),
+            (".RECIPEPREFIX :=\nall: ; @v=original; printf '%s' \"$$v\"\n", b"original"),
+        ):
+            self.add("Makefile", source)
+            with self.subTest(source=source):
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, expected)
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion recipe prefix"):
+                    read_epochs.completion_source_facts("Makefile", source.encode())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion recipe prefix"), session:
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assert_clean(session)
+                session = self.session()
+                with session:
+                    completed, _, _ = session._native_make_readonly("all", observe_reads=True)
+                    self.assertEqual(completed.stdout, ordinary.stdout)
+                self.assert_clean(session)
+
     def test_native_completion_constructed_rules_and_exports(self):
         from scripts.validation_ownership import read_epochs
         suffix = (
@@ -2059,7 +2132,7 @@ class FoundationTests(unittest.TestCase):
             "NESTED := $(subst ;,:,a;b) # $($(NAME))\n"
             "HASH := \\#literal # $($(NAME))\n"
             "define MACRO\n"
-            "rule: ; ignored # $($(NAME))\n"
+            "rule: ; ignored # literal\n"
             "endef\n"
             "all: LOCAL := target # $($(NAME))\n"
             "all: SEMI := target; # literal\n"
@@ -2122,6 +2195,13 @@ class FoundationTests(unittest.TestCase):
                 "NAME := VALUE\nVALUE := original\nexport ${NAME}\nOUTPUT := original\n" + recipe,
                 "VALUE := original\nexport\nOUTPUT := original\n" + recipe,
                 ".EXPORT_ALL_VARIABLES:\nOUTPUT := original\n" + recipe,
+                "NAME := VALUE\nVALUE := original\ndefine MACRO\n# $($(NAME))\nendef\n"
+                "OUTPUT := $(call MACRO)\n" + recipe,
+                ".RECIPEPREFIX := >\nNAME := VALUE\nVALUE := original\n"
+                "all:\n>@v=unused; printf '#%s' '$($(NAME))'\n",
+                ".RECIPEPREFIX := >\n\tOUTPUT := original\nall:\n>@:\n",
+                "define .RECIPEPREFIX\n>\nendef\nall:\n>@:\n",
+                ".RECIPEPREFIX :=\nOUTPUT := original\n" + recipe,
                 *("NAME := VALUE\nVALUE := original\nOUTPUT := $(call " + target + ",$(NAME))\n" + recipe
                   for target in ("value", "origin", "flavor", "call")),
             ):

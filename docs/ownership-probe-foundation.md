@@ -794,8 +794,7 @@ the existing namespace launcher, run these `FoundationTests` controls:
    suppliers must refuse instead of disappearing behind a hash. Returned
    archives reject removed literal suppliers and coherent tab/inline computed
    recipe payloads. `test_native_completion_make_comments_keep_non_recipe_context`
-   preserves Make comments in ordinary/target assignments, literal define
-   bodies; nested expression delimiters and
+   preserves Make comments in ordinary/target assignments; nested expression delimiters and
    escaped literal hashes retain ordinary GNU output.
    A target-specific assignment's semicolon enters GNU rule context: hashes
    after that delimiter remain in its value. Only global assignments retain
@@ -814,6 +813,18 @@ the existing namespace launcher, run these `FoundationTests` controls:
    completion events must bind that supplier even when the recipe uses only a
    shell environment variable. Returned archives reject removed literal-export
    suppliers and coherent payloads for every unsupported enabling form.
+   `test_native_completion_define_hash_and_recipe_prefix_context` preserves
+   hashes as literal multiline define-value text, including when the macro is
+   expanded through `call` or in a recipe. Literal supplier dependencies require
+   real native completion bindings; computed suppliers explicitly refuse.
+   Ordinary comments outside definitions remain Make comments. Computed
+   references in unused define bodies are conservatively unsupported too.
+   Any `.RECIPEPREFIX` assignment or definition is unsupported for completion
+   evidence, including a reset/default spelling: the finite source model does
+   not infer the effective prefix. Real GNU and native no-completion controls
+   retain non-tab recipes and tab-indented assignments after a prefix change.
+   Coherent archive payloads and removed literal-define supplier selections
+   must reject at their corresponding consumer boundaries.
    Repeat the no-completion execution control with computed assignment and short
    lookup sources: genuine native output must remain `original` without an
    invented completion trace. No native evaluator, source rewrite, new budget,

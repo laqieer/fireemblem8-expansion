@@ -293,12 +293,16 @@ def completion_declaration(statement):
     """Classify literal global sites before admitting non-site source context."""
     assignment = MODE_ASSIGNMENT.fullmatch(statement)
     if assignment is not None:
+        if assignment["name"] == ".RECIPEPREFIX":
+            raise MakeProbeError("unsupported completion recipe prefix")
         return assignment, None
     header = statement.strip(MAKE_SPACE)
     if re.match(r"^(?:(?:export|override|private)[ \t]+)*define(?:[ \t]|$)", header):
         macro = DEFINE.fullmatch(header)
         if macro is None:
             raise MakeProbeError("unsupported completion define name")
+        if macro[1] == ".RECIPEPREFIX":
+            raise MakeProbeError("unsupported completion recipe prefix")
         return None, macro
     if re.match(
         r"^(?:ifeq|ifneq|ifdef|ifndef|else|endif|include|-include|sinclude|undefine|unexport)(?:[ \t]|$)",
