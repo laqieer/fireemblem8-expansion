@@ -284,8 +284,6 @@ def completion_declaration(statement):
     if assignment is not None:
         return assignment, None
     header = statement.strip(MAKE_SPACE)
-    if re.match(r"^\.SECONDEXPANSION[ \t]*:", header):
-        raise MakeProbeError("unsupported completion secondary expansion")
     if re.match(r"^(?:(?:export|override|private)[ \t]+)*define(?:[ \t]|$)", header):
         macro = DEFINE.fullmatch(header)
         if macro is None:
@@ -309,6 +307,8 @@ def completion_declaration(statement):
         if operator is not None:
             raise MakeProbeError("unsupported completion assignment name")
         if statement[index] in ":;":
+            if statement[index] == ":" and ".SECONDEXPANSION" in statement[:index].split():
+                raise MakeProbeError("unsupported completion secondary expansion")
             return None, None
         index += 1
     return None, None

@@ -771,7 +771,8 @@ the existing namespace launcher, run these `FoundationTests` controls:
    real ordinary GNU and native no-completion output for computed secondary
    prerequisites and `call` forwarding to `value`, `origin`, `flavor` and
    `call`. Completion-enabled source admission must explicitly refuse
-   `.SECONDEXPANSION` and these forwarded name-taking builtin targets rather
+   `.SECONDEXPANSION` (including either ordering in literal multi-target
+   declarations) and these forwarded name-taking builtin targets rather
    than omit suppliers. Secondary expansion is a source-level unsupported
    completion context, not a recipe-dollar heuristic. Ordinary escaped dollars
    in values/recipes and custom literal calls remain supported.

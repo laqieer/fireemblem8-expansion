@@ -1886,8 +1886,10 @@ class FoundationTests(unittest.TestCase):
     def test_native_completion_secondary_and_forwarded_suppliers_refuse(self):
         from scripts.validation_ownership import read_epochs
         cases = [
-            (".SECONDEXPANSION:\nNAME := VALUE\nVALUE := file-shell\n"
-             "all: $$($$(NAME)) ; @v=selected; printf '%s' \"$$v\"\nfile-shell: ;\n", "selected"),
+            (declaration + "\nNAME := VALUE\nVALUE := file-shell\n"
+             "all: $$($$(NAME)) ; @v=selected; printf '%s' \"$$v\"\nfile-shell: ;\n", "selected")
+            for declaration in (".SECONDEXPANSION:", ".SECONDEXPANSION other:",
+                                "other .SECONDEXPANSION:")
         ]
         for target, expected in (("value", "original"), ("origin", "file"), ("flavor", "simple"),
                                  ("call", "original")):
@@ -1938,6 +1940,8 @@ class FoundationTests(unittest.TestCase):
                 "NAME := VALUE\n$(NAME) := original\nOUTPUT := $(VALUE)\n" + recipe,
                 "NAME := VALUE\ndefine $(NAME)\noriginal\nendef\nOUTPUT := $(VALUE)\n" + recipe,
                 ".SECONDEXPANSION:\nNAME := VALUE\nVALUE := original\nOUTPUT := $(VALUE)\n" + recipe,
+                ".SECONDEXPANSION other:\nNAME := VALUE\nVALUE := original\nOUTPUT := $(VALUE)\n" + recipe,
+                "other .SECONDEXPANSION:\nNAME := VALUE\nVALUE := original\nOUTPUT := $(VALUE)\n" + recipe,
                 *("NAME := VALUE\nVALUE := original\nOUTPUT := $(call " + target + ",$(NAME))\n" + recipe
                   for target in ("value", "origin", "flavor", "call")),
             ):
