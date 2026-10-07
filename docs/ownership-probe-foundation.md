@@ -237,6 +237,18 @@ shared metadata budget before completing this invocation.
 Component controls require touched corruption and false partial-return counts
 to refuse immediately, and untouched corruption to refuse at settlement before
 source capture. These remain host custody controls, not original-eight proof.
+The payload-less `before_write`/`written` component facade cannot resume after
+a paired write has initialized the expected image in the same writer lifetime.
+Refuse that interface transition before kernel mutation; never clear the image
+and adopt current bytes to make the transition appear valid. Pure facade
+writes and facade-to-paired transitions remain available. The supervisor uses
+paired writes exclusively, so this is not a restriction on capsule syscalls.
+`NativeOutputCustodyTests.test_writer_interface_transitions_preserve_expected_image_and_refuse_before_mutation`
+covers original, duplicated and modeled-inherited bindings: attempted facade
+mutation must refuse with bytes, image, identity and events unchanged, followed
+by successful paired continuation and exact settled source capture. Repeated
+facade writes before paired entry remain a positive compatibility control.
+The inherited component labels do not establish actual child-job authority.
 
 This intermediate adapter applies only to the existing `/native/tool` command
 capsule, not original native Make jobs. It retains final exact output capture

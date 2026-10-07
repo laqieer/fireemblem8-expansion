@@ -4918,6 +4918,78 @@ class NativeOutputCustodyTests(unittest.TestCase):
         self.outputs.closed(pid, descriptor, 0)
         return pin
 
+    def test_writer_interface_transitions_preserve_expected_image_and_refuse_before_mutation(self):
+        from contextlib import ExitStack
+        from scripts.validation_ownership.native_outputs import NativeOutputError, NativeOutputs
+        for legacy_first in (False, True):
+            for binding in ("original", "duplicated", "inherited"):
+                with self.subTest(legacy_first=legacy_first, binding=binding), ExitStack() as stack:
+                    outputs = NativeOutputs(
+                        deadline=self.deadline, charge=self.charge, file_limit=65536,
+                        emit=lambda kind, **fields: self.events.append({"kind": kind, **fields}),
+                    )
+                    stack.callback(outputs.close)
+                    path = "interfaces-" + str(legacy_first) + "-" + binding
+                    descriptor = os.open(self.root / path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+                    writer = stack.enter_context(os.fdopen(descriptor, "r+b", buffering=0))
+                    pin = os.open(self.root / path, os.O_RDONLY)
+                    self.addCleanup(os.close, pin)
+                    item = outputs.opened(
+                        owner=1, pid=1, descriptor=descriptor, pin=pin, path=path, writing=True,
+                    )
+                    pid, selected, physical = 1, descriptor, descriptor
+                    duplicate = None
+                    if binding == "duplicated":
+                        selected = os.dup(descriptor)
+                        duplicate = stack.enter_context(os.fdopen(selected, "r+b", buffering=0))
+                        physical = selected
+                        outputs.duplicated(1, descriptor, selected)
+                    elif binding == "inherited":
+                        pid = 2
+                        outputs.inherited(1, 2, (descriptor,))
+                    prefix = b""
+                    if legacy_first:
+                        for data in (b"L", b"U"):
+                            outputs.before_write(pid, selected, pin)
+                            result = os.pwrite(physical, data, len(prefix))
+                            outputs.written(pid, selected, pin, result)
+                            prefix += data
+                    operation = outputs.enter_write(
+                        pid=pid, descriptor=selected, pin=pin, data=b"A", offset=len(prefix),
+                    )
+                    result = os.pwrite(physical, b"A", len(prefix))
+                    outputs.leave_write(operation, result)
+                    prefix += b"A"
+                    identity, events = item.identity, len(self.events)
+                    with self.assertRaisesRegex(NativeOutputError, "payload-less"):
+                        outputs.before_write(pid, selected, pin)
+                        result = os.pwrite(physical, b"B", len(prefix))
+                        outputs.written(pid, selected, pin, result)
+                    self.assertEqual(os.pread(pin, 65536, 0), prefix)
+                    self.assertEqual(item.expected, prefix)
+                    self.assertEqual(item.identity, identity)
+                    self.assertEqual(len(self.events), events)
+                    self.assertIsNone(item.pending_writer)
+                    self.assertFalse(outputs.pending)
+                    operation = outputs.enter_write(
+                        pid=pid, descriptor=selected, pin=pin, data=b"B", offset=len(prefix),
+                    )
+                    result = os.pwrite(physical, b"B", len(prefix))
+                    outputs.leave_write(operation, result)
+                    if duplicate is not None:
+                        duplicate.close()
+                        outputs.closed(1, selected, 0)
+                    elif binding == "inherited":
+                        outputs.closed(2, descriptor, 0)
+                    writer.close()
+                    outputs.closed(1, descriptor, 0)
+                    self.assertIsNone(item.expected)
+                    source = outputs.capture(owner=1, path=path, descriptor=pin)
+                    self.assertEqual(source.data, prefix + b"B")
+                    self.assertEqual(source.mode, 0o600)
+                    outputs.release(source)
+                    outputs.finish()
+
     def test_entry_return_creating_and_truncating_open_preserve_exact_object(self):
         from scripts.validation_ownership.native_outputs import NativeOutputError
         flags = os.O_RDWR | os.O_CREAT | os.O_EXCL

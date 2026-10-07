@@ -506,7 +506,7 @@ class NativeOutputs:
             raise NativeOutputError("native write entry lacks bounded actual bytes/offset")
         if pid in self.pending:
             raise NativeOutputError("native write overlaps an unfinished kernel operation")
-        item = self.before_write(pid, descriptor, pin)
+        item = self._claim_writer(pid, descriptor, pin, paired=True)
         operation = None
         try:
             operation = self._begin(
@@ -784,6 +784,9 @@ class NativeOutputs:
         self._event("output-dup", item, pid=pid, fd=original, result=result)
 
     def before_write(self, pid, descriptor, pin):
+        return self._claim_writer(pid, descriptor, pin, paired=False)
+
+    def _claim_writer(self, pid, descriptor, pin, *, paired):
         self._usable()
         self.deadline()
         self.charge(64)
@@ -797,6 +800,8 @@ class NativeOutputs:
             or self._identity(pin) != item.identity
         ):
             raise NativeOutputError("native output write lost its live object/descriptor")
+        if not paired and item.expected is not None:
+            raise NativeOutputError("native paired writer cannot switch to payload-less observation")
         item.pending_writer = binding
         return item
 
