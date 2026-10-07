@@ -2519,12 +2519,19 @@ class ProbeSession:
                     raise MakeProbeError("native Command tool differs from the active issued runtime")
                 self._sealed_native_tool_bytes(command.native_tool)
             self.budget.remaining()
-            self.budget.charge("cache", len(encoded([
-                path, inputs, command.code, sources, command.directories,
-            ])))
-            return hashlib.sha256(encoded([
-                self.snapshot.digest, path, inputs, command.code, sources, command.directories,
-            ])).hexdigest()
+            tool_identity = None
+            if native_tool is not None and (
+                command.native_tool is not None or path == tool_path
+            ):
+                tool_identity = (
+                    native_tool.digest, native_tool.inputs, native_tool.original_output,
+                )
+            payload = encoded([
+                self.snapshot.digest, path, executable_digests[path], tool_identity,
+                inputs, command.code, sources, command.directories,
+            ])
+            self.budget.charge("cache", len(payload))
+            return hashlib.sha256(payload).hexdigest()
         if (
             not isinstance(native_executables, tuple)
             or len(native_executables) > self.budget.limits.entries
@@ -2609,6 +2616,12 @@ class ProbeSession:
             runtime[tool_path] = binary
             native_executables = (*native_executables, tool_path)
         native_runtime = tuple(sorted(runtime.items()))
+        executable_digests = {}
+        if commands is not None:
+            for path in ("/bin/sh", *native_executables):
+                self.budget.remaining()
+                self.budget.charge("total", len(runtime[path]))
+                executable_digests[path] = hashlib.sha256(runtime[path]).hexdigest()
         environment["VO_OBSERVE_NATIVE_READONLY"] = "1"
         read_abi = self._native_read_abi(
             completions=observe_completions or observe_runtime_completions,

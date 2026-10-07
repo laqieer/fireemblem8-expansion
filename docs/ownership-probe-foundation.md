@@ -141,6 +141,12 @@ monotonic dispatch is bound to the actual clone, exec entry, runtime v5
 exec-stop inputs and complete returned job. Repeated equal argv means repeated
 real jobs, not deduplicated/replayed results. The final channel report must
 cover every issued authorization and completed actual job.
+The owner payload also binds the SHA-256 of the selected captured executable
+bytes, frozen before resolving a Command, and the active native tool's digest,
+source inputs and original placement when applicable. Hashing and the complete
+encoded payload use the existing shared budget. Different sealed tools or
+captured host images cannot alias merely because argv and pathname agree;
+repeated execution of the same image retains a stable owner.
 
 This intermediate path requires runtime v5, canonical `/repo`, immutable
 source/code/directory declarations, the active issued native tool if one is

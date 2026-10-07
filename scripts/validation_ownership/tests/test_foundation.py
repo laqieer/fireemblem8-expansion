@@ -5539,6 +5539,60 @@ class FoundationTests(unittest.TestCase):
             self.assertTrue(all(row["waited"] and row["returncode"] == 0 for row in jobs))
         self.assert_clean(session)
 
+    def test_native_command_owner_binds_different_sealed_tools_and_captured_host_images(self):
+        self.add("first.c", '#include <stdio.h>\nint main(void) { puts("first"); return 0; }\n')
+        self.add("second.c", '#include <stdio.h>\nint main(void) { puts("second"); return 0; }\n')
+        self.add("Makefile", "all: ; @/native/tool\n")
+        session = self.session()
+        with session:
+            first = session.compile_native(("first.c",))
+            second = session.compile_native(("second.c",))
+            self.assertNotEqual(first.digest, second.digest)
+            owners = []
+            snapshot = session.snapshot
+            argv = ("/native/tool",)
+            for tool, expected in ((first, b"first\n"), (second, b"second\n"), (first, b"first\n")):
+                completed, _, observed = session._native_make_readonly(
+                    "all", observe_reads=True, observe_runtime_completions=True,
+                    native_tool=tool, commands={argv: Command(argv, native_tool=tool)},
+                )
+                self.assertEqual(completed.stdout, expected)
+                job, = [
+                    parse_json(value.removeprefix("native-job:").encode(), "sealed executable owner")
+                    for value in observed["accessed"] if value.startswith("native-job:")
+                ]
+                owners.append(job["admission"]["owner"])
+                self.assertIs(session.snapshot, snapshot)
+            self.assertNotEqual(owners[0], owners[1])
+            self.assertEqual(owners[0], owners[2])
+        self.assert_clean(session)
+        self.add("Makefile", "all: ; @v=host; printf '%s' \"$$v\"\n")
+        session = self.session()
+        with session:
+            captured = session._captured_native_runtime
+            owners = []
+            argv = ("/bin/sh", "-c", "v=host; printf '%s' \"$v\"")
+            for suffix in (b"", b"distinct-captured-image", b""):
+                def image(path):
+                    return tuple(
+                        (name, data + suffix if name == "/usr/bin/sh" else data)
+                        for name, data in captured(path)
+                    )
+                with patch.object(session, "_captured_native_runtime", image):
+                    completed, _, observed = session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                        commands={argv: Command(argv)},
+                    )
+                self.assertEqual(completed.stdout, b"host")
+                job, = [
+                    parse_json(value.removeprefix("native-job:").encode(), "captured executable owner")
+                    for value in observed["accessed"] if value.startswith("native-job:")
+                ]
+                owners.append(job["admission"]["owner"])
+            self.assertNotEqual(owners[0], owners[1])
+            self.assertEqual(owners[0], owners[2])
+        self.assert_clean(session)
+
     def test_native_command_admission_rejects_missing_substituted_and_writable_commands(self):
         argv = ("/bin/sh", "-c", "v=original; printf '%s' \"$v\"")
         self.add("Makefile", "all: ; @v=original; printf '%s' \"$$v\"\n")
