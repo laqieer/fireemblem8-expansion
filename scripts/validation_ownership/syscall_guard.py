@@ -3365,7 +3365,7 @@ def supervise(config, drop_privileges):
             nonlocal error, finished_trace
             if error is None and policy.native_outputs is not None:
                 try:
-                    policy.native_outputs.custody.finish()
+                    policy.native_outputs.finish()
                 except BaseException as failure:
                     error = str(failure)
                     raise

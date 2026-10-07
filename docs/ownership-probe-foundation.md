@@ -496,6 +496,14 @@ source-defined `.asset-manifest-write-` prefix in one exact parent and accepts
 exactly eight `[a-z0-9_]` characters. No candidate regex or general writable
 directory-prefix authority is accepted. Temporary files and shared locks are
 not returned as retained generated files and cannot become generated sources.
+At successful invocation completion, every declared retained file must exist in
+the current custody map, and every temporary object must have been retired.
+Declared directories and shared locks may remain; unused optional resources need
+not be created. Live completion and archive replay check the same current-object
+set before query-private cleanup, without a filesystem scan or another retirement
+ledger. Resources below a retained regular-file ancestor are invalid.
+Both live source entry and archive replay restrict generated sources to exact
+retained paths, including failed generated fopen entries.
 Shared lock RDWR opens do not acquire content write/truncate/mode/removal
 authority. Separate opens have separate descriptions; dup/fork share one.
 Flock success, nonblocking failure, explicit unlock and last-close release
@@ -546,6 +554,15 @@ last close release the respective descriptions. Failed replacement/removal
 observe ENOENT and populated rmdir observes ENOTEMPTY. The final artifact is
 exactly `VALUE := native\n`, mode 0644, with empty stdout/stderr. Temporary and
 lock resources must not appear in the returned artifact list.
+Removing a PID temporary's retirement and its matching directory removal from
+the rehashed archive must refuse at terminal custody.
+`test_native_terminal_roles_refuse_live_temporary_objects` runs actual exact,
+root-PID and atomic temporary leftovers and requires refusal before cleanup.
+Its eager optional-include variants use each actual temporary as valid Make
+source bytes and require source-role refusal instead of parsing those bytes.
+The original writer case rejects an archive that declares an absent retained
+file. The scope case also exercises retained-only and retained-plus-lock terminal
+sets, every temporary role and every resource-as-source role.
 `test_native_original_make_resource_roles_refuse_unissued_and_shared_content_effects`
 denies foreign PID/incorrect atomic names and shared-lock write/mode/truncate
 before the kernel operation.
@@ -572,6 +589,9 @@ Its optional fopen returns EACCES; the actual return releases the old entry pin
 without inventing parsed bytes. A later recipe performs a real atomic replacement
 with `VALUE := final\n`, mode 0644. Missing/borrowed retirement and custody controls
 must refuse. An unreadable final artifact is not used as a capture fallback.
+An authority-only archive mutation classifying the actual generated entry as
+temporary must refuse at the generated-source boundary; this is a parsed
+contract control, not a newly executed kernel observation.
 `test_native_writer_settlement_binds_last_close_exec_duplicate_fork_and_death`
 checks ordinary close, dup, real fork, foreign-source duplicate target retirement,
 successful CLOEXEC exec and process death. Moving settlement before an earlier

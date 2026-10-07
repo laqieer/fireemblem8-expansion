@@ -1954,9 +1954,9 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
     authority = trace["output_authority"]
     resources = authority.get("resources", ()) if isinstance(authority, dict) else ()
     if __package__:
-        from .native_resources import resource_plan, resource_role, resource_operation, validate_resource_scope
+        from .native_resources import resource_plan, resource_role, resource_operation, validate_resource_scope, require_retained_source, validate_terminal_resources
     else:
-        from native_resources import resource_plan, resource_role, resource_operation, validate_resource_scope
+        from native_resources import resource_plan, resource_role, resource_operation, validate_resource_scope, require_retained_source, validate_terminal_resources
     try:
         resources = resource_plan(resources)
     except MakeProbeError as error:
@@ -2076,6 +2076,10 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
     for observation in machine:
         if observation["kind"] == "generated-source-entry":
             serial, visit = observation["serial"], observation["visit"]
+            try:
+                require_retained_source(observation["path"], authority["paths"])
+            except MakeProbeError as error:
+                raise ReadEpochError(str(error)) from error
             if (
                 any(type(observation[key]) is not int or observation[key] < 1 for key in ("owner", "serial", "visit"))
                 or type(observation["revision"]) is not int or observation["revision"] < 0
@@ -2566,6 +2570,12 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                     lock_modes.pop(description, None)
     if bindings or readers or writes or parent_returns or released_locks or any(lock_modes.values()) or any(not item["settled"] for item in objects.values()):
         raise ReadEpochError("native output archive omitted descriptor retirement or content settlement")
+    try:
+        validate_terminal_resources(
+            authority["paths"], resources, (item["path"] for item in objects.values() if item["path"] is not None),
+        )
+    except MakeProbeError as error:
+        raise ReadEpochError(str(error)) from error
 
 
 def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):

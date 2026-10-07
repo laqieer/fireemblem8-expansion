@@ -15,12 +15,16 @@ from types import MappingProxyType
 
 if __package__:
     from .authority import encoded
+    from .budget import MakeProbeError
     from .lifecycle import finish_cleanup
+    from .native_resources import require_retained_source
     from . import read_epochs
     from . import source_phases
 else:
     from authority import encoded
+    from budget import MakeProbeError
     from lifecycle import finish_cleanup
+    from native_resources import require_retained_source
     import read_epochs
     import source_phases
 
@@ -806,8 +810,10 @@ class NativeReadTrace:
                 path = self.policy.resolve(name if name.startswith("/") else state.cwd + "/" + name)
                 item = observer.custody.objects.get(path)
                 if item is not None:
-                    if path.removeprefix("/repo/") not in self.config["native_output_paths"]:
-                        raise read_epochs.ReadEpochError("native resource role cannot become a generated source")
+                    try:
+                        require_retained_source(path.removeprefix("/repo/"), self.config["native_output_paths"])
+                    except MakeProbeError as error:
+                        raise read_epochs.ReadEpochError(str(error)) from error
                     descriptor = observer.operand(path)
                     try:
                         if descriptor is None:

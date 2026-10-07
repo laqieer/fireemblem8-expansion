@@ -82,6 +82,7 @@ def resource_operation(rows, path, root_pid, outputs, operation):
 
 
 def validate_resource_scope(rows, outputs, sources):
+    outputs = tuple(outputs)
     sources = tuple(sources)
     for kind, path in resource_plan(rows):
         for source in sources:
@@ -93,6 +94,22 @@ def validate_resource_scope(rows, outputs, sources):
         for output in outputs:
             if (
                 output == path and kind != "pid-temporary"
+                or path.startswith(output + "/")
                 or _file_ancestor(kind, path, output)
             ):
                 raise MakeProbeError("native resource conflicts with retained output")
+
+
+def require_retained_source(path, outputs):
+    if path not in outputs:
+        raise MakeProbeError("native resource role cannot become a generated source")
+
+
+def validate_terminal_resources(outputs, rows, files):
+    required = {"/repo/" + name for name in outputs}
+    shared = {"/repo/" + name for kind, name in resource_plan(rows) if kind == "shared-lock"}
+    current = set(files)
+    if not required <= current:
+        raise MakeProbeError("native terminal custody omitted a retained output")
+    if current - required - shared:
+        raise MakeProbeError("native terminal custody has an unretired temporary object")

@@ -123,6 +123,10 @@ class NativeWriterTests(unittest.TestCase):
             read_epochs.validate_trace(
                 trace, trace["scope"], count_limit=100000, file_limit=10000000,
             )
+            missing = json.loads(json.dumps(trace))
+            missing["output_authority"]["paths"].append("missing")
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "retained"):
+                read_epochs.validate_trace(missing, missing["scope"], count_limit=100000, file_limit=10000000)
             for field, value in (
                 ("fd", 999), ("revision", 100), ("path", "/repo/other"),
                 ("result", 0), ("result", 6), ("result", 10000001),
@@ -955,6 +959,32 @@ class NativeWriterTests(unittest.TestCase):
                 ("replace", -errno.ENOENT), ("remove", -errno.ENOENT), ("rmdir", -errno.ENOTEMPTY),
             ])
             read_epochs.validate_trace(trace, trace["scope"], count_limit=100000, file_limit=10000000)
+            leftover = json.loads(json.dumps(trace))
+            rows = leftover["machine"]["events"]
+            temporary_retirement = next(
+                row["event"] for row in rows if row["kind"] == "native-output"
+                and row["event"]["kind"] == "output-retire" and ".tmp" in row["event"]["destination"]
+            )
+            rows[:] = [
+                row for row in rows if not (
+                    row["kind"] == "native-output" and (
+                        row["event"]["kind"] == "output-retire"
+                        and row["event"]["serial"] == temporary_retirement["serial"]
+                        or row["event"]["kind"] == "output-directory-change"
+                        and row["event"]["operation"] == "remove"
+                        and row["event"]["source"] == temporary_retirement["destination"]
+                    )
+                )
+            ]
+            number = 0
+            for sequence, row in enumerate(rows, 1):
+                row["seq"] = sequence
+                if row["kind"] == "native-output":
+                    number += 1
+                    row["event"]["sequence"] = number
+                    row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "unretired temporary"):
+                read_epochs.validate_trace(leftover, leftover["scope"], count_limit=100000, file_limit=10000000)
             for kind, field, value in (
                 ("output-lock", "description", 999),
                 ("output-lock", "mode", 1),
@@ -1139,7 +1169,10 @@ class NativeWriterTests(unittest.TestCase):
                 self.assert_clean(session)
 
     def test_native_resource_scope_refuses_pattern_source_collisions_and_ambiguous_roles(self):
-        from scripts.validation_ownership.native_resources import resource_plan, resource_operation, validate_resource_scope
+        from scripts.validation_ownership.native_resources import (
+            resource_plan, resource_operation, validate_resource_scope,
+            require_retained_source, validate_terminal_resources,
+        )
         for rows in (
             (("directory", "stage"), ("shared-lock", "stage")),
             (("unknown", "stage"),), (("directory", "../stage"),),
@@ -1160,6 +1193,11 @@ class NativeWriterTests(unittest.TestCase):
             ((("temporary", "stage/tmp"),), ("stage/tmp",), ()),
             ((("directory", "stage"),), (), ("stage/immutable",)),
             ((("shared-lock", "stage/lock"),), ("stage/lock",), ()),
+            ((("directory", "stage/child"),), ("stage",), ()),
+            ((("temporary", "stage/tmp"),), ("stage",), ()),
+            ((("shared-lock", "stage/lock"),), ("stage",), ()),
+            ((("pid-temporary", "stage/result"),), ("stage",), ()),
+            ((("atomic-temporary", "stage/.asset-manifest-write-"),), ("stage",), ()),
         ):
             with self.subTest(rows=rows):
                 with self.assertRaises(MakeProbeError):
@@ -1203,6 +1241,68 @@ class NativeWriterTests(unittest.TestCase):
                 path += "abcdefgh"
             for operation in ("open", "write", "mode", "replace", "remove", "mkdir", "rmdir", "lock"):
                 self.assertEqual(resource_operation(((kind, name),), path, 123, (), operation), operation in allowed)
+            with self.subTest(source_role=kind):
+                with self.assertRaises(MakeProbeError):
+                    require_retained_source(path.removeprefix("/repo/"), ("stage/result",))
+        require_retained_source("stage/result", ("stage/result",))
+        validate_terminal_resources(("stage/result",), (), ("/repo/stage/result",))
+        validate_terminal_resources(
+            ("stage/result",), (("directory", "stage"), ("shared-lock", "stage/lock")),
+            ("/repo/stage/result", "/repo/stage/lock"),
+        )
+        for role, name in (
+            ("temporary", "stage/tmp"), ("pid-temporary", "stage/result"),
+            ("atomic-temporary", "stage/.asset-manifest-write-"),
+        ):
+            concrete = name + (".123.tmp" if role == "pid-temporary" else "abcdefgh" if role == "atomic-temporary" else "")
+            with self.subTest(terminal_role=role):
+                with self.assertRaisesRegex(MakeProbeError, "unretired temporary"):
+                    validate_terminal_resources(
+                        ("stage/result",), ((role, name),), ("/repo/stage/result", "/repo/" + concrete),
+                    )
+        with self.assertRaisesRegex(MakeProbeError, "retained"):
+            validate_terminal_resources(("stage/result",), (), ())
+
+    def test_native_terminal_roles_refuse_live_temporary_objects(self):
+        self.add("native.c", (
+            "#define _POSIX_C_SOURCE 200809L\n#include <fcntl.h>\n#include <unistd.h>\n"
+            "#include <sys/stat.h>\n#include <stdio.h>\n#include <string.h>\n"
+            "int main(int argc,char **argv){int fd;char path[128];if(argc!=2&&argc!=3)return 1;"
+            "if(mkdir(\"/repo/stage\",0700))return 2;"
+            "fd=open(\"/repo/stage/result\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "if(fd<0||write(fd,\"final\",5)!=5||close(fd))return 3;"
+            "if(!strcmp(argv[1],\"pid\"))snprintf(path,sizeof(path),\"/repo/stage/result.%ld.tmp\",(long)getpid());"
+            "else snprintf(path,sizeof(path),\"/repo/stage/%s\","
+            "!strcmp(argv[1],\"atomic\")?\".asset-manifest-write-abcdefgh\":\"tmp\");"
+            "fd=open(path,O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "if(fd<0||write(fd,\"VALUE := ignored\\n\",17)!=17||close(fd))return 4;"
+            "if(argc==3)printf(\"%s\\n\",path+6);return 0;}\n"
+        ))
+        resources = (
+            ("directory", "stage"), ("temporary", "stage/tmp"),
+            ("pid-temporary", "stage/result"), ("atomic-temporary", "stage/.asset-manifest-write-"),
+        )
+        for mode in ("exact", "pid", "atomic"):
+            for source in (False, True):
+                with self.subTest(mode=mode, source=source):
+                    self.add("Makefile", (
+                        "SOURCE := $(shell /native/tool " + mode + " source)\n-include $(SOURCE)\nall:\n\t@:\n"
+                        if source else "all:\n\t@/native/tool " + mode + "\n"
+                    ))
+                    session = self.session()
+                    with session:
+                        tool = session.compile_native(("native.c",))
+                        class Commands:
+                            def __getitem__(self, argv):
+                                return Command(argv, native_tool=tool, outputs=("stage/result",), native_resources=resources)
+                        with self.assertRaisesRegex(
+                            MakeProbeError, "resource role cannot become a generated source" if source else "unretired temporary",
+                        ):
+                            session._native_make_writable(
+                                "all", outputs=("stage/result",), native_resources=resources,
+                                native_tool=tool, commands=Commands(), observe_reads=True, observe_runtime_completions=True,
+                            )
+                    self.assert_clean(session)
 
     def test_native_shared_lock_failed_descriptors_bind_later_actor_and_descendant(self):
         from scripts.validation_ownership import read_epochs
@@ -1325,6 +1425,17 @@ class NativeWriterTests(unittest.TestCase):
             self.assertIsNone(retired[0]["source"])
             self.assertEqual(retired[0]["identity"], entry["identity"])
             read_epochs.validate_trace(trace, trace["scope"], count_limit=100000, file_limit=10000000)
+            temporary_source = json.loads(json.dumps(trace))
+            temporary_source["output_authority"]["paths"] = ["stage/required-other"]
+            role = ["temporary", "stage/generated.mk"]
+            temporary_source["output_authority"]["resources"].append(role)
+            for job in temporary_source["output_authority"]["jobs"]:
+                job["admission"]["outputs"] = ["stage/required-other"]
+                job["admission"]["resources"].append(role)
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "resource role cannot become a generated source"):
+                read_epochs.validate_native_output_authority(
+                    temporary_source, count_limit=100000, file_limit=10000000, reserve=lambda size: None,
+                )
             for field, value in (
                 ("source", 1), ("identity", entry["identity"][:-1] + [0]),
                 ("visit", 999), ("pid", 999),
