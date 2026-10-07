@@ -3804,6 +3804,38 @@
       ]
     },
     {
+      "id": "TC-WORKFLOW-NATIVE-READONLY-001",
+      "title": "Observe immutable native Make and original tools",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/274"
+      ],
+      "document": "docs/ownership-probe-foundation.md",
+      "anchor": "tc-workflow-native-readonly-001-observe-immutable-native-make-and-original-tools",
+      "profiles": [
+        "Linux x86-64 source checkout, GNU Make 4.3, GCC/C++ host tools and existing namespace/ptrace launcher"
+      ],
+      "purpose": "Prove one immutable-source native Make invocation with an original sealed Command/compiler/tool, actual source/job/machine observations, unchanged aggregate budget/deadline, no replay and complete owned cleanup.",
+      "prerequisites": "Clean source checkout and existing host tools/namespace permissions; case-owned disposable inputs only. No ROM, emulator, save reset, credentials or remote mutation.",
+      "actions": "Run the integrated original-tool/source/job/budget case: compile the C reader at its original declared output/CWD, include input.mk, execute the actual reader on input.txt and run the original recipe with a replay trap. Retain separate real write/foreign/source/frame/register/job/runtime/view/failure/cancel/quota controls and UTF-8 byte-boundary families.",
+      "expected_result": "Exact captured-input:immutable stdout and no stderr; original tool/shell argv/CWD and waited status; actual immutable source FD bytes/modes/custody and matching machine pin retirements; one unchanged budget/deadline and owned teardown. Complete requested runtime/machine/archive observations pass the existing validators.",
+      "negative_control": "Source writes and undeclared execution refuse without mutation. Existing actual source/caller/ABI/register/job/wire/view/identity/runtime/cancellation/resource adversaries reject and clean owned state. Pre-fix maximum value/target readers reject admitted boundary payloads; fixed oversized controls still reject.",
+      "interactions": "Depends on merged authority/runtime/observer/compiler/tool/machine/archive/cleanup seams. Complete writable producer and generated-read custody remains together in dependent issue275; umbrella270 and graph180 stay open until their full original criteria. No independent game/profile conflicts or validation narrowing.",
+      "save_compatibility": "Host-only internal foundation; no save/config identity, migration, ROM/RAM, locale/game data or modern/archival/default-mapped behavior change.",
+      "cleanup": "The existing session and sole-reaper supervisor retire only case-owned processes, pins, scratch and caches after success/failure; preserve failures before resetting disposable fixtures.",
+      "limitations": "Readonly source/tool observation is not writable native production, .dep redirection, temporary/lock/retirement, generated source custody, original eight-query qualification or graph delivery. Unsupported native inputs/platforms/cross-lane combinations refuse. No material manual-only criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_immutable_foundation_original_tool_source_jobs_and_budget -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_readonly_actual_write_and_foreign_execution_refuse scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_readonly_actual_completion_inventory_barrier_and_jobs scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_completion_variable_payload_boundaries scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_target_payload_boundaries -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        }
+      ]
+    },
+    {
       "id": "TC-WORKFLOW-PROBE-PRODUCER-001",
       "title": "Preserve live producer context and native remakes",
       "feature_id": "workflow-governance",

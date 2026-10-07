@@ -16,7 +16,68 @@ D depends on P, not on the optional view or runtime-input APIs.
 See the [archived delivery allocation](https://github.com/laqieer/fireemblem8-expansion/blob/56e0a206ffae088b0dbc1fe8aa6339a8ee820f33/docs/ownership-probe-allocation.json)
 and [downstream boundary](#contract-allocation-and-downstream-integration).
 
-## Native evaluator runtime-admission component
+## Immutable native foundation and dependent writable evaluator
+
+Issue [#274](https://github.com/laqieer/fireemblem8-expansion/issues/274)
+owns the closed immutable-input native foundation below, including the
+internal `_native_make_readonly` and sealed compiler/tool seams. It is a
+separately deliverable component of
+[#270](https://github.com/laqieer/fireemblem8-expansion/issues/270), not
+qualification of that umbrella's original generated eight-query contract.
+The complete writable producer **and** generated-read-version transaction
+stays together in dependent
+[#275](https://github.com/laqieer/fireemblem8-expansion/issues/275).
+
+The readonly foundation never grants native output writes, `.dep` shell
+redirection ownership, temporary/lock lifecycle, atomic retirement or
+generated-source custody. Generated include remakes/reexec requiring those
+writes remain refused. Existing mapped APIs are unchanged; neither this root
+nor a successful prefix authorizes validation narrowing or graph delivery.
+The dependent extension must preserve original commands, inputs, all four
+profiles times both Make primaries, one unchanged budget/deadline and every
+actual source/job/version outcome.
+
+### TC-WORKFLOW-NATIVE-READONLY-001: observe immutable native Make and original tools
+
+From a clean supported Linux x86-64 checkout with GNU Make 4.3, the existing
+GCC/C++ host tools and namespace/ptrace launcher:
+
+1. Run
+   `python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_immutable_foundation_original_tool_source_jobs_and_budget`.
+   The case compiles `tools/scanner/reader.c` through the original sealed
+   `Command`/output/CWD compiler seam. Original Make includes immutable
+   `input.mk`, eagerly executes the issued original-path reader against
+   `input.txt`, and runs the original recipe. Require exactly
+   `captured-input:immutable`, no stderr, the original tool and shell jobs'
+   actual argv/CWD and waited success, and source FD bytes/modes/custody with
+   matching machine pin retirements. A replay trap stays active. Compiler and
+   Make share one original budget/deadline, and context exit removes owned
+   scratch and processes.
+2. Run the same class's
+   `test_native_readonly_actual_write_and_foreign_execution_refuse` and
+   `test_native_readonly_actual_completion_inventory_barrier_and_jobs`.
+   Writes and undeclared execution must refuse without source mutation;
+   actual source/completion/inventory barriers and job/machine pairs must
+   remain valid. Retain the documented source-frame/pin, callback/register,
+   job/signal, stale-view, runtime/tool, failure-envelope, cancellation and
+   resource controls below; the integrated positive does not replace them.
+3. Run its `test_native_completion_variable_payload_boundaries` and
+   `test_native_target_payload_boundaries`. Exact admitted UTF-8 byte payloads
+   survive both consumer families; oversized payloads refuse. Filesystem path
+   bounds stay unchanged. Preserve the original maximum-byte failure evidence.
+4. The existing `ownership-probe-test` CI owner runs the complete native suite
+   and exact selected-case inventory. No single positive, runtime capture or
+   whole-suite label substitutes for the separate native source/job/budget/
+   failure criteria. Tests create and retire only their own disposable inputs.
+
+This source-only case requires no ROM, emulator, save reset or subjective
+judgment. Dependencies are the merged immutable authority, namespace/runtime,
+observer, compiler/tool, machine/archive and cleanup seams; conflicts are none
+beyond their documented admission constraints. It changes no ROM/RAM/save,
+locale/game content, modern/archival profile or default mapped behavior.
+Unsupported native platforms, inputs or cross-lane combinations refuse.
+
+### Native evaluator runtime-admission component
 
 Issue [#270](https://github.com/laqieer/fireemblem8-expansion/issues/270)
 separates the single-invocation native evaluator from the downstream ownership

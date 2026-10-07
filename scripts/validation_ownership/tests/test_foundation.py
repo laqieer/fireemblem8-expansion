@@ -6764,6 +6764,79 @@ class FoundationTests(unittest.TestCase):
                     self.assertEqual(after, before | (1 << 16) if name == "eflags" else before)
         self.assert_clean(session)
 
+    def test_native_immutable_foundation_original_tool_source_jobs_and_budget(self):
+        self.add("tools/scanner/reader.c", (
+            "#include <stdio.h>\n"
+            "int main(int argc, char **argv) {\n"
+            "    FILE *input;\n"
+            "    int value;\n"
+            "    if (argc != 2 || !(input = fopen(argv[1], \"r\"))) return 7;\n"
+            "    while ((value = fgetc(input)) != EOF) putchar(value);\n"
+            "    return ferror(input) || fclose(input) ? 8 : 0;\n"
+            "}\n"
+        ))
+        self.add("input.txt", "captured-input\n")
+        self.add("input.mk", "SUFFIX := immutable\n")
+        self.add("Makefile", (
+            "include input.mk\nVALUE := $(shell tools/scanner/reader input.txt)\n"
+            "all: ; @printf '%s:%s' '$(VALUE)' '$(SUFFIX)'; :\n"
+        ))
+        session = self.session()
+        with session:
+            deadline = session.budget.deadline
+            inputs = {
+                path: (
+                    session.snapshot.files[path],
+                    stat.S_IMODE((session.tree / path).stat().st_mode),
+                )
+                for path in ("Makefile", "input.mk")
+            }
+            tool = session.compile_native_command(Command(
+                ("gcc", "-O2", "reader.c", "-o", "reader"),
+                code=("tools/scanner/reader.c",), outputs=("tools/scanner/reader",),
+            ), cwd="tools/scanner")
+            self.assertEqual(tool.original_output, "tools/scanner/reader")
+            self.assertEqual(tool.inputs, tuple(session.snapshot.owners(("tools/scanner/reader.c",))))
+            with patch.object(session, "command", side_effect=AssertionError("command replay")):
+                completed, _, observed = session._native_make_readonly(
+                    "all", variables=("VALUE", "SUFFIX"), native_tool=tool, original_tool=True,
+                    observe_reads=True, observe_runtime_completions=True,
+                )
+            self.assertEqual(completed.stdout, b"captured-input:immutable")
+            self.assertEqual(completed.stderr, b"")
+            self.assertEqual(session.budget.deadline, deadline)
+            self.assertFalse(session.budget.failed)
+            self.assertIn("/repo/input.txt", observed["accessed"])
+            jobs = [
+                parse_json(row.removeprefix("native-job:").encode(), "actual native job")
+                for row in observed["accessed"] if row.startswith("native-job:")
+            ]
+            self.assertEqual(len(jobs), 2)
+            self.assertEqual({row["context"]["kind"] for row in jobs}, {"expansion", "recipe"})
+            self.assertEqual({row["executable"] for row in jobs}, {
+                "/repo/tools/scanner/reader", "/bin/sh",
+            })
+            tool_job = next(row for row in jobs if row["executable"] == "/repo/tools/scanner/reader")
+            self.assertEqual(tool_job["argv"], ["tools/scanner/reader", "input.txt"])
+            self.assertEqual({row["cwd"] for row in jobs}, {"/repo"})
+            self.assertTrue(all(row["returncode"] == 0 and row["waited"] for row in jobs))
+            trace = observed["read_trace"]
+            opens = [row for row in trace["events"]
+                     if row["kind"] == "source-open" and row["result"] >= 0]
+            self.assertEqual({row["path"] for row in opens}, set(inputs))
+            for row in opens:
+                data, mode = inputs[row["path"]]
+                source = next(item for item in trace["sources"] if item["id"] == row["source"])
+                self.assertEqual(base64.b64decode(source["data"]), data)
+                self.assertEqual((source["mode"], source["bytes"]), (mode, len(data)))
+                self.assertEqual(row["custody"], {"kind": "snapshot"})
+            retired = [row for row in trace["machine"]["events"] if row["kind"] == "pin-retired"]
+            self.assertEqual(
+                {(row["visit"], row["source"], tuple(row["identity"])) for row in retired},
+                {(row["visit"], row["source"], tuple(row["identity"])) for row in opens},
+            )
+        self.assert_clean(session)
+
     def test_native_completion_variable_payload_boundaries(self):
         name = "V" * 128
         for runtime in (False, True):
