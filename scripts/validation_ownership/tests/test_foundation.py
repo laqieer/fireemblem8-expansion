@@ -20,7 +20,7 @@ import threading
 import time
 import unittest
 import venv
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import FrozenInstanceError, asdict, dataclass, fields, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -82,10 +82,12 @@ class FoundationTests(unittest.TestCase):
             runtime_files=runtime_files,
         )
 
-    def assert_clean(self, session):
+    def assert_execution_closed(self, session):
         self.assertFalse(session.cache)
         self.assertFalse(session.mappings)
         self.assertFalse(session.native_tools)
+        self.assertFalse(session.runtime_tools)
+        self.assertFalse(session.runtime_query_profiles)
         self.assertFalse(session._views)
         self.assertFalse(session.make_runtime)
         self.assertFalse(session.runtime_inputs)
@@ -93,8 +95,11 @@ class FoundationTests(unittest.TestCase):
         self.assertIsNone(session.runtime_root)
         self.assertFalse(session.budget.children)
         self.assertIsNone(session.snapshot)
-        self.assertIsNone(session.base)
         self.assertEqual(session.pending_commands, 0)
+
+    def assert_clean(self, session):
+        self.assert_execution_closed(session)
+        self.assertIsNone(session.base)
         self.assertFalse(self.scratch.exists())
 
     def capture_supervisor_report(self, session, operation):
@@ -1055,6 +1060,39 @@ class FoundationTests(unittest.TestCase):
             self.assertFalse((session.runtime_root / canonical.lstrip("/")).exists())
         self.assert_clean(session)
 
+    def test_absent_stock_dispatch_alias_remains_absent_without_weakening_image_conflicts(self):
+        from scripts.validation_ownership import make_probe
+
+        original = "/bin/ownership-absent-dispatch-" + secrets.token_hex(12)
+        canonical = "/usr/bin/" + Path(original).name
+        self.assertFalse(Path(original).exists())
+        self.assertFalse(Path(canonical).exists())
+        self.add("Makefile", (
+            f"ORIGINAL := $(wildcard {original})\n"
+            f"CANONICAL := $(wildcard {canonical})\n"
+            "all: ;\n"
+        ))
+        aliases = (*make_probe.ALIASES, canonical)
+        with patch.object(make_probe, "ALIASES", aliases):
+            with self.session(runtime_files=(original,)) as session:
+                captured, = session.runtime_inputs
+                self.assertIsNone(captured.data)
+                self.assertEqual(captured.canonical, canonical)
+                self.assertEqual(captured.aliases, (("/bin", "usr/bin"),))
+                self.assertNotIn(original, session.runtime_dispatch)
+                self.assertFalse((session.runtime_root / canonical.lstrip("/")).exists())
+                result = session.make("all", variables=("ORIGINAL", "CANONICAL"))
+                self.assertEqual(result.semantics["domains"]["ORIGINAL"]["value"], "")
+                self.assertEqual(result.semantics["domains"]["CANONICAL"]["value"], "")
+            self.assert_clean(session)
+            direct = self.session(runtime_files=(canonical,))
+            with self.assertRaisesRegex(
+                MakeProbeError, "^runtime input conflicts with trusted execution image$",
+            ):
+                with direct:
+                    self.fail("direct reserved helper image collision was admitted")
+            self.assert_clean(direct)
+
     def test_stock_runtime_alias_absence_keeps_component_and_operation_boundaries(self):
         original = "/bin/ownership-absence-boundary-" + secrets.token_hex(12)
         canonical = "/usr/bin/" + Path(original).name
@@ -1615,6 +1653,31 @@ class FoundationTests(unittest.TestCase):
         return AuthorityLoader(
             self.root, git_tree_entries(self.root, revision, budget=budget), revision, budget=budget,
         )
+
+    def test_original_namespace_capabilities_expire_across_actual_immutable_views(self):
+        budget = ProbeBudget()
+        self.add("Makefile", "all: ;\n")
+        self.add("src/a.c", "base\n")
+        base = self.capture_view(budget)
+        self.add("src/b.c", "current\n")
+        current = self.capture_view(budget)
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            first = session.make("all")
+            token = session._original_namespace(first, target="all", makefile="Makefile")
+            self.assertEqual(session._original_wildcard(token, "src/*.c"), "src/a.c src/b.c")
+            with session.select_view(base):
+                with self.assertRaisesRegex(MakeProbeError, "forged|expired"):
+                    session._original_wildcard(token, "src/*.c")
+                older = session.make("all")
+                base_token = session._original_namespace(older, target="all", makefile="Makefile")
+                self.assertEqual(session._original_wildcard(base_token, "src/*.c"), "src/a.c")
+            for expired in (token, base_token):
+                with self.assertRaisesRegex(MakeProbeError, "forged|expired"):
+                    session._original_wildcard(expired, "src/*.c")
+            restored = session.make("all")
+            restored_token = session._original_namespace(restored, target="all", makefile="Makefile")
+            self.assertEqual(session._original_wildcard(restored_token, "src/*.c"), "src/a.c src/b.c")
+        self.assert_clean(session)
 
     def deleted_source_views(self, budget):
         old, new = "src/data/deleted_generated.json", "src/data/current_generated.json"
@@ -6384,18 +6447,317 @@ print(json.dumps({"submount_levels":3,"source_flags_unchanged":True,
         config = self.directory / "mount-config.json"
         config.write_text(json.dumps({"root": str(self.root), "mounts": []}))
         supervise = Mock(return_value=0)
-        flags = Mock(wraps=sys.flags, isolated=True, no_site=True)
-        with patch.object(sys, "path", list(sys.path)), patch.object(
-            sys, "argv", ["sandbox_exec.py", str(config)],
-        ), patch.object(
-            sys, "flags", flags,
-        ), patch.object(sandbox_exec, "mount"), patch.object(
+        original_flags, original_argv, original_path = sys.flags, sys.argv, sys.path
+        had_toolchain = "toolchain_runtime" in sys.modules
+        original_toolchain = sys.modules.get("toolchain_runtime")
+        search = list(sys.path)
+        launcher_sys = SimpleNamespace(
+            flags=SimpleNamespace(isolated=True, no_site=True),
+            argv=["sandbox_exec.py", str(config)], path=search,
+        )
+        descriptors = set(os.listdir("/proc/self/fd"))
+        with patch.object(sys, "path", search), patch.object(
+            sandbox_exec, "sys", launcher_sys,
+        ), patch.object(sandbox_exec, "mount") as mount, patch.object(
             sandbox_exec, "recursive_attributes", side_effect=OSError(errno.ENOSYS, "unsupported"),
-        ), patch.dict(sys.modules, {"syscall_guard": SimpleNamespace(supervise=supervise)}):
+        ) as attributes, patch.dict(sys.modules, {"syscall_guard": SimpleNamespace(supervise=supervise)}):
+            sys.modules.pop("toolchain_runtime", None)
+            self.assertNotIn("toolchain_runtime", sys.modules)
+            self.assertIs(sys.flags, original_flags)
+            self.assertIs(sandbox_exec.sys.path, sys.path)
             with self.assertRaises(OSError) as caught:
                 sandbox_exec.main()
+            self.assertEqual(
+                Path(sys.modules["toolchain_runtime"].__file__).resolve(),
+                TRUSTED_ROOT / "toolchain_runtime.py",
+            )
+            self.assertIs(sys.flags, original_flags)
         self.assertEqual(caught.exception.errno, errno.ENOSYS)
+        mount.assert_called_once_with(self.root, self.root, sandbox_exec.MS_BIND | sandbox_exec.MS_REC)
+        attributes.assert_called_once_with(
+            self.root, sandbox_exec.MS_RDONLY | sandbox_exec.MS_NOSUID | sandbox_exec.MS_NODEV,
+        )
         supervise.assert_not_called()
+        self.assertIs(sandbox_exec.sys, sys)
+        self.assertIs(sys.flags, original_flags)
+        self.assertIs(sys.argv, original_argv)
+        self.assertIs(sys.path, original_path)
+        self.assertEqual("toolchain_runtime" in sys.modules, had_toolchain)
+        if had_toolchain:
+            self.assertIs(sys.modules["toolchain_runtime"], original_toolchain)
+        self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
+
+    def null_mount_kernel_control(self, mode):
+        self.assertNotEqual(os.getuid(), 0, "null-mount fixture requires an ordinary invoking user")
+        fixture = self.directory / ("null-mount-" + mode)
+        fixture.mkdir()
+        program = self.directory / ("null-mount-" + mode + ".py")
+        program.write_text(r'''
+import ctypes,errno,json,os,stat,subprocess,sys
+from pathlib import Path
+from types import SimpleNamespace
+sys.path.insert(0,sys.argv[1])
+import sandbox_exec as setup
+LIBC=ctypes.CDLL(None,use_errno=True)
+mode,stage,fixture=sys.argv[2],sys.argv[3],Path(sys.argv[4])
+uid,gid=int(sys.argv[5]),int(sys.argv[6])
+def flags():
+    return {key:value.strip() for key,value in
+            (line.split(":",1) for line in Path("/proc/self/status").read_text().splitlines())}
+def drop():
+    for capability in range(64):
+        if LIBC.prctl(24,capability,0,0,0) and ctypes.get_errno()!=errno.EINVAL:
+            raise OSError(ctypes.get_errno(),"bounding capability drop")
+    if LIBC.prctl(47,4,0,0,0): raise OSError(ctypes.get_errno(),"ambient drop")
+    class Header(ctypes.Structure):
+        _fields_=[("version",ctypes.c_uint32),("pid",ctypes.c_int)]
+    class Data(ctypes.Structure):
+        _fields_=[("effective",ctypes.c_uint32),("permitted",ctypes.c_uint32),("inheritable",ctypes.c_uint32)]
+    header,data=Header(0x20080522,0),(Data*2)()
+    if LIBC.capset(ctypes.byref(header),ctypes.byref(data)): raise OSError(ctypes.get_errno(),"capability drop")
+    if LIBC.prctl(38,1,0,0,0): raise OSError(ctypes.get_errno(),"NNP")
+    value=flags()
+    assert value["NoNewPrivs"]=="1"
+    assert all(int(value[name],16)==0 for name in ("CapInh","CapPrm","CapEff","CapBnd","CapAmb"))
+    return {name:value[name] for name in ("CapInh","CapPrm","CapEff","CapBnd","CapAmb","NoNewPrivs")}
+def mount_state(path):
+    descriptor=os.open(path,os.O_PATH|os.O_NOFOLLOW|os.O_CLOEXEC)
+    try:
+        info=os.fstat(descriptor)
+        with open("/proc/self/fdinfo/"+str(descriptor),"rb") as source: data=source.read(4097)
+        assert len(data)<=4096
+        mount_id=int(next(line.split(b":",1)[1] for line in data.splitlines() if line.startswith(b"mnt_id:")))
+        return {"identity":[info.st_dev,info.st_ino,info.st_mode,info.st_rdev],
+                "mount_id":mount_id,"flags":os.fstatvfs(descriptor).f_flag}
+    finally: os.close(descriptor)
+def attrs(path,value):
+    setup.recursive_attributes(path,value)
+def bind_device(source,target,readonly):
+    setup.mount(source,target,setup.MS_BIND|setup.MS_REC)
+    attrs(target,setup.MS_NOSUID|setup.MS_NOEXEC|(setup.MS_RDONLY if readonly else 0))
+if stage=="outer":
+    assert os.getuid()==os.geteuid()==uid>0 and os.getgid()==gid>0
+    assert Path("/proc/self/uid_map").read_text().split()==[str(uid),str(uid),"1"]
+    assert Path("/proc/self/gid_map").read_text().split()==[str(gid),str(gid),"1"]
+    outer_user=os.stat("/proc/self/ns/user").st_ino
+    work=fixture/"volume";work.mkdir()
+    if LIBC.mount(b"tmpfs",os.fsencode(work),b"tmpfs",14,b"size=1048576,mode=0700"):
+        raise OSError(ctypes.get_errno(),"private bounded tmpfs")
+    for name in ("null","zero"):
+        (work/name).touch()
+        bind_device(Path("/dev")/name,work/name,mode!="writable")
+    for name in ("source","runtime"):
+        (work/name).mkdir();(work/name/"canary").write_bytes(name.encode())
+        setup.bind(work/name,work/name)
+    worker=drop()
+    assert os.getuid()==uid and os.getgid()==gid
+    child=subprocess.run(["/usr/bin/unshare","--user","--map-root-user","--mount","--fork",
+                          "--kill-child","--propagation","private","/usr/bin/python3","-I","-S","-B",
+                          __file__,sys.argv[1],mode,"inner",str(work),str(uid),str(gid),str(outer_user)],
+                         check=False)
+    assert child.returncode==0,child.returncode
+    raise SystemExit(0)
+assert os.getuid()==os.geteuid()==os.getgid()==0
+assert Path("/proc/self/uid_map").read_text().split()==["0",str(uid),"1"]
+assert Path("/proc/self/gid_map").read_text().split()==["0",str(gid),"1"]
+assert os.stat("/proc/self/ns/user").st_ino!=int(sys.argv[7])
+assert flags()["NoNewPrivs"]=="1"
+root=fixture/"root"
+for name in ("dev","repo","usr"): (root/name).mkdir(parents=True)
+for name in ("null","zero"): (root/"dev"/name).touch()
+setup.bind(root,root,executable=True)
+setup.bind(fixture/"source",root/"repo")
+setup.bind(fixture/"runtime",root/"usr",executable=True)
+setup.bind(fixture/("zero" if mode=="wrong-device" else "null"),root/"dev/null",writable=True)
+setup.bind(fixture/"zero",root/"dev/zero",writable=True)
+target=root/"dev/null"
+before=mount_state(target)
+descriptors=set(os.listdir("/proc/self/fd"))
+calls=[]
+original_ctypes=setup.ctypes
+class Library:
+    def syscall(self,*args):
+        value=ctypes.cast(args[4],ctypes.POINTER(setup.MountAttributes)).contents
+        if mode=="old":
+            request=setup.MS_REMOUNT|setup.MS_BIND|setup.MS_NOSUID|setup.MS_NOEXEC
+            calls.append(["legacy-remount",request])
+            return LIBC.mount(None,os.fsencode(target),None,request,None)
+        calls.append([args[0].value,args[3].value,value.attr_set,value.attr_clr,
+                      value.propagation,value.userns_fd,args[5].value])
+        if mode in {"unsupported","locked"}:
+            ctypes.set_errno(errno.ENOSYS if mode=="unsupported" else errno.EPERM)
+            return -1
+        if mode=="substituted":
+            if LIBC.mount(os.fsencode(fixture/"null"),os.fsencode(target),None,setup.MS_BIND|setup.MS_REC,None):
+                raise OSError(ctypes.get_errno(),"owned replacement mount")
+            descriptor=os.open(target,os.O_PATH|os.O_NOFOLLOW|os.O_CLOEXEC)
+            try:
+                restriction=setup.MountAttributes(attr_set=14)
+                if LIBC.syscall(ctypes.c_long(442),ctypes.c_int(descriptor),ctypes.c_char_p(b""),
+                                ctypes.c_uint(4096),ctypes.byref(restriction),ctypes.c_size_t(32)):
+                    raise OSError(ctypes.get_errno(),"replacement restriction")
+            finally: os.close(descriptor)
+        return LIBC.syscall(*args)
+    def mount(self,*args):
+        raise AssertionError("selective helper attempted a remount fallback")
+members=dict(vars(ctypes));members["CDLL"]=lambda *args,**kwargs:Library()
+setup.ctypes=SimpleNamespace(**members)
+failure=None
+try:
+    try:
+        setup._enable_toolchain_null(root)
+    except (OSError,RuntimeError) as error:
+        failure={"type":type(error).__name__,"message":str(error),"errno":getattr(error,"errno",None)}
+finally:
+    setup.ctypes=original_ctypes
+assert set(os.listdir("/proc/self/fd"))==descriptors
+after=mount_state(target)
+if mode in {"readonly","writable"}:
+    assert failure is None,failure
+    assert calls==[[442,4096,0,4,0,0,32]],calls
+    assert before["identity"]==after["identity"] and before["mount_id"]==after["mount_id"]
+    assert after["flags"]==before["flags"]&~os.ST_NODEV
+    assert bool(after["flags"]&os.ST_RDONLY)==(mode=="readonly")
+elif mode=="wrong-device":
+    assert failure is not None and not calls
+    assert before==after
+elif mode=="substituted":
+    assert failure is not None and failure["type"]=="RuntimeError"
+    assert calls==[[442,4096,0,4,0,0,32]]
+    assert before["identity"]==after["identity"] and before["mount_id"]!=after["mount_id"]
+    assert after["flags"]&os.ST_NODEV
+else:
+    assert failure is not None and failure["errno"]==(errno.ENOSYS if mode=="unsupported" else errno.EPERM)
+    assert before==after
+    assert calls==([["legacy-remount",4138]] if mode=="old" else [[442,4096,0,4,0,0,32]])
+worker=drop()
+denied={}
+for name in ("repo","usr"):
+    try: fd=os.open(root/name/"canary",os.O_WRONLY|os.O_CLOEXEC)
+    except OSError as error:
+        assert error.errno in (errno.EROFS,errno.EPERM,errno.EACCES)
+        denied[name]=error.errno
+    else:
+        os.close(fd);raise AssertionError("readonly regular fixture became writable")
+try: fd=os.open(root/"dev/zero",os.O_RDONLY|os.O_CLOEXEC)
+except OSError as error:
+    assert error.errno in (errno.EPERM,errno.EACCES)
+    denied["other-device"]=error.errno
+else:
+    os.close(fd);raise AssertionError("other device escaped nodev")
+io=False
+if failure is None:
+    fd=os.open(target,os.O_RDWR|os.O_NOFOLLOW|os.O_CLOEXEC)
+    try: assert os.read(fd,1)==b"" and os.write(fd,b"x")==1
+    finally: os.close(fd)
+    io=True
+assert set(os.listdir("/proc/self/fd"))==descriptors
+print(json.dumps({"mode":mode,"before":before,"after":after,"failure":failure,"calls":calls,
+                  "post_drop":worker,"denied":denied,"null_io":io,"fd_closed":True,
+                  "local_nonzero_topology":True}),flush=True)
+''')
+        stdout, stderr = self.directory / (mode + ".stdout"), self.directory / (mode + ".stderr")
+        before = set(os.listdir("/proc/self/fd"))
+        reader, writer = os.pipe2(os.O_CLOEXEC)
+        child = None
+        def limits():
+            resource.setrlimit(resource.RLIMIT_FSIZE, (256 * 1024, 256 * 1024))
+        try:
+            with stdout.open("wb") as output, stderr.open("wb") as errors:
+                child = subprocess.Popen([
+                    "/usr/bin/python3", "-I", "-S", "-B", str(TRUSTED_ROOT / "lifecycle.py"),
+                    str(time.monotonic() + 30), "--",
+                    "/usr/bin/unshare", "--user", "--map-current-user", "--keep-caps", "--mount",
+                    "--fork", "--kill-child", "--propagation", "private",
+                    "/usr/bin/python3", "-I", "-S", "-B", str(program), str(TRUSTED_ROOT), mode,
+                    "outer", str(fixture), str(os.getuid()), str(os.getgid()),
+                ], stdin=reader, stdout=output, stderr=errors, env=ENVIRONMENT,
+                   close_fds=True, start_new_session=True, preexec_fn=limits)
+                os.close(reader)
+                reader = -1
+                child.wait(timeout=35)
+            self.assertEqual(child.returncode, 0, stderr.read_text())
+            self.assertLessEqual(stdout.stat().st_size, 256 * 1024)
+            self.assertLessEqual(stderr.stat().st_size, 256 * 1024)
+            result = json.loads(stdout.read_text())
+            self.assertEqual(result["mode"], mode)
+            self.assertTrue(result["fd_closed"])
+            self.assertTrue(result["local_nonzero_topology"])
+            self.assertEqual(result["post_drop"]["NoNewPrivs"], "1")
+            self.assertTrue(all(int(result["post_drop"][name], 16) == 0
+                                for name in ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb")))
+            self.assertEqual(set(result["denied"]), {"repo", "usr", "other-device"})
+            return result
+        finally:
+            if reader >= 0:
+                os.close(reader)
+            os.close(writer)
+            if child is not None and child.poll() is None:
+                descriptor = os.pidfd_open(child.pid)
+                try:
+                    signal.pidfd_send_signal(descriptor, signal.SIGTERM)
+                    child.wait(timeout=5)
+                finally:
+                    os.close(descriptor)
+            self.assertFalse(Path(f"/proc/self/task/{os.getpid()}/children").read_text().strip())
+            self.assertEqual(set(os.listdir("/proc/self/fd")), before)
+
+    def test_toolchain_null_mount_preserves_readonly_and_writable_parents(self):
+        for mode in ("readonly", "writable"):
+            with self.subTest(mode=mode):
+                result = self.null_mount_kernel_control(mode)
+                self.assertIsNone(result["failure"])
+                self.assertTrue(result["null_io"])
+                self.assertEqual(result["before"]["identity"], result["after"]["identity"])
+                self.assertEqual(result["before"]["mount_id"], result["after"]["mount_id"])
+                self.assertEqual(result["after"]["flags"], result["before"]["flags"] & ~os.ST_NODEV)
+
+    def test_toolchain_null_mount_rejects_wrong_and_substituted_devices(self):
+        for mode in ("wrong-device", "substituted"):
+            with self.subTest(mode=mode):
+                result = self.null_mount_kernel_control(mode)
+                self.assertIsNotNone(result["failure"])
+                self.assertFalse(result["null_io"])
+                self.assertTrue(result["after"]["flags"] & os.ST_NODEV)
+
+    def test_toolchain_null_mount_failures_have_no_remount_fallback(self):
+        for mode, expected in (("unsupported", errno.ENOSYS), ("locked", errno.EPERM)):
+            with self.subTest(mode=mode):
+                result = self.null_mount_kernel_control(mode)
+                self.assertEqual(result["failure"]["errno"], expected)
+                self.assertEqual(result["before"], result["after"])
+                self.assertFalse(result["null_io"])
+
+    def test_toolchain_null_old_remount_restores_readonly_rejection(self):
+        result = self.null_mount_kernel_control("old")
+        self.assertEqual(result["failure"]["errno"], errno.EPERM)
+        self.assertEqual(result["before"], result["after"])
+        self.assertFalse(result["null_io"])
+
+    def test_toolchain_null_exception_requires_an_issued_launch(self):
+        from scripts.validation_ownership import sandbox_exec
+        config = self.directory / "null-launch-config.json"
+        search = list(sys.path)
+        local = SimpleNamespace(
+            flags=SimpleNamespace(isolated=True, no_site=True),
+            argv=["sandbox_exec.py", str(config)], path=search,
+        )
+        for extra in (
+            {"toolchain_runtime": {}},
+            {"dependency": {"toolchain_probe": {}}, "toolchain_runtime": {}},
+        ):
+            with self.subTest(extra=extra):
+                config.write_text(json.dumps({"root": str(self.root), "mounts": [], **extra}))
+                with patch.object(sys, "path", search), patch.object(
+                    sandbox_exec, "sys", local,
+                ), patch.object(sandbox_exec, "mount") as mount, patch.object(
+                    sandbox_exec, "_enable_toolchain_null",
+                ) as enable, patch.dict(sys.modules):
+                    sys.modules.pop("toolchain_runtime", None)
+                    with self.assertRaisesRegex(RuntimeError, "unrelated|unbound"):
+                        sandbox_exec.main()
+                mount.assert_not_called()
+                enable.assert_not_called()
 
     @contextmanager
     def owned_process(self, argv):
@@ -6761,7 +7123,7 @@ int main(int argc, char **argv) {
                             self.assertEqual(session.budget.runs, runs)
                         self.assert_clean(session)
 
-    def ordinary_assignment_context(self, assignments, names):
+    def ordinary_assignment_context(self, assignments, names, exported=()):
         environment, cli = dict(ENVIRONMENT), []
         for origin, name, value in assignments:
             if origin == "environment":
@@ -6773,13 +7135,15 @@ int main(int argc, char **argv) {
             cwd=self.root, env=environment, capture_output=True, check=True, timeout=10,
         )
         lines = normal.stdout.decode("utf-8").splitlines()
-        self.assertEqual(len(lines), 1 + 3*len(names), normal.stdout)
+        offset = 1 + 3*len(names)
+        self.assertEqual(len(lines), offset + len(exported), normal.stdout)
         return (
             [{"name": name, "order_only": False} for name in lines[0].split()],
             {
                 name: dict(zip(("value", "origin", "flavor"), lines[1 + index*3:4 + index*3]))
                 for index, name in enumerate(names)
             },
+            dict(zip(exported, lines[offset:])),
         )
 
     def test_equivalent_assignment_order_preserves_actual_make_identity(self):
@@ -6787,6 +7151,7 @@ int main(int argc, char **argv) {
             "all: $(B)\n"
             "\t@printf '%s\\n' '$^' '$(A)' '$(origin A)' '$(flavor A)' "
             "'$(B)' '$(origin B)' '$(flavor B)'\n"
+            "\t@printf '%s\\n' \"$$MAKEFLAGS\"\n"
             "one-two: ;\n"
         ))
         for origins in (
@@ -6798,18 +7163,28 @@ int main(int argc, char **argv) {
                 normal, observed = [], []
                 with self.session() as session:
                     for order in (assignments, tuple(reversed(assignments))):
-                        context = self.ordinary_assignment_context(order, ("A", "B"))
+                        context = self.ordinary_assignment_context(order, ("A", "B"), ("MAKEFLAGS",))
                         result = session.make("all", variables=("A", "B"), assignments=order)
                         self.assertEqual(result.semantics["files"][0]["prerequisites"], context[0])
                         self.assertEqual(result.semantics["domains"], context[1])
+                        self.assertEqual(len(result.semantics["native_dispatches"]), 2)
+                        for dispatch in result.semantics["native_dispatches"]:
+                            self.assertEqual(dispatch["environment"]["MAKEFLAGS"], context[2]["MAKEFLAGS"])
                         self.assertEqual(result.events, ())
                         normal.append(context)
                         observed.append(result)
                 self.assert_clean(session)
-                self.assertEqual(normal[0], normal[1])
+                self.assertEqual(normal[0][:2], normal[1][:2])
                 self.assertEqual(observed[0].execution_digest, observed[1].execution_digest)
-                self.assertEqual(observed[0].semantic_digest, observed[1].semantic_digest)
-                self.assertEqual(observed[0].semantics, observed[1].semantics)
+                if origins == ("command-line", "command-line"):
+                    self.assertNotEqual(normal[0][2]["MAKEFLAGS"], normal[1][2]["MAKEFLAGS"])
+                    self.assertNotEqual(observed[0].semantics["native_dispatches"],
+                                        observed[1].semantics["native_dispatches"])
+                    self.assertNotEqual(observed[0].semantic_digest, observed[1].semantic_digest)
+                else:
+                    self.assertEqual(normal[0], normal[1])
+                    self.assertEqual(observed[0].semantic_digest, observed[1].semantic_digest)
+                    self.assertEqual(observed[0].semantics, observed[1].semantics)
 
     def test_assignment_identity_preserves_values_origins_and_observed_order(self):
         names = ("A", "B", "STATE")
@@ -6868,6 +7243,7 @@ int main(int argc, char **argv) {
             "ifneq ($(findstring --no-print-directory,$(MAKEFLAGS)),)",
             "ifneq ($(origin LD_PRELOAD),undefined)",
             "ifneq ($(origin VO_OBSERVE_TARGET),undefined)",
+            "ifneq ($(origin VO_OBSERVE_RAW_NAMES),undefined)",
             "ifneq ($(origin SOURCE_DATE_EPOCH),undefined)",
         )
         for condition in controls:
@@ -7005,6 +7381,11 @@ int main(int argc, char **argv) {
                         self.assertEqual(len(observed.events), 1)
                         self.assertEqual(observed.events[0]["match"], 0)
                         self.assertEqual(observed.stdout, b"")
+                        contexts = observed.semantics["native_dispatches"]
+                        self.assertEqual({item["kind"] for item in contexts}, {"value", "recipe"})
+                        self.assertTrue(all(item["environment"]["HOME"] == "/nonexistent" for item in contexts))
+                        self.assertTrue(all(not any(name.startswith("VO_") for name in item["environment"])
+                                            for item in contexts))
                     self.assert_clean(session)
 
     def test_recursive_and_makefile_remake_dispatch_still_requires_real_mappings(self):
@@ -7051,8 +7432,8 @@ int main(int argc, char **argv) {
             self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "observed")
             self.assertTrue(all(event["match"] >= 0 for event in result.events))
         self.assert_clean(session)
-        from scripts.validation_ownership.syscall_guard import VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA
-        for marker in (VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA):
+        from scripts.validation_ownership.syscall_guard import VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_JOB_POLICY
+        for marker in (VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_JOB_POLICY):
             with self.subTest(marker=marker):
                 session = self.session()
                 with self.assertRaisesRegex(MakeProbeError, "unauthenticated"):
@@ -9193,21 +9574,32 @@ print(json.dumps({"owned_descriptors":len(allocated),"reaped":len(reaped),"defer
 
     def test_direct_argument_boundaries_cannot_collide_and_quote_refactors_survive(self):
         registration = Command(("/usr/bin/printf", "%s", "a b"))
-        commands = {
-            "printf %s 'a b'": registration,
-            'printf "%s" "a b"': registration,
-        }
+        direct = ("printf %s 'a b'", "printf '%s' 'a b'", r"printf %s a\ b")
+        shell = 'printf "%s" "a b"'
+        commands = dict.fromkeys((*direct, shell), registration)
         values = []
-        for expression in ("printf %s 'a b'", 'printf "%s" "a b"'):
+        for expression in (*direct, shell):
             # Isolate argv semantics from the separate identity of recipe-owning
             # source bytes: this goal deliberately has no recipe.
             self.add("Makefile", "VALUE := $(shell " + expression + ")\n.PHONY: all\nall:\n")
             with self.session() as session:
                 result = session.make("all", variables=("VALUE",), commands=commands)
                 self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "a b")
-                values.append(result.semantic_digest)
+                dispatch, = result.semantics["native_dispatches"]
+                self.assertEqual(dispatch["kind"], "value")
+                if expression in direct:
+                    self.assertEqual(dispatch["executable"], "/usr/bin/printf")
+                    self.assertEqual(dispatch["arguments"], ["printf", "%s", "a b"])
+                else:
+                    self.assertEqual(dispatch["executable"], "/bin/sh")
+                    self.assertEqual(dispatch["arguments"], ["/bin/sh", "-c", expression])
+                values.append(result)
             self.assert_clean(session)
-        self.assertEqual(values[0], values[1])
+        self.assertEqual(len({result.semantic_digest for result in values[:3]}), 1)
+        for result in values[1:]:
+            self.assertEqual(result.semantics["domains"], values[0].semantics["domains"])
+            self.assertEqual(result.semantics["dynamic_commands"], values[0].semantics["dynamic_commands"])
+        self.assertNotEqual(values[0].semantic_digest, values[-1].semantic_digest)
         self.add("Makefile", "VALUE := $(shell printf %s a b)\nall: ;\n")
         session = self.session()
         with self.assertRaisesRegex(MakeProbeError, "unregistered eager"):
@@ -9284,6 +9676,222 @@ print(json.dumps({"owned_descriptors":len(allocated),"reaped":len(reaped),"defer
             self.assertEqual(session.budget.runs, runs)
             self.assertTrue(session.budget.failed)
         self.assert_clean(session)
+
+
+class NamespaceImageTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = FoundationTests()
+        self.fixture.setUp()
+
+    def tearDown(self):
+        self.fixture.tearDown()
+
+    def metadata(self, session, fields):
+        return {
+            name: {field: getattr((session.tree / name).stat(), field) for field in fields}
+            for name in (".", "code", "data", "data/nested", "data/value")
+        }
+
+    def metadata_fixture(self):
+        command, fields = self.fixture.static_metadata_fixture()
+        self.fixture.add("data/nested/value", b"deep")
+        return command, fields
+
+    def prime_directory_times(self, session):
+        for name in (".", "code", "data", "data/nested"):
+            os.utime(session.tree / name, ns=(1, 1))
+
+    def assert_capture_keeps_metadata_and_cache(self, session, command, fields):
+        self.prime_directory_times(session)
+        first = session.command(command)
+        self.assertIs(session.command(command), first)
+        before = self.metadata(session, fields)
+        digest, runs = session.snapshot.digest, session.budget.runs
+        charged = session.budget.bytes.get("cache", 0)
+        image = session._capture_namespace_image()
+        self.assertIs(image.snapshot, session.snapshot)
+        self.assertEqual(session.snapshot.digest, digest)
+        self.assertEqual(session.budget.runs, runs)
+        self.assertGreater(session.budget.bytes["cache"], charged)
+        self.assertEqual(self.metadata(session, fields), before)
+        self.assertTrue(session._metadata_matches(first.metadata))
+        self.assertIs(session.command(command), first)
+        self.assertEqual(self.metadata(session, fields), before)
+        self.assertFalse(session._namespace_frames)
+        self.assertFalse(session._namespace_pending)
+
+    def test_direct_capture_preserves_complete_metadata_and_cached_command(self):
+        command, fields = self.metadata_fixture()
+        with self.fixture.session(seconds=30) as session:
+            self.assert_capture_keeps_metadata_and_cache(session, command, fields)
+        self.fixture.assert_clean(session)
+
+    def test_direct_capture_preserves_root_and_nested_selected_view_metadata(self):
+        command, fields = self.metadata_fixture()
+        budget = ProbeBudget(Limits(seconds=30))
+        base = self.fixture.capture_view(budget)
+        self.fixture.add("current-only.txt", "current")
+        current = self.fixture.capture_view(budget)
+        with ProbeSession(current, scratch_root=self.fixture.scratch, budget=budget) as session:
+            with session.select_view(base):
+                self.assert_capture_keeps_metadata_and_cache(session, command, fields)
+            self.assert_capture_keeps_metadata_and_cache(session, command, fields)
+        self.fixture.assert_clean(session)
+
+    def test_removing_only_noatime_recovers_metadata_drift_and_false_cache_miss(self):
+        import fcntl
+
+        command, fields = self.metadata_fixture()
+        opening = ProbeSession._namespace_directory
+        def ordinary_reads(session, name):
+            descriptor = opening(session, name)
+            flags = fcntl.fcntl(descriptor, fcntl.F_GETFL)
+            fcntl.fcntl(descriptor, fcntl.F_SETFL, flags & ~os.O_NOATIME)
+            return descriptor
+        with self.fixture.session(seconds=30) as session:
+            self.prime_directory_times(session)
+            first = session.command(command)
+            self.assertIs(session.command(command), first)
+            before = self.metadata(session, fields)
+            with patch.object(ProbeSession, "_namespace_directory", ordinary_reads):
+                session._capture_namespace_image()
+            after = self.metadata(session, fields)
+            for name in (".", "code", "data", "data/nested"):
+                self.assertEqual(
+                    {field for field in fields if before[name][field] != after[name][field]},
+                    {"st_atime_ns"},
+                )
+            self.assertEqual(before["data/value"], after["data/value"])
+            self.assertFalse(session._metadata_matches(first.metadata))
+            self.assertIsNot(session.command(command), first)
+        self.fixture.assert_clean(session)
+
+    def test_root_and_component_open_errors_close_real_pins_without_fallback(self):
+        self.fixture.add("data/nested/value", b"source")
+        opening = os.open
+        for failing in (".", "data", "nested"):
+            with self.subTest(failing=failing), self.fixture.session() as session:
+                opened, attempts = [], []
+                def deny_noatime(path, flags, *args, **kwargs):
+                    name = "." if os.fspath(path) == str(session.tree) else os.fspath(path)
+                    attempts.append((name, flags))
+                    if name == failing and flags & os.O_NOATIME:
+                        raise PermissionError(errno.EPERM, "metadata-neutral access denied", os.fspath(path))
+                    descriptor = opening(path, flags, *args, **kwargs)
+                    opened.append(descriptor)
+                    return descriptor
+                with patch.object(os, "open", deny_noatime), self.assertRaises(PermissionError):
+                    session._capture_namespace_image()
+                self.assertTrue(any(name == failing for name, _ in attempts))
+                required = os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME
+                self.assertTrue(all(flags & required == required for _, flags in attempts))
+                for descriptor in opened:
+                    with self.assertRaises(OSError) as closed:
+                        os.fstat(descriptor)
+                    self.assertEqual(closed.exception.errno, errno.EBADF)
+                self.assertFalse(session._namespace_images)
+                self.assertFalse(session._namespace_frames)
+                self.assertFalse(session._namespace_pending)
+                session._capture_namespace_image()
+            self.fixture.assert_clean(session)
+
+    def assert_inventory(self, paths, directories):
+        for path in paths:
+            self.fixture.add(path, b"x")
+        with self.fixture.session(entries=4) as session:
+            self.assertEqual(len(session.snapshot.files), len(paths))
+            charged = session.budget.bytes.get("cache", 0)
+            image = session._capture_namespace_image()
+            actual = set(image.members)
+            for directory, children in image.members.items():
+                actual.update(name if directory == "." else directory + "/" + name for name, _ in children)
+            self.assertEqual(set(image.directories), set(directories))
+            self.assertEqual(actual, set(paths) | set(directories))
+            self.assertGreater(session.budget.bytes["cache"], charged)
+            self.assertEqual(session.budget.limits.entries, 4)
+        self.fixture.assert_clean(session)
+
+    def test_full_flat_source_cohort_does_not_pay_an_extra_root_entry(self):
+        self.assert_inventory(("a", "b", "c", "d"), (".",))
+
+    def test_nested_source_cohort_keeps_all_parent_scaffolding(self):
+        self.assert_inventory(("data/nested/a", "data/nested/b", "data/nested/c"),
+                              (".", "data", "data/nested"))
+
+    def test_source_over_limit_still_rejects_before_namespace_capture(self):
+        for name in ("a", "b", "c", "d", "e"):
+            self.fixture.add(name, b"x")
+        session = self.fixture.session(entries=4)
+        with patch.object(session, "_capture_namespace_image", wraps=session._capture_namespace_image) as capture:
+            with self.assertRaisesRegex(MakeProbeError, "snapshot entry count"):
+                with session:
+                    session._capture_namespace_image()
+            capture.assert_not_called()
+        self.fixture.assert_clean(session)
+
+    def test_foreign_member_changed_type_and_incomplete_image_reject(self):
+        for name in ("a", "b", "c"):
+            self.fixture.add(name, b"x")
+        for defect in ("foreign", "directory", "symlink", "missing"):
+            with self.subTest(defect=defect), self.fixture.session(entries=4) as session:
+                if defect == "foreign":
+                    (session.tree / "foreign").write_bytes(b"unadmitted")
+                else:
+                    (session.tree / "a").unlink()
+                    if defect == "directory":
+                        (session.tree / "a").mkdir()
+                    elif defect == "symlink":
+                        (session.tree / "a").symlink_to("b")
+                reason = "incomplete" if defect == "missing" else "differs from admitted"
+                with self.assertRaisesRegex(MakeProbeError, reason):
+                    session._capture_namespace_image()
+            self.fixture.assert_clean(session)
+
+    def test_unreceipted_inherited_output_cannot_enter_namespace_capture(self):
+        from scripts.validation_ownership.make_probe import GeneratedFile
+
+        self.fixture.add("Makefile", "all: ;\n")
+        with self.fixture.session() as session:
+            (session.tree / "unreceipted").write_bytes(b"unreceipted")
+            session.published_sources["unreceipted"] = GeneratedFile("unreceipted", b"unreceipted", 0o644)
+            with patch.object(session, "_capture_namespace_image", wraps=session._capture_namespace_image) as capture:
+                with self.assertRaisesRegex(MakeProbeError, "unreceipted inherited"):
+                    session._begin_namespace("all", "Makefile", ())
+                capture.assert_not_called()
+        self.fixture.assert_clean(session)
+
+    def test_restoring_mixed_source_counter_rejects_both_admitted_cohorts(self):
+        import ast
+        import inspect
+        import textwrap
+
+        original = ProbeSession._capture_namespace_image
+        tree = ast.parse(textwrap.dedent(inspect.getsource(original)))
+        receiver = tree.body[0].args.args[0].arg
+        changed = []
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Compare) and len(node.ops) == len(node.comparators) == 1
+                and isinstance(node.ops[0], ast.GtE)
+                and all(isinstance(item, ast.Call) and isinstance(item.func, ast.Name)
+                        and item.func.id == "len" for item in (node.left, node.comparators[0]))
+            ):
+                node.comparators[0] = ast.parse(receiver + ".budget.limits.entries", mode="eval").body
+                changed.append(node)
+        self.assertEqual(len(changed), 1)
+        replacements = {}
+        exec(compile(ast.fix_missing_locations(tree), original.__code__.co_filename, "exec"),
+             original.__globals__, replacements)
+        suite = unittest.TestSuite(type(self)(name) for name in (
+            "test_full_flat_source_cohort_does_not_pay_an_extra_root_entry",
+            "test_nested_source_cohort_keeps_all_parent_scaffolding",
+        ))
+        result = unittest.TestResult()
+        with patch.object(ProbeSession, "_capture_namespace_image", replacements[original.__name__]):
+            suite.run(result)
+        self.assertEqual((result.testsRun, len(result.failures), len(result.errors)), (2, 0, 2))
+        for _, error in result.errors:
+            self.assertIn("MakeProbeError: original namespace exceeds admitted extent", error)
 
 
 @dataclass(frozen=True)
@@ -9499,7 +10107,9 @@ class PendingAdmissionTests(unittest.TestCase):
                         "import sys; print(sum(len(value) for value in sys.argv[1:-1]),sys.argv[-1])",
                         "a" * 60000, "b" * 60000, str(index),
                     ))
-                    size = len(encoded([command.argv, (), (), (), (), command.publication_policy]))
+                    size = len(encoded([
+                        command.argv, (), (), (), (), command.publication_policy, None, None,
+                    ]))
                     self.assertLess(size, MAX_PENDING_RECORD_BYTES)
                     expected += size
                     result = session.command(command)
@@ -9530,7 +10140,7 @@ class PendingAdmissionTests(unittest.TestCase):
         command = Command(tuple(argv), code=("reader.py",), sources=(source,), directories=(".",))
         fixed = len(encoded([
             command.argv, command.code, command.sources, command.directories,
-            command.outputs, command.publication_policy,
+            command.outputs, command.publication_policy, None, None,
         ]))
         argv.append("x" * (limit + 1 - fixed - 3))
         command = replace(command, argv=tuple(argv))
@@ -9538,7 +10148,7 @@ class PendingAdmissionTests(unittest.TestCase):
         self.assertTrue(all(len(value.encode()) <= 65536 for value in command.argv))
         self.assertEqual(len(encoded([
             command.argv, command.code, command.sources, command.directories,
-            command.outputs, command.publication_policy,
+            command.outputs, command.publication_policy, None, None,
         ])), limit + 1)
         with self.session(budget) as session:
             before = budget.bytes.get("pending", 0)
@@ -10152,6 +10762,1197 @@ class ObservationAllowanceTests(unittest.TestCase):
                     self.assertEqual(resolved, [] if defect == "above-capsule" else ["printf one"])
                     self.assertTrue(session.budget.failed)
                     self.assertTrue(session.budget.closed)
+
+
+class OutcomeCustodyTests(unittest.TestCase):
+    """O1-O6: real custody APIs, no child/namespace/privilege operations."""
+
+    TOKEN = "a" * 32
+    DEADLINE = 130.0
+    B = 262144
+
+    class Stream:
+        def __init__(self, fd, name, events, error=None, before=False, observe=None):
+            self.fd, self.name, self.events = fd, name, events
+            self.error, self.before, self.observe = error, before, observe
+            self.closed = False
+
+        def fileno(self):
+            return self.fd
+
+        def close(self):
+            self.events.append(self.name)
+            if self.observe is not None:
+                self.observe()
+            if self.error is not None and self.before:
+                raise self.error
+            self.closed = True
+            if self.error is not None:
+                raise self.error
+
+    class Child:
+        def __init__(self):
+            self.pid, self.returncode = 101, None
+
+    class Selector:
+        def __init__(self, close, select_error=None, lifetime=False):
+            self.keys, self.closing = {}, close
+            self.select_error, self.lifetime = select_error, lifetime
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *ignored):
+            self.close()
+
+        def register(self, stream, events, data=None):
+            fd = stream if type(stream) is int else stream.fileno()
+            key = selectors.SelectorKey(stream, fd, events, data)
+            self.keys[fd] = key
+            return key
+
+        def unregister(self, stream):
+            return self.keys.pop(stream if type(stream) is int else stream.fileno())
+
+        def get_map(self):
+            return self.keys
+
+        def select(self, timeout=None):
+            if timeout == 0:
+                return []
+            if self.select_error is not None:
+                raise self.select_error
+            if self.lifetime:
+                return [(self.keys[0], selectors.EVENT_READ)]
+            return [(key, selectors.EVENT_READ) for key in tuple(self.keys.values())]
+
+        def close(self):
+            self.keys.clear()
+            self.closing()
+
+    @staticmethod
+    def _signals(stack):
+        stack.enter_context(patch.object(signal, "pthread_sigmask", return_value=set()))
+        stack.enter_context(patch.object(signal, "sigpending", return_value=set()))
+        stack.enter_context(patch.object(signal, "signal", return_value=signal.SIG_DFL))
+        stack.enter_context(patch.object(signal, "raise_signal"))
+
+    def _binding(self):
+        from scripts.validation_ownership import lifecycle as life
+        return life._FixtureBinding("readonly", 1001, 1002, self.DEADLINE, 3, 4, 1001)
+
+    def _worker(self):
+        return {
+            "mode": "readonly", "before": [3, 4, 5, 6, 7, 15], "after": [3, 4, 5, 6, 7, 11],
+            "failure": None, "calls": [[442, 4096, 0, 4, 0, 0, 32]], "caps": [0, 0, 0, 0, 0, 1],
+            "denied": [errno.EROFS, errno.EACCES, errno.EACCES], "null_io": True, "fd_closed": True,
+            "local_nonzero_topology": True,
+        }
+
+    def _records(self, status=0):
+        from scripts.validation_ownership import lifecycle as life
+        report = life._cleanup_wire(life._CleanupReport("R", self.DEADLINE).value())
+        return [
+            {"v": 1, "role": "R", "phase": "before", "binding": self._binding().wire(), "pid": 201,
+             "kind": "normal-exit", "stage": "worker", "status": status, "error": None,
+             "result": self._worker(), "setup_status": 0},
+            {"v": 1, "role": "R", "phase": "after", "binding": self._binding().wire(), "pid": 201,
+             "before": "before", "cleanup": report, "disposition": "return", "status": status},
+            {"v": 1, "role": "L", "phase": "before", "token": self.TOKEN, "pid": 101,
+             "kind": "normal-exit", "stage": "wait", "status": status, "error": None,
+             "wait": [101, 1001, int(signal.SIGCHLD), os.CLD_EXITED if status >= 0 else os.CLD_KILLED,
+                      status if status >= 0 else -status]},
+            {"v": 1, "role": "L", "phase": "after", "token": self.TOKEN, "pid": 101,
+             "before": "before", "cleanup": report, "disposition": "return", "status": status},
+        ]
+
+    @staticmethod
+    def _wire(records):
+        from scripts.validation_ownership import lifecycle as life
+        return b"".join(life._encode_frame(value) for value in records)
+
+    def _coordinator(self, status=7, *, fault=None, before=False, data=None, diagnostics=b"opaque",
+                     default=False, capture_failure=None):
+        from scripts.validation_ownership import budget as budgeting, lifecycle as life
+        events, latches = [], []
+        faults = set() if fault is None else set(fault.split("+"))
+        earlier = (
+            KeyboardInterrupt("inert interrupt") if "interrupt" in faults
+            else subprocess.TimeoutExpired("inert", 1) if "wait-timeout" in faults
+            else ValueError("inert earlier exception")
+        )
+        cleanup = OSError(errno.EIO, "inert close exception")
+        child = self.Child()
+        owner = result = view = None
+        budget = None
+        summary = {}
+        try:
+            with ExitStack() as stack:
+                self._signals(stack)
+                stack.enter_context(patch.object(budgeting.time, "monotonic", return_value=100.0))
+                stack.enter_context(patch.object(budgeting.secrets, "token_hex", return_value=self.TOKEN))
+                budget = ProbeBudget(Limits(seconds=30))
+                budget.started = 100.0
+                if not default:
+                    owner = budget.reserve_outcome()
+                    owner._bind_fixture(self._binding())
+                source = self._wire(self._records(status)) if data is None else data
+                offsets = [0, 0]
+
+                def observe():
+                    if owner is not None:
+                        latches.append((owner._status, owner._streams is not None))
+
+                streams = {
+                    name: self.Stream(fd, name, events, cleanup if name in faults else None, before, observe)
+                    for fd, name in ((10, "stdout"), (11, "stderr"), (12, "lifetime"))
+                }
+                child.stdout, child.stderr, child.stdin = streams["stdout"], streams["stderr"], streams["lifetime"]
+                waits = []
+
+                def wait(timeout=None):
+                    waits.append(timeout)
+                    if len(waits) == 1 and faults & {"wait", "wait-timeout", "unreaped"}:
+                        raise earlier
+                    if "unreaped" in faults:
+                        raise cleanup
+                    if len(waits) > 1:
+                        observe()
+                        events.append("wait")
+                        if "reap" in faults:
+                            raise cleanup
+                    child.returncode = status
+                    if "remaining" in faults and len(waits) == 1:
+                        budget.failed = True
+                    return status
+
+                child.wait, child.poll = wait, lambda: child.returncode
+
+                def read(fd, size):
+                    if faults & {"read", "interrupt"} and fd == 11:
+                        raise earlier
+                    index = fd - 10
+                    content = source if index == 0 else diagnostics
+                    chunk = content[offsets[index]:offsets[index] + size]
+                    offsets[index] += len(chunk)
+                    return chunk
+
+                def selector_close():
+                    events.append("selector")
+                    observe()
+                    if faults & {"selector", "body-selector"}:
+                        raise cleanup
+
+                selector = self.Selector(selector_close, earlier if "body-selector" in faults else None)
+                stack.enter_context(patch.object(budgeting, "ordinary_executable"))
+                launch = stack.enter_context(patch.object(budgeting.subprocess, "Popen", return_value=child))
+                stack.enter_context(patch.object(budgeting.selectors, "DefaultSelector", return_value=selector))
+                stack.enter_context(patch.object(budgeting.os, "set_blocking"))
+                stack.enter_context(patch.object(budgeting.os, "read", read))
+                charge = budget.charge
+                if "deferred" in faults:
+                    stack.enter_context(patch.object(signal, "sigpending", return_value={signal.SIGTERM}))
+                    stack.enter_context(patch.object(signal, "sigtimedwait", return_value=object()))
+                    def deferred(signum):
+                        if "stderr" in events:
+                            raise cleanup
+                    stack.enter_context(patch.object(signal, "raise_signal", deferred))
+                if "charge" in faults:
+                    def charging(category, size):
+                        if category == "output":
+                            raise earlier
+                        return charge(category, size)
+                    stack.enter_context(patch.object(budget, "charge", charging))
+                if "conversion" in faults:
+                    def conversion(buffer, size):
+                        raise capture_failure if capture_failure is not None else earlier
+                    stack.enter_context(patch.object(budgeting, "_capture_bytes", conversion))
+                if "completed" in faults:
+                    def completed(*args):
+                        raise earlier
+                    stack.enter_context(patch.object(budgeting.subprocess, "CompletedProcess", completed))
+                try:
+                    result = budget.run(
+                        [*NAMESPACE_LAUNCHER, "/usr/bin/true"], env=ENVIRONMENT,
+                        privileged=True, output_limit=self.B, outcome=owner,
+                    )
+                except BaseException as error:
+                    summary["raised"] = "earlier" if error is earlier or error is capture_failure else (
+                        "cleanup" if error is cleanup else type(error).__name__
+                    )
+                    life._forget_error(error)
+                else:
+                    summary["raised"] = None
+                try:
+                    budget.close(**({} if default else {"report": owner._cleanup}))
+                except BaseException as error:
+                    summary["close_failed"] = True
+                    life._forget_error(error)
+                summary.update(
+                    failed=budget.failed, runs=budget.runs, events=tuple(events),
+                    closed=tuple(stream.closed for stream in streams.values()),
+                    remaining_children=len(budget.children), latches=tuple(latches),
+                    argv=tuple(launch.call_args.args[0]), launch_fds=launch.call_args.kwargs["pass_fds"],
+                    result_status=None if result is None else result.returncode,
+                    costs=dict(budget.bytes), entries=budget._outcome_entries,
+                    waits=tuple(waits), capture_counts=tuple(offsets), waited_status=child.returncode,
+                )
+                if owner is not None:
+                    if not owner._terminal:
+                        summary["custody_lost"] = True
+                    else:
+                        view = owner.snapshot()
+                        summary.update(
+                            custody_lost=False, status=view.outer_returncode, error=view.outer_error,
+                            capture_complete=view.capture_complete, available=view.capture_available,
+                            custody=view.custody_complete, frame_error=view.frame_error,
+                            returned=view.api_returned, reaped=view.reaped, qualified=view.qualified,
+                            cleanup_complete=view.cleanup.complete, cleanup_count=view.cleanup.count,
+                            uncertain=view.cleanup.uncertain,
+                            cached=all(owner.snapshot() is view for _ in range(20)),
+                            bytes_equal=view.stdout == source and view.stderr == diagnostics,
+                            shared=result is not None and result.stdout is view.stdout and result.stderr is view.stderr,
+                            frame_status=tuple(None if frame is None else frame.status for frame in view.frames),
+                            frame_kinds=tuple(None if frame is None else frame.kind for frame in view.frames),
+                            stream_lengths=(None if view.stdout is None else len(view.stdout),
+                                            None if view.stderr is None else len(view.stderr)),
+                            opaque_repr=repr(source) not in repr(view) and repr(diagnostics) not in repr(view),
+                        )
+                else:
+                    summary["bytes_equal"] = result is not None and result.stdout == source and result.stderr == diagnostics
+        finally:
+            # No raw API exception/capture/parser refs enter a retained testcase
+            # failure. The assertions run only after this helper has returned.
+            life._forget_error(earlier)
+            life._forget_error(cleanup)
+            if capture_failure is not None:
+                life._forget_error(capture_failure)
+            result = view = None
+            if owner is not None:
+                if not owner._spent or owner._terminal:
+                    owner.release()
+            if budget is not None:
+                budget.children.clear()  # Inert handles only; no simulated result credit.
+        return summary
+
+    def _watchdog(self, status=7, *, fault=None, before=False, main=False, default=False, keep_wire=False):
+        from scripts.validation_ownership import lifecycle as life
+        child = self.Child()
+        faults = set() if fault is None else set(fault.split("+"))
+        earlier = (
+            life.WatchdogInterrupted("inert interrupt") if "interrupt" in faults
+            else TimeoutError("inert wait timeout") if "wait-timeout" in faults
+            else ValueError("inert earlier exception")
+        )
+        cleanup = (
+            PermissionError(errno.EPERM, "inert signal denial") if faults & {"group", "desc-signal"}
+            else OSError(errno.EIO, "inert cleanup exception")
+        )
+        events, writes, before_cleanup, fd_closes, waits = [], [], [], [], []
+        descendants = {202, 203} if faults & {"descendant", "desc-signal", "desc-reap"} else set()
+        allocated = set()
+        facts = {}
+        setup_seen = False
+        writes_attempted = 0
+        now = [100.0]
+
+        def own_children():
+            nonlocal setup_seen
+            if not setup_seen:
+                setup_seen = True
+                return []
+            return sorted(descendants)
+
+        def observe_cleanup():
+            before_cleanup.append(bool(writes) and json.loads(writes[0][4:]).get("status") == status)
+
+        def waitid(*args):
+            waits.append(args)
+            if faults & {"wait", "wait-timeout", "interrupt"} and len(waits) == 1:
+                raise earlier
+            if len(waits) == 1 and faults & {"lifetime", "timeout"}:
+                if "timeout" in faults:
+                    now[0] = self.DEADLINE
+                return None
+            return SimpleNamespace(
+                si_pid=999 if "wrong-child" in faults else child.pid, si_uid=1001,
+                si_signo=int(signal.SIGCHLD),
+                si_code=os.CLD_EXITED if status >= 0 else os.CLD_KILLED,
+                si_status=status if status >= 0 else -status,
+            )
+
+        def wait(timeout=None):
+            observe_cleanup()
+            events.append("reap")
+            if "reap" in faults and before:
+                raise cleanup
+            child.returncode = status
+            if "reap" in faults:
+                raise cleanup
+            if "agreement" in faults:
+                child.returncode = 0 if status else 7
+            return child.returncode
+
+        child.wait = wait
+
+        def opening(pid):
+            if "setup" in faults:
+                raise earlier
+            descriptor = 40 if pid == 101 else pid
+            allocated.add(descriptor)
+            return descriptor
+
+        def closing(fd):
+            observe_cleanup()
+            events.append("pidfd")
+            fd_closes.append(fd)
+            if ("pidfd" in faults and fd == 40) or ("descendant" in faults and fd == 202):
+                if not before:
+                    allocated.discard(fd)
+                raise cleanup
+            allocated.discard(fd)
+
+        def selector_close():
+            observe_cleanup()
+            events.append("selector")
+            if "selector" in faults:
+                raise cleanup
+
+        def write(fd, data):
+            nonlocal writes_attempted
+            writes_attempted += 1
+            if fault == "epipe" or fault == "after-epipe" and writes_attempted == 2:
+                raise BrokenPipeError(errno.EPIPE, "inert publication")
+            if fault == "short" or fault == "after-short" and writes_attempted == 2:
+                writes.append(data[:3])
+                return 3
+            if fault == "eagain" and writes_attempted == 1:
+                raise BlockingIOError(errno.EAGAIN, "inert readiness")
+            writes.append(data)
+            return len(data)
+
+        def reaping(pid, options):
+            if "desc-reap" in faults and pid == 202:
+                raise ChildProcessError("inert unconfirmed descendant")
+            descendants.discard(pid)
+            return pid, 0
+
+        try:
+            with ExitStack() as stack:
+                self._signals(stack)
+                stack.enter_context(patch.object(life, "ordinary_executable"))
+                stack.enter_context(patch.object(life, "require_pidfds"))
+                stack.enter_context(patch.object(life, "owned_children", own_children))
+                stack.enter_context(patch.object(life, "prctl"))
+                stack.enter_context(patch.object(life.time, "monotonic", side_effect=lambda: now[0]))
+                stack.enter_context(patch.object(life.os, "fstat", side_effect=lambda fd: SimpleNamespace(
+                    st_mode=stat.S_IFREG if fault == "pipe" else stat.S_IFIFO,
+                    st_dev=3, st_ino=100 if fault == "alias" else 100 + fd,
+                )))
+                stack.enter_context(patch.object(life.fcntl, "fcntl", return_value=os.O_WRONLY))
+                stack.enter_context(patch.object(life.os, "fpathconf", return_value=4095 if fault == "pipe-buf" else 4096))
+                stack.enter_context(patch.object(life.os, "set_blocking"))
+                stack.enter_context(patch.object(life.os, "pidfd_open", opening))
+                stack.enter_context(patch.object(life.os, "close", closing))
+                stack.enter_context(patch.object(life.os, "waitid", waitid))
+                stack.enter_context(patch.object(life.os, "waitpid", reaping))
+                kill = stack.enter_context(patch.object(life.os, "killpg", side_effect=cleanup if "group" in faults else None))
+                def pidfd_signal(descriptor, signum):
+                    if "desc-signal" in faults and descriptor == 202:
+                        raise cleanup
+                stack.enter_context(patch.object(life.signal, "pidfd_send_signal", pidfd_signal))
+                stack.enter_context(patch.object(life.select, "select", return_value=([], [1], [])))
+                stack.enter_context(patch.object(life.os, "write", write))
+                launch = stack.enter_context(patch.object(life.subprocess, "Popen", return_value=child))
+                stack.enter_context(patch.object(life.selectors, "DefaultSelector", return_value=self.Selector(
+                    selector_close, lifetime="lifetime" in faults,
+                )))
+                if "handler" in faults:
+                    def restore_handler(signum, handler):
+                        if "reap" in events:
+                            raise cleanup
+                        return signal.SIG_DFL
+                    stack.enter_context(patch.object(signal, "signal", restore_handler))
+                if "deferred" in faults:
+                    stack.enter_context(patch.object(signal, "sigpending", return_value={signal.SIGTERM}))
+                    stack.enter_context(patch.object(signal, "sigtimedwait", return_value=object()))
+                    def deferred(signum):
+                        if "reap" in events:
+                            raise cleanup
+                    stack.enter_context(patch.object(signal, "raise_signal", deferred))
+                if fault == "deadline-publish":
+                    actual_publish = life._OutcomePublisher.publish
+                    def expire(publisher, value):
+                        now[0] = self.DEADLINE
+                        return actual_publish(publisher, value)
+                    stack.enter_context(patch.object(life._OutcomePublisher, "publish", expire))
+                if fault in ("encode-before", "encode-after"):
+                    original_encode = life._encode_frame
+                    def encode(value):
+                        if value["phase"] == ("before" if fault == "encode-before" else "after"):
+                            raise earlier
+                        return original_encode(value)
+                    stack.enter_context(patch.object(life, "_encode_frame", encode))
+                if main:
+                    stack.enter_context(patch.object(life, "sys", SimpleNamespace(
+                        flags=SimpleNamespace(isolated=True, no_site=True), stderr=sys.stderr,
+                        implementation=sys.implementation, getsizeof=sys.getsizeof,
+                        argv=["lifecycle.py", str(self.DEADLINE),
+                              *([] if default else ["--outcome-v1", self.TOKEN]), "--", "/usr/bin/true"],
+                    )))
+                    stack.enter_context(patch("builtins.print"))
+                    self_signal = stack.enter_context(patch.object(life.os, "kill"))
+                    stack.enter_context(patch.object(life.os, "_exit", side_effect=SystemExit))
+                try:
+                    actual = life.main() if main else life.run(
+                        [*NAMESPACE_LAUNCHER, "/usr/bin/true"], self.DEADLINE,
+                        outcome_token=None if default else self.TOKEN,
+                    )
+                except BaseException as error:
+                    facts["raised"] = "earlier" if error is earlier else (
+                        "cleanup" if error is cleanup else type(error).__name__
+                    )
+                    life._forget_error(error)
+                    actual = None
+                else:
+                    facts["raised"] = None
+                records = []
+                for data in writes:
+                    if len(data) >= 4 and len(data) - 4 == int.from_bytes(data[:4], "little"):
+                        records.append(json.loads(data[4:]))
+                facts.update(
+                    result=actual, frames=records, cleanup_latched=tuple(before_cleanup),
+                    launches=launch.call_count, writes_attempted=writes_attempted,
+                    events=tuple(events), fd_closes=tuple(fd_closes), fd_unconfirmed=len(allocated),
+                    child_status=child.returncode, killed=kill.call_count,
+                    wait_flags=all(item[2] == os.WEXITED | os.WNOHANG | os.WNOWAIT for item in waits),
+                    descendants=len(descendants),
+                    self_signals=tuple(call.args[1] for call in self_signal.call_args_list) if main else (),
+                )
+                if keep_wire:
+                    facts["wire"] = tuple(writes)
+        finally:
+            life._forget_error(earlier)
+            life._forget_error(cleanup)
+        return facts
+
+    def test_o1_coordinator_custody_oracle(self):
+        facts = self._coordinator(7, fault="stdout")
+        self.assertEqual(facts["raised"], "cleanup")
+        self.assertEqual(facts["waited_status"], 7)
+        self.assertTrue(all(facts["capture_counts"]))
+        self._custody_oracle_reached = True
+        self.assertFalse(facts.get("custody_lost"), "C lost the pre-cleanup observation")
+        self.assertEqual(facts.get("status"), 7)
+        self.assertTrue(facts.get("bytes_equal"))
+        self.assertEqual(facts.get("raised"), "cleanup")
+
+    def test_o1_watchdog_custody_oracle(self):
+        facts = self._watchdog(7, fault="selector")
+        before = next((value["status"] for value in facts["frames"] if value["phase"] == "before"), None)
+        observed, raised = all(facts["cleanup_latched"]), facts["raised"]
+        reaped, launched = facts["child_status"], facts["launches"]
+        facts.clear()
+        self.assertEqual((raised, reaped, launched), ("cleanup", 7, 1))
+        self._custody_oracle_reached = True
+        self.assertEqual(before, 7, "L lost its owned WNOWAIT observation")
+        self.assertTrue(observed)
+        self.assertEqual(raised, "cleanup")
+
+    def test_o3_acquisition_failure_precedes_mask_restoration(self):
+        from scripts.validation_ownership import budget as budgeting, lifecycle as life
+        for failure in ("launch", "admission", "block", None):
+            for interrupted in (True, False):
+                with self.subTest(failure=failure, interrupted=interrupted):
+                    original_mask = {signal.SIGUSR1}
+                    current_mask = set(original_mask)
+                    setup_error = OSError(errno.EAGAIN, "inert acquisition failure")
+                    interruption = KeyboardInterrupt("inert mask restoration")
+                    original_errors, restoration_facts, events = [], [], []
+                    block_failed = restored = False
+                    owner = view = result = budget = None
+                    raised = None
+                    try:
+                        with ExitStack() as stack:
+                            self._signals(stack)
+                            stack.enter_context(patch.object(budgeting.time, "monotonic", return_value=100.0))
+                            stack.enter_context(patch.object(budgeting.secrets, "token_hex", return_value=self.TOKEN))
+                            budget = ProbeBudget(Limits(seconds=30))
+                            budget.started = 100.0
+                            owner = budget.reserve_outcome()
+                            owner._bind_fixture(self._binding())
+                            if failure == "admission":
+                                budget.charge("pending", budget.limits.pending_bytes - budget.bytes["pending"])
+                            actual_charge = budget.charge
+
+                            def charge(category, size):
+                                try:
+                                    return actual_charge(category, size)
+                                except MakeProbeError as error:
+                                    original_errors.append(error)
+                                    raise
+
+                            def mask(how, requested):
+                                nonlocal block_failed, restored
+                                previous = set(current_mask)
+                                if how == signal.SIG_BLOCK:
+                                    current_mask.update(requested)
+                                    if failure == "block" and requested and not block_failed:
+                                        block_failed = True
+                                        original_errors.append(setup_error)
+                                        raise setup_error
+                                else:
+                                    self.assertEqual(how, signal.SIG_SETMASK)
+                                    current_mask.clear()
+                                    current_mask.update(requested)
+                                    if not restored:
+                                        restored = True
+                                        restoration_facts.append(owner._error)
+                                        if interrupted:
+                                            raise interruption
+                                return previous
+
+                            child = self.Child()
+                            streams = [
+                                self.Stream(fd, name, events)
+                                for fd, name in ((10, "stdout"), (11, "stderr"), (12, "lifetime"))
+                            ]
+                            child.stdout, child.stderr, child.stdin = streams
+
+                            def wait(timeout=None):
+                                child.returncode = 0
+                                return 0
+
+                            def launch(*args, **kwargs):
+                                if failure == "launch":
+                                    original_errors.append(setup_error)
+                                    raise setup_error
+                                return child
+
+                            wire, offset = self._wire(self._records()), 0
+
+                            def read(fd, size):
+                                nonlocal offset
+                                if fd == 11:
+                                    return b""
+                                chunk = wire[offset:offset + size]
+                                offset += len(chunk)
+                                return chunk
+
+                            child.wait, child.poll = wait, lambda: child.returncode
+                            stack.enter_context(patch.object(budget, "charge", charge))
+                            stack.enter_context(patch.object(signal, "pthread_sigmask", mask))
+                            stack.enter_context(patch.object(budgeting, "ordinary_executable"))
+                            popen = stack.enter_context(patch.object(budgeting.subprocess, "Popen", side_effect=launch))
+                            stack.enter_context(patch.object(budgeting.selectors, "DefaultSelector",
+                                                            return_value=self.Selector(lambda: events.append("selector"))))
+                            stack.enter_context(patch.object(budgeting.os, "set_blocking"))
+                            stack.enter_context(patch.object(budgeting.os, "read", read))
+                            try:
+                                result = budget.run(
+                                    [*NAMESPACE_LAUNCHER, "/usr/bin/true"], env=ENVIRONMENT,
+                                    privileged=True, output_limit=self.B, outcome=owner,
+                                )
+                            except BaseException as error:
+                                raised = error
+                            budget.close(report=owner._cleanup)
+                            view = owner.snapshot()
+                            self.assertEqual(popen.call_count, int(failure not in ("admission", "block")))
+                            self.assertEqual(current_mask, original_mask)
+                            self.assertFalse(budget.children)
+                            self.assertTrue(restoration_facts)
+                            if failure is not None:
+                                self.assertEqual(len(original_errors), 1)
+                                self.assertIs(raised, original_errors[0])
+                                self.assertEqual(view.outer_error, life._error_value(original_errors[0]))
+                                self.assertEqual(restoration_facts[0], view.outer_error)
+                                self.assertEqual(view.outer_stage, "setup")
+                                self.assertIsNone(view.outer_returncode)
+                            elif interrupted:
+                                self.assertIs(raised, interruption)
+                                self.assertEqual(view.outer_error, life._error_value(interruption))
+                                self.assertIsNone(view.outer_returncode)
+                            else:
+                                self.assertIsNone(raised)
+                                self.assertEqual(result.returncode, 0)
+                                self.assertEqual(view.outer_returncode, 0)
+                                self.assertTrue(view.cleanup.complete)
+                            if interrupted:
+                                self.assertFalse(view.cleanup.complete)
+                                bit = 1 << life._STAGES.index("mask")
+                                self.assertTrue(view.cleanup.failed & bit)
+                                self.assertTrue(view.cleanup.uncertain & bit)
+                            if failure is None:
+                                self.assertTrue(all(stream.closed for stream in streams))
+                            if popen.called:
+                                current_mask.update(life.TERMINATING)
+                                popen.call_args.kwargs["preexec_fn"]()
+                                self.assertEqual(current_mask, original_mask)
+                    finally:
+                        view = result = raised = wire = None
+                        if owner is not None:
+                            owner.release()
+                        for error in (*original_errors, setup_error, interruption):
+                            life._forget_error(error)
+                        original_errors.clear()
+
+    def test_o1_normal_observation_precedes_each_real_cleanup(self):
+        for status in (7, 0, -9, 125):
+            for fault in ("selector", "stdout", "stderr", "lifetime", "reap", "deferred"):
+                for before in (False, True):
+                    with self.subTest(layer="C", status=status, site=fault, before=before):
+                        facts = self._coordinator(status, fault=fault, before=before)
+                        self.assertFalse(facts["custody_lost"])
+                        self.assertEqual(facts["status"], status)
+                        self.assertTrue(facts["bytes_equal"])
+                        self.assertTrue(facts["latches"])
+                        self.assertTrue(all(item == (status, True) for item in facts["latches"]))
+                        self.assertEqual(facts["raised"], "cleanup")
+                        self.assertFalse(facts["returned"])
+                        self.assertFalse(facts["cleanup_complete"])
+                        self.assertTrue(facts["failed"])
+                        self.assertFalse(facts["qualified"])
+                        for name in ("selector", "stdout", "stderr", "lifetime"):
+                            self.assertEqual(facts["events"].count(name), 1)
+                        if fault in ("stdout", "stderr", "lifetime"):
+                            self.assertEqual(facts["closed"][("stdout", "stderr", "lifetime").index(fault)], not before)
+            for fault in ("selector", "pidfd", "reap", "descendant", "handler", "group", "desc-signal"):
+                for before in (False, True):
+                    with self.subTest(layer="L", status=status, site=fault, before=before):
+                        facts = self._watchdog(status, fault=fault, before=before)
+                        # Only finite fixture bytes/records remain, never an API exception.
+                        self.assertTrue(facts["cleanup_latched"])
+                        self.assertTrue(all(facts["cleanup_latched"]))
+                        self.assertEqual(facts["frames"][0]["status"], status)
+                        self.assertEqual(facts["raised"], "cleanup")
+                        self.assertEqual(facts["frames"][1]["disposition"], "raise")
+                        self.assertTrue(facts["wait_flags"])
+                        self.assertEqual(len(facts["fd_closes"]), len(set(facts["fd_closes"])))
+                        self.assertEqual(facts["descendants"], 0)
+                        if fault in ("pidfd", "descendant"):
+                            self.assertEqual(facts["fd_unconfirmed"], int(before))
+                        if fault == "reap":
+                            self.assertEqual(facts["child_status"], None if before else status)
+                        facts.clear()
+
+    def test_o1_composed_l_nonzero_actual_125_then_c_cleanup(self):
+        inner = self._watchdog(7, fault="pidfd", main=True, keep_wire=True)
+        actual, wire = inner["result"], b"".join(inner["wire"])
+        inner.clear()
+        facts = self._coordinator(actual, fault="stderr", data=self._wire(self._records(7)[:2]) + wire)
+        wire = None
+        self.assertEqual(actual, 125)
+        self.assertEqual(facts["status"], 125)
+        self.assertEqual(facts["frame_status"], (7, 7, 7, None))
+        self.assertTrue(facts["bytes_equal"])
+        self.assertFalse(facts["returned"])
+        self.assertFalse(facts["qualified"])
+        self.assertEqual(facts["raised"], "cleanup")
+
+    def test_o2_zero_or_valid_inner_records_never_qualify_outer_failure(self):
+        for status in (0, 125, -9):
+            for fault in (None, "stdout", "unreaped", "read", "body-selector"):
+                with self.subTest(status=status, fault=fault):
+                    facts = self._coordinator(status, fault=fault, data=self._wire(self._records()))
+                    self.assertFalse(facts["qualified"])
+                    if fault:
+                        self.assertTrue(facts["failed"])
+                        self.assertFalse(facts["returned"])
+                    if fault == "unreaped":
+                        self.assertFalse(facts["reaped"])
+                        self.assertTrue(facts["uncertain"])
+        facts = self._watchdog(0, fault="deferred", main=True)
+        result, before_status, after = facts["result"], facts["frames"][0]["status"], facts["frames"][1]
+        facts.clear()
+        self.assertEqual((result, before_status), (125, 0))
+        self.assertEqual(after["disposition"], "raise")
+        self.assertGreater(after["cleanup"]["count"], 0)
+        facts = self._watchdog(0, fault="desc-reap", main=True)
+        actual = (facts["result"], facts["descendants"], facts["fd_unconfirmed"],
+                  len(facts["fd_closes"]), facts["frames"][-1]["cleanup"]["uncertain"])
+        facts.clear()
+        self.assertEqual(actual[:4], (125, 1, 0, 3))
+        self.assertNotEqual(actual[4], 0)
+
+    def test_o3_prior_exceptions_and_cleanup_status_are_distinct(self):
+        for fault in ("wait", "read", "body-selector", "charge", "unreaped",
+                      "wait+stdout", "read+selector", "body-selector+deferred",
+                      "interrupt+stdout", "wait-timeout+stderr"):
+            facts = self._coordinator(125, fault=fault)
+            self.assertEqual(facts["raised"], "earlier")
+            self.assertIsNone(facts["status"])
+            self.assertFalse(facts["capture_complete"])
+            self.assertIsNotNone(facts["error"])
+        for fault in ("setup", "wait", "lifetime", "timeout", "wrong-child", "setup+selector",
+                      "wait+pidfd", "lifetime+selector", "interrupt+pidfd", "wait-timeout+selector"):
+            facts = self._watchdog(7, fault=fault)
+            records, result = facts["frames"], facts["raised"]
+            facts.clear()
+            if fault == "timeout":
+                self.assertEqual(result, "TimeoutError")
+                self.assertEqual(records, [])
+                continue
+            self.assertEqual(records[0]["kind"], "exception")
+            self.assertIsNone(records[0]["status"])
+            self.assertIsNone(records[0]["wait"])
+            self.assertIsNotNone(result)
+            if fault in ("setup", "wait", "setup+selector", "wait+pidfd", "interrupt+pidfd", "wait-timeout+selector"):
+                self.assertEqual(result, "earlier")
+            if fault in ("lifetime", "lifetime+selector"):
+                self.assertEqual(result, "BrokenPipeError")
+        for fault in ("remaining", "conversion", "completed"):
+            facts = self._coordinator(7, fault=fault)
+            self.assertEqual(facts["status"], 7)
+            self.assertFalse(facts["returned"])
+            self.assertFalse(facts["qualified"])
+            self.assertEqual(facts["available"], fault != "conversion")
+
+    def test_o4_strict_frames_and_binding_no_resynchronization(self):
+        records = self._records()
+        good = self._wire(records)
+        controls = [
+            b"", good[:2], good[:5], good[:-1], self._wire(records[:3]),
+            (4093).to_bytes(4, "little") + b" " * 4093,
+            self._wire([records[0], records[0], *records[2:]]),
+            self._wire([records[1], records[0], *records[2:]]),
+        ]
+        for index, changes in (
+            (0, {"command": "no"}), (2, {"token": "b" * 32}), (2, {"status": True}),
+            (2, {"wait": [102, 1001, int(signal.SIGCHLD), os.CLD_EXITED, 0]}),
+            (2, {"wait": [101, 1001, int(signal.SIGCHLD), os.CLD_STOPPED, 9]}),
+            (2, {"wait": [101, 1001, int(signal.SIGCHLD), os.CLD_KILLED, 0]}),
+            (3, {"pid": 102}), (0, {"kind": "exception"}),
+        ):
+            changed = [dict(value) for value in records]
+            changed[index].update(changes)
+            controls.append(self._wire(changed))
+        for index, replacement in ((0, "writable"), (1, 1003), (2, 1003), (3, 131.0), (4, 9), (5, 9), (6, 9)):
+            changed = [dict(value) for value in records]
+            changed[0]["binding"] = self._binding().wire()
+            changed[0]["binding"][index] = replacement
+            controls.append(self._wire(changed))
+        body = json.dumps(records[0], separators=(",", ":")).replace('"v":1', '"v":1,"v":1').encode()
+        controls.append(len(body).to_bytes(4, "little") + body)
+        for data in controls:
+            facts = self._coordinator(0, data=data)
+            self.assertFalse(facts["custody"])
+            self.assertIsNotNone(facts["frame_error"])
+            self.assertFalse(facts["qualified"])
+        facts = self._coordinator(0, data=self._wire([records[0], records[2], records[1], records[3]]))
+        self.assertTrue(facts["custody"])
+        self.assertTrue(facts["bytes_equal"])
+        reordered = []
+        for record in records:
+            body = json.dumps(record, sort_keys=True, separators=(",", ":")).encode().replace(b'"v"', b'"\\u0076"')
+            reordered.append(len(body).to_bytes(4, "little") + body)
+        facts = self._coordinator(0, data=b"".join(reordered))
+        self.assertTrue(facts["custody"])
+        self.assertEqual(facts["frame_status"], (0, 0, 0, 0))
+        # Stderr can resemble a perfect receipt but never fills any slot.
+        facts = self._coordinator(0, data=b"", diagnostics=good)
+        self.assertFalse(facts["custody"])
+        self.assertEqual(facts["frame_status"], (None,) * 4)
+
+    def test_o4_creator_zero_is_not_worker_completion(self):
+        records = self._records(7)
+        normal = self._coordinator(7, data=self._wire(records))
+        self.assertEqual(normal["frame_status"][0], 7)
+        records[0].update(stage="creator", status=0, result=None)
+        facts = self._coordinator(125, data=self._wire(records))
+        self.assertFalse(facts["custody"])
+        records[0].update(kind="exception", status=None, error=[1, errno.EIO])
+        records[1].update(disposition="raise", status=None)
+        facts = self._coordinator(125, data=self._wire(records))
+        self.assertTrue(facts["custody"])
+        self.assertEqual(facts["frame_kinds"][0], "exception")
+        self.assertIsNone(facts["frame_status"][0])
+        self.assertFalse(facts["qualified"])
+
+    def test_o4_publication_errors_are_real_failures_not_delivered_causes(self):
+        for fault in ("epipe", "short", "after-epipe", "after-short", "deadline-publish", "encode-before", "encode-after",
+                      "pipe", "alias", "pipe-buf"):
+            facts = self._watchdog(7, fault=fault, main=True)
+            result, launches, records = facts["result"], facts["launches"], facts["frames"]
+            facts.clear()
+            self.assertEqual(result, 125)
+            if fault in ("pipe", "alias", "pipe-buf"):
+                self.assertEqual(launches, 0)
+            if fault in ("epipe", "short", "deadline-publish", "encode-before"):
+                self.assertFalse(any(value["phase"] == "before" for value in records))
+        facts = self._watchdog(7, fault="eagain")
+        actual, attempts, phases = facts["result"], facts["writes_attempted"], [item["phase"] for item in facts["frames"]]
+        facts.clear()
+        self.assertEqual(actual, 7)
+        self.assertEqual(attempts, 3)
+        self.assertEqual(phases, ["before", "after"])
+
+    def test_o5_preallocation_affinity_and_exact_monotonic_bounds(self):
+        from scripts.validation_ownership import budget as budgeting, lifecycle as life
+        for change in (
+            {"cache_bytes": 552959}, {"pending_bytes": 4095}, {"entries": 51},
+            {"output_bytes": self.B - 1}, {"process_output_bytes": self.B - 1},
+            {"total_bytes": 552960 + 4096 - 1},
+        ):
+            with self.subTest(limit=change), patch.object(budgeting, "_RunOutcome") as constructor:
+                budget = ProbeBudget(Limits(**change))
+                with self.assertRaises(MakeProbeError):
+                    budget.reserve_outcome()
+                constructor.assert_not_called()
+        with patch.object(life.sys, "getsizeof", return_value=1024), patch.object(budgeting, "_RunOutcome") as constructor:
+            with self.assertRaises(MakeProbeError):
+                ProbeBudget().reserve_outcome()
+            constructor.assert_not_called()
+        for size in (True, 16384, 16385, life._JSON_WORK_BYTES + 8191, self.B + 1):
+            with patch.object(budgeting, "_RunOutcome") as constructor:
+                with self.assertRaises(MakeProbeError):
+                    ProbeBudget().reserve_outcome(output_limit=size)
+                constructor.assert_not_called()
+        minimum = life._JSON_WORK_BYTES + 8192
+        budget = ProbeBudget(Limits(entries=52, cache_bytes=2 * minimum + 28672, pending_bytes=4096))
+        owner = budget.reserve_outcome(output_limit=minimum)
+        values = (budget.bytes.copy(), budget.states, budget.runs, budget._outcome_entries)
+        owner.release()
+        self.assertEqual(values, ({"cache": 2 * minimum + 28672, "pending": 4096}, 1, 0, 52))
+        self.assertEqual(values[0], budget.bytes)
+        with self.assertRaises(MakeProbeError):
+            owner.snapshot()
+        with self.assertRaises(MakeProbeError):
+            budget.reserve_outcome(output_limit=minimum)
+        budget = ProbeBudget()
+        owner = budget.reserve_outcome()
+        foreign = life._CleanupReport("C", budget.deadline)
+        with self.assertRaises(MakeProbeError):
+            budget.close(report=foreign)
+        budget.close(report=owner._cleanup)
+        owner.release()
+        for problem in ("foreign", "subclass", "spent", "ordinal", "closed", "failed", "session", "broker", "input", "ordinary"):
+            budget = ProbeBudget()
+            owner = budget.reserve_outcome()
+            supplied, kwargs = owner, {}
+            if problem == "foreign":
+                budget = ProbeBudget()
+            elif problem == "subclass":
+                class Substitute(budgeting._RunOutcome):
+                    pass
+                supplied = object.__new__(Substitute)
+            elif problem == "spent":
+                owner._spent = True
+            elif problem == "ordinal":
+                budget.runs += 1
+            elif problem in ("closed", "failed"):
+                setattr(budget, problem, True)
+            elif problem == "session":
+                budget.session_started = True
+            elif problem == "broker":
+                kwargs["producer_channel"] = object()
+                kwargs["producer_handler"] = object()
+            elif problem == "input":
+                kwargs["input_data"] = b"x"
+            with patch.object(subprocess, "Popen") as launch:
+                with self.assertRaises(MakeProbeError):
+                    budget.run(
+                        [*NAMESPACE_LAUNCHER, "/usr/bin/true"], env=ENVIRONMENT,
+                        privileged=problem != "ordinary", output_limit=self.B, outcome=supplied, **kwargs,
+                    )
+                launch.assert_not_called()
+            owner._terminal = True
+            owner.release()
+
+    def test_o5_cumulative_cleanup_entries_do_not_format_or_keep_errors(self):
+        from scripts.validation_ownership import lifecycle as life
+
+        class Unprintable(OSError):
+            def __str__(self):
+                raise AssertionError("raw exception formatting")
+
+        report = life._CleanupReport("C", self.DEADLINE)
+        primary = ValueError("existing")
+        huge = Unprintable(errno.EIO, b"x" * (1024 * 1024))
+        done = []
+        try:
+            with ExitStack() as stack:
+                self._signals(stack)
+                for group in range(6):
+                    def bad():
+                        raise huge
+                    life.finish_cleanup(
+                        [("stdout", bad), ("stderr", bad), ("lifetime", bad), ("wait", lambda: done.append(group))],
+                        primary=primary, report=report,
+                    )
+            value = report.value()
+            finite = (value.count, len(value.errors), value.overflow, value.complete,
+                      len(life._encode_frame({"report": life._cleanup_wire(value)})),
+                      hasattr(primary, "cleanup_errors"), hasattr(primary, "__notes__"), len(done))
+            references = tuple(type(item).__name__ for item in __import__("gc").get_referents(report))
+        finally:
+            life._forget_error(primary)
+            life._forget_error(huge)
+            huge = primary = None
+        self.assertEqual(finite[:4], (17, 16, True, False))
+        self.assertLessEqual(finite[4], 4096)
+        self.assertEqual(finite[5:], (False, False, 6))
+        self.assertNotIn("Unprintable", references)
+        class UnavailableErrno(OSError):
+            @property
+            def errno(self):
+                raise ValueError("inert metadata access")
+        metadata = life._CleanupReport("L", self.DEADLINE)
+        metadata.error("pidfd", UnavailableErrno())
+        self.assertTrue(metadata.value().metadata_failed)
+        self.assertFalse(metadata.value().complete)
+
+    def test_o5_representation_admission_and_peak_lifetime(self):
+        import gc
+        import tracemalloc
+        from scripts.validation_ownership import budget as budgeting, lifecycle as life
+        for payload in (
+            b"[" * 7 + b"0" + b"]" * 7, b'{"x":"' + b"x" * 65 + b'"}',
+            b"[" + b"0," * 192 + b"0]", b'{"v":NaN}', b'{"v":1e9999}',
+        ):
+            with patch.object(life.json, "loads", wraps=json.loads) as decode:
+                with self.assertRaises(ValueError):
+                    value = life._json_read(payload)
+                    if type(value) is dict and any(type(item) is float and not __import__("math").isfinite(item)
+                                                   for item in value.values()):
+                        raise ValueError("finite schema rejection")
+                if payload != b'{"v":NaN}' and payload != b'{"v":1e9999}':
+                    decode.assert_not_called()
+        binding = self._binding()
+        records = self._records(7)
+        for role in (1, 3):
+            report = life._CleanupReport("R" if role == 1 else "L", self.DEADLINE)
+            for _ in range(16):
+                report.error("stdout", OSError(errno.EIO, "fixed"))
+            records[role].update(cleanup=life._cleanup_wire(report.value()), disposition="raise", status=None)
+        wire = self._wire(records)
+        # Pad all four frames to F, not just a typical short success record.
+        padded = bytearray()
+        offset = 0
+        while offset < len(wire):
+            size = int.from_bytes(wire[offset:offset + 4], "little")
+            body = wire[offset + 4:offset + 4 + size]
+            padded.extend((4092).to_bytes(4, "little") + body + b" " * (4092 - size))
+            offset += size + 4
+        source = bytes(padded)
+        diagnostics = b"x" * (self.B - len(source))
+        gc.collect()
+        tracemalloc.start()
+        try:
+            with patch.object(budgeting.time, "monotonic", return_value=100.0):
+                budget = ProbeBudget(Limits(seconds=30))
+                budget.started = 100.0
+                baseline = tracemalloc.get_traced_memory()[0]
+                tracemalloc.reset_peak()
+                owner = budget.reserve_outcome()
+                owner._token = self.TOKEN
+                owner._bind_fixture(binding)
+                for _ in range(16):
+                    owner._cleanup.error("stderr", OSError(4095, "fixed"))
+                owner._cleanup.value()
+                owner._spent = True
+                owner._append(0, source)
+                owner._append(1, diagnostics)
+                owner._observe(7, True)
+                owner._freeze()
+                owner._terminal = True
+                view = owner.snapshot()
+                worker = life._private_worker_record(json.dumps(self._worker(), separators=(",", ":")).encode())
+                peak = tracemalloc.get_traced_memory()[1] - baseline
+                facts = (view.capture_available, view.custody_complete, all(
+                    owner.snapshot() is view for _ in range(50)
+                ), len(worker), peak, budget.bytes["cache"])
+                alias = subprocess.CompletedProcess([], 7, view.stdout, view.stderr)
+                owner.release()
+                retained = (len(alias.stdout), len(alias.stderr), owner._streams, owner._snapshot, owner._frames)
+                view = alias = worker = None
+                gc.collect()
+                after_release = tracemalloc.get_traced_memory()[0] - baseline
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(facts[:4], (True, True, True, 10))
+        self.assertLessEqual(facts[4], facts[5])
+        self.assertEqual(retained, (16384, 245760, None, None, None))
+        self.assertLess(after_release, 32768)
+
+    def test_o5_exact_stream_and_private_worker_boundaries(self):
+        from scripts.validation_ownership import lifecycle as life
+        frames = []
+        for value in self._records():
+            frame = life._encode_frame(value)
+            frames.append((4092).to_bytes(4, "little") + frame[4:] + b" " * (4096 - len(frame)))
+        output = b"".join(frames)
+        errors = b"x" * (self.B - len(output))
+        facts = self._coordinator(0, data=output, diagnostics=errors)
+        self.assertTrue(facts["custody"])
+        self.assertTrue(facts["bytes_equal"])
+        self.assertEqual(facts["stream_lengths"], (16384, 245760))
+        self.assertEqual(facts["costs"]["output"], self.B)
+        for stdout, stderr in ((output + b"x", errors), (output, errors + b"x")):
+            facts = self._coordinator(0, data=stdout, diagnostics=stderr)
+            self.assertFalse(facts["capture_complete"])
+            self.assertIsNone(facts["status"])
+            self.assertEqual(facts["raised"], "MakeProbeError")
+            self.assertEqual(facts["stream_lengths"][0], 16384)
+            self.assertLessEqual(facts["stream_lengths"][1], 245760)
+        worker = json.dumps(self._worker(), separators=(",", ":")).encode()
+        complete = worker + b" " * (4096 - len(worker))
+        self.assertEqual(life._private_worker_record(complete)[0], "readonly")
+        for mode in life._MODES:
+            fixture = self._worker()
+            fixture["mode"] = mode
+            if mode == "wrong-device":
+                fixture["calls"] = []
+            elif mode == "old":
+                fixture["calls"] = [["legacy-remount", 4138]]
+            if mode not in ("readonly", "writable"):
+                fixture["failure"] = [1, errno.ENOSYS if mode == "unsupported" else errno.EPERM]
+                fixture["null_io"] = False
+            observed = life._private_worker_record(json.dumps(fixture, separators=(",", ":")).encode())
+            self.assertEqual(observed[0], mode)
+            self.assertEqual(observed[7], fixture["null_io"])
+        with patch.object(life.json, "loads") as decoded:
+            with self.assertRaises(ValueError):
+                life._private_worker_record(complete + b"x")
+            decoded.assert_not_called()
+        with self.assertRaises(ValueError):
+            life._private_worker_record(life._encode_frame(self._records()[0])[4:])
+
+    def test_o5_retained_failure_releases_raw_exception_and_captures(self):
+        import gc
+        import weakref
+        from scripts.validation_ownership import lifecycle as life
+
+        class Payload:
+            pass
+
+        def case():
+            payload = Payload()
+            reference = weakref.ref(payload)
+            original = ValueError(payload, b"x" * 262144)
+            facts = self._coordinator(7, fault="conversion+stderr", capture_failure=original)
+            life._forget_error(original)
+            original = payload = None
+            gc.collect()
+            return reference, facts["status"], facts["available"], facts["raised"]
+
+        reference, status, available, raised = case()
+        try:
+            raise AssertionError("bounded custody failure")
+        except AssertionError as error:
+            retained = error
+        gc.collect()
+        released = reference() is None
+        context = retained.__context__
+        life._forget_error(retained)
+        retained = None
+        self.assertTrue(released)
+        self.assertIsNone(context)
+        self.assertEqual((status, available, raised), (7, False, "earlier"))
+
+    def test_o5_owned_pipe_atomic_publication_and_no_recycled_authority(self):
+        from scripts.validation_ownership import lifecycle as life
+        read, write = os.pipe2(os.O_CLOEXEC | os.O_NONBLOCK)
+        guard_read, guard_write = os.pipe2(os.O_CLOEXEC)
+        old_fstat, old_fcntl = os.fstat, life.fcntl.fcntl
+        old_blocking, old_conf, old_write = os.set_blocking, os.fpathconf, os.write
+        old_select = life.select.select
+        data = None
+        try:
+            with ExitStack() as stack:
+                stack.enter_context(patch.object(life.os, "fstat", lambda fd: old_fstat(write if fd == 1 else fd)))
+                stack.enter_context(patch.object(life.fcntl, "fcntl", lambda fd, op: old_fcntl(write if fd == 1 else fd, op)))
+                stack.enter_context(patch.object(life.os, "set_blocking", lambda fd, flag: old_blocking(write if fd == 1 else fd, flag)))
+                stack.enter_context(patch.object(life.os, "fpathconf", lambda fd, name: old_conf(write if fd == 1 else fd, name)))
+                stack.enter_context(patch.object(life.os, "write", lambda fd, value: old_write(write if fd == 1 else fd, value)))
+                publisher = life._OutcomePublisher(self.TOKEN, time.monotonic() + 5, guard_read)
+                filled = 0
+                while filled < self.B:
+                    try:
+                        filled += old_write(write, b"x" * 4096)
+                    except BlockingIOError:
+                        break
+                waits = []
+                def writable(readers, writers, errors, timeout):
+                    waits.append(timeout)
+                    while True:
+                        try:
+                            if not os.read(read, 4096):
+                                break
+                        except BlockingIOError:
+                            break
+                    return old_select([], [write], [], timeout)
+                stack.enter_context(patch.object(life.select, "select", writable))
+                publisher.publish(self._records()[2])
+                data = os.read(read, 4096)
+                valid = json.loads(data[4:])["status"] == 0 and len(data) == int.from_bytes(data[:4], "little") + 4
+                os.close(read)
+                read = None
+                with self.assertRaises(BrokenPipeError):
+                    publisher.publish(self._records()[3])
+                finite = (valid, len(waits), publisher.attempted, publisher.sent)
+        finally:
+            data = None
+            for descriptor in (read, write, guard_read, guard_write):
+                if descriptor is not None:
+                    os.close(descriptor)
+        self.assertEqual(finite, (True, 1, 2, 1))
+        child = self.Child()
+        child.returncode = 7
+        report = life._CleanupReport("L", self.DEADLINE)
+        with patch.object(os, "killpg") as signal_group, patch.object(os, "waitid") as waitid:
+            life.terminate(child, report=report)
+            signal_group.assert_not_called()
+            waitid.assert_not_called()
+
+    def test_o6_none_preserves_actual_default_contract_and_optin_returns(self):
+        for status in (7, 0, -9, 125):
+            facts = self._coordinator(status, default=True, data=b"default-output")
+            self.assertEqual(facts["result_status"], status)
+            self.assertTrue(facts["bytes_equal"])
+            self.assertNotIn("--outcome-v1", facts["argv"])
+            self.assertNotIn("cache", facts["costs"])
+            self.assertEqual(facts["entries"], 0)
+            self.assertEqual(facts["launch_fds"], ())
+            opted = self._coordinator(status)
+            self.assertEqual(opted["result_status"], status)
+            self.assertEqual(opted["status"], status)
+            self.assertTrue(opted["shared"])
+            self.assertTrue(opted["cached"])
+            self.assertTrue(opted["opaque_repr"])
+            self.assertIn("--outcome-v1", opted["argv"])
+            self.assertFalse(opted["qualified"])
+            inner = self._watchdog(status, default=True)
+            result, write_count = inner["result"], inner["writes_attempted"]
+            inner.clear()
+            self.assertEqual(result, status)
+            self.assertEqual(write_count, 0)
+        for default in (False, True):
+            facts = self._watchdog(-9, main=True, default=default)
+            actual = (facts["raised"], facts["self_signals"])
+            facts.clear()
+            self.assertEqual(actual, ("SystemExit", (9,)))
+        from scripts.validation_ownership import lifecycle as life
+        with patch.object(life, "sys", SimpleNamespace(
+            flags=SimpleNamespace(isolated=True, no_site=True), stderr=sys.stderr,
+            argv=["lifecycle.py", str(self.DEADLINE), "--", "/usr/bin/printf", "--outcome-v1"],
+        )), patch.object(life, "run", side_effect=ValueError("ordinary diagnostic")), patch("builtins.print") as diagnostic:
+            result = life.main()
+            ordinary = diagnostic.call_args.args == ("namespace watchdog: ordinary diagnostic",)
+        self.assertEqual(result, 125)
+        self.assertTrue(ordinary)
+        for arguments in (
+            ["--outcome-v1", "bad", "--", "/usr/bin/true"],
+            ["--outcome-v1", self.TOKEN, "--outcome-v1", self.TOKEN, "--", "/usr/bin/true"],
+            ["--outcome-v1", self.TOKEN, "--fd", "9", "--", "/usr/bin/true"],
+            ["--outcome-v1", self.TOKEN, "--path", "receipt", "--", "/usr/bin/true"],
+            ["--stdin-fd", "3", "--outcome-v1", self.TOKEN, "--", "/usr/bin/true"],
+        ):
+            with patch.object(life, "sys", SimpleNamespace(
+                flags=SimpleNamespace(isolated=True, no_site=True), stderr=sys.stderr,
+                argv=["lifecycle.py", str(self.DEADLINE), *arguments],
+            )), patch.object(life, "run") as run, patch("builtins.print"):
+                self.assertEqual(life.main(), 125)
+                run.assert_not_called()
 
 
 if __name__ == "__main__":

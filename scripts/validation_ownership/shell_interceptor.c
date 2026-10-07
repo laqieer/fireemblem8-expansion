@@ -471,6 +471,22 @@ frame:
             return 125;
         free(mapped);
     }
+    if (kind == VO_LIVE)
+    {
+        long status = syscall(SYS_getpid, VO_TOOLCHAIN_STATUS, 0, 0);
+        if (status < 0 || status > 2)
+            return 125;
+        if (status != 2)
+        {
+            snprintf(path, sizeof(path), "%016llx.err", (unsigned long long)match);
+            mapped = read_file_at(mapping, path, &size, MAX_OUTPUT);
+            if (!mapped || write_all(STDERR_FILENO, mapped, size))
+                return 125;
+            free(mapped);
+            close(mapping);
+            return (int)status;
+        }
+    }
     close(mapping);
     return 0;
 }

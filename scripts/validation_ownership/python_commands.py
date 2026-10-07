@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import io
 import json
+import posixpath
+import re
 from pathlib import PurePosixPath
 
 from .authority import parse_json, relative_path
@@ -203,6 +206,116 @@ def directory_python_command(session, body, arguments=(), *, sources=(), outputs
         directories=_directory_closure(directories), code=code,
         publication_policy=publication_policy,
     )
+
+
+def _text_data_sources(session, source, definitions):
+    source, definitions = relative_path(source), relative_path(definitions)
+    session.sources((source, definitions))
+    pending, active, complete = [(source, False)], set(), set()
+    while pending:
+        session.budget.remaining()
+        path, finished = pending.pop()
+        if finished:
+            active.remove(path)
+            complete.add(path)
+            continue
+        if path in active:
+            raise MakeProbeError("text input has a cyclic include")
+        if path in complete:
+            continue
+        if len(active) + len(complete) >= session.budget.limits.entries:
+            session.budget.reject("text include closure exceeds source entry admission")
+        session.sources((path,))
+        data = (
+            session.published_sources[path].data if path in session.published_sources
+            else session.snapshot.files[path]
+        )
+        session.budget.charge("cache", len(data))
+        decoded = text(data, "text input " + path, "utf-8")
+        active.add(path)
+        pending.append((path, True))
+        children = []
+        with io.StringIO(decoded, newline=None) as stream:
+            line = stream.readline()
+            while line:
+                session.budget.remaining()
+                stripped = line.strip()
+                include = re.match(r'#include\s+"([^"]+)"', stripped)
+                if include:
+                    name = include[1]
+                    if name.startswith("/") or "\\" in name:
+                        raise MakeProbeError("text include has an unsupported or escaping path")
+                    child = posixpath.normpath(posixpath.join(posixpath.dirname(path), name))
+                    child = relative_path(child)
+                    session.budget.charge("cache", len(child.encode("utf-8")) + 64)
+                    children.append(child)
+                    line = stream.readline()
+                    continue
+                if stripped.startswith("#include"):
+                    raise MakeProbeError("text input has unsupported include grammar")
+                message = re.match(r"^#([0-9a-fA-Fx]+)", stripped)
+                macro = re.match(r"^##\s*(\w+)", stripped)
+                line = stream.readline()
+                if message or macro:
+                    while line and not line.startswith("#"):
+                        session.budget.remaining()
+                        line = stream.readline()
+        pending.extend((child, False) for child in reversed(children))
+    return tuple(sorted(complete | {definitions}))
+
+
+TEXT_GENERATION_BODY = """
+import os,runpy,stat
+source,definitions,output,header,encoding,comparison=sys.argv[1:]
+script='scripts/texttools/textprocess.py'
+sys.path.insert(0,'/repo/scripts/texttools')
+sys.argv=[script,source,definitions,'/work/'+output,'/work/'+comparison,encoding]
+runpy.run_path(script,run_name='__main__')
+flags=os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC
+def identity(info):
+ return (info.st_dev,info.st_ino,info.st_mode,info.st_size,info.st_mtime_ns,info.st_ctime_ns,info.st_nlink)
+try:
+ expected=os.open('/repo/'+header,flags)
+ try:
+  rendered=os.open('/work/'+comparison,flags)
+  try:
+   old,new=os.fstat(expected),os.fstat(rendered)
+   if not stat.S_ISREG(old.st_mode) or not stat.S_ISREG(new.st_mode):
+    raise ValueError('text comparison requires regular files')
+   while True:
+    data=os.read(expected,65536)
+    if data!=os.read(rendered,65536):
+     raise ValueError('rendered text header differs from immutable input')
+    if not data: break
+   if (identity(old)!=identity(os.fstat(expected))
+       or identity(new)!=identity(os.fstat(rendered))
+       or identity(old)!=identity(os.stat('/repo/'+header,follow_symlinks=False))
+       or identity(new)!=identity(os.stat('/work/'+comparison,follow_symlinks=False))):
+    raise ValueError('text comparison input changed')
+  finally: os.close(rendered)
+ finally: os.close(expected)
+finally:
+ os.unlink('/work/'+comparison)
+"""
+
+
+def text_generation_command(session, source, definitions, output, header, encoding):
+    if not isinstance(session, ProbeSession) or session.base is None or session.snapshot is None:
+        raise MakeProbeError("text generation requires an active owning probe session")
+    source, definitions, output, header = map(relative_path, (source, definitions, output, header))
+    if encoding not in {"utf8", "cp932"} or header not in session.snapshot.files:
+        raise MakeProbeError("text generation requires supported encoding and an immutable comparison header")
+    sources = tuple(sorted(set(_text_data_sources(session, source, definitions)) | {header}))
+    destination = PurePosixPath(output)
+    comparison = (destination.parent / ("." + destination.name + ".header-check")).as_posix()
+    command = python_command(
+        session, TEXT_GENERATION_BODY, (source, definitions, output, header, encoding, comparison),
+        sources=sources, outputs=(output,),
+        code=("scripts/texttools/textprocess.py", "scripts/texttools/huffman.py"),
+        publication_policy="if-content-changed-preserve-mode",
+    )
+    session._native_context_command(command)
+    return session._private_install_command(command, (output, comparison))
 
 
 def _python_module_code(session, module, *, main=False):

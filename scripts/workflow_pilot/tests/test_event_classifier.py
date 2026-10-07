@@ -198,7 +198,7 @@ class EventClassifierFixtureTests(unittest.TestCase):
                 expected_jobs = {"event-classifier", "summary"}
                 if case_id == "missing-base":
                     expected_jobs.update(
-                        {"host-tests", "build", "extended-host-tests", "legacy"}
+                        {"host-tests", "ownership-tests", "build", "extended-host-tests", "legacy"}
                     )
                 self.assertEqual(set(case["expected"]["jobs"]), expected_jobs)
                 self.assertFalse(case["expected"]["summary_success"])

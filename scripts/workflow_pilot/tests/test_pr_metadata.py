@@ -638,7 +638,7 @@ def _metadata_jobs(
 ) -> list[dict]:
     jobs = []
     for index, name in enumerate(sorted(pr_metadata.METADATA_JOB_NAMES), 1):
-        if name in {"extended-host-tests", "legacy", "patch-release"}:
+        if name in {*pr_metadata.candidate_evidence.METADATA_SKIPPED_JOB_IDS, "patch-release"}:
             jobs.append(
                 _job(
                     name,
@@ -2123,10 +2123,10 @@ class PullRequestMetadataTests(unittest.TestCase):
             ],
         )
 
-        eight_record, eight_jobs = _run(112, 16, mode="full", active=True)
-        cases["eight-job-current-shape"] = (
-            eight_record,
-            [job for job in eight_jobs if job["name"] != "summary"],
+        current_record, current_jobs = _run(112, 16, mode="full", active=True)
+        cases["nine-job-current-shape-without-summary"] = (
+            current_record,
+            [job for job in current_jobs if job["name"] != "summary"],
         )
 
         unknown_record, unknown_jobs = _run(
@@ -4825,7 +4825,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 "conclusion"
             ] = "failure"
             mutations[f"{job_name}-failure"] = jobs
-        for job_name in ("extended-host-tests", "legacy"):
+        for job_name in pr_metadata.candidate_evidence.METADATA_SKIPPED_JOB_IDS:
             jobs = copy.deepcopy(base_jobs)
             target = next(job for job in jobs if job["name"] == job_name)
             target["runner_name"] = "unexpected-runner"

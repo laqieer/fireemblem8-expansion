@@ -70,9 +70,10 @@ Missing lifecycle primitives reject before a payload runs; there is no
 numeric-PID generation-check or unconfined fallback.
 Native C++ tool consumers additionally need the existing host C++ compiler.
 The producer suite's real graphics/linker controls also use libpng,
-pkg-config and ARM binutils; its extended Build owner installs those existing
-consumer prerequisites. They are not requirements of the standalone registry
-command above.
+pkg-config and ARM binutils. The actual header pipeline additionally uses the
+ARM GCC driver, C SDK headers and GNU sed; the same extended Build owner
+installs those consumer prerequisites. They are not requirements of the
+standalone registry command above.
 The existing required `extended-host-tests` Build worker runs this complete
 process suite through `ownership-probe-test` in full Build mode, in parallel
 with the host localization work. Lightweight `tests/workflows` checks verify
@@ -98,19 +99,44 @@ vectors without modifying global site directories.
 Each capsule has a private mount, network and PID namespace, a read-only chroot,
 no capabilities, `no_new_privs`, and no inherited descriptor beyond standard
 input/output/error. Candidate source mounts preserve observable Git executable
-bits but are **noexec**. No proc filesystem, device-FD aliases, host home,
+bits but are **noexec**. No whole proc filesystem, device-FD aliases, host home,
 credentials, or service sockets are mounted inside the candidate root.
+Only the identity-issued header filter receives the two exact readonly kernel
+input files required by its real sed/libselinux constructor. Their namespace,
+actual read extents and EOF status are recorded; they are not generic proc
+access or Make source-read authority.
 
 Recursive bind mounts receive their restrictions through `mount_setattr` with
 `AT_RECURSIVE`, using an `O_PATH`-pinned mount root. Read-only, noexec, nosuid and
-nodev apply to every copied submount, not just the top bind. Attribute clearing
-is never requested, so stronger source restrictions remain intact. The initial
+nodev apply to every copied submount, not just the top bind. Generic recursive
+bind setup never requests attribute clearing, so stronger source restrictions
+remain intact. The initial
 root is recursively sealed before deliberate writable work/control mounts and
 the separate read-only executable interceptor are installed. These exceptions
 do not make inherited submounts writable or executable accidentally.
 An unavailable recursive-attribute operation rejects before candidate
 supervision; there is no top-level-remount fallback. All changes are confined
 to the launcher's private mount namespace, not the host's source mounts.
+
+The already issued modern-toolchain syntax/compile profile has one narrow
+device exception: its exact `/dev/null` bind must still be the same actual
+character device `1:3`. Setup pins both the source and target, checks bounded
+kernel mount IDs and complete mount flags, then clears only the target's local
+`NODEV` attribute with a nonrecursive, fd-addressed `mount_setattr`. Readonly,
+nosuid, noexec, atime and propagation restrictions are not relaxed; path or
+mount substitution, a blocked source device, unsupported operation or locked
+attribute fails closed. There is no full-remount, RW, privilege or preopened-FD
+fallback. The native stage/last-executable null-write rules stay unchanged.
+
+The setup-only regression in
+[the existing toolchain case](test-cases/workflow-governance.md#tc-workflow-ownership-modern-toolchain-001-execute-the-original-modern-toolchain-prerequisite)
+uses no Make, compiler or SDK workload. It requires an ordinary nonzero
+invoking UID/GID, Linux x86-64 with `mount_setattr`, and installed unprivileged
+user/mount namespace support including util-linux `--map-current-user` and
+`--keep-caps`. An extra local outer namespace preserves that nonzero ID for
+setup, drops all capability sets and sets NNP before the inner root mapping.
+This is local mechanism evidence, not hosted mount/lock/LSM telemetry.
+Unsupported topology fails rather than using the separate sudo route.
 
 The syscall supervisor remains outside the chroot. It follows every child,
 uses kernel-identified entry/exit stops, fails on unadmitted syscalls, and
@@ -137,8 +163,12 @@ ending at an unmapped page does not require reading the next page. Strict
 UTF-8 and the 4,096-byte pathname bound still apply. Ptrace errors identify
 their request rather than collapsing distinct failures into bare `EIO`.
 
-Candidate `symlink`/`symlinkat` and the entire `rename`/`renameat`/`renameat2`
-family reject before execution. A symlink target is relative to its containing
+Candidate `symlink`/`symlinkat` and ungranted `rename`/`renameat`/`renameat2`
+calls reject before execution. The graph's identity-issued private regular
+installation is the sole candidate rename exception; its parent pins,
+single-link source, absent same-parent destination and sole-actor checks
+are described in [ownership validation](validation-ownership.md).
+A symlink target is relative to its containing
 directory, not the creating process's cwd; a moved cwd/dirfd ancestor also
 changes kernel `..` resolution without changing the recorded path. Neither
 alias is needed by the supported consumers. Denying them keeps candidate
@@ -150,6 +180,50 @@ the guest root, before `..` and with each syscall's final-component follow
 semantics. Absolute links never resolve against the supervisor's host root.
 Open, cwd and directory-FD records retain that authorized destination, so a
 runtime alias cannot disguise an undeclared `/repo` access as a library read.
+
+The header pipeline's public directory, retirement and ownership-transfer
+operations are different: the supervisor executes these pending typed effects
+while candidate processes are parked. They confer no candidate syscall
+permission. The actual native remake job/ordinal, target-derived operands,
+identity-issued command and currently owned temporary must agree. Closed
+tagged confirmations carry actual created-directory identities and regular
+file before/after versions, which the host rechecks before publishing effects
+or advancing the five-step pipeline. Partial pipelines reject; cleanup removes
+only their owned files/directories and preserves existing parents and inputs.
+`test_header_effects` and `test_header_pipeline` belong to the existing process
+suite, not ordinary graph discovery. The former isolates filesystem effects;
+the latter executes actual ARM/SDK/sed code and a genuine default message
+composition. Runtime launches are identity-issued and consumed once before
+the native configuration is serialized. A caller-created dictionary cannot
+grant the SDK or kernel-input profile. Full original source-read-phase
+authority remains separate and unimplemented.
+
+An opt-in original read trace uses the actual GNU4.3 entry/return ABI and four
+x86-64 hardware execution-breakpoint slots. The runtime ELF, decoded control
+flow, globals, real source fopen call sites and stopped process/frame are
+validated; no source line offset or mutable Make variable chooses an entry.
+The existing observer forwards fopen unchanged, preserves errno and restores
+the observation selection across real self-exec. Parent breakpoints are
+cleared from descendants. A self-generated SIGTRAP or ordinary source
+notification cannot impersonate this boundary.
+
+The optional `read_trace` result records original raw variable sets, exact
+source snapshots and ordered successful/failed visits across actual execs.
+It is observation data, not a phase grant. Default-off observations retain
+their old shape. The existing native suite owns `test_read_epochs`, and its
+positive/default/corruption/lifetime controls do not run again in graph
+discovery. No original namespace exception or full-report claim follows
+until the independent mutation and every-pass source contracts also close.
+
+The separate opt-in source-phase capture adds original entry namespace images
+through the same private channel, at actual stopped read-entry barriers.
+It does not synthesize a producer result: producer counts, native dispatch/job
+shape and remaining resource grants stay intact. Completed publications are
+acknowledged before the host captures the complete namespace, and the native
+trace binds that exact image to the original input event. The session retains
+image identities privately; a serialized image or digest alone grants nothing.
+This remains an observation component, not a mutation-journal completeness
+claim or a source-walk namespace exception.
 
 Output directories must remain removable by the original runner. Pathname
 `chmod`/`fchmodat` may retain owner read/write/search permissions, but may not
@@ -221,6 +295,226 @@ command results. Makefile remakes, direct recursive Make and graphs containing
 GNU Make's native recursive-command flags conservatively require registered
 results for their dispatches, rather than silently suppressing recursion.
 The fixed process/resource bounds still include interceptor children.
+
+Every Make observation includes `native_dispatches`: the actual scheduled
+executable/argv/cwd, ordered dispatch identity, recipe/value classification,
+failure-ignore state and complete effective environment at the authenticated
+interceptor exec boundary. Export membership and values come from GNU Make's
+actual `envp`, including target-specific export and inherited unexport behavior,
+not a source-name scan or another expansion of unused variables. No host
+environment or observer bootstrap variables are inherited. Values are not
+redacted or replaced with a claimed semantic equivalent. Duplicate/malformed
+environment names and excessive vectors reject. Both vectors share the
+existing 64 KiB frame bound, each retains the 1,024-entry bound, and strings
+retain the 4,096-byte bound. Native observations, JSON transport, retained
+semantics and graph caches spend their existing counters without refunds.
+
+The native record also reports `rebuilding_makefiles` from the trusted
+observer's real GNU state, separately from the overloaded required/live bit.
+Live producer requests carry the same bounded argv/cwd/environment context.
+The host verifies its exact schema and argv agreement with the authenticated
+interceptor frame before registration, then issues an in-process context
+bound to the active callback and view. An explicitly context-aware adapter may
+use it for its exact primary command; unrelated registration helpers do not
+inherit that environment. Caller records, stale contexts and malformed wire
+fields cannot replace it. This is dispatch authority only, not a read-pass
+identifier or an original-entry namespace/input certificate.
+
+Every dispatch also has a native `job` association: recipe target and actual
+command ordinal, or an explicitly target-less shell expansion. The observer
+samples GNU's real child list and shell-function PID before wait/waitpid and
+the read/fortified-read boundary. This occurs after first-job linkage, unlike
+the earlier spawn point. The supervisor binds it to the actual tracked
+process and dispatch sequence; a bare PID is never adopted by a later process.
+A live request waits for that real context without prematurely parking the
+native parent. Missing hooks at a blocked read/wait boundary fail closed.
+Forged sender IPs, untracked processes, conflicting contexts and malformed or
+mismatched sequences reject. Identical argv across different targets does not
+erase target identity. These job records are not Makefile read-pass receipts.
+
+Source-phase observation adds a distinct native source-effect sidecar, not
+fields to those dispatch/job records. At the actual authenticated dispatch
+entry, the supervisor records the hardware-derived before/source/after-read
+context. Only the real successful child exec can bind that origin to an
+existing dispatch, and every live request and actual publication must retain
+that binding. A later publication acknowledgement does not refresh its origin.
+The host joins the closed sidecar to the original read trace, all native
+dispatches, accepted requests and independently checked physical outcomes.
+Nested adoption remains explicit rather than borrowing a child's read epoch.
+This observes originating contexts and completed publications; it does not yet
+close intermediate/host/cleanup mutation coverage or grant a namespace
+exception. Default and read-trace-only calls retain their previous behavior.
+
+A further opt-in fixed-directory journal independently reads kernel mutation
+events across real native publication windows and terminal file cleanup.
+Its original directory pins and view/epoch survive for the issued observation
+lifetime; event/reply records cannot supply that identity themselves. Native
+actors remain parked with read-only source mounts, publication permissions
+stay unchanged, and all bytes/counts use existing allowances. Coalesced
+write/attribute events denote touched files, not exact write counts.
+The profile rejects every directory mutation and any output needing a new
+parent: late watch installation cannot recover transients in a new subtree.
+Nested queries, unknown host activity, watch loss and malformed or unmatched
+outcomes likewise refuse. Existing-parent native text/ARM/filter/transfer
+controls do not stand in for the unchanged missing-parent required root.
+General mutation coverage and every-pass source authority remain unimplemented;
+ordinary and source-phase-only behavior is unchanged.
+
+The separately selected `prewatched-directories` journal profile closes new
+parent visibility without a late-watch guess. A fresh private empty directory
+is watched through its original FD before native atomic no-replace installation
+into the authorized source parent. Matching kernel move/cookie/self-move
+records and both peers' inode/path/lease checks close the handoff before child
+operations resume. SGID/default-ACL inheritance, existing destinations,
+nonempty/foreign/replayed stages and unknown activity reject. This is not the
+regular private-install capability and does not grant directory moves to
+ordinary commands. Actual installed receipts, not predicted paths, own later
+directory cleanup. The unchanged required message/header component needs no
+preexisting-parent witness in this profile. Whole source-phase interpretation
+and obligation-union authority remain separate.
+
+Authenticated source-phase observations also support a cached immutable
+per-pass archive. It preserves original raw input scopes, entry/return status
+and flags, every repeated source visit/version and the native goal order,
+without promoting ordinary file reads to source evaluation. A failed source
+open has no invented image. The existing unsigned32 native return-flags field
+is validated in full, not only by its low byte. All retained/decoded data
+spends existing cache bounds; cached lookup rechecks identity/view/lifetime
+without launching another native query. This data representation does not
+interpret special-variable semantics, authorize missing includes or close
+the pending every-pass census and namespace proof.
+
+The optional source-phase census now consumes those issued records through
+separate original source walks. It checks actual mutation/reexec closure,
+failed/successful source versions and original inputs before using the
+corresponding entry image, then unions reads/defaults/dependencies/effects.
+Constants are intersected across passes; final definitions cannot erase
+first-pass HIDDEN. Plain global input flags/origins are interpreted from the
+validated GNU ABI, while unsupported special/private/dynamic behavior holds.
+Deferred namespace-bearing aliases, unproved target/local scopes and unknown effect
+timing do not borrow a source-time snapshot; metadata-only reads stay lazy.
+The original executed-read closure is checked on every pass, independently
+of wildcard use. Unsupported variable-universe references and their computed
+or transitive aliases cannot disappear from the census merely because the
+native source/input/image history is complete. The check shares the existing
+substitution-reference base parser and leaves unexecuted metadata bodies lazy.
+Original input bodies enter that closure only when the existing source-mode
+walk or an authenticated Make recipe export actually requires their effective
+binding. Their raw values remain distinct from pruned read forms, and they do
+not become synthetic source declarations. Metadata/unexport/override and
+known lazy-operand controls retain their behavior. Recipe suppression is
+separate from export expansion: source/command-line recursive values may
+already be expanded in a projected recipe, while GNU4.3 preserves recursive
+environment-origin values as raw export data even in an executed recipe.
+Effective origin/flavor and actual export membership determine the read;
+explicit Make references are still normal expansion. Named export/unexport
+also creates an empty file-origin simple binding when the variable was
+undefined, as confirmed by the native metadata controls.
+Requested invocation goals
+cannot replace authentic forced control values; the normal unforced facts and
+the existing unsupported supplied-control boundary remain separate.
+
+The required scoped-source capability keeps exact/source-proved target lists
+and literal single-percent target scopes separate from global definitions.
+Original declaration sites, assignment order, origin/flavor and versions
+govern scoped immediate RHS reads. Target-specific append retains a raw
+recursive tail and its applicable inherited base, including when the global
+base is simple. For an empty tail over the later nonempty base `late`, GNU's
+actual argument is `late ` with its final separator; neither the old base
+`early` nor a trimmed value is equivalent.
+
+Scoped deferred reads require an owned original consumer context. Source rule,
+target/stem and command ordinal are derived from the original source walk;
+actual native raw recipes and expanded job arguments corroborate the result.
+They cannot supply an earlier definition or refresh a missing source fact.
+An unproved job cannot disappear behind another valid use of the same recipe.
+Required source-only contexts before an include remake remain explicitly
+marked obligations, not invented native jobs. Unselected active declarations,
+including the legacy `menu_def` append, remain in the source census.
+
+The existing source/cache/count/deadline and observation lifetimes bound this
+typed state. Computed or escaped destinations, overlapping scopes, unqualified
+parent/shared-child inheritance, scoped private/override combinations and
+automatic-sensitive assignments remain held. The original LZ and per-file
+compiler witnesses are projected recipe/source evidence, not successful asset
+conversion or compilation. Their pre-existing raw LZ operands are fixture
+inputs, not published outputs. The legacy ordinary `-rR` and native built-in
+CPP contexts remain distinct.
+
+Namespace-denial diagnostics may attach bounded source-only attribution to
+the original error. They retain already computed original pass/site,
+condition, carrier/dependency, binding-version and snapshot-exclusion facts;
+missing source/native associations remain unavailable. Formatting does not
+evaluate Make again or manufacture a namespace/source capability. The
+existing file/count/byte/deadline limits bound the data. The dependency walk
+uses one predecessor per queued name and reconstructs only its selected
+carrier path. Workspace and record-container extents are admitted before
+growth, not after building a shared-prefix fan-out. Transient source notes
+that cannot fit do not turn a successful source decision into a refusal.
+
+Accounting or formatting failure remains explicit and secondary to the
+original refusal. Failed diagnostic frames and partial collections are
+released; a bounded stage/type and sanitized secondary error replace the raw
+diagnostic traceback. Original source context is not erased. Pure retained-
+exception allocation controls cover this lifetime boundary; their byte
+measurements are not native/root resource-sizing evidence.
+
+The successful small SIMPLE-snapshot candidate is not changed into a failing
+historical ROOT18 reader. A separately labeled recursive-late negative
+exercises the unchanged guard. This diagnostic-only capability grants no
+temporal/value/target/branch fact. The ordinary reporter and current diagnostic
+harness do not serialize the custom attribution automatically; publication
+and any later root attempt need their own accepted scope.
+
+The invariant planner remains the default public path. Full original-root acceptance
+and resource measurement remain separate from source correctness; no phase
+result authorizes a shell/profile, bound split or quota workaround.
+
+Ordinary-recipe local-binding analysis has an explicit original-source
+expansion context shared by the read-constant and per-pass snapshot consumers.
+A literal `$$` pair is consumed once in a proved active recipe; unsupported
+active dollars and malformed references remain holds. Inline headers keep
+their separate staged context. Assignments, define bodies, unknown roles and
+expressions containing active reparse/opaque invocation retain the conservative
+scan, including escaped `foreach` operations. Shell quotes and hash data do
+not suppress genuine Make binders.
+
+ROOT19's available cause site maps statically to the original header-filter
+recipe; the token-level explanation is not an observed internal runtime
+message or ROOT18 attribution. Pure controls reproduce both consumers'
+false unknown, and the focused include-remake positive retains the later
+unselected filter obligation without executing its compiler/filter pipeline.
+This adds no native command permission, budget or source value proof, and
+does not establish original-root or public-report completion.
+
+The graph's lifecycle consumer may additionally select
+`ProbeSession.make(..., observe_recipe_dispatch=True)` for the validated
+`recipe_dispatches` projection. It retains each complete recipe context,
+including sequence, kind and environment, rather than dropping startup
+authority. These are dispatch observations, not execution
+of candidate recipes; metadata-only suppression is unchanged. Effective error
+policy comes from GNU Make's active job `noerror` bit, which combines target
+`COMMANDS_NOERROR`, command flags and expanded leading `-`, plus the global
+ignore flag. The observer reads that job at the real `wait`/`waitpid` return,
+before GNU Make updates or frees it. Authenticated native receipts bind the
+waited namespace PID to the helper's actual kernel `getpid` result and dispatch
+sequence. Missing, duplicate, malformed or unmatched receipts reject; PIDs are
+not owner identity. All receipt traffic retains observation/byte accounting.
+An unrelated scoped `.IGNORE` is not global ignore authority.
+The graph uses these records only with its closed ordinary dispatcher,
+captured source identity and session/model binding. It does not acquire
+permission to execute arbitrary consumer code or reset its report budget.
+
+`ProbeSession.make(..., definitions=("NAME",))` observes literal GNU
+`$(value NAME)` together with origin/flavor in global and actual file scopes.
+Those records live under `semantics["definitions"]`, separate from expanded
+`domains`/file `variables`. Raw and expanded requests cannot overlap, and
+their combined count keeps the original 512-name admission. Identifier and
+128-character bounds are unchanged. Raw observation does not expand an unused
+body; normal Make parsing/recipe evaluation still occurs. The private selector
+is removed before Make imports its environment and survives genuine Make
+re-exec only through the existing trusted bootstrap. Raw result, decoded and
+retained/cached bytes keep their original counters and limits.
 
 Make's runtime is captured once per session from its actual ELF interpreter
 and that trusted interpreter's bounded `--list` dependency closure. Canonical
@@ -479,6 +773,14 @@ another capsule rejects before launch. A terminal failure also forbids cached
 replay. The separate captured-source entry bound still uses `Limits.entries`;
 source capture is not a filesystem-observation charge.
 
+An original namespace image includes those admitted source entries and their
+derived root/parent directories. Its traversal checks the exact admitted
+namespace extent rather than charging scaffolding as additional source
+entries. Thus a full source cohort remains admissible at its existing source
+limit; foreign entries, substituted types, incomplete images and unreceipted
+inherited publications still reject. Every per-node charge and deadline check
+remains, as do the separate source, creation and observation limits.
+
 Producer checkpoints validate both their capped capsule count and prospective
 effective lifetime total. Parked/nested work spends that same total; resumption
 never exceeds the capsule's initial cap or its settled count plus the remaining
@@ -591,6 +893,15 @@ source/code ancestors retain permitted metadata but do not become enumerable.
 Directory declarations are type-checked; names-only listing never grants member
 contents. The guard uses the mounted read-only view, never a writable alias.
 
+Host-side original-namespace enumeration also preserves that metadata.
+The shared directory-pin helper uses `O_NOATIME` for root and component pins,
+retaining no-follow, directory and close-on-exec flags. It cannot fall back to
+an ordinary read or restore timestamps afterward. Direct capture without any
+Make/source-phase transition must preserve all recorded stat fields and valid
+cached results, including across selected views; real metadata or membership
+changes still invalidate reuse. See the focused
+[namespace-image CI regression procedure](test-cases/workflow-governance.md#namespace-image-ci-regression-correction).
+
 `ProcessOutput.metadata` contains operation-aware source observations and any
 already-permitted observations of explicitly captured runtime files:
 syscall number, canonical guest path, flags, mask, buffer size, directory
@@ -701,6 +1012,16 @@ commit's complete bounded source tree; original paths such as
 and their blobs. Existing loader and Snapshot reads group those blobs by origin
 under the same report budget; no second loader/session/sandbox is constructed.
 
+`AuthorityLoader.read_blobs(paths, label)` exposes that same bounded parser
+for a selected immutable read, returning an exact path-to-bytes map only after
+all requested responses validate. It requires the actual capture, never a
+detached dictionary or a fabricated partial Snapshot. Direct reads charge
+framing and copied payloads to `output`; Snapshot charges them to `snapshot`.
+Each stream uses the existing aggregate category bound while each blob keeps
+its independent file bound. Requests and launcher arguments retain `pending`
+charges and the original deadline. No cross-call cache is retained; live
+callers continue to use the uncached no-follow `read_blob` API.
+
 The database must be an existing canonical absolute directory without symlink
 components. Unrequested links, wrong/unavailable/non-commit objects, a working
 checkout substituted for a database, escaping/conflicting names and nonregular
@@ -739,13 +1060,16 @@ Two identities deliberately serve different purposes:
   repeated events use them. Every speculative command still requires complete
   authority, successful source accounting and the same aggregate charges/cache.
 
-Unique-name assignment metadata is canonicalized by name, retaining each
-origin and value. Environment and command-line assignments, including mixed
-origins and recursive references, therefore have the same semantic identity
-when reordering them leaves the native target/domain observations equivalent.
-The executed argv and environment application order are **not** reordered.
-Order-sensitive Make observations, such as a `MAKEOVERRIDES` value or a
-prerequisite selected from it, remain intact and continue to change the digest.
+Unique-name request metadata is canonicalized by name, retaining each origin
+and value. Equal variable values/origins/flavors and prerequisites do not imply
+equal complete native identity: reordering CLI assignments changes exported
+`MAKEFLAGS`, which an ordinary recipe can observe. Actual executable/argv,
+environment bytes and application order are **not** sorted or masked.
+Only genuinely equal complete native contexts retain equal semantic digests.
+Likewise, quoting forms with identical direct `printf` argv remain equivalent,
+while a form that makes GNU Make select `/bin/sh -c` retains a different native
+context despite equal registered-command output and variable semantics.
+Order-sensitive `MAKEOVERRIDES` or prerequisite observations also remain intact.
 This does not expand the metadata-only recipe contract into production recipe
 execution or artifact validation.
 
@@ -753,6 +1077,15 @@ Do not hash the whole `MakeObservation` when computing an owner identity:
 consume `semantic_digest`, not `execution_digest`. These are ephemeral
 execution/semantic boundaries, not committed source ledgers or ROM identity
 requirements.
+
+`MakeObservation.file_open_attempts` retains unique `(resolved_path,
+syscall_spelling)` pairs for the live Make process's repository file-open
+requests, including requests whose absence Make ignores. These are attempted
+opens, not successful reads; directory enumeration and actual kernel statuses
+retain their existing separate observations. The spelling is what Make passed
+to the syscall after its own normalization, not reconstructed Makefile text.
+The records use the existing protected observation channel and cumulative
+bookkeeping allowance, without granting additional access.
 
 ## Aggregate lifetime and resources
 
@@ -863,8 +1196,9 @@ an attempted launch before a pre-`Popen` rejection, as before.
 Caller-side states, argv and serialized Python objects can already exist
 before admission; this is not a claim that their allocation was prevented.
 No coordinator AS/NNP policy or aggregate host-RAM guarantee is added.
-The graph planner's use of this shared seam belongs to #180's later normal
-integration, not this foundation root. Dependencies are the existing budget,
+The graph planner uses the same seam for newly queued replacement states;
+repeated queries share admission without counting queued states as executions.
+Dependencies are the existing budget,
 producer and view APIs; other feature/profile conflicts are none. Save/config,
 generated content, locale, ROM/GBA RAM and modern/archival behavior are unchanged.
 
@@ -1148,6 +1482,152 @@ or cleanup exception is recorded without replacing an existing operation
 failure. With no primary failure, the deferred exception propagates; default
 OS termination actions take effect only after owned resources are removed.
 Failed/interrupted cleanup never resets or extends the aggregate lifetime.
+
+### Opt-in outcome custody (observation, not qualification)
+
+The [#180 prerequisite freeze](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5733870035)
+addresses two distinct loss boundaries. A normal, nonzero `Popen.wait()` result
+is not a Python exception: a later selector/stream finalizer can prevent
+`ProbeBudget.run` from delivering its `CompletedProcess`. The watchdog likewise
+observes a waitable leader with `WNOWAIT`, but subsequent cleanup can make its
+actual `main()` return **125**, not that leader's status. Preserving an existing
+exception alone does not preserve either normal observation.
+
+This is a narrow, opt-in host API prerequisite. It does **not** implement the
+restricted namespace bootstrap, a privileged witness, a trusted R/W writer
+barrier, backend selection, or a new command permission. It does not repair or
+qualify the seven restricted-host null-mount modes. No gameplay/configuration
+flag, Limits field, owner, case ID, Build workflow, ROM/RAM/save, locale, generated
+game format, modern/debug/release, or archival output changes.
+
+| API | Contract |
+| --- | --- |
+| `ProbeBudget.reserve_outcome(output_limit=262144)` | One private affine owner, bound to this bare budget, original deadline and next run ordinal; no process is launched. |
+| `ProbeBudget.run(..., outcome=owner)` | Requires the exact existing guarded privileged prefix, matching explicit `output_limit`, `category="output"`, no input or producer channel/handler, and no started `ProbeSession`. Existing executable, sudo-n, lifetime and close-fds checks remain. |
+| `owner.snapshot()` | After the capture attempt is terminal, returns immutable admitted observations, streams or explicit unavailability, four fixed frame slots, and finite cleanup facts. Does not call `remaining()`, perform I/O, retry, or learn a status from cleanup. |
+| `owner.release()` | Invalidates later access/use, drops owned stream/parser/report references and the active slot. Does not refund counters, reopen the budget, reap a child, delete a fixture, or destroy caller-held aliases. |
+| `lifecycle.run(..., outcome_token=token)` | Latches its validated, owned `waitid(P_PID, WEXITED\|WNOHANG\|WNOWAIT)` tuple before teardown; publishes before/after facts on the existing stdout pipe. |
+| `finish_cleanup(..., report=...)`, `terminate(..., report=...)`, `ProbeBudget._terminate/close(..., report=...)` | One concrete prepaid, cumulative role report, not a callback/sink. The owner holds C's private `_cleanup` report; finish budget cleanup with that same report before inspecting/releasing custody. Foreign budget reports reject. |
+
+All optional arguments default to **None**. That path retains the existing
+argv, input/output bytes, returns, exception identities/notes, signal handling,
+and exception-to-125 behavior, without new report admissions or frames. Only
+the opt-in watchdog argv adds `--outcome-v1 TOKEN` before `--`; it is not
+forwarded to the payload. No publisher-FD/path/socket/command option exists.
+
+On the opt-in C path, capture buffers are owned from the first admitted byte.
+A normal integer wait result and EOF state are latched **before** the next
+deadline check, selector close, bytes/result conversion or final teardown.
+Selector cleanup preserves an earlier body exception. Clean cleanup returns
+the actual `CompletedProcess`, including nonzero/125/signal status, sharing the
+owner's immutable bytes. Failed cleanup still raises and fails the budget;
+there is no replacement successful result. An earlier read/wait/setup error
+keeps its identity; poll, cached return codes and cleanup waits cannot fill
+the normal-status cell. Failed byte conversion explicitly makes capture
+unavailable. A partial accepted prefix is never a completed receipt.
+The eventual fixture must also make nonzero, invalid or incomplete results
+terminal using the existing budget rejection path before reporting them;
+this observation API does not silently reinterpret such results as exceptions.
+
+L publishes its before record while the leader is still owned and unreaped.
+It does not assign `child.returncode` or reap early. Cleanup still attempts the
+sole-reaper, pidfd, selector and handler obligations; its observed status must
+agree with the reaped status. Publication failure is secondary to an earlier
+exception, otherwise a failure. After publication uses the **same original
+deadline**, including on failure; it cannot attest its own future pipe close,
+exit, or enclosing cleanup. A normally observed 7 plus L cleanup failure is
+still actual outer 125. A later C cleanup exception preserves those separate
+facts, not a returned `CompletedProcess`.
+
+#### Closed data format and allocation
+
+Each record is a four-byte little-endian length followed by strict ASCII JSON,
+at most **4096 bytes including the header**. The only slots are R-before,
+R-after, L-before and L-after. Each role orders before/after once; global
+interleaving is allowed. Equivalent key order and valid JSON escapes remain
+data-equivalent. Duplicate keys/slots (including escaped duplicate keys), unknown
+fields, overlong strings, excessive nesting/nodes, nonfinite numbers, booleans in
+integer fields, misbound tokens/identities, malformed or partial frames reject
+without resynchronization. Earlier valid slots may remain observations;
+missing later custody never becomes success. Stderr is opaque diagnostics.
+
+The fixed records carry version/role/phase/owned PID and either a first fact
+(finite kind/stage/error and signed status) or a bounded cleanup/disposition.
+L-before additionally carries the validated PID/UID/SIGCHLD/code/status tuple;
+L records carry the fresh 32-lowercase-hex invocation token. R records instead
+match a private fixture binding: mode, independent U/G, original deadline and
+parent device/inode/owner. Private `_bind_fixture` installs only those
+comparison values, before the run, and is **not** a fixture pinning or
+authentication API.
+
+The private W-result decoder accepts only the original mode's bounded semantic
+data: mode; before/after device/inode/mode/rdev/mount-ID/flags; a finite failure
+tag/errno rather than an arbitrary message; zero or one selective/old-remount
+call; five capability sets plus NNP; the three denial errnos; null I/O, FD-close
+and nonzero-topology booleans. It cannot accept an R/L envelope, a claimed wait
+status, or a command. This decoder and benign R **data fixtures** are not a W,
+R publisher, namespace transition, or trusted-writer barrier. No untrusted
+worker record is forwarded as a top-level frame.
+
+L validates inherited FD1 as a FIFO writer distinct from the lifetime pipe,
+requires `PIPE_BUF >= 4096`, and makes it nonblocking before launch. Each
+publication is one atomic write. EAGAIN waits for readiness under the original
+deadline; short write, EPIPE or expiry fails, without rewind, duplicate before,
+alternate channel or file. If that channel failed, the cause itself may be
+unavailable. Token freshness and the exact guarded prefix are **not origin
+authentication**. Snapshots always report `qualified=False`; even four intact
+zero records cannot qualify a mode, outer failure or unknown owner cleanup.
+
+For `B=output_limit`, `F=4096` and `E=4096`, reserve **2B + 4F + 3E** cache
+bytes (552,960 at B=256 KiB), F pending bytes for the future private W record,
+the actual watchdog argv including option/token, one planned state and **52**
+monotonic entries (four slots plus 3×16 errors). The existing Limits and total
+budget must admit these subdivisions; real stream bytes still spend output.
+Stdout is at most 4F=16 KiB; stderr at most B−4F; combined capture is at most B.
+There are no refunds on conversion, release, or a failed attempt.
+
+Wire length alone is not the Python heap bound. Captures use fixed-size
+bytearrays, not growing prefix lists. Before decoding or encoding, the codec
+admits at most 192 nodes, depth six, 64-character ASCII strings and bounded
+scalars, with a separate conservative **172,032-byte** workspace for
+containers, pairs/memo, strings and transient encode/decode representations.
+Supported CPython object headers are checked before construction. Mutable
+captures are dropped before decoding; byte conversion overlaps at most one
+buffer pair and one immutable pair. The admission equation also covers all
+retained slots/reports and the private W buffer/workspace. Consequently this
+representation supports **180,224 ≤ B ≤ 262,144**; smaller or insufficient
+budgets reject before owner construction/launch, not by increasing the quota
+or dropping error completeness. None callers keep their existing smaller
+stream limits. These are custody-storage bounds, not a claim to bound the
+whole interpreter's RSS, pre-existing caller objects, or external aliases.
+
+Each role's report has at most 16 error entries **across all cleanup groups**,
+not 16 per call. Its count saturates at 17 with explicit overflow; metadata
+failure/uncertain release also makes it incomplete. Reports retain finite
+stage/type/integer data, no exception objects, tracebacks, reprs, messages,
+secondary-error histories or notes. Raw FD authority is withdrawn before
+fallible close; a possibly recycled integer is not retried. Independent
+remaining closes/reaps are attempted, waits stay deadline-bounded, and
+unconfirmed children remain owned. A close fault after confirmed release and
+one before release both fail, but do not authorize another close/signal.
+
+Repeated snapshots at unchanged state reuse the same admitted immutable
+value. Later explicit budget cleanup may replace that one cached summary,
+never append a history; callers must drop earlier aliases before that work.
+Inspect only after cleanup, produce a finite semantic summary, discard
+`CompletedProcess`, snapshots, raw exceptions and their traceback/context
+references, then release the owner. Raise a retained unittest failure only
+after leaving the API exception handler. `raise ... from None` does not itself
+release those references. Already returned Python aliases remain the caller's
+responsibility after `release()`.
+
+The [existing ownership case procedure](test-cases/workflow-governance.md#bounded-outcome-custody-prerequisite-o1o6)
+maps the actual-API positives, paired failures, independent shipping-L/C
+restorations, allocation/lifetime controls and default regressions. No new
+platform/setup permission follows from that evidence. Dependencies are the
+existing budget, lifecycle and owned capture pipes; no gameplay-feature,
+profile, save or localization conflicts. Future fixed R/N/W code still needs
+its own freeze, restricted-host setup proof and all seven real modes.
 
 Every budget subprocess, including ordinary Git/compiler commands, namespace
 availability probes and capsules, uses a fresh exclusive-reaper watchdog.

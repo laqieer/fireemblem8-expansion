@@ -385,6 +385,198 @@ epoch change is required; all runtime failures already use a vanilla fallback.
 - **Save/cleanup:** the default identity and save epoch remain unchanged.
   Remove only the named build roots if cleanup is needed. No manual criterion.
 
+### Concurrent full-modern object profile isolation
+
+From a Linux source checkout with pidfd/waitid, child-subreaper and
+`renameat2(RENAME_NOREPLACE)` support,
+ARM GCC/binutils, newlib, the host C/C++ compiler, libpng/zlib, `pkg-config`
+and the normal asset-generation Python dependencies:
+
+1. Run `./build_tools.sh`, as the CI `build` worker does before this test.
+2. Require `build/test-artifacts/custom-spell-profile-assets` to be absent.
+   The runner creates and pins it inside its private holder, then publishes
+   it without overwrite. It never adopts, removes or replaces an intervening
+   public entry or a previously retained root to start another run. Run
+   `python3 tools/gba-playtest/tests/test_custom_spell_effect.py --require-profile-isolation`
+   with `GBA_PLAYTEST_HOST_ONLY` unset or `0`.
+3. Require exactly one executed, non-skipped test. It launches two genuine
+   concurrent `make -j2 expansion-modern-all` builds: enabled with the reference
+   manifest and disabled with the default manifest, in separate debug/AAPCS
+   roots. Require separate generated asset namespaces, custom data only in
+   the enabled namespace, and both `custom_spell_effect.o` and
+   `custom_spell_effect_data.o` in each profile.
+4. Confirm all owned sessions are empty and reaped and their output captures
+   are closed before the exact owned profile root is removed. Ordinary test
+   failures and timeouts still clean up. Uncertain process/stream cleanup or
+   a substituted root fails explicitly and retains the root instead; do not
+   delete it or retry over it while writers may remain. A final pin-close
+   failure remains non-success and retains any still-live descriptor, even
+   when the already-empty owned directory has been unlinked.
+   These are full relocatable-object builds, not ROM or final-ELF links;
+   canonical release/publisher outputs are not inputs or outputs of this test.
+
+The required entry rejects unavailable compilers, host-only skips, zero or
+multiple selected cases, and test failures (including expected failures).
+The ordinary host discovery still
+skips this class before cleanup or process launch, while configuration tests
+remain active. Parsed CI controls require exactly one full/fallback execution
+owner in `build` after dependencies and build tools; metadata-only/review-first
+events do not execute it. Removing/duplicating/disabling the command, moving it
+to `host-tests`, selecting host-only mode or omitting prerequisites rejects.
+Equivalent command quoting/continuation remains valid. The integrated mirrored
+inventory has 34 gates, retaining every earlier gate and the independent
+text-publication regression without an extra job or timeout increase.
+The compile test is ordinal 21 in that inventory, not ordinal 34.
+
+### Profile output and process-lifecycle controls
+
+The [#180 lifecycle follow-through](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5683697584)
+removes the dependency caused by serially draining two bounded stdout pipes.
+Separate regular `build-0.log`/`build-1.log` captures let both children write
+without waiting for the other child's exit; output remains attributed to its
+original command. There is no reader thread or executor to outlive teardown,
+and the unrelated Git capturer's 4 MiB output cap is not inherited.
+One absolute 600-second work/capture deadline begins before the first launch,
+including acquisition; each child does not get a new 600-second wait.
+
+The runner reuses `scripts/workflow_pilot/raw_diff_check.py`'s pidfd,
+subreaper, interrupt and owned-session quiescence primitives without changing
+that tool's capture policy. Each child has a separate owned session. Its
+leader remains waitable until all session descendants, including children
+that change process groups, have been terminated and reaped. Failure cleanup
+has one bounded five-second teardown grace, not a renewed build budget.
+Capture handles close only after attempted tree teardown; the root is deleted
+only after every tree and capture is confirmed settled. On uncertainty, pinned
+state and the root are retained, and cleanup diagnostics preserve the original
+failure as their cause. This is trusted-build ownership, not a sandbox for
+malicious processes escaping their session.
+
+1. Run `python3 tools/gba-playtest/tests/test_host_only_mode.py ProfileProcessLifecycleTests -v`.
+2. Require the bounded child's write to exceed the measured pipe capacity,
+   with its post-output progress witnessed while the first child is active.
+   Require a first child depending on that signal to complete. These use
+   explicit progress/exit witnesses, not a speed-only oracle.
+3. Inject second-launch failure, first-acquisition deadline exhaustion,
+   interruption and timeout with a live grandchild in a different process
+   group. Require no remaining child, reader or capture before root removal.
+4. Inject unavailable identity/cleanup observation and root substitution.
+   Require failure, retained waitable identities/root and no deletion of
+   replacement contents; the fixture only disposes of retained work after
+   removing its controlled fault and proving quiescence.
+5. Keep the existing host-only and strict-entry controls, then run the real
+   required profile test once using the earlier command and record timing and
+   cleanup. A passing real Make run does not refute the conditional pipe or
+   failure-path defects; the bounded old serial lifecycle fails these controls.
+6. Run the existing consumer census check and its classification-coverage
+   tests, plus `HostOnlyStagedWorktreeSubprocessTests`. The OS grandchild
+   `pid` symbol must keep its explicit non-game-ID exclusion in the existing
+   classification map. The staged tree must include the real process helper
+   and package init; missing-helper import fails, restoration returns to
+   host-only skipping, and all stale artifacts remain unchanged. No identifier
+   rename, scanner waiver or live source fallback supplies that evidence.
+   After changing a classification, run
+   `python3 -m scripts.generated_data.idspace generate` and commit its derived
+   audits. Require `python3 -m scripts.generated_data.idspace check` and the
+   existing ID-space output-drift tests; do not hand-edit audit digests.
+
+### Root identity and interrupt boundaries
+
+The [5686491976 root follow-through](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5686491976)
+closes the check/delete gap and extends interrupt-safe pin ownership through
+final closure. A pathname `lstat` comparison followed by pathname `rmtree`
+does not bind traversal: a replacement at that boundary was deleted while
+the displaced original survived. The correction makes a no-overwrite claim
+into an exclusive same-parent cleanup directory, verifies the moved entry
+against the already-open root pin, and walks only directory descriptors.
+It never recursively traverses a newly resolved public root pathname.
+A wrong claim is restored without overwriting a newer namespace entry; if
+restoration cannot be done safely, all displaced/replacement data and the
+owned cleanup namespace remain retained with explicit failure.
+
+The existing interrupt-deferral primitive now spans root open/registration
+through final close. Every acquired descriptor is registered with its actual
+identity. Closure errors distinguish a still-live acquired pin from an
+already-closed or replaced descriptor, so no live pin is represented only by
+an unowned sentinel. Retained ownership blocks another run at the same root
+even if its old directory is already unlinked; a retry cannot overwrite the
+only record of a live pin. A cleanup failure keeps its primary exception chain;
+the earlier SIGINT reproduction already retained the original RuntimeError
+in its context, so diagnostic loss is not claimed.
+
+1. Run `python3 tools/gba-playtest/tests/test_host_only_mode.py ProfileProcessLifecycleTests -v`.
+2. Substitute real marked directories at the post-check claim boundary and
+   again at FD traversal entry. Require failure and preservation of both the
+   unrelated replacement and the original pinned contents. A competing new
+   public entry must never be overwritten during claim restoration.
+3. Exercise a nested owned tree and external symlink targets. Only the owned
+   tree is removed, all pins close, and external markers survive.
+4. Deliver actual SIGINT after real root open but before normal assignment,
+   and immediately before final root close. Inspect actual open FDs and the
+   retained ownership record: every acquired live pin must be tracked or
+   closed. Inject final-close errors both before and after the real close;
+   require non-success, accurate descriptor state and the original exception
+   chain, not merely a mocked ordering assertion.
+5. Keep all earlier process/host/staged-helper and census controls. The exact
+   original helper fails the new bounded controls; independent outer fixture
+   cleanup settles only its own processes, pins and disposable directories.
+   No repeat full-object build is needed for this root-only correction when
+   unchanged commands/manifests/assertions and the real-runner controls pass.
+
+The private cleanup claim is not a new sandbox or general lifecycle service.
+The shared raw-diff primitives and their resource bounds are unchanged.
+Nine jobs, all 34 gates, the single 600-second work deadline and shared
+five-second failure teardown remain. Baselines 1-14 stay closed; baseline 15
+is unallocated pending independent corrected-source review.
+
+### Initial private ownership and publication
+
+The [5687542201 initial-publication follow-through](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-5687542201)
+closes the earlier interval between exclusive public `mkdir` and initial
+root `open`. Exclusive creation alone did not identify the later-opened
+object: a replacement was pinned and subsequently deleted as if it were the
+created root. The root is now created and pinned while still inside the
+exclusive private holder. Only afterward does `renameat2(RENAME_NOREPLACE)`
+publish that exact object under the public name. An intervening public entry
+causes failure without being adopted, overwritten, traversed or deleted.
+The same holder is reused by the already-verified cleanup claim, and capture
+files are opened relative to the established root FD.
+
+Private initialization and publication failures retain every acquired pin
+and created private namespace with the original failure chain. A failure
+before any ownership exists propagates without fabricating retained state.
+Publication is registered under the existing interrupt-deferral boundary;
+post-publication identity checks precede workload entry. The public pathname
+is never reopened to establish ownership. The trust boundary is the private
+holder/root and owned sessions, not a sandbox against arbitrary same-user
+private-resource mutation or control of the interpreter.
+
+1. Run `python3 tools/gba-playtest/tests/test_host_only_mode.py ProfileProcessLifecycleTests -v`.
+2. Intervene at the original creation-to-initial-pin boundary and record
+   actual created/acquired device/inode identities and both markers. The old
+   helper pins the replacement, runs both children and deletes its marker;
+   the corrected helper keeps the private created identity, refuses
+   conflicting publication and starts no child.
+3. Insert a public entry immediately before no-overwrite publication.
+   Require preservation of it and all private ownership. After the
+   independent fixture settles/closes only its own retained resources and
+   removes its controlled collision, a normal new run must publish and clean
+   successfully.
+4. Inject private parent/holder/root pin and publication failures, actual
+   SIGINT after real publication, and a changed public entry immediately
+   afterward. Require accurate retained or closed ownership and the original
+   error; no falsely adopted root may reach a child.
+5. Retain all prior nested cleanup, namespace claim/restore, SIGINT/close,
+   process, host-only, strict-entry and staged-import controls. Regenerate
+   changed census audits canonically without renaming PID symbols or
+   changing their reviewed classification. These bounded checks need no
+   full profile compile, graph, provider/H1 or new allocation.
+
+This subcase extends the existing profile and ownership contracts without
+changing gameplay, save, locale, generated schemas or ABI. Its dependencies are
+the existing modern object build and asset-manifest pipeline; no new feature
+conflicts or manual-only criterion apply. Other asset-generation concurrency
+tests and sequential ROM checks are not replacements for these two full builds.
+
 ## TC-CUSTOM-SPELL-061-003: Strict package conversion
 
 - **Profile:** selected alternate reference manifest with feature `1`.

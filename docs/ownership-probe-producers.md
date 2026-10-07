@@ -21,7 +21,9 @@ commands still execute on every dispatch and incur every original charge.
 Callers and active Make receipts retain complete `ProcessOutput` objects;
 live publication state owns the generated files it needs. Returned
 `MakeObservation` values retain semantic/provenance, stdout/stderr and event
-records, not complete producer results or their generated-file bytes.
+records. This graph extension also retains captured `GeneratedFile` bytes/modes
+in `MakeObservation.generated` for the view at each query's completion, not
+complete producer objects.
 After the last real owner releases a result, the reuse cache does not pin an
 object it can never reuse. Native compiler artifacts with `outputs=()` and
 pure-reader metadata revalidation retain their existing caching behavior.
@@ -68,6 +70,13 @@ output bytes, error status and cleanup behavior remain covered by real
 controls. The probe never appends syntax, synthesizes executable metadata or
 installs a native image into Make. Graphics recipes remain metadata-only in
 the report; their ordinary build outputs are not claimed as probe-produced.
+The real linker-discovery fixtures measure complete `INPUTS` on a recipe-less
+`measure-inputs` target. Their ordinary print target is a value oracle, not a
+safe confined recipe: its single 56,560-byte argument exceeds the existing
+4,096-byte native string bound. Keep the entire 56,561-byte producer result
+(1,475 paths in the exact-d9 fixture), the real adapter and original noexec
+negative. The oversized print target remains an explicit rejection control;
+neither truncating discovery nor increasing the bound is a correction.
 
 The original direct Python entry demonstrated a different failure from a
 missing program: Make successfully statted an executable source, received
@@ -283,6 +292,14 @@ results reject. Publication uses bounded nofollow descriptor-relative handling
 and retains the runner-ownership rule for new objects on the sudo route.
 Only a normalized logical producer can replace its own generated output.
 
+`MakeObservation.generated` retains the final confirmed `GeneratedFile`
+objects, including their actual bytes and modes, after publication cleanup.
+It is empty for a query with no published output. Replacements retain the last
+confirmed version; nested observations retain the outputs visible at their
+own completion. These immutable results retain already charged generated
+bytes and effective metadata, not a second execution, publisher or persistent
+source-worktree artifact.
+
 Output-producing invocations execute genuinely for every actual dispatch.
 The default `Command.publication_policy="replace"` recreates the output even
 when its bytes are unchanged. Explicit `"if-content-changed"` preserves an
@@ -358,7 +375,9 @@ it must not copy private mode 0644 over a retained effective mode 0600.
 `semantics["published_sources"]` returns the final portable
 `[path, owner, mode, size, sha256]` bindings, including nested publications.
 Physical identities are confirmation/adoption authority, not semantic hashes.
-No generated-byte field or producer-object archive is added to MakeObservation.
+The graph extension's existing `MakeObservation.generated` retains these same
+final effective bytes and modes after cleanup, including nested publications;
+it does not retain private producer objects.
 
 Every invocation, receipt and sequence remains. Private writes, comparison
 reads, mapping/confirmation traffic and retained identity data spend existing

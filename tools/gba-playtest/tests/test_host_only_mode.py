@@ -19,7 +19,7 @@ What is proven here:
 * normal mode is unchanged: the same class still probes and still captures;
 * a hermetic staged worktree (TemporaryDirectory) holding stale, mismatched
   debug/release/legacy ROM-shaped, ELF and save artifacts at the exact paths
-  the suite looks at: host-only skips all nine live classes, exits 0, and
+  the suite looks at: host-only skips all registered live classes, exits 0, and
   leaves every staged file byte-, size- and mtime-identical (nothing deleted,
   nothing rewritten), while the same tree in normal mode really opens the
   stale ROM and fails loudly.
@@ -30,11 +30,17 @@ from __future__ import annotations
 import ast
 import hashlib
 import importlib
+import io
+import json
 import os
+import select
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -639,6 +645,753 @@ class HostOnlyEnvContractTests(unittest.TestCase):
         self.assertIn("expansion-modern-itemexpansion-check", reason)
 
 
+@unittest.skipUnless(sys.platform == "linux" and hasattr(os, "pidfd_open"),
+                     "profile session ownership requires Linux pidfds")
+class ProfileProcessLifecycleTests(unittest.TestCase):
+    def setUp(self):
+        self.module = importlib.import_module("test_custom_spell_effect")
+        self.raw = self.module.process_ownership
+        parent = host_mode.REPO_ROOT / "build" / "test-artifacts"
+        parent.mkdir(parents=True, exist_ok=True)
+        self.directory = Path(tempfile.mkdtemp(prefix="profile-process-controls-", dir=parent))
+        self.root = self.directory / "owned"
+        self.observed = []
+        self.streams = []
+        self.threads = set(threading.enumerate())
+        self.real_popen = subprocess.Popen
+        self.real_rmtree = shutil.rmtree
+        self.root_pins = []
+        self.addCleanup(self.cleanup_fixture)
+
+    def command(self, source):
+        return [sys.executable, "-I", "-S", "-u", "-c", source, str(self.directory)]
+
+    def watch(self, *args, **kwargs):
+        process = self.real_popen(*args, **kwargs)
+        self.observed.append((process, os.pidfd_open(process.pid)))
+        stream = kwargs.get("stdout")
+        self.streams.append(stream if hasattr(stream, "close") else process.stdout)
+        return process
+
+    def wait_file(self, name):
+        path = self.directory / name
+        deadline = time.monotonic() + 3
+        while not path.exists():
+            if time.monotonic() >= deadline:
+                self.fail(f"child did not publish {name}")
+            time.sleep(0.005)
+        return path
+
+    def assert_quiescent(self):
+        for process, descriptor in self.observed:
+            poller = select.poll()
+            poller.register(descriptor, select.POLLIN)
+            self.assertTrue(poller.poll(0), f"live profile process {process}")
+            with self.assertRaises(ChildProcessError):
+                os.waitid(os.P_PIDFD, descriptor, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        self.assertTrue(all(stream is None or stream.closed for stream in self.streams))
+        self.assertFalse(set(threading.enumerate()) - self.threads)
+
+    def cleanup_fixture(self):
+        with self.raw._child_reaper():
+            retained = self.module._RETAINED_PROFILE_BUILDS.get(self.root)
+            if retained is not None:
+                root_state, builds = retained
+                for build in builds:
+                    if build.process is not None and build.leader_fd < 0 and not build.settled:
+                        build.leader_fd = os.pidfd_open(build.process.pid)
+                errors = self.module._close_profile_builds(builds, time.monotonic() + 3)
+                if errors:
+                    raise AssertionError(f"controlled profile cleanup still unconfirmed: {errors}")
+                if isinstance(root_state, int):
+                    if root_state >= 0:
+                        os.close(root_state)
+                else:
+                    for key in tuple(root_state.pins):
+                        self.module._close_profile_pin(root_state, key)
+                del self.module._RETAINED_PROFILE_BUILDS[self.root]
+            for _process, descriptor in self.observed:
+                try:
+                    signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            for process, descriptor in self.observed:
+                poller = select.poll()
+                poller.register(descriptor, select.POLLIN)
+                self.assertTrue(poller.poll(3000), "controlled process could not be stopped")
+                try:
+                    result = os.waitid(os.P_PIDFD, descriptor, os.WEXITED)
+                    if process is not None:
+                        process.returncode = result.si_status if result.si_code == os.CLD_EXITED else -result.si_status
+                except ChildProcessError:
+                    pass
+                os.close(descriptor)
+        for stream in self.streams:
+            if hasattr(stream, "close"):
+                stream.close()
+        for descriptor, expected in self.root_pins:
+            try:
+                actual = os.fstat(descriptor)
+            except OSError:
+                continue
+            if os.path.samestat(actual, expected):
+                os.close(descriptor)
+        self.real_rmtree(self.directory)
+
+    def assert_root_pins_owned_or_closed(self):
+        retained = self.module._RETAINED_PROFILE_BUILDS.get(self.root)
+        if retained is None:
+            tracked = set()
+        elif isinstance(retained[0], int):
+            tracked = {retained[0]} if retained[0] >= 0 else set()
+        else:
+            tracked = {descriptor for descriptor, _ in retained[0].pins.values()}
+        for descriptor, expected in self.root_pins:
+            try:
+                actual = os.fstat(descriptor)
+            except OSError as error:
+                self.assertEqual(error.errno, 9)
+                continue
+            if os.path.samestat(actual, expected):
+                self.assertIn(descriptor, tracked, "live acquired root pin is not retained")
+
+    def record_root_open(self, *, interrupt=False):
+        opening = os.open
+        def open_root(path, flags, *args, **kwargs):
+            descriptor = opening(path, flags, *args, **kwargs)
+            if Path(path) == self.root or (os.fspath(path) == "root" and kwargs.get("dir_fd") is not None):
+                self.root_pins.append((descriptor, os.fstat(descriptor)))
+                if interrupt:
+                    os.kill(os.getpid(), signal.SIGINT)
+            return descriptor
+        return open_root
+
+    def assert_chain_contains(self, error, primary):
+        pending = [error]
+        seen = set()
+        while pending:
+            current = pending.pop()
+            if current is primary:
+                return
+            if current is None or id(current) in seen:
+                continue
+            seen.add(id(current))
+            pending.extend((current.__cause__, current.__context__))
+        self.fail("primary exception is absent from the exception chain")
+
+    def signal_commands(self, *, require_signal=False):
+        first = """
+import os, sys, time
+from pathlib import Path
+root = Path(sys.argv[1])
+(root / 'first-ready').write_text(str(os.getpid()))
+deadline = time.monotonic() + 2
+while not (root / 'progress').exists() and time.monotonic() < deadline:
+    time.sleep(0.005)
+received = (root / 'progress').exists()
+(root / 'first-exited').touch()
+print('first-output')
+"""
+        if require_signal:
+            first += "\nsys.exit(0 if received else 3)\n"
+        second = """
+import fcntl, json, os, sys, time
+from pathlib import Path
+root = Path(sys.argv[1])
+deadline = time.monotonic() + 2
+while not (root / 'first-ready').exists():
+    if time.monotonic() >= deadline:
+        raise RuntimeError('first child did not start')
+    time.sleep(0.005)
+read_fd, write_fd = os.pipe()
+capacity = fcntl.fcntl(write_fd, fcntl.F_GETPIPE_SZ)
+os.close(read_fd)
+os.close(write_fd)
+try:
+    capacity = fcntl.fcntl(1, fcntl.F_GETPIPE_SZ)
+except OSError:
+    pass
+payload = b'x' * (capacity + 4096)
+offset = 0
+while offset < len(payload):
+    offset += os.write(1, payload[offset:])
+active = not (root / 'first-exited').exists()
+(root / 'progress').write_text(json.dumps({'capacity': capacity, 'written': offset, 'first_active': active}))
+os.write(2, b'second-stderr')
+"""
+        return self.command(first), self.command(second)
+
+    def test_output_beyond_pipe_capacity_progresses_before_first_exit(self):
+        before_fds = set(os.listdir("/proc/self/fd"))
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.module.profile_builds(self.signal_commands(), self.root, timeout=3) as results:
+                witness = json.loads((self.directory / "progress").read_text())
+                self.assertGreater(witness["written"], witness["capacity"])
+                self.assertTrue(witness["first_active"])
+                self.assertEqual([result.returncode for result in results], [0, 0])
+                self.assertEqual(results[0].stdout, "first-output\n")
+                self.assertEqual(results[1].stdout, "x" * witness["written"] + "second-stderr")
+        self.assert_quiescent()
+        self.assertFalse(self.root.exists())
+        self.assertEqual(set(os.listdir("/proc/self/fd")), before_fds | {
+            str(descriptor) for _, descriptor in self.observed
+        })
+
+    def test_first_child_dependency_on_post_output_signal_completes(self):
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.module.profile_builds(self.signal_commands(require_signal=True), self.root, timeout=0.75) as results:
+                self.assertEqual([result.returncode for result in results], [0, 0])
+        self.assert_quiescent()
+        self.assertFalse(self.root.exists())
+
+    def test_capture_does_not_borrow_the_git_four_mib_limit(self):
+        size = 4 * 1024 * 1024 + 17
+        commands = (self.command(f"import sys; sys.stdout.write('a' * {size})"),
+                    self.command("print('other-build')"))
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.module.profile_builds(commands, self.root, timeout=3) as results:
+                self.assertEqual(results[0].stdout, "a" * size)
+                self.assertEqual(results[1].stdout, "other-build\n")
+        self.assert_quiescent()
+
+    def test_second_launch_failure_settles_first_and_closes_captures_before_removal(self):
+        original = OSError("controlled second Popen failure")
+        removals = []
+
+        def launch(*args, **kwargs):
+            if self.observed:
+                self.streams.append(kwargs["stdout"])
+                raise original
+            return self.watch(*args, **kwargs)
+
+        removing = self.module._remove_profile_root
+        def remove(path, owner):
+            self.assert_quiescent()
+            removals.append(path)
+            return removing(path, owner)
+
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=launch), \
+             mock.patch.object(self.module, "_remove_profile_root", side_effect=remove):
+            with self.assertRaises(OSError) as caught:
+                with self.module.profile_builds(
+                    (self.command("import time; time.sleep(30)"),) * 2, self.root, timeout=1,
+                ):
+                    self.fail("partial launch must not reach assertions")
+        self.assertIs(caught.exception, original)
+        self.assert_quiescent()
+        self.assertEqual(removals, [self.root])
+        self.assertFalse(self.root.exists())
+
+    def test_slow_first_acquisition_cannot_reset_deadline_or_start_second(self):
+        def launch(*args, **kwargs):
+            process = self.watch(*args, **kwargs)
+            time.sleep(0.3)
+            return process
+
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=launch):
+            with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                with self.module.profile_builds(
+                    (self.command("import time; time.sleep(30)"),) * 2, self.root, timeout=0.2,
+                ):
+                    self.fail("expired acquisition budget must not be renewed")
+        self.assertEqual(caught.exception.timeout, 0.2)
+        self.assertEqual(len(self.observed), 1)
+        self.assert_quiescent()
+        self.assertFalse(self.root.exists())
+
+    def test_timeout_reaps_changed_group_grandchild_before_artifact_cleanup(self):
+        grandchild = "import os,time; os.setpgrp(); time.sleep(30)"
+        parent = f"""
+import json, os, subprocess, sys, time
+from pathlib import Path
+child = subprocess.Popen([sys.executable, '-I', '-S', '-c', {grandchild!r}])
+Path(sys.argv[1], 'grandchild').write_text(str(child.pid))
+time.sleep(30)
+"""
+        def launch(*args, **kwargs):
+            process = self.watch(*args, **kwargs)
+            if len(self.observed) == 1:
+                pid = int(self.wait_file("grandchild").read_text())
+                self.observed.append((None, os.pidfd_open(pid)))
+            return process
+
+        removing = self.module._remove_profile_root
+        def remove(path, owner):
+            self.assert_quiescent()
+            return removing(path, owner)
+
+        reap = self.raw._reap_leader
+        def checked_reap(process):
+            self.assertIsNotNone(os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT))
+            self.assertEqual(list(self.raw._owned_descriptors(process.pid, True)), [])
+            return reap(process)
+
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=launch), \
+             mock.patch.object(self.module, "_remove_profile_root", side_effect=remove), \
+             mock.patch.object(self.raw, "_reap_leader", side_effect=checked_reap):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                with self.module.profile_builds(
+                    (self.command(parent), self.command("import time; time.sleep(30)")), self.root, timeout=0.3,
+                ):
+                    self.fail("timeout must not reach assertions")
+        self.assert_quiescent()
+        self.assertFalse(self.root.exists())
+
+    def test_uncertain_cleanup_keeps_root_and_waitable_identity_with_primary_error(self):
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch), \
+             mock.patch.object(self.raw, "_terminate_owned",
+                               side_effect=self.raw.ProcessCleanupError("controlled uncertain cleanup")):
+            with self.assertRaises(self.raw.ProcessCleanupError) as caught:
+                with self.module.profile_builds(
+                    (self.command("import time; time.sleep(30)"),) * 2, self.root, timeout=0.15,
+                ):
+                    self.fail("timeout must not reach assertions")
+        self.assertIsInstance(caught.exception.__cause__, subprocess.TimeoutExpired)
+        self.assertTrue(self.root.is_dir())
+        root_state, builds = self.module._RETAINED_PROFILE_BUILDS[self.root]
+        root_fd = root_state.pins["root"][0]
+        self.assertEqual(os.fstat(root_fd).st_ino, self.root.stat().st_ino)
+        for build in builds:
+            self.assertIsNone(build.process.returncode)
+            self.assertIsNone(os.waitid(os.P_PIDFD, build.leader_fd, os.WEXITED | os.WNOHANG | os.WNOWAIT))
+            self.assertTrue(build.output.closed)
+        with self.assertRaises(FileExistsError):
+            with self.module.profile_builds((), self.root):
+                self.fail("retained root must not be reused or removed")
+
+    def test_interrupt_after_acquisition_settles_owned_session(self):
+        open_pidfd = os.pidfd_open
+        def interrupt(pid):
+            descriptor = open_pidfd(pid)
+            if self.observed and pid == self.observed[0][0].pid:
+                os.kill(os.getpid(), signal.SIGINT)
+            return descriptor
+
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch), \
+             mock.patch.object(self.module.os, "pidfd_open", side_effect=interrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                with self.module.profile_builds(
+                    (self.command("import time; time.sleep(30)"),) * 2, self.root, timeout=1,
+                ):
+                    self.fail("interruption must not reach assertions")
+        self.assert_quiescent()
+        self.assertFalse(self.root.exists())
+
+    def test_replaced_root_is_retained_instead_of_removing_unowned_content(self):
+        displaced = self.directory / "original"
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.assertRaises(self.raw.ProcessCleanupError):
+                with self.module.profile_builds(
+                    (self.command("print('first')"), self.command("print('second')")),
+                    self.root, timeout=1,
+                ):
+                    self.root.rename(displaced)
+                    self.root.mkdir()
+                    (self.root / "preserve").write_text("replacement")
+        self.assert_quiescent()
+        self.assertEqual((self.root / "preserve").read_text(), "replacement")
+        self.assertTrue(displaced.is_dir())
+
+    def test_pidfd_acquisition_failure_retains_unreaped_identity_and_root(self):
+        open_pidfd = os.pidfd_open
+        original = OSError("controlled pidfd acquisition failure")
+        def acquire(pid):
+            if self.observed:
+                raise original
+            return open_pidfd(pid)
+
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch), \
+             mock.patch.object(self.module.os, "pidfd_open", side_effect=acquire):
+            with self.assertRaises(self.raw.ProcessCleanupError) as caught:
+                with self.module.profile_builds(
+                    (self.command("import time; time.sleep(30)"),) * 2, self.root, timeout=1,
+                ):
+                    self.fail("failed identity acquisition cannot proceed")
+        self.assertIs(caught.exception.__cause__, original)
+        self.assertEqual(len(self.observed), 1)
+        self.assertIsNone(self.observed[0][0].returncode)
+        self.assertTrue(self.root.is_dir())
+        self.assertTrue(all(stream.closed for stream in self.streams))
+
+    def test_post_check_replacement_at_cleanup_boundary_preserves_both_directories(self):
+        displaced = self.directory / "displaced"
+        injected = []
+
+        def replace():
+            self.assert_quiescent()
+            self.root.rename(displaced)
+            self.root.mkdir()
+            (self.root / "foreign-marker").write_text("preserve replacement")
+            injected.append(True)
+
+        renaming = getattr(self.module, "_rename_profile_directory", None)
+        def claim(source_fd, source, target_fd, target):
+            if source == self.root.name and target == "root" and not injected:
+                replace()
+            return renaming(source_fd, source, target_fd, target)
+
+        def legacy_remove(path, *args, **kwargs):
+            if Path(path) == self.root and not injected:
+                replace()
+            return self.real_rmtree(path, *args, **kwargs)
+
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch), \
+             mock.patch.object(self.module, "_rename_profile_directory", side_effect=claim, create=True), \
+             mock.patch.object(self.module.shutil, "rmtree", side_effect=legacy_remove):
+            with self.assertRaises(self.raw.ProcessCleanupError):
+                with self.module.profile_builds(
+                    (self.command("print('first')"), self.command("print('second')")),
+                    self.root, timeout=1,
+                ):
+                    (self.root / "original-marker").write_text("preserve original")
+        self.assertEqual(injected, [True])
+        self.assertEqual((self.root / "foreign-marker").read_text(), "preserve replacement")
+        self.assertEqual((displaced / "original-marker").read_text(), "preserve original")
+        root_state, _ = self.module._RETAINED_PROFILE_BUILDS[self.root]
+        self.assertTrue(os.path.samestat(os.fstat(root_state.pins["root"][0]), displaced.stat()))
+        self.assert_quiescent()
+
+    def test_namespace_drift_at_fd_traversal_boundary_preserves_original_contents(self):
+        scanning = os.scandir
+        injected = []
+        original = []
+        def scan(descriptor):
+            if isinstance(descriptor, int) and original and not injected and os.path.samestat(
+                    os.fstat(descriptor), original[0]):
+                self.assert_quiescent()
+                if self.root.exists():
+                    self.root.rename(self.directory / "displaced")
+                self.root.mkdir()
+                (self.root / "foreign-marker").write_text("replacement")
+                injected.append(descriptor)
+            return scanning(descriptor)
+
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch), \
+             mock.patch.object(self.module.os, "scandir", side_effect=scan):
+            with self.assertRaises(self.raw.ProcessCleanupError):
+                with self.module.profile_builds(
+                    (self.command("print('first')"), self.command("print('second')")),
+                    self.root, timeout=1,
+                ):
+                    (self.root / "original-marker").write_text("original")
+                    original.append(self.root.stat())
+        self.assertEqual(len(injected), 1)
+        self.assertEqual((self.root / "foreign-marker").read_text(), "replacement")
+        root_state, _ = self.module._RETAINED_PROFILE_BUILDS[self.root]
+        descriptor = root_state if isinstance(root_state, int) else root_state.pins["root"][0]
+        self.assertTrue(os.path.samestat(os.fstat(descriptor), original[0]))
+        self.assertGreater(os.stat("original-marker", dir_fd=descriptor).st_size, 0)
+        self.assert_quiescent()
+
+    def test_recursive_fd_cleanup_removes_only_owned_tree_and_closes_all_pins(self):
+        outside = self.directory / "outside"
+        outside.mkdir()
+        (outside / "preserve").write_text("not owned by profile")
+        before_fds = set(os.listdir("/proc/self/fd"))
+        source = """
+from pathlib import Path
+import sys
+root = Path(sys.argv[1]) / 'owned'
+directory = root / 'nested' / 'deeper'
+directory.mkdir(parents=True)
+(directory / 'artifact').write_text('owned output')
+"""
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.module.profile_builds(
+                (self.command(source), self.command("print('other build')")),
+                self.root, timeout=1,
+            ) as results:
+                self.assertEqual([result.returncode for result in results], [0, 0])
+                (self.root / "outside-link").symlink_to(outside, target_is_directory=True)
+        self.assert_quiescent()
+        self.assertEqual((outside / "preserve").read_text(), "not owned by profile")
+        self.assertEqual(set(self.directory.iterdir()), {outside})
+        self.assertEqual(set(os.listdir("/proc/self/fd")), before_fds | {
+            str(descriptor) for _, descriptor in self.observed
+        })
+
+    def test_initial_pin_never_adopts_an_intervening_public_root(self):
+        opening = os.open
+        displaced = self.directory / "displaced-before-pin"
+        observation = {}
+        def open_root(path, flags, *args, **kwargs):
+            public = Path(path) == self.root
+            private = os.fspath(path) == "root" and kwargs.get("dir_fd") is not None
+            if (public or private) and not observation:
+                descriptor = opening(path, flags, *args, **kwargs)
+                created = os.fstat(descriptor)
+                marker = opening("original-marker", os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                                 0o600, dir_fd=descriptor)
+                os.write(marker, b"original")
+                os.close(marker)
+                os.close(descriptor)
+                if public:
+                    self.root.rename(displaced)
+                self.root.mkdir()
+                (self.root / "foreign-marker").write_text("replacement")
+                descriptor = opening(path, flags, *args, **kwargs)
+                acquired = os.fstat(descriptor)
+                observation.update(
+                    private=private,
+                    created_identity=(created.st_dev, created.st_ino),
+                    acquired_identity=(acquired.st_dev, acquired.st_ino),
+                )
+                return descriptor
+            return opening(path, flags, *args, **kwargs)
+
+        self.initial_publication_observation = observation
+        with mock.patch.object(self.module.os, "open", side_effect=open_root), \
+             mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.assertRaises(self.raw.ProcessCleanupError):
+                with self.module.profile_builds(
+                    (self.command("print('first')"), self.command("print('second')")),
+                    self.root, timeout=1,
+                ):
+                    pass
+        self.assertTrue(observation["private"])
+        self.assertEqual(observation["created_identity"], observation["acquired_identity"])
+        self.assertEqual(self.observed, [])
+        self.assertEqual((self.root / "foreign-marker").read_text(), "replacement")
+        owner, builds = self.module._RETAINED_PROFILE_BUILDS[self.root]
+        self.assertEqual(builds, [])
+        self.assertFalse(owner.published)
+        self.assertEqual(
+            (self.directory / owner.holder_name / "root" / "original-marker").read_text(),
+            "original",
+        )
+        self.assertEqual(os.fstat(owner.pins["root"][0]).st_ino, observation["created_identity"][1])
+
+    def test_publication_collision_preserves_private_root_and_allows_owned_recovery(self):
+        renaming = self.module._rename_profile_directory
+        injected = []
+        def publish(source_fd, source, target_fd, target):
+            if source == "root" and target == self.root.name and not injected:
+                self.root.mkdir()
+                (self.root / "foreign-marker").write_text("replacement")
+                injected.append(True)
+            return renaming(source_fd, source, target_fd, target)
+
+        with mock.patch.object(self.module, "_rename_profile_directory", side_effect=publish), \
+             mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.assertRaises(self.raw.ProcessCleanupError) as caught:
+                with self.module.profile_builds(
+                    (self.command("print('first')"), self.command("print('second')")),
+                    self.root, timeout=1,
+                ):
+                    self.fail("colliding publication must not start a build")
+        self.assertIsInstance(caught.exception.__cause__, FileExistsError)
+        self.assertEqual(self.observed, [])
+        self.assertEqual((self.root / "foreign-marker").read_text(), "replacement")
+        owner, _ = self.module._RETAINED_PROFILE_BUILDS[self.root]
+        private = self.directory / owner.holder_name / "root"
+        self.assertTrue(os.path.samestat(os.fstat(owner.pins["root"][0]), private.stat()))
+        with self.assertRaises(FileExistsError):
+            with self.module.profile_builds((), self.root):
+                self.fail("retained private ownership must block an implicit retry")
+        for key in tuple(owner.pins):
+            self.module._close_profile_pin(owner, key)
+        self.real_rmtree(self.directory / owner.holder_name)
+        self.real_rmtree(self.root)
+        del self.module._RETAINED_PROFILE_BUILDS[self.root]
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.module.profile_builds(
+                (self.command("print('recovered first')"), self.command("print('recovered second')")),
+                self.root, timeout=1,
+            ) as results:
+                self.assertEqual([result.returncode for result in results], [0, 0])
+        self.assert_quiescent()
+        self.assertEqual(list(self.directory.iterdir()), [])
+
+    def test_private_initialization_and_publication_failures_retain_all_created_ownership(self):
+        for phase in ("parent-pin", "holder-pin", "root-pin", "publication"):
+            with self.subTest(phase=phase):
+                opening = self.module._open_profile_pin
+                renaming = self.module._rename_profile_directory
+                original = OSError(f"controlled {phase} failure")
+                def acquire(owner, key, *args, **kwargs):
+                    if phase == key + "-pin":
+                        raise original
+                    return opening(owner, key, *args, **kwargs)
+                def publish(*args):
+                    if phase == "publication":
+                        raise original
+                    return renaming(*args)
+                with mock.patch.object(self.module, "_open_profile_pin", side_effect=acquire), \
+                     mock.patch.object(self.module, "_rename_profile_directory", side_effect=publish), \
+                     mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+                    with self.assertRaises((OSError, self.raw.ProcessCleanupError)) as caught:
+                        with self.module.profile_builds(
+                            (self.command("print('unused')"),) * 2, self.root, timeout=1,
+                        ):
+                            self.fail("failed private setup must not enter the workload")
+                self.assert_chain_contains(caught.exception, original)
+                self.assertEqual(self.observed, [])
+                self.assertFalse(self.root.exists())
+                retained = self.module._RETAINED_PROFILE_BUILDS.get(self.root)
+                if phase == "parent-pin":
+                    self.assertIsNone(retained)
+                    self.assertEqual(list(self.directory.iterdir()), [])
+                else:
+                    self.assertIsNotNone(retained)
+                    owner, _ = retained
+                    self.assertTrue((self.directory / owner.holder_name).is_dir())
+                    for descriptor, identity in owner.pins.values():
+                        self.assertTrue(os.path.samestat(os.fstat(descriptor), identity))
+                    for key in tuple(owner.pins):
+                        self.module._close_profile_pin(owner, key)
+                    self.real_rmtree(self.directory / owner.holder_name)
+                    del self.module._RETAINED_PROFILE_BUILDS[self.root]
+
+    def test_sigint_after_real_publication_keeps_registered_identity_through_cleanup(self):
+        renaming = self.module._rename_profile_directory
+        injected = []
+        def publish(source_fd, source, target_fd, target):
+            result = renaming(source_fd, source, target_fd, target)
+            if source == "root" and target == self.root.name and not injected:
+                injected.append(True)
+                os.kill(os.getpid(), signal.SIGINT)
+            return result
+        with mock.patch.object(self.module, "_rename_profile_directory", side_effect=publish), \
+             mock.patch.object(self.module.os, "open", side_effect=self.record_root_open()), \
+             mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.assertRaises(KeyboardInterrupt):
+                with self.module.profile_builds(
+                    (self.command("print('unused')"),) * 2, self.root, timeout=1,
+                ):
+                    self.fail("publication interrupt must precede workload entry")
+        self.assertEqual(injected, [True])
+        self.assertEqual(self.observed, [])
+        self.assert_root_pins_owned_or_closed()
+        self.assertEqual(list(self.directory.iterdir()), [])
+
+    def test_post_publication_namespace_drift_cannot_adopt_or_launch_into_replacement(self):
+        renaming = self.module._rename_profile_directory
+        displaced = self.directory / "displaced-after-publication"
+        injected = []
+        def publish(source_fd, source, target_fd, target):
+            result = renaming(source_fd, source, target_fd, target)
+            if source == "root" and target == self.root.name and not injected:
+                self.root.rename(displaced)
+                self.root.mkdir()
+                (self.root / "foreign-marker").write_text("replacement")
+                injected.append(True)
+            return result
+        with mock.patch.object(self.module, "_rename_profile_directory", side_effect=publish), \
+             mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.assertRaises(self.raw.ProcessCleanupError):
+                with self.module.profile_builds(
+                    (self.command("print('unused')"),) * 2, self.root, timeout=1,
+                ):
+                    self.fail("drift must be rejected before workload entry")
+        self.assertEqual(self.observed, [])
+        owner, _ = self.module._RETAINED_PROFILE_BUILDS[self.root]
+        self.assertTrue(owner.published)
+        self.assertTrue(os.path.samestat(os.fstat(owner.pins["root"][0]), displaced.stat()))
+        self.assertEqual((self.root / "foreign-marker").read_text(), "replacement")
+
+    def test_claim_restore_never_overwrites_a_new_namespace_entry(self):
+        displaced = self.directory / "original"
+        renaming = self.module._rename_profile_directory
+        injected = []
+        def claim(source_fd, source, target_fd, target):
+            if source == self.root.name and target == "root" and not injected:
+                self.root.rename(displaced)
+                self.root.mkdir()
+                (self.root / "first-replacement").write_text("first")
+                renaming(source_fd, source, target_fd, target)
+                self.root.mkdir()
+                (self.root / "second-replacement").write_text("second")
+                injected.append(True)
+                return
+            return renaming(source_fd, source, target_fd, target)
+
+        with mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch), \
+             mock.patch.object(self.module, "_rename_profile_directory", side_effect=claim):
+            with self.assertRaises(self.raw.ProcessCleanupError):
+                with self.module.profile_builds(
+                    (self.command("print('first')"), self.command("print('second')")),
+                    self.root, timeout=1,
+                ):
+                    (self.root / "original-marker").write_text("original")
+        owner, _ = self.module._RETAINED_PROFILE_BUILDS[self.root]
+        self.assertEqual((displaced / "original-marker").read_text(), "original")
+        self.assertEqual((self.root / "second-replacement").read_text(), "second")
+        self.assertEqual((self.directory / owner.holder_name / "root" / "first-replacement").read_text(), "first")
+        self.assert_quiescent()
+
+    def test_actual_sigint_after_root_open_never_loses_acquired_pin(self):
+        with mock.patch.object(self.module.os, "open", side_effect=self.record_root_open(interrupt=True)), \
+             mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.assertRaises((KeyboardInterrupt, self.raw.ProcessCleanupError)):
+                with self.module.profile_builds(
+                    (self.command("print('unused')"),) * 2, self.root, timeout=1,
+                ):
+                    self.fail("root acquisition interrupt must precede launches")
+        self.assertEqual(len(self.root_pins), 1)
+        self.assertEqual(self.observed, [])
+        self.assert_root_pins_owned_or_closed()
+
+    def test_actual_sigint_at_final_root_close_closes_or_retains_pin_and_primary(self):
+        closing = os.close
+        injected = []
+        primary = RuntimeError("original body failure")
+        def close(descriptor):
+            if self.root_pins and descriptor == self.root_pins[0][0] and not injected:
+                injected.append(True)
+                os.kill(os.getpid(), signal.SIGINT)
+            return closing(descriptor)
+
+        with mock.patch.object(self.module.os, "open", side_effect=self.record_root_open()), \
+             mock.patch.object(self.module.os, "close", side_effect=close), \
+             mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+            with self.assertRaises(KeyboardInterrupt) as caught:
+                with self.module.profile_builds(
+                    (self.command("print('first')"), self.command("print('second')")),
+                    self.root, timeout=1,
+                ):
+                    raise primary
+        self.assertEqual(injected, [True])
+        self.assert_chain_contains(caught.exception, primary)
+        self.assert_root_pins_owned_or_closed()
+        self.assert_quiescent()
+
+    def test_final_root_close_failure_tracks_actual_descriptor_state(self):
+        for close_first in (False, True):
+            with self.subTest(close_first=close_first):
+                closing = os.close
+                injected = []
+                primary = RuntimeError("original body failure")
+                pin_offset = len(self.root_pins)
+                def close(descriptor):
+                    if len(self.root_pins) > pin_offset and descriptor == self.root_pins[pin_offset][0] and not injected:
+                        injected.append(True)
+                        if close_first:
+                            closing(descriptor)
+                        raise OSError("controlled root close failure")
+                    return closing(descriptor)
+                with mock.patch.object(self.module.os, "open", side_effect=self.record_root_open()), \
+                     mock.patch.object(self.module.os, "close", side_effect=close), \
+                     mock.patch.object(self.module.subprocess, "Popen", side_effect=self.watch):
+                    with self.assertRaises((OSError, self.raw.ProcessCleanupError)) as caught:
+                        with self.module.profile_builds(
+                            (self.command("print('first')"), self.command("print('second')")),
+                            self.root, timeout=1,
+                        ):
+                            raise primary
+                self.assertEqual(injected, [True])
+                self.assert_chain_contains(caught.exception, primary)
+                self.assert_root_pins_owned_or_closed()
+                self.assert_quiescent()
+                if not self.root.exists():
+                    with self.assertRaises(FileExistsError):
+                        with self.module.profile_builds((), self.root):
+                            self.fail("an unlinked retained pin must not be overwritten by another run")
+                retained = self.module._RETAINED_PROFILE_BUILDS.pop(self.root, None)
+                if retained is not None and not isinstance(retained[0], int):
+                    for key in tuple(retained[0].pins):
+                        self.module._close_profile_pin(retained[0], key)
+
+
 class HostOnlyClassificationTests(unittest.TestCase):
     """Category A vs. Category B is explicit, complete and enforced."""
 
@@ -667,6 +1420,72 @@ class HostOnlyClassificationTests(unittest.TestCase):
                 self.assertTrue(result.skipped)
                 for _test, reason in result.skipped:
                     self.assertIn("host-only mode", reason)
+
+    def test_full_project_profile_build_skips_before_cleanup_with_arm_tool_available(self):
+        module = importlib.import_module("test_custom_spell_effect")
+        test_class = module.CustomSpellProfileAssetIsolationTests
+        with mock.patch.object(module, "ARM_CC", "/usr/bin/arm-none-eabi-gcc"), \
+             mock.patch.object(module.Path, "mkdir", side_effect=OSError("blocked setup")) as setup, \
+             mock.patch.object(module.shutil, "rmtree") as cleanup, \
+             mock.patch.object(module.subprocess, "Popen") as launch:
+            with _host_only():
+                result = _run_case(test_class)
+            self.assertEqual(result.errors, [])
+            self.assertEqual(result.failures, [])
+            self.assertEqual(result.testsRun, 0)
+            self.assertTrue(result.skipped)
+            setup.assert_not_called()
+            cleanup.assert_not_called()
+            launch.assert_not_called()
+
+            with _normal_mode():
+                result = _run_case(test_class)
+            self.assertEqual(result.testsRun, 1)
+            self.assertEqual(len(result.errors), 1)
+            self.assertEqual(result.skipped, [])
+            setup.assert_called_once_with(parents=True, exist_ok=True)
+            cleanup.assert_not_called()
+            launch.assert_not_called()
+
+    def test_required_profile_entry_rejects_host_only_and_missing_compiler(self):
+        module = importlib.import_module("test_custom_spell_effect")
+        for host_only, compiler in (("1", "/usr/bin/arm-none-eabi-gcc"), ("0", None)):
+            with self.subTest(host_only=host_only, compiler=compiler), \
+                 mock.patch.dict(os.environ, {host_mode.ENV_VAR: host_only}), \
+                 mock.patch.object(module, "ARM_CC", compiler), \
+                 mock.patch.object(module.shutil, "rmtree") as cleanup, \
+                 mock.patch.object(module.subprocess, "Popen") as launch, \
+                 mock.patch("sys.stderr", new_callable=io.StringIO):
+                self.assertEqual(module.run_required_profile_isolation(), 1)
+                cleanup.assert_not_called()
+                launch.assert_not_called()
+
+    def test_required_profile_entry_runs_only_the_exact_case_and_rejects_empty_or_failed_runs(self):
+        module = importlib.import_module("test_custom_spell_effect")
+        test_class = module.CustomSpellProfileAssetIsolationTests
+        method = "test_concurrent_enabled_disabled_full_modern_compiles_keep_assets_isolated"
+        for failure in (None, AssertionError("controlled compile failure")):
+            with self.subTest(failure=failure), _normal_mode(), \
+                 mock.patch.object(test_class, method, autospec=True, return_value=None,
+                                   side_effect=failure) as selected, \
+                 mock.patch("sys.stderr", new_callable=io.StringIO):
+                self.assertEqual(module.run_required_profile_isolation(), int(failure is not None))
+                selected.assert_called_once()
+        for count in (0, 2):
+            with self.subTest(selected_count=count), _normal_mode(), \
+                 mock.patch.object(test_class, method, autospec=True, return_value=None), \
+                 mock.patch.object(unittest.defaultTestLoader, "loadTestsFromName",
+                                   return_value=unittest.TestSuite(test_class(method) for _ in range(count))), \
+                 mock.patch("sys.stderr", new_callable=io.StringIO):
+                self.assertEqual(module.run_required_profile_isolation(), 1)
+
+        @unittest.expectedFailure
+        def expected_failure(_case):
+            raise AssertionError("controlled expected compile failure")
+
+        with _normal_mode(), mock.patch.object(test_class, method, expected_failure), \
+             mock.patch("sys.stderr", new_callable=io.StringIO):
+            self.assertEqual(module.run_required_profile_isolation(), 1)
 
     def test_live_modules_have_no_unregistered_live_entry_point(self):
         """Run EVERY class of the live modules in host-only mode with a
@@ -705,6 +1524,7 @@ class HostOnlyClassificationTests(unittest.TestCase):
             ("test_save_load_scenario", "SaveLoadScenarioFilesTests"),
             ("test_tools_scenario", "ToolsReleaseNegativeFilesTests"),
             ("test_savesuspend_resume_scenario", "SavesuspendResumeScenarioFilesTests"),
+            ("test_custom_spell_effect", "CustomSpellConfigTests"),
         )
         for module_name, class_name in cases:
             with self.subTest(module=module_name, cls=class_name):
@@ -973,6 +1793,10 @@ class HostOnlyStagedWorktreeSubprocessTests(unittest.TestCase):
             cls.tree / "scripts" / "localization",
             ignore=ignore,
         )
+        process_support = cls.tree / "scripts" / "workflow_pilot"
+        process_support.mkdir()
+        for name in ("__init__.py", "raw_diff_check.py"):
+            shutil.copy2(REPO_ROOT / "scripts" / "workflow_pilot" / name, process_support / name)
         shutil.copy2(REPO_ROOT / "config.mk", cls.tree / "config.mk")
         cls.staged = []
         for index, relative in enumerate(_STAGED_ARTIFACT_RELATIVE_PATHS):
@@ -1017,6 +1841,20 @@ class HostOnlyStagedWorktreeSubprocessTests(unittest.TestCase):
         for module_name, class_name in host_mode.LIVE_TEST_CLASSES:
             self.assertIn(f"{module_name}.{class_name}", result.stdout)
         self.assertNotIn("no mGBA core recognizes ROM", result.stdout)
+        support = self.tree / "scripts" / "workflow_pilot" / "raw_diff_check.py"
+        removed = support.with_suffix(".absent")
+        support.rename(removed)
+        targets = ["test_custom_spell_effect.CustomSpellProfileAssetIsolationTests"]
+        try:
+            missing = self._run_live_classes(host_only=True, targets=targets)
+        finally:
+            removed.rename(support)
+        self.assertNotEqual(missing.returncode, 0, missing.stdout)
+        self.assertIn("raw_diff_check", missing.stdout)
+        restored = self._run_live_classes(host_only=True, targets=targets)
+        self.assertEqual(restored.returncode, 0, restored.stdout)
+        self.assertIn("Ran 0 tests", restored.stdout)
+        self.assertIn("OK (skipped=1)", restored.stdout)
         for path in self.staged:
             self.assertTrue(path.is_file(), f"host-only mode deleted {path}")
             self.assertEqual(

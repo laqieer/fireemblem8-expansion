@@ -1,14 +1,33 @@
 """Issue #77 configuration, dispatch, resource, and ARM-object checks."""
 
+import ctypes
+import errno
 import json
+import os
 import re
+import select
+import secrets
 import shutil
+import signal
+import stat
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TextIO
+
+import host_mode
 
 ROOT = Path(__file__).resolve().parents[3]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.workflow_pilot import raw_diff_check as process_ownership
+
 SOURCE = ROOT / "src" / "custom_spell_effect.c"
 DATA_SOURCE = ROOT / "src" / "data" / "custom_spell_effect_data.c"
 DISPATCH = ROOT / "src" / "banim-efxmagic.c"
@@ -560,6 +579,327 @@ class CustomSpellArmTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
 
+@dataclass
+class _ProfileBuild:
+    output: TextIO | None = None
+    process: subprocess.Popen | None = None
+    leader_fd: int = -1
+    settled: bool = False
+
+
+# An unverified session must keep its waitable leader/pidfd, not just its number.
+_RETAINED_PROFILE_BUILDS = {}
+
+
+@dataclass
+class _ProfileRoot:
+    pins: dict[object, tuple[int, os.stat_result | None]] = field(default_factory=dict)
+    holder_name: str | None = None
+    claimed: bool = False
+    published: bool = False
+
+
+_DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+
+
+def _open_profile_pin(owner, key, path, *, dir_fd=None):
+    descriptor = os.open(path, _DIRECTORY_FLAGS, dir_fd=dir_fd)
+    owner.pins[key] = (descriptor, None)
+    owner.pins[key] = (descriptor, os.fstat(descriptor))
+    return descriptor
+
+
+def _close_profile_pin(owner, key):
+    descriptor, expected = owner.pins[key]
+    try:
+        actual = os.fstat(descriptor)
+    except OSError as error:
+        if error.errno == errno.EBADF:
+            del owner.pins[key]
+        raise
+    if expected is not None and not os.path.samestat(expected, actual):
+        del owner.pins[key]
+        raise process_ownership.ProcessCleanupError("profile pin identity changed; refusing to close replacement")
+    try:
+        os.close(descriptor)
+    except BaseException:
+        # close can fail either before or after releasing the descriptor.
+        # Retain only a still-live pin to the identity we actually acquired.
+        try:
+            following = os.fstat(descriptor)
+        except OSError as error:
+            if error.errno == errno.EBADF:
+                del owner.pins[key]
+        else:
+            if not os.path.samestat(actual, following):
+                del owner.pins[key]
+        raise
+    del owner.pins[key]
+
+
+def _rename_profile_directory(source_fd, source, target_fd, target):
+    rename = ctypes.CDLL(None, use_errno=True).renameat2
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    if rename(source_fd, os.fsencode(source), target_fd, os.fsencode(target), 1):
+        number = ctypes.get_errno()
+        raise OSError(number, os.strerror(number), source)
+
+
+def _profile_namespace_matches(owner, test_root, *, claimed):
+    root_fd = owner.pins["root"][0]
+    parent_fd = owner.pins["parent"][0]
+    if not os.path.samestat(os.fstat(parent_fd), test_root.parent.stat()):
+        raise process_ownership.ProcessCleanupError("profile parent namespace changed")
+    if not claimed:
+        actual = os.stat(test_root.name, dir_fd=parent_fd, follow_symlinks=False)
+    else:
+        try:
+            os.stat(test_root.name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            pass
+        else:
+            raise process_ownership.ProcessCleanupError("profile root namespace was replaced")
+        holder_fd = owner.pins["holder"][0]
+        if not os.path.samestat(os.fstat(holder_fd), os.stat(
+                owner.holder_name, dir_fd=parent_fd, follow_symlinks=False)):
+            raise process_ownership.ProcessCleanupError("profile cleanup namespace changed")
+        actual = os.stat("root", dir_fd=holder_fd, follow_symlinks=False)
+    if not stat.S_ISDIR(actual.st_mode) or not os.path.samestat(os.fstat(root_fd), actual):
+        raise process_ownership.ProcessCleanupError("profile root identity changed")
+
+
+def _clear_profile_directory(owner, descriptor, check_namespace):
+    check_namespace()
+    with os.scandir(descriptor) as entries:
+        entries = list(entries)
+    check_namespace()
+    for entry in entries:
+        check_namespace()
+        expected = entry.stat(follow_symlinks=False)
+        if stat.S_ISDIR(expected.st_mode):
+            key = object()
+            child = _open_profile_pin(owner, key, entry.name, dir_fd=descriptor)
+            if not os.path.samestat(expected, os.fstat(child)):
+                raise process_ownership.ProcessCleanupError("profile child directory identity changed")
+            _clear_profile_directory(owner, child, check_namespace)
+            check_namespace()
+            if not os.path.samestat(os.fstat(child), os.stat(
+                    entry.name, dir_fd=descriptor, follow_symlinks=False)):
+                raise process_ownership.ProcessCleanupError("profile child namespace changed")
+            os.rmdir(entry.name, dir_fd=descriptor)
+            if os.fstat(child).st_nlink:
+                raise process_ownership.ProcessCleanupError("profile child removal did not unlink its pin")
+            _close_profile_pin(owner, key)
+        else:
+            os.unlink(entry.name, dir_fd=descriptor)
+    check_namespace()
+
+
+def _initialize_profile_root(test_root, owner, checkpoint):
+    parent_fd = _open_profile_pin(owner, "parent", test_root.parent)
+    checkpoint()
+    holder_name = f".{test_root.name}.cleanup-{secrets.token_hex(12)}"
+    os.mkdir(holder_name, 0o700, dir_fd=parent_fd)
+    owner.holder_name = holder_name
+    holder_fd = _open_profile_pin(owner, "holder", holder_name, dir_fd=parent_fd)
+    checkpoint()
+    # The root is still private when its identity is acquired. Publication
+    # never opens or adopts whichever object occupies the public name.
+    os.mkdir("root", 0o700, dir_fd=holder_fd)
+    _open_profile_pin(owner, "root", "root", dir_fd=holder_fd)
+    checkpoint()
+    _rename_profile_directory(holder_fd, "root", parent_fd, test_root.name)
+    owner.published = True
+    _profile_namespace_matches(owner, test_root, claimed=False)
+    checkpoint()
+
+
+def _remove_profile_root(test_root, owner):
+    parent_fd = owner.pins["parent"][0]
+    holder_fd = owner.pins["holder"][0]
+    holder_name = owner.holder_name
+    _profile_namespace_matches(owner, test_root, claimed=False)
+    # Claim into an exclusive private namespace, then verify the moved entry
+    # against the existing pin. A replaced public name is never traversed.
+    _rename_profile_directory(parent_fd, test_root.name, holder_fd, "root")
+    actual = os.stat("root", dir_fd=holder_fd, follow_symlinks=False)
+    if not os.path.samestat(os.fstat(owner.pins["root"][0]), actual):
+        try:
+            _rename_profile_directory(holder_fd, "root", parent_fd, test_root.name)
+        except OSError as error:
+            raise process_ownership.ProcessCleanupError(
+                f"profile claim changed; replacement retained in {holder_name}/root") from error
+        raise process_ownership.ProcessCleanupError("profile claim changed; replacement restored without deletion")
+    owner.claimed = True
+    check_namespace = lambda: _profile_namespace_matches(owner, test_root, claimed=True)
+    _clear_profile_directory(owner, owner.pins["root"][0], check_namespace)
+    check_namespace()
+    os.rmdir("root", dir_fd=holder_fd)
+    if os.fstat(owner.pins["root"][0]).st_nlink:
+        raise process_ownership.ProcessCleanupError("profile removal did not unlink the pinned root")
+    os.rmdir(holder_name, dir_fd=parent_fd)
+    if os.fstat(holder_fd).st_nlink:
+        raise process_ownership.ProcessCleanupError("profile cleanup holder was replaced")
+    try:
+        os.stat(test_root.name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    raise process_ownership.ProcessCleanupError("profile root namespace changed during removal")
+
+
+def _finish_profile_build(build, deadline):
+    if build.process is None or build.settled:
+        return
+    if build.process.returncode is not None:
+        raise process_ownership.ProcessCleanupError("profile leader was reaped before session quiescence")
+    if build.leader_fd < 0:
+        os.waitid(os.P_PID, build.process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        try:
+            os.killpg(build.process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        raise process_ownership.ProcessCleanupError(
+            "profile pidfd unavailable; waitable leader identity retained")
+    process_ownership._terminate_owned(build.process, build.leader_fd, True, deadline)
+    process_ownership._reap_leader(build.process)
+    build.settled = True
+
+
+def _close_profile_builds(builds, deadline):
+    errors = []
+    for build in builds:
+        try:
+            _finish_profile_build(build, deadline)
+        except BaseException as error:
+            errors.append(error)
+    for build in builds:
+        if build.output is not None:
+            try:
+                build.output.close()
+            except BaseException as error:
+                errors.append(error)
+        if build.settled and build.leader_fd >= 0:
+            descriptor, build.leader_fd = build.leader_fd, -1
+            try:
+                os.close(descriptor)
+            except BaseException as error:
+                errors.append(error)
+    return errors
+
+
+@contextmanager
+def profile_builds(commands, test_root, *, timeout=600):
+    with process_ownership._interruptible() as checkpoint:
+        if test_root in _RETAINED_PROFILE_BUILDS:
+            raise FileExistsError(errno.EEXIST, "profile ownership is still retained", test_root)
+        test_root.parent.mkdir(parents=True, exist_ok=True)
+        owner = _ProfileRoot()
+        builds = []
+        cleanup_errors = []
+        failure = None
+        try:
+            _initialize_profile_root(test_root, owner, checkpoint)
+            with process_ownership._child_reaper():
+                try:
+                    deadline = time.monotonic() + timeout
+
+                    def remaining():
+                        checkpoint()
+                        value = deadline - time.monotonic()
+                        if value <= 0:
+                            raise subprocess.TimeoutExpired(commands, timeout)
+                        return value
+
+                    poller = select.poll()
+                    pending = {}
+                    for index, command in enumerate(commands):
+                        remaining()
+                        _profile_namespace_matches(owner, test_root, claimed=False)
+                        build = _ProfileBuild()
+                        builds.append(build)
+                        # Regular files cannot impose a pipe-capacity dependency on
+                        # the other build. They retain unlimited, attributed logs.
+                        build.output = open(
+                            f"build-{index}.log", "x+",
+                            opener=lambda path, flags: os.open(
+                                path, flags, dir_fd=owner.pins["root"][0]),
+                        )
+                        build.process = subprocess.Popen(
+                            command, cwd=str(ROOT), stdin=subprocess.DEVNULL,
+                            stdout=build.output, stderr=subprocess.STDOUT, start_new_session=True,
+                        )
+                        build.leader_fd = os.pidfd_open(build.process.pid)
+                        checkpoint()
+                        pending[build.leader_fd] = build
+                        poller.register(build.leader_fd, select.POLLIN)
+                    while pending:
+                        for descriptor, events in poller.poll(max(1, int(min(remaining(), 0.05) * 1000))):
+                            if not events & select.POLLIN:
+                                raise process_ownership.ProcessCleanupError("profile leader identity is unavailable")
+                            build = pending[descriptor]
+                            _finish_profile_build(build, min(deadline, time.monotonic() + 5))
+                            poller.unregister(descriptor)
+                            del pending[descriptor]
+                    results = []
+                    for build in builds:
+                        build.output.seek(0)
+                        chunks = []
+                        while True:
+                            remaining()
+                            chunk = build.output.read(65536)
+                            if not chunk:
+                                break
+                            chunks.append(chunk)
+                        results.append(subprocess.CompletedProcess(
+                            build.process.args, build.process.returncode, "".join(chunks),
+                        ))
+                    yield results
+                finally:
+                    cleanup_errors.extend(_close_profile_builds(builds, time.monotonic() + 5))
+        except BaseException as error:
+            failure = error
+        if not owner.published:
+            if owner.pins or owner.holder_name is not None:
+                _RETAINED_PROFILE_BUILDS[test_root] = (owner, builds)
+                raise process_ownership.ProcessCleanupError(
+                    f"profile private initialization/publication failed; retained {owner.holder_name} for {test_root}"
+                ) from failure
+            if failure is not None:
+                raise failure
+            raise process_ownership.ProcessCleanupError("profile publication did not complete")
+        if "root" not in owner.pins:
+            cleanup_errors.append(process_ownership.ProcessCleanupError("profile root identity is unavailable"))
+        if cleanup_errors:
+            _RETAINED_PROFILE_BUILDS[test_root] = (owner, builds)
+            error = process_ownership.ProcessCleanupError(
+                f"profile cleanup unconfirmed; retained {test_root}: "
+                + "; ".join(str(item) or type(item).__name__ for item in cleanup_errors)
+            )
+            raise error from (failure if failure is not None else cleanup_errors[0])
+        try:
+            _remove_profile_root(test_root, owner)
+        except BaseException as error:
+            _RETAINED_PROFILE_BUILDS[test_root] = (owner, builds)
+            raise process_ownership.ProcessCleanupError(
+                f"profile root cleanup failed; retained {test_root}: {error}"
+            ) from (failure if failure is not None else error)
+        for key in reversed(tuple(owner.pins)):
+            try:
+                _close_profile_pin(owner, key)
+            except BaseException as error:
+                cleanup_errors.append(error)
+        if cleanup_errors:
+            _RETAINED_PROFILE_BUILDS[test_root] = (owner, builds)
+            raise process_ownership.ProcessCleanupError(
+                f"profile pin closure failed; retained live identities for {test_root}: "
+                + "; ".join(str(item) for item in cleanup_errors)
+            ) from (failure if failure is not None else cleanup_errors[0])
+        if failure is not None:
+            raise failure
+
+
+@host_mode.live_artifact_testcase("concurrent custom-spell full-modern object builds")
 class CustomSpellProfileAssetIsolationTests(unittest.TestCase):
     def test_concurrent_enabled_disabled_full_modern_compiles_keep_assets_isolated(self):
         if ARM_CC is None:
@@ -568,8 +908,6 @@ class CustomSpellProfileAssetIsolationTests(unittest.TestCase):
         test_root = ROOT / "build" / "test-artifacts" / "custom-spell-profile-assets"
         enabled_root = test_root / "enabled"
         disabled_root = test_root / "disabled"
-        shutil.rmtree(test_root, ignore_errors=True)
-        test_root.mkdir(parents=True)
         commands = (
             [
                 "make",
@@ -593,20 +931,9 @@ class CustomSpellProfileAssetIsolationTests(unittest.TestCase):
                 "EXPANSION_CUSTOM_SPELL_EFFECTS=0",
             ],
         )
-        processes = [
-            subprocess.Popen(
-                command,
-                cwd=str(ROOT),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-            for command in commands
-        ]
-        try:
-            outputs = [process.communicate(timeout=600)[0] for process in processes]
-            for process, output in zip(processes, outputs):
-                self.assertEqual(process.returncode, 0, output)
+        with profile_builds(commands, test_root) as results:
+            for result in results:
+                self.assertEqual(result.returncode, 0, result.stdout)
 
             enabled_assets = list((enabled_root / "generated" / "assets").glob(
                 "*/asset_manifest.mk"
@@ -628,13 +955,22 @@ class CustomSpellProfileAssetIsolationTests(unittest.TestCase):
                 self.assertTrue(
                     (root / "debug" / "aapcs" / "src" / "data" / "custom_spell_effect_data.o").is_file()
                 )
-        finally:
-            for process in processes:
-                if process.poll() is None:
-                    process.kill()
-                    process.wait()
-            shutil.rmtree(test_root, ignore_errors=True)
+
+
+def run_required_profile_isolation():
+    suite = unittest.defaultTestLoader.loadTestsFromName(
+        "CustomSpellProfileAssetIsolationTests."
+        "test_concurrent_enabled_disabled_full_modern_compiles_keep_assets_isolated",
+        module=sys.modules[__name__],
+    )
+    result = unittest.TextTestRunner(verbosity=2).run(suite)
+    if result.testsRun != 1 or result.skipped or result.expectedFailures:
+        print("Required profile isolation must execute one test without skips or expected failures.", file=sys.stderr)
+        return 1
+    return 0 if result.wasSuccessful() else 1
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--require-profile-isolation"]:
+        sys.exit(run_required_profile_isolation())
     unittest.main()

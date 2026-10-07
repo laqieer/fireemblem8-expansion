@@ -335,6 +335,51 @@
       }},
       "else": {"properties": {"process": {"properties": {"state": {"const": "exited"}}}}}
     },
+    "reviewQualification": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "schema_version", "case_id", "repository", "pull_request", "base_sha", "candidate_sha",
+        "worktree", "checker_revision", "changed_paths", "changed_edge_ids",
+        "affected_consumers", "review_scope", "review_task", "reviewer", "review_started_at",
+        "review_completed_at", "coordinator_id", "git_identity"
+      ],
+      "properties": {
+        "schema_version": {"const": 1},
+        "case_id": {"const": "TC-WORKFLOW-GATE-OWNERSHIP-001"},
+        "repository": {"$ref": "#/$defs/repository"},
+        "pull_request": {"$ref": "#/$defs/positive"},
+        "base_sha": {"$ref": "#/$defs/sha"},
+        "candidate_sha": {"$ref": "#/$defs/sha"},
+        "worktree": {"$ref": "#/$defs/absolute"},
+        "checker_revision": {"$ref": "#/$defs/sha"},
+        "changed_paths": {
+          "type": "array", "minItems": 1, "maxItems": 200,
+          "uniqueItems": true, "items": {"$ref": "#/$defs/path"}
+        },
+        "changed_edge_ids": {
+          "type": "array", "maxItems": 256,
+          "uniqueItems": true, "items": {"$ref": "#/$defs/id"}
+        },
+        "affected_consumers": {
+          "type": "array", "maxItems": 256,
+          "uniqueItems": true, "items": {"$ref": "#/$defs/id"}
+        },
+        "review_scope": {
+          "type": "array", "minItems": 4, "maxItems": 40,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/text", "maxLength": 1024}
+        },
+        "review_task": {"$ref": "#/$defs/text", "maxLength": 256},
+        "reviewer": {"$ref": "#/$defs/text", "maxLength": 256},
+        "review_started_at": {"$ref": "#/$defs/time"},
+        "review_completed_at": {"$ref": "#/$defs/time"},
+        "coordinator_id": {"$ref": "#/$defs/id"},
+        "git_identity": {"$ref": "#/$defs/gitIdentity"}
+      },
+      "if": {"properties": {"changed_edge_ids": {"maxItems": 0}}},
+      "then": {"properties": {"affected_consumers": {"maxItems": 0}}},
+      "else": {"properties": {"affected_consumers": {"minItems": 1}}}
+    },
     "coordinatorLocal": {
       "type": "object", "additionalProperties": false,
       "required": ["coordinator_id", "repository", "pr_number", "head_sha", "base_sha", "base_ref",
@@ -347,6 +392,7 @@
         "branch": {"$ref": "#/$defs/text", "maxLength": 256},
         "worktree": {"$ref": "#/$defs/absolute"}, "git_identity": {"$ref": "#/$defs/gitIdentity"},
         "registered_at": {"$ref": "#/$defs/time"}, "clock": {"$ref": "#/$defs/clock"},
+        "review_qualification": {"$ref": "#/$defs/reviewQualification"},
         "required_checks": {
           "type": "object", "minProperties": 2, "maxProperties": 32,
           "propertyNames": {"$ref": "#/$defs/id"}, "additionalProperties": {"$ref": "#/$defs/requiredCheck"},

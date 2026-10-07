@@ -437,6 +437,22 @@ class AuthorityLoader:
         finally:
             os.close(descriptor)
 
+    def read_blobs(self, paths, label):
+        """Read selected immutable blobs without creating a snapshot or retaining a cache."""
+        self.budget.remaining()
+        if (
+            self.entries.budget is not self.budget or self.revision is None
+            or self.entries.capture != (self.root, self.revision)
+        ):
+            raise MakeProbeError("batched reads require their actual immutable capture and report budget")
+        entries = {}
+        for index, path in enumerate(paths):
+            if index >= self.budget.limits.entries:
+                self.budget.reject("batched blob selection exceeds entry bound")
+            entry = self.entry(path, label)
+            entries[entry.path] = entry
+        return _immutable_blobs(self, list(entries.values()), category="output")
+
     def read_json(self, relative, label):
         return parse_json(self.read_blob(relative, label), label)
 
@@ -458,6 +474,56 @@ class AuthorityLoader:
             raise MakeProbeError("live symlink changed type or has an unsafe ancestor") from error
         finally:
             os.close(descriptor)
+
+
+def _immutable_blobs(loader, entries, *, category):
+    """Share Snapshot's bounded Git stream, including framing and copied payload charges."""
+    budget = loader.budget
+    budget.remaining()
+    for entry in entries:
+        if (
+            loader.entry(entry.path, "immutable blob") != entry
+            or not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", entry.object_id)
+        ):
+            raise MakeProbeError("invalid immutable blob authority")
+    files = {}
+    for directory in dict.fromkeys(entry.git_dir for entry in entries):
+        batch = [entry for entry in entries if entry.git_dir == directory]
+        if sum(len(entry.object_id) + 1 for entry in batch) > budget.limits.pending_bytes:
+            budget.reject("aggregate pending byte budget exhausted")
+        result = budget.run(
+            [*git_command(loader.root, directory), "cat-file", "--batch"],
+            env=ENVIRONMENT,
+            input_data="".join(entry.object_id + "\n" for entry in batch).encode("ascii"),
+            output_limit=getattr(budget.limits, f"{category}_bytes"),
+            category=category,
+        )
+        if result.returncode:
+            raise MakeProbeError(f"immutable blob stream failed: {result.stderr!r}")
+        payload = result.stdout
+        offset = 0
+        for entry in batch:
+            budget.remaining()
+            end = payload.find(b"\n", offset)
+            if end < 0:
+                raise MakeProbeError("truncated immutable blob header")
+            header = text(payload[offset:end], "Git blob header", "ascii").split()
+            if len(header) != 3 or header[:2] != [entry.object_id, "blob"] or not header[2].isdigit():
+                raise MakeProbeError("unexpected immutable blob identity/type")
+            if len(header[2]) > len(str(budget.limits.file_bytes)):
+                raise MakeProbeError("immutable blob exceeds file bound")
+            size = int(header[2])
+            if size > budget.limits.file_bytes:
+                raise MakeProbeError("immutable blob exceeds file bound")
+            offset = end + 1
+            if size >= len(payload) - offset or payload[offset + size:offset + size + 1] != b"\n":
+                raise MakeProbeError("truncated immutable blob payload")
+            budget.charge(category, size)
+            files[entry.path] = payload[offset:offset + size]
+            offset += size + 1
+        if offset != len(payload):
+            raise MakeProbeError("trailing immutable blob stream")
+    return files
 
 
 class Snapshot:
@@ -508,37 +574,7 @@ class Snapshot:
                         immutable[entry.path] = reuse.files[entry.path]
                         self.reused_paths.add(entry.path)
             entries = [entry for entry in entries if entry.path not in self.reused_paths]
-            for directory in dict.fromkeys(entry.git_dir for entry in entries):
-                batch = [entry for entry in entries if entry.git_dir == directory]
-                result = budget.run(
-                    [*git_command(loader.root, directory), "cat-file", "--batch"],
-                    env=ENVIRONMENT,
-                    input_data="".join(entry.object_id + "\n" for entry in batch).encode("ascii"),
-                    output_limit=budget.limits.snapshot_bytes,
-                    category="snapshot",
-                )
-                if result.returncode:
-                    raise MakeProbeError(f"immutable blob stream failed: {result.stderr!r}")
-                payload = result.stdout
-                offset = 0
-                for entry in batch:
-                    end = payload.find(b"\n", offset)
-                    if end < 0:
-                        raise MakeProbeError("truncated immutable blob header")
-                    header = text(payload[offset:end], "Git blob header", "ascii").split()
-                    if len(header) != 3 or header[:2] != [entry.object_id, "blob"] or not header[2].isdigit():
-                        raise MakeProbeError("unexpected immutable blob identity/type")
-                    size = int(header[2])
-                    if size > budget.limits.file_bytes:
-                        raise MakeProbeError("immutable blob exceeds file bound")
-                    offset = end + 1
-                    immutable[entry.path] = payload[offset:offset + size]
-                    offset += size
-                    if payload[offset:offset + 1] != b"\n":
-                        raise MakeProbeError("truncated immutable blob payload")
-                    offset += 1
-                if offset != len(payload):
-                    raise MakeProbeError("trailing immutable blob stream")
+            immutable.update(_immutable_blobs(loader, entries, category="snapshot"))
         for name, entry in sorted(loader.entries.items()):
             budget.remaining()
             relative_path(name)
@@ -555,7 +591,7 @@ class Snapshot:
             if entry.mode in {"100644", "100755"} and entry.object_type == "blob":
                 data = immutable[name] if loader.revision is not None else loader.read_blob(name, "execution snapshot")
                 budget.charge(
-                    "snapshot", (0 if name in self.reused_paths else len(data))
+                    "snapshot", (0 if loader.revision is not None else len(data))
                     + len(name.encode("utf-8")) + 64,
                 )
                 self.files[name] = data

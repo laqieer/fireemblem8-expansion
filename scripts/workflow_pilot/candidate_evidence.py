@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-WORKER_JOB_IDS = ("host-tests", "build", "extended-host-tests", "legacy")
+WORKER_JOB_IDS = ("host-tests", "ownership-tests", "build", "extended-host-tests", "legacy")
 METADATA_ADAPTER_JOB_IDS = ("host-tests", "build")
-METADATA_SKIPPED_JOB_IDS = ("extended-host-tests", "legacy")
+METADATA_SKIPPED_JOB_IDS = ("ownership-tests", "extended-host-tests", "legacy")
 KNOWN_JOB_IDS = frozenset(WORKER_JOB_IDS) | {
     "event-identity",
     "event-router",
@@ -181,8 +181,7 @@ def preflight_success(jobs: dict[str, tuple[str, str | None]]) -> bool:
         PREFLIGHT_CLASSIFIER: ("completed", "success"),
         "host-tests": ("completed", "success"),
         "build": ("completed", "success"),
-        "extended-host-tests": ("completed", "skipped"),
-        "legacy": ("completed", "skipped"),
+        **{job_id: ("completed", "skipped") for job_id in METADATA_SKIPPED_JOB_IDS},
         "summary": ("completed", "failure"),
     }
     return jobs == expected

@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -12,6 +13,9 @@ from unittest import mock
 
 CHECK_DOCS_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "check_docs.py"
+)
+CONTENT_PUBLICATION_SUITE_ARGV = (
+    "python3", "-m", "unittest", "scripts.validation_ownership.tests.test_content_publication", "-v",
 )
 REVIEW_PATH_GATE_COMMAND = (
     "build/host-python/bin/python3 -I -c "
@@ -1001,9 +1005,41 @@ class TesterCaseRegistryTests(unittest.TestCase):
         }
         with mock.patch.object(check_docs, "parse_test_case_registry", return_value=(selected, [])):
             self.assertEqual(check_docs.check_test_case_registry(REAL_REPO_ROOT), [])
-        self.assertEqual(case["automation"][0]["command"], (
-            "python3 -m unittest scripts.validation_ownership.tests.test_content_publication -v"
-        ))
+        self.assertIn(
+            (CONTENT_PUBLICATION_SUITE_ARGV, "scripts/validation_ownership/tests/test_content_publication.py"),
+            {(tuple(shlex.split(item["command"])), item["evidence"]) for item in case["automation"]},
+        )
+
+    def test_content_publication_suite_guard_ignores_order_but_rejects_omission(self):
+        registry, errors = check_docs.parse_test_case_registry(REAL_REPO_ROOT)
+        self.assertEqual(errors, [])
+        for reverse, quoted, omit in ((False, False, False), (True, False, False),
+                                      (False, True, False), (False, False, True)):
+            with self.subTest(reverse=reverse, quoted=quoted, omit=omit):
+                changed = copy.deepcopy(registry)
+                case = next(item for item in changed["cases"]
+                            if item["id"] == "TC-PROBE-CONTENT-PUBLICATION-001")
+                if reverse:
+                    case["automation"].reverse()
+                if quoted:
+                    record = next(item for item in case["automation"]
+                                  if tuple(shlex.split(item["command"])) == CONTENT_PUBLICATION_SUITE_ARGV)
+                    record["command"] = (
+                        "python3  -m unittest "
+                        "'scripts.validation_ownership.tests.test_content_publication'  -v"
+                    )
+                if omit:
+                    case["automation"] = [
+                        item for item in case["automation"]
+                        if tuple(shlex.split(item["command"])) != CONTENT_PUBLICATION_SUITE_ARGV
+                    ]
+                    self.assertTrue(case["automation"])
+                with mock.patch.object(check_docs, "parse_test_case_registry", return_value=(changed, [])):
+                    if omit:
+                        with self.assertRaises(AssertionError):
+                            self.test_content_publication_case_is_indexed_with_complete_contract()
+                    else:
+                        self.test_content_publication_case_is_indexed_with_complete_contract()
 
     def test_review_path_coverage_case_is_indexed_with_focused_procedure(self):
         registry, errors = check_docs.parse_test_case_registry(REAL_REPO_ROOT)
@@ -1225,6 +1261,30 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 -m unittest discover -s "
                             "tests/workflows -p 'test_*.py' -v",
                             "python3 scripts/check_docs.py --check",
+                        },
+                    },
+                    "TC-WORKFLOW-GATE-OWNERSHIP-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "/usr/bin/python3 -I -S -B "
+                            "scripts/validation_ownership/isolated_launcher.py tests",
+                            "/usr/bin/python3 -I -S -B "
+                            "scripts/validation_ownership/isolated_launcher.py "
+                            "check --repository-root .",
+                            "python3 -m unittest scripts.validation_ownership.tests."
+                            "test_report_views.ReportViewTests."
+                            "test_registry_count_support_ownership_follows_the_selected_view -v",
+                            "python3 -m unittest scripts.validation_ownership.tests."
+                            "test_reporter.RepositoryStatusTests -v",
+                            "python3 -m unittest scripts.validation_ownership.tests."
+                            "test_graph_regex.GraphRegexTests -v",
+                        },
+                    },
+                    "TC-WORKFLOW-OWNERSHIP-MODERN-TOOLCHAIN-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.validation_ownership.tests.test_toolchain_runtime -v",
                         },
                     },
                     "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001": {

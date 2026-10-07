@@ -23,6 +23,15 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <set>
+#include <string>
+#include <vector>
+
+typedef bool (*ScanincPathAvailable)(const std::string &, void *);
+
+std::set<std::string> ScanIncDependencies(
+    const std::string &initialPath, std::vector<std::string> includeDirs,
+    ScanincPathAvailable available, void *context);
 
 #ifdef _MSC_VER
 

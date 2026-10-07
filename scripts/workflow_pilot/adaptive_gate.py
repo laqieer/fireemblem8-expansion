@@ -22,6 +22,7 @@ from . import coordinator_observations as observations
 from . import event_classifier
 from . import pr_metadata as github
 from . import reporter
+from .review_family import MAX_REVIEW_FILES
 
 
 HIGH_RISKS = frozenset({"protocol", "replay", "transport", "security", "save",
@@ -33,6 +34,7 @@ SECURITY_CHECKS = frozenset({
 BINDING_PREFIX = "workflow-pilot-candidate:v1:"
 PREFLIGHT_CLASSIFIER = "review-first-classifier"
 MAX_CANDIDATES = 128
+OWNERSHIP_CHECK_ID = "validation-ownership"
 
 
 def require(condition, message):
@@ -1135,9 +1137,65 @@ def _validate_local_checks(checks):
             "coordinator validation requires registered semantic checks, not raw diff alone")
 
 
+def validate_review_qualification(value):
+    handoff.fields(
+        value,
+        "schema_version case_id repository pull_request base_sha candidate_sha worktree "
+        "checker_revision changed_paths changed_edge_ids affected_consumers "
+        "review_scope review_task reviewer review_started_at review_completed_at coordinator_id "
+        "git_identity",
+    )
+    require(value["schema_version"] == 1 and type(value["schema_version"]) is int,
+            "review qualification schema version changed")
+    handoff.text(value["case_id"], maximum=128, pattern=handoff.ID_RE)
+    handoff.text(value["repository"], maximum=256, pattern=observations.REPOSITORY_RE)
+    handoff.integer(value["pull_request"], minimum=1)
+    for key in ("base_sha", "candidate_sha", "checker_revision"):
+        handoff.sha(value[key])
+    handoff.absolute_path(value["worktree"])
+    for path in handoff.items(value["changed_paths"], minimum=1, maximum=MAX_REVIEW_FILES, unique=True):
+        handoff.path(path)
+    for key in ("changed_edge_ids", "affected_consumers"):
+        for item in handoff.items(value[key], minimum=0, maximum=256, unique=True):
+            handoff.text(item, maximum=256, pattern=handoff.ID_RE)
+    require(bool(value["changed_edge_ids"]) == bool(value["affected_consumers"]),
+            "reviewed edge and consumer scopes must both be empty or nonempty")
+    for item in handoff.items(value["review_scope"], minimum=4, maximum=40, unique=True):
+        handoff.text(item, maximum=1024)
+    try:
+        from scripts.validation_ownership.coordinator_capture import REVIEW_CASE_ID, reviewed_evolution_scope
+
+        require(value["case_id"] == REVIEW_CASE_ID, "review qualification case identity changed")
+        expected_scope = sorted(reviewed_evolution_scope(
+            value["checker_revision"],
+            value["changed_paths"],
+            value["changed_edge_ids"],
+            value["affected_consumers"],
+        ))
+    except RuntimeError as error:
+        raise ValueError(str(error)) from error
+    require(value["review_scope"] == expected_scope,
+            "review qualification scope differs from its complete explicit arrays")
+    for key in ("review_task", "reviewer"):
+        handoff.text(value[key], maximum=256)
+    handoff.text(value["coordinator_id"], maximum=128, pattern=handoff.ID_RE)
+    for key in ("review_started_at", "review_completed_at"):
+        handoff.timestamp(value[key])
+    require(handoff.timestamp(value["review_started_at"])
+            <= handoff.timestamp(value["review_completed_at"]),
+            "review qualification chronology reversed")
+    handoff.fields(value["git_identity"], "worktree git_dir common_dir device inode")
+    for key in ("worktree", "git_dir", "common_dir"):
+        handoff.absolute_path(value["git_identity"][key])
+    handoff.integer(value["git_identity"]["device"])
+    handoff.integer(value["git_identity"]["inode"], minimum=1)
+
+
 def validate_local_validation(local):
     handoff.fields(local, "coordinator_id repository pr_number head_sha base_sha base_ref branch worktree "
-                   "git_identity registered_at clock required_checks checks")
+                   "git_identity registered_at clock required_checks checks"
+                   + (" review_qualification" if isinstance(local, dict)
+                      and "review_qualification" in local else ""))
     handoff.text(local["coordinator_id"], maximum=128, pattern=handoff.ID_RE)
     handoff.text(local["repository"], maximum=256, pattern=observations.REPOSITORY_RE)
     handoff.integer(local["pr_number"], minimum=1)
@@ -1152,9 +1210,33 @@ def validate_local_validation(local):
     handoff.fields(local["git_identity"], "worktree git_dir common_dir device inode")
     for key in ("worktree", "git_dir", "common_dir"):
         handoff.absolute_path(local["git_identity"][key])
-    for key in ("device", "inode"):
-        handoff.integer(local["git_identity"][key])
+    handoff.integer(local["git_identity"]["device"])
+    handoff.integer(local["git_identity"]["inode"], minimum=1)
     _validate_local_checks(local["required_checks"])
+    if "review_qualification" in local:
+        validate_review_qualification(local["review_qualification"])
+        qualification = local["review_qualification"]
+        require(
+            (
+                qualification["repository"],
+                qualification["pull_request"],
+                qualification["candidate_sha"],
+                qualification["base_sha"],
+                qualification["worktree"],
+                qualification["coordinator_id"],
+                qualification["git_identity"],
+            )
+            == (
+                local["repository"],
+                local["pr_number"],
+                local["head_sha"],
+                local["base_sha"],
+                local["worktree"],
+                local["coordinator_id"],
+                local["git_identity"],
+            ),
+            "review qualification differs from local validation identity",
+        )
     for check_id, captured in handoff.named_records(local["checks"]):
         handoff.fields(captured, "definitions observation")
         handoff.validate_check(captured["observation"])
@@ -1194,7 +1276,15 @@ def _coordinator_git(state, record, pr, worktree):
     return current
 
 
-def register_local_validation(state, record, pr, worktree, required_checks):
+def register_local_validation(
+    state,
+    record,
+    pr,
+    worktree,
+    required_checks,
+    *,
+    review_qualification=None,
+):
     """Declare coordinator-owned checks; this does not create an owner or handoff."""
     current = _coordinator_git(state, record, pr, worktree)
     clock = observations.clock_observation()
@@ -1205,6 +1295,8 @@ def register_local_validation(state, record, pr, worktree, required_checks):
         "registered_at": clock["at"], "clock": clock,
         "required_checks": copy.deepcopy(required_checks), "checks": {},
     }
+    if review_qualification is not None:
+        local["review_qualification"] = copy.deepcopy(review_qualification)
     validate_local_validation(local)
     record["local_validation"] = local
     return local
@@ -1229,7 +1321,11 @@ def capture_local_check(state, record, pr, check_id, trusted_executor=None):
     definitions = copy.deepcopy(local["required_checks"])
     require(check_id in definitions, "unknown registered local check")
     context = {"allowed_worktree": local["worktree"], "assigned_parent_sha": local["base_sha"],
-               "required_checks": definitions}
+               "required_checks": definitions, "repository": local["repository"],
+               "pull_request": local["pr_number"], "head_sha": local["head_sha"],
+               "git_identity": copy.deepcopy(local["git_identity"])}
+    if "review_qualification" in local:
+        context["review_qualification"] = copy.deepcopy(local["review_qualification"])
     entry = {"assignment": context, "checks": []}
     local["checks"].pop(check_id, None)
     started = observations.utc_now()
@@ -1237,7 +1333,7 @@ def capture_local_check(state, record, pr, check_id, trusted_executor=None):
         check = handoff.capture_check(entry, check_id, pr.head_sha, trusted_executor, task_owned=False)
         require(_registered_local(state, record, pr) is local
                 and local["required_checks"] == definitions, "registered check set changed during capture")
-    except (OSError, ValueError) as error:
+    except (OSError, RuntimeError, ValueError) as error:
         check = {"id": check_id, "evidence_id": definitions[check_id]["evidence_id"],
                  "contract": definitions[check_id]["contract"], "parent_sha": local["base_sha"],
                  "result_sha": pr.head_sha, "worktree": local["worktree"], "started_at": started,
@@ -1249,9 +1345,23 @@ def capture_local_check(state, record, pr, check_id, trusted_executor=None):
     return check
 
 
-def coordinator_local_ready(state, record, pr):
+def coordinator_local_ready(state, record, pr, review_qualification=None):
     try:
         local = _registered_local(state, record, pr)
+        if "review_qualification" in local:
+            if review_qualification is None:
+                return False
+            review_qualification.validate_binding(state, record, pr)
+            if (
+                review_qualification.record() != local["review_qualification"]
+                or OWNERSHIP_CHECK_ID not in local["required_checks"]
+                or local["required_checks"][OWNERSHIP_CHECK_ID]["contract"] != "coordinator-check"
+                or local["required_checks"][OWNERSHIP_CHECK_ID]["evidence_id"]
+                != review_qualification.evidence_id()
+            ):
+                return False
+        elif review_qualification is not None:
+            return False
         if set(local["checks"]) != set(local["required_checks"]):
             return False
         for check_id, definition in local["required_checks"].items():
@@ -1269,18 +1379,26 @@ def coordinator_local_ready(state, record, pr):
                         and (check["pid"] is None or check["peak_rss_bytes"] is None))):
                 return False
         return True
-    except (OSError, ValueError):
+    except (OSError, RuntimeError, ValueError):
         return False
 
 
-def _local_ready(state, pr, record):
+def _local_ready(state, pr, record, review_qualification=None):
     handoff.summarize_handoffs(state)
     require(find_candidate(state, candidate_identity(record)) == record, "unrecorded local candidate")
     delegated = _local_delegations(state, pr)
     if _delegation_incomplete(delegated) or record["abandoned_reason"] is not None:
         return False
     if "local_validation" in record:
-        return coordinator_local_ready(state, record, pr)
+        return coordinator_local_ready(state, record, pr, review_qualification)
+    from scripts.validation_ownership.coordinator_capture import REVIEWED_EVIDENCE_PREFIX
+
+    if review_qualification is not None or any(
+        entry["assignment"]["required_checks"].get(OWNERSHIP_CHECK_ID, {}).get(
+            "evidence_id", "",
+        ).startswith(REVIEWED_EVIDENCE_PREFIX) for entry in delegated
+    ):
+        return False
     for entry in delegated:
         if (entry["validation"]["result_sha"] == pr.head_sha
                 and entry["assignment"]["expected_branch"] == pr.head_ref):
@@ -1338,7 +1456,8 @@ def _candidate_runs(state, record, pr, runs):
 
 
 def assess_candidate(state, record, decision, pr, session, facts, triage, checks, runs,
-                     *, family_evidence=None, accepted_security=(), criteria_ready=False):
+                     *, family_evidence=None, accepted_security=(), criteria_ready=False,
+                     local_qualification=None):
     """Consume existing typed observations. Does not dispatch, merge or launch a watcher."""
     handoff.validate_state(state)
     require(type(criteria_ready) is bool, "objective/manual readiness must be an actual decision")
@@ -1403,7 +1522,7 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
                 or (facts and reporter.parse_time(report.completed_at, "pre-review completion") >=
                     min(reporter.parse_time(fact.submitted_at, "remote review") for fact in facts))):
             scheduling.append("unbound-original-review-context")
-    if not _local_ready(state, pr, record):
+    if not _local_ready(state, pr, record, local_qualification):
         missing.append("exact-local-handoff")
     security_ready = (
         len(checks) == len(SECURITY_CHECKS)
@@ -1510,7 +1629,8 @@ def evidence_comment(assessment, preserved_text=""):
 
 
 def assess_observed(client, state, record, session, triage, review_tools, *,
-                    family_evidence=None, accepted_security=(), criteria_ready=False):
+                    family_evidence=None, accepted_security=(), criteria_ready=False,
+                    local_qualification=None):
     """Refresh through #177/#179 and validate the unique actual Git merge base."""
     pr, lines = fetch_candidate(client, state["repository"], record["pr_number"])
     decision = fetch_decision(client, pr, lines)
@@ -1541,7 +1661,7 @@ def assess_observed(client, state, record, session, triage, review_tools, *,
     assessment = assess_candidate(
         state, record, decision, after, session, facts, triage, checks, runs,
         family_evidence=family_evidence, accepted_security=accepted_security,
-        criteria_ready=criteria_ready)
+        criteria_ready=criteria_ready, local_qualification=local_qualification)
     return assessment, runs
 
 
